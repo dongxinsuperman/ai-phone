@@ -417,6 +417,12 @@ class VLMRunner:
 
         # 运行态（循环内会维护）
         self._last_tail_bytes: Optional[bytes] = None
+        # 上一个 step 主 VLM 决策时看到的 before 帧。在 finished 走断言系统时，
+        # 用作"最后一个动作前"的对照帧——和当前 final 帧组成"动作前/后"双图，
+        # 让断言模型直接对比"主 VLM 自述的状态变化"是否真的发生。
+        # 跨度永远 = 一个 step（最后那个动作），不会被 case 长度污染。
+        # 第一步就 finished 时为 None，断言会退化成单图模式。
+        self._previous_before_bytes: Optional[bytes] = None
         self._recent_clicks: List[Tuple[int, int]] = []
         self._scroll_streak: Tuple[Optional[str], int] = (None, 0)
         self._unknown_streak = 0
@@ -891,7 +897,8 @@ class VLMRunner:
                     step=step,
                 )
                 verdict, verify_reason = await self._verify_finished_assertion(
-                    screenshot_bytes=screenshot_bytes,
+                    prev_before_bytes=self._previous_before_bytes,
+                    final_bytes=screenshot_bytes,
                     thought=thought,
                     finish_msg=finish_msg,
                     step=step,
@@ -1155,6 +1162,12 @@ class VLMRunner:
 
             if await self._maybe_audit(step):
                 return await self._raise_fatal(step, tail_bytes or screenshot_bytes)
+
+            # ⑦ 把"本 step 主 VLM 看到的 before 帧"滚到 _previous_before_bytes，
+            #    供下一 step 万一直接 finished 时给断言系统当"动作前对照帧"。
+            #    放在 step 末尾、所有提前 return 路径之外——finished/assert_fail
+            #    都已在中段 return，case 已结束，不需要再滚。
+            self._previous_before_bytes = screenshot_bytes
 
             await self._emit_event(make_event(EVT_STEP_END, self.run_id, step=step))
 
@@ -2018,7 +2031,8 @@ class VLMRunner:
     async def _verify_finished_assertion(
         self,
         *,
-        screenshot_bytes: bytes,
+        prev_before_bytes: Optional[bytes],
+        final_bytes: bytes,
         thought: str,
         finish_msg: str,
         step: int,
@@ -2026,7 +2040,20 @@ class VLMRunner:
         """断言系统：在主 VLM 输出 ``finished()`` 后做一次终局裁决。
 
         统一走 ``assistant_*``（默认 1.6 通用版），避免"主 VLM 自验主 VLM"。
-        1.6 通用版同样支持图像输入，所以本函数仍然把最终截图交给它判断。
+        1.6 通用版同样支持图像输入。
+
+        输入双图（"动作前/后"对照模式）：
+
+        - ``prev_before_bytes``：上一个 step 主 VLM 看到的 before 帧，也即
+          finished 那一击之前的画面。跨度始终为"最后一个动作"，不会被 case
+          长度污染。第一步就 finished 时该参数为 ``None``，自动退化为单图模式。
+        - ``final_bytes``：finished 这一步主 VLM 看到的截图，也是断言要验收
+          的"最终落点"。
+
+        prompt 会指引模型把两张图作为"动作前/后"对照，配合主 VLM 的 thought
+        和 finish_msg 文本，判断"thought 自述的状态变化是否真的发生"——既能
+        正确放过过程导向 case（"点击返回"），也能识破状态导向 case 的伪成功
+        （"拖到 30%" 但截图无变化）。
 
         约束：
         - 只读，不允许继续执行任何 step
@@ -2043,11 +2070,30 @@ class VLMRunner:
             await self._log(2, "断言系统 · 跳过", reason, step=step)
             return ("SKIP", reason)
 
+        has_prev = prev_before_bytes is not None
         prompt = self._build_finished_assertion_prompt(
-            thought=thought, finish_msg=finish_msg
+            thought=thought,
+            finish_msg=finish_msg,
+            has_prev=has_prev,
         )
-        b64 = base64.b64encode(screenshot_bytes).decode("ascii")
-        data_url = f"data:image/jpeg;base64,{b64}"
+
+        user_content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+        if has_prev:
+            prev_b64 = base64.b64encode(prev_before_bytes).decode("ascii")
+            user_content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{prev_b64}"},
+                }
+            )
+        final_b64 = base64.b64encode(final_bytes).decode("ascii")
+        user_content.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{final_b64}"},
+            }
+        )
+
         thinking_type = (
             "enabled" if settings.assistant_thinking_assertion else "disabled"
         )
@@ -2057,13 +2103,7 @@ class VLMRunner:
             "top_p": 0,
             "messages": [
                 {"role": "system", "content": "你是严格保守的结果验收裁决器。"},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                    ],
-                },
+                {"role": "user", "content": user_content},
             ],
             "thinking": {"type": thinking_type},
         }
@@ -2075,7 +2115,8 @@ class VLMRunner:
         await self._log(
             1,
             "断言系统 · 复核",
-            "主VLM 已申请 finished，断言系统开始最终裁决（不再继续执行步骤）",
+            "主VLM 已申请 finished，断言系统开始最终裁决（不再继续执行步骤）"
+            f" | 对照模式={'双图(动作前/后)' if has_prev else '单图(无前置帧)'}",
             step=step,
         )
 
@@ -2125,23 +2166,57 @@ class VLMRunner:
         return ("SKIP", reason)
 
     def _build_finished_assertion_prompt(
-        self, *, thought: str, finish_msg: str
+        self,
+        *,
+        thought: str,
+        finish_msg: str,
+        has_prev: bool,
     ) -> str:
         """构造 finished 断言系统提示词。
 
-        结构化 case 与自由对话使用不同口径：
+        双图对照模式（``has_prev=True``）：附图 1 = 主 VLM 最后一个动作之前的
+        画面，附图 2 = 当前最终画面。模型应同时利用"两图差异"和主 VLM 的
+        thought 文本，判断"thought 自述的状态变化是否真的发生"。
 
-        - 结构化 case：回到严格模式，只根据最终截图逐条验证预期结果
-        - 自由对话：只看"最后一个动作结果"是否成立，不复盘历史过程
+        单图模式（``has_prev=False``）：仅有附图 = 当前最终画面（首步即
+        finished 的极端情况）。退化到只验最终状态。
+
+        结构化通道 / 自由通道使用不同口径：
+
+        - 结构化 case：以"预期结果"为唯一验收标准，逐条核对
+        - 自由对话：以"最后一个动作结果"为唯一验收对象，不审过程
         """
+        img_index_intro = (
+            "本提示词附带两张图（按消息顺序）：\n"
+            "- 附图 1：主 VLM **最后一个动作之前**看到的画面（动作前对照帧）\n"
+            "- 附图 2：当前**最终落点**画面（断言要验收的对象）\n"
+            "两张图之间只跨越主 VLM 最后一个动作。"
+        ) if has_prev else (
+            "本提示词附带一张图：\n"
+            "- 附图：当前**最终落点**画面（断言要验收的对象）\n"
+            "本次没有动作前对照帧（首步即 finished 的极端情况），请仅基于该图与主 VLM 自述判断。"
+        )
+
+        cmp_block_struct = (
+            "对照判断（仅当存在双图时启用）：\n"
+            "- 把附图 1 / 附图 2 当成「动作前/后」快照，**优先用两图差异验证**主 VLM "
+            "thought 自述的状态变化是否真的发生（例如：返回上一级 → 页面整体不同；"
+            "弹窗关闭 → 浮层消失；进度拖动 → 进度元件位置/填充明显改变）。\n"
+            "- thought 声称发生的视觉变化，必须能在两图差异中找到对应证据；"
+            "如果两图几乎相同而 thought 声称「已切换/已变化」，则该自述不可信。\n"
+            "- 但最终是否 PASS 仍以「附图 2 是否满足预期结果」为准——双图对照只是辅助"
+            "排除「伪成功」，不替代预期结果验收。\n\n"
+        ) if has_prev else ""
+
         if self._is_structured:
             return (
                 "你是手机自动化任务的最终断言系统，只负责裁决主 VLM 的 finished 是否可被采纳。"
                 "你不能继续执行步骤，也不能把本次 finished 改写成新的动作建议。\n\n"
-                "当前是结构化测试用例。你的唯一职责：只根据当前最终截图，对用户输入中的"
-                "“预期结果”做最终验收。\n\n"
+                f"{img_index_intro}\n\n"
+                "当前是结构化测试用例。你的唯一职责：根据用户输入中的“预期结果”做最终验收。\n\n"
+                f"{cmp_block_struct}"
                 "裁决规则：\n"
-                "1. “预期结果”是唯一验收标准，优先级最高；你必须逐条检查预期结果是否被当前截图可靠支持。\n"
+                "1. “预期结果”是唯一验收标准，优先级最高；你必须逐条检查预期结果是否被附图 2 可靠支持。\n"
                 "2. 你做的是语义验收，不是逐字匹配：\n"
                 "   - 不要求与预期结果一字不差\n"
                 "   - 允许同义表达、界面别名、常见产品话术变体\n"
@@ -2151,10 +2226,11 @@ class VLMRunner:
                 "   - 如果证据模糊、被遮挡、过小、无法可靠判断，则该条不成立\n"
                 "4. 对数值、比例、区间、状态类要求：\n"
                 "   - 若截图中能直接看到明确数值/文字，优先按明确证据判断\n"
-                "   - 若没有明确文字，但可以从截图做稳定、可靠的视觉判断，也可判定成立\n"
+                "   - 若没有明确文字，但可以从两图差异做稳定、可靠的视觉判断，也可判定成立\n"
                 "   - 若只能猜测大概如此，则不能通过\n"
-                "5. 只要有任一关键预期结果未被当前截图可靠支持，就必须 FAIL。\n"
-                "6. 如果主 VLM 的 finished 内容与截图明显矛盾，也必须 FAIL。\n"
+                "5. 只要有任一关键预期结果未被附图 2（必要时配合附图 1 对照）可靠支持，就必须 FAIL。\n"
+                "6. 如果主 VLM 的 thought / finished 内容与截图明显矛盾（如自述「已切换」但两图几乎相同），"
+                "也必须 FAIL。\n"
                 "7. 不允许输出 UNSURE，也不允许建议继续执行；只能做最终裁决。\n\n"
                 "输出协议：只输出第一行，且只能是以下两种之一：\n"
                 "PASS: <一句话原因>\n"
@@ -2163,24 +2239,36 @@ class VLMRunner:
                 "- 你只验“预期结果”，不验前置条件，不验操作过程，不验历史顺序。\n"
                 "- 严格验收 != 逐字匹配。\n"
                 "- 语义等价可以通过，证据不足不能通过。\n"
-                "- FAIL 时必须明确指出：是哪一条预期结果没有被当前截图可靠支持。\n\n"
+                "- FAIL 时必须明确指出：是哪一条预期结果没有被截图可靠支持。\n\n"
                 f"【用户目标】\n{self.goal}"
                 f"\n\n【主VLM最后思考】\n{thought}"
                 f"\n\n【主VLM finished 内容】\n{finish_msg}\n"
             )
+
+        cmp_block_free = (
+            "对照判断（仅当存在双图时启用）：\n"
+            "- 把附图 1 / 附图 2 当成「动作前/后」快照，**优先用两图差异验证**主 VLM "
+            "thought 自述的「最后一个动作结果」是否真的发生（例如返回 → 页面整体不同；"
+            "关闭 → 浮层消失；拖动 → 元件位置改变）。\n"
+            "- 这一对照对「过程导向任务」特别重要：例如「点击返回」，「上一级页面」是什么"
+            "你不知道，但只要附图 1 和附图 2 是**可识别的不同页面**，"
+            "且 thought 自述与差异方向一致，就足以判 PASS。\n"
+            "- 反过来，若 thought 自述了明显的视觉变化但两图几乎相同，则该自述不可信。\n\n"
+        ) if has_prev else ""
+
         return (
             "你是手机自动化任务的最终断言系统，只负责裁决主 VLM 的 finished 是否可被采纳。"
             "你不能继续执行步骤，也不能把本次 finished 改写成新的动作建议。\n\n"
-            "你的输入只有两类有效信息：\n"
-            "1. 用户原始目标\n"
-            "2. 当前这张最终截图\n\n"
+            f"{img_index_intro}\n\n"
             "铁律：仅看“用户最后一个 action 执行步骤”与截图是否一致。\n"
             "也就是说：\n"
             "- 你要先从用户目标里抽取“最后一个动作”是什么\n"
-            "- 然后只判断这个最后动作完成后的结果，是否已在截图中成立\n"
+            "- 然后判断这个最后动作完成后的结果，是否已在附图 2 中成立"
+            "（必要时用附图 1 做「动作前对照」辅助判断）\n"
             "- 前面的动作、顺序、中间过渡、是否真的点过某个前置按钮，一律不审查\n\n"
+            f"{cmp_block_free}"
             "裁决规则：\n"
-            "1. 如果用户目标包含多个顺序动作，例如“点击A后点击B”“先做X再做Y”“完成步骤M后立即执行步骤N”，"
+            "1. 如果用户目标包含多个顺序动作（“点击A后点击B”“先做X再做Y”“完成步骤M后立即执行步骤N”），"
             "你只抽取最后一个动作，并只验证截图是否支持这个最后动作的结果已经成立。\n"
             "2. 你必须忽略“先/后/马上/立即/随后/双动作链/连续点击”等过程词带来的历史顺序要求；"
             "这些词不能成为 FAIL 依据。\n"
@@ -2188,8 +2276,10 @@ class VLMRunner:
             "   - 无法证明之前是否点击过某按钮\n"
             "   - 无法确认点击顺序\n"
             "   - 无法证明是否使用了双动作链\n"
-            "   - 单张截图未体现中间过程\n"
+            "   - 截图未体现中间过程\n"
             "4. 只有当最后一个动作对应的最终结果，与截图明确矛盾时，才允许 FAIL。\n"
+            "   过程导向动作（如「返回」「关闭」）：附图 1 与附图 2 是同一页面、且 thought 自述了切换 → FAIL；\n"
+            "   状态导向动作（如「拖到 30%」「选中某项」）：附图 2 没有 thought 自述的视觉证据 → FAIL。\n"
             "5. 不允许输出 UNSURE，也不允许建议继续执行；只能做最终裁决。\n\n"
             "输出协议：只输出第一行，且只能是以下两种之一：\n"
             "PASS: <一句话原因>\n"
@@ -2199,7 +2289,8 @@ class VLMRunner:
             "- “过程不可回溯”绝不等于“结果未达成”。\n"
             "- 你的 FAIL 必须指出“最后一个动作结果”层面的明确矛盾，不能只谈过程。\n\n"
             f"【用户目标】\n{self.goal}"
-            "\n\n【最终截图裁决对象】\n请只根据上面的用户目标与当前截图，判断最后一个动作的结果是否成立。\n"
+            f"\n\n【主VLM最后思考】\n{thought}"
+            f"\n\n【主VLM finished 内容】\n{finish_msg}\n"
         )
 
     # ------------------------------------------------------------------
