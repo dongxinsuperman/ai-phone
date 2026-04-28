@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai_phone"
+version = "0.0.1"
+description = "Lightweight VLM-driven mobile automation platform (Server + Agent)"
+requires-python = ">=3.11,<3.13"
+authors = [{ name = "ai-phone" }]
+dependencies = [
+    # Server (FastAPI 生态)
+    "fastapi>=0.110,<0.116",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.6,<3",
+    "pydantic-settings>=2.2",
+    "python-multipart>=0.0.9",        # FastAPI multipart 上传
+    # DB
+    "sqlalchemy[asyncio]>=2.0,<2.1",
+    "asyncpg>=0.29",
+    # 不装 alembic：schema 已冻结，建表走 db.py 启动期 create_all，
+    # 后续若真有变更用手工 ALTER + 补齐 models.py 即可，避免背一个从不落地的迁移栈
+    # HTTP / WS
+    "httpx>=0.27",
+    "websockets>=13,<14",            # 14+ 改了 connect() 返回类型，老 async for ws 用法不兼容
+    # Utilities
+    "python-dotenv>=1.0",
+    "Pillow>=10.3,<12",
+    "loguru>=0.7",
+    # Android driver
+    "adbutils>=2.6",
+    # 实时镜像：scrcpy 解码（vendored client + scrcpy-server.jar v2.4）
+    "av>=10,<13",                     # PyAV，wheels 覆盖 3.9 / macOS arm64
+    "numpy>=1.24,<2",                 # av 帧 → ndarray，再 Pillow 转 JPEG
+    # iOS driver 默认不强装：pymobiledevice3 只在 macOS / Linux 有效，
+    # Windows 同事不接 iOS 不该被这一坨依赖拖累。需要 iOS 的人 pip install -e ".[ios]"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "types-Pillow",
+    "aiosqlite>=0.20",          # 单测专用；运行时还是 asyncpg + PG
+    "httpx>=0.27",              # FastAPI TestClient 走 httpx
+]
+# iOS 接入（M3）：pymobiledevice3 9.x 是当前唯一支持 iOS 26 的版本（DDI manifest
+# 需要新版才有匹配条目）。9.x 强制 Python 3.10+，所以本项目最低 3.11。
+# 安装命令：pip install -e ".[ios]"
+# WDA 端点连接走 httpx（已在主依赖里），这里不再单独列。
+ios = [
+    "pymobiledevice3>=9.5,<10",
+]
+# HarmonyOS 接入（M4）：hmdriver2 提供基于 uitest socket daemon 的低延时主通道，
+# 同级于 iOS 的 WDA。底座 hdc 二进制要手动装 DevEco Studio 并配环境变量，
+# 见 HarmonyOS环境配置笔记.md。hmdriver2 自身依赖 requests / lxml，
+# 不拉重量级编码库，对 Windows / Linux 同事没有副作用，按需装即可。
+# 安装命令：pip install -e ".[harmony]"
+harmony = [
+    "hmdriver2>=1.4.4",
+]
+
+[project.scripts]
+ai_phone = "ai_phone.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ai_phone*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 110
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

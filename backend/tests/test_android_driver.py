@@ -1,0 +1,159 @@
+"""AndroidDriver 单元测试：用 MagicMock 注入 AdbDevice，验证命令映射是否与
+Sonic AndroidTouchHandler / AndroidDeviceBridgeTool 对齐，不依赖真实设备。"""
+from __future__ import annotations
+
+import io
+from unittest.mock import MagicMock
+
+import pytest
+from PIL import Image
+
+from ai_phone.agent.drivers.android import AndroidDriver
+from ai_phone.agent.drivers.base import DeviceInfo
+
+
+def _make_driver() -> tuple[AndroidDriver, MagicMock]:
+    fake = MagicMock()
+    fake.serial = "EMU-TEST"
+    fake.window_size.return_value = MagicMock(width=1080, height=1920)
+    fake.rotation.return_value = 0
+    fake.getprop.side_effect = lambda k: {
+        "ro.product.brand": "Xiaomi",
+        "ro.product.model": "Mi 10",
+        "ro.build.version.release": "12",
+    }.get(k, "")
+    img = Image.new("RGB", (100, 200), color=(255, 0, 0))
+    fake.screenshot.return_value = img
+    driver = AndroidDriver(fake)
+    return driver, fake
+
+
+def test_window_size_returns_tuple():
+    driver, fake = _make_driver()
+    assert driver.window_size() == (1080, 1920)
+    fake.window_size.assert_called_once()
+
+
+def test_click_maps_to_adb_click():
+    driver, fake = _make_driver()
+    driver.click(100, 200)
+    fake.click.assert_called_once_with(100, 200)
+
+
+def test_long_press_uses_swipe_with_duration_seconds():
+    driver, fake = _make_driver()
+    driver.long_press(50, 60, duration_ms=1500)
+    fake.swipe.assert_called_once_with(50, 60, 50, 60, duration=1.5)
+
+
+def test_swipe_converts_ms_to_seconds():
+    driver, fake = _make_driver()
+    driver.swipe(10, 20, 30, 40, duration_ms=500)
+    fake.swipe.assert_called_once_with(10, 20, 30, 40, duration=0.5)
+
+
+def test_press_home_and_back_use_keyevent():
+    driver, fake = _make_driver()
+    driver.press_home()
+    driver.press_back()
+    fake.keyevent.assert_any_call(3)
+    fake.keyevent.assert_any_call(4)
+
+
+def test_terminate_app_uses_am_force_stop():
+    driver, fake = _make_driver()
+    driver.terminate_app("com.tencent.mm")
+    fake.shell.assert_called_with("am force-stop com.tencent.mm")
+
+
+def test_activate_app_uses_monkey_first():
+    driver, fake = _make_driver()
+    fake.shell.return_value = "Events injected: 1\n## Network stats"
+    driver.activate_app("com.tencent.mm")
+    called_args = fake.shell.call_args_list[0][0][0]
+    assert "monkey -p com.tencent.mm" in called_args
+
+
+def test_activate_app_raises_when_no_activity():
+    driver, fake = _make_driver()
+    fake.shell.return_value = "** No activities found to run, monkey aborted."
+    fake.app_info.side_effect = Exception("not installed")
+    with pytest.raises(RuntimeError) as exc:
+        driver.activate_app("com.not.exist")
+    assert "com.not.exist" in str(exc.value)
+
+
+def test_list_third_party_packages_parses_output():
+    driver, fake = _make_driver()
+    fake.shell.return_value = (
+        "package:com.tencent.mm\n"
+        "package:com.alibaba.android.rimet\n"
+        "\n"
+        "package:com.example.foo"
+    )
+    pkgs = driver.list_third_party_packages()
+    assert pkgs == [
+        "com.tencent.mm",
+        "com.alibaba.android.rimet",
+        "com.example.foo",
+    ]
+
+
+def test_screenshot_png_returns_png_bytes():
+    driver, _ = _make_driver()
+    data = driver.screenshot_png()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_screenshot_jpeg_returns_jpeg_and_respects_max_side():
+    driver, _ = _make_driver()
+    data = driver.screenshot_jpeg(quality=25, max_side=50)
+    # JPEG magic
+    assert data[:3] == b"\xff\xd8\xff"
+    img = Image.open(io.BytesIO(data))
+    assert max(img.size) <= 50
+
+
+def test_device_info_reads_props_and_size():
+    driver, _ = _make_driver()
+    info = driver.device_info()
+    assert isinstance(info, DeviceInfo)
+    assert info.serial == "EMU-TEST"
+    assert info.platform == "android"
+    assert info.brand == "Xiaomi"
+    assert info.model == "Mi 10"
+    assert info.os_version == "12"
+    assert info.screen_width == 1080
+    assert info.screen_height == 1920
+    assert info.status == "online"
+
+
+def test_scroll_down_direction_swipes_from_bottom_to_top():
+    driver, fake = _make_driver()
+    driver.scroll("down")
+    fake.swipe.assert_called_once()
+    (sx, sy, ex, ey) = fake.swipe.call_args[0][:4]
+    # 新语义：down = 向下浏览看下方内容 → 手指由下往上，所以 sy > ey
+    assert sx == ex
+    assert sy > ey
+
+
+def test_scroll_up_inverts_direction():
+    driver, fake = _make_driver()
+    driver.scroll("up")
+    (sx, sy, ex, ey) = fake.swipe.call_args[0][:4]
+    # 新语义：up = 向上回顶看上方内容 → 手指由上往下，所以 sy < ey
+    assert sx == ex
+    assert sy < ey
+
+
+def test_type_text_noop_on_empty():
+    driver, fake = _make_driver()
+    driver.type_text("")
+    fake.send_keys.assert_not_called()
+
+
+def test_type_text_sends_ascii():
+    driver, fake = _make_driver()
+    driver.type_text("hello")
+    fake.send_keys.assert_called_once_with("hello")

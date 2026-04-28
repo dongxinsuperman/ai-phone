@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Project data (本地运行产生的截图 / 日志)
+.data/
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Env secrets
+.env
+.env.local
