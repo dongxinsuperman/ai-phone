@@ -323,8 +323,13 @@ class SubmissionItem(Base):
     case_name: Mapped[str] = mapped_column(String(255), default="")
     platform: Mapped[str] = mapped_column(String(16), index=True)
     run_content: Mapped[str] = mapped_column(Text)
-    # 目标设备别名（可选）；空串 = 平台内任意 ready 设备
-    device_alias: Mapped[str] = mapped_column(String(128), default="")
+    # 目标设备别名池（可选）；该端可被消费的别名子集。
+    # - None / 空数组 = 该端全池任挑（ready 设备里随便拿一台）
+    # - 长度 1（如 ["A1"]）= 锁单台（语义上等价于过去的 deviceAlias）
+    # - 长度 N（如 ["A1","B1"]）= 子集池：只在这 N 台里动态消费，
+    #   哪台先 ready 哪台拿下一条；自然形成"快机多跑、慢机少跑"的负载分担
+    # 写入时以 list[str] 形式（按 sorted+dedup 之后的顺序），DB 用 JSON 列承载
+    device_alias_pool: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     # queued / running / success / failed / cancelled
     state: Mapped[str] = mapped_column(String(16), default="queued", index=True)
@@ -360,7 +365,7 @@ class SubmissionItem(Base):
             "case_name": self.case_name or self.case_id,
             "platform": self.platform,
             "run_content": self.run_content,
-            "device_alias": self.device_alias or None,
+            "device_alias_pool": list(self.device_alias_pool or []) or None,
             "state": self.state,
             "status_reason": self.status_reason or None,
             "run_id": self.run_id,

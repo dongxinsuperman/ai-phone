@@ -90,10 +90,22 @@ async def create_submission(
     body: Any = Body(...),
     sched: SubmissionScheduler = SchedulerDep,
 ) -> Dict[str, Any]:
-    """准入一批 item。请求体兼容两种格式：
+    """准入一批 item。请求体格式（v1.7 唯一形态）：
 
-    - 老：``[{}, {}]``
-    - 新：``{"submissionName": "...", "items": [{}, {}]}``（推荐）
+    .. code-block:: json
+
+        {
+          "submissionName": "...",
+          "items": [
+            {
+              "caseId": "...",
+              "caseName": "...",
+              "runContent": "...",
+              "platforms": ["android", ...],
+              "deviceAliasPools": {"android": ["A1","B1"], ...}
+            }
+          ]
+        }
 
     详见 :func:`ai_phone.server.scheduler.service.parse_and_validate`。
     """

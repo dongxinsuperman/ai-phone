@@ -54,6 +54,24 @@ cp .env.example .env
 #   AI_PHONE_WDA_PROJECT_DIR                       iOS 接入（Mac），留空走"手动 Xcode + iproxy"过渡态
 ```
 
+### 1.5 v1.7 升级 — destructive schema 重建（重要）
+
+v1.7 对 submission 协议做了破坏性统一（`device_alias` → `device_alias_pool`，详见 [对外调用清单.md §变更记录](./对外调用清单.md#变更记录)）。**因平台尚未对外发布、零外部用户**，老库直接清空重建即可：
+
+```bash
+# Postgres：
+psql "$AI_PHONE_DB_URL" -c 'DROP TABLE IF EXISTS submission_items, submissions CASCADE;'
+
+# 或直接 drop schema 重建：
+psql "$AI_PHONE_DB_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+
+# 启动 server，db.py 会 Base.metadata.create_all() 自动按新 schema 建表
+```
+
+老的 `device_alias` 字段被 `device_alias_pool`（JSON nullable）取代；其他表无变化。
+不走 alembic 的根因：v1 schema 一直是"启动期 create_all 自动建表"，没有迁移基线，
+此处沿用同一原则——业务零数据时直接 drop+rebuild 最简单。
+
 ### 2. 起后端 Server
 
 ```bash
@@ -257,7 +275,7 @@ curl -X POST "http://<server>/api/submissions/<subId>/cases/<caseId>/cancel?plat
 
 - 默认 `AI_PHONE_BROADCAST_BACKEND=stdout`，每条终态打一行结构化 JSON 到 loguru（tail 日志即可观察）。
 - 切 `AI_PHONE_BROADCAST_BACKEND=kafka` 后发往 topic `ai-phone.submission.result`（broker 未到前仍是 mock 打日志，broker 到位后只替换 `publisher.py::KafkaPublisher._send_async`）。
-- payload 12 字段：`event / version / ts / submissionId / caseId / platform / state / statusReason / runId / deviceSerial / deviceAlias / startedAt / finishedAt / elapsedMs / steps / tokenStats / reportUrl / origin`。
+- payload 12 字段：`event / version / ts / submissionId / caseId / platform / state / statusReason / runId / deviceSerial / deviceAliasPool / startedAt / finishedAt / elapsedMs / steps / tokenStats / reportUrl / origin`。
 
 ### HTML 报告
 

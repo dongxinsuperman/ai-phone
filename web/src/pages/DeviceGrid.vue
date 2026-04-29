@@ -223,7 +223,7 @@ function prettyErr(e) {
           <div class="field">
             <label>
               别名 <span class="req">*</span>
-              <span class="hint">外部 API 里 deviceAlias 必须精确匹配这里的值</span>
+              <span class="hint">外部 API 里 deviceAliasPools 内的别名必须精确匹配这里的值</span>
             </label>
             <input
               v-model="dlg.alias"

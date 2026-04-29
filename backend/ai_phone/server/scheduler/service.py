@@ -139,12 +139,19 @@ class AdmissionError(ValueError):
 
 @dataclass
 class ItemDraft:
-    """准入通过后的单条 item 草稿，准备落库。"""
+    """准入通过后的单条 item 草稿，准备落库。
+
+    ``device_alias_pool``：可被消费的别名候选集（可空）：
+
+    - ``None`` / ``[]`` —— 该端全池任挑（任意 ready 设备）
+    - ``["A1"]`` —— 锁单台（等价于过去的 deviceAlias）
+    - ``["A1","B1",...]`` —— 子集池，调度器在派发瞬间动态选 ready 的一台
+    """
 
     case_id: str
     platform: str
     run_content: str
-    device_alias: Optional[str] = None
+    device_alias_pool: Optional[List[str]] = None
     # 外部传 caseName 时透传；缺省由调用方回填（一般 = case_id）。
     case_name: Optional[str] = None
 
@@ -152,65 +159,67 @@ class ItemDraft:
 def parse_and_validate(raw_body: Any) -> Tuple[str, List[ItemDraft]]:
     """把外部 JSON 解析为 ``(submission_name, drafts)``。
 
-    支持两种顶层格式（保持前向兼容）：
+    **唯一受理格式（v1.7）**——wrapper 对象 + 池语义单条 item：
 
-    1. 纯数组（老）::
+    .. code-block:: json
 
-           [{"caseId": "...", ...}, ...]
+        {
+          "submissionName": "v3.4-回归",
+          "items": [
+            {
+              "caseId": "C-1",
+              "caseName": "登录用例",          // 可选
+              "runContent": "打开 App ...",
+              "platforms": ["android", "ios"],
+              "deviceAliasPools": {              // 可选
+                "android": ["A1", "B1"],
+                "ios": ["I1"]
+              }
+            }
+          ]
+        }
 
-       ``submission_name`` 返回空串，调用方按需回落 submission_id。
+    一条 raw item 会按 ``platforms`` 被展开成 ``len(platforms)`` 条
+    :class:`ItemDraft`，每条带上 ``deviceAliasPools[<platform>]`` 作为 pool。
+    落库后每条占一行 ``SubmissionItem``，调度、广播、WS 协议、唯一键
+    ``(submission_id, case_id, platform)`` 都不受影响。
 
-    2. wrapper 对象（v1.3 引入，推荐）::
+    池语义说明：
 
-           {"submissionName": "...", "items": [{...}, ...]}
+    - ``deviceAliasPools`` 字段缺省 → 所有端都全池任挑
+    - 某 platform 的 key 缺失 → 该端全池任挑
+    - ``deviceAliasPools[p]`` 为 ``[]`` / ``null`` → 该端全池任挑
+    - ``deviceAliasPools[p] = ["A1"]`` → 该端锁单台
+    - ``deviceAliasPools[p] = ["A1","B1",...]`` → 该端在子集池里动态消费
 
-    ``items`` 内每条（raw item）支持两种**单条风格**（v1.6 起），单条内部
-    **只能用其中一种，禁止跨风格字段混用**；批次里不同条可以各自用不同风格：
+    校验规则（v1.7 最小契约）：
 
-    - **风格 A（单端，老字段）**：``platform: string`` + 可选 ``deviceAlias: string``
-    - **风格 B（多端，新字段）**：``platforms: string[]`` + 可选
-      ``deviceAliases: {<platform>: <alias>}``
-
-    一条风格 B 的 raw item 会被当场展开成 ``len(platforms)`` 条
-    :class:`ItemDraft`，落库后每条占一行 ``SubmissionItem``——调度、广播、WS
-    协议、数据库唯一键 ``(submission_id, case_id, platform)`` 都不受影响。
-
-    校验规则（v1.6 对外契约最小集）：
-
-    - items 必须是非空 list，每项必须是 object
-    - ``caseId`` / ``runContent`` 必填；``runContent`` 非空
-    - 必须有 ``platform`` 或 ``platforms`` **之一**（两者都传 →
-      ``conflicting_platform_field``）
-    - 同理 ``deviceAlias`` 与 ``deviceAliases`` 二选一（两者都传 →
-      ``conflicting_alias_field``）
-    - 跨风格错配 → ``mixed_field_style``：
-        * ``platforms``（新）+ ``deviceAlias``（老）
-        * ``platform``（老）+ ``deviceAliases``（新）
-    - ``platforms`` 必须是非空数组，元素都在 ``ALLOWED_PLATFORMS`` 里、不可重复
-    - ``deviceAliases`` 必须是 object；每个 key 必须在本条 ``platforms`` 里
-      （否则 ``alias_platform_not_in_list``）
-    - 空串 / ``null`` 的 ``deviceAlias`` / ``deviceAliases[x]`` 统一当作"不指定"
-    - 其它自定义字段静默忽略（前向兼容）
+    - 顶层必须是 wrapper 对象 ``{submissionName, items}``，items 非空 list，
+      每项必须是 object（``invalid_body``）
+    - ``caseId`` / ``runContent`` 必填非空（``missing_field``）
+    - ``platforms`` 必填，非空数组，元素 ∈ ``ALLOWED_PLATFORMS``，**不可重复**
+      （非法值 → ``invalid_platform``；重复 → ``invalid_body``）
+    - ``deviceAliasPools`` 可选；为对象时：
+        * key 必须 ∈ ``ALLOWED_PLATFORMS`` 且必须在本条 ``platforms`` 里
+          （否则 ``pool_alias_not_in_platforms``）
+        * value 必须是数组（或 null）；数组元素必须是非空字符串
+        * 单端池内部去重 + 排序（避免 [A1, A1] 误用）
+    - 其它自定义字段静默忽略
     """
-    submission_name = ""
-    if isinstance(raw_body, dict):
-        name_raw = raw_body.get("submissionName")
-        submission_name = str(name_raw).strip() if name_raw else ""
-        items = raw_body.get("items")
-        if not isinstance(items, list):
-            raise AdmissionError(
-                "invalid_body",
-                "wrapper 格式下 items 必须是数组",
-            )
-        items_list = items
-    elif isinstance(raw_body, list):
-        items_list = raw_body
-    else:
+    if not isinstance(raw_body, dict):
         raise AdmissionError(
             "invalid_body",
-            "请求体必须是 JSON 数组 [{}, {}] 或 wrapper 对象 {submissionName, items}",
+            '请求体必须是 wrapper 对象 {"submissionName": "...", "items": [...]}',
         )
 
+    name_raw = raw_body.get("submissionName")
+    submission_name = str(name_raw).strip() if name_raw else ""
+    items_list = raw_body.get("items")
+    if not isinstance(items_list, list):
+        raise AdmissionError(
+            "invalid_body",
+            "items 必须是数组",
+        )
     if not items_list:
         raise AdmissionError("invalid_body", "items 为空")
 
@@ -232,122 +241,97 @@ def parse_and_validate(raw_body: Any) -> Tuple[str, List[ItemDraft]]:
         if not run_content:
             raise AdmissionError("missing_field", "runContent 必填且不能为空", index=i)
 
-        # ---- 解析单条风格 --------------------------------------------------
-        raw_platform = raw.get("platform")
+        # ---- 规范化平台列表 ------------------------------------------------
         raw_platforms = raw.get("platforms")
-        raw_alias = raw.get("deviceAlias")
-        raw_aliases = raw.get("deviceAliases")
-
-        # 空串 / 空 dict 视为"未传"——和 v1.5 及之前的行为对齐
-        has_old_platform = raw_platform not in (None, "")
-        has_new_platform = raw_platforms is not None
-        has_old_alias = raw_alias not in (None, "")
-        has_new_alias = raw_aliases not in (None, {})
-
-        if has_old_platform and has_new_platform:
-            raise AdmissionError(
-                "conflicting_platform_field",
-                "platform 与 platforms 不能同时传，二选一",
-                index=i,
-            )
-        if has_old_alias and has_new_alias:
-            raise AdmissionError(
-                "conflicting_alias_field",
-                "deviceAlias 与 deviceAliases 不能同时传，二选一",
-                index=i,
-            )
-        # 跨风格混用：platforms（多端）只接受 deviceAliases；platform（单端）只接受 deviceAlias
-        if has_new_platform and has_old_alias:
-            raise AdmissionError(
-                "mixed_field_style",
-                "platforms（多端）请用 deviceAliases 对象指定每端别名，不要传 deviceAlias",
-                index=i,
-            )
-        if has_old_platform and has_new_alias:
-            raise AdmissionError(
-                "mixed_field_style",
-                "platform（单端）请用 deviceAlias 字符串，不要传 deviceAliases",
-                index=i,
-            )
-        if not has_old_platform and not has_new_platform:
+        if raw_platforms is None:
             raise AdmissionError(
                 "missing_field",
-                "platform 或 platforms 必填（二选一）",
+                "platforms 必填（非空数组）",
                 index=i,
             )
-
-        # ---- 规范化平台列表 ------------------------------------------------
-        if has_new_platform:
-            if not isinstance(raw_platforms, list) or not raw_platforms:
-                raise AdmissionError(
-                    "invalid_body",
-                    "platforms 必须是非空数组",
-                    index=i,
-                )
-            platforms: List[str] = []
-            for p_raw in raw_platforms:
-                p = str(p_raw or "").strip().lower()
-                if p not in ALLOWED_PLATFORMS:
-                    raise AdmissionError(
-                        "invalid_platform",
-                        f"platforms 中包含非法值 {p_raw!r}，允许：android / ios / harmony",
-                        index=i,
-                    )
-                platforms.append(p)
-            if len(set(platforms)) != len(platforms):
-                raise AdmissionError(
-                    "invalid_body",
-                    f"platforms 不允许重复：{raw_platforms!r}",
-                    index=i,
-                )
-        else:
-            p = str(raw_platform or "").strip().lower()
+        if not isinstance(raw_platforms, list) or not raw_platforms:
+            raise AdmissionError(
+                "invalid_body",
+                "platforms 必须是非空数组",
+                index=i,
+            )
+        platforms: List[str] = []
+        for p_raw in raw_platforms:
+            p = str(p_raw or "").strip().lower()
             if p not in ALLOWED_PLATFORMS:
                 raise AdmissionError(
                     "invalid_platform",
-                    f"platform 必须是 android / ios / harmony，收到 {raw_platform!r}",
+                    f"platforms 中包含非法值 {p_raw!r}，"
+                    f"允许：{' / '.join(ALLOWED_PLATFORMS)}",
                     index=i,
                 )
-            platforms = [p]
+            platforms.append(p)
+        if len(set(platforms)) != len(platforms):
+            raise AdmissionError(
+                "invalid_body",
+                f"platforms 不允许重复：{raw_platforms!r}",
+                index=i,
+            )
 
-        # ---- 规范化别名映射 ------------------------------------------------
-        # alias_map: platform(lower) -> alias(非空字符串)
-        alias_map: Dict[str, str] = {}
-        if has_new_alias:
-            if not isinstance(raw_aliases, dict):
+        # ---- 规范化别名池映射 ----------------------------------------------
+        # pool_map: platform(lower) -> 已 dedup+sorted 的 alias 列表（可空 list 表示该端"全池任挑"）
+        pool_map: Dict[str, List[str]] = {}
+        raw_pools = raw.get("deviceAliasPools")
+        if raw_pools is not None:
+            if not isinstance(raw_pools, dict):
                 raise AdmissionError(
                     "invalid_body",
-                    "deviceAliases 必须是对象（{platform: alias}）",
+                    "deviceAliasPools 必须是对象（{platform: [aliases]}）",
                     index=i,
                 )
-            for k, v in raw_aliases.items():
+            for k, v in raw_pools.items():
                 k_norm = str(k or "").strip().lower()
                 if k_norm not in ALLOWED_PLATFORMS:
                     raise AdmissionError(
                         "invalid_platform",
-                        f"deviceAliases 的键 {k!r} 不是合法平台",
+                        f"deviceAliasPools 的键 {k!r} 不是合法平台",
                         index=i,
                     )
                 if k_norm not in platforms:
                     raise AdmissionError(
-                        "alias_platform_not_in_list",
-                        f"deviceAliases 的键 {k_norm!r} 不在 platforms={platforms} 里",
+                        "pool_alias_not_in_platforms",
+                        f"deviceAliasPools 的键 {k_norm!r} 不在 platforms={platforms} 里",
                         index=i,
                     )
-                # None / "" → 等同"不指定别名"（该端走池内任挑）
-                if v is None or str(v).strip() == "":
+                # null / 空数组 = 该端走全池任挑（与 key 不存在等价，但显式接受）
+                if v is None:
+                    pool_map[k_norm] = []
                     continue
-                alias_map[k_norm] = str(v).strip()
-        elif has_old_alias:
-            alias_map[platforms[0]] = str(raw_alias).strip()
+                if not isinstance(v, list):
+                    raise AdmissionError(
+                        "invalid_body",
+                        f"deviceAliasPools[{k_norm!r}] 必须是数组或 null",
+                        index=i,
+                    )
+                cleaned: List[str] = []
+                for a in v:
+                    a_norm = str(a or "").strip()
+                    if not a_norm:
+                        raise AdmissionError(
+                            "invalid_body",
+                            f"deviceAliasPools[{k_norm!r}] 含空别名",
+                            index=i,
+                        )
+                    cleaned.append(a_norm)
+                # dedup + sorted：让序无关，避免 ["A1","A1"] 这种隐性 bug
+                pool_map[k_norm] = sorted(set(cleaned))
 
         # ---- 展开：一条 raw item → len(platforms) 条 ItemDraft -------------
         for p in platforms:
+            pool = pool_map.get(p)
+            # pool 为 None（未配置）或空 list（显式 null/空数组）都规整成 None，
+            # 落库后 device_alias_pool=None 表示该端全池任挑。
+            normalized_pool: Optional[List[str]] = list(pool) if pool else None
             out.append(ItemDraft(
                 case_id=case_id,
                 platform=p,
                 run_content=run_content,
-                device_alias=alias_map.get(p) or None,
+                device_alias_pool=normalized_pool,
                 case_name=case_name or None,
             ))
     return submission_name, out
@@ -495,15 +479,20 @@ class SubmissionScheduler:
                     index=i,
                 )
 
-        # 别名严格校验：任何一条 item 传了 ``deviceAlias`` 就必须：
+        # 别名严格校验：任何一条 item 的 ``device_alias_pool`` 非空时，**池里
+        # 每一个别名都要**：
         #   1. 命中 ``device_aliases`` 表（否则整批 400 ``unknown_device_alias``）
         #   2. 反查到的 serial 若已在 ``devices`` 表里有 platform 记录，必须与
         #      item.platform 一致（否则整批 400 ``device_alias_platform_mismatch``）
-        # 不传别名的 item 维持"池子里任挑"不受影响。
+        # 池为 None / 空的 item 维持"池子里任挑"不受影响。
         # "先绑后现"容忍：别名指向的 serial 暂未上线（``devices`` 表无记录）时
         # platform 未知，不做 mismatch 判定，放过；等 serial 真上线后走自然分流。
-        aliased_drafts = [(i, d) for i, d in enumerate(drafts) if d.device_alias]
-        if aliased_drafts:
+        # 把池展平成 (alias, platform, draft_index) 三元组方便定位首个出错下标。
+        pool_checks: List[Tuple[str, str, int]] = []
+        for i, d in enumerate(drafts):
+            for alias in (d.device_alias_pool or []):
+                pool_checks.append((alias, d.platform, i))
+        if pool_checks:
             from ..aliases import (
                 AliasPlatformMismatchError,
                 UnknownAliasError,
@@ -513,16 +502,12 @@ class SubmissionScheduler:
                 try:
                     await validate_aliases(
                         session,
-                        (
-                            (d.device_alias, d.platform)
-                            for _, d in aliased_drafts
-                        ),
+                        ((alias, platform) for alias, platform, _ in pool_checks),
                     )
                 except UnknownAliasError as exc:
                     first_bad_index = next(
-                        (i for i, d in aliased_drafts
-                         if d.device_alias and d.device_alias in str(exc)),
-                        aliased_drafts[0][0],
+                        (i for alias, _, i in pool_checks if alias in str(exc)),
+                        pool_checks[0][2],
                     )
                     raise AdmissionError(
                         "unknown_device_alias",
@@ -530,11 +515,9 @@ class SubmissionScheduler:
                         index=first_bad_index,
                     ) from exc
                 except AliasPlatformMismatchError as exc:
-                    # mismatch 消息含 "<alias>(...)"，据此定位第一条出错的 item index
                     first_bad_index = next(
-                        (i for i, d in aliased_drafts
-                         if d.device_alias and d.device_alias in str(exc)),
-                        aliased_drafts[0][0],
+                        (i for alias, _, i in pool_checks if alias in str(exc)),
+                        pool_checks[0][2],
                     )
                     raise AdmissionError(
                         "device_alias_platform_mismatch",
@@ -571,7 +554,7 @@ class SubmissionScheduler:
                     case_name=(d.case_name or d.case_id),
                     platform=d.platform,
                     run_content=d.run_content,
-                    device_alias=d.device_alias or "",
+                    device_alias_pool=list(d.device_alias_pool) if d.device_alias_pool else None,
                     state="queued",
                     enqueued_at=now,
                 )
@@ -608,7 +591,7 @@ class SubmissionScheduler:
                     "caseId": it.case_id,
                     "caseName": it.case_name or it.case_id,
                     "platform": it.platform,
-                    "deviceAlias": it.device_alias or None,
+                    "deviceAliasPool": list(it.device_alias_pool or []) or None,
                     "state": it.state,
                 }
                 for it in items
@@ -779,22 +762,36 @@ class SubmissionScheduler:
 
         规则：platform 一致 + status=online + readiness.ready=True + 当前没被锁。
 
-        ``item.device_alias`` 非空 **只** 会命中 ``device_aliases`` 表里对应 serial
-        的那一台（严格指名）。准入阶段 :meth:`submit` 已经拦过一次未命中别名，
-        所以这里走到"别名表里有、可是对应 serial 当下没 online / 没 ready"是合法
-        临时态——直接返回 None 等下一轮 tick。
+        ``item.device_alias_pool`` 语义：
+
+        - ``None`` / 空 list → 全平台池任挑（候选 = 该端所有 online 设备）
+        - 长度 1（如 ["A1"]）→ 锁单台（候选 = 1 台）
+        - 长度 N（如 ["A1","B1"]）→ 子集池：候选 = 池中能反查到 serial 的那 N 台。
+          **派发瞬间才挑哪台**——哪台先 ready 就被哪台拿走，自然形成"快机多
+          跑、慢机少跑、坏机不跑"的负载分担。
+
+        准入阶段 :meth:`submit` 已经把池里别名都校验过；真走到"别名表里有、
+        可是对应 serial 当下没 online / 没 ready"是合法临时态——返回 None 等下
+        一轮 tick 重试即可。
         """
-        # 严格别名指名：只认别名表，不再做 serial / model 前缀降级
-        if item.device_alias:
+        pool = list(item.device_alias_pool or [])
+        if pool:
+            # 子集池：把池里所有 alias 反查 serial，serial.in_(...) 一次查所有候选。
             from ..aliases import get_serial_by_alias
-            pinned = await get_serial_by_alias(session, item.device_alias.strip())
-            if not pinned:
-                # 准入时应该已经拒了；真走到这里说明别名被运维中途删了，
-                # 直接跳过，让兜底超时把它推成 queue_timeout。
+            pool_serials: List[str] = []
+            for alias in pool:
+                a = (alias or "").strip()
+                if not a:
+                    continue
+                serial = await get_serial_by_alias(session, a)
+                if serial:
+                    pool_serials.append(serial)
+            if not pool_serials:
+                # 池里别名全被运维中途删了或还没绑 serial：等兜底超时
                 return None
             res = await session.execute(
                 select(Device).where(
-                    Device.serial == pinned,
+                    Device.serial.in_(pool_serials),
                     Device.platform == item.platform,
                     Device.status == "online",
                 )

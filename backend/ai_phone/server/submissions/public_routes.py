@@ -143,9 +143,11 @@ async def create_submission(
     body: Any = Body(
         ...,
         description=(
-            "支持两种格式："
-            "1) 老：JSON 数组 [{caseId, platform, runContent, deviceAlias?, caseName?}, ...]；"
-            "2) 新：wrapper 对象 {submissionName?, items: [...]}（推荐，submissionName 用于报告/大盘展示，缺省回落 submissionId）"
+            "wrapper 对象格式（v1.7）："
+            "{submissionName, items: [{caseId, caseName?, runContent, "
+            "platforms: [a,b,...], deviceAliasPools?: {p: [aliases]}}]}。"
+            "deviceAliasPools 可选——缺省 / null / [] 表示该端全池任挑；"
+            "长度 1 锁单台；长度 N 子集池，调度器派发瞬间动态选 ready 的一台。"
         ),
     ),
 ) -> Dict[str, Any]:

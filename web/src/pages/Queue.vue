@@ -332,22 +332,31 @@ const drawerReportUrl = computed(() => {
 })
 
 // ---------- 手工投递表单 ----------
-// 单条 form-item 勾 1 个端 = 按"风格 A"发送（platform + deviceAlias），
-// 勾 2+ 个端 = 按"风格 B"发送（platforms + deviceAliases）——一条请求走
-// 后端展开成 N 条 SubmissionItem。deviceAlias（单字符串）和 deviceAliases
-// （按端对象）两个 UI 态互斥，不会同时出现；用户切换勾选时旧值就地保留，
-// 不做跨态搬运（要改时 UI 会自动露出当前态的输入框，另一态不显示但值仍在
-// 内存里——想清空自己删即可）。
+// v1.7 唯一受理形态：wrapper {submissionName, items} +
+//   每条 raw item: { caseId, caseName?, runContent, platforms[], deviceAliasPools? }
+// deviceAliasPools[p] 三档语义：
+//   - 缺省 / null / [] = 该端全池任挑
+//   - 长度 1（["A1"]） = 锁单台
+//   - 长度 N（["A1","B1"]）= 子集池，调度器派发瞬间动态选 ready 的一台
+// 前端按"每端一个文本框"输入（逗号分隔多个别名），切端时旧值就地保留。
 function newFormItem() {
   return {
     caseId: '',
     caseName: '',
     platforms: ['android'],
     runContent: '',
-    // 单端用：string。多端用：{android?: string, ios?: string, harmony?: string}，仅把非空值发给后端
-    deviceAlias: '',
-    deviceAliases: {},
+    // 每端一段池文本（逗号分隔多个别名，留空 = 该端全池任挑）
+    aliasPoolText: { android: '', ios: '', harmony: '' },
   }
+}
+
+// 把"逗号分隔的别名串"解析成 dedup+sorted 数组；中英文逗号都接收。
+function parsePool(text) {
+  const arr = (text || '')
+    .split(/[,，]/)
+    .map(s => s.trim())
+    .filter(Boolean)
+  return [...new Set(arr)].sort()
 }
 const form = ref({ submissionName: '', items: [newFormItem()] })
 const submitErr = ref('')
@@ -382,33 +391,24 @@ function openSubmitDlg() {
   resetForm()
   showSubmitDlg.value = true
 }
-// 把单条 form-item 序列化成"一条后端 raw item"。按勾选端数自动选风格 A/B。
+// 把单条 form-item 序列化成"一条后端 raw item"（v1.7 唯一形态）。
 function buildRawItem(it) {
   const caseId = (it.caseId || '').trim()
   const caseName = (it.caseName || '').trim()
   const runContent = (it.runContent || '').trim()
-  if (it.platforms.length === 1) {
-    // 风格 A
-    const obj = { caseId, platform: it.platforms[0], runContent }
-    if (caseName) obj.caseName = caseName
-    const alias = (it.deviceAlias || '').trim()
-    if (alias) obj.deviceAlias = alias
-    return obj
-  }
-  // 风格 B
   const obj = {
     caseId,
-    platforms: [...it.platforms],
     runContent,
+    platforms: [...it.platforms],
   }
   if (caseName) obj.caseName = caseName
-  // 只把"当前仍被勾选、且非空"的端别名发出去，防止用户切换端后残留脏数据
-  const aliases = {}
+  // 只把"当前仍被勾选、且非空池"的端发出去，防止用户切换端后残留脏数据
+  const pools = {}
   for (const p of it.platforms) {
-    const v = (it.deviceAliases?.[p] || '').trim()
-    if (v) aliases[p] = v
+    const arr = parsePool(it.aliasPoolText?.[p])
+    if (arr.length) pools[p] = arr
   }
-  if (Object.keys(aliases).length) obj.deviceAliases = aliases
+  if (Object.keys(pools).length) obj.deviceAliasPools = pools
   return obj
 }
 // 发送 payload：每条 form-item → 一条 raw item（不在前端预展开，后端会做）
@@ -421,15 +421,11 @@ const previewRows = computed(() => {
   const out = []
   for (const it of form.value.items) {
     for (const p of it.platforms) {
-      const alias =
-        it.platforms.length === 1
-          ? (it.deviceAlias || '').trim()
-          : (it.deviceAliases?.[p] || '').trim()
       out.push({
         caseId: (it.caseId || '').trim(),
         caseName: (it.caseName || '').trim(),
         platform: p,
-        deviceAlias: alias,
+        pool: parsePool(it.aliasPoolText?.[p]),
       })
     }
   }
@@ -482,7 +478,7 @@ function loadDemoData() {
         id: 'itm-a1', submission_id: 'demo-a1b2c3d4e5f6',
         case_id: 'smoke-login-001', case_name: '冒烟 · 抖音搜索"咖啡"',
         platform: 'android', run_content: '打开抖音 → 搜索"咖啡" → 返回首页',
-        device_alias: '', state: 'running', status_reason: '',
+        device_alias_pool: null, state: 'running', status_reason: '',
         run_id: 'run-aaaa1111', device_serial: '6ad9243',
         enqueued_at: iso(-620), started_at: iso(-300), finished_at: null,
       },
@@ -490,7 +486,7 @@ function loadDemoData() {
         id: 'itm-a2', submission_id: 'demo-a1b2c3d4e5f6',
         case_id: 'smoke-search-002', case_name: '冒烟 · 微信"发现"页',
         platform: 'android', run_content: '打开微信 → 点"发现" → 截图返回',
-        device_alias: 'Pixel 7', state: 'queued', status_reason: '',
+        device_alias_pool: ['Pixel 7'], state: 'queued', status_reason: '',
         run_id: null, device_serial: null,
         enqueued_at: iso(-619), started_at: null, finished_at: null,
       },
@@ -498,7 +494,7 @@ function loadDemoData() {
         id: 'itm-a3', submission_id: 'demo-a1b2c3d4e5f6',
         case_id: 'smoke-login-001', case_name: '冒烟 · 抖音搜索"咖啡"',
         platform: 'ios', run_content: '打开抖音 → 搜索"咖啡" → 返回首页',
-        device_alias: '', state: 'queued', status_reason: '',
+        device_alias_pool: null, state: 'queued', status_reason: '',
         run_id: null, device_serial: null,
         enqueued_at: iso(-618), started_at: null, finished_at: null,
       },
@@ -506,7 +502,7 @@ function loadDemoData() {
         id: 'itm-a4', submission_id: 'demo-a1b2c3d4e5f6',
         case_id: 'smoke-login-002', case_name: '冒烟 · Safari 打开 example.com',
         platform: 'ios', run_content: '打开 Safari → 访问 https://example.com',
-        device_alias: '', state: 'success', status_reason: 'completed',
+        device_alias_pool: null, state: 'success', status_reason: 'completed',
         run_id: 'run-aaaa2222', device_serial: '00008150-00041CAE3478401C',
         enqueued_at: iso(-617), started_at: iso(-550), finished_at: iso(-120),
       },
@@ -514,7 +510,7 @@ function loadDemoData() {
         id: 'itm-a5', submission_id: 'demo-a1b2c3d4e5f6',
         case_id: 'smoke-cancel', case_name: '冒烟 · 相机人像模式',
         platform: 'harmony', run_content: '打开相机 → 切到人像模式',
-        device_alias: '', state: 'cancelled', status_reason: 'cancelled_by_request',
+        device_alias_pool: null, state: 'cancelled', status_reason: 'cancelled_by_request',
         run_id: null, device_serial: null,
         enqueued_at: iso(-616), started_at: null, finished_at: iso(-500),
       },
@@ -534,7 +530,7 @@ function loadDemoData() {
         id: 'itm-b1', submission_id: 'demo-0000deadbeef',
         case_id: 'reg-order-003', case_name: '回归 · 商城下单',
         platform: 'harmony', run_content: '打开商城 → 下单一件商品 → 查看订单',
-        device_alias: '', state: 'running', status_reason: '',
+        device_alias_pool: null, state: 'running', status_reason: '',
         run_id: 'run-bbbb3333', device_serial: '22M0224828000423',
         enqueued_at: iso(-300), started_at: iso(-180), finished_at: null,
       },
@@ -542,7 +538,7 @@ function loadDemoData() {
         id: 'itm-b2', submission_id: 'demo-0000deadbeef',
         case_id: 'reg-order-004', case_name: '回归 · 购物车不下单',
         platform: 'harmony', run_content: '打开商城 → 加入购物车 → 不下单',
-        device_alias: '', state: 'queued', status_reason: '',
+        device_alias_pool: null, state: 'queued', status_reason: '',
         run_id: null, device_serial: null,
         enqueued_at: iso(-299), started_at: null, finished_at: null,
       },
@@ -550,7 +546,7 @@ function loadDemoData() {
         id: 'itm-b3', submission_id: 'demo-0000deadbeef',
         case_id: 'reg-login-fail', case_name: '回归 · 错误密码登录',
         platform: 'android', run_content: '尝试用错误密码登录',
-        device_alias: '', state: 'failed', status_reason: 'step_failed',
+        device_alias_pool: null, state: 'failed', status_reason: 'step_failed',
         run_id: 'run-bbbb4444', device_serial: '6ad9243',
         enqueued_at: iso(-298), started_at: iso(-270), finished_at: iso(-200),
       },
@@ -572,7 +568,7 @@ function loadDemoData() {
         id: 'itm-c1', submission_id: 'demo-alldone12345',
         case_id: 'regression-flow', case_name: '注册主流程',
         platform: 'android', run_content: '走一遍注册流程',
-        device_alias: '', state: 'success', status_reason: 'completed',
+        device_alias_pool: null, state: 'success', status_reason: 'completed',
         run_id: 'run-cccc1111', device_serial: '6ad9243',
         report_url: '/files/reports/demo-alldone12345/regression-flow__android.html',
         enqueued_at: iso(-3600), started_at: iso(-3590), finished_at: iso(-3400),
@@ -581,7 +577,7 @@ function loadDemoData() {
         id: 'itm-c2', submission_id: 'demo-alldone12345',
         case_id: 'regression-flow', case_name: '注册主流程',
         platform: 'ios', run_content: '走一遍注册流程',
-        device_alias: '', state: 'success', status_reason: 'completed',
+        device_alias_pool: null, state: 'success', status_reason: 'completed',
         run_id: 'run-cccc2222', device_serial: '00008150-00041CAE3478401C',
         report_url: '/files/reports/demo-alldone12345/regression-flow__ios.html',
         enqueued_at: iso(-3600), started_at: iso(-3400), finished_at: iso(-3200),
@@ -590,7 +586,7 @@ function loadDemoData() {
         id: 'itm-c3', submission_id: 'demo-alldone12345',
         case_id: 'regression-flow', case_name: '注册主流程',
         platform: 'harmony', run_content: '走一遍注册流程',
-        device_alias: '', state: 'failed', status_reason: 'step_failed',
+        device_alias_pool: null, state: 'failed', status_reason: 'step_failed',
         run_id: 'run-cccc3333', device_serial: '22M0224828000423',
         report_url: '/files/reports/demo-alldone12345/regression-flow__harmony.html',
         enqueued_at: iso(-3600), started_at: iso(-3200), finished_at: iso(-3000),
@@ -664,8 +660,12 @@ function loadDemoData() {
               <span class="case" :title="`用例名: ${entry.it.case_name || entry.it.case_id}\n用例 ID (caseId): ${entry.it.case_id}`">
                 {{ entry.it.case_name || entry.it.case_id }}
               </span>
-              <span v-if="entry.it.device_alias" class="alias" title="deviceAlias (指定设备)">
-                @{{ entry.it.device_alias }}
+              <span
+                v-if="(entry.it.device_alias_pool || []).length"
+                class="alias"
+                :title="`deviceAliasPool (设备池): ${(entry.it.device_alias_pool || []).join(', ')}`"
+              >
+                @{{ (entry.it.device_alias_pool || []).join(',') }}
               </span>
             </div>
             <div class="q-row2">
@@ -961,9 +961,9 @@ function loadDemoData() {
         <div class="modal-body">
           <div class="help small-help">
             本入口只是第 2 梯队阶段<b>临时验证用</b>，正式调用方后续用对外 HTTP API。
-            请求体最终以 <code>{ submissionName?, items: [{…}, …] }</code> 结构发给后端。
-            每条 item 勾 1 端走 <code>platform + deviceAlias</code>（风格 A），
-            勾 2+ 端走 <code>platforms[] + deviceAliases{}</code>（风格 B，后端自动展开成多条 Run）。
+            请求体（v1.7 唯一形态）：<code>{ submissionName, items: [{ caseId, runContent, platforms[], deviceAliasPools? }] }</code>。
+            <code>deviceAliasPools[p]</code> 留空 = 该端任意 ready 设备；
+            填多个用逗号分隔即子集池（场景 5：调度器派发瞬间动态选 ready 的一台）。
           </div>
           <div class="form-item form-item-name">
             <div class="form-row">
@@ -1010,23 +1010,21 @@ function loadDemoData() {
                 </label>
               </div>
             </div>
-            <!-- 单端：经典的 deviceAlias 单字符串输入；多端：按端填别名 -->
-            <div v-if="it.platforms.length === 1" class="form-row">
-              <label>deviceAlias (指定设备，可选)</label>
-              <input v-model="it.deviceAlias" placeholder="留空 = 所选平台内任意 ready 设备" />
-            </div>
-            <div v-else class="form-row">
+            <!-- v1.7 唯一受理：每端一段池文本，逗号分隔多个别名 -->
+            <div class="form-row">
               <label>
-                deviceAliases (按端指定设备，可选)
-                <span class="label-hint">每个端独立一行；留空 = 该端池内任挑 ready 设备</span>
+                deviceAliasPools (按端别名池，可选)
+                <span class="label-hint">
+                  每端一行；留空 = 该端任意 ready 设备；填多个用逗号分隔（如 <code>A1, B1</code>）= 子集池
+                </span>
               </label>
               <div class="alias-per-plat">
                 <div v-for="p in it.platforms" :key="p" class="alias-row">
                   <span class="plat-tag" :class="platformColorClass(p)">{{ PLATFORM_LABEL[p] || p }}</span>
                   <input
-                    :value="it.deviceAliases[p] || ''"
-                    @input="it.deviceAliases[p] = $event.target.value"
-                    :placeholder="`留空 = ${PLATFORM_LABEL[p] || p} 内任意 ready 设备`"
+                    :value="it.aliasPoolText[p] || ''"
+                    @input="it.aliasPoolText[p] = $event.target.value"
+                    :placeholder="`留空 = ${PLATFORM_LABEL[p] || p} 任意 ready；多个用逗号分隔，如 A1, B1`"
                   />
                 </div>
               </div>
@@ -1057,7 +1055,13 @@ function loadDemoData() {
                 }}</span>
                 <span v-if="p.caseName" class="pr-name">{{ p.caseName }}</span>
                 <code>{{ p.caseId || '(未填)' }}</code>
-                <span v-if="p.deviceAlias" class="pr-alias">@{{ p.deviceAlias }}</span>
+                <span
+                  v-if="p.pool.length"
+                  class="pr-alias"
+                  :title="p.pool.length > 1 ? `子集池：${p.pool.join(', ')}（哪台先 ready 哪台拿）` : '锁单台'"
+                >
+                  @{{ p.pool.join(',') }}
+                </span>
               </div>
             </div>
           </div>
