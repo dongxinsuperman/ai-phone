@@ -34,6 +34,8 @@ dependencies = [
     "numpy>=1.24,<2",                 # av 帧 → ndarray，再 Pillow 转 JPEG
     # iOS driver 默认不强装：pymobiledevice3 只在 macOS / Linux 有效，
     # Windows 同事不接 iOS 不该被这一坨依赖拖累。需要 iOS 的人 pip install -e ".[ios]"
+    # Kafka producer：submission 终态广播。0.11+ 支持 Python 3.11/3.12 + idempotent producer
+    "aiokafka>=0.11,<1",
 ]
 
 [project.optional-dependencies]
@@ -53,8 +55,8 @@ ios = [
     "pymobiledevice3>=9.5,<10",
 ]
 # HarmonyOS 接入（M4）：hmdriver2 提供基于 uitest socket daemon 的低延时主通道，
-# 同级于 iOS 的 WDA。底座 hdc 二进制要手动装 DevEco Studio 并配环境变量，
-# 见 HarmonyOS环境配置笔记.md。hmdriver2 自身依赖 requests / lxml，
+# 同级于 iOS 的 WDA。底座 hdc 二进制要手动装 DevEco Studio 并配环境变量。
+# hmdriver2 自身依赖 requests / lxml，
 # 不拉重量级编码库，对 Windows / Linux 同事没有副作用，按需装即可。
 # 安装命令：pip install -e ".[harmony]"
 harmony = [

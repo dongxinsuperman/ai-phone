@@ -7,6 +7,7 @@
 - deviceAliasPools 可选；为对象时 key 合法性 + value 是数组
 - 池语义：缺省 / null / [] / 单别名 / 多别名 → ItemDraft.device_alias_pool 规整
 - 拆条：一条多端 raw item 展开成 N 条 ItemDraft
+- v1.8 新增：callbackUrl 可选、必须 http(s)、长度上限 1024
 """
 from __future__ import annotations
 
@@ -26,7 +27,7 @@ from ai_phone.server.scheduler.service import (
 
 def test_minimal_single_platform_no_pool():
     """最小合法 body：platforms 单端、不传 deviceAliasPools。"""
-    name, drafts = parse_and_validate({
+    name, callback_url, drafts = parse_and_validate({
         "submissionName": "smoke",
         "items": [
             {
@@ -37,6 +38,7 @@ def test_minimal_single_platform_no_pool():
         ],
     })
     assert name == "smoke"
+    assert callback_url is None
     assert len(drafts) == 1
     d = drafts[0]
     assert d.case_id == "C-1"
@@ -48,7 +50,7 @@ def test_minimal_single_platform_no_pool():
 
 def test_multi_platform_fanout_no_pool():
     """一条 raw item 多端 → 拆 N 条 ItemDraft，platform 一一对应。"""
-    name, drafts = parse_and_validate({
+    name, _cb, drafts = parse_and_validate({
         "submissionName": "fanout",
         "items": [
             {
@@ -66,7 +68,7 @@ def test_multi_platform_fanout_no_pool():
 
 def test_pool_size_one_locks_single():
     """长度 1 的池：等价于"锁单台"语义。"""
-    _, drafts = parse_and_validate({
+    _name, _cb, drafts = parse_and_validate({
         "submissionName": "lock-single",
         "items": [
             {
@@ -82,7 +84,7 @@ def test_pool_size_one_locks_single():
 
 def test_pool_size_n_subset_pool():
     """长度 N 的池：场景 5 子集池；写入 ItemDraft 时 dedup + sorted。"""
-    _, drafts = parse_and_validate({
+    _name, _cb, drafts = parse_and_validate({
         "submissionName": "subset",
         "items": [
             {
@@ -99,7 +101,7 @@ def test_pool_size_n_subset_pool():
 
 def test_pool_partial_per_platform():
     """多端时仅指定一端的池：未指定的端走全池任挑。"""
-    _, drafts = parse_and_validate({
+    _name, _cb, drafts = parse_and_validate({
         "submissionName": "partial",
         "items": [
             {
@@ -117,7 +119,7 @@ def test_pool_partial_per_platform():
 
 def test_pool_explicit_null_or_empty_means_full_pool():
     """deviceAliasPools[p] 显式 null / [] = 该端全池任挑（落 None）。"""
-    _, drafts = parse_and_validate({
+    _name, _cb, drafts = parse_and_validate({
         "submissionName": "null-pool",
         "items": [
             {
@@ -133,7 +135,7 @@ def test_pool_explicit_null_or_empty_means_full_pool():
 
 
 def test_case_name_passthrough():
-    _, drafts = parse_and_validate({
+    _name, _cb, drafts = parse_and_validate({
         "submissionName": "smoke",
         "items": [
             {
@@ -347,6 +349,65 @@ def test_pool_contains_empty_alias():
 
 
 # ---------------------------------------------------------------------------
+# v1.8 callbackUrl 校验
+# ---------------------------------------------------------------------------
+
+
+def test_callback_url_happy_path():
+    """合法 https URL → 正常解析。"""
+    _name, callback_url, _drafts = parse_and_validate({
+        "submissionName": "x",
+        "callbackUrl": "https://my-server.example.com/cb",
+        "items": [{"caseId": "C-1", "runContent": "x", "platforms": ["android"]}],
+    })
+    assert callback_url == "https://my-server.example.com/cb"
+
+
+def test_callback_url_empty_string_treated_as_absent():
+    """空串 / 空白 = 没传，callback_url 落 None。"""
+    _name, callback_url, _drafts = parse_and_validate({
+        "submissionName": "x",
+        "callbackUrl": "",
+        "items": [{"caseId": "C-1", "runContent": "x", "platforms": ["android"]}],
+    })
+    assert callback_url is None
+
+
+def test_callback_url_must_be_http_or_https():
+    """非 http(s) 协议 → invalid_body。"""
+    with pytest.raises(AdmissionError) as exc_info:
+        parse_and_validate({
+            "submissionName": "x",
+            "callbackUrl": "ftp://example.com/cb",
+            "items": [{"caseId": "C-1", "runContent": "x", "platforms": ["android"]}],
+        })
+    assert exc_info.value.reason == "invalid_body"
+
+
+def test_callback_url_too_long():
+    """长度 > 1024 → invalid_body。"""
+    long_url = "https://" + ("x" * 1100)
+    with pytest.raises(AdmissionError) as exc_info:
+        parse_and_validate({
+            "submissionName": "x",
+            "callbackUrl": long_url,
+            "items": [{"caseId": "C-1", "runContent": "x", "platforms": ["android"]}],
+        })
+    assert exc_info.value.reason == "invalid_body"
+
+
+def test_callback_url_must_be_string():
+    """非字符串类型 → invalid_body。"""
+    with pytest.raises(AdmissionError) as exc_info:
+        parse_and_validate({
+            "submissionName": "x",
+            "callbackUrl": 12345,
+            "items": [{"caseId": "C-1", "runContent": "x", "platforms": ["android"]}],
+        })
+    assert exc_info.value.reason == "invalid_body"
+
+
+# ---------------------------------------------------------------------------
 # 边界场景
 # ---------------------------------------------------------------------------
 
@@ -376,7 +437,7 @@ def test_index_propagates_to_failing_item():
 
 def test_submission_name_can_be_empty():
     """submissionName 为空时不拒，调用方按需回落 submission_id。"""
-    name, _ = parse_and_validate({
+    name, _cb, _drafts = parse_and_validate({
         "submissionName": "",
         "items": [{
             "caseId": "C-1",
@@ -389,7 +450,7 @@ def test_submission_name_can_be_empty():
 
 def test_extra_fields_silently_ignored():
     """无关字段不报错。"""
-    name, drafts = parse_and_validate({
+    name, _cb, drafts = parse_and_validate({
         "submissionName": "x",
         "extraTopField": "ignored",
         "items": [{
@@ -399,4 +460,5 @@ def test_extra_fields_silently_ignored():
             "extraField": "ignored",
         }],
     })
+    assert name == "x"
     assert len(drafts) == 1

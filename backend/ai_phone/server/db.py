@@ -86,8 +86,7 @@ async def init_db() -> None:
     注意：``Base.metadata.create_all`` 只会"建缺的表"，**不会**给已有表加新列。
     给 ORM 新增字段后若启动报 ``column ... does not exist``，按本仓库约定走
     手工 SQL：先在 PG 里 ``ALTER TABLE``，再重启服务（model 侧由开发补齐）。
-    当前已登记的手工 SQL 见 ``架构设计.md``（或根目录 ``codex后续计划表.md``）
-    的"DB 手工迁移清单"。
+    当前已登记的手工 SQL 见 ``架构设计.md`` 的"DB 手工迁移清单"。
     """
     engine = get_engine()
     # 延迟到此处才 import，避免循环依赖（models 依赖 Base，Base 在本文件）

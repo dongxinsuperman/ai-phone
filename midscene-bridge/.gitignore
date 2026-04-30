@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env.midscene
+.env.midscene.*
+!.env.midscene.example
+midscene_run/
+*.log
+.DS_Store

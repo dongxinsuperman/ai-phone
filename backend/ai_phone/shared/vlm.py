@@ -147,6 +147,13 @@ class Decision:
     UI 链式动作"（同一 Thought 下输出 ≥ 2 个 Action，由 runner 在不抓中间
     截图的前提下顺序执行），新增 ``action_strs`` 暴露完整列表，``action_str``
     保留为列表第一项以保持向后兼容（旧测试 / 直接消费 Decision 的代码不受影响）。
+
+    ``parsed_actions`` 是为 Claude / GPT 等"结构化输出"协议预留的可选直通字段：
+    豆包系输出文本 DSL，runner 走 ``parse_action(action_str)`` 解析；Claude /
+    GPT 通过 tool_use / computer_call 已经给出结构化字段，可以在客户端直接装
+    成 ``ParsedAction`` 列表写入本字段——runner 端见到非空时优先消费它，跳过
+    文本解析；否则回退到旧路径。这样三家协议共用同一个 ``Decision`` 类型，
+    runner 上层调用零改动。
     """
 
     thought: str
@@ -154,6 +161,10 @@ class Decision:
     elapsed_ms: int
     raw_content: str = ""
     action_strs: List[str] = field(default_factory=list)
+    # 用 Any 而非 List[ParsedAction] 是为了避免 vlm.py ↔ actions.py 类型层面的
+    # 循环（actions.py 已经被 vlm.py 间接导入）；运行期实际类型仍是
+    # ``List[ai_phone.shared.actions.ParsedAction]``。
+    parsed_actions: Optional[List[Any]] = None
 
 
 # ---------------------------------------------------------------------------

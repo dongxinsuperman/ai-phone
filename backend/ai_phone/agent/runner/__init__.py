@@ -1,4 +1,8 @@
-"""VLM Runner 包：主循环 + 稳定检测 + pHash + 事件常量。"""
+"""VLM Runner 包：主循环 + 稳定检测 + pHash + 事件常量。
+
+外接执行器（Midscene 等）通过 :mod:`ai_phone.agent.runner.factory` 的
+``build_runner`` 工厂分流；详见仓库根 ``Midscene执行器接入方案.md``。
+"""
 from .events import (
     EVT_ACTION,
     EVT_EXEC_RESULT,
@@ -13,12 +17,16 @@ from .events import (
     log_event,
     make_event,
 )
+from .factory import build_runner
+from .midscene_runner import MidsceneRunner
 from .phash import compute_phash, diff_rate, hamming_distance
 from .stability import StabilityResult, wait_page_stable_pixel
 from .vlm_loop import RunResult, VLMRunner
 
 __all__ = [
     "VLMRunner",
+    "MidsceneRunner",
+    "build_runner",
     "RunResult",
     "StabilityResult",
     "wait_page_stable_pixel",

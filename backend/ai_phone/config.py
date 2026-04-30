@@ -145,6 +145,49 @@ class Settings(BaseSettings):
         default=30000,
         description="上一轮 prompt ≥ 该 tokens 触发分段重置 previous_response_id；<=0 禁用",
     )
+    # --- 主 VLM 协议后端开关（多协议适配层）---
+    # 主 VLM 走哪家协议，决定执行链上"看图 → 决策 → 输出动作"那一坨怎么发请求。
+    # 三家协议差异较大（方舟 Responses / Anthropic Messages-tools / OpenAI Responses-computer_use_preview），
+    # 走"高冗余、低耦合"——每家在 ai_phone/shared/llm/main/ 下独立一个文件，互不影响。
+    # 切换后 vlm_api_url / vlm_api_key / vlm_model 三个字段含义会跟随协议变化：
+    #   - doubao_responses（默认）：方舟 Responses API，model 用 doubao-seed-1-6-vision-*
+    #   - claude_cu：Anthropic Messages API + computer 工具，model 用 claude-*-claude-*-sonnet-*
+    #   - gpt_cu：OpenAI Responses API + computer_use_preview 工具，model 用 computer-use-preview / gpt-*
+    # 注：辅助系统协议由 assistant_backend 单独控制，二者可自由组合（比如 主用 Claude + 辅用 Doubao）。
+    vlm_backend: str = Field(
+        default="doubao_responses",
+        description=(
+            "主 VLM 协议后端。可选 doubao_responses（默认）/ claude_cu / gpt_cu。"
+            "env: AI_PHONE_VLM_BACKEND"
+        ),
+    )
+    # 主 VLM 思考链预算（tokens），仅在 backend 支持 thinking 时生效：
+    # - doubao_responses: 不读本字段（豆包 vision 不开 thinking，关闭节省 token）
+    # - claude_cu: payload.thinking.budget_tokens；0 表示关闭 thinking
+    # - gpt_cu: 不读（GPT computer-use-preview 自带推理，不可关也不需配额）
+    # 默认 1024 tokens 是 Claude Computer Use 官方建议起点，足够单步决策推理。
+    vlm_main_thinking_budget: int = Field(
+        default=1024,
+        ge=0,
+        le=8192,
+        description=(
+            "主 VLM 思考预算（tokens）。仅 claude_cu 生效（0 关闭）；"
+            "doubao_responses / gpt_cu 忽略。env: AI_PHONE_VLM_MAIN_THINKING_BUDGET"
+        ),
+    )
+    # 主 VLM 历史窗口大小（仅 stateless 协议生效）：
+    # - doubao_responses: 服务端续历史 + 显式缓存，本字段忽略
+    # - claude_cu / gpt_cu: 客户端累积 messages，过长会指数级抬 token；
+    #   长任务 30 步以上时只保留首屏 1 步 + 最近 N 步对，避免 token 爆。
+    vlm_history_window_steps: int = Field(
+        default=12,
+        ge=2,
+        le=64,
+        description=(
+            "Claude / GPT 主 VLM 历史滑窗保留的最近步数。仅 stateless 协议生效。"
+            "env: AI_PHONE_VLM_HISTORY_WINDOW_STEPS"
+        ),
+    )
 
     # --- 辅助系统模型（Assistant）---
     # 主 VLM 走 vision 大模型负责"看图决策"，但项目里还有几类**非主决策**的辅助 LLM
@@ -197,6 +240,25 @@ class Settings(BaseSettings):
         description=(
             "断言系统是否开启 thinking。断言要看截图 + 思考链 + 预期文本做终局裁决，"
             "开思考能识别细微视觉证据。env: AI_PHONE_ASSISTANT_THINKING_ASSERTION"
+        ),
+    )
+    # --- 辅助系统协议后端开关（多协议适配层）---
+    # 4 个辅助调用（包名匹配 / 通道判定 / 审判 / 断言）走哪家协议。和 vlm_backend
+    # 完全解耦：可以"主 VLM 走 Claude，辅助走 Doubao（成本低）" 这种组合。
+    # 各家在 ai_phone/shared/llm/assistants/ 下独立文件实现，确保零交叉。
+    #   - doubao_chat（默认）：方舟 Chat Completions，model 用 doubao-seed-1-6-*
+    #   - claude：Anthropic Messages API，model 用 claude-*-sonnet-*
+    #   - openai：OpenAI Chat Completions，model 用 gpt-4o / gpt-4.1 等
+    # 切换后 assistant_api_url / assistant_api_key / assistant_model 含义跟随协议变化。
+    # thinking 开关在不同协议下含义略不同：
+    #   - 豆包：payload.thinking.type = enabled/disabled
+    #   - Claude：payload.thinking.type = enabled + budget_tokens
+    #   - OpenAI：reasoning.effort（仅 o-系列）；非推理模型忽略
+    assistant_backend: str = Field(
+        default="doubao_chat",
+        description=(
+            "辅助系统协议后端。可选 doubao_chat（默认）/ claude / openai。"
+            "env: AI_PHONE_ASSISTANT_BACKEND"
         ),
     )
 
@@ -423,6 +485,340 @@ class Settings(BaseSettings):
         ge=0.5,
         le=30.0,
         description="单次 probe 的超时（秒）；超时算一次失败",
+    )
+
+    # --- Midscene 执行器（外接，寄居在 ai-phone/midscene-bridge/）---
+    # 详细方案见 `Midscene执行器接入方案.md`。
+    # 默认关闭：未显式开启时，ai-phone 主仓零行为变化。
+    midscene_enabled: bool = Field(
+        default=False,
+        description=(
+            "是否暴露 Midscene 执行器选项。关闭时：Web 不显示引擎下拉框，"
+            "POST /api/runs 收到 engine=midscene 直接 400。"
+        ),
+    )
+    midscene_run_timeout_sec: int = Field(
+        default=60 * 60,
+        ge=60,
+        le=24 * 60 * 60,
+        description=(
+            "Midscene run 单次硬超时（秒）。默认 60 分钟，给长链 case 留余量；"
+            "业务 case 永远短链可调小。"
+        ),
+    )
+    midscene_bridge_dir: Optional[Path] = Field(
+        default=None,
+        description=(
+            "midscene-bridge 目录绝对路径。空 = 自动定位到 <repo>/midscene-bridge。"
+            "在自定义安装位置时显式指定。"
+        ),
+    )
+    midscene_node_bin: str = Field(
+        default="node",
+        description="Node 可执行文件路径；默认走 PATH。多版本 Node 时可写绝对路径。",
+    )
+
+    # ──────────────────────────────────────────────────────────────────
+    # Submission 调度 TTL（开源运维必改项）
+    # ──────────────────────────────────────────────────────────────────
+    # scheduler 兜底超时：批次 / item 跑过这个时长强制收口，防止异常 agent
+    # 永远不回 RUN_DONE 把队列死锁。这两个值是开源用户**几乎一定要按业务调整**
+    # 的——跑短任务嫌 1h item 太长（单设备 stuck 1h 才回收），跑长 case 嫌
+    # 3h 批次太短（一个长 case 可能跑 1h，10 条就不够）。
+    submission_ttl_sec: int = Field(
+        default=3 * 60 * 60,
+        ge=60,
+        le=24 * 60 * 60,
+        description=(
+            "Submission（批次）总硬超时（秒）。从 admit 时刻开始计时，超过仍未收口"
+            "则强制把剩余 item 标 expired 并触发终态广播。默认 3 小时。"
+            "env: AI_PHONE_SUBMISSION_TTL_SEC"
+        ),
+    )
+    item_ttl_sec: int = Field(
+        default=60 * 60,
+        ge=60,
+        le=12 * 60 * 60,
+        description=(
+            "单个 SubmissionItem 硬超时（秒）。item 进入 running 后超时仍无 RUN_DONE"
+            "则强制 finalize 为 timeout。默认 1 小时，覆盖典型业务 case。"
+            "env: AI_PHONE_ITEM_TTL_SEC"
+        ),
+    )
+    scheduler_tick_sec: float = Field(
+        default=2.0,
+        ge=0.1,
+        le=60.0,
+        description=(
+            "scheduler 后台 tick 周期（秒）。事件驱动路径会主动 kick，这是兜底巡检。"
+            "短任务高吞吐场景可调小（0.5-1s）；空闲集群可调大省 CPU。"
+            "env: AI_PHONE_SCHEDULER_TICK_SEC"
+        ),
+    )
+
+    # ──────────────────────────────────────────────────────────────────
+    # Run 行为硬上限（业务调优项）
+    # ──────────────────────────────────────────────────────────────────
+    # 单 Run 最大 VLM 决策步数。超过强制终止为 fail，防止 VLM 在死路上无限刷
+    # token。100 步对绝大多数业务 case 充裕，长链 case（>30 步操作链）需要调大。
+    run_max_steps: int = Field(
+        default=100,
+        ge=10,
+        le=1000,
+        description=(
+            "单 Run 最大决策步数硬上限。超过强制 fail 收尾，防 VLM 在死路打转烧 token。"
+            "长链 case（>30 步）适当调大；常规短 case 100 已经偏宽松。"
+            "env: AI_PHONE_RUN_MAX_STEPS"
+        ),
+    )
+    # 单步 wait action 最大等待秒数。VLM 输出 wait(seconds=N) 时被裁剪到该上限。
+    # 默认 1800s（30 分钟）覆盖"等视频播完 / 等服务端跑批"等场景；普通业务可调小。
+    run_max_wait_sec: int = Field(
+        default=1800,
+        ge=10,
+        le=24 * 60 * 60,
+        description=(
+            "单次 wait action 最大允许等待秒数。VLM 申请超过该值会被裁剪并标 clipped。"
+            "默认 30 分钟为长等场景兜底；常规业务可调到 60-300s。"
+            "env: AI_PHONE_RUN_MAX_WAIT_SEC"
+        ),
+    )
+    # 审判系统单次调用超时；超时按 ALLOW 处理（不阻塞 Run 收尾）。
+    audit_timeout_sec: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=300.0,
+        description=(
+            "结构化通道审判（_run_struct_audit）单次调用超时（秒）。"
+            "超时按 ALLOW 处理不阻塞 Run；网络环境差/海外节点可调到 60-90s。"
+            "env: AI_PHONE_AUDIT_TIMEOUT_SEC"
+        ),
+    )
+    # 断言系统终局裁决超时；超时按 SKIP 处理（回退采纳主 VLM 结果）。
+    assertion_timeout_sec: float = Field(
+        default=60.0,
+        ge=10.0,
+        le=600.0,
+        description=(
+            "断言系统（finished 终局裁决）单次调用超时（秒）。"
+            "超时按 SKIP 处理回退主 VLM 结果，不阻塞 Run 收尾。"
+            "env: AI_PHONE_ASSERTION_TIMEOUT_SEC"
+        ),
+    )
+    # 审判 ALLOW 上限：审判放行多少次后下次召唤直接 KILL 绕过审判模型。
+    # 30 次覆盖典型长 case 全程合法重试；觉得审判不靠谱、误 KILL 多发的运维可上调到 50/100。
+    audit_allow_limit: int = Field(
+        default=30,
+        ge=1,
+        le=500,
+        description=(
+            "审判系统单 Run 累计 ALLOW 次数上限。达上限后探测器召唤直接 KILL，绕过审判。"
+            "审判模型不稳/容易误 KILL 时调大；想让 Run 早死省 token 时调小。"
+            "env: AI_PHONE_AUDIT_ALLOW_LIMIT"
+        ),
+    )
+    # 周期巡检间隔：每 N 步主动召唤一次审判，兜底"VLM 一鼓作气走错路"。
+    # 5 太频繁前期合法跳步常被误 KILL；30 给足 VLM 上下文再监督。
+    audit_periodic_interval: int = Field(
+        default=30,
+        ge=0,
+        le=200,
+        description=(
+            "审判周期巡检间隔（步）。每 N 步主动召唤一次审判检查推进合理性。"
+            "0 = 关闭周期巡检（仅 detector 触发）；调大让 VLM 多跑几步再检查。"
+            "env: AI_PHONE_AUDIT_PERIODIC_INTERVAL"
+        ),
+    )
+    # 链式动作上限：同一轮 VLM 决策内串联多个 Action 用于追"瞬态 UI"。
+    chain_max_actions: int = Field(
+        default=2,
+        ge=1,
+        le=5,
+        description=(
+            "单轮 VLM 决策最多串联多少个 Action（超出截断保留前 N 个）。"
+            "1 = 关闭链式（每步只走一个 Action）；视频/工具栏场景需要 ≥ 2。"
+            "env: AI_PHONE_CHAIN_MAX_ACTIONS"
+        ),
+    )
+    chain_inner_gap_ms: int = Field(
+        default=200,
+        ge=0,
+        le=2000,
+        description=(
+            "链内相邻两个 Action 的硬等间隔（毫秒）。"
+            "0 = 不等（极激进）；过大会让链式失去毫秒级追瞬态 UI 的意义。"
+            "env: AI_PHONE_CHAIN_INNER_GAP_MS"
+        ),
+    )
+
+    # ──────────────────────────────────────────────────────────────────
+    # 卡死检测阈值（"误 kill 多发"运维必改区）
+    # ──────────────────────────────────────────────────────────────────
+    # 这一组是本地纯算法（不调 LLM）的兜底卡死探测器。命中后会向 VLM 注入
+    # "卡死提示"或直接终止 Run。阈值偏小 → 误 kill 多发；偏大 → 真死循环
+    # 拖太久。开源用户根据自家 app 的"合法重试节奏"调整。
+    click_stuck_threshold: int = Field(
+        default=4,
+        ge=2,
+        le=20,
+        description=(
+            "同坐标连续点击触发卡死提示的次数。点过 N 次同位置仍无屏变化 → 注入提示。"
+            "调大可减少误 kill（合法连点场景，如刷新按钮/抽奖）。"
+            "env: AI_PHONE_CLICK_STUCK_THRESHOLD"
+        ),
+    )
+    scroll_stuck_threshold: int = Field(
+        default=3,
+        ge=2,
+        le=20,
+        description=(
+            "同方向连续无效滚动触发卡死提示的次数。N 次 swipe 屏幕几乎不动 → 注入提示。"
+            "长列表底部场景调大；常规列表保持默认。"
+            "env: AI_PHONE_SCROLL_STUCK_THRESHOLD"
+        ),
+    )
+    unknown_action_streak_limit: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description=(
+            "VLM 连续输出未知 / 解析失败 action 的次数上限。超过 → 注入纠正提示。"
+            "模型偶尔抖动可调到 5；想严格收口调到 2。"
+            "env: AI_PHONE_UNKNOWN_ACTION_STREAK_LIMIT"
+        ),
+    )
+    consecutive_screenshot_fail_limit: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description=(
+            "连续截图失败次数上限。超过 → 终止 Run 标 fail（设备可能掉线/崩溃）。"
+            "弱网/老旧设备可调到 5-8；线上稳定环境保持默认。"
+            "env: AI_PHONE_CONSECUTIVE_SCREENSHOT_FAIL_LIMIT"
+        ),
+    )
+
+    # ──────────────────────────────────────────────────────────────────
+    # 异常介入触发阈值（结构化通道审判 detector）
+    # ──────────────────────────────────────────────────────────────────
+    # 这一组是"召唤审判"的本地探测器阈值。命中后**不直接 kill**，是丢给
+    # 轻量审判模型判定继续 / 终止。阈值偏小 → 频繁召唤审判（多 token 多延迟）；
+    # 偏大 → 真偏离也叫不醒审判。"误 kill 多发"运维场景的关键调节区。
+    audit_click_bucket_px: float = Field(
+        default=50.0,
+        ge=10.0,
+        le=300.0,
+        description=(
+            "同坐标桶聚类容差（像素，质心欧氏距）。距离 ≤ 此值视为同一桶。"
+            "高分屏可调大（80-100）；密集 UI 调小（20-30）。"
+            "env: AI_PHONE_AUDIT_CLICK_BUCKET_PX"
+        ),
+    )
+    audit_click_bucket_trigger: int = Field(
+        default=3,
+        ge=2,
+        le=20,
+        description=(
+            "同坐标桶累计 click ≥ N 次召唤审判。"
+            "调大允许更多合法重试；调小快速发现反复点同一处模式。"
+            "env: AI_PHONE_AUDIT_CLICK_BUCKET_TRIGGER"
+        ),
+    )
+    audit_screen_revisit_hamming: int = Field(
+        default=8,
+        ge=0,
+        le=64,
+        description=(
+            "pHash 汉明距阈值，≤ 此值视为同屏。256 bit 哈希默认 8 ≈ 3% 差异。"
+            "调小（4-6）严格判同屏；调大（12-16）容忍更多视觉抖动。"
+            "env: AI_PHONE_AUDIT_SCREEN_REVISIT_HAMMING"
+        ),
+    )
+    audit_screen_revisit_trigger: int = Field(
+        default=3,
+        ge=2,
+        le=20,
+        description=(
+            "同屏访问累计 ≥ N 次召唤审判。Tab 切换 / 抽屉开合等合法多次访问可调大。"
+            "env: AI_PHONE_AUDIT_SCREEN_REVISIT_TRIGGER"
+        ),
+    )
+    audit_scroll_flip_window: int = Field(
+        default=6,
+        ge=2,
+        le=30,
+        description=(
+            "滚动方向翻转检测窗口（最近 N 次滚动）。"
+            "env: AI_PHONE_AUDIT_SCROLL_FLIP_WINDOW"
+        ),
+    )
+    audit_scroll_flip_trigger: int = Field(
+        default=2,
+        ge=1,
+        le=10,
+        description=(
+            "窗口内方向翻转 ≥ N 次召唤审判（震荡 / 东找西找）。"
+            "env: AI_PHONE_AUDIT_SCROLL_FLIP_TRIGGER"
+        ),
+    )
+    audit_scroll_noprogress_diff: float = Field(
+        default=0.02,
+        ge=0.0,
+        le=0.5,
+        description=(
+            "滚动前后帧 diff_rate ≤ 此值视为页面几乎没动（无效滑动）。"
+            "调大（0.05）容忍更多视觉抖动；调小（0.005）严格判无效滑动。"
+            "env: AI_PHONE_AUDIT_SCROLL_NOPROGRESS_DIFF"
+        ),
+    )
+    audit_scroll_noprogress_trigger: int = Field(
+        default=3,
+        ge=2,
+        le=20,
+        description=(
+            "同方向连续无效滑动 ≥ N 次召唤审判（已到列表底/无更多内容场景）。"
+            "env: AI_PHONE_AUDIT_SCROLL_NOPROGRESS_TRIGGER"
+        ),
+    )
+
+    # ──────────────────────────────────────────────────────────────────
+    # 通道判定阈值（结构化 vs 自由对话）
+    # ──────────────────────────────────────────────────────────────────
+    # 启动期判定 case 走哪条通道：结构化（带审判 + 严格步骤校验）还是自由
+    # 对话（VLM 自主决策）。阈值控制"严格度多高才进结构化"。
+    # - 关键字命中 ≥ HARD_HIT       → 直接结构化（最高置信，免审判分类调用）
+    # - 严格度评分 ≥ HARD_SCORE     → 直接结构化（长 case + 密集约束）
+    # - 严格度评分 ≥ AUDIT_SCORE    → 借审判模型一次性分类
+    # - 都不达标                     → 自由对话通道
+    struct_keyword_hard_hit: int = Field(
+        default=2,
+        ge=1,
+        le=10,
+        description=(
+            "四级标签命中数 ≥ 此值直接走结构化（免审判分类调用）。"
+            "标签：测试标题/前置条件/操作步骤/预期结果/起跑线/资源选择/兜底等。"
+            "env: AI_PHONE_STRUCT_KEYWORD_HARD_HIT"
+        ),
+    )
+    struct_strictness_hard_score: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+        description=(
+            "严格度综合评分 ≥ 此值直接走结构化（0-7 分制）。"
+            "评分维度：引号/数字约束/逻辑词/顺序词/动词等。"
+            "env: AI_PHONE_STRUCT_STRICTNESS_HARD_SCORE"
+        ),
+    )
+    struct_strictness_audit_score: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description=(
+            "严格度评分 ≥ 此值借审判模型分类（中等信号 case）。"
+            "调小让更多 case 进结构化（严格但慢）；调大放宽自由对话覆盖。"
+            "env: AI_PHONE_STRUCT_STRICTNESS_AUDIT_SCORE"
+        ),
     )
 
 

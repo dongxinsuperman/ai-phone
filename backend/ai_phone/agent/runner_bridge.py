@@ -222,24 +222,30 @@ class RunnerBridge:
         ok = bool(evt.get("ok"))
         reason = str(evt.get("reason") or "")
         # 从 reason 前缀推断 result；reason 形如 "finished: xxx" / "assert_fail: xxx"
+        # 'fail' 是外接引擎（Midscene）专用：它不区分 finished / assert_fail，
+        # 任务声称失败统一发 'fail'，server 那边 _finalize_run 会落库 status='failed'
         result = "finished" if ok else "error"
         prefix = reason.split(":", 1)[0].strip()
-        if prefix in ("finished", "assert_fail", "error", "cancelled"):
+        if prefix in ("finished", "assert_fail", "error", "cancelled", "fail"):
             result = prefix
         message = reason.split(":", 1)[1].strip() if ":" in reason else reason
 
-        await self._send(
-            {
-                "type": P.MSG_RUN_DONE,
-                "run_id": self.run_id,
-                "serial": self.serial,
-                "result": result,
-                "message": message,
-                "steps": int(evt.get("steps") or 0),
-                "elapsed_ms": int(evt.get("elapsed_ms") or 0),
-                "token_stats": evt.get("token_stats") or self._last_token_stats or {},
-            }
-        )
+        payload: Dict[str, Any] = {
+            "type": P.MSG_RUN_DONE,
+            "run_id": self.run_id,
+            "serial": self.serial,
+            "result": result,
+            "message": message,
+            "steps": int(evt.get("steps") or 0),
+            "elapsed_ms": int(evt.get("elapsed_ms") or 0),
+            "token_stats": evt.get("token_stats") or self._last_token_stats or {},
+        }
+        # 外接引擎（Midscene 等）的报告 URL 透传到 server，落到 Run.external_report_url
+        # vlm 主链路永远不带这个字段
+        external_report_url = evt.get("external_report_url")
+        if external_report_url:
+            payload["external_report_url"] = str(external_report_url)
+        await self._send(payload)
 
     # ------------------------------------------------------------------
     def _enqueue(self, coro) -> asyncio.Task:

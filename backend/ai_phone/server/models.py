@@ -142,6 +142,14 @@ class Run(Base):
     steps: Mapped[int] = mapped_column(Integer, default=0)
     elapsed_ms: Mapped[int] = mapped_column(Integer, default=0)
     token_summary: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    # 执行引擎：'vlm'（默认 / ai-phone 主链路）或 'midscene'（外接寄居）等。
+    # 老 run 没有这个字段，server_default 兜底为 'vlm'，归因清晰。
+    engine: Mapped[str] = mapped_column(
+        String(32), default="vlm", server_default="vlm", index=True
+    )
+    # 外接引擎产物（如 Midscene HTML 报告）的对外可访问 URL。
+    # 仅 engine != 'vlm' 时填充；vlm runner 永远是 None（其报告由 ai-phone 自己组装）。
+    external_report_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -165,6 +173,8 @@ class Run(Base):
             "steps": self.steps,
             "elapsed_ms": self.elapsed_ms,
             "token_summary": self.token_summary or {},
+            "engine": self.engine or "vlm",
+            "external_report_url": self.external_report_url,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
@@ -263,6 +273,9 @@ class Submission(Base):
     finished_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # v1.8 webhook：投递时可选传 callbackUrl。整批收口时异步 POST 一份
+    # submission.terminal payload；发一次失败就吞，不影响主流程。
+    callback_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
 
     items: Mapped[list["SubmissionItem"]] = relationship(
         back_populates="submission", cascade="all, delete-orphan", lazy="noload"

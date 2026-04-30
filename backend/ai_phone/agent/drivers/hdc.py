@@ -17,7 +17,7 @@
 3. ``hmdriver2`` 的 uitest daemon 偶尔会掉线，这时还能用纯 ``hdc shell`` 执行
    命令作为自愈兜底。
 
-环境前提（详见 ``HarmonyOS环境配置笔记.md``）：
+环境前提：
 
 - macOS / Linux 下 ``hdc`` 二进制必须在 ``PATH``（DevEco Studio 装完后要加环境变量）
 - ``hdc list targets`` 能看到设备（设备开发者模式 + USB 调试已开启 + 对 PC 授权）
@@ -150,8 +150,8 @@ def hdc_run(
     if hdc_bin is None:
         raise HdcError(
             ["hdc"], -2, "",
-            "hdc 二进制找不到。请装 DevEco Studio 或 Command Line Tools，"
-            "参考 HarmonyOS环境配置笔记.md",
+            "hdc 二进制找不到。请装 DevEco Studio 或 Command Line Tools "
+            "并把 hdc 所在目录加到 PATH（macOS 通常是 ~/Library/Huawei/Sdk/openharmony/<ver>/toolchains）",
         )
     # 用绝对路径（或已 resolve 的路径）跑，避免用户 shell 未 source 导致 裸 hdc 找不到
     cmd: List[str] = [hdc_bin]

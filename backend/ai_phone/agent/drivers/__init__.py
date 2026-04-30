@@ -46,7 +46,7 @@ except Exception:  # noqa: BLE001
     def open_harmony_driver(serial: str, **_kw):  # type: ignore[misc]
         raise RuntimeError(
             "HarmonyOS 支持未启用：请 pip install -e \"backend[harmony]\" "
-            "并确保 hdc 在 PATH（详见 HarmonyOS环境配置笔记.md）后重启 agent。"
+            "并确保 hdc 在 PATH（DevEco Studio 自带，需要手动配环境变量）后重启 agent。"
         )
 
     _HARMONY_AVAILABLE = False

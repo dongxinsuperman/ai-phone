@@ -95,11 +95,16 @@ class ParsedAction:
 
     参考 Groovy parseAction 返回的 Map 字段命名，保持跨语言一致：
     - action: 动作名（如 "click"）
-    - point/start_point/end_point: [x, y]，归一化 0-1000 坐标
+    - point/start_point/end_point: [x, y]，坐标空间见 ``coord_space``
     - content: type / finished / assert_fail 的文本
     - direction: scroll 的方向
     - name: open_app / close_app 的应用名
     - seconds: wait 的秒数
+    - coord_space: 坐标空间标记，多协议适配层用来区分模型的输出系。
+        * ``"normalized"``（默认）：归一化 0-1000 坐标，豆包系标准输出
+        * ``"absolute"``：相对模型 input image 的绝对像素坐标（Claude / OpenAI
+          的 computer 工具就是这类）。Runner 在做 viewport 反向缩放时按本字段
+          决定走"× 比例"还是"先 ÷ 1000 再乘屏幕宽高"。
     """
 
     action: str
@@ -112,6 +117,7 @@ class ParsedAction:
     seconds: Optional[int] = None
     raw: str = ""
     extra: Dict[str, Any] = field(default_factory=dict)
+    coord_space: str = "normalized"
 
     @property
     def is_known(self) -> bool:
@@ -127,6 +133,9 @@ class ParsedAction:
             v = getattr(self, k)
             if v is not None:
                 out[k] = v
+        # coord_space 仅在非默认值时显式输出，避免污染豆包系日志/快照
+        if self.coord_space and self.coord_space != "normalized":
+            out["coord_space"] = self.coord_space
         return out
 
 

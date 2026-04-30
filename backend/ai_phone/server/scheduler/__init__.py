@@ -9,8 +9,7 @@
 
 模块只读 `Hub` / `DeviceLockStore`，不修改它们的结构，也不碰既有的
 `/api/runs` 派发路径——调度器复用 WS `start_run` 协议（保持
-`run_id + goal` 不变），这条承诺写在 `codex后续计划表.md` 的
-v1 冻结清单里。
+`run_id + goal` 不变），这条承诺属于项目内部 v1 冻结清单。
 """
 
 from .service import (

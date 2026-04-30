@@ -1,38 +1,32 @@
 """Submission 终态事件 payload 构造。
 
-输出契约严格对齐 ``codex后续计划表.md`` P1 广播字段：
+输出契约（v2 字段集，version 字段保留 1，新增字段属兼容追加）：
 
-.. code-block:: json
+item 终态事件（``submission.item.terminal``）字段一览：
 
-    {
-      "event": "submission.item.terminal",
-      "version": 1,
-      "ts": "2026-04-22T03:12:05.121+00:00",
-      "submissionId": "abc123...",
-      "caseId": "login_001",
-      "platform": "android",
-      "state": "success | failed | cancelled",
-      "statusReason": "completed | assert_failed | run_error | ...",
-      "runId": "xxxxxxxx" | null,
-      "deviceSerial": "R3CR70STPCK" | null,
-      "deviceAliasPool": ["A1", "B1"] | null,
-      "startedAt": iso | null,
-      "finishedAt": iso | null,
-      "elapsedMs": 12345 | null,
-      "steps": 8 | null,
-      "tokenStats": { ... } | {},
-      "reportUrl": "/files/reports/.../.html" | null,
-      "origin": "external | internal"
-    }
+- ``event`` / ``version`` / ``ts``: 事件元数据
+- ``submissionId`` / ``submissionName``: 批次维度
+- ``itemId``: 该执行单元主键，方便消费方一键定位日志
+- ``caseId`` / ``caseName`` / ``platform``: case 维度
+- ``engine``: 实际跑这条 item 的执行引擎（``vlm`` / ``midscene``）；
+  没绑 Run 时为 ``null``
+- ``state`` / ``statusReason``: 终态结果（详见 scheduler 11 项 statusReason）
+- ``runId`` / ``deviceSerial``: 实际派发结果；queued 阶段被收尾时为 ``null``
+- ``deviceAliasPool``: 投递时声明的别名池（v1.7 池语义）
+- ``enqueuedAt``: 入队时刻，永远有值
+- ``startedAt`` / ``finishedAt`` / ``elapsedMs``: 执行时段；未启动时三者均 None
+- ``steps`` / ``tokenStats``: 执行规模摘要（来自 Run）
+- ``reportUrl``: HTML 单条报告地址；queued 阶段被收尾时为 ``null``
+- ``origin``: ``external`` / ``internal``
 
 字段约定：
 
-- ``reportUrl`` 为 ``null`` 表示 **没生成报告**（典型场景：item 在 queued 状态下
-  被取消；或批次 submission_timeout 把未启动的 item 踢出）。
-- ``runId`` 为 ``null`` 同理——没跑过 Run。
+- ``reportUrl`` 为 ``null`` 表示没生成报告（典型场景：item 在 queued 状态下被
+  取消；或批次 submission_timeout 把未启动的 item 踢出）。
+- ``runId`` / ``engine`` 为 ``null`` 同理——没跑过 Run。
 - ``elapsedMs`` 未启动或异常未拿到时间戳时为 ``null``。
 
-此函数**不**落盘报告、**不**访问 Kafka，只负责"装字段"。
+此函数不落盘报告、不访问 Kafka，只负责装字段。
 """
 
 from __future__ import annotations
@@ -83,20 +77,28 @@ def build_terminal_event(
     if submission is not None:
         submission_name = submission.submission_name or submission.id
 
+    # Run.engine 为空字符串时按 'vlm' 兜底，跟 Run.to_dict 的行为对齐
+    engine: Optional[str] = None
+    if run is not None:
+        engine = run.engine or "vlm"
+
     return {
         "event": SCHEMA_EVENT,
         "version": SCHEMA_VERSION,
         "ts": now_ts,
         "submissionId": item.submission_id,
         "submissionName": submission_name or item.submission_id,
+        "itemId": item.id,
         "caseId": item.case_id,
         "caseName": (item.case_name or item.case_id),
         "platform": item.platform,
+        "engine": engine,
         "state": item.state,
         "statusReason": item.status_reason or None,
         "runId": item.run_id or None,
         "deviceSerial": item.device_serial or None,
         "deviceAliasPool": list(item.device_alias_pool or []) or None,
+        "enqueuedAt": item.enqueued_at.isoformat() if item.enqueued_at else None,
         "startedAt": started.isoformat() if started else None,
         "finishedAt": finished.isoformat() if finished else None,
         "elapsedMs": elapsed_ms,
@@ -122,15 +124,25 @@ def build_submission_terminal_event(
 
     summary_report_url 为 ``None`` 表示汇总 HTML 生成失败，调用方可降级用
     JSON 接口拉。
+
+    聚合字段：
+      - ``counts``: 按 state 聚合，业务方看总盘
+      - ``platformCounts``: 按 platform 聚合，业务方看每端跑了几条
+      - ``platformStateCounts``: 端 × 状态 二维矩阵（嵌套字典），业务方一眼
+        看出"每端各状态分别多少条"，不用回拉每条 item 自己算
     """
     now_ts = (now or datetime.now(timezone.utc)).isoformat()
 
     counts: Dict[str, int] = {}
     plat_counts: Dict[str, int] = {}
+    plat_state_counts: Dict[str, Dict[str, int]] = {}
     total_elapsed_ms = 0
     for it in items:
         counts[it.state] = counts.get(it.state, 0) + 1
         plat_counts[it.platform] = plat_counts.get(it.platform, 0) + 1
+        # 二维矩阵：先按 platform 分桶，再按 state 计数
+        bucket = plat_state_counts.setdefault(it.platform, {})
+        bucket[it.state] = bucket.get(it.state, 0) + 1
         if it.started_at and it.finished_at:
             try:
                 total_elapsed_ms += max(
@@ -152,6 +164,7 @@ def build_submission_terminal_event(
         "totalItems": len(items),
         "counts": counts,
         "platformCounts": plat_counts,
+        "platformStateCounts": plat_state_counts,
         "totalElapsedMs": total_elapsed_ms,
         "summaryReportUrl": summary_report_url,
     }

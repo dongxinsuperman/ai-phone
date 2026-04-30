@@ -1,8 +1,8 @@
 """/api/runs：运行记录。
 
 .. deprecated:: v1-第4梯队
-    ``/api/runs`` **即将被标为 deprecated**。v1 正式对外契约请走 ``/api/submissions``
-    （参见 ``codex后续计划表.md`` P0/P1）。``/api/runs`` 保留是为了：
+    ``/api/runs`` **即将被标为 deprecated**。v1 正式对外契约请走 ``/api/submissions``。
+    ``/api/runs`` 保留是为了：
 
     - 调度器内部（``SubmissionScheduler._try_dispatch``）仍复用 Run/RunStep/RunLog
       数据模型与 WS ``start_run`` 协议；
@@ -35,12 +35,16 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ai_phone.config import get_settings
 from ai_phone.shared import protocol as P
 
 from ..hub import Hub
 from ..lockstore import DeviceLockStore, LockConflict
 from ..models import Case, Device, Run, RunLog, RunStep
 from ._deps import DBSession, HubDep, LockStoreDep
+
+# 白名单：API 接受的 engine 取值。新增引擎时同步本表 + factory.py。
+_KNOWN_ENGINES = ("vlm", "midscene")
 
 router = APIRouter(
     prefix="/api/runs",
@@ -56,11 +60,19 @@ class RunCreate(BaseModel):
     # 新锁模型：调用方（浏览器 / job / webhook）已持有设备锁 token，Run 沿用这把锁。
     # 不传表示"由调度端代抢一把 job 锁跑"，跑完自动释放。
     lock_token: Optional[str] = None
+    # 执行引擎选择：'vlm'（默认 / ai-phone 主链路）或 'midscene'（外接寄居）。
+    # 'midscene' 仅在 settings.midscene_enabled=True 时被接受；详见
+    # `Midscene执行器接入方案.md`。批次投递（/api/submissions）不接受此字段。
+    engine: Optional[str] = Field(default=None, max_length=32)
 
     @model_validator(mode="after")
     def _require_goal_or_case(self) -> "RunCreate":
         if not self.goal and not self.case_id:
             raise ValueError("goal 和 case_id 至少要有一个")
+        if self.engine is not None and self.engine not in _KNOWN_ENGINES:
+            raise ValueError(
+                f"engine 必须是 {_KNOWN_ENGINES} 之一，收到 {self.engine!r}"
+            )
         return self
 
 
@@ -184,12 +196,22 @@ async def create_run(
                 detail=f"设备已被占用，无法启动自动任务：{exc}",
             )
 
+    # 引擎选择：缺省走 vlm（与历史行为一致）。midscene 仅在 settings.midscene_enabled
+    # 显式启用时被接受，避免未配置 bridge 的环境意外路由到外接通道。
+    engine = (body.engine or "vlm").strip().lower()
+    if engine == "midscene" and not get_settings().midscene_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="midscene 引擎未启用：请在 .env 中设置 AI_PHONE_MIDSCENE_ENABLED=true",
+        )
+
     run = Run(
         device_serial=body.device_serial,
         agent_id=agent_id,
         case_id=case_id,
         goal=goal,
         status="pending",
+        engine=engine,
     )
     session.add(run)
     await session.commit()
@@ -205,6 +227,7 @@ async def create_run(
                 "run_id": run.id,
                 "device_serial": body.device_serial,
                 "goal": goal,
+                "engine": engine,
             },
         )
         if not dispatched:

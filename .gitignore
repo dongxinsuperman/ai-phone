@@ -29,3 +29,9 @@ data/
 # Env secrets
 .env
 .env.local
+
+# Internal docs（个人笔记 / 未落地方案 / 调研记录 / 工作日志，不对外暴露）
+docs-internal/
+
+# Midscene 执行器运行产物（log / cache / yaml）；任意层级匹配
+midscene_run/

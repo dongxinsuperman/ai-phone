@@ -309,6 +309,8 @@ flowchart TB
 - 不耗模型
 - 能尽早发出信号
 
+> 这里所有阈值都是默认值，开源用户可通过 `.env` 微调。完整列表见本文末尾"附录：参数调优 env 速查"或 `backend/.env.example` §18-§19。
+
 #### 审判裁决层
 
 命中阈值后，再交给轻量 supervisor 判断：
@@ -316,7 +318,9 @@ flowchart TB
 - 这次应该 `ALLOW`
 - 还是应该 `KILL`
 
-当前结构化通道下，还设置了 `ALLOW` 上限，防止“永远再放一次”。
+当前结构化通道下还设置了 `ALLOW` 上限（默认 30 次），防止"永远再放一次"。再加一道周期巡检（默认每 30 步主动审一次），兜底"VLM 一鼓作气走顺了错误路线"——这种偏离本地探测器抓不到（不存在反复模式），只能靠周期性把 case + 历史交给审判模型对照。
+
+> ALLOW 上限和巡检间隔都可通过 `.env` 调：误 KILL 多发把 ALLOW 调大、巡检间隔拉长；想严格收口反过来。详见附录。
 
 ### 6.4 为什么它很重要
 
@@ -575,26 +579,27 @@ finished 断言系统解决的是另一个完全不同的问题：
 
 模型可以要求等待较长时间，但系统仍会做硬上限控制。
 
-当前上限：
+默认上限：
 
-- `MAX_WAIT_SECONDS = 1800`
+- `MAX_WAIT_SECONDS = 1800`（30 分钟，env: `AI_PHONE_RUN_MAX_WAIT_SEC`）
 
-也就是最多 30 分钟。
-
-这样做的目的，是允许长视频场景，同时避免异常 case 无限等待。
+这样做的目的，是允许长视频场景，同时避免异常 case 无限等待。普通业务可调小到 60-300s。
 
 ### 10.2 链式动作限制
 
 系统允许在单轮输出里串联少量动作，但不是无限开放。
 
-当前：
+默认：
 
-- `CHAIN_MAX_ACTIONS = 2`
+- `CHAIN_MAX_ACTIONS = 2`（env: `AI_PHONE_CHAIN_MAX_ACTIONS`）
+- 链内间隔 200ms（env: `AI_PHONE_CHAIN_INNER_GAP_MS`）
 
 作用是：
 
 - 让高确定性连续点击更快
 - 同时避免主 VLM 一次输出过长动作链，脱离可观测反馈
+
+设为 1 则关闭链式（每步只走一个 Action）；视频/工具栏场景需要 ≥ 2。
 
 ### 10.3 未知动作保护
 
@@ -713,7 +718,101 @@ finished 断言系统解决的是另一个完全不同的问题：
 
 ---
 
-## 15. 代码参考
+## 15. 附录：参数调优 env 速查（开源用户）
+
+本文里提到的所有"硬编码常量值"实际上都已在 `backend/ai_phone/config.py` 里 env 化，开源用户**无需改源码**——改 `.env` 重启服务即可生效。完整列表见 `backend/.env.example` §16-§20，按主题分组：
+
+| .env.example 区块 | 控制对象 | 涉及辅助系统 |
+| --- | --- | --- |
+| §16 调度 TTL | 批次/item 兜底超时、scheduler tick | 整体调度 |
+| §17 Run 行为硬上限 | 单 Run 最大步数、wait 上限、链式动作、审判超时、ALLOW 上限、巡检间隔 | 审判系统 / 兜底机制 |
+| §18 卡死检测阈值 | 同坐标点击、同向滑动、未知动作、连续截图失败 | 审判 / 卡死系统的本地探测层 |
+| §19 异常介入触发阈值 | 坐标桶、屏幕重访、滚动震荡/无进展 | 审判系统的 detector |
+| §20 通道判定阈值 | 关键字命中 / 严格度评分 | 通道判定系统 |
+
+### 15.1 四个常见运维场景调参指引
+
+#### 场景 A：误 KILL 多发（VLM 被审判错杀）
+
+把审判调"宽松"，让合法重试有更大配额：
+
+```bash
+AI_PHONE_AUDIT_ALLOW_LIMIT=50              # 审判放行上限从 30 抬到 50
+AI_PHONE_AUDIT_CLICK_BUCKET_TRIGGER=5      # 同坐标点 5 次才召唤
+AI_PHONE_AUDIT_SCREEN_REVISIT_TRIGGER=5    # 同屏访问 5 次才召唤
+AI_PHONE_AUDIT_PERIODIC_INTERVAL=50        # 周期巡检间隔从 30 拉到 50（更晚介入）
+AI_PHONE_CLICK_STUCK_THRESHOLD=6           # 卡死提示门槛从 4 抬到 6
+```
+
+#### 场景 B：严格收口（怕 VLM 烧 token）
+
+把所有阈值压紧，让 Run 早死：
+
+```bash
+AI_PHONE_RUN_MAX_STEPS=50                  # 单 Run 最多 50 步
+AI_PHONE_AUDIT_ALLOW_LIMIT=10              # 审判 10 次就 KILL
+AI_PHONE_AUDIT_PERIODIC_INTERVAL=15        # 每 15 步巡检（更频繁）
+AI_PHONE_RUN_MAX_WAIT_SEC=300              # 单步 wait 上限压到 5 分钟
+```
+
+#### 场景 C：长链 case（>30 步操作链）
+
+放宽硬上限，否则会被 SAFETY_MAX_STEPS 提前打断：
+
+```bash
+AI_PHONE_RUN_MAX_STEPS=300                  # 单 Run 上限拉到 300 步
+AI_PHONE_RUN_MAX_WAIT_SEC=3600              # wait 上限拉到 1 小时
+AI_PHONE_AUDIT_ALLOW_LIMIT=80               # ALLOW 上限随步数等比放大
+AI_PHONE_AUDIT_PERIODIC_INTERVAL=40         # 巡检间隔也拉大，避开"长 case 必然多次合法跳步"
+AI_PHONE_ITEM_TTL_SEC=10800                 # item TTL 从 1h 抬到 3h
+AI_PHONE_SUBMISSION_TTL_SEC=43200           # 批次 TTL 从 3h 抬到 12h
+```
+
+#### 场景 D：高频小批次（CI 集成场景）
+
+短任务快进快出，调度更激进：
+
+```bash
+AI_PHONE_SCHEDULER_TICK_SEC=0.5             # 调度 tick 提到 500ms
+AI_PHONE_ITEM_TTL_SEC=600                   # item 10 分钟兜底
+AI_PHONE_SUBMISSION_TTL_SEC=3600            # 批次 1 小时兜底
+AI_PHONE_RUN_MAX_STEPS=30                   # 短 case 单 Run 30 步够用
+```
+
+### 15.2 周期巡检（PERIODIC_INTERVAL）行为厘清
+
+这是开源用户最容易误解的一项，单独说明：
+
+- 它是**间隔**而不是"前 N 步冷启动延迟"。代码里 `step % N == 0` 就触发，没有"前 N 步不巡检"的逻辑
+- 默认 30 = 第一次巡检发生在 step=30，后续 60、90 步各一次
+- 调小 → 更早开始监督（更严，也更容易撞上前期合法跳步导致误 KILL）
+- 调大 → 更晚开始监督（更宽松，但走错路时迟一点才被发现）
+- 设为 0 → 完全关闭周期巡检，仅靠 detector 召唤
+
+误 KILL 多发时**应该调大**（如 50-60），不要调小。
+
+### 15.3 调参生效方式
+
+- 改 `.env` 后：
+  - server 端配置（`AI_PHONE_SUBMISSION_TTL_SEC` 等 §16/部分 §17）→ 重启 server 进程
+  - agent 端配置（§17 大部分 / §18 / §19 / §20）→ 重启 agent 进程
+  - 主决策模型 / 辅助模型相关（§5 / §6）→ 重启对应进程
+
+- 不改源码、不改测试，所有参数都是单一 truth source：`config.py` → `.env`
+
+### 15.4 不开放调节的"专家参数"
+
+下面这些虽然也是"看起来能调的数字"，但**没有 env 入口**——它们是项目内部经验值，没有数据复盘的乱调反而坏事：
+
+- `STRUCT_AUDIT_HISTORY_LIMIT = 100`（喂给审判的最近动作步数）
+- 稳定检测的 `threshold=0.04 / total_timeout=5s / poll=0.4s`
+- pHash 哈希位数等算法常量
+
+如果业务上确实需要调，请改源码并跑回归测试。
+
+---
+
+## 16. 代码参考
 
 本文主要基于以下实现位置梳理：
 

@@ -1,6 +1,6 @@
 """SubmissionScheduler：v1 第 2 梯队内部排队 + 调度核心。
 
-本文件严格遵守 `codex后续计划表.md` 里的 v1 冻结清单：
+本文件严格遵守项目内部 v1 冻结清单：
 
     **不修改** 既有的 WS `start_run` 协议（仍是 ``run_id / device_serial / goal``），
     **不修改** agent 侧执行流程，**不修改** /api/runs 已有字段。
@@ -44,19 +44,23 @@ from ..models import Device, Run, Submission, SubmissionItem
 from ..submissions import (
     ResultPublisher,
     StdoutPublisher,
+    WebhookPublisher,
     build_item_report_html,
     build_submission_summary_html,
     build_submission_terminal_event,
     build_terminal_event,
 )
 
-# v1 硬边界，跟 codex后续计划表.md 对齐
-DEFAULT_SUBMISSION_TTL_SEC = 3 * 60 * 60  # 3h
-DEFAULT_ITEM_TTL_SEC = 60 * 60            # 1h
+# v1 硬边界（项目内部冻结约定）
+# 模块加载时一次性从 settings 拍下；运维改 .env 后重启 server 生效。
+# 保留模块级常量名是为向后兼容（外部测试 / monkeypatch 直接拿这些名字用）。
+_settings = get_settings()
+DEFAULT_SUBMISSION_TTL_SEC = _settings.submission_ttl_sec  # 默认 3h，env: AI_PHONE_SUBMISSION_TTL_SEC
+DEFAULT_ITEM_TTL_SEC = _settings.item_ttl_sec              # 默认 1h，env: AI_PHONE_ITEM_TTL_SEC
 # scheduler 背景 tick 周期：兜底，确保就算没有人"踢一脚"，队列也会被扫。
 # 事件驱动路径（on_run_done / on_readiness_change / submit）都会 kick 一下，真正
-# 决定延迟的是 kick 队列；这里只是防漏网。
-SCHEDULER_TICK_SEC = 2.0
+# 决定延迟的是 kick 队列；这里只是防漏网。env: AI_PHONE_SCHEDULER_TICK_SEC
+SCHEDULER_TICK_SEC = _settings.scheduler_tick_sec
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +71,7 @@ SCHEDULER_TICK_SEC = 2.0
 ALLOWED_PLATFORMS = ("android", "ios", "harmony")
 
 
-# v1 statusReason 枚举（11 项），详见 codex后续计划表.md P1。
+# v1 statusReason 枚举（11 项，项目内部 P1 冻结）。
 # 放这里方便其他模块（测试 / 文档生成）统一引用，避免字符串散落。
 #
 # ─── 为什么不是 12 项？ ──────────────────────────────────────────────────
@@ -128,7 +132,7 @@ def _classify_error_reason(message: str) -> str:
 
 class AdmissionError(ValueError):
     """准入失败的领域错误。``index`` 指向请求体里第几条 item 出错；``reason`` 是
-    ``codex后续计划表.md`` 里定义的 rejectReason 枚举。``detail`` 给人看。"""
+    v1 冻结的 rejectReason 枚举。``detail`` 给人看。"""
 
     def __init__(self, reason: str, detail: str, *, index: Optional[int] = None) -> None:
         super().__init__(detail)
@@ -156,8 +160,10 @@ class ItemDraft:
     case_name: Optional[str] = None
 
 
-def parse_and_validate(raw_body: Any) -> Tuple[str, List[ItemDraft]]:
-    """把外部 JSON 解析为 ``(submission_name, drafts)``。
+def parse_and_validate(
+    raw_body: Any,
+) -> Tuple[str, Optional[str], List[ItemDraft]]:
+    """把外部 JSON 解析为 ``(submission_name, callback_url, drafts)``。
 
     **唯一受理格式（v1.7）**——wrapper 对象 + 池语义单条 item：
 
@@ -214,6 +220,25 @@ def parse_and_validate(raw_body: Any) -> Tuple[str, List[ItemDraft]]:
 
     name_raw = raw_body.get("submissionName")
     submission_name = str(name_raw).strip() if name_raw else ""
+
+    callback_url: Optional[str] = None
+    cb_raw = raw_body.get("callbackUrl")
+    if cb_raw is not None and cb_raw != "":
+        if not isinstance(cb_raw, str):
+            raise AdmissionError("invalid_body", "callbackUrl 必须是字符串")
+        cb_str = cb_raw.strip()
+        if not (cb_str.startswith("http://") or cb_str.startswith("https://")):
+            raise AdmissionError(
+                "invalid_body",
+                "callbackUrl 必须以 http:// 或 https:// 开头",
+            )
+        if len(cb_str) > 1024:
+            raise AdmissionError(
+                "invalid_body",
+                f"callbackUrl 长度不能超过 1024（当前 {len(cb_str)}）",
+            )
+        callback_url = cb_str
+
     items_list = raw_body.get("items")
     if not isinstance(items_list, list):
         raise AdmissionError(
@@ -334,7 +359,7 @@ def parse_and_validate(raw_body: Any) -> Tuple[str, List[ItemDraft]]:
                 device_alias_pool=normalized_pool,
                 case_name=case_name or None,
             ))
-    return submission_name, out
+    return submission_name, callback_url, out
 
 
 # ---------------------------------------------------------------------------
@@ -466,7 +491,7 @@ class SubmissionScheduler:
         - 老：``[{}, {}]``
         - 新：``{"submissionName": "...", "items": [{}, {}]}``
         """
-        submission_name, drafts = parse_and_validate(raw_body)
+        submission_name, callback_url, drafts = parse_and_validate(raw_body)
 
         # "每个端必须至少有一台 online 设备"才准入；这里不要求 ready，以避免
         # 一台临时锁屏就整批打回（排队等就行）。
@@ -544,6 +569,7 @@ class SubmissionScheduler:
             raw_body=raw_body_to_store,
             accepted_at=now,
             expire_at=expire_at,
+            callback_url=callback_url,
         )
         items: List[SubmissionItem] = []
         for d in drafts:
@@ -945,6 +971,7 @@ class SubmissionScheduler:
                 summary_report_url=summary_url,
             )
             await self._publisher.publish_terminal(event)
+            await self._maybe_send_webhook(sub, event)
             logger.info(
                 "[scheduler] submission 终态收口 submission={} state={} items={} summary={}",
                 submission_id, sub.state, len(items), summary_url or "<failed>",
@@ -953,6 +980,29 @@ class SubmissionScheduler:
             logger.warning(
                 "[scheduler] 广播 submission.terminal 失败 submission={} err={}",
                 submission_id, exc,
+            )
+
+    async def _maybe_send_webhook(
+        self,
+        submission: Submission,
+        event: Dict[str, Any],
+    ) -> None:
+        """v1.8 webhook 旁路：批次投递时若带 callbackUrl，主 publisher 之后再发一次
+        HTTP 回调（fire-and-forget，5s 超时，失败吞异常）。
+
+        与 Kafka / stdout 主通道并存，完全独立——一个挂掉不影响另一个。
+        WebhookPublisher 内部已经吞了所有异常，本方法的 try 只是双保险。
+        """
+        callback_url = getattr(submission, "callback_url", None)
+        if not callback_url:
+            return
+        try:
+            webhook = WebhookPublisher(url=callback_url)
+            await webhook.publish_terminal(event)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[scheduler] webhook 旁路异常（吞）submission={} url={} err={}",
+                submission.id, callback_url, exc,
             )
 
     # ------------------------------------------------------------------
@@ -997,7 +1047,7 @@ class SubmissionScheduler:
                 if not item.status_reason:
                     item.status_reason = "cancelled_by_request"
             else:
-                # result=error 的兜底分类——严格按 codex后续计划表.md P1 的 12 项
+                # result=error 的兜底分类——严格按 v1 P1 冻结的 12 项
                 # 枚举落位。Agent 上报的 message 没带明确 prefix 的，一律归到
                 # executor_error；有明显关键字的再细分。
                 item.state = "failed"

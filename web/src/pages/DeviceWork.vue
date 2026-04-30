@@ -20,6 +20,10 @@ const wsConnected = ref(false)
 const goal = ref('')
 const busy = ref(false)
 const submitError = ref(null)
+// 引擎选择（仅在 midsceneEnabled=true 时下拉框可见，缺省永远 'vlm'）
+// 详见仓库根 Midscene执行器接入方案.md
+const selectedEngine = ref('vlm')
+const midsceneEnabled = ref(false)
 // 屏幕尺寸（设备端逻辑像素），用于点击坐标归一化；没拿到前按 video 元素尺寸兜底
 const devicePixel = ref({ w: 0, h: 0 })
 const tapBusy = ref(false)
@@ -523,17 +527,28 @@ function onMessage(msg) {
         })
       }
       break
-    case 'run_done':
+    case 'run_done': {
+      // 'finished'（vlm 主链路）和 'pass'（外接引擎）都视为成功；其余皆失败
+      const isOk = msg.result === 'finished' || msg.result === 'pass'
       pushLog({
-        level: msg.result === 'finished' ? 1 : 3,
+        level: isOk ? 1 : 3,
         title: `Run 结束 → ${msg.result}`,
         content: msg.message || '',
         timestamp: Date.now() / 1000,
       })
+      // 拿一次最新的 Run 记录，把 external_report_url（外接引擎，如 Midscene）刷出来
+      // 让"打开外部报告"按钮生效
+      const finishedId = currentRunId.value
+      if (finishedId) {
+        api.getRun(finishedId)
+          .then((r) => { currentRun.value = r })
+          .catch(() => {})
+      }
       currentRunId.value = null
       refreshDevice()
       // 新锁模型：锁一直归本 tab，不需要 Run 结束后再抢
       break
+    }
     case 'device_update':
       refreshDevice()
       pushLog({
@@ -574,6 +589,9 @@ async function startRun() {
       device_serial: serial.value,
       goal: goal.value.trim(),
       lock_token: lock.token.value || undefined,
+      // engine：缺省 'vlm'（与历史行为完全等价）；'midscene' 仅在后端
+      // AI_PHONE_MIDSCENE_ENABLED=true 时被接受，下拉框也仅在那时可见
+      engine: selectedEngine.value || 'vlm',
     })
     currentRunId.value = res.id
     currentRun.value = res
@@ -607,6 +625,12 @@ function clearLogs() {
 }
 
 onMounted(async () => {
+  // 拉一次后端功能开关：是否暴露 Midscene 引擎下拉框等
+  // 失败不阻塞主流程；缺省按"全部关闭"渲染
+  api.getConfig()
+    .then((cfg) => { midsceneEnabled.value = !!cfg?.midscene_enabled })
+    .catch(() => { midsceneEnabled.value = false })
+
   await refreshDevice()
   // 先抢锁：409 意味着别的 tab / job 已占用，按"报错拦截"方案渲染提示页，不开 WS
   const info = await lock.acquire()
@@ -853,6 +877,18 @@ watch(
 
       <div class="right" :style="rightColStyle">
         <div class="goal-panel">
+          <!-- 引擎下拉框：仅在后端 AI_PHONE_MIDSCENE_ENABLED=true 时可见。
+               缺省永远 'vlm'（与历史行为完全等价）。详见 Midscene执行器接入方案.md -->
+          <div v-if="midsceneEnabled" class="engine-row">
+            <label>执行引擎</label>
+            <select
+              v-model="selectedEngine"
+              :disabled="!!currentRunId || lock.readonly.value"
+            >
+              <option value="vlm">vlm（默认 / ai-phone 主链路）</option>
+              <option value="midscene">midscene（外接寄居）</option>
+            </select>
+          </div>
           <label>Goal（自然语言目标）</label>
           <textarea
             v-model="goal"
@@ -869,6 +905,12 @@ watch(
           </div>
           <p v-if="submitError" class="err">{{ submitError }}</p>
           <p v-if="currentRunId" class="info">run_id: {{ currentRunId }}</p>
+          <!-- 外接引擎（如 Midscene）跑完后展示报告链接；vlm 路径永远不带这个字段 -->
+          <p v-if="!currentRunId && currentRun && currentRun.external_report_url" class="info">
+            <a :href="currentRun.external_report_url" target="_blank" rel="noopener">
+              打开 {{ (currentRun.engine || 'external') }} 报告 →
+            </a>
+          </p>
         </div>
 
         <div class="log-fill">
@@ -1271,6 +1313,28 @@ h2 {
   border: 1px solid #d1d5db;
   border-radius: 6px;
   font-family: inherit;
+}
+.engine-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.engine-row label {
+  font-size: 13px;
+  color: #374151;
+  white-space: nowrap;
+}
+.engine-row select {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  background: #fff;
+}
+.engine-row select:disabled {
+  background: #f3f4f6;
+  cursor: not-allowed;
 }
 .btn-row {
   display: flex;

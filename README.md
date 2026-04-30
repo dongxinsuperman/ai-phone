@@ -1,10 +1,35 @@
 # ai-phone
 
-轻量 VLM 视觉自动化平台，前后端分离。详细设计见 [`架构设计.md`](./架构设计.md)。
+**面向中小型公司的三端真机 AI 自动化中台** —— iOS / Android / HarmonyOS 同级原生支持，自然语言驱动的纯视觉决策，开箱即用的调度队列与多设备并发，执行器可插拔，一台 Mac 即可起完整链路。
 
-- `backend/`：Python 3.9，同一个包按启动参数切换 Server / Agent 角色
+> **产品形态**：ai-phone 不是一个执行器 SDK，而是把"投递批次 → 设备池调度 → 自然语言执行 → 终态广播 + HTML 报告 + 大盘统计"做成 QA 团队 / 业务回归大盘开箱即用的中台能力。**执行器是其中一个可替换组件**：默认内置自研的 VLM 纯视觉决策循环（带卡死检测 / 审判 / 断言等辅助系统），也可挂载第三方执行器作为额外引擎选项。
+
+详细设计见 [`架构设计.md`](./架构设计.md)。
+
+- `backend/`：Python 3.11（`pyproject.toml` 锁 `>=3.11,<3.13`），同一个包按启动参数切换 Server / Agent 角色
 - `web/`：Vue 3 + Vite 前端（**纯 JavaScript，无 TypeScript**）
 - `deploy/`：k8s / Nginx 部署模板（M4 阶段补）
+
+---
+
+## 为什么选 ai-phone
+
+| 能力维度 | ai-phone 提供的 |
+|---|---|
+| **三端真机原生** | iOS（WDA / mjpeg passthrough）/ Android（adb + scrcpy）/ HarmonyOS（hdc + hypium）三端等价。鸿蒙作为一等公民与 iOS / Android 同等支持，在开源生态里少见 |
+| **调度队列 + 多设备并发** | `POST /api/submissions` 投递批次 → 实时按 `device_alias_pool` 分发到设备池 → Submission / Item TTL 兜底超时 → Kafka / Webhook 双通道终态广播 → HTML 报告自动落盘。设备占用锁 + readiness gate 防止派单到僵尸设备 |
+| **自然语言驱动** | `runContent: "打开设置并进入关于本机"` 直接喂给 VLM，不写 selector / xpath / 步骤脚本 |
+| **纯视觉决策** | 每步只看截图，不依赖 DOM / 控件树 / 无障碍服务，跨 App 跨平台不挑食 |
+| **辅助系统护城河** | 卡死检测（本地 pHash 算法层、不烧 token）+ 异常介入审判（独立轻量模型，反复同坐标 / 同屏 / 震荡滑动自动召唤）+ 双图断言系统（before / after + 全步骤上下文对照终局裁决）+ 通道判定（结构化 / 自由对话自动分流）—— "VLM 是否真生效"不再是黑盒 |
+| **三家协议自由组合** | 主 VLM 走 Doubao / Claude / GPT 三选一，辅助系统也可异家组合（如"主 Claude + 辅 Doubao 省成本"），全部走 env 切换、零代码改动 |
+| **执行器可插拔** | 默认内置自研 VLM 决策循环；前端"引擎"下拉框允许挂载第三方执行器作为额外选项，调度 / 报告 / 设备池 / 终态广播仍然走中台统一链路 |
+| **快速部署** | 一台 Mac + Postgres + 一根数据线即可起完整链路；K8s / Nginx 部署模板见 `deploy/`（M4 补） |
+
+**典型用户**：
+
+- 中小型公司 QA 团队 —— 真机上做 AI 化的兼容性 / 回归 / 冒烟测试
+- 业务回归大盘想从"脚本维护"切到"自然语言投递"
+- 海外团队需要切 Claude / GPT 跑英文 App（改两个 env 即用，详见 `backend/.env.example` §5/§6）
 
 ---
 
@@ -12,7 +37,7 @@
 
 | 模块 | 状态 |
 |---|---|
-| 对外 AI 云真机执行器 API `/api/submissions`（匿名）+ Kafka/stdout 终态广播 + HTML 报告 | v1 完整（Kafka broker 未到位前以 stdout 形态运行，`AI_PHONE_BROADCAST_BACKEND` 切换，详见 [`codex后续计划表.md` §第 3 梯队落位进度](./codex后续计划表.md)） |
+| 对外 AI 云真机执行器 API `/api/submissions`（匿名）+ Kafka/stdout/webhook 终态广播 + HTML 报告 | v1 完整（broker 未到位前以 stdout 形态运行，`AI_PHONE_BROADCAST_BACKEND` 切换，详见 [`对外调用清单.md`](./对外调用清单.md) §6 Kafka / §7 Webhook） |
 | 内部队列总览页 `/queue`（设备状态 + 手工投递 + Run 日志抽屉） | 完整 |
 | Android Driver（adbutils） | 完整 |
 | Android 中文输入（ADBKeyBoard 自动 push/install/activate） | 完整 |
@@ -22,8 +47,8 @@
 | VLM 决策循环（迁移自 5-VLM 全权处理.groovy） | 完整，含 Responses API + 显式缓存 + 会话分段（详见「架构设计.md」§7.1） |
 | 历史回放页 `/runs/:id` | API 已就位，前端待补 |
 | Case 加载/保存对话框 | API 已就位，前端待补 |
-| iOS Driver / iOS 镜像 | **完整**：WDA tap/swipe + 输入、DVT 截图、VLM run 全链路；镜像默认 `mjpeg_passthrough`（旋转/分辨率天然自适应），可降级 `wda_mjpeg`（H.264/MSE）/ `dvt_screenshot`（无 WDA 兜底）。详见 [启动终端清单.md §7](./启动终端清单.md#7-切镜像后端三端总表-高级可选) |
-| HarmonyOS Driver / HarmonyOS 镜像 | **完整**：hmdriver2 控制（含 socket 自愈）+ hypium Captures MJPEG 镜像（实测 ~30fps、<100ms 延迟，折叠/异形屏天然自适应），可降级 `screenshot`（hdc 截图轮询，~8-10fps，hypium 不可用时兜底）。详见 [HarmonyOS环境配置笔记.md](./HarmonyOS环境配置笔记.md) |
+| iOS Driver / iOS 镜像 | **完整**：WDA tap/swipe + 输入、DVT 截图、VLM run 全链路；镜像默认 `mjpeg_passthrough`（旋转/分辨率天然自适应），可降级 `wda_mjpeg`（H.264/MSE）/ `dvt_screenshot`（无 WDA 兜底）。三档切换走 `AI_PHONE_IOS_MIRROR_BACKEND` env |
+| HarmonyOS Driver / HarmonyOS 镜像 | **完整**：hmdriver2 控制（含 socket 自愈）+ hypium Captures MJPEG 镜像（实测 ~30fps、<100ms 延迟，折叠/异形屏天然自适应），可降级 `screenshot`（hdc 截图轮询，~8-10fps，hypium 不可用时兜底）。后端切换走 `AI_PHONE_HARMONY_MIRROR_BACKEND` env |
 | 日志服务系统（统一收集/检索） | 待办（用户排期） |
 | 生产部署（k8s / Nginx） | 待 M4 |
 
@@ -33,7 +58,7 @@
 
 ### 前置
 
-- macOS，Python 3.9（系统自带 `/usr/bin/python3` 即可），Node 18+
+- macOS，Python 3.11（`brew install python@3.11`，**不要用系统自带的 3.9**：pmd3 9.x / aiokafka 0.11+ / ruff py311 都要求 3.11+），Node 18+
 - `brew install android-platform-tools ffmpeg`
   - **`ffmpeg` 是镜像必需依赖**（agent 内部子进程调用）
 - PostgreSQL：本机 Homebrew Postgres 或远程实例皆可，连接串走 `AI_PHONE_DB_URL`
@@ -76,7 +101,7 @@ psql "$AI_PHONE_DB_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 
 ```bash
 cd backend
-/usr/bin/python3 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 
@@ -139,7 +164,7 @@ pip install -e ".[ios]"   # pymobiledevice3 9.x（iOS 17+/26 必需）
 
 ### 启动终端清单
 
-详见 [`启动终端清单.md`](./启动终端清单.md)。日常 iOS 调试需要的终端：
+日常 iOS 调试需要的终端：
 
 - 终端 A：`sudo pymobiledevice3 remote tunneld`（DVT 截图通道，iOS 17+ 必备，常驻）
 - 终端 D：后端 Server（`uvicorn ai_phone.server.app:app ...`）
@@ -207,7 +232,7 @@ sudo -E /path/to/backend/.venv/bin/python -m pymobiledevice3 mounter auto-mount 
 
 ### 目前已知限制
 
-- iOS 镜像默认已切到 `mjpeg_passthrough`（实测 15-20fps、旋转天然自适应），`wda_mjpeg` / `dvt_screenshot` 留作降级。详见 [启动终端清单.md §7](./启动终端清单.md#7-切镜像后端三端总表-高级可选)
+- iOS 镜像默认已切到 `mjpeg_passthrough`（实测 15-20fps、旋转天然自适应），`wda_mjpeg` / `dvt_screenshot` 留作降级。三档切换走 `AI_PHONE_IOS_MIRROR_BACKEND` env
 - WDA Bundle Identifier 必须唯一（不能用默认 `com.facebook.WebDriverAgentRunner`，Personal Team 不让注册），首次在 Xcode 里改一次即可
 - SpringBoard（桌面）上的 `element click` 不稳定（rect 为 0），控制层自动回退到坐标 tap / swipe
 
@@ -224,16 +249,19 @@ pip install -e ".[harmony]"   # 拉 hmdriver2，纯 Python，~5MB
 
 `hdc` 二进制随 DevEco Studio 一起装；agent 启动时会自动从常见安装路径补上 PATH，多数情况下不用手动 export。
 
-完整环境配置 + 排障 + 给测试团队的"raw driver 后门" → [`HarmonyOS环境配置笔记.md`](./HarmonyOS环境配置笔记.md)
-完整方案演进 + P3-A/P3-B 双后端的来龙去脉 → [`HarmonyOS接入方案_2026-04-20.md`](./HarmonyOS接入方案_2026-04-20.md)
+**HarmonyOS 启动顺序**和 iOS/Android 完全一样，只是不需要 tunneld（DVT 是 iOS 专属）：
 
-启动顺序和 iOS/Android 完全一样，只是不需要 tunneld（DVT 是 iOS 专属）。终端清单看 [启动终端清单.md §4.5](./启动终端清单.md#45-harmonyos-日常3-个终端)。
+- 终端 D：后端 Server（`uvicorn ai_phone.server.app:app ...`）
+- 终端 E：后端 Agent（`python -m ai_phone agent`，自动扫 `hdc list targets`）
+- 终端 F：前端（`npm run dev`）
+
+镜像默认 `hypium`（~30fps、含视频图层），可通过 `AI_PHONE_HARMONY_MIRROR_BACKEND=screenshot` 回退到 hdc 截图轮询兜底。
 
 ---
 
 ## 对外 AI 云真机执行器 API（v1）
 
-完整契约见 [`codex后续计划表.md`](./codex后续计划表.md)，这里只给调用速记。
+完整契约 + 字段说明 + 错误码 + Kafka/Webhook 回调格式见 [`对外调用清单.md`](./对外调用清单.md)，这里只给调用速记。
 
 ### 投递一批（匿名）
 

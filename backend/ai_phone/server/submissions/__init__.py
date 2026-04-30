@@ -1,10 +1,11 @@
 """v1 第 3 梯队：submission 终态广播 + HTML 报告 + 对外查询路由。
 
-本包的职责边界（严格按 codex后续计划表.md v1 契约）：
+本包的职责边界（严格按 v1 冻结契约）：
 
 * ``publisher`` —— ``ResultPublisher`` 抽象 + StdoutPublisher（默认）+
-  KafkaPublisher（mock 占位，真实 broker 接入时只改这一块）。scheduler 在
-  item 进入终态（success / failed / cancelled）时调一次 ``publish_terminal``。
+  KafkaPublisher（aiokafka 真发，broker 缺位降 mock）+ WebhookPublisher
+  （per-submission 一次性 HTTP 回调）。scheduler 在 item 进入终态
+  （success / failed / cancelled）时调一次 ``publish_terminal``。
 * ``events``   —— 把 ``SubmissionItem`` + 关联 ``Run`` 序列化成"广播事件"字典。
   包含 reportUrl（如已生成）/ elapsedMs / tokenStats / statusReason / state 等
   供外部平台消费的最小字段集。
@@ -29,6 +30,7 @@ from .publisher import (
     NullPublisher,
     ResultPublisher,
     StdoutPublisher,
+    WebhookPublisher,
     make_publisher,
 )
 from .reports import (
@@ -43,6 +45,7 @@ __all__ = [
     "StdoutPublisher",
     "KafkaPublisher",
     "NullPublisher",
+    "WebhookPublisher",
     "make_publisher",
     "build_terminal_event",
     "build_submission_terminal_event",

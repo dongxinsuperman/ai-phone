@@ -43,7 +43,7 @@ from ai_phone.agent.mirror import (
     extract_resolution_from_moov,
     extract_sps_nal as _extract_sps_nal,
 )
-from ai_phone.agent.runner import VLMRunner
+from ai_phone.agent.runner import build_runner
 from ai_phone.agent.runner_bridge import RunnerBridge
 from ai_phone.agent.scrcpy_client import (
     EVENT_DISCONNECT as _SCRCPY_EVENT_DISCONNECT,
@@ -417,6 +417,9 @@ async def _handle_start_run(
     run_id = str(msg.get("run_id") or "").strip()
     serial = str(msg.get("device_serial") or "").strip()
     goal = str(msg.get("goal") or "").strip()
+    # 引擎选择：缺省 'vlm'（与历史行为完全等价）。'midscene' 等外接引擎走不同路径，
+    # 比如不开 ai-phone driver、不走 vlm_loop。详见 `Midscene执行器接入方案.md`。
+    engine = str(msg.get("engine") or "vlm").strip().lower() or "vlm"
     if not (run_id and serial and goal):
         logger.warning("start_run 参数不全 | run_id={} serial={} goal_len={}", run_id, serial, len(goal))
         return
@@ -445,32 +448,40 @@ async def _handle_start_run(
     )
 
     async def _run_task() -> None:
-        try:
-            driver = await asyncio.to_thread(_get_or_open_driver, serial)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("打开设备失败 serial={}", serial)
-            await client.send(
-                {
-                    "type": P.MSG_RUN_DONE,
-                    "run_id": run_id,
-                    "serial": serial,
-                    "result": "error",
-                    "message": f"open_driver_failed: {exc}",
-                    "steps": 0,
-                    "elapsed_ms": 0,
-                    "token_stats": {},
-                }
-            )
-            await bridge.aclose()
-            supervisor.pop(run_id)
-            return
+        # 外接引擎（如 midscene）不需要 ai-phone 自己的 driver 缓存：它们自带 ADB
+        # 客户端，由 bridge 子进程操作设备。这里跳过 _get_or_open_driver 既省时间，
+        # 也避免在不需要时把 iOS WDA / scrcpy 这类副作用带起来。
+        driver = None
+        if engine == "vlm":
+            try:
+                driver = await asyncio.to_thread(_get_or_open_driver, serial)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("打开设备失败 serial={}", serial)
+                await client.send(
+                    {
+                        "type": P.MSG_RUN_DONE,
+                        "run_id": run_id,
+                        "serial": serial,
+                        "result": "error",
+                        "message": f"open_driver_failed: {exc}",
+                        "steps": 0,
+                        "elapsed_ms": 0,
+                        "token_stats": {},
+                    }
+                )
+                await bridge.aclose()
+                supervisor.pop(run_id)
+                return
 
         try:
-            runner = VLMRunner(
+            runner = build_runner(
+                engine=engine,
                 run_id=run_id,
+                serial=serial,
                 driver=driver,
                 goal=goal,
                 emit=bridge.emit,
+                settings=settings,
             )
         except RuntimeError as exc:
             await client.send(

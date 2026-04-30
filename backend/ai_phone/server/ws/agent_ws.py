@@ -460,13 +460,17 @@ async def _persist_step(msg: Dict[str, Any]) -> None:
 async def _finalize_run(run_id: str, msg: Dict[str, Any]) -> None:
     result = str(msg.get("result") or "error")
     status_map = {
-        "finished": "success",
+        "finished": "success",  # vlm 主循环：finished 视为成功
+        "pass": "success",      # 外接引擎统一语义：pass 视为成功
         "assert_fail": "failed",
+        "fail": "failed",       # 外接引擎：fail 视为失败
         "error": "failed",
         "cancelled": "stopped",
     }
     final_status = status_map.get(result, "failed")
     reason = str(msg.get("message") or "")
+    # external_report_url 仅外接引擎（如 Midscene）会带；vlm runner 永远不带，保持 None
+    external_report_url = msg.get("external_report_url")
 
     async def op(session: AsyncSession) -> None:
         run = await session.get(Run, run_id)
@@ -477,6 +481,8 @@ async def _finalize_run(run_id: str, msg: Dict[str, Any]) -> None:
         run.steps = int(msg.get("steps") or run.steps or 0)
         run.elapsed_ms = int(msg.get("elapsed_ms") or run.elapsed_ms or 0)
         run.token_summary = msg.get("token_stats") or run.token_summary or {}
+        if external_report_url:
+            run.external_report_url = str(external_report_url)[:512]
         run.finished_at = datetime.now(timezone.utc)
         await session.commit()
 

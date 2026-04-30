@@ -95,6 +95,9 @@ export const api = {
   createRun: (payload) => request('POST', '/api/runs', { body: payload }),
   stopRun: (id) => request('POST', `/api/runs/${id}/stop`),
 
+  // 前端启动时读一次的功能开关快照（midscene_enabled 等）；详见 Midscene执行器接入方案.md
+  getConfig: () => request('GET', '/api/config'),
+
   // 手动输入：必须带 lock_token（自己这个 tab 持有的 token），后端据此校验
   sendInput: (serial, payload) =>
     request('POST', `/api/devices/${encodeURIComponent(serial)}/input`, {

@@ -1,0 +1,31 @@
+{
+  "name": "midscene-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Midscene 执行器适配层 — 寄居在 ai-phone 项目下的独立 Node 工程；ai-phone 主仓只负责 spawn 此进程并解析 stdout JSON。",
+  "main": "dist/run.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "ts-node src/run.ts",
+    "clean": "rm -rf dist",
+    "rebuild": "npm run clean && npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@midscene/android": "^1.7.6",
+    "@midscene/core": "^1.7.6",
+    "@midscene/shared": "^1.7.6",
+    "@types/js-yaml": "^4.0.9",
+    "dotenv": "^16.4.5",
+    "js-yaml": "^4.1.1"
+  },
+  "devDependencies": {
+    "@midscene/cli": "^1.7.6",
+    "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  }
+}

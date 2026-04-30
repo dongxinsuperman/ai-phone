@@ -142,7 +142,13 @@ class MirrorJpegMsg(TypedDict, total=False):
     ts: float
 
 
-RunResult = Literal["finished", "assert_fail", "error", "cancelled"]
+RunResult = Literal["finished", "assert_fail", "error", "cancelled", "fail"]
+# 'fail' 是外接引擎（Midscene）专用 —— 它不区分 finished / assert_fail，
+# 所有"任务声称失败"统一是 fail。Server 端 _finalize_run 会映射成 status='failed'。
+
+# 引擎选择。'vlm' = ai-phone 主 VLM 主循环（默认）；'midscene' = 外接寄居引擎。
+# 详细方案见仓库根 `Midscene执行器接入方案.md`。
+RunEngine = Literal["vlm", "midscene"]
 
 
 class RunDoneMsg(TypedDict, total=False):
@@ -153,6 +159,8 @@ class RunDoneMsg(TypedDict, total=False):
     steps: int
     elapsed_ms: int
     token_stats: Dict[str, Any]
+    # 仅外接引擎填；ai-phone 自己的 vlm runner 永远不带
+    external_report_url: Optional[str]
 
 
 class PongMsg(TypedDict):
