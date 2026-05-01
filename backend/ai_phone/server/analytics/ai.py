@@ -1,32 +1,43 @@
-"""大盘 AI 分析客户端：纯文本一次性调用 chat completion。
+"""大盘 AI 分析客户端：通过辅助系统工厂调多协议 chat completion。
 
-和 ``shared/vlm.py``（主 VLM 决策）的区别：
+设计变迁（重要）：
 
-- VLMClient 走 Responses API（会话状态 / 截图输入 / caching 前缀），不适合单次纯文本
-- 这里走 ``/chat/completions`` 端点，单次问答、不落 previous_response_id、不维护历史
-- 不做重试：用户明确要求"报错先不加重试"；前端失败就把错误原样展示，让用户决定
+- 早期：本文件自己用 ``httpx`` 走豆包 ``/chat/completions``，硬绑死豆包协议
+- 现在：通过 :func:`ai_phone.shared.llm.create_assistant` 拿到三家协议之一
+  的 ``BaseAssistant`` 实例，调其 ``analyze_text`` —— 跟随 ``assistant_backend``
+  自动切换到 Doubao / Claude / OpenAI
 
-模型档位选择（与辅助系统对齐）：
+这样大盘 AI 分析与"包名匹配 / 通道判定 / 审判 / 断言"4 个辅助调用同源，
+开源用户切到 Claude 主 VLM + OpenAI 辅助系统这种异构组合时，AI 分析自动跟
+随辅助系统的协议切换，**不再绑死豆包**。
 
-- AI 分析是**纯文本任务**（喂 JSON 出文字总结），不需要 vision 能力。
-- 默认走 ``assistant_*`` 配置（如 ``doubao-seed-1-6-250615`` 通用版），比 vision
-  专版便宜快一档；与"包名匹配 / 通道判定 / 审判 / 断言"4 个辅助调用同档。
-- ``assistant_*`` 留空时回退到 ``vlm_*``（兼容老 .env：主辅同 key 同模型）。
-- 调用方可显式传 ``api_url / api_key / model`` 覆盖默认值。
+为什么 AI 分析归属辅助系统而非主 VLM：
 
-输入：聚合切片 dict；输出：人类可读中文分析文本 + usage 摘要。
+- AI 分析是**纯文本任务**（喂大盘 JSON、出文字总结），用不上 vision 能力
+- 与辅助系统的 4 个调用同属"chat completion 系"，模型档位、计费档位天然对齐
+- 切到 Claude / GPT 时，主 VLM 仍走 computer-use 系列，辅助 + AI 分析共用普通 chat
+
+本模块仅保留：
+
+- :class:`AnalyticsAIError`：HTTP 状态码包装异常（路由层 try/except 用）
+- :class:`AnalyticsAIClient`：薄包装；构造时拿 assistant 实例，``analyze`` 调
+  ``analyze_text``
+- :func:`build_user_prompt`：把聚合 snapshot 压成给模型的 user 消息
+- ``_SYSTEM_PROMPT``：4 段输出格式约束
+
+``AnalysisResult`` 类型从 ``shared.llm.base`` re-export，避免双 dataclass
+漂移导致字段悄悄不一致。
 """
 from __future__ import annotations
 
 import json
-import time
-from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-import httpx
 from loguru import logger
 
 from ai_phone.config import get_settings
+from ai_phone.shared.llm import create_assistant
+from ai_phone.shared.llm.base import AnalysisResult
 
 
 # 默认给前端的简要兜底文案（仅在 client 未配置时使用，避免 500）
@@ -42,16 +53,6 @@ class AnalyticsAIError(RuntimeError):
     def __init__(self, message: str, *, status_code: int = 502) -> None:
         super().__init__(message)
         self.status_code = status_code
-
-
-@dataclass
-class AnalysisResult:
-    model: str
-    text: str
-    elapsed_ms: int
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +177,7 @@ def _compact_payload(snapshot: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def build_user_prompt(snapshot: Dict[str, Any]) -> str:
-    """给豆包的单次 user 消息：数据 JSON 裸贴，前面加一句话问题。"""
+    """给模型的单次 user 消息：数据 JSON 裸贴，前面加一句话问题。"""
     trimmed = _compact_payload(snapshot)
     body = json.dumps(trimmed, ensure_ascii=False, separators=(",", ":"))
     date = snapshot.get("date") or "今日"
@@ -187,109 +188,64 @@ def build_user_prompt(snapshot: Dict[str, Any]) -> str:
 # Client
 # ---------------------------------------------------------------------------
 class AnalyticsAIClient:
-    """封装一次 chat completion 请求；不带重试、不带多轮。"""
+    """AI 分析客户端薄包装：通过辅助系统工厂走多协议。
+
+    构造时按 ``settings.assistant_backend``（doubao_chat / claude / openai）
+    创建对应实现；``analyze`` 调用其 ``analyze_text``，把 RuntimeError 翻译
+    成 :class:`AnalyticsAIError`（带 HTTP 状态码，给路由层用）。
+    """
 
     def __init__(
         self,
         *,
-        api_url: Optional[str] = None,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None,
+        assistant: Optional[Any] = None,
         timeout_seconds: float = 60.0,
     ) -> None:
-        s = get_settings()
-        # 与辅助系统对齐：assistant_* 优先（通用版便宜快、纯文本最匹配），
-        # 留空时回退 vlm_*（老 .env 兼容；主辅同 key 同模型场景无感）。
-        self.api_url = (api_url or s.assistant_api_url or s.vlm_chat_api_url or "").strip()
-        self.api_key = (api_key or s.assistant_api_key or s.vlm_api_key or "").strip()
-        self.model = (model or s.assistant_model or s.vlm_model or "").strip()
+        # 依赖注入支持：单测可以传 mock 实例进来；正常路径不传，按 backend 切
+        self._assistant = assistant or create_assistant()
         self.timeout = timeout_seconds
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.api_url and self.api_key and self.model)
+        """判断 assistant_* / vlm_* 是否至少一组完整。
+
+        与三家 ``analyze_text`` 内部的校验等价：``assistant_api_url``、
+        ``assistant_api_key or vlm_api_key``、``assistant_model`` 三件齐
+        备即视为已配置。
+        """
+        s = get_settings()
+        api_url = (s.assistant_api_url or "").strip()
+        api_key = (s.assistant_api_key or s.vlm_api_key or "").strip()
+        model = (s.assistant_model or "").strip()
+        return bool(api_url and api_key and model)
 
     async def analyze(self, snapshot: Dict[str, Any]) -> AnalysisResult:
-        """调豆包生成一段中文分析。失败抛 :class:`AnalyticsAIError`。"""
+        """调辅助系统生成一段中文分析。失败抛 :class:`AnalyticsAIError`。"""
         if not self.is_configured:
             raise AnalyticsAIError(_DEFAULT_UNCONFIGURED_HINT, status_code=400)
 
         user_prompt = build_user_prompt(snapshot)
 
-        payload = {
-            "model": self.model,
-            "temperature": 0.2,
-            "messages": [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-        }
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        t0 = time.monotonic()
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.post(self.api_url, json=payload, headers=headers)
-        except httpx.HTTPError as exc:
-            raise AnalyticsAIError(f"VLM 请求失败: {exc}", status_code=502) from exc
-
-        if resp.status_code != 200:
-            raise AnalyticsAIError(
-                f"VLM 返回 {resp.status_code}: {resp.text[:400]}",
-                status_code=502,
+            result = await self._assistant.analyze_text(
+                system=_SYSTEM_PROMPT,
+                user=user_prompt,
+                label="AI 分析",
+                thinking=False,
+                temperature=0.2,
+                timeout=self.timeout,
             )
+        except RuntimeError as exc:
+            # 三家 analyze_text 内部统一抛 RuntimeError（配置缺失 / 网络错误 /
+            # 非 200 响应 / 解析失败）。这里不区分原因，统一翻译成 502，让
+            # 前端原样展示 message——与历史"VLM 报错先不加重试"策略一致。
+            raise AnalyticsAIError(str(exc), status_code=502) from exc
 
-        elapsed_ms = int((time.monotonic() - t0) * 1000)
-        try:
-            data = resp.json()
-        except ValueError as exc:
-            raise AnalyticsAIError("VLM 返回非 JSON", status_code=502) from exc
-
-        text = _extract_chat_text(data)
-        if not text:
-            raise AnalyticsAIError(
-                "VLM 响应没有可用文本内容：" + json.dumps(data, ensure_ascii=False)[:400],
-                status_code=502,
-            )
-
-        usage = data.get("usage") or {}
-        result = AnalysisResult(
-            model=self.model,
-            text=text,
-            elapsed_ms=elapsed_ms,
-            prompt_tokens=int(usage.get("prompt_tokens") or 0),
-            completion_tokens=int(usage.get("completion_tokens") or 0),
-            total_tokens=int(usage.get("total_tokens") or 0),
-        )
         logger.info(
             "[analytics] AI 分析完成 date={} model={} elapsed={}ms tokens={}",
-            snapshot.get("date"), self.model, elapsed_ms, result.total_tokens,
+            snapshot.get("date"), result.model, result.elapsed_ms, result.total_tokens,
         )
         return result
-
-
-def _extract_chat_text(data: Dict[str, Any]) -> str:
-    """豆包 Chat Completions: ``choices[0].message.content``；防御性处理一下 content 是 list 的情况。"""
-    choices = data.get("choices") or []
-    if not choices:
-        return ""
-    msg = (choices[0] or {}).get("message") or {}
-    content = msg.get("content")
-    if isinstance(content, str):
-        return content.strip()
-    # 少数情况下 content 是 list of {type, text}
-    if isinstance(content, list):
-        parts = []
-        for c in content:
-            if isinstance(c, dict) and c.get("type") in ("text", "output_text"):
-                t = c.get("text")
-                if isinstance(t, str):
-                    parts.append(t)
-        return "".join(parts).strip()
-    return ""
 
 
 __all__ = [

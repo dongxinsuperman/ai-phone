@@ -24,12 +24,13 @@
 from __future__ import annotations
 
 import base64
+import time
 from typing import Any, Dict, List, Optional
 
 import httpx
 
 from ai_phone.config import get_settings
-from ai_phone.shared.llm.base import TokenCounter
+from ai_phone.shared.llm.base import AnalysisResult, TokenCounter
 
 __all__ = ["OpenAIAssistant"]
 
@@ -214,4 +215,82 @@ class OpenAIAssistant:
             thinking=thinking,
             scene="断言系统",
             timeout=120.0,
+        )
+
+    # ------------------------------------------------------------------
+    # ⑥ 大盘 AI 分析（高级文本：system + user + 透出 usage / 耗时）
+    # ------------------------------------------------------------------
+    async def analyze_text(
+        self,
+        *,
+        system: str,
+        user: str,
+        label: str = "AI 分析",
+        thinking: bool = False,
+        temperature: float = 0.2,
+        timeout: float = 60.0,
+    ) -> AnalysisResult:
+        """大盘 AI 分析专用：messages = [system, user]，OpenAI 标准两条消息。
+
+        ``temperature`` 在 o-系列推理模型上 OpenAI 服务端会静默忽略，普通 GPT
+        模型按设置生效——客户端无需按模型名分支。
+        """
+        settings = get_settings()
+        model = settings.assistant_model
+        api_key = settings.assistant_api_key or settings.vlm_api_key
+        api_url = settings.assistant_api_url
+        if not (api_key and api_url and model):
+            raise RuntimeError(
+                "OpenAI 辅助系统配置缺失，请检查 AI_PHONE_ASSISTANT_API_URL / "
+                "AI_PHONE_ASSISTANT_API_KEY / AI_PHONE_ASSISTANT_MODEL"
+            )
+
+        payload: Dict[str, Any] = {
+            "model": model,
+            "temperature": temperature,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }
+        if thinking:
+            payload["reasoning_effort"] = "medium"
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        t0 = time.monotonic()
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(api_url, json=payload, headers=headers)
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"{label} OpenAI Chat Completions 请求失败: status={resp.status_code} "
+                f"body={resp.text[:200]}"
+            )
+        data = resp.json()
+        message = (data.get("choices") or [{}])[0].get("message") or {}
+        content = message.get("content")
+        if isinstance(content, list):
+            text = "".join(
+                p.get("text", "") for p in content if isinstance(p, dict)
+            ).strip()
+        elif isinstance(content, str):
+            text = content.strip()
+        else:
+            text = ""
+        if not text:
+            raise RuntimeError(f"{label} OpenAI 未返回可解析文本")
+
+        usage = data.get("usage") or {}
+        self.counter.record(label, model, usage)
+        return AnalysisResult(
+            model=model,
+            text=text,
+            elapsed_ms=elapsed_ms,
+            prompt_tokens=int(usage.get("prompt_tokens") or 0),
+            completion_tokens=int(usage.get("completion_tokens") or 0),
+            total_tokens=int(usage.get("total_tokens") or 0),
         )

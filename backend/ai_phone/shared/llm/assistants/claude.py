@@ -23,12 +23,13 @@ tool。只主 VLM 才需要那个头。
 from __future__ import annotations
 
 import base64
+import time
 from typing import Any, Dict, List, Optional
 
 import httpx
 
 from ai_phone.config import get_settings
-from ai_phone.shared.llm.base import TokenCounter
+from ai_phone.shared.llm.base import AnalysisResult, TokenCounter
 
 __all__ = ["ClaudeAssistant"]
 
@@ -238,4 +239,98 @@ class ClaudeAssistant:
                 "You are a strict, conservative result-verification adjudicator."
             ),
             timeout=120.0,
+        )
+
+    # ------------------------------------------------------------------
+    # ⑥ 大盘 AI 分析（高级文本：system + user + 透出 usage / 耗时）
+    # ------------------------------------------------------------------
+    async def analyze_text(
+        self,
+        *,
+        system: str,
+        user: str,
+        label: str = "AI 分析",
+        thinking: bool = False,
+        temperature: float = 0.2,
+        timeout: float = 60.0,
+    ) -> AnalysisResult:
+        """大盘 AI 分析专用：system 走 payload.system 字段、user 走 messages[0]。
+
+        Anthropic 协议把 system 单独抽成顶层字段（不像 OpenAI / 豆包是
+        ``messages[0]``）。usage 字段是 ``input_tokens / output_tokens``，需要
+        翻译到统一的 prompt/completion 别名。
+        """
+        settings = get_settings()
+        model = settings.assistant_model
+        api_key = settings.assistant_api_key or settings.vlm_api_key
+        api_url = settings.assistant_api_url
+        if not (api_key and api_url and model):
+            raise RuntimeError(
+                "Claude 辅助系统配置缺失，请检查 AI_PHONE_ASSISTANT_API_URL / "
+                "AI_PHONE_ASSISTANT_API_KEY / AI_PHONE_ASSISTANT_MODEL"
+            )
+
+        payload: Dict[str, Any] = {
+            "model": model,
+            "max_tokens": 4096,
+            "temperature": temperature,
+            "system": system,
+            "messages": [{"role": "user", "content": user}],
+        }
+        if thinking and settings.vlm_main_thinking_budget > 0:
+            payload["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": int(settings.vlm_main_thinking_budget),
+            }
+
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+
+        t0 = time.monotonic()
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(api_url, json=payload, headers=headers)
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"{label} Claude Messages API 请求失败: status={resp.status_code} "
+                f"body={resp.text[:200]}"
+            )
+        data = resp.json()
+
+        text_parts: List[str] = []
+        for block in data.get("content") or []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text":
+                t = block.get("text") or ""
+                if isinstance(t, str):
+                    text_parts.append(t)
+        text = "\n".join(text_parts).strip()
+        if not text:
+            raise RuntimeError(f"{label} Claude 未返回可解析文本")
+
+        usage = data.get("usage") or {}
+        prompt_tokens = int(usage.get("input_tokens") or 0)
+        completion_tokens = int(usage.get("output_tokens") or 0)
+        # 归一化进 TokenCounter（与 _post 里的处理逻辑保持一致）
+        normalized: Dict[str, Any] = {
+            "input_tokens": prompt_tokens,
+            "output_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+        }
+        cached = usage.get("cache_read_input_tokens")
+        if cached is not None:
+            normalized["input_tokens_details"] = {"cached_tokens": int(cached)}
+        self.counter.record(label, model, normalized)
+
+        return AnalysisResult(
+            model=model,
+            text=text,
+            elapsed_ms=elapsed_ms,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
         )

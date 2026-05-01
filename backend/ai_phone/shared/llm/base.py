@@ -30,6 +30,7 @@ Protocol 校验报错暴露出"漏实现"的事实。
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import List, Optional, Protocol, Tuple
 
 # Decision / TokenCounter 复用现有定义，避免重复 dataclass 漂移。
@@ -40,9 +41,30 @@ from ai_phone.shared.vlm import Decision, TokenCounter
 __all__ = [
     "Decision",
     "TokenCounter",
+    "AnalysisResult",
     "BaseMainVLM",
     "BaseAssistant",
 ]
+
+
+@dataclass
+class AnalysisResult:
+    """``BaseAssistant.analyze_text`` 的结构化返回。
+
+    服务"大盘 AI 分析"这类需要展示 token 消耗 / 耗时的高级文本任务，与
+    ``chat_text`` 仅返回 str 形成对照——后者面向辅助系统内部 4 处轻量
+    Q&A，不需要透出 usage。
+
+    各家协议 usage 字段差异已在适配层归一化为统一的 prompt/completion/
+    total 三元组（Claude 的 input_tokens/output_tokens 在适配层翻译过来）。
+    """
+
+    model: str
+    text: str
+    elapsed_ms: int
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
 
 
 class BaseMainVLM(Protocol):
@@ -153,5 +175,36 @@ class BaseAssistant(Protocol):
 
         ``prev_before_bytes`` 可为 ``None``（第一步就 finished），此时退
         化为单图模式（仅 final_bytes）。
+        """
+        ...
+
+    async def analyze_text(
+        self,
+        *,
+        system: str,
+        user: str,
+        label: str = "AI 分析",
+        thinking: bool = False,
+        temperature: float = 0.2,
+        timeout: float = 60.0,
+    ) -> AnalysisResult:
+        """高级文本分析：system + user 两条消息，返回带 usage 的结构化结果。
+
+        与 :meth:`chat_text` 的差异：
+
+        - ``chat_text`` 只返回 str，面向辅助系统内部 4 处轻量 Q&A（包名匹配 /
+          通道判定 / 审判 / 子步骤拆解），不需要 system / temperature / usage
+        - ``analyze_text`` 返回 :class:`AnalysisResult`，面向需要展示 token
+          消耗与耗时的高级文本任务（如大盘 AI 分析），强 system 控制格式 +
+          可调 temperature 取得创造性总结
+
+        ``temperature`` 在三家协议下的支持差异：
+
+        - 豆包 Chat Completions：原生支持
+        - Claude Messages API：原生支持
+        - OpenAI Chat Completions：o-系列推理模型不支持 temperature，会被
+          OpenAI 服务端静默忽略（不报错）；普通 GPT 模型按设置生效
+
+        ``thinking`` 在三家下的语义同 :meth:`chat_text`。
         """
         ...
