@@ -308,14 +308,25 @@ def _classify_structured_local(
         "（短对话/弱约束，自由通道）"
     )
 
-# ---- 起跑线"关闭 App + 重新打开"的代码层强制注入 ----
+# ---- 起跑线"打开 App / 关闭并重新打开"的代码层强制注入 ----
 # 背景：VLM 视觉模型有强烈的"看到什么干什么"先验，单靠 prompt 很难压住——多次
 # 实测，即使把"必须先 close_app + open_app"放在 prompt 最顶端也会被忽略，VLM
 # 看到当前截图凑巧已在目标页就直接跳到操作步骤。改成代码侧扫描 goal、命中即
 # 程序化跑前两步，**不让 VLM 选择**。
 #
-# 触发条件：goal 文本里同时含"关闭/杀进程"类 + "重新打开/重启"类关键词，且能
-# 抽到一个被「」包起来的应用名。三者缺一就不注入，回退到 VLM 自己处理。
+# 触发条件分两档（任一命中即触发起跑线，且都跑同一段 close_app + open_app
+# 流程；close_app 在 App 未运行时是无害 no-op，重启更安全）：
+#
+#   档 1：goal 同时含"杀进程"类 + "重新打开"类关键词 + 「App名」
+#         → 用户显式要求重启场景（如稳定性回归 / 冷启 case）
+#
+#   档 2：goal 含"启动"类关键词且**紧贴**「App 名」 + 「App 名」
+#         → 简单"打开 X 做 Y"场景（error51 现场：goal="打开「洋葱学园」"
+#           退回 VLM 后，Claude/GPT CU 没有 open_app 抽象，走 home + 找
+#           图标的路径既慢又不靠谱，必须由起跑线兜底）
+#
+# 「应用名」始终要求 ASCII / CJK 引号包裹——避免误抓 goal 内 free-text 提
+# 到的菜单 / Tab 名当 App 名。
 _PRELUDE_KILL_KEYWORDS = (
     "杀进程", "杀掉", "关闭app", "关闭App", "kill", "关掉",
     "强制停止", "强制关闭", "强制退出",
@@ -323,21 +334,50 @@ _PRELUDE_KILL_KEYWORDS = (
 _PRELUDE_RESTART_KEYWORDS = (
     "重新打开", "重启app", "重启App", "重开", "再次打开", "重新启动",
 )
+# 启动型关键词集合：和「App名」紧贴匹配才算触发档 2。"打开" 这种泛动词单独
+# 出现不算（goal="打开蓝牙开关" 不应触发），必须紧跟 「」 包裹的 App 名。
+_PRELUDE_OPEN_KEYWORDS = (
+    "打开", "进入", "启动", "跳转到", "跳转至", "前往",
+    "open", "launch", "go to", "goto", "enter",
+)
 _APP_NAME_RE = re.compile(r"「([^」]+)」")
+# 档 2 专用：检测"启动词 + 「App名」"的紧贴模式。允许中间有空格 / "的" 等
+# 助词，但不允许换行或长 free text 间隔。
+_OPEN_APP_TIGHT_RE = re.compile(
+    r"(?:" + "|".join(re.escape(k) for k in _PRELUDE_OPEN_KEYWORDS) + r")"
+    r"\s*(?:的|了|下|一下)?\s*「([^」]+)」",
+    re.IGNORECASE,
+)
 
 
 def _detect_app_lifecycle_prelude(goal: str) -> Optional[str]:
-    """检查 goal 是否要求"起跑线杀+重启 App"。命中返回 app 名，否则 None。"""
+    """检查 goal 是否要求起跑线注入。命中返回 app 名，否则 None。
+
+    返回的 app 名统一交给 _run_app_lifecycle_prelude 跑同一段 close_app +
+    open_app 流程——两档之间不再分支：close_app 对未运行的 App 等价于
+    no-op（驱动层 force-stop 报 "not running" 几十毫秒），重启对 case 行
+    为更确定（避免上次脏 session 残留）。
+    """
     text_compact = goal.replace(" ", "")
+
+    # 档 1：杀进程 AND 重新打开 AND 「App名」
     has_kill = any(k.replace(" ", "") in text_compact for k in _PRELUDE_KILL_KEYWORDS)
-    has_restart = any(k.replace(" ", "") in text_compact for k in _PRELUDE_RESTART_KEYWORDS)
-    if not (has_kill and has_restart):
-        return None
-    matches = _APP_NAME_RE.findall(goal)
-    if not matches:
-        return None
-    # 多次出现取最高频，避免误抓 case 内提到的菜单 / 选项名（如分类、Tab 标签）当 App 名
-    return Counter(matches).most_common(1)[0][0]
+    has_restart = any(
+        k.replace(" ", "") in text_compact for k in _PRELUDE_RESTART_KEYWORDS
+    )
+    if has_kill and has_restart:
+        matches = _APP_NAME_RE.findall(goal)
+        if matches:
+            # 多次出现取最高频，避免误抓 case 内提到的菜单 / 选项名当 App 名
+            return Counter(matches).most_common(1)[0][0]
+
+    # 档 2：启动词紧贴「App名」（"打开「洋葱学园」"、"进入「淘宝」搜索..." 类）
+    tight_matches = _OPEN_APP_TIGHT_RE.findall(goal)
+    if tight_matches:
+        # 多次出现取最高频，与档 1 同语义
+        return Counter(tight_matches).most_common(1)[0][0]
+
+    return None
 
 
 def _parse_csv_keywords(raw: str) -> List[str]:
