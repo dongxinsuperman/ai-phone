@@ -255,6 +255,19 @@ class ClaudeComputerUseClient:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(self.api_url, json=payload, headers=headers)
             if resp.status_code != 200:
+                # 4xx 客户端错误（含 422 schema 校验）：dump 本次请求 messages
+                # 里所有 assistant 块的关键字段摘要，便于快速判断是 tool_use ↔
+                # tool_result 失配、还是 thinking 缺 signature、还是其它新增
+                # 校验。5xx 服务端错误不 dump（与我们 payload 无关）。
+                if 400 <= resp.status_code < 500:
+                    block_summary = _summarize_assistant_blocks(request_messages)
+                    logger.error(
+                        "Claude Messages 4xx | status={} | body={} | "
+                        "assistant_blocks={}",
+                        resp.status_code,
+                        resp.text[:500],
+                        block_summary,
+                    )
                 raise RuntimeError(
                     f"Claude Messages API 失败: status={resp.status_code} "
                     f"body={resp.text[:500]}"
@@ -320,9 +333,18 @@ class ClaudeComputerUseClient:
 
         # ⑨ 把本轮 user / assistant 追加进客户端历史，便于下一轮续上下文
         self.messages.append(new_user)
-        # 模型本轮 raw content blocks 整体作为 assistant 消息保留——Anthropic
-        # 续历史时 assistant 一定要带 tool_use 块（不然下一轮 user 里的
-        # tool_result 会找不到对应 id），所以全量保留。
+        # 模型本轮 raw content blocks 整体作为 assistant 消息保留——这一份
+        # "原样保留"同时满足三条 Anthropic 协议硬约束，缺一报 4xx：
+        #   ① tool_use 块必须保留：下一轮 user 里的 tool_result 要按
+        #      tool_use_id 配对，少了就 ``tool_use ids were found
+        #      without tool_result blocks``。
+        #   ② thinking 块必须保留 ``signature`` 字段：Anthropic 用它校验
+        #      思考链完整性，缺了下一轮请求直接 422
+        #      ``messages.X.content.Y.thinking.signature: Field required``。
+        #   ③ tool_use 的 ``input`` / ``id`` / ``name``、thinking 的
+        #      ``thinking`` 文本本体——续历史时缺任一字段都会 422。
+        # 整存整取天然覆盖这些字段；任何"按需筛 block 字段省 token"的优化
+        # 都要先确认 Anthropic 当前协议要求，别图省事误伤校验字段。
         assistant_content = data.get("content") or []
         self.messages.append({"role": "assistant", "content": assistant_content})
 
@@ -392,6 +414,54 @@ class ClaudeComputerUseClient:
             trimmed = head + tail
 
         return trimmed
+
+
+# ---------------------------------------------------------------------------
+# Helper · 4xx 故障诊断：assistant 块结构摘要
+# ---------------------------------------------------------------------------
+def _summarize_assistant_blocks(
+    messages: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """从请求 messages 抽取所有 assistant 消息的块结构摘要。
+
+    用于 4xx 报错时定位是哪类 schema 校验挂了：
+    - thinking 块：上报 ``has_signature`` 是否齐
+    - tool_use 块：上报 ``id`` 前缀（用于和 user 里 tool_result 对账）
+    - text 块：仅上报长度
+    其它块类型只上报 type。**只摘要不打全文**，避免日志爆。
+    """
+    summary: List[Dict[str, Any]] = []
+    for msg in messages:
+        if not isinstance(msg, dict) or msg.get("role") != "assistant":
+            continue
+        for block in msg.get("content") or []:
+            if not isinstance(block, dict):
+                continue
+            btype = block.get("type")
+            if btype == "thinking":
+                summary.append(
+                    {
+                        "type": "thinking",
+                        "has_signature": "signature" in block,
+                        "thinking_len": len(str(block.get("thinking") or "")),
+                    }
+                )
+            elif btype == "tool_use":
+                tu_id = str(block.get("id") or "")
+                summary.append(
+                    {
+                        "type": "tool_use",
+                        "id_prefix": tu_id[:16] + ("..." if len(tu_id) > 16 else ""),
+                        "name": block.get("name"),
+                    }
+                )
+            elif btype == "text":
+                summary.append(
+                    {"type": "text", "text_len": len(str(block.get("text") or ""))}
+                )
+            else:
+                summary.append({"type": btype})
+    return summary
 
 
 # ---------------------------------------------------------------------------
