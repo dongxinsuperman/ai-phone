@@ -566,8 +566,23 @@ def _computer_call_to_parsed_action(
             coord_space="absolute",
         )
 
-    if atype in ("screenshot", "move"):
-        # ack 类 / 移动端无意义，跳过让模型下一轮换策略
+    # screenshot 是 GPT 的"观察意图"——首步常见、中途偶尔。OpenAI 文档说
+    # 它是 ack 类，但模型仍然可能主动调来"看一眼当前状态"。我们的 runner
+    # 已在每轮开头自动喂截图，screenshot 实质 noop——但**直接丢会让
+    # parsed_actions 空 → 触发"未知动作"计数**（连发 3 次直接 kill）。
+    # 转 wait(1s) 既不触发未知计数、又自然过渡到下一轮新截图，是模型
+    # "看一眼再决定"意图的最忠实兑现。与 claude_cu.py 同处理保持一致。
+    if atype == "screenshot":
+        return ParsedAction(
+            action="wait",
+            seconds=1,
+            raw=raw_repr,
+            coord_space="absolute",
+        )
+
+    # move 是模型把手机当 PC（鼠标悬停）——理解偏差。直接丢 + 让它下一轮
+    # 换策略，不要用 wait 掩盖。
+    if atype == "move":
         logger.debug("OpenAI {} 在移动端无意义，丢弃", atype)
         return None
 

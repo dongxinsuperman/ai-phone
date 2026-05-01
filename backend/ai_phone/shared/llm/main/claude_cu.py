@@ -725,11 +725,30 @@ def _tool_use_to_parsed_action(
             coord_space="absolute",
         )
 
-    # 这些 Claude 动作在手机自动化里没用 / 与 runner 截图机制冲突，全部丢弃
+    # screenshot 是 Claude 的"观察意图"——首步常见、中途偶尔出现，模型只
+    # 是想再看一眼当前状态。我们的 runner 已在每轮开头自动喂截图，所以
+    # screenshot 实质是 noop——但**直接丢会让 parsed_actions 空 → 走
+    # ParsedAction(unknown) 兜底 → 触发"未知动作"计数 + 提示注入**（无端
+    # 占用 unknown_action_streak_limit 配额，连发 3 次就 kill）。转成
+    # wait(1s) 既不触发未知计数、又自然过渡到下一轮（下一轮带新截图，模型
+    # 看完继续决策），是模型"看一眼再决定"意图的最忠实兑现。
+    # 旧版（老 Groovy）就是这么处理的，效果稳定。
+    if action == "screenshot":
+        return ParsedAction(
+            action="wait",
+            seconds=1,
+            raw=raw_repr,
+            coord_space="absolute",
+        )
+
+    # 这些 Claude 动作在手机自动化里没用——和 screenshot 不同，它们是模型
+    # **理解偏差**（把手机当 PC 处理：鼠标移动 / 按下抬起 / 中键 / 三击 /
+    # 长按某键等）。转 wait 反而掩盖问题让模型继续走错；**直接丢 + 让它
+    # 下一轮换策略**才是对的——会触发 unknown 兜底，runner 注入"动作不
+    # 规范"提示，模型自我纠偏。
     if action in (
         "mouse_move",
         "cursor_position",
-        "screenshot",
         "left_mouse_down",
         "left_mouse_up",
         "middle_click",
