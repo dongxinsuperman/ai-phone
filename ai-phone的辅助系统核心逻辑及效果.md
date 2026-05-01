@@ -817,16 +817,16 @@ AI_PHONE_RUN_MAX_STEPS=30                   # 短 case 单 Run 30 步够用
 本文主要基于以下实现位置梳理：
 
 - 主循环与辅助系统主入口  
-  [vlm_loop.py](/Users/dongxin/代码文件/sonic合集/ai-phone/backend/ai_phone/agent/runner/vlm_loop.py)
+  [`backend/ai_phone/agent/runner/vlm_loop.py`](./backend/ai_phone/agent/runner/vlm_loop.py)
 
 - 主 VLM Prompt  
-  [prompt.py](/Users/dongxin/代码文件/sonic合集/ai-phone/backend/ai_phone/shared/prompt.py)
+  [`backend/ai_phone/shared/prompt.py`](./backend/ai_phone/shared/prompt.py)
 
 - 页面稳定检测  
-  [stability.py](/Users/dongxin/代码文件/sonic合集/ai-phone/backend/ai_phone/agent/runner/stability.py)
+  [`backend/ai_phone/agent/runner/stability.py`](./backend/ai_phone/agent/runner/stability.py)
 
 - 瞬态 UI 检测与接管  
-  [transient_ui.py](/Users/dongxin/代码文件/sonic合集/ai-phone/backend/ai_phone/agent/runner/transient_ui.py)
+  [`backend/ai_phone/agent/runner/transient_ui.py`](./backend/ai_phone/agent/runner/transient_ui.py)
 
 - 全局配置  
-  [config.py](/Users/dongxin/代码文件/sonic合集/ai-phone/backend/ai_phone/config.py)
+  [`backend/ai_phone/config.py`](./backend/ai_phone/config.py)
