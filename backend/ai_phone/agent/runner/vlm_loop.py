@@ -39,7 +39,10 @@ from ai_phone.shared.llm import (
     create_assistant,
     create_main_vlm,
 )
-from ai_phone.shared.llm.prompts import build_system_prompt_for_backend
+from ai_phone.shared.llm.prompts import (
+    build_system_prompt_for_backend,
+    build_unknown_action_hint,
+)
 from ai_phone.shared.vlm import TokenCounter
 
 from .events import (
@@ -1367,17 +1370,19 @@ class VLMRunner:
 
         else:
             # 未知动作：注入修正提示供下一轮 VLM 消费
+            # 提示文本按 backend 分家——豆包动作集和 Claude/GPT 的 computer
+            # tool 动作集差异大（前者有 open_app/close_app/press_home 等手机
+            # 自动化项目级抽象，后两家只有 PC 风格的 left_click/keypress
+            # 等）。直接发豆包 DSL 给 Claude/GPT 会让它们主动模仿，把
+            # ``open_app(app_name='X')`` 整串当 type 的 text 输入到屏幕，
+            # 完全跑偏（实测 error52 step3）。详见 prompts/__init__.py 注释。
             await self._log(
                 2, "未知动作", f"无法识别: {action}，已注入修正提示", step=step
             )
             self.vlm.add_hint(
-                f"⚠️ 你上一步输出的动作名「{action}」不在规范动作集合里，未被执行。"
-                "请严格使用以下动作名之一：click / long_press / type / scroll / drag / "
-                "open_app / press_home / press_back / finished / double_tap / wait / "
-                "close_app / assert_fail。"
-                "例如点击请写 click(point='<point>x y</point>')；打开应用写 "
-                "open_app(app_name='XXX')；等待写 wait(seconds=N)。"
-                "请基于当前页面重新决策并输出规范动作。"
+                build_unknown_action_hint(
+                    action, backend=self._settings.vlm_backend
+                )
             )
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             return {"action": action, "elapsed_ms": elapsed_ms, "unknown": True}
