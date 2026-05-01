@@ -6,6 +6,10 @@
 
 ---
 
+![iOS / HarmonyOS / Android 三端等价接入，业务化别名一栏管理](./assets/screenshots/devices-overview.png)
+
+---
+
 ## 为什么选 ai-phone
 
 | 能力维度 | ai-phone 提供的 |
@@ -24,6 +28,20 @@
 - 中小型公司 QA 团队 —— 真机上做 AI 化的兼容性 / 回归 / 冒烟测试
 - 业务回归大盘想从"脚本维护"切到"自然语言投递"
 - 海外团队需要切 Claude / GPT 跑英文 App（改两个 env 即用）
+
+---
+
+## 看一眼实际样子
+
+**调度队列** —— 三端独立 FIFO + 正在执行 + 最近批次状态，一栏拉通：
+
+![队列总览](./assets/screenshots/queue-overview.png)
+
+**辅助系统护城河** —— VLM 自认 `finished`，但断言系统对照"中奖 200 元"业务条件复核失败 → 拦下落 `assert_failed`，避免误判成功（这是 ai-phone 与 Midscene 等 Plan-Loop 框架的根本差异：**AI 决策不再是黑盒**）：
+
+![断言系统兜底 · VLM 自认成功被裁决器拦下](./assets/screenshots/device-workbench-android-assert-fail.png)
+
+更多场景（设备工作台、HTML 报告、运维大盘、AI 分析）见 [使用功能介绍](./使用功能介绍.md)。
 
 ---
 
