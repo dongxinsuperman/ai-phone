@@ -33,17 +33,29 @@
 
 ## 看一眼实际样子
 
-**调度队列** —— 三端独立 FIFO + 正在执行 + 最近批次状态，一栏拉通：
+按"调度 → 调试 → 决策护城河 → 产出 → 观测"5 个节点串起来看：
 
-![队列总览](./assets/screenshots/queue-overview.png)
+**1. 调度队列** —— 三端独立 FIFO + 正在执行 + 最近批次状态一栏拉通，外部投递的 Submission 实时分发到设备池：
 
-**辅助系统护城河** —— 同坐标 `(~500, 500)` 累计点击 3 次自动召唤审判系统（**WARN #15 审判·召唤**），独立轻量模型审视后决定继续推进还是 KILL，VLM 决策不再是黑盒（这是 ai-phone 与 Midscene 等 Plan-Loop 框架的根本差异）：
+![队列总览 · Android / iOS / HarmonyOS 三端独立排队 + 正在执行 + 最近批次](./assets/screenshots/queue-overview.png)
+
+**2. 单设备调试** —— 浏览器即客户端：左实时画面（scrcpy / WDA / hypium 三端原生推流）、右自然语言 Goal 输入 + 步骤日志面板，回写通道与 VLM 共用，业务测试同学零安装、零配置：
+
+![Android 设备工作台 · 实时画面 + Goal 输入 + 步骤日志面板](./assets/screenshots/device-workbench-android.png)
+
+**3. 辅助系统护城河** —— 同坐标 `(~500, 500)` 累计点击 3 次自动召唤审判系统（**WARN #15 审判·召唤**），独立轻量模型审视后决定继续推进还是 KILL，VLM 决策不再是黑盒（这是 ai-phone 与 Midscene 等 Plan-Loop 框架的根本差异）：
 
 ![审判系统 · 同坐标震荡触发召唤，独立模型实时审视后放行](./assets/screenshots/assist-judge-system.png)
 
-更多辅助能力（瞬态 UI 接管 / 断言系统 / 卡死检测 / 通道判定）见 [使用功能介绍 · 七、辅助系统](./使用功能介绍.md#七辅助系统ai-决策可信度护城河)。
+> 完整辅助能力（瞬态 UI 接管 / 断言系统 / 卡死检测 / 通道判定）见 [使用功能介绍 · 七、辅助系统](./使用功能介绍.md#七辅助系统ai-决策可信度护城河)。
 
-更多场景（设备工作台、HTML 报告、运维大盘、AI 分析）见 [使用功能介绍](./使用功能介绍.md)。
+**4. 自包含 HTML 报告** —— 单 case 与三端汇总两级，每步操作前 / 操作后双图对照 + Token 统计 + VLM 思考全留痕，零外部依赖、匿名可访问，便于外部平台直接嵌入：
+
+![三端汇总 HTML 报告 · 操作前 / 操作后双图对照 + 步骤时间线 + token 统计](./assets/screenshots/report-three-platform.png)
+
+**5. 运维大盘** —— 吞吐 / 设备健康 / Token 用量 / 稳定性四象限一页呈现；AI 分析卡片基于当日数据生成 4 段中文总结，跟随 `ASSISTANT_BACKEND` 在豆包 / Claude / GPT 间自由切换：
+
+![运维大盘 · 吞吐 / 设备 / Token / 稳定性四象限 + AI 摘要](./assets/screenshots/analytics-overview.png)
 
 ---
 
