@@ -39,7 +39,7 @@ from ai_phone.shared.llm import (
     create_assistant,
     create_main_vlm,
 )
-from ai_phone.shared.prompt import build_system_prompt
+from ai_phone.shared.llm.prompts import build_system_prompt_for_backend
 from ai_phone.shared.vlm import TokenCounter
 
 from .events import (
@@ -423,7 +423,13 @@ class VLMRunner:
         # 主 VLM 客户端：通过 ``create_main_vlm`` 工厂按 ``settings.vlm_backend`` 分派
         # （doubao_responses / claude_cu / gpt_cu）。测试时可以传 ``vlm_client``
         # 参数注入 mock，绕过工厂。
-        system_prompt = build_system_prompt(self.goal)
+        # System prompt 同样按 backend 分家：豆包走文本 DSL 模板，Claude 走
+        # ``computer`` tool + ``FINISHED:`` 关键字模板，GPT 走 computer-use-
+        # preview 模板——三家协议输出形态完全不同，共用一份模板会让 Claude/
+        # GPT 退化成"忠实输出豆包文本 DSL"，runner 的 tool_use 解析全部 miss。
+        system_prompt = build_system_prompt_for_backend(
+            self.goal, backend=self._settings.vlm_backend
+        )
         self.counter = TokenCounter()
         self.vlm = vlm_client or create_main_vlm(
             system_prompt=system_prompt, counter=self.counter
@@ -628,8 +634,10 @@ class VLMRunner:
                 line_count = sum(
                     1 for line in substeps_text.splitlines() if line.strip()
                 )
-                self.vlm.system_prompt = build_system_prompt(
-                    self.goal, substeps_text=substeps_text
+                self.vlm.system_prompt = build_system_prompt_for_backend(
+                    self.goal,
+                    substeps_text=substeps_text,
+                    backend=self._settings.vlm_backend,
                 )
                 await self._log(
                     1,
