@@ -42,7 +42,7 @@ import httpx
 from loguru import logger
 
 from ai_phone.config import get_settings
-from ai_phone.shared.actions import ParsedAction
+from ai_phone.shared.actions import ParsedAction, X11_TO_ANDROID_KEYCODE
 from ai_phone.shared.llm.base import Decision, TokenCounter
 
 __all__ = ["ClaudeComputerUseClient"]
@@ -747,23 +747,34 @@ def _tool_use_to_parsed_action(
         )
 
     if action == "scroll":
-        # Claude scroll 字段：coordinate（起点）, scroll_direction（up/down/left/right）,
-        # scroll_amount（次数，整数）。我们项目动作只接收 direction，amount 暂不消费。
+        # Claude scroll 字段：coordinate（起点）, scroll_direction（up/down/left/
+        # right）, scroll_amount（次数，整数）。amount 透传给 driver.scroll 的
+        # ``amount`` 参数，避免长列表场景模型反复 scroll → 卡死被审判 KILL。
         direction = (args.get("scroll_direction") or "down").lower()
         if direction not in ("up", "down", "left", "right"):
             direction = "down"
+        # Anthropic 默认 scroll_amount=3；钳到 [1, 10] 防止模型给极端值（实测
+        # 见过给 100 的，driver 真照办会卡 1 分钟）
+        try:
+            raw_amount = int(args.get("scroll_amount") or 1)
+        except (TypeError, ValueError):
+            raw_amount = 1
+        scroll_amount = max(1, min(10, raw_amount))
         return ParsedAction(
             action="scroll",
             point=point or [500, 500],
             direction=direction,
+            scroll_amount=scroll_amount,
             raw=raw_repr,
             coord_space="absolute",
         )
 
     if action == "key":
-        # Anthropic key 名约定为 X11/xdotool 风格（"Return" / "BackSpace" / "Page_Down"...）
-        # 项目目前只显式支持 press_home / press_back，做映射。其他按键暂时丢弃，让模
-        # 型下一轮换策略。
+        # Anthropic key 名走 X11/xdotool 风格（"Return" / "BackSpace" /
+        # "Page_Down"...）。优先查项目专用动作（Home/Back/Escape 走
+        # press_home/press_back，约定不变），其余查 X11 → Android keycode 表
+        # 转 ACTION_KEY_EVENT，让 runner 调 driver.press_keycode 走通用通道。
+        # 表外的键名记 warn 后丢——不要瞎映射避免误触。
         key_name = (args.get("text") or "").lower()
         if key_name in ("home",):
             return ParsedAction(
@@ -773,8 +784,17 @@ def _tool_use_to_parsed_action(
             return ParsedAction(
                 action="press_back", raw=raw_repr, coord_space="absolute"
             )
+        keycode = X11_TO_ANDROID_KEYCODE.get(key_name)
+        if keycode is not None:
+            return ParsedAction(
+                action="key_event",
+                keycode=keycode,
+                raw=raw_repr,
+                coord_space="absolute",
+            )
         logger.warning(
-            "暂不支持的按键: '{}'（仅 Home/Back/Escape 映射），丢弃", key_name
+            "暂不支持的按键: '{}'（不在 X11→Android keycode 表内），丢弃",
+            key_name,
         )
         return None
 

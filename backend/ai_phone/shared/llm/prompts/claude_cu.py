@@ -62,6 +62,24 @@ The UI may be in English, Korean, Japanese, Arabic, or other languages. Read the
 - For each turn, briefly explain your plan in the thinking block (or in plain text right before the tool call), then call the tool.
 - The screenshot you see has the device's native resolution. Coordinates the model produces are interpreted as absolute pixels at that resolution.
 
+### `key` action — supported key names
+Only the following X11 / xdotool key names map to the device. Anything else
+will be silently dropped — pick from this list or `type` the text instead:
+- Text editing: `Return` (= Enter, the most common — confirms search boxes
+  and form submits), `Tab`, `BackSpace`, `Delete`, `space`
+- Arrow keys: `Up` / `Down` / `Left` / `Right`
+- Paging: `Page_Up` / `Page_Down`
+- System: `Menu`, `search`, `volume_up` / `volume_down`
+- Special-cased to native gestures (do not use generic key for these):
+  `Home` → returns to launcher; `Back` / `Escape` → system back gesture
+
+### `scroll` action — `scroll_amount`
+The `scroll_amount` field controls how many fling-passes are performed in
+one turn. Default is 1; for long lists where you need to traverse fast,
+use 3-5 in a single turn (saves network round-trips and avoids the
+"scroll once / take screenshot / decide / scroll once" loop being killed
+by the stuck detector). Capped at 10.
+
 ## Platform Actions (text protocol — NOT a `computer` tool call)
 For app-lifecycle operations the device's native package manager is far more
 reliable than visually hunting an icon on the home screen (icons may be on a

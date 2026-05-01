@@ -1348,21 +1348,31 @@ class VLMRunner:
 
         elif action == A.ACTION_SCROLL:
             direction = parsed.direction or "down"
+            # 滚动次数：Claude/GPT CU 在长列表场景常给 amount>1（"快速翻 N 屏"），
+            # 不透传会一直只滑 1 屏 → 模型见截图变化不大反复 scroll → 卡死被
+            # 审判 KILL。豆包路径 ParsedAction 默认 amount=1，行为不变。
+            amount = max(1, int(parsed.scroll_amount or 1))
             # VLM 明确给点 → 以该点为中心做局部滑动（分块/分栏场景精准滑）
             # VLM 没给点    → 走 driver 内置全屏中线兜底（整页 list 翻页）
             if parsed.point:
                 abs_xy: Optional[Tuple[int, int]] = await self._vlm_point_to_abs(
                     parsed.point, coord_space=parsed.coord_space
                 )
+                amount_suffix = f"，连续 {amount} 次" if amount > 1 else ""
                 await self._log(
-                    1, "滑动", f"方向: {direction}，中心: {abs_xy}", step=step
+                    1, "滑动",
+                    f"方向: {direction}，中心: {abs_xy}{amount_suffix}",
+                    step=step,
                 )
             else:
                 abs_xy = None
+                amount_suffix = f"，连续 {amount} 次" if amount > 1 else ""
                 await self._log(
-                    1, "滑动", f"方向: {direction}（屏幕中线兜底）", step=step
+                    1, "滑动",
+                    f"方向: {direction}（屏幕中线兜底）{amount_suffix}",
+                    step=step,
                 )
-            await asyncio.to_thread(self.driver.scroll, direction, abs_xy)
+            await asyncio.to_thread(self.driver.scroll, direction, abs_xy, amount)
 
         elif action == A.ACTION_DRAG:
             sp = await self._vlm_point_to_abs(
@@ -1407,6 +1417,31 @@ class VLMRunner:
         elif action == A.ACTION_PRESS_BACK:
             await self._log(1, "系统按键", "BACK", step=step)
             await asyncio.to_thread(self.driver.press_back)
+
+        elif action == A.ACTION_KEY_EVENT:
+            # 通用按键：Claude/GPT 输出 X11 键名（"Return"/"Tab"/"BackSpace"
+            # 等），main 解析层已查表转 Android keycode。这里直接调
+            # driver.press_keycode；harmony 的 keycode 表与 Android 不同，
+            # 暂走"穿透 hmdriver2.press_key"，键值不一定生效（follow-up）；
+            # iOS 只支持 HOME/BACK/APP_SWITCH，其他键 raise，此处 try
+            # 包住转 warn 让 runner 当未知动作进入兜底而不是 fail Run。
+            keycode = parsed.keycode
+            if keycode is None:
+                await self._log(
+                    2, "按键事件失败", "缺少 keycode，跳过", step=step
+                )
+            else:
+                await self._log(
+                    1, "按键事件", f"keycode={keycode}", step=step
+                )
+                try:
+                    await asyncio.to_thread(self.driver.press_keycode, keycode)
+                except NotImplementedError as exc:
+                    await self._log(
+                        2, "按键事件不支持",
+                        f"keycode={keycode} 在当前平台不可用：{exc}",
+                        step=step,
+                    )
 
         else:
             # 未知动作：注入修正提示供下一轮 VLM 消费

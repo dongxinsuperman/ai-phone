@@ -25,6 +25,12 @@ ACTION_OPEN_APP = "open_app"
 ACTION_CLOSE_APP = "close_app"
 ACTION_PRESS_HOME = "press_home"
 ACTION_PRESS_BACK = "press_back"
+# 通用按键事件（数字 keycode），用于覆盖 Home/Back 之外的键——如 Enter / Tab /
+# BackSpace / 方向键。承接 Claude / GPT computer tool 的 ``key("Return")``
+# / ``keypress(["Tab"])`` 等输入；Android 直接走 ``adb shell input
+# keyevent``，Harmony 走 hmdriver2.press_key（keycode 表与 Android 不同，需在
+# 平台层做映射，未实现的键会按 NotImplementedError 走未知动作兜底）。
+ACTION_KEY_EVENT = "key_event"
 ACTION_WAIT = "wait"
 ACTION_FINISHED = "finished"
 ACTION_ASSERT_FAIL = "assert_fail"
@@ -41,11 +47,53 @@ KNOWN_ACTIONS = frozenset(
         ACTION_CLOSE_APP,
         ACTION_PRESS_HOME,
         ACTION_PRESS_BACK,
+        ACTION_KEY_EVENT,
         ACTION_WAIT,
         ACTION_FINISHED,
         ACTION_ASSERT_FAIL,
     }
 )
+
+
+# ---------------------------------------------------------------------------
+# X11 / xdotool 风格键名 → Android KeyCode 映射
+# ---------------------------------------------------------------------------
+# Anthropic Computer Use 与 OpenAI computer-use-preview 的 key / keypress 动
+# 作约定都用 X11 键名（"Return" / "BackSpace" / "Page_Down" 等）。以下表把
+# 它们翻译为 Android ``KEYCODE_*``。
+#
+# **不**包含 "Home" / "Back" / "Escape"——这三个有专用 ParsedAction
+# （ACTION_PRESS_HOME / ACTION_PRESS_BACK），claude_cu / gpt_cu 解析层会优先
+# 走专用动作，避免 Home 键名歧义（Linux X11 "Home" = 光标到行首；移动端
+# "Home" = 回桌面，约定走 press_home）。
+#
+# 鸿蒙 keycode 表与 Android 不同；本表当前**只对 Android 路径正确**，鸿蒙
+# 走到这里会进 driver.press_keycode 的"穿透 hmdriver2.press_key"分支，键值
+# 不一定生效——后续按需补 platform 维度的分叉表。iOS 只识别 HOME/BACK/
+# APP_SWITCH（见 ios.py:press_keycode），其他键 raise NotImplementedError，
+# 由 runner 走未知动作兜底。
+X11_TO_ANDROID_KEYCODE: Dict[str, int] = {
+    # 文本编辑（搜索框 / 表单确认最高频）
+    "return": 66,        # KEYCODE_ENTER
+    "enter": 66,
+    "tab": 61,           # KEYCODE_TAB
+    "backspace": 67,     # KEYCODE_DEL（Android 命名歧义：DEL = backspace）
+    "delete": 112,       # KEYCODE_FORWARD_DEL
+    "space": 62,         # KEYCODE_SPACE
+    # 方向键
+    "up": 19,            # KEYCODE_DPAD_UP
+    "down": 20,          # KEYCODE_DPAD_DOWN
+    "left": 21,          # KEYCODE_DPAD_LEFT
+    "right": 22,         # KEYCODE_DPAD_RIGHT
+    # 翻页
+    "page_up": 92,       # KEYCODE_PAGE_UP
+    "page_down": 93,     # KEYCODE_PAGE_DOWN
+    # 多媒体 / 系统
+    "menu": 82,          # KEYCODE_MENU
+    "search": 84,        # KEYCODE_SEARCH
+    "volume_up": 24,
+    "volume_down": 25,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +163,13 @@ class ParsedAction:
     direction: Optional[str] = None
     name: Optional[str] = None
     seconds: Optional[int] = None
+    # key_event 专用：Android keycode（Claude/GPT 走 X11 键名 → 查
+    # X11_TO_ANDROID_KEYCODE 表得到）。
+    keycode: Optional[int] = None
+    # scroll 专用：连续滚动次数（默认 1，与历史豆包路径行为一致）。Claude
+    # ``scroll_amount`` 字段直接透传；OpenAI ``scroll_x/scroll_y`` 像素值
+    # 在 main/gpt_cu.py 按"每 100px ≈ 1 次"换算。
+    scroll_amount: int = 1
     raw: str = ""
     extra: Dict[str, Any] = field(default_factory=dict)
     coord_space: str = "normalized"
@@ -129,10 +184,16 @@ class ParsedAction:
 
     def to_dict(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {"action": self.action}
-        for k in ("point", "start_point", "end_point", "content", "direction", "name", "seconds"):
+        for k in (
+            "point", "start_point", "end_point", "content", "direction",
+            "name", "seconds", "keycode",
+        ):
             v = getattr(self, k)
             if v is not None:
                 out[k] = v
+        # scroll_amount 仅在 >1 时显式输出，默认值不污染日志
+        if self.scroll_amount and self.scroll_amount > 1:
+            out["scroll_amount"] = self.scroll_amount
         # coord_space 仅在非默认值时显式输出，避免污染豆包系日志/快照
         if self.coord_space and self.coord_space != "normalized":
             out["coord_space"] = self.coord_space

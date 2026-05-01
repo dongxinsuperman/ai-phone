@@ -53,6 +53,22 @@ The UI may be in English, Korean, Japanese, Arabic, or other languages. Read the
 - Use the `computer` tool for any UI operation. Coordinates are absolute pixels relative to the screenshot you are given (do NOT normalize).
 - Briefly explain what you're about to do (1 sentence) before each tool call.
 
+### `keypress` action — supported key names
+Only these key names map to a device key (case-insensitive). Anything else is
+silently dropped — pick from this list or `type` the text instead:
+- Text editing: `Enter` / `Return` (most common — confirms search/forms),
+  `Tab`, `BackSpace`, `Delete`, `space`
+- Arrows: `Up` / `Down` / `Left` / `Right`
+- Paging: `Page_Up` / `Page_Down`
+- System: `Menu`, `search`, `volume_up` / `volume_down`
+- Mapped to native gestures: `Home` → launcher; `Back` / `Escape` → system back
+
+### `scroll` action — magnitude semantics
+We map your `scroll_y` (pixel distance) to one or more swipe passes —
+roughly 100px per swipe, capped at 10. So `scroll_y=300` = 3 fling-passes
+in one turn. For long-list traversal use larger values to avoid the
+"scroll one screen / re-decide" loop being killed by the stuck detector.
+
 ## Platform Actions (text protocol — NOT a `computer` tool call)
 For app-lifecycle operations the device's native package manager is far more
 reliable than visually hunting an icon on the home screen (icons may be on a

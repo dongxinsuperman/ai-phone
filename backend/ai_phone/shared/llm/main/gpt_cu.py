@@ -47,7 +47,7 @@ import httpx
 from loguru import logger
 
 from ai_phone.config import get_settings
-from ai_phone.shared.actions import ParsedAction
+from ai_phone.shared.actions import ParsedAction, X11_TO_ANDROID_KEYCODE
 from ai_phone.shared.llm.base import Decision, TokenCounter
 
 __all__ = ["GPTComputerUseClient"]
@@ -555,18 +555,28 @@ def _computer_call_to_parsed_action(
 
     if atype == "scroll":
         pt = _xy(action_obj) or [500, 500]
-        sx = action_obj.get("scroll_x") or 0
-        sy = action_obj.get("scroll_y") or 0
+        try:
+            sx = int(action_obj.get("scroll_x") or 0)
+            sy = int(action_obj.get("scroll_y") or 0)
+        except (TypeError, ValueError):
+            sx = sy = 0
         # OpenAI 滚动矢量：正 y 向下，负 y 向上；正 x 向右，负 x 向左。
         # 我们项目 direction 语义：down=往下浏览，up=往上浏览。
         if abs(sy) >= abs(sx):
             direction = "down" if sy > 0 else "up"
+            magnitude = abs(sy)
         else:
             direction = "right" if sx > 0 else "left"
+            magnitude = abs(sx)
+        # OpenAI 没有 amount 字段，用像素绝对值估算"模型想滚多少屏"——
+        # 100px 折一次 swipe（和移动端典型 fling 距离一致）。钳到 [1, 10] 防
+        # 极端值（实测见过模型给 sy=2000 想直接翻 N 屏的情况）。
+        scroll_amount = max(1, min(10, int(round(magnitude / 100)))) if magnitude else 1
         return ParsedAction(
             action="scroll",
             point=pt,
             direction=direction,
+            scroll_amount=scroll_amount,
             raw=raw_repr,
             coord_space="absolute",
         )
@@ -584,8 +594,11 @@ def _computer_call_to_parsed_action(
         keys = action_obj.get("keys") or []
         if not isinstance(keys, list) or not keys:
             return None
-        # 取第一个键做映射（多按键组合移动端没用）
-        key_name = str(keys[0]).lower()
+        # 取第一个键做映射（多按键组合移动端没用）。优先查 Home/Back/Escape
+        # 专用动作；其余查 X11 → Android keycode 表，转通用 ACTION_KEY_EVENT。
+        # OpenAI 文档里 keypress 键名不严格 X11——可能是 "ENTER" / "Enter" /
+        # "Return"，统一小写后查表（X11_TO_ANDROID_KEYCODE 用小写 key）。
+        key_name = str(keys[0]).strip().lower()
         if "home" in key_name:
             return ParsedAction(
                 action="press_home", raw=raw_repr, coord_space="absolute"
@@ -594,8 +607,17 @@ def _computer_call_to_parsed_action(
             return ParsedAction(
                 action="press_back", raw=raw_repr, coord_space="absolute"
             )
+        keycode = X11_TO_ANDROID_KEYCODE.get(key_name)
+        if keycode is not None:
+            return ParsedAction(
+                action="key_event",
+                keycode=keycode,
+                raw=raw_repr,
+                coord_space="absolute",
+            )
         logger.warning(
-            "暂不支持的按键组合: {}（仅 Home/Back/Escape 映射），丢弃", keys
+            "暂不支持的按键组合: {}（不在 X11→Android keycode 表内），丢弃",
+            keys,
         )
         return None
 

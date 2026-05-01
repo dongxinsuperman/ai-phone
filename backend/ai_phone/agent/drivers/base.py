@@ -166,7 +166,12 @@ class BaseDriver(ABC):
     # ------------------------------------------------------------------
     # 派生能力（复合动作 —— 与驱动无关，默认用 swipe 合成）
     # ------------------------------------------------------------------
-    def scroll(self, direction: str, center: Optional[Tuple[int, int]] = None) -> None:
+    def scroll(
+        self,
+        direction: str,
+        center: Optional[Tuple[int, int]] = None,
+        amount: int = 1,
+    ) -> None:
         """按"浏览方向"滚动页面（Android / iOS 通用，水平=翻页，垂直=滚动列表）。
 
         ⚠️ ``direction`` 是**用户意图方向**（向哪边浏览），不是手指方向：
@@ -188,6 +193,12 @@ class BaseDriver(ABC):
           卡片内滚动等精准场景）。位移取屏幕短边 30%，起止点钳到屏幕
           3%~97% 安全区，避免拖出屏幕。VLM 明确指向哪个分块，就在那个
           分块内拖，不再被"屏幕中线"硬性接管。
+
+        ``amount`` 参数：连续滚动次数（1-10），默认 1 次。承接 Claude
+        ``scroll_amount`` / OpenAI ``scroll_y`` 折算的"滚多远"语义——长列
+        表场景模型常给 amount=3~5 表达"快速翻找"。每次 swipe 间留 100ms
+        让列表 fling 衰减，避免滑动重叠。豆包路径默认走 amount=1，与历
+        史行为一致。
         """
         width, height = self.window_size()
 
@@ -249,4 +260,12 @@ class BaseDriver(ABC):
                 sy = _clamp(cy + half, y_lo, y_hi)
                 ey = _clamp(cy - half, y_lo, y_hi)
 
-        self.swipe(sx, sy, ex, ey, duration_ms=400)
+        # amount 重复：钳到 [1, 10] 防极端值（main 解析层也已钳，二次防御）
+        repeat = max(1, min(10, int(amount)))
+        for i in range(repeat):
+            self.swipe(sx, sy, ex, ey, duration_ms=400)
+            if i < repeat - 1:
+                # 100ms 间隔让列表 fling 衰减，避免连续 swipe 被 OS 合并成
+                # 一次大幅 fling（导致实际滚动距离远超 amount 预期）
+                import time
+                time.sleep(0.1)
