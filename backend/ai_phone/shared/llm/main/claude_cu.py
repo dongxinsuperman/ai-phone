@@ -137,6 +137,14 @@ class ClaudeComputerUseClient:
         # 思考预算（tokens），0 / 负数 → 关闭 thinking
         self._thinking_budget = max(0, int(settings.vlm_main_thinking_budget))
 
+        # Anthropic prompt caching 开关。开启时 system / tools / 历史前缀打
+        # cache_control 标记，Anthropic 端按 5min TTL 缓存复用——cache hit
+        # 后 input 单价降到 0.1x，但 cache write 单价是 1.25x，**break-even
+        # 在 ~3 次 cache hit 之后**才赚。短 case / 调试场景默认关。
+        self._prompt_caching_enabled = bool(
+            settings.vlm_main_prompt_caching_enabled
+        )
+
         # 兼容 BaseMainVLM 的 segment_count 字段（Claude 不分段，恒 1）；
         # vlm_loop 的"段X"日志依赖此属性，提供占位避免 AttributeError。
         self.segment_count = 1
@@ -240,10 +248,37 @@ class ClaudeComputerUseClient:
             "display_number": 1,
         }
 
+        # ③.1 prompt caching 标记注入（仅当 settings.enabled = True）
+        # Anthropic cache_control 协议：在以下"稳定前缀"末尾打 ephemeral 标
+        # 记，命中后 5min TTL 内同前缀复用 → input 单价降到 0.1x。最多 4 个
+        # cache breakpoints；我们用 3 个：system + tools + 倒数第 2 条
+        # 历史 message。倒数第 1 条是本轮新发的（变化），不能打。
+        # 显式 disabled 时所有 system/tools/messages 都保持原样，请求字节
+        # 与未开启状态一字节不差——这是"默认 off + 用户拍开关"的安全姿态。
+        if self._prompt_caching_enabled:
+            # system 必须改 list 形式才能挂 cache_control
+            system_field: Any = [
+                {
+                    "type": "text",
+                    "text": self.system_prompt,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+            # tools 列表里给 computer_tool 也挂 cache_control（system 之后
+            # tools 之前是 Anthropic 协议天然边界，命中率最高）
+            computer_tool["cache_control"] = {"type": "ephemeral"}
+            # 历史 messages 倒数第 2 条加 cache marker（最后一条是本轮新
+            # user，会变；倒数第 2 条是上一轮 assistant，已稳定）。
+            # _mark_messages_cache_breakpoint 走防御性深拷贝，避免污染
+            # self.messages 自身（self.messages 还要参与下一轮裁剪）。
+            request_messages = _mark_messages_cache_breakpoint(request_messages)
+        else:
+            system_field = self.system_prompt
+
         payload: Dict[str, Any] = {
             "model": self.model,
             "max_tokens": 4096,
-            "system": self.system_prompt,
+            "system": system_field,
             "messages": request_messages,
             "tools": [computer_tool],
             "tool_choice": {"type": "auto"},
@@ -353,10 +388,24 @@ class ClaudeComputerUseClient:
                 + int(usage.get("output_tokens") or 0)
             ),
         }
-        cached = usage.get("cache_read_input_tokens")
-        if cached is not None:
-            normalized_usage["input_tokens_details"] = {"cached_tokens": int(cached)}
+        cache_read = usage.get("cache_read_input_tokens")
+        cache_write = usage.get("cache_creation_input_tokens")
+        if cache_read is not None:
+            normalized_usage["input_tokens_details"] = {"cached_tokens": int(cache_read)}
         self.counter.record("VLM决策", self.model, normalized_usage)
+
+        # 开启 prompt caching 时输出命中诊断（INFO 一行），让用户在生产
+        # 里能直观判断"是否真的省钱了"——cache_read 大 = 命中前缀复用，
+        # cache_write 大但 read=0 = 只在写缓存还没复用，需要更多 Run 才赚回。
+        # 默认关闭 caching 时跳过这条日志（避免空噪音）。
+        if self._prompt_caching_enabled:
+            logger.info(
+                "Claude prompt caching | input={} cache_read={} cache_write={}"
+                " (read 越大越省钱；write 是首次/失效后的写入成本，1.25x 普通 input)",
+                int(usage.get("input_tokens") or 0),
+                int(cache_read or 0),
+                int(cache_write or 0),
+            )
 
         # ⑨ 把本轮 user / assistant 追加进客户端历史，便于下一轮续上下文
         self.messages.append(new_user)
@@ -441,6 +490,45 @@ class ClaudeComputerUseClient:
             trimmed = head + tail
 
         return trimmed
+
+
+# ---------------------------------------------------------------------------
+# Helper · prompt caching · 在历史 messages 倒数第 2 条末尾打 cache breakpoint
+# ---------------------------------------------------------------------------
+def _mark_messages_cache_breakpoint(
+    messages: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """复制一份 messages，在倒数第 2 条的最后一个 content block 上挂
+    ``cache_control: ephemeral``，让 Anthropic 缓存到该位置的稳定前缀。
+
+    选倒数第 2 条而不是倒数第 1 条：倒数第 1 条是本轮新发的 user（含截图，
+    内容变），打了也不会命中；倒数第 2 条是上一轮 assistant 响应，已经稳定，
+    后续轮次的请求前缀都会包含它，是命中率最高的位置。
+
+    < 2 条历史时静默返回原列表（首轮请求没有可缓存的稳定前缀）。
+
+    深拷贝原因：self.messages 自身要保留"原版"参与下一轮裁剪/续历史，不能
+    被本次的 cache_control 标记污染——否则下一轮再标时会重复挂、且裁剪
+    后的中间消息可能莫名其妙带着上一轮的 marker。
+    """
+    if len(messages) < 2:
+        return messages
+
+    import copy
+
+    out = list(messages)
+    target_idx = len(out) - 2
+    # 整条消息深拷贝（content blocks 也要拷，否则改 block 会反向污染原始 list）
+    target = copy.deepcopy(out[target_idx])
+    content = target.get("content")
+    if not isinstance(content, list) or not content:
+        # 退化：content 是字符串或空列表 → 没法挂，直接放弃缓存
+        return messages
+    last_block = content[-1]
+    if isinstance(last_block, dict):
+        last_block["cache_control"] = {"type": "ephemeral"}
+        out[target_idx] = target
+    return out
 
 
 # ---------------------------------------------------------------------------

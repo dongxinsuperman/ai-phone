@@ -204,6 +204,24 @@ class Settings(BaseSettings):
             "env: AI_PHONE_VLM_HISTORY_WINDOW_STEPS"
         ),
     )
+    # Anthropic prompt caching 开关：
+    # - 仅 claude_cu 生效（GPT 走 previous_response_id 服务端续历史，自带缓存；
+    #   doubao_responses 同理）。
+    # - 默认 **关闭**——cache write 成本是普通 input 的 1.25x（5min TTL），
+    #   break-even 在 ~3 次 cache hit 之后才赚。短 case + Run 间隔长的场景
+    #   反而亏，须按业务量评估再开。开启后 Anthropic 会对标了
+    #   ``cache_control`` 的 system / tools / messages 前缀做缓存复用。
+    # - 实测建议：生产长 case 跑 20+ 步 + Run 间隔 < 5 分钟时开启，可省
+    #   60-90% input token；短 case / 调试场景关。
+    vlm_main_prompt_caching_enabled: bool = Field(
+        default=False,
+        description=(
+            "Anthropic prompt caching 开关。仅 claude_cu 生效。默认关闭"
+            "（短 case / Run 间隔长场景 cache write 成本反而亏）；长 case +"
+            "频繁 Run 场景开启可省 60-90% input token。"
+            "env: AI_PHONE_VLM_MAIN_PROMPT_CACHING_ENABLED"
+        ),
+    )
 
     # --- 辅助系统模型（Assistant）---
     # 主 VLM 走 vision 大模型负责"看图决策"，但项目里还有几类**非主决策**的辅助 LLM
