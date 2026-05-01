@@ -27,6 +27,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 import httpx
+from loguru import logger
 
 from ai_phone.config import get_settings
 from ai_phone.shared.llm.base import AnalysisResult, TokenCounter
@@ -282,6 +283,20 @@ class ClaudeAssistant:
                 "type": "enabled",
                 "budget_tokens": int(settings.vlm_main_thinking_budget),
             }
+            # Anthropic 硬约束：thinking enabled 时 temperature 必须 = 1，
+            # 否则 API 直接 400 ``temperature may only be set to 1 when
+            # thinking is enabled``。``analyze_text`` 把 thinking 与
+            # temperature 都暴露成公开关键字参数，调用方很容易传出非法
+            # 组合（比如想要确定性输出 temperature=0.2 + 想要思考
+            # thinking=True）→ 这里强制覆盖兜底，避免组合参数静默 400。
+            if temperature != 1:
+                logger.warning(
+                    "{} thinking enabled 时 Anthropic 强制 temperature=1，"
+                    "已忽略调用方传入的 temperature={}",
+                    label,
+                    temperature,
+                )
+            payload["temperature"] = 1
 
         headers = {
             "x-api-key": api_key,
