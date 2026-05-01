@@ -37,9 +37,11 @@
 
 ![队列总览](./assets/screenshots/queue-overview.png)
 
-**辅助系统护城河** —— VLM 自认 `finished`，但断言系统对照"中奖 200 元"业务条件复核失败 → 拦下落 `assert_failed`，避免误判成功（这是 ai-phone 与 Midscene 等 Plan-Loop 框架的根本差异：**AI 决策不再是黑盒**）：
+**辅助系统护城河** —— 同坐标 `(~500, 500)` 累计点击 3 次自动召唤审判系统（**WARN #15 审判·召唤**），独立轻量模型审视后决定继续推进还是 KILL，VLM 决策不再是黑盒（这是 ai-phone 与 Midscene 等 Plan-Loop 框架的根本差异）：
 
-![断言系统兜底 · VLM 自认成功被裁决器拦下](./assets/screenshots/device-workbench-android-assert-fail.png)
+![审判系统 · 同坐标震荡触发召唤，独立模型实时审视后放行](./assets/screenshots/assist-judge-system.png)
+
+更多辅助能力（瞬态 UI 接管 / 断言系统 / 卡死检测 / 通道判定）见 [使用功能介绍 · 七、辅助系统](./使用功能介绍.md#七辅助系统ai-决策可信度护城河)。
 
 更多场景（设备工作台、HTML 报告、运维大盘、AI 分析）见 [使用功能介绍](./使用功能介绍.md)。
 
