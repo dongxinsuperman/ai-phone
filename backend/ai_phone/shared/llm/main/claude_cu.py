@@ -63,6 +63,22 @@ _ASSERT_FAIL_RE = re.compile(
     r"^\s*ASSERT_FAIL\s*[:：]\s*(.*)$", re.IGNORECASE | re.MULTILINE
 )
 
+# Platform Action 文本协议（与 FINISHED / ASSERT_FAIL 同源），用于让 Claude
+# CU 在执行中调用平台原生能力（包名级 open_app / close_app 等）——这些是
+# computer tool 不具备的"项目级抽象"，又是 VLM 走"home + 找图标"路径最不
+# 可靠的部分。格式：
+#   PLATFORM_ACTION: open_app(app_name='洋葱学园')
+#   PLATFORM_ACTION: close_app(app_name='淘宝')
+# 行首匹配 + 兼容全角冒号 + 单/双引号。匹配组：(action_name, app_name)。
+_PLATFORM_ACTION_RE = re.compile(
+    r"^\s*PLATFORM_ACTION\s*[:：]\s*(\w+)\s*\(\s*app_name\s*=\s*"
+    r"['\"]([^'\"]+)['\"]\s*\)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+# 当前白名单只放 open_app / close_app。新增动作时同步扩白名单 + 在 prompt
+# 文档里添加示例 + runner do_action 加 dispatch 分支（已有的复用即可）。
+_PLATFORM_ACTION_WHITELIST = frozenset({"open_app", "close_app"})
+
 
 class ClaudeComputerUseClient:
     """主 VLM · Anthropic Claude Computer Use 客户端。
@@ -282,11 +298,22 @@ class ClaudeComputerUseClient:
             raise RuntimeError(f"Claude 决策异常: {exc}") from exc
 
         # ④ 解析 response.content blocks
-        thought, tool_uses, finish_action = _parse_claude_response(data)
+        thought, tool_uses, platform_actions, finish_action = _parse_claude_response(
+            data
+        )
 
-        # ⑤ 把 tool_use 块映射为 ParsedAction 列表
+        # ⑤ 把动作链拼成 ParsedAction 列表，顺序：平台动作 → tool_use → 终态
+        # 平台动作放在最前面：PLATFORM_ACTION 多用于 open_app / close_app
+        # 这种"切换运行 App"动作，自然先于 computer tool 的屏幕交互执行。
+        # 若同一轮模型既输出 PLATFORM_ACTION 又输出 tool_use（极少见），
+        # 平台动作先跑也更安全（避免在错误 App 上 click）。
         parsed_actions: List[ParsedAction] = []
         action_strs: List[str] = []
+
+        for pa in platform_actions:
+            parsed_actions.append(pa)
+            action_strs.append(pa.raw or pa.action)
+
         for tool_use in tool_uses:
             pa = _tool_use_to_parsed_action(tool_use)
             if pa is None:
@@ -294,7 +321,7 @@ class ClaudeComputerUseClient:
             parsed_actions.append(pa)
             action_strs.append(pa.raw or pa.action)
 
-        # ⑥ finished / assert_fail：text 块里的关键字宣告
+        # ⑥ finished / assert_fail：text 块里的关键字宣告，永远在链末尾
         if finish_action is not None:
             parsed_actions.append(finish_action)
             action_strs.append(finish_action.raw or finish_action.action)
@@ -516,20 +543,23 @@ def _decode_image_size(image_bytes: bytes) -> Tuple[int, int]:
 # ---------------------------------------------------------------------------
 def _parse_claude_response(
     data: Dict[str, Any],
-) -> Tuple[str, List[Dict[str, Any]], Optional[ParsedAction]]:
-    """从 Anthropic Messages 响应里抽取 thought / tool_use / finished 关键字。
+) -> Tuple[
+    str, List[Dict[str, Any]], List[ParsedAction], Optional[ParsedAction]
+]:
+    """从 Anthropic Messages 响应里抽取 thought / tool_use / 平台动作 / 终态。
 
-    返回三元组：
-    - thought：thinking block 文本 + text block 文本拼接（去掉 finished/assert_fail
-      关键字行）
+    返回四元组：
+    - thought：thinking block 文本 + text block 文本拼接（去掉所有协议关键字行）
     - tool_uses：每个 tool_use block 的字典（含 name / input / id 等字段），按
       响应里的顺序
+    - platform_actions：从 text 块解析出的 PLATFORM_ACTION 列表（每行一个），
+      按出现顺序，已校验白名单
     - finish_action：扫到 FINISHED / ASSERT_FAIL 关键字时返回对应 ParsedAction，
       否则 None
     """
     blocks = data.get("content") or []
     if not isinstance(blocks, list):
-        return "", [], None
+        return "", [], [], None
 
     thinking_parts: List[str] = []
     text_parts: List[str] = []
@@ -551,8 +581,11 @@ def _parse_claude_response(
             tool_uses.append(block)
 
     full_text = "\n".join(text_parts)
-    finish_action: Optional[ParsedAction] = None
 
+    # 平台动作（行级）：先扫，转成 ParsedAction 列表；从 thought 文本里剥掉
+    platform_actions = _extract_platform_actions(full_text)
+
+    finish_action: Optional[ParsedAction] = None
     # 关键字匹配优先级：ASSERT_FAIL > FINISHED（业务上失败声明优先）
     fail_match = _ASSERT_FAIL_RE.search(full_text)
     if fail_match:
@@ -574,12 +607,45 @@ def _parse_claude_response(
                 coord_space="absolute",
             )
 
-    # thought = thinking 块（如有） + 去掉关键字行的 text 块
-    cleaned_text = _ASSERT_FAIL_RE.sub("", _FINISHED_RE.sub("", full_text)).strip()
+    # thought = thinking 块（如有） + 去掉所有协议关键字行的 text 块
+    cleaned_text = _PLATFORM_ACTION_RE.sub(
+        "",
+        _ASSERT_FAIL_RE.sub("", _FINISHED_RE.sub("", full_text)),
+    ).strip()
     thought_pieces = [p for p in (thinking_parts + [cleaned_text]) if p]
     thought = "\n".join(thought_pieces)
 
-    return thought, tool_uses, finish_action
+    return thought, tool_uses, platform_actions, finish_action
+
+
+def _extract_platform_actions(full_text: str) -> List[ParsedAction]:
+    """从 assistant text 拼接里抽取 PLATFORM_ACTION 行，转成 ParsedAction。
+
+    白名单外的动作名（如未来模型自己 hallucinate 的 ``send_intent`` 等）会
+    记 warn 后丢弃——避免误执行未授权能力。
+    """
+    out: List[ParsedAction] = []
+    for match in _PLATFORM_ACTION_RE.finditer(full_text):
+        action_name = match.group(1).strip().lower()
+        app_name = match.group(2).strip()
+        if action_name not in _PLATFORM_ACTION_WHITELIST:
+            logger.warning(
+                "未知 PLATFORM_ACTION 动作名 '{}'（白名单外，丢弃）",
+                action_name,
+            )
+            continue
+        if not app_name:
+            logger.warning("PLATFORM_ACTION {} 缺 app_name，丢弃", action_name)
+            continue
+        out.append(
+            ParsedAction(
+                action=action_name,
+                name=app_name,
+                raw=f"platform.{action_name}(app_name='{app_name}')",
+                coord_space="absolute",
+            )
+        )
+    return out
 
 
 # ---------------------------------------------------------------------------

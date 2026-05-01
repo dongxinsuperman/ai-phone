@@ -59,6 +59,21 @@ _ASSERT_FAIL_RE = re.compile(
     r"^\s*ASSERT_FAIL\s*[:：]\s*(.*)$", re.IGNORECASE | re.MULTILINE
 )
 
+# Platform Action 文本协议（与 Claude CU 同源），用于让 GPT computer-use-
+# preview 在执行中调用平台原生能力（包名级 open_app / close_app 等）——
+# 这些是 computer tool 不具备的"项目级抽象"，又是 VLM 走"home + 找图标"
+# 路径最不可靠的部分。格式：
+#   PLATFORM_ACTION: open_app(app_name='洋葱学园')
+#   PLATFORM_ACTION: close_app(app_name='淘宝')
+# 行首匹配 + 兼容全角冒号 + 单/双引号。匹配组：(action_name, app_name)。
+_PLATFORM_ACTION_RE = re.compile(
+    r"^\s*PLATFORM_ACTION\s*[:：]\s*(\w+)\s*\(\s*app_name\s*=\s*"
+    r"['\"]([^'\"]+)['\"]\s*\)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+# 当前白名单只放 open_app / close_app（与 claude_cu.py 保持一致）。
+_PLATFORM_ACTION_WHITELIST = frozenset({"open_app", "close_app"})
+
 
 class GPTComputerUseClient:
     """主 VLM · OpenAI computer-use-preview 客户端。
@@ -248,7 +263,9 @@ class GPTComputerUseClient:
             raise RuntimeError(f"GPT 决策异常: {exc}") from exc
 
         # ③ 解析 response.output blocks
-        thought, computer_calls, finish_action = _parse_gpt_response(data)
+        thought, computer_calls, platform_actions, finish_action = (
+            _parse_gpt_response(data)
+        )
 
         # 缓存最近一次 computer_call 的 call_id 与 safety_checks，下一轮 ack 用
         if computer_calls:
@@ -256,14 +273,19 @@ class GPTComputerUseClient:
             self._last_call_id = last.get("call_id")
             self._last_pending_safety_checks = last.get("pending_safety_checks") or []
         else:
-            # 模型本轮没给 computer_call（只给 message text 或 reasoning），下一
-            # 轮就不需要 ack
+            # 模型本轮没给 computer_call（只给 message text / reasoning /
+            # PLATFORM_ACTION），下一轮就不需要 ack
             self._last_call_id = None
             self._last_pending_safety_checks = []
 
-        # ④ 把 computer_call 块映射为 ParsedAction
+        # ④ 拼装动作链：平台动作 → computer_call → 终态。理由同 claude_cu.py
         parsed_actions: List[ParsedAction] = []
         action_strs: List[str] = []
+
+        for pa in platform_actions:
+            parsed_actions.append(pa)
+            action_strs.append(pa.raw or pa.action)
+
         for cc in computer_calls:
             pa = _computer_call_to_parsed_action(cc)
             if pa is None:
@@ -362,17 +384,20 @@ def _decode_image_size(image_bytes: bytes) -> Tuple[int, int]:
 # ---------------------------------------------------------------------------
 def _parse_gpt_response(
     data: Dict[str, Any],
-) -> Tuple[str, List[Dict[str, Any]], Optional[ParsedAction]]:
-    """从 OpenAI Responses 响应抽取 thought / computer_call / finished 关键字。
+) -> Tuple[
+    str, List[Dict[str, Any]], List[ParsedAction], Optional[ParsedAction]
+]:
+    """从 OpenAI Responses 响应抽取 thought / computer_call / 平台动作 / 终态。
 
-    返回三元组：
-    - thought：reasoning summary（如有） + message text 拼接（去掉关键字行）
+    返回四元组：
+    - thought：reasoning summary（如有） + message text 拼接（去掉所有协议关键字行）
     - computer_calls：每个 computer_call 块（含 call_id / action / pending_safety_checks）
+    - platform_actions：从 message text 解析的 PLATFORM_ACTION 列表，已校验白名单
     - finish_action：扫到 FINISHED / ASSERT_FAIL 关键字时返回对应 ParsedAction
     """
     output_items = data.get("output") or []
     if not isinstance(output_items, list):
-        return "", [], None
+        return "", [], [], None
 
     reasoning_parts: List[str] = []
     text_parts: List[str] = []
@@ -391,7 +416,6 @@ def _parse_gpt_response(
                     if isinstance(s, dict) and isinstance(s.get("text"), str):
                         reasoning_parts.append(s["text"].strip())
         elif itype == "message":
-            # role == assistant; content 是 list of {type,text}
             for c in item.get("content") or []:
                 if not isinstance(c, dict):
                     continue
@@ -403,8 +427,10 @@ def _parse_gpt_response(
             computer_calls.append(item)
 
     full_text = "\n".join(text_parts)
-    finish_action: Optional[ParsedAction] = None
 
+    platform_actions = _extract_platform_actions(full_text)
+
+    finish_action: Optional[ParsedAction] = None
     fail_match = _ASSERT_FAIL_RE.search(full_text)
     if fail_match:
         reason = fail_match.group(1).strip() or "assert_fail（无原因）"
@@ -425,11 +451,45 @@ def _parse_gpt_response(
                 coord_space="absolute",
             )
 
-    cleaned_text = _ASSERT_FAIL_RE.sub("", _FINISHED_RE.sub("", full_text)).strip()
+    cleaned_text = _PLATFORM_ACTION_RE.sub(
+        "",
+        _ASSERT_FAIL_RE.sub("", _FINISHED_RE.sub("", full_text)),
+    ).strip()
     thought_pieces = [p for p in (reasoning_parts + [cleaned_text]) if p]
     thought = "\n".join(thought_pieces)
 
-    return thought, computer_calls, finish_action
+    return thought, computer_calls, platform_actions, finish_action
+
+
+def _extract_platform_actions(full_text: str) -> List[ParsedAction]:
+    """从 assistant text 拼接里抽取 PLATFORM_ACTION 行，转成 ParsedAction。
+
+    白名单外的动作名记 warn 后丢弃，避免误执行未授权能力。与
+    claude_cu.py._extract_platform_actions 同实现，复制以避免跨家 import 耦合
+    （延续本目录"主 VLM 实现互不依赖"的风格惯例）。
+    """
+    out: List[ParsedAction] = []
+    for match in _PLATFORM_ACTION_RE.finditer(full_text):
+        action_name = match.group(1).strip().lower()
+        app_name = match.group(2).strip()
+        if action_name not in _PLATFORM_ACTION_WHITELIST:
+            logger.warning(
+                "未知 PLATFORM_ACTION 动作名 '{}'（白名单外，丢弃）",
+                action_name,
+            )
+            continue
+        if not app_name:
+            logger.warning("PLATFORM_ACTION {} 缺 app_name，丢弃", action_name)
+            continue
+        out.append(
+            ParsedAction(
+                action=action_name,
+                name=app_name,
+                raw=f"platform.{action_name}(app_name='{app_name}')",
+                coord_space="absolute",
+            )
+        )
+    return out
 
 
 # ---------------------------------------------------------------------------
