@@ -107,6 +107,16 @@ class GPTComputerUseClient:
 
         self.segment_count = 1
 
+        # 推理强度（low/medium/high），从 settings 读，默认 medium。
+        # computer-use-preview 自带推理，必须有非零 effort，不能关。
+        effort = (settings.vlm_main_reasoning_effort or "medium").strip().lower()
+        if effort not in ("low", "medium", "high"):
+            logger.warning(
+                "vlm_main_reasoning_effort 取值非法 ({}), 回退 medium", effort
+            )
+            effort = "medium"
+        self._reasoning_effort = effort
+
     # ------------------------------------------------------------------
     # BaseMainVLM 兼容字段
     # ------------------------------------------------------------------
@@ -204,9 +214,10 @@ class GPTComputerUseClient:
             "tools": [computer_tool],
             "input": input_items,
             "truncation": "auto",
-            # computer-use-preview 的推理力度：low / medium / high；默认 medium
-            # 平衡速度和准确度。如未来要让用户调，加 settings.vlm_reasoning_effort
-            "reasoning": {"effort": "medium"},
+            # computer-use-preview 的推理力度：low / medium / high。
+            # 由 settings.vlm_main_reasoning_effort 控制（env: AI_PHONE_VLM_MAIN_REASONING_EFFORT）；
+            # 默认 medium 平衡速度和准确度。
+            "reasoning": {"effort": self._reasoning_effort},
         }
         if self.previous_response_id is None:
             # 首轮带 instructions（OpenAI Responses API 等价于 system prompt）

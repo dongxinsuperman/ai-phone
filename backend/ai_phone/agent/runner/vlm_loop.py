@@ -437,6 +437,11 @@ class VLMRunner:
 
         # 运行态（循环内会维护）
         self._last_tail_bytes: Optional[bytes] = None
+        # 最近一次喂给 ``vlm.decide`` 的截图分辨率 (width, height)。仅在
+        # ``coord_space="absolute"`` 路径（Claude / GPT CU）反算坐标时使用——
+        # CU 系截图会被 ``max_long_edge=1344`` 缩放，模型给的像素是相对这张
+        # 缩图，需要按设备/截图比例缩回设备坐标。豆包路径不读本字段。
+        self._last_vlm_screenshot_size: Optional[Tuple[int, int]] = None
         # 上一个 step 主 VLM 决策时看到的 before 帧。在 finished 走断言系统时，
         # 用作"最后一个动作前"的对照帧——和当前 final 帧组成"动作前/后"双图，
         # 让断言模型直接对比"主 VLM 自述的状态变化"是否真的发生。
@@ -777,6 +782,12 @@ class VLMRunner:
                 return await self._raise_fatal(step, screenshot_bytes)
 
             # ② 决策
+            # CU 系（claude_cu / gpt_cu）需要在喂截图前缓存其分辨率，下游
+            # ``_vlm_point_to_abs(coord_space="absolute")`` 用它把模型像素
+            # 反算回设备坐标。豆包路径只是多写一次 self 字段，不影响行为。
+            backend = (self._settings.vlm_backend or "").lower()
+            if backend in ("claude_cu", "gpt_cu"):
+                self._last_vlm_screenshot_size = _decode_jpeg_size(screenshot_bytes)
             try:
                 # driver.screenshot_jpeg 出来是 JPEG；显式告诉 VLMClient 用哪种 mime
                 decision = await self.vlm.decide(screenshot_bytes, mime="image/jpeg")
@@ -1124,7 +1135,7 @@ class VLMRunner:
                 and tail_bytes is not None
             ):
                 trigger_abs = await self._vlm_point_to_abs(
-                    parsed.point or [500, 500]
+                    parsed.point or [500, 500], coord_space=parsed.coord_space
                 )
                 snapshot = await detect_transient_ui(
                     before_bytes=screenshot_bytes,
@@ -1259,17 +1270,23 @@ class VLMRunner:
             self._last_wait_was_explicit = False
 
         if action == A.ACTION_CLICK:
-            abs_xy = await self._vlm_point_to_abs(parsed.point or [500, 500])
+            abs_xy = await self._vlm_point_to_abs(
+                parsed.point or [500, 500], coord_space=parsed.coord_space
+            )
             await self._log(1, "点击", f"坐标{abs_xy}", step=step)
             await asyncio.to_thread(self.driver.click, abs_xy[0], abs_xy[1])
 
         elif action == A.ACTION_DOUBLE_TAP:
-            abs_xy = await self._vlm_point_to_abs(parsed.point or [500, 500])
+            abs_xy = await self._vlm_point_to_abs(
+                parsed.point or [500, 500], coord_space=parsed.coord_space
+            )
             await self._log(1, "双击", f"坐标{abs_xy}", step=step)
             await asyncio.to_thread(self.driver.double_click, abs_xy[0], abs_xy[1])
 
         elif action == A.ACTION_LONG_PRESS:
-            abs_xy = await self._vlm_point_to_abs(parsed.point or [500, 500])
+            abs_xy = await self._vlm_point_to_abs(
+                parsed.point or [500, 500], coord_space=parsed.coord_space
+            )
             await self._log(1, "长按", f"坐标{abs_xy}，1000ms", step=step)
             await asyncio.to_thread(self.driver.long_press, abs_xy[0], abs_xy[1], 1000)
 
@@ -1283,7 +1300,9 @@ class VLMRunner:
             # VLM 明确给点 → 以该点为中心做局部滑动（分块/分栏场景精准滑）
             # VLM 没给点    → 走 driver 内置全屏中线兜底（整页 list 翻页）
             if parsed.point:
-                abs_xy: Optional[Tuple[int, int]] = await self._vlm_point_to_abs(parsed.point)
+                abs_xy: Optional[Tuple[int, int]] = await self._vlm_point_to_abs(
+                    parsed.point, coord_space=parsed.coord_space
+                )
                 await self._log(
                     1, "滑动", f"方向: {direction}，中心: {abs_xy}", step=step
                 )
@@ -1295,8 +1314,12 @@ class VLMRunner:
             await asyncio.to_thread(self.driver.scroll, direction, abs_xy)
 
         elif action == A.ACTION_DRAG:
-            sp = await self._vlm_point_to_abs(parsed.start_point or [500, 500])
-            ep = await self._vlm_point_to_abs(parsed.end_point or [500, 500])
+            sp = await self._vlm_point_to_abs(
+                parsed.start_point or [500, 500], coord_space=parsed.coord_space
+            )
+            ep = await self._vlm_point_to_abs(
+                parsed.end_point or [500, 500], coord_space=parsed.coord_space
+            )
             await self._log(1, "拖拽", f"从{sp} → {ep}", step=step)
             await asyncio.to_thread(
                 self.driver.swipe, sp[0], sp[1], ep[0], ep[1], 500
@@ -2368,10 +2391,47 @@ class VLMRunner:
     # 截图 / 坐标辅助
     # ------------------------------------------------------------------
     async def _screenshot_jpeg(self) -> bytes:
-        return await asyncio.to_thread(self.driver.screenshot_jpeg, 25, None)
+        # 截图参数按主 VLM 协议分家，**豆包路径保持 (25, None) 行为不变**：
+        # - doubao_responses（默认）：模型对 JPEG 压缩伪影不敏感，低画质 +
+        #   设备原始分辨率即可；保留历史参数避免老 case 行为漂移。
+        # - claude_cu / gpt_cu：Anthropic / OpenAI Computer Use 官方推荐截
+        #   图长边 ≤1344px、quality ≥70。低画质会让小文字 / 细线条图标糊
+        #   到识别不出来，原图分辨率会让 token 翻倍但信噪比反而更差，实
+        #   测此组合对 CU 系元素定位精度提升明显。
+        backend = (self._settings.vlm_backend or "").lower()
+        if backend in ("claude_cu", "gpt_cu"):
+            quality, max_long_edge = 75, 1344
+        else:
+            quality, max_long_edge = 25, None
+        return await asyncio.to_thread(
+            self.driver.screenshot_jpeg, quality, max_long_edge
+        )
 
-    async def _vlm_point_to_abs(self, point: List[int]) -> Tuple[int, int]:
+    async def _vlm_point_to_abs(
+        self,
+        point: List[int],
+        coord_space: str = "normalized",
+    ) -> Tuple[int, int]:
+        """模型坐标 → 设备像素，按 ``coord_space`` 走分家路径。
+
+        - ``"normalized"``（默认，豆包系）：0-1000 归一化坐标，走原
+          ``A.vlm_point_to_abs`` 路径；**调用时不传或传 normalized 等价于
+          老行为，豆包不受影响**。
+        - ``"absolute"``（Claude / GPT Computer Use）：模型给的是相对喂给
+          它那张截图的绝对像素。需要按 ``(设备 / 截图)`` 比例缩放回设备
+          像素——CU 系会通过 ``max_long_edge=1344`` 缩图，截图分辨率不等
+          于设备分辨率，直接把像素当设备坐标会偏。截图尺寸取自最近一次
+          ``vlm.decide`` 喂入帧（见 ``_last_vlm_screenshot_size``）。
+        """
         w, h = await asyncio.to_thread(self.driver.window_size)
+        if coord_space == "absolute" and self._last_vlm_screenshot_size is not None:
+            sw, sh = self._last_vlm_screenshot_size
+            if sw > 0 and sh > 0:
+                abs_x = int(point[0] * (w / sw))
+                abs_y = int(point[1] * (h / sh))
+                abs_x = max(0, min(abs_x, w - 1))
+                abs_y = max(0, min(abs_y, h - 1))
+                return abs_x, abs_y
         abs_xy = A.vlm_point_to_abs(int(point[0]), int(point[1]), w, h)
         return int(abs_xy[0]), int(abs_xy[1])
 
@@ -2411,3 +2471,41 @@ class VLMRunner:
             logger.warning(logmsg)
         else:
             logger.info(logmsg)
+
+
+# ---------------------------------------------------------------------------
+# JPEG 尺寸 decode（仅 CU 系坐标反算用，模块级以避免类膨胀）
+# ---------------------------------------------------------------------------
+def _decode_jpeg_size(image_bytes: bytes) -> Optional[Tuple[int, int]]:
+    """从 JPEG bytes 解码出 (width, height)。失败返回 None。
+
+    实现优先级：PIL → JPEG SOF0 字节扫描。**只服务 CU 系坐标反算路径**，
+    豆包路径不会调到本函数。
+    """
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        with Image.open(BytesIO(image_bytes)) as img:
+            return int(img.width), int(img.height)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("PIL decode 截图尺寸失败({})，回退到字节扫描", exc)
+
+    try:
+        if image_bytes[:3] == b"\xff\xd8\xff":  # JPEG SOI
+            i = 2
+            n = len(image_bytes)
+            while i < n - 8:
+                if image_bytes[i] == 0xFF and image_bytes[i + 1] in (
+                    0xC0, 0xC1, 0xC2, 0xC3,
+                ):
+                    h = (image_bytes[i + 5] << 8) | image_bytes[i + 6]
+                    w = (image_bytes[i + 7] << 8) | image_bytes[i + 8]
+                    return int(w), int(h)
+                i += 1
+    except Exception:  # noqa: BLE001
+        pass
+
+    logger.warning("无法从截图 bytes 识别 JPEG 尺寸，CU 坐标反算将退化为豆包归一化路径")
+    return None

@@ -164,7 +164,8 @@ class Settings(BaseSettings):
     # 主 VLM 思考链预算（tokens），仅在 backend 支持 thinking 时生效：
     # - doubao_responses: 不读本字段（豆包 vision 不开 thinking，关闭节省 token）
     # - claude_cu: payload.thinking.budget_tokens；0 表示关闭 thinking
-    # - gpt_cu: 不读（GPT computer-use-preview 自带推理，不可关也不需配额）
+    # - gpt_cu: 不读（GPT 用 reasoning.effort 而不是 budget_tokens 控推理强度，
+    #           见下方 vlm_main_reasoning_effort）
     # 默认 1024 tokens 是 Claude Computer Use 官方建议起点，足够单步决策推理。
     vlm_main_thinking_budget: int = Field(
         default=1024,
@@ -173,6 +174,21 @@ class Settings(BaseSettings):
         description=(
             "主 VLM 思考预算（tokens）。仅 claude_cu 生效（0 关闭）；"
             "doubao_responses / gpt_cu 忽略。env: AI_PHONE_VLM_MAIN_THINKING_BUDGET"
+        ),
+    )
+    # 主 VLM 推理强度，仅 gpt_cu 生效：
+    # - doubao_responses / claude_cu: 忽略（各自走 thinking 字段控制）
+    # - gpt_cu: payload.reasoning.effort = low/medium/high
+    #   * low：~30% 推理 token，适合 8 步内的简单 case
+    #   * medium（默认）：平衡速度和准确度，适合常规自动化 case
+    #   * high：~3x 推理 token + 更慢，适合多步骤复杂决策（注意成本）
+    # 不可关——computer-use-preview 是推理模型，必须有非零 effort。
+    vlm_main_reasoning_effort: str = Field(
+        default="medium",
+        pattern=r"^(low|medium|high)$",
+        description=(
+            "主 VLM 推理强度。仅 gpt_cu 生效，可选 low / medium（默认）/ high；"
+            "doubao_responses / claude_cu 忽略。env: AI_PHONE_VLM_MAIN_REASONING_EFFORT"
         ),
     )
     # 主 VLM 历史窗口大小（仅 stateless 协议生效）：

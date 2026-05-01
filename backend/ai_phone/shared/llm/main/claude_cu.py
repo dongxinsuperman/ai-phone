@@ -161,20 +161,52 @@ class ClaudeComputerUseClient:
         """单步决策：截图 → Anthropic Messages API → ParsedAction 列表。"""
         screen_w, screen_h = _decode_image_size(screenshot_bytes)
 
-        # ① 构造本轮 user content：pending hints 文本 + 当前截图
+        # ① 构造本轮 user content：tool_result 块（如有）+ pending hints + 当前截图
+        # Anthropic 协议硬约束：上一条 assistant 含 tool_use 块时，紧接的
+        # user 必须以 tool_result 块开头，且每个 tool_use_id 都要有配对的
+        # tool_result——少一个 API 直接 400 报
+        # ``tool_use ids were found without tool_result blocks``。
+        # 我们把"动作执行后的当前截图"放进**第一个 tool_result**（这是模型
+        # 看到的执行后状态），其余 tool_use（瞬态 UI 链式动作场景）用文本
+        # 占位 ack——模型只需要知道"那一串动作都执行了"，不需要中间帧。
+        image_block = {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": mime,
+                "data": base64.b64encode(screenshot_bytes).decode("ascii"),
+            },
+        }
+
+        prev_tool_use_ids = self._extract_prev_tool_use_ids()
+
         user_blocks: List[Dict[str, Any]] = []
+        for idx, tu_id in enumerate(prev_tool_use_ids):
+            if idx == 0:
+                user_blocks.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tu_id,
+                        "content": [image_block],
+                    }
+                )
+            else:
+                user_blocks.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tu_id,
+                        "content": [{"type": "text", "text": "ok"}],
+                    }
+                )
+
         for hint in self.pending_hints:
             user_blocks.append({"type": "text", "text": hint})
-        user_blocks.append(
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": mime,
-                    "data": base64.b64encode(screenshot_bytes).decode("ascii"),
-                },
-            }
-        )
+
+        # 首轮（无 tool_use 配对）才单独把截图作为 image 块给——避免与上面
+        # tool_result 内的截图重复，节省 token。
+        if not prev_tool_use_ids:
+            user_blocks.append(image_block)
+
         # 失败回滚备份
         pending_backup = list(self.pending_hints)
         self.pending_hints.clear()
@@ -205,6 +237,11 @@ class ClaudeComputerUseClient:
                 "type": "enabled",
                 "budget_tokens": self._thinking_budget,
             }
+            # Anthropic 硬约束：thinking enabled 时 temperature 必须 = 1，
+            # 否则 API 返回 400 ``temperature may only be set to 1 when
+            # thinking is enabled``。当前 API 默认值就是 1.0，但显式写死
+            # 是防御性的——避免后人加 temperature 配置时连带 crash。
+            payload["temperature"] = 1
 
         headers = {
             "x-api-key": self.api_key,
@@ -289,11 +326,9 @@ class ClaudeComputerUseClient:
         assistant_content = data.get("content") or []
         self.messages.append({"role": "assistant", "content": assistant_content})
 
-        # ⑩ 如果上一轮有 tool_use，按协议下一轮 user 必须带 tool_result。Claude CU
-        # 在我们这种"自己执行工具不回 tool_result"的场景下，模型实际能容忍——但严
-        # 谨起见，在每轮 user 消息前自动注入 tool_result 占位（指向上一次 tool_use
-        # 的 id）。这一段在第二轮才生效。
-        # （注：实现下一轮注入而不是本轮注入，避免双重注入；见 _trimmed_messages）
+        # ⑩ tool_result 注入：见步骤 ① 顶部 `_extract_prev_tool_use_ids` +
+        # `user_blocks` 构造逻辑。本轮已经把"上一条 assistant 的所有 tool_use"
+        # 配对回了 tool_result，无需在此再做处理。
 
         return Decision(
             thought=thought or "",
@@ -305,18 +340,42 @@ class ClaudeComputerUseClient:
         )
 
     # ------------------------------------------------------------------
-    # 内部：历史滑窗 + tool_result 占位注入
+    # 内部：tool_use id 提取 + 历史滑窗
     # ------------------------------------------------------------------
+    def _extract_prev_tool_use_ids(self) -> List[str]:
+        """提取上一条 assistant 消息里所有 tool_use 块的 id（按出现顺序）。
+
+        用于本轮新 user content 的 tool_result 配对。Anthropic 协议硬约束：
+        每个 tool_use_id 都必须有一个 tool_result，否则 API 直接 400。
+
+        返回空列表表示：① 首轮（self.messages 为空）；② 上一轮模型只输出
+        text/thinking 没调 computer 工具（罕见，但可能发生）；③ 上一条不
+        是 assistant（理论不会出现，防御性返回空）。
+        """
+        if not self.messages:
+            return []
+        last = self.messages[-1]
+        if not isinstance(last, dict) or last.get("role") != "assistant":
+            return []
+        ids: List[str] = []
+        for block in last.get("content") or []:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                tu_id = block.get("id")
+                if isinstance(tu_id, str) and tu_id:
+                    ids.append(tu_id)
+        return ids
+
     def _trimmed_messages(self) -> List[Dict[str, Any]]:
-        """生成本轮发出去的 messages：保留首屏 + 最近 N 步对，并补齐 tool_result。
+        """生成本轮发出去的历史 messages：保留首屏 + 最近 N 步对。
 
-        Anthropic 协议要求：assistant 含 tool_use 块时，紧接的 user 必须以
-        tool_result 块开头（与 tool_use id 配对）。我们在每轮新 user 前检查上
-        一条 assistant 是否含 tool_use，若有就在新 user content 顶部插入
-        tool_result 占位（type=tool_result, content="ok"）。
+        滑窗策略：保留首屏 1 对（让模型记得 case 起点）+ 最近 window-1 对。
+        tool_use / tool_result 配对由调用方 ``decide`` 在拼接新 user 时已经
+        处理好；本函数只负责"已存在的历史"按 step 对齐裁剪。
 
-        本函数返回值会与新 user 拼接，所以这里只处理"已存在的历史"。新 user
-        的 tool_result 注入在调用方 ``decide`` 里做。
+        ⚠️ 裁剪需保证不破坏 tool_use ↔ tool_result 配对：因为我们以"user+
+        assistant 一对"为最小单元裁剪，每对内部的配对关系完整（user 的
+        tool_result 对应 head/tail 范围内 assistant 的 tool_use），不会出
+        现孤立 tool_use。
         """
         if not self.messages:
             return []
@@ -328,7 +387,6 @@ class ClaudeComputerUseClient:
         if len(self.messages) <= max_keep:
             trimmed = list(self.messages)
         else:
-            # 保留首屏 1 对（让模型记得 case 起点）+ 最近 window_pairs - 1 对
             head = self.messages[:2]
             tail = self.messages[-(max_keep - 2):]
             trimmed = head + tail
