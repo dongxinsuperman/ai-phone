@@ -1,11 +1,18 @@
-"""大盘 AI 分析客户端：纯文本调用豆包 Chat Completions。
+"""大盘 AI 分析客户端：纯文本一次性调用 chat completion。
 
-和 ``shared/vlm.py`` 的区别：
+和 ``shared/vlm.py``（主 VLM 决策）的区别：
 
-- VLMClient 走 Responses API（有会话状态 / 截图输入 / caching 前缀），不适合单次纯文本分析
-- 这里直接走 ``vlm_chat_api_url``（``/api/v3/chat/completions``），一次性调用、不落
-  previous_response_id、不维护会话历史
-- 不做重试：用户明确要求"VLM 报错先不加重试"；前端失败就把错误原样展示，让用户决定
+- VLMClient 走 Responses API（会话状态 / 截图输入 / caching 前缀），不适合单次纯文本
+- 这里走 ``/chat/completions`` 端点，单次问答、不落 previous_response_id、不维护历史
+- 不做重试：用户明确要求"报错先不加重试"；前端失败就把错误原样展示，让用户决定
+
+模型档位选择（与辅助系统对齐）：
+
+- AI 分析是**纯文本任务**（喂 JSON 出文字总结），不需要 vision 能力。
+- 默认走 ``assistant_*`` 配置（如 ``doubao-seed-1-6-250615`` 通用版），比 vision
+  专版便宜快一档；与"包名匹配 / 通道判定 / 审判 / 断言"4 个辅助调用同档。
+- ``assistant_*`` 留空时回退到 ``vlm_*``（兼容老 .env：主辅同 key 同模型）。
+- 调用方可显式传 ``api_url / api_key / model`` 覆盖默认值。
 
 输入：聚合切片 dict；输出：人类可读中文分析文本 + usage 摘要。
 """
@@ -24,8 +31,8 @@ from ai_phone.config import get_settings
 
 # 默认给前端的简要兜底文案（仅在 client 未配置时使用，避免 500）
 _DEFAULT_UNCONFIGURED_HINT = (
-    "AI 分析未启用：尚未配置 VLM 接入信息 "
-    "（需要 AI_PHONE_VLM_API_KEY + AI_PHONE_VLM_MODEL + AI_PHONE_VLM_CHAT_API_URL）。"
+    "AI 分析未启用：尚未配置辅助系统或主 VLM 接入信息 "
+    "（需要 ASSISTANT 或 VLM 任一组：API_URL + API_KEY + MODEL）。"
 )
 
 
@@ -191,9 +198,11 @@ class AnalyticsAIClient:
         timeout_seconds: float = 60.0,
     ) -> None:
         s = get_settings()
-        self.api_url = (api_url or s.vlm_chat_api_url or "").strip()
-        self.api_key = (api_key or s.vlm_api_key or "").strip()
-        self.model = (model or s.vlm_model or "").strip()
+        # 与辅助系统对齐：assistant_* 优先（通用版便宜快、纯文本最匹配），
+        # 留空时回退 vlm_*（老 .env 兼容；主辅同 key 同模型场景无感）。
+        self.api_url = (api_url or s.assistant_api_url or s.vlm_chat_api_url or "").strip()
+        self.api_key = (api_key or s.assistant_api_key or s.vlm_api_key or "").strip()
+        self.model = (model or s.assistant_model or s.vlm_model or "").strip()
         self.timeout = timeout_seconds
 
     @property
