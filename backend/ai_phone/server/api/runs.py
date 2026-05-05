@@ -28,6 +28,7 @@ M1.6a 历史说明（保留方便溯源）：
 """
 from __future__ import annotations
 
+import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -169,6 +170,13 @@ async def create_run(
         combined = f"{pre_goal}\n\n{case.goal}".strip() if pre_goal else case.goal
         goal = body.goal or combined
 
+    # 预生成 run.id，下面把它直接当锁 holder 用——这样：
+    # 1) 并发自动抢锁天然按"不同 run = 不同 holder"判冲突，不会被同名续期绕过；
+    # 2) 设备页 / 运维查锁时 holder 就是业务上的 Run ID，不必再绕 meta；
+    # 3) stop_run 释放代抢锁时直接 holder 比对，不依赖事后写进 meta 的 run_id。
+    # 与 models.Run.id 的 default=_short_id 保持同样的生成规则（uuid4 前 12 hex）。
+    pre_run_id = uuid.uuid4().hex[:12]
+
     # 锁的来源二选一：
     # (1) 调用方已持锁 → lock_token 校验通过就沿用
     # (2) 没 token → 当场代抢一把 job 锁（自动化场景：定时任务 / webhook）
@@ -181,11 +189,11 @@ async def create_run(
                 detail="lock_token 无效或已过期，请刷新后重试",
             )
     else:
-        # 代抢：用一个 run-级 holder，失败直接 409
+        # 代抢：holder 用预生成的 run.id，天然唯一，避免同 holder 被识别为续期
         try:
             info = await store.acquire(
                 body.device_serial,
-                holder=f"run-{body.device_serial}",
+                holder=pre_run_id,
                 holder_type="job",
                 meta={"auto_acquired": True},
             )
@@ -206,6 +214,7 @@ async def create_run(
         )
 
     run = Run(
+        id=pre_run_id,
         device_serial=body.device_serial,
         agent_id=agent_id,
         case_id=case_id,
@@ -262,7 +271,12 @@ async def stop_run(
     run.status = "stopped"
     run.reason = run.reason or "stopped_by_user"
     await session.commit()
-    # 新锁模型：锁不归属 run，由发起方（浏览器 tab / 调度端）自己管释放；这里不碰。
+    # 新锁模型：外部传入的锁不归属 run，由发起方（浏览器 tab / 调度端）自己管释放。
+    # 但 POST /api/runs 自己代抢的 job 锁需要在 stop 时释放，否则设备会卡到 TTL 过期。
+    # holder 直接是 run.id（见 create_run），无需读 meta，靠 holder 一对一比对即可。
+    lock = store.peek(run.device_serial)
+    if lock is not None and lock.holder == run_id and lock.meta.get("auto_acquired"):
+        await store.release(run.device_serial, lock.token)
     await hub.unbind_run(run_id)
     await session.refresh(run)
     return run.to_dict()

@@ -190,13 +190,14 @@ async def test_create_run_with_goal(client, session):
     body = resp.json()
     assert body["status"] == "pending"
     assert body["goal"] == "打开设置"
-    assert "lock_token" in body
+    assert "job_lock_token" in body
     run_id = body["id"]
 
-    # 设备被自动占用
+    # 设备被自动占用：holder 就是 run.id，meta 里标记是代抢
     dev = (await client.get("/api/devices/S1")).json()
-    assert dev["lock"]["holder_type"] == "auto"
+    assert dev["lock"]["holder_type"] == "job"
     assert dev["lock"]["holder"] == run_id
+    assert dev["lock"]["meta"]["auto_acquired"] is True
 
     # 第二个 run 同设备应 409（自动锁未释放）
     dup = await client.post(
@@ -263,6 +264,12 @@ async def test_stop_run_releases_lock(client, session):
     assert stop.status_code == 200
     assert stop.json()["status"] == "stopped"
 
-    # 锁已释放 → 再下一个 run 应能占
+    # stop 后 lock 应被清空（直接看设备状态，避免靠下一个 run 间接验证）
+    dev = (await client.get("/api/devices/S1")).json()
+    assert dev["lock"] is None
+
+    # 锁已释放 → 再下一个 run 应能占（且新 run 的 holder = 新 run_id）
     r2 = await client.post("/api/runs", json={"device_serial": "S1", "goal": "g2"})
     assert r2.status_code == 201
+    dev2 = (await client.get("/api/devices/S1")).json()
+    assert dev2["lock"]["holder"] == r2.json()["id"]
