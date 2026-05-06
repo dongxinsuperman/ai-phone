@@ -48,6 +48,11 @@ The GitHub Actions workflow runs the same baseline checks for pull requests.
 
 ## Pull Request Guidelines
 
+This repository is maintained as an upstream reference implementation. Pull
+requests are welcome as bug reports, design references, or candidate patches, but
+they are not guaranteed to be merged. The maintainer may reimplement, adapt, or
+decline a contribution to keep the main branch stable and maintainable.
+
 - Keep changes focused on one behavior or one document area.
 - Include tests for backend scheduling, locking, API, runner, or protocol
   changes whenever practical.
