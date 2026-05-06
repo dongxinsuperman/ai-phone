@@ -10,7 +10,6 @@ python-multipart>=0.0.9
 
 sqlalchemy[asyncio]>=2.0,<2.1
 asyncpg>=0.29
-alembic>=1.13
 
 httpx>=0.27
 websockets>=13,<14
@@ -23,3 +22,5 @@ adbutils>=2.6
 
 av>=10,<13
 numpy>=1.24,<2
+
+aiokafka>=0.11,<1

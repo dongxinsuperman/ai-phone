@@ -28,8 +28,12 @@ under its own license:
   Copyright Appium contributors. See third_party/WebDriverAgent/LICENSE.
 - scrcpy (vendored client + scrcpy-server.jar v2.4) — Apache License 2.0,
   Copyright Genymobile.
+- ADBKeyBoard (backend/assets/ADBKeyBoard.apk) — GNU GPLv2,
+  Copyright its upstream contributors.
 - pymobiledevice3 — GNU GPLv3 (optional dependency, not bundled).
 - hmdriver2 — MIT License (optional dependency, not bundled).
 - aiokafka, FastAPI, SQLAlchemy, Pydantic, httpx, Pillow, adbutils, av, numpy,
   loguru, websockets, python-dotenv, uvicorn — see each package's PyPI page
   for license terms.
+
+See THIRD_PARTY_NOTICES.md for additional third-party component notes.

@@ -1,5 +1,7 @@
 # ai-phone
 
+[![CI](https://github.com/dongxinsuperman/ai-phone/actions/workflows/ci.yml/badge.svg)](https://github.com/dongxinsuperman/ai-phone/actions/workflows/ci.yml)
+
 **面向中小型公司的三端真机 AI 自动化中台** —— iOS / Android / HarmonyOS 同级原生支持，自然语言驱动的纯视觉决策，开箱即用的调度队列与多设备并发，执行器可插拔，一台 Mac 即可起完整链路。
 
 > **产品形态**：ai-phone 不是一个执行器 SDK，而是把"投递批次 → 设备池调度 → 自然语言执行 → 终态广播 + HTML 报告 + 大盘统计"做成 QA 团队 / 业务回归大盘开箱即用的中台能力。**执行器是其中一个可替换组件**：默认内置自研的 VLM 纯视觉决策循环（带卡死检测 / 审判 / 断言等辅助系统），也可挂载第三方执行器作为额外引擎选项。
@@ -21,7 +23,7 @@
 | **辅助系统护城河** | 卡死检测（本地 pHash 算法层、不烧 token）+ 异常介入审判（独立轻量模型，反复同坐标 / 同屏 / 震荡滑动自动召唤）+ 双图断言系统（before / after + 全步骤上下文对照终局裁决）+ 通道判定（结构化 / 自由对话自动分流）—— "VLM 是否真生效"不再是黑盒 |
 | **三家协议自由组合** | 主 VLM 走 Doubao / Claude / GPT 三选一，辅助系统也可异家组合（如"主 Claude + 辅 Doubao 省成本"），全部走 env 切换、零代码改动 |
 | **执行器可插拔** | 默认内置自研 VLM 决策循环；前端"引擎"下拉框允许挂载第三方执行器作为额外选项，调度 / 报告 / 设备池 / 终态广播仍然走中台统一链路 |
-| **快速部署** | 一台 Mac + Postgres + 一根数据线即可起完整链路；K8s / Nginx 部署模板见 `deploy/`（M4 补） |
+| **快速部署** | 一台 Mac + Postgres + 一根数据线即可起完整链路；生产部署模板在 Roadmap 中持续补齐 |
 
 **典型用户**：
 
@@ -107,9 +109,13 @@ curl -X POST http://localhost:8000/api/submissions \
 | VLM 决策循环 + 辅助系统（卡死 / 审判 / 断言 / 通道判定） | ✅ 完整 |
 | 多协议适配（Doubao / Claude / GPT 自由组合） | ✅ 完整 |
 | 执行器可插拔（内置 VLM + Midscene 桥接） | ✅ 完整 |
-| 历史回放页 / Case 加载对话框 | API 就位，前端待补 |
-| 日志服务系统（统一收集 / 检索） | 待办 |
-| K8s / Nginx 部署模板 | 待 M4 |
+
+## Roadmap
+
+- 历史回放页 / Case 加载对话框：API 就位，前端待补
+- 日志服务系统：统一收集、检索、保留策略
+- 生产部署模板：Docker Compose / K8s / Nginx / Ingress 示例
+- Webhook 签名：面向公网集成的 HMAC 校验示例
 
 ---
 
@@ -125,6 +131,9 @@ curl -X POST http://localhost:8000/api/submissions \
 | [HarmonyOS 接入指南](./docs/harmony-setup.md) | 鸿蒙接入者 | hdc / hmdriver2 / hypium 镜像后端切换 |
 | [辅助系统核心逻辑及效果](./ai-phone的辅助系统核心逻辑及效果.md) | 算法调优者 | 通道判定 / 审判 / 断言 / 卡死检测 / 链式动作的效果与调参 |
 | [Midscene 执行器接入方案](./Midscene执行器接入方案.md) | 执行器扩展者 | 第三方执行器挂载方案 |
+| [安全说明](./SECURITY.md) | 部署者 / 集成者 | 鉴权边界、默认 token、网络隔离和漏洞报告方式 |
+| [贡献指南](./CONTRIBUTING.md) | 贡献者 | 本地开发、测试命令、PR 约定 |
+| [第三方声明](./THIRD_PARTY_NOTICES.md) | 法务 / 维护者 | 捆绑组件与主要依赖的许可证说明 |
 
 ---
 
@@ -133,7 +142,8 @@ curl -X POST http://localhost:8000/api/submissions \
 - `backend/`：Python 3.11（`pyproject.toml` 锁 `>=3.11,<3.13`），同一个包按启动参数切换 Server / Agent 角色
 - `web/`：Vue 3 + Vite 前端（**纯 JavaScript，无 TypeScript**）
 - `midscene-bridge/`：第三方执行器桥接子工程（独立 Node 工程，按需启用）
-- `deploy/`：k8s / Nginx 部署模板（M4 阶段补）
+
+> 发布源码包时建议使用 `git archive`，不要直接压缩本地工作目录；本地 `.env`、`.data/`、`node_modules/`、`dist/` 等运行产物都不应进入发布包。
 
 ---
 
