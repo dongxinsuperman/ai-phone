@@ -3,6 +3,7 @@ from fastapi import FastAPI
 
 from . import (
     analytics,
+    agents,
     cases,
     config,
     device_aliases,
@@ -17,6 +18,7 @@ from ..submissions.public_routes import router as public_submissions_router
 
 def include_routers(app: FastAPI) -> None:
     app.include_router(devices.router)            # /api/devices（含匿名 /available）
+    app.include_router(agents.router)             # /api/agents（在线 Agent 只读快照）
     app.include_router(cases.router)
     app.include_router(runs.router)
     app.include_router(files.router)

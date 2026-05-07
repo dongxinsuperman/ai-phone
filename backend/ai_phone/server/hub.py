@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Set
 
@@ -27,6 +28,8 @@ class AgentConn:
     agent_name: str
     host_os: str
     ws: WebSocket
+    connected_at: float = field(default_factory=time.time)
+    last_seen_at: float = field(default_factory=time.time)
     serials: Set[str] = field(default_factory=set)
     run_ids: Set[str] = field(default_factory=set)
 
@@ -164,6 +167,7 @@ class Hub:
         conn = self._agents.get(agent_id)
         if conn is None:
             return
+        conn.last_seen_at = time.time()
         old = conn.serials
         to_remove = old - serials
         to_add = serials - old
@@ -173,6 +177,11 @@ class Hub:
         for s in to_add:
             self._serial_to_agent[s] = agent_id
         conn.serials = set(serials)
+
+    def touch_agent(self, agent_id: str) -> None:
+        conn = self._agents.get(agent_id)
+        if conn is not None:
+            conn.last_seen_at = time.time()
 
     # ------------------------------------------------------------------
     # Run 路由
@@ -283,6 +292,8 @@ class Hub:
                     "agent_id": c.agent_id,
                     "agent_name": c.agent_name,
                     "host_os": c.host_os,
+                    "connected_at": c.connected_at,
+                    "last_seen_at": c.last_seen_at,
                     "serials": sorted(c.serials),
                     "run_ids": sorted(c.run_ids),
                 }

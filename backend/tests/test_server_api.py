@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import pytest
 
 from ai_phone.server.models import Device, RunCommand
+from ai_phone.server.hub import Hub
 
 
 async def _seed_device(session, *, serial="S1", status="online") -> Device:
@@ -56,6 +57,27 @@ async def test_list_and_get_device(client, session):
 
     miss = await client.get("/api/devices/UNKNOWN")
     assert miss.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_agents(client, app):
+    hub = Hub()
+    app.state.hub = hub
+    await hub.register_agent("agent-1", "mac-a", "Darwin", object())
+    await hub.set_devices("agent-1", {"S1", "S2"})
+    await hub.bind_run("run-1", "agent-1")
+
+    resp = await client.get("/api/agents")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["agent_id"] == "agent-1"
+    assert body[0]["agent_name"] == "mac-a"
+    assert body[0]["device_count"] == 2
+    assert body[0]["running_count"] == 1
+    assert body[0]["serials"] == ["S1", "S2"]
+    assert body[0]["connected_at"]
+    assert body[0]["last_seen_at"]
 
 
 # --------------------------------------------------------------------- locking

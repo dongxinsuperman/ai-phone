@@ -114,6 +114,9 @@ const size = computed(() => {
 })
 
 const holderType = computed(() => props.device.lock?.holder_type || null)
+const agentLabel = computed(() => (
+  props.device.agent_name_current || props.device.agent_id_current || props.device.agent_id || ''
+))
 </script>
 
 <template>
@@ -140,6 +143,9 @@ const holderType = computed(() => props.device.lock?.holder_type || null)
       <span>{{ device.os_version || 'os -' }}</span>
       <span>{{ size }}</span>
       <span v-if="holderType" class="holder">{{ holderType === 'manual' ? '浏览器' : 'VLM' }}</span>
+    </div>
+    <div v-if="agentLabel" class="agent-line" :title="agentLabel">
+      Agent：{{ agentLabel }}
     </div>
     <div v-if="reason" class="reason">{{ reason }}</div>
     <div v-if="readinessMeta" class="readiness">
@@ -238,6 +244,13 @@ const holderType = computed(() => props.device.lock?.holder_type || null)
 }
 .readiness-hint {
   opacity: 0.85;
+}
+.agent-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #4b5563;
 }
 .wda-stage {
   font-size: 12px;

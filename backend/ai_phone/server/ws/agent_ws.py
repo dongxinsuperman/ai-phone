@@ -124,6 +124,7 @@ async def _dispatch(
     msg: Dict[str, Any],
 ) -> None:
     t = msg.get("type")
+    hub.touch_agent(agent_id)
 
     if t == P.MSG_PONG or t == P.MSG_PING:
         # Agent 可选的心跳；收到也回一个

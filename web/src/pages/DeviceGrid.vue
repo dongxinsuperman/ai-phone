@@ -4,6 +4,7 @@ import DeviceCard from '../components/DeviceCard.vue'
 import { api, internal } from '../lib/api.js'
 
 const devices = ref([])
+const agents = ref([])
 const loading = ref(false)
 const error = ref(null)
 const filter = ref('all')
@@ -13,13 +14,40 @@ async function refresh() {
   loading.value = true
   error.value = null
   try {
-    devices.value = await api.listDevices()
+    const [devs, agts] = await Promise.all([
+      api.listDevices(),
+      api.listAgents().catch(() => []),
+    ])
+    devices.value = Array.isArray(devs) ? devs : []
+    agents.value = Array.isArray(agts) ? agts : []
   } catch (e) {
     error.value = String(e)
   } finally {
     loading.value = false
   }
 }
+
+const agentBySerial = computed(() => {
+  const map = new Map()
+  for (const a of agents.value) {
+    for (const serial of a.serials || []) {
+      map.set(serial, a)
+    }
+  }
+  return map
+})
+
+const enrichedDevices = computed(() => (
+  devices.value.map((d) => {
+    const agent = agentBySerial.value.get(d.serial)
+    return {
+      ...d,
+      agent_online: !!agent,
+      agent_name_current: agent?.agent_name || '',
+      agent_id_current: agent?.agent_id || d.agent_id || '',
+    }
+  })
+))
 
 // "未就绪" = online 但 readiness.ready === false。作为 online 的子集单独筛。
 function isNotReady(d) {
@@ -31,7 +59,7 @@ function isReadyIdle(d) {
 }
 
 const filtered = computed(() => {
-  const list = devices.value
+  const list = enrichedDevices.value
   if (filter.value === 'online') return list.filter(isReadyIdle)
   if (filter.value === 'not_ready') return list.filter(isNotReady)
   if (filter.value === 'busy') return list.filter((d) => d.effective_status === 'busy')
@@ -40,8 +68,8 @@ const filtered = computed(() => {
 })
 
 const counts = computed(() => {
-  const base = { all: devices.value.length, online: 0, not_ready: 0, busy: 0, offline: 0 }
-  for (const d of devices.value) {
+  const base = { all: enrichedDevices.value.length, online: 0, not_ready: 0, busy: 0, offline: 0 }
+  for (const d of enrichedDevices.value) {
     if (isNotReady(d)) base.not_ready += 1
     else if (isReadyIdle(d)) base.online += 1
     else if (d.effective_status === 'busy') base.busy += 1
@@ -49,6 +77,22 @@ const counts = computed(() => {
   }
   return base
 })
+
+const agentSummary = computed(() => {
+  const online = agents.value.length
+  const devicesTotal = agents.value.reduce((sum, a) => sum + Number(a.device_count || 0), 0)
+  const runningTotal = agents.value.reduce((sum, a) => sum + Number(a.running_count || 0), 0)
+  return { online, devicesTotal, runningTotal }
+})
+
+function formatAgentAge(ms) {
+  if (ms == null) return '-'
+  const sec = Math.max(0, Math.round(Number(ms) / 1000))
+  if (sec < 60) return `${sec}s`
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}m`
+  return `${Math.floor(min / 60)}h`
+}
 
 onMounted(() => {
   refresh()
@@ -190,6 +234,30 @@ function prettyErr(e) {
     </header>
 
     <p v-if="error" class="err">加载失败：{{ error }}</p>
+
+    <div class="agent-panel">
+      <div class="agent-panel-head">
+        <div>
+          <div class="agent-title">Agent 在线状态</div>
+          <div class="agent-sub">
+            在线 {{ agentSummary.online }} 个 · 设备 {{ agentSummary.devicesTotal }} 台 · 运行中 {{ agentSummary.runningTotal }} 条
+          </div>
+        </div>
+        <div class="agent-tip">远端电脑启动 Agent 后会自动出现在这里</div>
+      </div>
+      <div v-if="agents.length" class="agent-list">
+        <div v-for="a in agents" :key="a.agent_id" class="agent-item">
+          <span class="agent-dot"></span>
+          <div class="agent-main">
+            <div class="agent-name">{{ a.agent_name || a.agent_id }}</div>
+            <div class="agent-meta">
+              {{ a.host_os || '-' }} · {{ a.device_count || 0 }} 台设备 · {{ a.running_count || 0 }} 运行中 · {{ formatAgentAge(a.last_seen_age_ms) }} 前心跳
+            </div>
+          </div>
+        </div>
+      </div>
+      <div v-else class="agent-empty">暂无在线 Agent</div>
+    </div>
 
     <div class="grid" v-if="filtered.length">
       <DeviceCard
@@ -342,6 +410,72 @@ h2 {
   border: 1px solid #fecaca;
   color: #991b1b;
   border-radius: 6px;
+}
+.agent-panel {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #e2e6ec;
+  border-radius: 10px;
+}
+.agent-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.agent-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+}
+.agent-sub,
+.agent-tip {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #6b7280;
+}
+.agent-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+.agent-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 8px 10px;
+  background: #f9fafb;
+  border: 1px solid #eef1f5;
+  border-radius: 8px;
+}
+.agent-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #22c55e;
+  flex-shrink: 0;
+}
+.agent-main {
+  min-width: 0;
+}
+.agent-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1f2937;
+}
+.agent-meta,
+.agent-empty {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #6b7280;
 }
 
 /* ---- 弹窗 ---- */

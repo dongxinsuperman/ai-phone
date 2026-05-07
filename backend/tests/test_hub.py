@@ -37,6 +37,18 @@ async def test_register_and_route_by_serial():
 
 
 @pytest.mark.asyncio
+async def test_snapshot_includes_agent_timestamps():
+    hub = Hub()
+    ws = FakeWS()
+    await hub.register_agent("a1", "mac", "Darwin", ws)
+    before = hub.snapshot()["agents"][0]["last_seen_at"]
+    hub.touch_agent("a1")
+    after = hub.snapshot()["agents"][0]["last_seen_at"]
+    assert after >= before
+    assert hub.snapshot()["agents"][0]["connected_at"] <= after
+
+
+@pytest.mark.asyncio
 async def test_unregister_clears_routes():
     hub = Hub()
     ws = FakeWS()

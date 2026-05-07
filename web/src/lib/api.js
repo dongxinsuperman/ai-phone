@@ -62,6 +62,7 @@ export const api = {
 
   // 设备
   listDevices: () => request('GET', '/api/devices'),
+  listAgents: () => request('GET', '/api/agents'),
   getDevice: (serial) => request('GET', `/api/devices/${encodeURIComponent(serial)}`),
   acquireLock: (serial, holder, holderType = 'manual') =>
     request('POST', `/api/devices/${encodeURIComponent(serial)}/lock`, {
