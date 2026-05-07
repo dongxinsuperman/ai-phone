@@ -8,6 +8,21 @@
 
 ---
 
+## 分支说明
+
+当前分支是 `next/server-brain`，用于验证 **Server 大脑，Agent 手脚** 的新架构。
+
+| 分支 | 定位 | 适合场景 |
+|---|---|---|
+| `main` | 稳定开源分支，现有 Agent 大脑架构 | 个人使用、本机单套部署、希望优先稳定和少配置的团队 |
+| `next/server-brain` | 新架构验证分支，VLM 决策集中在 Server，Agent 只执行设备动作 | 多办公区、多 Agent、统一 Server、统一模型密钥、后续要接队列 / 权限 / 审计 / K8s 的团队 |
+
+两个分支会保持长期隔离：`main` 不会被新架构直接覆盖，`next/server-brain` 也不会自动合并回 `main`。如果你第一次使用 ai-phone，建议先从 `main` 开始；如果你的设备分散在多台电脑，希望所有 Agent 都连接同一个 Server，再评估本分支。
+
+本分支的部署和差异说明见 [Server 大脑架构说明](./docs/server-brain.md)。
+
+---
+
 ![iOS / HarmonyOS / Android 三端等价接入，业务化别名一栏管理](./assets/screenshots/devices-overview.png)
 
 ---
