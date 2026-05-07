@@ -233,19 +233,41 @@ class _RunSupervisor:
         self._runs: Dict[str, Dict[str, Any]] = {}
 
     def is_busy(self, serial: str) -> bool:
+        self._drop_done()
         return any(r["serial"] == serial for r in self._runs.values())
 
     def register(self, run_id: str, serial: str, task: asyncio.Task, bridge: RunnerBridge) -> None:
         self._runs[run_id] = {"serial": serial, "task": task, "bridge": bridge}
 
+        def _cleanup(done: asyncio.Task) -> None:
+            self._runs.pop(run_id, None)
+            if done.cancelled():
+                return
+            try:
+                exc = done.exception()
+            except Exception:  # noqa: BLE001
+                return
+            if exc is not None:
+                logger.error("runner task 提前异常 run_id={}: {}", run_id, exc)
+
+        task.add_done_callback(_cleanup)
+
     def pop(self, run_id: str) -> Optional[Dict[str, Any]]:
         return self._runs.pop(run_id, None)
 
     def get(self, run_id: str) -> Optional[Dict[str, Any]]:
+        self._drop_done()
         return self._runs.get(run_id)
 
     def all_tasks(self) -> List[asyncio.Task]:
+        self._drop_done()
         return [r["task"] for r in self._runs.values()]
+
+    def _drop_done(self) -> None:
+        for run_id, entry in list(self._runs.items()):
+            task = entry.get("task")
+            if isinstance(task, asyncio.Task) and task.done():
+                self._runs.pop(run_id, None)
 
 
 # ------------------------------------------------------------------
@@ -484,9 +506,9 @@ async def _handle_start_run(
                 driver=driver,
                 goal=goal,
                 emit=bridge.emit,
-                settings=settings,
+                settings=get_settings(),
             )
-        except RuntimeError as exc:
+        except Exception as exc:  # noqa: BLE001
             await client.send(
                 {
                     "type": P.MSG_RUN_DONE,

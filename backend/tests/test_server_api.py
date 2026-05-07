@@ -8,8 +8,16 @@ from datetime import datetime, timezone
 
 import pytest
 
-from ai_phone.server.models import Device, RunCommand, RunLog
+from ai_phone.server.models import Device, Run, RunCommand, RunLog
 from ai_phone.server.hub import Hub
+
+
+class _FakeWs:
+    def __init__(self):
+        self.sent = []
+
+    async def send_json(self, payload):
+        self.sent.append(payload)
 
 
 async def _seed_device(session, *, serial="S1", status="online") -> Device:
@@ -379,3 +387,31 @@ async def test_stop_run_releases_lock(client, session):
     assert r2.status_code == 201
     dev2 = (await client.get("/api/devices/S1")).json()
     assert dev2["lock"]["holder"] == r2.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_stop_stale_agent_brain_run_resends_to_agent(client, session, app):
+    await _seed_device(session)
+    hub = Hub()
+    ws = _FakeWs()
+    app.state.hub = hub
+    await hub.register_agent("agent-local", "mac", "Darwin", ws)
+    await hub.set_devices("agent-local", {"S1"})
+
+    run = Run(
+        id="stale-mid",
+        device_serial="S1",
+        agent_id="agent-local",
+        goal="g",
+        status="stopped",
+        reason="stopped_by_user",
+        engine="midscene",
+        execution_mode="agent_brain",
+    )
+    session.add(run)
+    await session.commit()
+
+    resp = await client.post("/api/runs/stale-mid/stop")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "stopped"
+    assert ws.sent[-1] == {"type": "stop_run", "run_id": "stale-mid"}

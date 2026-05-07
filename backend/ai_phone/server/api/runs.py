@@ -291,7 +291,13 @@ async def stop_run(
     run = await session.get(Run, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
-    if run.status in ("success", "failed", "stopped"):
+    if run.status in ("success", "failed"):
+        return run.to_dict()
+    # agent_brain 的 stop 是软停：先发 stop_run，等 Agent 回 MSG_RUN_DONE 后
+    # 才算真正完成。历史上可能出现 status=stopped 但 finished_at 为空、且 Hub
+    # 已 unbind 的半收口 Run；这种情况下允许再次 stop，并用 run.agent_id 兜底
+    # 直发给原 Agent，清掉 Agent 端 _RunSupervisor 里的残留任务。
+    if run.status == "stopped" and run.finished_at is not None:
         return run.to_dict()
 
     dispatch_service = _dispatch_service(request, hub)
@@ -300,7 +306,10 @@ async def stop_run(
     )
     if not stopped_by_server:
         # 先通知 Agent 软停；具体兑现由 Agent 触发 run_done(cancelled) 回来
-        await hub.send_to_run(run_id, {"type": P.MSG_STOP_RUN, "run_id": run_id})
+        payload = {"type": P.MSG_STOP_RUN, "run_id": run_id}
+        sent = await hub.send_to_run(run_id, payload)
+        if not sent and run.agent_id:
+            await hub.send_to_agent(run.agent_id, payload)
 
     run.status = "stopped"
     run.reason = run.reason or "stopped_by_user"

@@ -141,6 +141,7 @@ psql "$AI_PHONE_DB_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 
 - [对外调用 API 契约（投递 / 查询 / 取消 / Kafka / Webhook）](../对外调用清单.md)
 - [架构设计](../架构设计.md)
+- [Server 大脑架构说明（next/server-brain）](./server-brain.md)
 - [使用功能介绍（产品手册）](../使用功能介绍.md)
 - [辅助系统核心逻辑及效果（含 26 项阈值调参）](../ai-phone的辅助系统核心逻辑及效果.md)
 - [Midscene 执行器挂载方案](../Midscene执行器接入方案.md)
