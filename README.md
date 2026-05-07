@@ -8,6 +8,19 @@
 
 ---
 
+## 分支说明
+
+当前 `main` 是稳定开源分支，推荐第一次使用 ai-phone 的用户从这里开始。
+
+| 分支 | 定位 | 适合场景 |
+|---|---|---|
+| `main` | 稳定开源分支，现有 Agent 大脑架构 | 个人使用、本机单套部署、希望优先稳定和少配置的团队 |
+| `next/server-brain` | 新架构验证分支，VLM 决策集中在 Server，Agent 只执行设备动作 | 多办公区、多 Agent、统一 Server、统一模型密钥、后续要接队列 / 权限 / 审计 / K8s 的团队 |
+
+两个分支会保持长期隔离：`main` 不会被新架构直接覆盖，`next/server-brain` 也不会自动合并回 `main`。如果你的设备分散在多台电脑，希望所有 Agent 都连接同一个 Server，可以评估 `next/server-brain`；如果只是本机或小团队先跑起来，继续使用 `main` 更稳妥。
+
+---
+
 ![iOS / HarmonyOS / Android 三端等价接入，业务化别名一栏管理](./assets/screenshots/devices-overview.png)
 
 ---
