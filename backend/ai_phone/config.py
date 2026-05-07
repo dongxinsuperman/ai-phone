@@ -124,16 +124,6 @@ class Settings(BaseSettings):
     )
 
     # --- VLM ---
-    # vlm_backend 决定主 VLM 决策循环走哪条协议路径：
-    #   doubao_responses — 方舟 Responses API（原有豆包路径，默认）
-    #   claude_cu        — Claude Computer Use via LiteLLM Chat Completions
-    vlm_backend: str = Field(
-        default="doubao_responses",
-        description=(
-            "主 VLM 协议后端选择：doubao_responses（方舟 Responses API）"
-            "| claude_cu（Claude Computer Use via LiteLLM）"
-        ),
-    )
     # 主决策走 Responses API（/responses）：服务端维护对话历史，配合显式缓存
     # 长任务也能把 prompt 前缀复用起来，避免 Chat API 滑窗把缓存打穿。
     vlm_api_url: str = Field(
@@ -305,30 +295,6 @@ class Settings(BaseSettings):
             "env: AI_PHONE_ASSISTANT_BACKEND"
         ),
     )
-    # --- 辅助系统按任务拆模型（海外 Claude 全家桶场景用）---
-    # 留空时回退到 assistant_model；填了则该任务走指定模型。
-    assistant_model_match: str = Field(
-        default="",
-        description="包名匹配专用模型（高频纯文本），留空回退 assistant_model",
-    )
-    assistant_model_channel: str = Field(
-        default="",
-        description="通道判定专用模型（中频纯文本），留空回退 assistant_model",
-    )
-    assistant_model_judge: str = Field(
-        default="",
-        description="审判专用模型（低频推理），留空回退 assistant_model",
-    )
-    assistant_model_assertion: str = Field(
-        default="",
-        description="断言专用模型（终态视觉裁决），留空回退 assistant_model",
-    )
-    # --- Claude CU 专属参数 ---
-    vlm_main_thinking_budget: int = Field(
-        default=1024,
-        description="主 VLM 单步思维链预算 token（仅 claude_cu 后端生效）",
-    )
-
     # --- VLM Agent · 瞬态 UI 检测（动态判断系统） ---
     # 视频播放工具栏 / Toast / 半透明菜单这类"自动隐藏"的瞬态控件，单帧策略下
     # VLM 看到 → 推理 → 执行的 6s+ 链路一定追不上。系统层 snapshot-replay 机制
