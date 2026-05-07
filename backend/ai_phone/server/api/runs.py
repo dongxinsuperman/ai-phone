@@ -31,7 +31,7 @@ from __future__ import annotations
 import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +42,7 @@ from ai_phone.shared import protocol as P
 from ..hub import Hub
 from ..lockstore import DeviceLockStore, LockConflict
 from ..models import Case, Device, Run, RunLog, RunStep
+from ..runner.dispatch import RunDispatchService
 from ._deps import DBSession, HubDep, LockStoreDep
 
 # 白名单：API 接受的 engine 取值。新增引擎时同步本表 + factory.py。
@@ -140,6 +141,7 @@ async def get_run_logs(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_run(
     body: RunCreate,
+    request: Request,
     session: AsyncSession = DBSession,
     store: DeviceLockStore = LockStoreDep,
     hub: Hub = HubDep,
@@ -227,24 +229,30 @@ async def create_run(
     await session.refresh(run)
 
     dispatched = False
+    execution_mode = "agent_brain"
     if agent_id is not None:
-        await hub.bind_run(run.id, agent_id)
-        dispatched = await hub.send_to_agent(
-            agent_id,
-            {
-                "type": P.MSG_START_RUN,
-                "run_id": run.id,
-                "device_serial": body.device_serial,
-                "goal": goal,
-                "engine": engine,
-            },
+        dispatch_service = _dispatch_service(request, hub)
+        result = await dispatch_service.dispatch(
+            run_id=run.id,
+            serial=body.device_serial,
+            agent_id=agent_id,
+            goal=goal,
+            engine=engine,
+            dispatch_source="api",
+            platform=dev.platform or "android",
         )
-        if not dispatched:
-            await hub.unbind_run(run.id)
+        dispatched = bool(result.get("dispatched"))
+        execution_mode = str(result.get("execution_mode") or "agent_brain")
+        if execution_mode == "agent_brain":
+            run.execution_mode = "agent_brain"
+            run.dispatch_source = "api"
+            await session.commit()
+        await session.refresh(run)
 
     payload = run.to_dict()
     payload["dispatched"] = dispatched
     payload["agent_id"] = agent_id
+    payload["execution_mode"] = execution_mode
     # 只有 "代抢" 的 job 锁 token 才回吐，让调度端保存用于 Run 结束后释放；
     # 浏览器路径下 token 归 useDeviceLock 管，这里不回吐避免泄露
     if job_lock_token is not None:
@@ -255,6 +263,7 @@ async def create_run(
 @router.post("/{run_id}/stop")
 async def stop_run(
     run_id: str,
+    request: Request,
     session: AsyncSession = DBSession,
     store: DeviceLockStore = LockStoreDep,
     hub: Hub = HubDep,
@@ -265,8 +274,13 @@ async def stop_run(
     if run.status in ("success", "failed", "stopped"):
         return run.to_dict()
 
-    # 先通知 Agent 软停；具体兑现由 Agent 触发 run_done(cancelled) 回来
-    await hub.send_to_run(run_id, {"type": P.MSG_STOP_RUN, "run_id": run_id})
+    dispatch_service = _dispatch_service(request, hub)
+    stopped_by_server = await dispatch_service.stop(
+        run_id, execution_mode=run.execution_mode or "agent_brain"
+    )
+    if not stopped_by_server:
+        # 先通知 Agent 软停；具体兑现由 Agent 触发 run_done(cancelled) 回来
+        await hub.send_to_run(run_id, {"type": P.MSG_STOP_RUN, "run_id": run_id})
 
     run.status = "stopped"
     run.reason = run.reason or "stopped_by_user"
@@ -280,3 +294,13 @@ async def stop_run(
     await hub.unbind_run(run_id)
     await session.refresh(run)
     return run.to_dict()
+
+
+def _dispatch_service(request: Request, hub: Hub) -> RunDispatchService:
+    svc = getattr(request.app.state, "run_dispatch_service", None)
+    if isinstance(svc, RunDispatchService):
+        return svc
+    server_runner = getattr(request.app.state, "server_runner_service", None)
+    svc = RunDispatchService(hub=hub, server_runner=server_runner)
+    request.app.state.run_dispatch_service = svc
+    return svc

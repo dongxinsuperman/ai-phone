@@ -1,17 +1,18 @@
 """SubmissionScheduler：v1 第 2 梯队内部排队 + 调度核心。
 
-本文件严格遵守项目内部 v1 冻结清单：
+本文件保留 v1 队列 / 锁 / 终态语义；在 next/server-brain 分支，Run 派发
+统一改走 ``RunDispatchService``：
 
-    **不修改** 既有的 WS `start_run` 协议（仍是 ``run_id / device_serial / goal``），
-    **不修改** agent 侧执行流程，**不修改** /api/runs 已有字段。
+    - 老 agent_brain：仍发送既有 WS `start_run` 协议（``run_id / device_serial / goal``）
+    - 新 server_brain：Server 进程内运行 VLMRunner，Agent 只执行 driver_command
 
 Scheduler 只做三件事：
 
 1. 把 ``SubmissionItem`` 按 ``platform`` 分池排队；
 2. 从"可调度池"选一对 ``(item, device)``——device 需满足 **online + ready +
    无锁**，platform 一致；
-3. 复用现有的 Run 创建 + WS 派发路径：建 Run 行 → bind_run → 发
-   MSG_START_RUN；Run 终态由 ``on_run_done()`` 在既有 agent_ws 里钩回来。
+3. 复用统一 Run 创建 + 派发路径：建 Run 行 → ``RunDispatchService`` 派发；
+   Run 终态由 ``on_run_done()`` 钩回来（agent_ws 或 ServerRunEmitter）。
 
 超时 & 取消：
 
@@ -41,6 +42,7 @@ from ai_phone.shared import protocol as P
 from ..hub import Hub
 from ..lockstore import DeviceLockStore, LockConflict
 from ..models import Device, Run, Submission, SubmissionItem
+from ..runner.dispatch import RunDispatchService
 from ..submissions import (
     ResultPublisher,
     StdoutPublisher,
@@ -392,11 +394,13 @@ class SubmissionScheduler:
         lock_store: DeviceLockStore,
         session_factory: async_sessionmaker[AsyncSession],
         publisher: Optional[ResultPublisher] = None,
+        dispatch_service: Optional[RunDispatchService] = None,
     ) -> None:
         self._hub = hub
         self._lock_store = lock_store
         self._session_factory = session_factory
         self._settings = get_settings()
+        self._dispatch_service = dispatch_service or RunDispatchService(hub=hub)
         # 广播 publisher：默认 stdout（v1 broker 未到位），scheduler 在 item
         # 进入终态（on_run_done / cancel queued / submission_timeout）时调一次。
         # 广播失败永远不影响主流程——publisher 内部吞异常。
@@ -728,27 +732,39 @@ class SubmissionScheduler:
             await session.refresh(run)
             await session.refresh(item)
 
-        # 4) 绑定 + 派发 WS。出错回滚状态 + 释放锁。
-        await self._hub.bind_run(run.id, agent_id)
-        ok = await self._hub.send_to_agent(
-            agent_id,
-            {
-                "type": P.MSG_START_RUN,
-                "run_id": run.id,
-                "device_serial": serial,
-                "goal": item.run_content,
-            },
+        self._runs[run.id] = _RunTrack(
+            item_id=item.id,
+            submission_id=item.submission_id,
+            platform=platform,
+            serial=serial,
+            lock_token=info.token,
+            started_at_mono=time.monotonic(),
         )
+
+        # 4) 派发 Run。agent_brain / server_brain 都从这里走，保证 API 与
+        # scheduler 的执行入口一致；出错回滚状态 + 释放锁。
+        result = await self._dispatch_service.dispatch(
+            run_id=run.id,
+            serial=serial,
+            agent_id=agent_id,
+            goal=item.run_content,
+            engine="vlm",
+            dispatch_source="scheduler",
+            platform=platform,
+        )
+        ok = bool(result.get("dispatched"))
         if not ok:
             logger.warning(
-                "[scheduler] send_to_agent 失败，回滚 item={} run={}",
+                "[scheduler] dispatch 失败，回滚 item={} run={} mode={}",
                 item.id, run.id,
+                result.get("execution_mode"),
             )
             await self._hub.unbind_run(run.id)
             try:
                 await self._lock_store.release(serial, info.token, force=True)
             except Exception:  # noqa: BLE001
                 pass
+            self._runs.pop(run.id, None)
             async with self._session_factory() as session:
                 it2 = await session.get(SubmissionItem, item.id)
                 if it2 is not None:
@@ -760,22 +776,26 @@ class SubmissionScheduler:
                 if run2 is not None:
                     run2.status = "failed"
                     run2.reason = "dispatch_failed"
+                    run2.execution_mode = str(result.get("execution_mode") or "agent_brain")
+                    run2.dispatch_source = "scheduler"
+                    run2.agent_id_at_start = agent_id
                     run2.finished_at = datetime.now(timezone.utc)
                 await session.commit()
             return False
 
-        self._runs[run.id] = _RunTrack(
-            item_id=item.id,
-            submission_id=item.submission_id,
-            platform=platform,
-            serial=serial,
-            lock_token=info.token,
-            started_at_mono=time.monotonic(),
-        )
+        execution_mode = str(result.get("execution_mode") or "agent_brain")
+        if execution_mode != "server_brain":
+            async with self._session_factory() as session:
+                run2 = await session.get(Run, run.id)
+                if run2 is not None:
+                    run2.execution_mode = execution_mode
+                    run2.dispatch_source = "scheduler"
+                    run2.agent_id_at_start = agent_id
+                    await session.commit()
 
         logger.info(
-            "[scheduler] dispatch submission={} item={} platform={} serial={} run={}",
-            item.submission_id, item.id, platform, serial, run.id,
+            "[scheduler] dispatch submission={} item={} platform={} serial={} run={} mode={}",
+            item.submission_id, item.id, platform, serial, run.id, execution_mode,
         )
         return True
 
@@ -1118,7 +1138,7 @@ class SubmissionScheduler:
 
         # 对 running 的 run 发 stop_run；真正落位在 on_run_done(cancelled)
         for run_id in stopped_running:
-            await self._hub.send_to_run(run_id, {"type": P.MSG_STOP_RUN, "run_id": run_id})
+            await self._stop_run(run_id)
 
         return {
             "submissionId": submission_id,
@@ -1171,10 +1191,7 @@ class SubmissionScheduler:
                 self._queues[pid] = [i for i in q if i != item_id]
 
         if run_id_to_stop:
-            await self._hub.send_to_run(
-                run_id_to_stop,
-                {"type": P.MSG_STOP_RUN, "run_id": run_id_to_stop},
-            )
+            await self._stop_run(run_id_to_stop)
 
         return {
             "submissionId": submission_id,
@@ -1250,7 +1267,7 @@ class SubmissionScheduler:
                 to_stop.append(run_id)
         for run_id in to_stop:
             logger.warning("[scheduler] run={} 超过 1h，发送 stop_run", run_id)
-            await self._hub.send_to_run(run_id, {"type": P.MSG_STOP_RUN, "run_id": run_id})
+            await self._stop_run(run_id)
             # 顺手把 statusReason 预写进 item，on_run_done 看到 status_reason 非空
             # 就不会再覆盖
             track = self._runs.get(run_id)
@@ -1263,6 +1280,28 @@ class SubmissionScheduler:
                             await session.commit()
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("[scheduler] 预写 run_timeout 失败: {}", exc)
+
+    async def _stop_run(self, run_id: str) -> bool:
+        """停止调度器派发的 run，兼容 agent_brain / server_brain。"""
+        execution_mode = "agent_brain"
+        try:
+            async with self._session_factory() as session:
+                run = await session.get(Run, run_id)
+                if run is not None:
+                    execution_mode = run.execution_mode or "agent_brain"
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[scheduler] 查询 run={} execution_mode 失败: {}", run_id, exc)
+
+        stopped = await self._dispatch_service.stop(
+            run_id,
+            execution_mode=execution_mode,
+        )
+        if stopped:
+            return True
+        return await self._hub.send_to_run(
+            run_id,
+            {"type": P.MSG_STOP_RUN, "run_id": run_id},
+        )
 
     # ------------------------------------------------------------------
     # 查询

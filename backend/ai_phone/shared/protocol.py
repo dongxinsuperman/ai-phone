@@ -18,6 +18,9 @@ MSG_DEVICE_UPDATE = "device_update"
 MSG_LOG = "log"
 MSG_STEP_DONE = "step_done"
 MSG_FRAME = "frame"
+# Server 大脑架构（next/server-brain）：Agent 把 driver_command 的执行结果回给 Server
+# 老架构（agent_brain）下不会出现这条消息。message_id 与 driver_command 一一对应。
+MSG_DRIVER_RESULT = "driver_result"
 # MSE 镜像新通道：fragmented MP4 init segment + media segments
 # - VIDEO_INIT 在 mirror 启动 / scrcpy 重启 / 设备旋转时下发，浏览器据此重建
 #   MediaSource + SourceBuffer
@@ -47,6 +50,10 @@ MSG_INPUT = "input"
 MSG_START_MIRROR = "start_mirror"
 MSG_STOP_MIRROR = "stop_mirror"
 MSG_PING = "ping"
+# Server 大脑架构（next/server-brain）：Server 调远端 BaseDriver 方法的 RPC。
+# 一次 driver_command 对应一次 driver_result（按 message_id 匹配）。
+# 老架构（agent_brain）下不会出现这条消息；保留 start_run / stop_run 给老链路用。
+MSG_DRIVER_COMMAND = "driver_command"
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +238,127 @@ class DeviceReadinessMsg(TypedDict, total=False):
 
 
 # ---------------------------------------------------------------------------
+# Server 大脑 RPC：driver_command / driver_result
+# ---------------------------------------------------------------------------
+# Server 大脑架构（next/server-brain）下，VLMRunner 跑在 Server 进程内，driver
+# 接口被 RemoteDriver 透传成 RPC：
+#
+#   Server                          Agent
+#   ────────                        ────────
+#   driver.click(x, y)
+#     │
+#     │ MSG_DRIVER_COMMAND
+#     │ { message_id, run_id, serial, method, params, deadline_ms }
+#     ▼
+#                                   _handle_driver_command()
+#                                     │
+#                                     │ 复用 _get_or_open_driver(serial)
+#                                     │ 调 BaseDriver.click(x, y)
+#                                     ▼
+#                                   MSG_DRIVER_RESULT
+#                                   { message_id, ok, result | error }
+#     │ ▲
+#     ▼ │
+#   DriverRpcWaiter.set_result(message_id, ...)
+#
+# 设计要点：
+#
+# - message_id 兼作 trace_id：Server / Agent / DB 三处用同一个 id 串日志。
+# - method 仅允许 BaseDriver 上声明的方法名（DriverMethod 白名单），未知方法
+#   一律 ok=false / error.category='device' / error_class='UnknownDriverMethod'。
+# - params 是 BaseDriver 方法的参数 dict；JSON 不能传 tuple，``scroll`` 的
+#   ``center`` 用 [cx, cy] 数组，Agent 侧反序列化时再 tuple 化。
+# - result：
+#   · 字节型返回（screenshot_png / screenshot_jpeg）→ {"encoding":"base64","mime":...,"data":...}
+#   · 简单标量 / 结构 → 直接 JSON value（如 window_size 返回 [w, h]，rotation 返回 int）
+#   · 无返回（click / type_text 等）→ result 为 None / 缺省
+# - deadline_ms：Server 给的软超时；Agent 不强制 kill，但超出后 Server 已不再
+#   等待，DriverRpcWaiter 会按 RpcTimeout 失败该命令。
+# - 老架构（agent_brain）完全不发这条消息；旧路径 start_run / stop_run 保留兼容。
+# - 不引入背压 / 拒绝策略：见 6.10.6 的明确决策。
+
+# 仅允许 BaseDriver 上已声明的方法名。新增 BaseDriver 方法时同步本表。
+DriverMethod = Literal[
+    # 屏幕信息
+    "window_size",
+    "rotation",
+    # 截图
+    "screenshot_png",
+    "screenshot_jpeg",
+    # 触控
+    "click",
+    "double_click",
+    "long_press",
+    "swipe",
+    # 输入 & 按键
+    "type_text",
+    "press_home",
+    "press_back",
+    "press_keycode",
+    # 应用
+    "list_third_party_packages",
+    "list_all_packages",
+    "activate_app",
+    "terminate_app",
+    "current_app",
+    # 基础信息
+    "device_info",
+    # 派生（BaseDriver 默认基于 swipe，但走 Agent 本地一次比 Server 多次跨进程便宜）
+    "scroll",
+]
+
+# v2 PoC Web 错误归因 UI 的四个一级桶。详见 8.3 / 14 章决策。
+# - model         : VLM / 模型层错误（超时、配额、拒绝、内容审核）
+# - device        : 真机层错误（ADB offline / WDA 崩溃 / unknown method / 元素找不到）
+# - network       : 跨进程链路错误（RPC 超时、WS 断开、握手失败）
+# - agent_offline : Run 启动时所属 Agent 已离线 / 跑到一半 Agent 掉线
+DriverErrorCategory = Literal["model", "device", "network", "agent_offline"]
+
+
+class DriverErrorPayload(TypedDict, total=False):
+    """driver_result.error 的结构化负载。
+
+    不要只回 ok=false——错误类名 + 消息 + 关键栈片段是排障刚需。
+    """
+
+    category: DriverErrorCategory
+    error_class: str  # 异常类名，如 'AdbError' / 'WDAStaleSession' / 'TimeoutError'
+    message: str  # 异常消息文本
+    traceback: str  # 关键栈片段（最后 N 行即可，不要整栈）
+
+
+class DriverCommandMsg(TypedDict, total=False):
+    """Server → Agent：远端 BaseDriver 方法调用。"""
+
+    type: Literal["driver_command"]
+    # 兼作 trace_id；Server / Agent / DB(run_commands.message_id / run_logs.trace_id)
+    # 三处用同一个 id 串日志。建议生成方式：``uuid.uuid4().hex[:16]``。
+    message_id: str
+    run_id: str  # 命令所属 Run；DriverRpcWaiter 按 run_id 批量 cancel 用
+    serial: str  # 目标设备
+    method: DriverMethod  # 必须在白名单内
+    params: Dict[str, Any]  # BaseDriver 方法参数 dict；空 dict 表示无参
+    deadline_ms: int  # 软超时（毫秒）；建议截图 10000、动作 5000、应用类 15000
+
+
+class DriverResultMsg(TypedDict, total=False):
+    """Agent → Server：driver_command 的执行结果。"""
+
+    type: Literal["driver_result"]
+    message_id: str  # 与请求侧 driver_command.message_id 完全一致
+    run_id: str  # 与请求侧一致；冗余字段方便日志单独看
+    serial: str  # 与请求侧一致；冗余字段方便日志单独看
+    method: DriverMethod  # 与请求侧一致；方便 Server 侧错误日志 / RunCommand 对账
+    ok: bool
+    # 仅当 ok=True 时填；类型见上方 docstring 关于 result 的约定
+    result: Any
+    # 仅当 ok=False 时填
+    error: DriverErrorPayload
+    # Agent 侧实际耗时（不含网络），单位 ms；Server 侧统计 rpc_elapsed_ms 用
+    elapsed_ms: int
+
+
+# ---------------------------------------------------------------------------
 # Server → Agent
 # ---------------------------------------------------------------------------
 class StartRunMsg(TypedDict):
@@ -286,6 +414,7 @@ AgentToServer = Union[
     PongMsg,
     DeviceStatusMsg,
     DeviceReadinessMsg,
+    DriverResultMsg,  # next/server-brain 新增
 ]
 
 ServerToAgent = Union[
@@ -295,4 +424,5 @@ ServerToAgent = Union[
     StartMirrorMsg,
     StopMirrorMsg,
     PingMsg,
+    DriverCommandMsg,  # next/server-brain 新增
 ]

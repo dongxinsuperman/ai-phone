@@ -5,6 +5,7 @@ from fastapi import WebSocket
 
 from ..hub import Hub
 from ..lockstore import DeviceLockStore
+from ..runner.rpc import DriverRpcWaiter
 
 
 def get_hub(ws: WebSocket) -> Hub:
@@ -21,3 +22,11 @@ def get_lock_store(ws: WebSocket) -> DeviceLockStore:
         store = DeviceLockStore()
         ws.app.state.lock_store = store
     return store
+
+
+def get_driver_rpc_waiter(ws: WebSocket) -> DriverRpcWaiter:
+    waiter = getattr(ws.app.state, "driver_rpc_waiter", None)
+    if not isinstance(waiter, DriverRpcWaiter):
+        waiter = DriverRpcWaiter()
+        ws.app.state.driver_rpc_waiter = waiter
+    return waiter

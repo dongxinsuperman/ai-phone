@@ -33,7 +33,8 @@ from ..hub import Hub
 _NO_SUB_COUNT: Dict[str, int] = {}
 from ..lockstore import DeviceLockStore
 from ..models import Device, Run, RunLog, RunStep
-from ._deps import get_hub, get_lock_store
+from ..runner.rpc import DriverRpcWaiter
+from ._deps import get_driver_rpc_waiter, get_hub, get_lock_store
 
 router = APIRouter()
 
@@ -51,6 +52,7 @@ async def agent_ws(
     await ws.accept()
     hub = get_hub(ws)
     lock_store = get_lock_store(ws)
+    driver_waiter = get_driver_rpc_waiter(ws)
 
     # 1) 收 hello
     try:
@@ -95,7 +97,7 @@ async def agent_ws(
     try:
         while True:
             msg = await ws.receive_json()
-            await _dispatch(hub, lock_store, agent_id, msg)
+            await _dispatch(hub, lock_store, driver_waiter, agent_id, msg)
     except WebSocketDisconnect:
         logger.info("Agent 断开 | id={}", agent_id)
     except Exception as exc:  # noqa: BLE001
@@ -108,7 +110,11 @@ async def agent_ws(
 # 分发
 # ---------------------------------------------------------------------------
 async def _dispatch(
-    hub: Hub, lock_store: DeviceLockStore, agent_id: str, msg: Dict[str, Any]
+    hub: Hub,
+    lock_store: DeviceLockStore,
+    driver_waiter: DriverRpcWaiter,
+    agent_id: str,
+    msg: Dict[str, Any],
 ) -> None:
     t = msg.get("type")
 
@@ -141,6 +147,23 @@ async def _dispatch(
             await _update_device_status(str(serial), dev_status, agent_id)
             await hub.broadcast_to_serial(
                 str(serial), {"type": "device_update", "serial": serial, "status": dev_status}
+            )
+        return
+
+    if t == P.MSG_DRIVER_RESULT:
+        matched = driver_waiter.resolve(msg)
+        if not msg.get("ok"):
+            try:
+                await _persist_driver_result_error(msg)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("driver_result 错误日志入库失败（忽略）：{}", exc)
+        if matched:
+            logger.debug(
+                "driver_result resolved | agent_id={} run_id={} message_id={} ok={}",
+                agent_id,
+                msg.get("run_id"),
+                msg.get("message_id"),
+                msg.get("ok"),
             )
         return
 
@@ -418,6 +441,9 @@ async def _persist_log(msg: Dict[str, Any]) -> None:
                 level=int(msg.get("level") or 1),
                 title=str(msg.get("title") or "")[:255],
                 content=str(msg.get("content") or msg.get("detail") or ""),
+                trace_id=msg.get("trace_id"),
+                error_class=msg.get("error_class"),
+                error_category=msg.get("error_category"),
             )
         )
         await session.commit()
@@ -443,6 +469,9 @@ async def _persist_step(msg: Dict[str, Any]) -> None:
                 unknown=1 if msg.get("unknown") else 0,
                 screenshot_before=str(msg.get("before_url") or "")[:512],
                 screenshot_after=str(msg.get("after_url") or "")[:512],
+                driver_method=msg.get("driver_method"),
+                command_id=msg.get("command_id"),
+                rpc_elapsed_ms=msg.get("rpc_elapsed_ms"),
             )
         )
         # 顺便更新 Run.steps
@@ -452,6 +481,34 @@ async def _persist_step(msg: Dict[str, Any]) -> None:
             if run.status == "pending":
                 run.status = "running"
                 run.started_at = run.started_at or datetime.now(timezone.utc)
+        await session.commit()
+
+    await _with_session(op)
+
+
+async def _persist_driver_result_error(msg: Dict[str, Any]) -> None:
+    run_id = str(msg.get("run_id") or "")
+    if not run_id:
+        return
+    error = msg.get("error") or {}
+    message_id = str(msg.get("message_id") or "")
+    method = str(msg.get("method") or "unknown")
+
+    async def op(session: AsyncSession) -> None:
+        run = await session.get(Run, run_id)
+        if run is None:
+            return
+        session.add(
+            RunLog(
+                run_id=run_id,
+                level=3,
+                title=f"driver_command failed: {method}"[:255],
+                content=str(error.get("message") or ""),
+                trace_id=message_id,
+                error_class=error.get("error_class"),
+                error_category=error.get("category"),
+            )
+        )
         await session.commit()
 
     await _with_session(op)

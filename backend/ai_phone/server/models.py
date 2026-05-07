@@ -150,6 +150,27 @@ class Run(Base):
     # 外接引擎产物（如 Midscene HTML 报告）的对外可访问 URL。
     # 仅 engine != 'vlm' 时填充；vlm runner 永远是 None（其报告由 ai-phone 自己组装）。
     external_report_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    # —— 以下字段在 next/server-brain 引入；老 main 仅有 schema，不写值 ——
+    # 'agent_brain' / 'server_brain'：本条 Run 走的执行链路。
+    # server_default='agent_brain' 让历史 / main 路径下的 Run 自动归类为老链路，
+    # 排障时 SELECT WHERE execution_mode='server_brain' 一句 SQL 锁定新架构 Run。
+    execution_mode: Mapped[str] = mapped_column(
+        String(16), default="agent_brain", server_default="agent_brain", index=True
+    )
+    # 'api' / 'scheduler'：来自 RunDispatchService 的入口标记。
+    # NULL 表示老链路（没经过 RunDispatchService）。
+    dispatch_source: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    # run 级 trace_id，便于跨进程串联日志 / run_logs / run_commands。
+    # 老链路下为 NULL；新链路下生成方式建议 ``uuid.uuid4().hex[:16]``。
+    trace_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    # Run 启动时绑定的 Agent ID。区分"现在 Agent 掉线"和"启动时就没 Agent"。
+    # 与 agent_id 字段的区别：agent_id 反映当前态（重连后会变），
+    # agent_id_at_start 是启动快照，错误归因用。
+    agent_id_at_start: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Run 失败原因若为 agent 掉线，记录掉线时刻。Web 错误归因 UI 用。
+    agent_offline_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -158,6 +179,9 @@ class Run(Base):
         back_populates="run", cascade="all, delete-orphan", lazy="noload"
     )
     log_records: Mapped[list["RunLog"]] = relationship(
+        back_populates="run", cascade="all, delete-orphan", lazy="noload"
+    )
+    command_records: Mapped[list["RunCommand"]] = relationship(
         back_populates="run", cascade="all, delete-orphan", lazy="noload"
     )
 
@@ -175,6 +199,11 @@ class Run(Base):
             "token_summary": self.token_summary or {},
             "engine": self.engine or "vlm",
             "external_report_url": self.external_report_url,
+            "execution_mode": self.execution_mode or "agent_brain",
+            "dispatch_source": self.dispatch_source,
+            "trace_id": self.trace_id,
+            "agent_id_at_start": self.agent_id_at_start,
+            "agent_offline_at": self.agent_offline_at.isoformat() if self.agent_offline_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
@@ -197,6 +226,15 @@ class RunStep(Base):
     unknown: Mapped[int] = mapped_column(Integer, default=0)  # 0/1 布尔
     screenshot_before: Mapped[str] = mapped_column(String(512), default="")
     screenshot_after: Mapped[str] = mapped_column(String(512), default="")
+    # —— 以下字段在 next/server-brain 引入；老 main 不写 ——
+    # 本步骤主导调用的 BaseDriver 方法名（screenshot_jpeg / click / type_text 等）。
+    # 老链路下为 NULL；新链路下从 driver_command.method 透传。
+    driver_method: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    # 本步骤"主动作"对应的 driver_command.message_id（不含截图等附属命令）。
+    # 用于和 run_commands 表 join 拿命令时间线。
+    command_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # RPC 往返耗时（毫秒）；仅含跨进程，不含 VLM。与 elapsed_ms 字段分开统计。
+    rpc_elapsed_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     run: Mapped[Run] = relationship(back_populates="step_records")
@@ -212,6 +250,9 @@ class RunStep(Base):
             "unknown": bool(self.unknown),
             "screenshot_before": self.screenshot_before,
             "screenshot_after": self.screenshot_after,
+            "driver_method": self.driver_method,
+            "command_id": self.command_id,
+            "rpc_elapsed_ms": self.rpc_elapsed_ms,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -228,6 +269,14 @@ class RunLog(Base):
     level: Mapped[int] = mapped_column(Integer, default=1)  # 1=info,2=warn,3=error
     title: Mapped[str] = mapped_column(String(255), default="")
     content: Mapped[str] = mapped_column(Text, default="")
+    # —— 以下字段在 next/server-brain 引入；老 main 不写 ——
+    # 与 runs.trace_id / driver_command.message_id 关联；为 NULL 时退回老行为。
+    trace_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    # 错误类名（AdbError / WDAStaleSession / TimeoutError / RpcTimeout / AgentOffline 等）
+    error_class: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    # 错误归因桶：'model' / 'device' / 'network' / 'agent_offline'。
+    # Web 错误归因 UI 直接按这一列分桶展示。
+    error_category: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     run: Mapped[Run] = relationship(back_populates="log_records")
@@ -239,7 +288,81 @@ class RunLog(Base):
             "level": self.level,
             "title": self.title,
             "content": self.content,
+            "trace_id": self.trace_id,
+            "error_class": self.error_class,
+            "error_category": self.error_category,
             "ts": self.ts.isoformat() if self.ts else None,
+        }
+
+
+class RunCommand(Base):
+    """跨进程 driver_command 命令的细粒度记录（next/server-brain 引入）。
+
+    设计要点：
+    - **仅在 next/server-brain（Server 大脑架构）写入**；老链路（agent_brain）不写
+    - 一次 ``driver_command`` ↔ 一条 RunCommand
+    - ``message_id`` 与 ``run_logs.trace_id`` / ``run_steps.command_id`` 共享
+      同一份 id 空间，方便 SQL join 排障
+    - 不与 run_steps 1:1：截图、状态查询等附属命令也都会写一行，但只有"主动作"
+      命令的 message_id 会回填到 ``run_steps.command_id``
+
+    典型用法：
+    - 排障：``SELECT * FROM run_commands WHERE run_id=? ORDER BY sent_at`` 拿命令时间线
+    - 统计：``SELECT method, count(*), avg(rpc_elapsed_ms) FROM run_commands
+            WHERE ok=true GROUP BY method`` 看每类方法的 RPC 平均耗时
+    - 截图丢失定位：``method='screenshot_jpeg' AND ok=false``
+    """
+
+    __tablename__ = "run_commands"
+    __table_args__ = (
+        Index("ix_run_commands_run_sent", "run_id", "sent_at"),
+        Index("ix_run_commands_message_id", "message_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("runs.id", ondelete="CASCADE"), index=True
+    )
+    # run_steps.step 的可选反链；附属命令（截图等）可能没有 step
+    step: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # driver_command.message_id；兼作 trace_id，与 run_logs.trace_id 同空间
+    message_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    # screenshot_jpeg / click / type_text / window_size 等；DriverMethod 白名单
+    method: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    # 派发时绑定的 Agent / 设备；Agent 重连不影响这条历史快照
+    agent_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    serial: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    # 命令完成态（True / False / NULL=超时未回）
+    ok: Mapped[Optional[bool]] = mapped_column(default=None, nullable=True)
+    # 错误结构（仅 ok=False 时填）
+    error_class: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    error_category: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
+    error_msg: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # RPC 往返耗时（毫秒）；含网络
+    rpc_elapsed_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Server 发出 driver_command 的时刻
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # Server 收到 driver_result 的时刻；超时 / 取消时为 NULL
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    run: Mapped[Run] = relationship(back_populates="command_records")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "run_id": self.run_id,
+            "step": self.step,
+            "message_id": self.message_id,
+            "method": self.method,
+            "agent_id": self.agent_id,
+            "serial": self.serial,
+            "ok": self.ok,
+            "error_class": self.error_class,
+            "error_category": self.error_category,
+            "error_msg": self.error_msg,
+            "rpc_elapsed_ms": self.rpc_elapsed_ms,
+            "sent_at": self.sent_at.isoformat() if self.sent_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
         }
 
 
@@ -392,10 +515,12 @@ class SubmissionItem(Base):
 
 __all__ = [
     "Device",
+    "DeviceAlias",
     "Case",
     "Run",
     "RunStep",
     "RunLog",
+    "RunCommand",
     "Submission",
     "SubmissionItem",
 ]

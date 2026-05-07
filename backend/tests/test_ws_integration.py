@@ -25,6 +25,7 @@ from ai_phone.server.api import include_routers
 from ai_phone.server.db import Base
 from ai_phone.server.hub import Hub
 from ai_phone.server.lockstore import DeviceLockStore
+from ai_phone.server.runner.rpc import DriverRpcWaiter
 from ai_phone.server.storage import mount_static
 from ai_phone.server.ws import include_ws
 
@@ -51,6 +52,14 @@ def ws_app(storage_tmp, tmp_path):
     app = FastAPI()
     app.state.lock_store = DeviceLockStore()
     app.state.hub = Hub()
+    # next/server-brain 用：在 lifespan 里这俩由 server.app 注入，单元测试
+    # 自己拼装 app 时要手动给齐，否则 /ws/agent 收 driver_result 会报 503。
+    app.state.driver_rpc_waiter = DriverRpcWaiter()
+    from concurrent.futures import ThreadPoolExecutor
+
+    app.state.driver_pool = ThreadPoolExecutor(
+        max_workers=4, thread_name_prefix="test-driver-rpc"
+    )
     include_routers(app)
     include_ws(app)
     mount_static(app)
@@ -71,6 +80,16 @@ def ws_app(storage_tmp, tmp_path):
         await db_module.dispose_engine()
 
     yield app
+
+    # 测试拆完后释放线程池 + 取消在飞 RPC，避免线程泄露
+    try:
+        app.state.driver_rpc_waiter.cancel_all(reason="test teardown")
+    except Exception:
+        pass
+    try:
+        app.state.driver_pool.shutdown(wait=False, cancel_futures=True)
+    except Exception:
+        pass
 
 
 # --------------------------------------------------------------------- upload
@@ -232,6 +251,107 @@ def test_stop_run_forwarded(ws_app):
 
             msg = agent.receive_json()
             assert msg == {"type": "stop_run", "run_id": run_id}
+
+
+def test_agent_driver_result_resolves_waiter(ws_app):
+    class RecordingWaiter(DriverRpcWaiter):
+        def __init__(self):
+            super().__init__()
+            self.resolved = []
+
+        def resolve(self, driver_result):
+            self.resolved.append(dict(driver_result))
+            return True
+
+    waiter = RecordingWaiter()
+    ws_app.state.driver_rpc_waiter = waiter
+    token = get_settings().agent_token
+    with TestClient(ws_app) as client:
+        with client.websocket_connect(f"/ws/agent?token={token}") as agent:
+            agent.send_json(
+                {
+                    "type": "hello",
+                    "agent_id": "agent-x",
+                    "agent_name": "mac",
+                    "host_os": "Darwin",
+                    "devices": [{"serial": "S1", "platform": "android", "status": "online"}],
+                }
+            )
+            _wait_device_online(client, "S1")
+
+            agent.send_json(
+                {
+                    "type": "driver_result",
+                    "message_id": "msg-1",
+                    "run_id": "run-1",
+                    "serial": "S1",
+                    "ok": True,
+                    "result": [1080, 2400],
+                    "elapsed_ms": 12,
+                }
+            )
+
+            import time
+
+            deadline = time.time() + 2.0
+            while time.time() < deadline and not waiter.resolved:
+                time.sleep(0.01)
+            assert waiter.resolved
+            assert waiter.resolved[0]["message_id"] == "msg-1"
+
+
+def test_driver_result_error_persists_structured_log(ws_app):
+    token = get_settings().agent_token
+    with TestClient(ws_app) as client:
+        with client.websocket_connect(f"/ws/agent?token={token}") as agent:
+            agent.send_json(
+                {
+                    "type": "hello",
+                    "agent_id": "agent-x",
+                    "agent_name": "mac",
+                    "host_os": "Darwin",
+                    "devices": [{"serial": "S1", "platform": "android", "status": "online"}],
+                }
+            )
+            _wait_device_online(client, "S1")
+
+            resp = client.post("/api/runs", json={"device_serial": "S1", "goal": "g"})
+            assert resp.status_code == 201, resp.text
+            run_id = resp.json()["id"]
+            agent.receive_json()  # start_run
+
+            agent.send_json(
+                {
+                    "type": "driver_result",
+                    "message_id": "trace-err-1",
+                    "run_id": run_id,
+                    "serial": "S1",
+                    "method": "click",
+                    "ok": False,
+                    "error": {
+                        "category": "device",
+                        "error_class": "AdbError",
+                        "message": "device offline",
+                    },
+                    "elapsed_ms": 18,
+                }
+            )
+
+            import time
+
+            deadline = time.time() + 2.0
+            items = []
+            while time.time() < deadline:
+                logs = client.get(f"/api/runs/{run_id}/logs")
+                assert logs.status_code == 200
+                items = logs.json()["items"]
+                if items:
+                    break
+                time.sleep(0.01)
+            assert items
+            assert items[0]["trace_id"] == "trace-err-1"
+            assert items[0]["error_class"] == "AdbError"
+            assert items[0]["error_category"] == "device"
 
 
 def test_device_update_propagates(ws_app):

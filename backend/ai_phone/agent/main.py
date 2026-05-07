@@ -19,7 +19,8 @@ import platform
 import socket
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+import traceback
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, get_args
 
 # 模块顶层的 MIRROR_* 常量从 os.environ 读，需要先把 backend/.env 加载进来。
 # pydantic Settings 自己解析 .env 不会注入到 os.environ，所以这里显式 load_dotenv。
@@ -54,6 +55,9 @@ from ai_phone.agent.scrcpy_client import (
 from ai_phone.agent.ws_client import AgentWSClient, stable_agent_id
 from ai_phone.config import get_settings
 from ai_phone.shared import protocol as P
+
+
+_DRIVER_METHODS = set(get_args(P.DriverMethod))
 
 
 # scrcpy mirror 参数：长边像素 / 帧率上限 / 比特率
@@ -668,6 +672,114 @@ async def _handle_input(
             logger.warning("input 未知 kind={} serial={}", kind, serial)
     except Exception as exc:  # noqa: BLE001
         logger.exception("input 执行失败 serial={} kind={}: {}", serial, kind, exc)
+
+
+async def _handle_driver_command(client: AgentWSClient, msg: Dict[str, Any]) -> None:
+    """执行 Server 大脑下发的单次 BaseDriver RPC，并回传 driver_result。"""
+    message_id = str(msg.get("message_id") or "")
+    run_id = str(msg.get("run_id") or "")
+    serial = str(msg.get("serial") or "").strip()
+    method = str(msg.get("method") or "").strip()
+    params = dict(msg.get("params") or {})
+    started = time.monotonic()
+
+    async def _send_result(
+        *,
+        ok: bool,
+        result: Any = None,
+        error: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        payload: Dict[str, Any] = {
+            "type": P.MSG_DRIVER_RESULT,
+            "message_id": message_id,
+            "run_id": run_id,
+            "serial": serial,
+            "method": method,
+            "ok": ok,
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+        }
+        if ok:
+            payload["result"] = result
+        else:
+            payload["error"] = error or {
+                "category": "device",
+                "error_class": "DriverCommandError",
+                "message": "driver_command failed",
+            }
+        await client.send(payload)
+
+    if not message_id or not serial or not method:
+        await _send_result(
+            ok=False,
+            error={
+                "category": "device",
+                "error_class": "MalformedDriverCommand",
+                "message": "driver_command 缺少 message_id / serial / method",
+            },
+        )
+        return
+
+    if method not in _DRIVER_METHODS:
+        await _send_result(
+            ok=False,
+            error={
+                "category": "device",
+                "error_class": "UnknownDriverMethod",
+                "message": f"未知 driver method: {method}",
+            },
+        )
+        return
+
+    try:
+        driver = await asyncio.to_thread(_get_or_open_driver, serial)
+        fn = getattr(driver, method)
+        raw_result = await asyncio.to_thread(
+            fn, **_normalize_driver_params(method, params)
+        )
+        await _send_result(ok=True, result=_serialize_driver_result(method, raw_result))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "driver_command 执行失败 | trace_id={} run_id={} serial={} method={}",
+            message_id,
+            run_id,
+            serial,
+            method,
+        )
+        await _send_result(ok=False, error=_driver_error_payload(exc))
+
+
+def _normalize_driver_params(method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(params)
+    if method == "scroll" and isinstance(out.get("center"), list):
+        center = out["center"]
+        if len(center) == 2:
+            out["center"] = (int(center[0]), int(center[1]))
+    return out
+
+
+def _serialize_driver_result(method: str, result: Any) -> Any:
+    if isinstance(result, bytes):
+        mime = "image/png" if method == "screenshot_png" else "image/jpeg"
+        return {
+            "encoding": "base64",
+            "mime": mime,
+            "data": base64.b64encode(result).decode("ascii"),
+        }
+    if hasattr(result, "to_dict") and callable(result.to_dict):
+        return result.to_dict()
+    if isinstance(result, tuple):
+        return list(result)
+    return result
+
+
+def _driver_error_payload(exc: Exception) -> Dict[str, Any]:
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    return {
+        "category": "device",
+        "error_class": exc.__class__.__name__,
+        "message": str(exc),
+        "traceback": "\n".join(tb.strip().splitlines()[-12:]),
+    }
 
 
 async def _dispatch_input_via_scrcpy(
@@ -1559,6 +1671,9 @@ def run(
     async def _input_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         await _handle_input(c, msg, mirror_sup)
 
+    async def _driver_command_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
+        await _handle_driver_command(c, msg)
+
     async def _start_mirror_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         await _handle_start_mirror(mirror_sup, msg)
 
@@ -1568,6 +1683,7 @@ def run(
     client.on(P.MSG_START_RUN, _start_handler)
     client.on(P.MSG_STOP_RUN, _stop_handler)
     client.on(P.MSG_INPUT, _input_handler)
+    client.on(P.MSG_DRIVER_COMMAND, _driver_command_handler)
     client.on(P.MSG_START_MIRROR, _start_mirror_handler)
     client.on(P.MSG_STOP_MIRROR, _stop_mirror_handler)
 

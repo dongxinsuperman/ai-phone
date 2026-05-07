@@ -217,6 +217,15 @@ class Hub:
             return False
         return await self.send_to_agent(aid, payload)
 
+    def agent_for_serial(self, serial: str) -> Optional[str]:
+        """返回当前持有该 serial 的 agent_id（不在线返回 None）。
+
+        next/server-brain 的 RemoteDriver 在构造时需要把 agent_id 快照进
+        ``runs.agent_id_at_start``；这是给那条路用的薄 accessor，避免外部直
+        接读 ``_serial_to_agent`` 私有字典。
+        """
+        return self._serial_to_agent.get(serial)
+
     async def send_to_run(self, run_id: str, payload: Dict[str, Any]) -> bool:
         aid = self._run_to_agent.get(run_id)
         if aid is None:
