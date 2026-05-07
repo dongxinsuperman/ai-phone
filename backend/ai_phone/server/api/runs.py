@@ -41,7 +41,7 @@ from ai_phone.shared import protocol as P
 
 from ..hub import Hub
 from ..lockstore import DeviceLockStore, LockConflict
-from ..models import Case, Device, Run, RunLog, RunStep
+from ..models import Case, Device, Run, RunCommand, RunLog, RunStep
 from ..runner.dispatch import RunDispatchService
 from ._deps import DBSession, HubDep, LockStoreDep
 
@@ -136,6 +136,24 @@ async def get_run_logs(
         "next_since_id": logs[-1].id if logs else since_id,
         "items": [lg.to_dict() for lg in logs],
     }
+
+
+@router.get("/{run_id}/commands")
+async def get_run_commands(
+    run_id: str,
+    session: AsyncSession = DBSession,
+    limit: int = Query(1000, ge=1, le=5000),
+) -> List[Dict[str, Any]]:
+    run = await session.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    res = await session.execute(
+        select(RunCommand)
+        .where(RunCommand.run_id == run_id)
+        .order_by(RunCommand.sent_at, RunCommand.id)
+        .limit(limit)
+    )
+    return [cmd.to_dict() for cmd in res.scalars().all()]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

@@ -30,6 +30,16 @@ const tapBusy = ref(false)
 // 进入页面抢锁的结果：null=还没试/成功进入，非 null 就是被占用时要展示给用户的信息
 const blocked = ref(null)
 
+function executionModeText(mode) {
+  return mode === 'server_brain' ? 'Server 大脑' : 'Agent 大脑'
+}
+const currentRunModeText = computed(() => (
+  currentRun.value ? executionModeText(currentRun.value.execution_mode) : ''
+))
+const currentRunAgent = computed(() => (
+  currentRun.value?.agent_id_at_start || currentRun.value?.agent_id || ''
+))
+
 // 两套镜像后端并存，收到第一条消息时定下 mirrorMode 再也不切：
 // - 'mse'  →  useMseMirror（<video> + H.264 + MSE）。Android scrcpy / iOS wda_mjpeg /
 //              iOS dvt_screenshot 走这里
@@ -598,7 +608,9 @@ async function startRun() {
     pushLog({
       level: 1,
       title: `创建 Run ${res.id.slice(0, 8)}`,
-      content: res.dispatched ? '已派发到 Agent' : '尚无 Agent 在线，未派发',
+      content: res.dispatched
+        ? `已派发 · ${executionModeText(res.execution_mode)}`
+        : '尚无 Agent 在线，未派发',
       timestamp: Date.now() / 1000,
     })
   } catch (e) {
@@ -904,7 +916,14 @@ watch(
             <button class="ghost" @click="clearLogs">清空日志</button>
           </div>
           <p v-if="submitError" class="err">{{ submitError }}</p>
-          <p v-if="currentRunId" class="info">run_id: {{ currentRunId }}</p>
+          <div v-if="currentRun" class="run-meta">
+            <span class="mode-pill" :class="currentRun.execution_mode === 'server_brain' ? 'server' : 'agent'">
+              {{ currentRunModeText }}
+            </span>
+            <span>run_id: <code>{{ currentRun.id }}</code></span>
+            <span v-if="currentRunAgent">Agent: <code>{{ currentRunAgent }}</code></span>
+            <span v-if="currentRun.dispatch_source">入口: {{ currentRun.dispatch_source }}</span>
+          </div>
           <!-- 外接引擎（如 Midscene）跑完后展示报告链接；vlm 路径永远不带这个字段 -->
           <p v-if="!currentRunId && currentRun && currentRun.external_report_url" class="info">
             <a :href="currentRun.external_report_url" target="_blank" rel="noopener">
@@ -1384,5 +1403,40 @@ h2 {
   color: #6b7280;
   font-size: 12px;
   font-family: ui-monospace, SF Mono, Menlo, monospace;
+}
+.run-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 2px;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.run-meta code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.mode-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid #d1d5db;
+  color: #374151;
+  background: #f9fafb;
+}
+.mode-pill.server {
+  color: #065f46;
+  background: #d1fae5;
+  border-color: #a7f3d0;
+}
+.mode-pill.agent {
+  color: #374151;
+  background: #f3f4f6;
+  border-color: #e5e7eb;
 }
 </style>

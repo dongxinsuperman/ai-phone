@@ -92,6 +92,7 @@ export const api = {
   getRun: (id) => request('GET', `/api/runs/${id}`),
   getRunSteps: (id) => request('GET', `/api/runs/${id}/steps`),
   getRunLogs: (id) => request('GET', `/api/runs/${id}/logs`),
+  getRunCommands: (id) => request('GET', `/api/runs/${id}/commands`),
   createRun: (payload) => request('POST', '/api/runs', { body: payload }),
   stopRun: (id) => request('POST', `/api/runs/${id}/stop`),
 

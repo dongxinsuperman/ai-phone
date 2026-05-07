@@ -33,7 +33,16 @@ const tokenInput = ref(getInternalToken())
 const selectedSubId = ref(null)
 
 // 只读的 run 抽屉（看步骤 + 日志，不碰设备锁）
-const runDrawer = ref({ open: false, runId: '', run: null, steps: [], logs: [], loading: false, err: '' })
+const runDrawer = ref({
+  open: false,
+  runId: '',
+  run: null,
+  steps: [],
+  logs: [],
+  commands: [],
+  loading: false,
+  err: '',
+})
 
 // ---------- 拉取 ----------
 let timer = null
@@ -236,7 +245,16 @@ function platformColorClass(p) {
 // ---------- 只读 Run 抽屉（不触发锁）----------
 let runDrawerTimer = null
 async function openRunDrawer(runId) {
-  runDrawer.value = { open: true, runId, run: null, steps: [], logs: [], loading: true, err: '' }
+  runDrawer.value = {
+    open: true,
+    runId,
+    run: null,
+    steps: [],
+    logs: [],
+    commands: [],
+    loading: true,
+    err: '',
+  }
   await fetchRunDrawerOnce()
   if (runDrawerTimer) clearInterval(runDrawerTimer)
   runDrawerTimer = setInterval(() => {
@@ -255,14 +273,16 @@ async function fetchRunDrawerOnce() {
   const rid = runDrawer.value.runId
   if (!rid) return
   try {
-    const [run, steps, logsResp] = await Promise.all([
+    const [run, steps, logsResp, commands] = await Promise.all([
       api.getRun(rid),
       api.getRunSteps(rid),
       api.getRunLogs(rid),
+      api.getRunCommands(rid),
     ])
     runDrawer.value.run = run
     runDrawer.value.steps = steps
     runDrawer.value.logs = (logsResp && logsResp.items) || []
+    runDrawer.value.commands = Array.isArray(commands) ? commands : []
     runDrawer.value.loading = false
     runDrawer.value.err = ''
     // 终态自动停轮询
@@ -329,6 +349,24 @@ const drawerReportUrl = computed(() => {
   if (!sub || !Array.isArray(sub.items)) return ''
   const it = sub.items.find(x => x && x.run_id === rid)
   return (it && it.report_url) ? it.report_url : ''
+})
+
+function executionModeText(mode) {
+  return mode === 'server_brain' ? 'Server 大脑' : 'Agent 大脑'
+}
+
+const drawerCommandSummary = computed(() => {
+  const commands = runDrawer.value.commands || []
+  const total = commands.length
+  const failed = commands.filter(c => c && c.ok === false).length
+  const pending = commands.filter(c => c && c.ok == null).length
+  const avgItems = commands
+    .map(c => Number(c?.rpc_elapsed_ms))
+    .filter(n => Number.isFinite(n) && n >= 0)
+  const avg = avgItems.length
+    ? Math.round(avgItems.reduce((a, b) => a + b, 0) / avgItems.length)
+    : null
+  return { total, failed, pending, avg }
 })
 
 // ---------- 手工投递表单 ----------
@@ -918,6 +956,24 @@ function loadDemoData() {
                 · elapsed {{ runDrawer.run.elapsed_ms }}ms
               </span>
             </div>
+            <div v-if="runDrawer.run" class="drawer-run-mode">
+              <span
+                class="mode-pill"
+                :class="runDrawer.run.execution_mode === 'server_brain' ? 'server' : 'agent'"
+              >
+                {{ executionModeText(runDrawer.run.execution_mode) }}
+              </span>
+              <span v-if="runDrawer.run.agent_id_at_start || runDrawer.run.agent_id">
+                Agent <code>{{ runDrawer.run.agent_id_at_start || runDrawer.run.agent_id }}</code>
+              </span>
+              <span v-if="runDrawer.run.dispatch_source">入口 {{ runDrawer.run.dispatch_source }}</span>
+              <span v-if="runDrawer.run.execution_mode === 'server_brain'">
+                RPC {{ drawerCommandSummary.total }} 条
+                <template v-if="drawerCommandSummary.avg !== null"> · 平均 {{ drawerCommandSummary.avg }}ms</template>
+                <template v-if="drawerCommandSummary.failed"> · 失败 {{ drawerCommandSummary.failed }}</template>
+                <template v-if="drawerCommandSummary.pending"> · 未回包 {{ drawerCommandSummary.pending }}</template>
+              </span>
+            </div>
           </div>
           <div class="drawer-actions">
             <a
@@ -945,6 +1001,33 @@ function loadDemoData() {
                 </span>
               </div>
               <LogPane :entries="drawerEntries" max-height="60vh" />
+            </div>
+            <div
+              v-if="runDrawer.run && runDrawer.run.execution_mode === 'server_brain'"
+              class="drawer-section"
+            >
+              <div class="drawer-section-title">
+                Driver RPC 命令 · 共 {{ runDrawer.commands.length }} 条
+                <span class="drawer-section-hint">
+                  只有 Server 大脑链路会写入这张命令时间线。
+                </span>
+              </div>
+              <div v-if="!runDrawer.commands.length" class="empty small">暂无 RPC 命令记录</div>
+              <div v-else class="command-list">
+                <div v-for="cmd in runDrawer.commands" :key="cmd.id || cmd.message_id" class="command-row">
+                  <span class="cmd-method">{{ cmd.method }}</span>
+                  <span
+                    class="cmd-status"
+                    :class="cmd.ok === false ? 'bad' : (cmd.ok === true ? 'ok' : 'pending')"
+                  >
+                    {{ cmd.ok === false ? '失败' : (cmd.ok === true ? '成功' : '等待') }}
+                  </span>
+                  <span v-if="cmd.step != null">step {{ cmd.step }}</span>
+                  <span v-if="cmd.rpc_elapsed_ms != null">{{ cmd.rpc_elapsed_ms }}ms</span>
+                  <span v-if="cmd.error_category" class="cmd-error">{{ cmd.error_category }}</span>
+                  <code>{{ cmd.message_id }}</code>
+                </div>
+              </div>
             </div>
           </template>
         </div>
@@ -1629,6 +1712,41 @@ function loadDemoData() {
   color: #6b7280;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+.drawer-run-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 6px;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.drawer-run-mode code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.mode-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid #d1d5db;
+  color: #374151;
+  background: #f9fafb;
+}
+.mode-pill.server {
+  color: #065f46;
+  background: #d1fae5;
+  border-color: #a7f3d0;
+}
+.mode-pill.agent {
+  color: #374151;
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
 .drawer-body {
   flex: 1;
   padding: 12px 16px;
@@ -1650,6 +1768,76 @@ function loadDemoData() {
   font-size: 11px;
   color: #6b7280;
   font-weight: 400;
+}
+.command-list {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+.command-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.3fr) 54px 62px 72px 86px minmax(160px, 1.6fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-top: 1px solid #f3f4f6;
+  color: #4b5563;
+  font-size: 12px;
+}
+.command-row:first-child {
+  border-top: 0;
+}
+.command-row code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #6b7280;
+}
+.cmd-method {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  color: #111827;
+}
+.cmd-status {
+  justify-self: start;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #f3f4f6;
+  color: #4b5563;
+}
+.cmd-status.ok {
+  background: #d1fae5;
+  color: #065f46;
+}
+.cmd-status.bad {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.cmd-status.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+.cmd-error {
+  color: #991b1b;
+}
+
+@media (max-width: 760px) {
+  .command-row {
+    grid-template-columns: minmax(110px, 1fr) 52px 58px 64px;
+  }
+  .command-row .cmd-error,
+  .command-row code {
+    display: none;
+  }
 }
 
 /* --- 对话框 --- */

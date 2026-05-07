@@ -10,7 +10,9 @@
 --   - 存量 PG 部署：发布 next/server-brain 之前，psql -f 跑一遍本文件
 --   - 新部署 / 干净 PG / SQLite 单测：init_db() 的 create_all 自动接管，无需手跑
 --
--- 幂等性：所有语句都用 IF NOT EXISTS 守卫，重复执行无副作用
+-- 幂等性：所有语句都有存在性检查，重复执行无副作用
+-- 兼容性：生产库可能仍是 PostgreSQL 9.4，因此不要使用
+--   ALTER TABLE ... ADD COLUMN IF NOT EXISTS / CREATE INDEX IF NOT EXISTS。
 --
 -- 回退策略：见文末『回退脚本（仅紧急回滚使用）』段落，正常迭代不要执行
 --
@@ -25,57 +27,211 @@
 --   - 'agent_brain'（默认 / main 老链路）
 --   - 'server_brain'（next/server-brain 新链路）
 --   server_default 让历史 Run 自动归类为老链路，归因清晰
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(16)
-    NOT NULL DEFAULT 'agent_brain';
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'runs'
+          AND column_name = 'execution_mode'
+    ) THEN
+        ALTER TABLE public.runs ADD COLUMN execution_mode VARCHAR(16)
+            NOT NULL DEFAULT 'agent_brain';
+    END IF;
+END $$;
 
 -- dispatch_source：Run 入口标记（'api' / 'scheduler'）
 --   NULL = 老链路（没经过 RunDispatchService）
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS dispatch_source VARCHAR(16) NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'runs'
+          AND column_name = 'dispatch_source'
+    ) THEN
+        ALTER TABLE public.runs ADD COLUMN dispatch_source VARCHAR(16) NULL;
+    END IF;
+END $$;
 
 -- trace_id：跨进程 trace；与 run_logs.trace_id / run_commands.message_id 同空间
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS trace_id VARCHAR(64) NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'runs'
+          AND column_name = 'trace_id'
+    ) THEN
+        ALTER TABLE public.runs ADD COLUMN trace_id VARCHAR(64) NULL;
+    END IF;
+END $$;
 
 -- agent_id_at_start：启动时绑定的 Agent ID 快照
 --   与 agent_id（当前态）区分；用于 Agent 重连后的错误归因
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS agent_id_at_start VARCHAR(64) NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'runs'
+          AND column_name = 'agent_id_at_start'
+    ) THEN
+        ALTER TABLE public.runs ADD COLUMN agent_id_at_start VARCHAR(64) NULL;
+    END IF;
+END $$;
 
 -- agent_offline_at：失败原因为 agent 掉线时记录掉线时刻
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS agent_offline_at TIMESTAMPTZ NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'runs'
+          AND column_name = 'agent_offline_at'
+    ) THEN
+        ALTER TABLE public.runs ADD COLUMN agent_offline_at TIMESTAMPTZ NULL;
+    END IF;
+END $$;
 
 -- 索引：execution_mode / trace_id 都是排障常用过滤维度
-CREATE INDEX IF NOT EXISTS ix_runs_execution_mode ON runs (execution_mode);
-CREATE INDEX IF NOT EXISTS ix_runs_trace_id ON runs (trace_id);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'i'
+          AND c.relname = 'ix_runs_execution_mode'
+          AND n.nspname = 'public'
+    ) THEN
+        CREATE INDEX ix_runs_execution_mode ON public.runs (execution_mode);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'i'
+          AND c.relname = 'ix_runs_trace_id'
+          AND n.nspname = 'public'
+    ) THEN
+        CREATE INDEX ix_runs_trace_id ON public.runs (trace_id);
+    END IF;
+END $$;
 
 
 -- -----------------------------------------------------------------------------
 -- 2. run_steps：加 3 列
 -- -----------------------------------------------------------------------------
 -- driver_method：本步骤主导调用的 BaseDriver 方法名（screenshot_jpeg / click 等）
-ALTER TABLE run_steps ADD COLUMN IF NOT EXISTS driver_method VARCHAR(32) NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'run_steps'
+          AND column_name = 'driver_method'
+    ) THEN
+        ALTER TABLE public.run_steps ADD COLUMN driver_method VARCHAR(32) NULL;
+    END IF;
+END $$;
 
 -- command_id：本步骤"主动作"对应的 driver_command.message_id
 --   不含截图等附属命令；与 run_commands.message_id 关联
-ALTER TABLE run_steps ADD COLUMN IF NOT EXISTS command_id VARCHAR(64) NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'run_steps'
+          AND column_name = 'command_id'
+    ) THEN
+        ALTER TABLE public.run_steps ADD COLUMN command_id VARCHAR(64) NULL;
+    END IF;
+END $$;
 
 -- rpc_elapsed_ms：仅 RPC 跨进程往返耗时；与 elapsed_ms（含 VLM）分开统计
-ALTER TABLE run_steps ADD COLUMN IF NOT EXISTS rpc_elapsed_ms INTEGER NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'run_steps'
+          AND column_name = 'rpc_elapsed_ms'
+    ) THEN
+        ALTER TABLE public.run_steps ADD COLUMN rpc_elapsed_ms INTEGER NULL;
+    END IF;
+END $$;
 
 
 -- -----------------------------------------------------------------------------
 -- 3. run_logs：加 3 列
 -- -----------------------------------------------------------------------------
 -- trace_id：与 runs.trace_id 同空间，跨进程串联日志
-ALTER TABLE run_logs ADD COLUMN IF NOT EXISTS trace_id VARCHAR(64) NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'run_logs'
+          AND column_name = 'trace_id'
+    ) THEN
+        ALTER TABLE public.run_logs ADD COLUMN trace_id VARCHAR(64) NULL;
+    END IF;
+END $$;
 
 -- error_class：错误类名（AdbError / WDAStaleSession / RpcTimeout 等）
-ALTER TABLE run_logs ADD COLUMN IF NOT EXISTS error_class VARCHAR(128) NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'run_logs'
+          AND column_name = 'error_class'
+    ) THEN
+        ALTER TABLE public.run_logs ADD COLUMN error_class VARCHAR(128) NULL;
+    END IF;
+END $$;
 
 -- error_category：错误归因桶（'model' / 'device' / 'network' / 'agent_offline'）
 --   Web 错误归因 UI 直接按这一列分桶展示
-ALTER TABLE run_logs ADD COLUMN IF NOT EXISTS error_category VARCHAR(16) NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'run_logs'
+          AND column_name = 'error_category'
+    ) THEN
+        ALTER TABLE public.run_logs ADD COLUMN error_category VARCHAR(16) NULL;
+    END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS ix_run_logs_trace_id ON run_logs (trace_id);
-CREATE INDEX IF NOT EXISTS ix_run_logs_error_category ON run_logs (error_category);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'i'
+          AND c.relname = 'ix_run_logs_trace_id'
+          AND n.nspname = 'public'
+    ) THEN
+        CREATE INDEX ix_run_logs_trace_id ON public.run_logs (trace_id);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'i'
+          AND c.relname = 'ix_run_logs_error_category'
+          AND n.nspname = 'public'
+    ) THEN
+        CREATE INDEX ix_run_logs_error_category ON public.run_logs (error_category);
+    END IF;
+END $$;
 
 
 -- -----------------------------------------------------------------------------
@@ -83,7 +239,7 @@ CREATE INDEX IF NOT EXISTS ix_run_logs_error_category ON run_logs (error_categor
 -- -----------------------------------------------------------------------------
 -- 一次 driver_command ↔ 一行；附属命令（截图等）也记录
 -- 仅 next/server-brain 写入；老链路（agent_brain）不写
-CREATE TABLE IF NOT EXISTS run_commands (
+CREATE TABLE IF NOT EXISTS public.run_commands (
     id              SERIAL PRIMARY KEY,
     run_id          VARCHAR(32) NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
     step            INTEGER NULL,
@@ -100,11 +256,63 @@ CREATE TABLE IF NOT EXISTS run_commands (
     finished_at     TIMESTAMPTZ NULL
 );
 
-CREATE INDEX IF NOT EXISTS ix_run_commands_run_id ON run_commands (run_id);
-CREATE INDEX IF NOT EXISTS ix_run_commands_run_sent ON run_commands (run_id, sent_at);
-CREATE INDEX IF NOT EXISTS ix_run_commands_message_id ON run_commands (message_id);
-CREATE INDEX IF NOT EXISTS ix_run_commands_method ON run_commands (method);
-CREATE INDEX IF NOT EXISTS ix_run_commands_error_category ON run_commands (error_category);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'i'
+          AND c.relname = 'ix_run_commands_run_id'
+          AND n.nspname = 'public'
+    ) THEN
+        CREATE INDEX ix_run_commands_run_id ON public.run_commands (run_id);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'i'
+          AND c.relname = 'ix_run_commands_run_sent'
+          AND n.nspname = 'public'
+    ) THEN
+        CREATE INDEX ix_run_commands_run_sent ON public.run_commands (run_id, sent_at);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'i'
+          AND c.relname = 'ix_run_commands_message_id'
+          AND n.nspname = 'public'
+    ) THEN
+        CREATE INDEX ix_run_commands_message_id ON public.run_commands (message_id);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'i'
+          AND c.relname = 'ix_run_commands_method'
+          AND n.nspname = 'public'
+    ) THEN
+        CREATE INDEX ix_run_commands_method ON public.run_commands (method);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'i'
+          AND c.relname = 'ix_run_commands_error_category'
+          AND n.nspname = 'public'
+    ) THEN
+        CREATE INDEX ix_run_commands_error_category ON public.run_commands (error_category);
+    END IF;
+END $$;
 
 
 -- =============================================================================
@@ -144,14 +352,14 @@ CREATE INDEX IF NOT EXISTS ix_run_commands_error_category ON run_commands (error
 -- 真要回滚，先 pg_dump run_commands 表存档再跑：
 --
 --   DROP TABLE IF EXISTS run_commands;
---   ALTER TABLE run_logs   DROP COLUMN IF EXISTS error_category;
---   ALTER TABLE run_logs   DROP COLUMN IF EXISTS error_class;
---   ALTER TABLE run_logs   DROP COLUMN IF EXISTS trace_id;
---   ALTER TABLE run_steps  DROP COLUMN IF EXISTS rpc_elapsed_ms;
---   ALTER TABLE run_steps  DROP COLUMN IF EXISTS command_id;
---   ALTER TABLE run_steps  DROP COLUMN IF EXISTS driver_method;
---   ALTER TABLE runs       DROP COLUMN IF EXISTS agent_offline_at;
---   ALTER TABLE runs       DROP COLUMN IF EXISTS agent_id_at_start;
---   ALTER TABLE runs       DROP COLUMN IF EXISTS trace_id;
---   ALTER TABLE runs       DROP COLUMN IF EXISTS dispatch_source;
---   ALTER TABLE runs       DROP COLUMN IF EXISTS execution_mode;
+--   ALTER TABLE public.run_logs   DROP COLUMN IF EXISTS error_category;
+--   ALTER TABLE public.run_logs   DROP COLUMN IF EXISTS error_class;
+--   ALTER TABLE public.run_logs   DROP COLUMN IF EXISTS trace_id;
+--   ALTER TABLE public.run_steps  DROP COLUMN IF EXISTS rpc_elapsed_ms;
+--   ALTER TABLE public.run_steps  DROP COLUMN IF EXISTS command_id;
+--   ALTER TABLE public.run_steps  DROP COLUMN IF EXISTS driver_method;
+--   ALTER TABLE public.runs       DROP COLUMN IF EXISTS agent_offline_at;
+--   ALTER TABLE public.runs       DROP COLUMN IF EXISTS agent_id_at_start;
+--   ALTER TABLE public.runs       DROP COLUMN IF EXISTS trace_id;
+--   ALTER TABLE public.runs       DROP COLUMN IF EXISTS dispatch_source;
+--   ALTER TABLE public.runs       DROP COLUMN IF EXISTS execution_mode;

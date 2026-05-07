@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from ai_phone.server.models import Device
+from ai_phone.server.models import Device, RunCommand
 
 
 async def _seed_device(session, *, serial="S1", status="online") -> Device:
@@ -252,6 +252,38 @@ async def test_run_list_and_detail(client, session):
     assert logs.status_code == 200
     assert logs.json()["items"] == []
     assert logs.json()["next_since_id"] == 0
+
+    commands = await client.get(f"/api/runs/{run_id}/commands")
+    assert commands.status_code == 200
+    assert commands.json() == []
+
+
+@pytest.mark.asyncio
+async def test_run_commands_are_read_only_timeline(client, session):
+    await _seed_device(session)
+    r = await client.post("/api/runs", json={"device_serial": "S1", "goal": "g"})
+    run_id = r.json()["id"]
+    session.add(
+        RunCommand(
+            run_id=run_id,
+            step=1,
+            message_id="cmd-1",
+            method="screenshot_jpeg",
+            agent_id="agent-local",
+            serial="S1",
+            ok=True,
+            rpc_elapsed_ms=42,
+        )
+    )
+    await session.commit()
+
+    resp = await client.get(f"/api/runs/{run_id}/commands")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["message_id"] == "cmd-1"
+    assert body[0]["method"] == "screenshot_jpeg"
+    assert body[0]["rpc_elapsed_ms"] == 42
 
 
 @pytest.mark.asyncio
