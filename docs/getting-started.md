@@ -67,7 +67,15 @@ cd backend && source .venv/bin/activate
 python -m ai_phone agent
 ```
 
-参数全走 `.env`，不需要再传命令行。Agent 启动后自动 `adb devices` 扫描 → WS 注册到 Server。首次跑 VLM `type` 时会自动 push + install ADBKeyBoard。
+本机开发时参数全走 `.env`，不需要再传命令行。Agent 启动后自动 `adb devices` 扫描 → WS 注册到 Server。首次跑 VLM `type` 时会自动 push + install ADBKeyBoard。
+
+远端办公区电脑只接 Agent、不跑 Server 时，直接把 Server 地址和 token 带上即可：
+
+```bash
+python -m ai_phone agent --server http://<server-host>:8000 --token <AI_PHONE_AGENT_TOKEN>
+```
+
+`--server` 可以填普通 HTTP(S) 地址，Agent 会自动推导 `ws(s)://.../ws/agent` 和 HTTP 上传地址；也兼容直接填写 `ws://.../ws/agent`。
 
 ---
 

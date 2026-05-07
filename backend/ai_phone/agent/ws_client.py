@@ -16,6 +16,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from loguru import logger
 from websockets.asyncio.client import connect as ws_connect
@@ -27,6 +28,7 @@ Handler = Callable[["AgentWSClient", Dict[str, Any]], Awaitable[None]]
 DeviceProvider = Callable[[], List[Dict[str, Any]]]  # 无参，返回 device dict 列表
 
 _BACKOFF_STEPS = (1.0, 2.0, 5.0, 10.0, 15.0)
+_DEFAULT_AGENT_WS_PATH = "/ws/agent"
 
 
 @dataclass
@@ -35,6 +37,7 @@ class AgentWSClient:
     token: str
     agent_id: str
     agent_name: str
+    server_http_base: str = ""
     host_os: str = field(default_factory=lambda: f"{platform.system()} {platform.release()}")
 
     # 由 Agent 主程序注入
@@ -222,6 +225,66 @@ class AgentWSClient:
 
 
 # --------------------------------------------------------------------- helpers
+
+def normalize_server_address(raw: str) -> tuple[str, str]:
+    """把用户输入的 Server 地址归一成 Agent 需要的 WS URL + HTTP base。
+
+    支持三种输入：
+    - ``http://server:8000``  -> ``ws://server:8000/ws/agent`` + HTTP base
+    - ``https://server``      -> ``wss://server/ws/agent`` + HTTP base
+    - ``ws://server/ws/agent`` 直接保留 WS，并反推出 HTTP base
+
+    这样 Agent 启动时只需要一份"Server 地址"，不要求用户理解 WS path。
+    """
+    value = (raw or "").strip()
+    if not value:
+        raise ValueError("server address is empty")
+    if "://" not in value:
+        value = f"http://{value}"
+
+    parsed = urlsplit(value)
+    scheme = parsed.scheme.lower()
+    if scheme not in {"http", "https", "ws", "wss"}:
+        raise ValueError(f"unsupported server scheme: {parsed.scheme}")
+    if not parsed.netloc:
+        raise ValueError(f"server address missing host: {raw}")
+
+    if scheme in {"http", "https"}:
+        http_scheme = scheme
+        ws_scheme = "wss" if scheme == "https" else "ws"
+        base_path = _base_path_from_http_path(parsed.path)
+        ws_path = _join_path(base_path, _DEFAULT_AGENT_WS_PATH)
+    else:
+        ws_scheme = scheme
+        http_scheme = "https" if scheme == "wss" else "http"
+        ws_path = parsed.path if parsed.path and parsed.path != "/" else _DEFAULT_AGENT_WS_PATH
+        base_path = _base_path_from_ws_path(ws_path)
+
+    ws_url = urlunsplit((ws_scheme, parsed.netloc, ws_path, "", ""))
+    http_base = urlunsplit((http_scheme, parsed.netloc, base_path, "", "")).rstrip("/")
+    return ws_url, http_base
+
+
+def _base_path_from_http_path(path: str) -> str:
+    p = (path or "").rstrip("/")
+    if not p or p == _DEFAULT_AGENT_WS_PATH:
+        return ""
+    if p.endswith(_DEFAULT_AGENT_WS_PATH):
+        return p[: -len(_DEFAULT_AGENT_WS_PATH)].rstrip("/")
+    return p
+
+
+def _base_path_from_ws_path(path: str) -> str:
+    p = (path or "").rstrip("/")
+    if p.endswith(_DEFAULT_AGENT_WS_PATH):
+        return p[: -len(_DEFAULT_AGENT_WS_PATH)].rstrip("/")
+    return ""
+
+
+def _join_path(base: str, suffix: str) -> str:
+    b = (base or "").rstrip("/")
+    s = "/" + suffix.strip("/")
+    return f"{b}{s}" if b else s
 
 def _build_url(base: str, token: str) -> str:
     sep = "&" if "?" in base else "?"

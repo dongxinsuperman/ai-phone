@@ -27,7 +27,8 @@ def _build_parser() -> argparse.ArgumentParser:
     agent.add_argument(
         "--server",
         default=None,
-        help="Server WS URL, e.g. ws://127.0.0.1:8000/ws/agent "
+        help="Server address. Accepts http(s) base URL or ws(s) URL, e.g. "
+        "https://aiphone.example.com or ws://127.0.0.1:8000/ws/agent "
         "(fallback: env AI_PHONE_SERVER_WS_URL)",
     )
     agent.add_argument(

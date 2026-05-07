@@ -52,7 +52,7 @@ from ai_phone.agent.scrcpy_client import (
     EVENT_RAW_BYTES as _SCRCPY_EVENT_RAW_BYTES,
     Client as ScrcpyClient,
 )
-from ai_phone.agent.ws_client import AgentWSClient, stable_agent_id
+from ai_phone.agent.ws_client import AgentWSClient, normalize_server_address, stable_agent_id
 from ai_phone.config import get_settings
 from ai_phone.shared import protocol as P
 
@@ -443,12 +443,11 @@ async def _handle_start_run(
         )
         return
 
-    settings = get_settings()
     bridge = RunnerBridge(
         run_id=run_id,
         serial=serial,
         ws_send=client.send,
-        server_http_base=settings.server_http_base,
+        server_http_base=client.server_http_base or get_settings().server_http_base,
     )
 
     async def _run_task() -> None:
@@ -1628,16 +1627,24 @@ def run(
     name: Optional[str] = None,
 ) -> None:
     settings = get_settings()
-    effective_ws = server_ws or settings.server_ws_url
+    effective_ws, derived_http_base = normalize_server_address(server_ws or settings.server_ws_url)
+    default_http_base = "http://127.0.0.1:8000"
+    if server_ws is not None:
+        effective_http_base = derived_http_base
+    elif settings.server_http_base.rstrip("/") == default_http_base:
+        effective_http_base = derived_http_base
+    else:
+        effective_http_base = settings.server_http_base.rstrip("/")
     effective_token = token or settings.agent_token
     effective_name = name or settings.agent_name or socket.gethostname()
     agent_id = stable_agent_id(effective_name)
 
     logger.info(
-        "ai-phone agent starting | name={} id={} server={} os={}",
+        "ai-phone agent starting | name={} id={} ws={} http={} os={}",
         effective_name,
         agent_id,
         effective_ws,
+        effective_http_base,
         platform.platform(),
     )
 
@@ -1658,6 +1665,7 @@ def run(
         token=effective_token,
         agent_id=agent_id,
         agent_name=effective_name,
+        server_http_base=effective_http_base,
         device_provider=_device_provider,
     )
     mirror_sup = _MirrorSupervisor(client)

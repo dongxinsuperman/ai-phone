@@ -72,8 +72,10 @@ python3.11 -m venv .venv && source .venv/bin/activate && pip install -e .
 # 终端 A：起 Server
 uvicorn ai_phone.server.app:app --host 0.0.0.0 --port 8000 --reload
 
-# 终端 B：起 Agent（接真机）
+# 终端 B：起 Agent（接真机；本机开发可不传 server/token，走 .env）
 python -m ai_phone agent
+# 远端办公区电脑接入公司 Server 时：
+# python -m ai_phone agent --server http://<server-host>:8000 --token <AI_PHONE_AGENT_TOKEN>
 
 # 终端 C：起前端
 cd ../web && npm install && npm run dev
