@@ -33,6 +33,7 @@ and-tools/tool-use/computer-use-tool）。
 from __future__ import annotations
 
 import base64
+import copy
 import json
 import re
 import time
@@ -467,29 +468,74 @@ class ClaudeComputerUseClient:
         """生成本轮发出去的历史 messages：保留首屏 + 最近 N 步对。
 
         滑窗策略：保留首屏 1 对（让模型记得 case 起点）+ 最近 window-1 对。
-        tool_use / tool_result 配对由调用方 ``decide`` 在拼接新 user 时已经
-        处理好；本函数只负责"已存在的历史"按 step 对齐裁剪。
 
-        ⚠️ 裁剪需保证不破坏 tool_use ↔ tool_result 配对：因为我们以"user+
-        assistant 一对"为最小单元裁剪，每对内部的配对关系完整（user 的
-        tool_result 对应 head/tail 范围内 assistant 的 tool_use），不会出
-        现孤立 tool_use。
+        ⚠️ Anthropic 协议硬约束：
+        1. messages 必须严格 user/assistant 交替
+        2. assistant 含 tool_use 时，紧接的 user 必须有对应 tool_result
+        3. user 的 tool_result 引用的 id 必须存在于紧邻的前一条 assistant
+
+        messages 内部排列：[user_0, asst_0, user_1, asst_1, ...]
+        其中 user_N (N>=1) 包含对 asst_(N-1) 的 tool_result。
+
+        当 head=[user_0, asst_0] 与 tail=[user_K, asst_K, ...] 之间有 gap
+        (即 asst_1..asst_(K-1) 被裁掉) 时存在双向冲突：
+        - asst_0 含 tool_use → 要求下一条 user 有其 tool_result（但 user_K
+          的 tool_result 引用的是 asst_(K-1)，不是 asst_0）
+        - user_K 含 tool_result → 引用的 tool_use_id 来自被裁掉的 asst_(K-1)
+
+        解决方案：对边界消息做深拷贝并清理：
+        - head 尾部 asst_0：移除 tool_use 块（保留 text/thinking）
+        - tail 首部 user_K：移除 tool_result 块（保留 image/text）
+        这样 asst_0 不再要求 tool_result，user_K 不再引用不存在的 tool_use。
         """
         if not self.messages:
             return []
 
         window_pairs = max(1, self._history_window_steps)
-        # 一对 = 1 user + 1 assistant，所以 window_pairs * 2 条
         max_keep = window_pairs * 2
 
         if len(self.messages) <= max_keep:
-            trimmed = list(self.messages)
-        else:
-            head = self.messages[:2]
-            tail = self.messages[-(max_keep - 2):]
-            trimmed = head + tail
+            return list(self.messages)
 
-        return trimmed
+        # head: 首对（user_0 + asst_0）
+        head_user = self.messages[0]
+        head_asst = self.messages[1]
+
+        # tail: 最近 (window-1) 对，保持 user/asst 交替
+        tail_count = max_keep - 2
+        tail_start = len(self.messages) - tail_count
+        # 确保 tail_start 指向 user（偶数索引）
+        if tail_start % 2 != 0:
+            tail_start -= 1
+            tail_count += 1
+        tail = list(self.messages[tail_start:])
+
+        # 清理 head 尾部 asst：移除 tool_use 块，避免要求下一条有 tool_result
+        sanitized_asst = copy.deepcopy(head_asst)
+        if isinstance(sanitized_asst.get("content"), list):
+            sanitized_asst["content"] = [
+                block for block in sanitized_asst["content"]
+                if not (isinstance(block, dict) and block.get("type") == "tool_use")
+            ]
+            if not sanitized_asst["content"]:
+                sanitized_asst["content"] = [
+                    {"type": "text", "text": "(action executed)"}
+                ]
+
+        # 清理 tail 首部 user：移除 tool_result 块，避免引用不存在的 tool_use_id
+        sanitized_tail_user = copy.deepcopy(tail[0])
+        if isinstance(sanitized_tail_user.get("content"), list):
+            sanitized_tail_user["content"] = [
+                block for block in sanitized_tail_user["content"]
+                if not (isinstance(block, dict) and block.get("type") == "tool_result")
+            ]
+            if not sanitized_tail_user["content"]:
+                sanitized_tail_user["content"] = [
+                    {"type": "text", "text": "(continuing from previous steps)"}
+                ]
+        tail[0] = sanitized_tail_user
+
+        return [head_user, sanitized_asst] + tail
 
 
 # ---------------------------------------------------------------------------

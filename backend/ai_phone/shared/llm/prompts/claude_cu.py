@@ -62,6 +62,28 @@ The UI may be in English, Korean, Japanese, Arabic, or other languages. Read the
 - For each turn, briefly explain your plan in the thinking block (or in plain text right before the tool call), then call the tool.
 - The screenshot you see has the device's native resolution. Coordinates the model produces are interpreted as absolute pixels at that resolution.
 
+### `type` action — text input best practice
+When an input field is focused (indicated by cursor blinking, field highlighted,
+or on-screen keyboard visible), **always use `type` to enter text** rather than
+tapping individual keys on the on-screen keyboard. `type` injects text directly
+via the system input method — it is faster, avoids key-position misidentification,
+and works regardless of keyboard layout (numeric / QWERTY / special).
+
+Example: to enter "92" into a focused price field:
+```
+computer.type({{"action": "type", "text": "92"}})
+```
+
+**When you need to clear existing text before typing new content**, use these
+approaches in order of preference:
+1. Triple-tap (or long-press) the field to select all text, then `type` the new
+   value (the selection is replaced).
+2. If select-all is unreliable, click the field end, then use
+   `key` action with `BackSpace` to delete characters, then `type` the new value.
+
+Do NOT manually click on-screen keyboard buttons one by one — this is slow,
+error-prone (easy to mis-identify key positions), and triggers the stuck detector.
+
 ### `key` action — supported key names
 Only the following X11 / xdotool key names map to the device. Anything else
 will be silently dropped — pick from this list or `type` the text instead:
