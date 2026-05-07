@@ -161,6 +161,7 @@ class RemoteDriver(BaseDriver):
         """
         deadline_ms = deadline_ms or DEFAULT_DEADLINE_MS.get(method, 10_000)
         message_id = uuid.uuid4().hex[:16]
+        call_started = time.monotonic()
         payload: DriverCommandMsg = {
             "type": MSG_DRIVER_COMMAND,
             "message_id": message_id,
@@ -212,7 +213,26 @@ class RemoteDriver(BaseDriver):
                     pass
             raise timeout_exc from exc
 
-        return self._decode_result(method, driver_result)
+        try:
+            return self._decode_result(method, driver_result)
+        except BaseException as exc:
+            # driver_result.ok=true 只代表 Agent 执行成功；若返回结构在 Server
+            # 解码阶段才发现异常，也要回写 run_commands 为失败，避免排障时
+            # 看到"命令成功但 Run 失败"的割裂。
+            if self._on_command_finished is not None:
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        self._on_command_finished(
+                            dict(payload),
+                            driver_result,
+                            exc,
+                            int((time.monotonic() - call_started) * 1000),
+                        ),
+                        self._loop,
+                    ).result(timeout=2.0)
+                except Exception:  # noqa: BLE001
+                    pass
+            raise
 
     async def _send_and_wait(
         self,

@@ -11,13 +11,14 @@ from ai_phone.agent.runner.events import EVT_RUN_FINISH, make_event, log_event
 from ai_phone.server import db as db_module
 from ai_phone.server.hub import Hub
 from ai_phone.server.lockstore import DeviceLockStore
-from ai_phone.server.models import Device, Run, Submission, SubmissionItem
+from ai_phone.server.models import Device, Run, RunCommand, Submission, SubmissionItem
 from ai_phone.server.runner.dispatch import RunDispatchService
 from ai_phone.server.runner.emitter import ServerRunEmitter
 from ai_phone.server.runner.rpc import DriverRpcWaiter
 from ai_phone.server.runner.service import ServerRunnerService
 from ai_phone.server.scheduler.service import SubmissionScheduler
 from ai_phone.server.submissions import ResultPublisher
+from ai_phone.shared.protocol import MSG_DRIVER_RESULT
 
 
 class FakeWS:
@@ -26,6 +27,26 @@ class FakeWS:
 
     async def send_json(self, payload: Dict[str, Any]) -> None:
         self.sent.append(payload)
+
+
+class MalformedScreenshotWS(FakeWS):
+    def __init__(self, waiter: DriverRpcWaiter) -> None:
+        super().__init__()
+        self.waiter = waiter
+
+    async def send_json(self, payload: Dict[str, Any]) -> None:
+        await super().send_json(payload)
+        self.waiter.resolve(
+            {
+                "type": MSG_DRIVER_RESULT,
+                "message_id": payload["message_id"],
+                "run_id": payload["run_id"],
+                "serial": payload["serial"],
+                "ok": True,
+                "result": {"encoding": "base64", "mime": "image/jpeg"},
+                "elapsed_ms": 1,
+            }
+        )
 
 
 class SlowBroadcastHub(Hub):
@@ -52,6 +73,26 @@ class FastSuccessRunner:
                 token_stats={"total_tokens": 7},
             )
         )
+
+
+class HangingRunner:
+    def __init__(self, *, run_id, driver, goal, emit):  # noqa: ANN001
+        self.run_id = run_id
+        self.emit = emit
+        self._event = asyncio.Event()
+
+    async def run(self):
+        self.emit(log_event(self.run_id, 1, "hanging runner", "started"))
+        await self._event.wait()
+
+
+class ScreenshotRunner:
+    def __init__(self, *, run_id, driver, goal, emit):  # noqa: ANN001
+        self.run_id = run_id
+        self.driver = driver
+
+    async def run(self):
+        await asyncio.to_thread(self.driver.screenshot_jpeg)
 
 
 class MemoryPublisher(ResultPublisher):
@@ -263,3 +304,185 @@ async def test_server_emitter_finalizes_run_once_under_stop_race(app, session):
         assert got.reason == "stopped_by_user"
         assert got.steps == 0
         assert got.elapsed_ms == 0
+
+
+@pytest.mark.asyncio
+async def test_agent_disconnect_fails_active_server_brain_run(app, session):
+    hub = Hub()
+    fake_ws = FakeWS()
+    await hub.register_agent("agent-offline", "agent", "test", fake_ws)
+    waiter = DriverRpcWaiter()
+    service = ServerRunnerService(
+        hub=hub,
+        lock_store=DeviceLockStore(),
+        session_factory=db_module.get_session_factory(),
+        waiter=waiter,
+        runner_factory=HangingRunner,
+    )
+    session.add(
+        Run(
+            id="agent-offline-run",
+            device_serial="S1",
+            agent_id="agent-offline",
+            goal="g",
+            status="pending",
+        )
+    )
+    await session.commit()
+
+    assert await service.start_run(
+        run_id="agent-offline-run",
+        serial="S1",
+        agent_id="agent-offline",
+        goal="g",
+        dispatch_source="api",
+    )
+    assert service.is_running("agent-offline-run")
+
+    finished = await service.handle_agent_disconnected("agent-offline")
+    assert finished == 1
+
+    deadline = time.time() + 2.0
+    got = None
+    while time.time() < deadline:
+        await asyncio.sleep(0.02)
+        async with db_module.get_session_factory()() as s:
+            got = await s.get(Run, "agent-offline-run")
+            if got is not None and got.status == "failed":
+                break
+
+    assert got is not None
+    assert got.status == "failed"
+    assert got.reason == "agent_offline: agent-offline"
+    assert got.agent_offline_at is not None
+    assert waiter.in_flight == 0
+
+
+@pytest.mark.asyncio
+async def test_recover_stale_server_brain_run_finalizes_scheduler_item(app, session):
+    hub = Hub()
+    lock_store = DeviceLockStore()
+    waiter = DriverRpcWaiter()
+    publisher = MemoryPublisher()
+    dispatch = RunDispatchService(hub=hub, server_runner=None)
+    scheduler = SubmissionScheduler(
+        hub=hub,
+        lock_store=lock_store,
+        session_factory=db_module.get_session_factory(),
+        publisher=publisher,
+        dispatch_service=dispatch,
+    )
+    service = ServerRunnerService(
+        hub=hub,
+        lock_store=lock_store,
+        session_factory=db_module.get_session_factory(),
+        waiter=waiter,
+        runner_factory=HangingRunner,
+        on_run_done=scheduler.on_run_done,
+    )
+
+    now = datetime.now(timezone.utc)
+    sub = Submission(
+        origin="internal",
+        submission_name="stale-submission",
+        state="accepted",
+        raw_body={},
+        accepted_at=now,
+        expire_at=now + timedelta(hours=1),
+    )
+    item = SubmissionItem(
+        submission=sub,
+        case_id="case-stale",
+        case_name="case-stale",
+        platform="android",
+        run_content="do it",
+        state="running",
+        run_id="stale-run",
+        device_serial="S1",
+        started_at=now,
+    )
+    run = Run(
+        id="stale-run",
+        device_serial="S1",
+        agent_id="agent-gone",
+        goal="do it",
+        status="running",
+        execution_mode="server_brain",
+        dispatch_source="scheduler",
+    )
+    session.add_all([sub, item, run])
+    await session.commit()
+
+    recovered = await service.recover_stale_runs(reason="server_restarted")
+    assert recovered == 1
+
+    async with db_module.get_session_factory()() as s:
+        got_run = await s.get(Run, "stale-run")
+        got_item = await s.get(SubmissionItem, item.id)
+        assert got_run is not None
+        assert got_run.status == "failed"
+        assert got_run.reason == "server_restarted"
+        assert got_item is not None
+        assert got_item.state == "failed"
+        assert got_item.status_reason == "executor_error"
+
+    terminal_events = [e for e in publisher.events if e.get("event") == "submission.item.terminal"]
+    assert len(terminal_events) == 1
+
+
+@pytest.mark.asyncio
+async def test_malformed_driver_result_marks_command_failed(app, session):
+    hub = Hub()
+    waiter = DriverRpcWaiter()
+    fake_ws = MalformedScreenshotWS(waiter)
+    await hub.register_agent("agent-malformed", "agent", "test", fake_ws)
+    service = ServerRunnerService(
+        hub=hub,
+        lock_store=DeviceLockStore(),
+        session_factory=db_module.get_session_factory(),
+        waiter=waiter,
+        runner_factory=ScreenshotRunner,
+    )
+    session.add(
+        Run(
+            id="malformed-run",
+            device_serial="S1",
+            agent_id="agent-malformed",
+            goal="g",
+            status="pending",
+        )
+    )
+    await session.commit()
+
+    assert await service.start_run(
+        run_id="malformed-run",
+        serial="S1",
+        agent_id="agent-malformed",
+        goal="g",
+        dispatch_source="api",
+    )
+
+    deadline = time.time() + 2.0
+    got = None
+    while time.time() < deadline:
+        await asyncio.sleep(0.02)
+        async with db_module.get_session_factory()() as s:
+            got = await s.get(Run, "malformed-run")
+            if got is not None and got.status == "failed":
+                break
+
+    assert got is not None
+    assert got.status == "failed"
+
+    from sqlalchemy import select
+
+    async with db_module.get_session_factory()() as s:
+        rows = (
+            await s.execute(
+                select(RunCommand).where(RunCommand.run_id == "malformed-run")
+            )
+        ).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].ok is False
+        assert rows[0].error_class == "MalformedResult"
+        assert rows[0].error_category == "network"

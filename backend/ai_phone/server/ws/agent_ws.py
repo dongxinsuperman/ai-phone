@@ -34,7 +34,13 @@ _NO_SUB_COUNT: Dict[str, int] = {}
 from ..lockstore import DeviceLockStore
 from ..models import Device, Run, RunLog, RunStep
 from ..runner.rpc import DriverRpcWaiter
-from ._deps import get_driver_rpc_waiter, get_hub, get_lock_store
+from ..runner.service import ServerRunnerService
+from ._deps import (
+    get_driver_rpc_waiter,
+    get_hub,
+    get_lock_store,
+    get_server_runner_service,
+)
 
 router = APIRouter()
 
@@ -53,6 +59,7 @@ async def agent_ws(
     hub = get_hub(ws)
     lock_store = get_lock_store(ws)
     driver_waiter = get_driver_rpc_waiter(ws)
+    server_runner = get_server_runner_service(ws)
 
     # 1) 收 hello
     try:
@@ -103,7 +110,7 @@ async def agent_ws(
     except Exception as exc:  # noqa: BLE001
         logger.exception("Agent WS 异常 | id={} err={}", agent_id, exc)
     finally:
-        await _on_disconnect(hub, lock_store, agent_id, serials)
+        await _on_disconnect(hub, lock_store, agent_id, serials, server_runner)
 
 
 # ---------------------------------------------------------------------------
@@ -547,8 +554,23 @@ async def _finalize_run(run_id: str, msg: Dict[str, Any]) -> None:
 
 
 async def _on_disconnect(
-    hub: Hub, lock_store: DeviceLockStore, agent_id: str, serials: set[str]
+    hub: Hub,
+    lock_store: DeviceLockStore,
+    agent_id: str,
+    serials: set[str],
+    server_runner: Optional[ServerRunnerService] = None,
 ) -> None:
+    if server_runner is not None:
+        try:
+            finished = await server_runner.handle_agent_disconnected(agent_id)
+            if finished:
+                logger.warning(
+                    "Agent {} 断开，已终结其 server_brain run {} 条",
+                    agent_id,
+                    finished,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Agent {} 断开时终结 server_brain run 失败：{}", agent_id, exc)
     conn = await hub.unregister_agent(agent_id)
     await _offline_devices(agent_id, serials or (conn.serials if conn else set()))
     # 新锁模型下锁不归 Agent 所有，Agent 断线不动锁。

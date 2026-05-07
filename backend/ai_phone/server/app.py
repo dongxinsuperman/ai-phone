@@ -94,6 +94,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         dispatch_service=app.state.run_dispatch_service,
     )
     app.state.server_runner_service.set_on_run_done(scheduler.on_run_done)
+    try:
+        await app.state.server_runner_service.recover_stale_runs()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("server_brain stale run 恢复失败（忽略）：{}", exc)
     await scheduler.start()
     app.state.scheduler = scheduler
     app.state.publisher = publisher

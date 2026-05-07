@@ -6,12 +6,14 @@ from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from ai_phone.agent.runner.vlm_loop import VLMRunner
 from ai_phone.server.hub import Hub
 from ai_phone.server.lockstore import DeviceLockStore
-from ai_phone.server.models import Run, RunCommand
+from ai_phone.server.models import Run, RunCommand, RunLog
+from ai_phone.shared import protocol as P
 
 from .emitter import ServerRunEmitter
 from .remote_driver import RemoteDriver
@@ -41,6 +43,8 @@ class ServerRunnerService:
         self._on_run_done = on_run_done
         self._tasks: Dict[str, asyncio.Task] = {}
         self._emitters: Dict[str, ServerRunEmitter] = {}
+        self._run_agents: Dict[str, str] = {}
+        self._agent_runs: Dict[str, set[str]] = {}
 
     def is_running(self, run_id: str) -> bool:
         task = self._tasks.get(run_id)
@@ -157,17 +161,93 @@ class ServerRunnerService:
         )
         self._tasks[run_id] = task
         self._emitters[run_id] = emitter
+        self._run_agents[run_id] = agent_id
+        self._agent_runs.setdefault(agent_id, set()).add(run_id)
         return True
 
     async def stop_run(self, run_id: str, *, reason: str = "stopped_by_user") -> bool:
-        self._waiter.cancel_run(run_id, reason=reason)
-        task = self._tasks.get(run_id)
-        if task is not None and not task.done():
-            task.cancel()
-        emitter = self._emitters.get(run_id)
-        if emitter is not None:
-            await emitter.force_finish(result="cancelled", message=reason)
-        return task is not None
+        return await self._force_finish_run(
+            run_id,
+            result="cancelled",
+            message=reason,
+            cancel_reason=reason,
+        )
+
+    async def handle_agent_disconnected(self, agent_id: str) -> int:
+        """Agent WS 断开时，立刻终结其承载的 server_brain Run。
+
+        老 agent_brain 路径会等 Agent 自己回 ``run_done`` 或 API stop；Server 大脑
+        的 runner task 在 Server 进程里，若 Agent 掉线后不主动收口，可能会卡在
+        下一次 driver RPC / VLM 调用之前。这里按 agent_id 精确取消。
+        """
+        run_ids = list(self._agent_runs.get(agent_id) or [])
+        finished = 0
+        for run_id in run_ids:
+            ok = await self._force_finish_run(
+                run_id,
+                result="error",
+                message=f"agent_offline: {agent_id}",
+                error_class="AgentOffline",
+                error_category="agent_offline",
+                cancel_reason="agent disconnected",
+            )
+            if ok:
+                finished += 1
+        return finished
+
+    async def recover_stale_runs(self, *, reason: str = "server_restarted") -> int:
+        """Server 启动时把上次进程遗留的 server_brain running/pending Run 归位。
+
+        这些 Run 的执行 task 已随旧进程消失，不可能继续完成；如果不显式落终态，
+        Web / scheduler 会长期看到 running。这里按 failed 收口，并复用
+        ``on_run_done`` 回调让 SubmissionItem 也同步落位。
+        """
+        async with self._session_factory() as session:
+            res = await session.execute(
+                select(Run).where(
+                    Run.execution_mode == "server_brain",
+                    Run.status.in_(("pending", "running")),
+                )
+            )
+            runs = list(res.scalars().all())
+            now = datetime.now(timezone.utc)
+            for run in runs:
+                run.status = "failed"
+                run.reason = reason
+                run.finished_at = now
+                session.add(
+                    RunLog(
+                        run_id=run.id,
+                        level=3,
+                        title="Run failed",
+                        content=reason,
+                        error_class="ServerRestarted",
+                        error_category="network",
+                    )
+                )
+            await session.commit()
+
+        for run in runs:
+            payload = {
+                "type": P.MSG_RUN_DONE,
+                "run_id": run.id,
+                "serial": run.device_serial,
+                "result": "error",
+                "message": reason,
+                "steps": run.steps or 0,
+                "elapsed_ms": run.elapsed_ms or 0,
+                "token_stats": run.token_summary or {},
+            }
+            await self._hub.unbind_run(run.id)
+            await self._hub.broadcast_to_serial(run.device_serial, payload)
+            if self._on_run_done is not None:
+                try:
+                    await self._on_run_done(run.id, payload)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("stale run 回调 scheduler 失败 run_id={}: {}", run.id, exc)
+        if runs:
+            logger.warning("server_brain stale runs recovered: {}", len(runs))
+        return len(runs)
 
     async def shutdown(self) -> None:
         for run_id in list(self._tasks):
@@ -193,16 +273,54 @@ class ServerRunnerService:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.exception("ServerRunnerService run 异常 run_id={}: {}", run_id, exc)
+            error_class = exc.__class__.__name__
+            error_category = "network"
+            message = f"server_runner_crash: {exc}"
+            if isinstance(exc, RemoteDriverError):
+                error_class = exc.error_class
+                error_category = exc.category
+                message = exc.message
             await emitter.force_finish(
                 result="error",
-                message=f"server_runner_crash: {exc}",
-                error_class=exc.__class__.__name__,
-                error_category="network",
+                message=message,
+                error_class=error_class,
+                error_category=error_category,
             )
         finally:
             await emitter.aclose()
             self._tasks.pop(run_id, None)
             self._emitters.pop(run_id, None)
+            agent_id = self._run_agents.pop(run_id, None)
+            if agent_id is not None:
+                runs = self._agent_runs.get(agent_id)
+                if runs is not None:
+                    runs.discard(run_id)
+                    if not runs:
+                        self._agent_runs.pop(agent_id, None)
+
+    async def _force_finish_run(
+        self,
+        run_id: str,
+        *,
+        result: str,
+        message: str,
+        cancel_reason: str,
+        error_class: str = "",
+        error_category: str = "",
+    ) -> bool:
+        self._waiter.cancel_run(run_id, reason=cancel_reason)
+        task = self._tasks.get(run_id)
+        if task is not None and not task.done():
+            task.cancel()
+        emitter = self._emitters.get(run_id)
+        if emitter is not None:
+            await emitter.force_finish(
+                result=result,
+                message=message,
+                error_class=error_class,
+                error_category=error_category,
+            )
+        return task is not None or emitter is not None
 
 
 __all__ = ["ServerRunnerService"]
