@@ -355,6 +355,29 @@ function executionModeText(mode) {
   return mode === 'server_brain' ? 'Server 大脑' : 'Agent 大脑'
 }
 
+function normalizeErrorSummary(summary) {
+  if (!summary) return null
+  const category = summary.category || 'unknown'
+  const meta = {
+    model: { label: '模型错误', cls: 'model' },
+    device: { label: '设备错误', cls: 'device' },
+    network: { label: '网络 / RPC', cls: 'network' },
+    agent_offline: { label: 'Agent 离线', cls: 'offline' },
+    stopped: { label: '已停止', cls: 'stopped' },
+    unknown: { label: '未知错误', cls: 'unknown' },
+  }[category] || { label: category, cls: 'unknown' }
+  return {
+    ...summary,
+    label: meta.label,
+    cls: meta.cls,
+    message: summary.message || summary.title || '',
+  }
+}
+
+const drawerErrorSummary = computed(() => (
+  normalizeErrorSummary(runDrawer.value.run?.error_summary)
+))
+
 const drawerCommandSummary = computed(() => {
   const commands = runDrawer.value.commands || []
   const total = commands.length
@@ -973,6 +996,11 @@ function loadDemoData() {
                 <template v-if="drawerCommandSummary.failed"> · 失败 {{ drawerCommandSummary.failed }}</template>
                 <template v-if="drawerCommandSummary.pending"> · 未回包 {{ drawerCommandSummary.pending }}</template>
               </span>
+            </div>
+            <div v-if="drawerErrorSummary" class="drawer-error-summary" :class="drawerErrorSummary.cls">
+              <span class="err-label">{{ drawerErrorSummary.label }}</span>
+              <span v-if="drawerErrorSummary.error_class" class="err-class">{{ drawerErrorSummary.error_class }}</span>
+              <span class="err-message">{{ drawerErrorSummary.message }}</span>
             </div>
           </div>
           <div class="drawer-actions">
@@ -1746,6 +1774,49 @@ function loadDemoData() {
   color: #374151;
   background: #f3f4f6;
   border-color: #e5e7eb;
+}
+.drawer-error-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #374151;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.drawer-error-summary.model,
+.drawer-error-summary.network,
+.drawer-error-summary.unknown {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+.drawer-error-summary.device,
+.drawer-error-summary.offline {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.drawer-error-summary.stopped {
+  color: #374151;
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+.err-label {
+  font-weight: 800;
+}
+.err-class {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 0.85;
+}
+.err-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .drawer-body {
   flex: 1;

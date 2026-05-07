@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from ai_phone.server.models import Device, RunCommand
+from ai_phone.server.models import Device, RunCommand, RunLog
 from ai_phone.server.hub import Hub
 
 
@@ -306,6 +306,58 @@ async def test_run_commands_are_read_only_timeline(client, session):
     assert body[0]["message_id"] == "cmd-1"
     assert body[0]["method"] == "screenshot_jpeg"
     assert body[0]["rpc_elapsed_ms"] == 42
+
+
+@pytest.mark.asyncio
+async def test_run_detail_includes_error_summary_from_log(client, session):
+    await _seed_device(session)
+    r = await client.post("/api/runs", json={"device_serial": "S1", "goal": "g"})
+    run_id = r.json()["id"]
+    session.add(
+        RunLog(
+            run_id=run_id,
+            level=3,
+            title="Agent 离线",
+            content="agent_offline: agent-x",
+            error_class="AgentOffline",
+            error_category="agent_offline",
+            trace_id="trace-1",
+        )
+    )
+    await session.commit()
+
+    resp = await client.get(f"/api/runs/{run_id}")
+    assert resp.status_code == 200
+    summary = resp.json()["error_summary"]
+    assert summary["category"] == "agent_offline"
+    assert summary["error_class"] == "AgentOffline"
+    assert summary["source"] == "run_log"
+
+
+@pytest.mark.asyncio
+async def test_run_detail_includes_error_summary_from_command(client, session):
+    await _seed_device(session)
+    r = await client.post("/api/runs", json={"device_serial": "S1", "goal": "g"})
+    run_id = r.json()["id"]
+    session.add(
+        RunCommand(
+            run_id=run_id,
+            message_id="cmd-err",
+            method="click",
+            ok=False,
+            error_class="AdbError",
+            error_category="device",
+            error_msg="adb input tap failed",
+        )
+    )
+    await session.commit()
+
+    resp = await client.get(f"/api/runs/{run_id}")
+    assert resp.status_code == 200
+    summary = resp.json()["error_summary"]
+    assert summary["category"] == "device"
+    assert summary["error_class"] == "AdbError"
+    assert summary["method"] == "click"
 
 
 @pytest.mark.asyncio

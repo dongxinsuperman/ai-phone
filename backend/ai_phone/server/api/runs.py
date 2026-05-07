@@ -33,7 +33,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.config import get_settings
@@ -99,7 +99,9 @@ async def get_run(run_id: str, session: AsyncSession = DBSession) -> Dict[str, A
     run = await session.get(Run, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
-    return run.to_dict()
+    payload = run.to_dict()
+    payload["error_summary"] = await _build_error_summary(run, session)
+    return payload
 
 
 @router.get("/{run_id}/steps")
@@ -311,7 +313,9 @@ async def stop_run(
         await store.release(run.device_serial, lock.token)
     await hub.unbind_run(run_id)
     await session.refresh(run)
-    return run.to_dict()
+    payload = run.to_dict()
+    payload["error_summary"] = await _build_error_summary(run, session)
+    return payload
 
 
 def _dispatch_service(request: Request, hub: Hub) -> RunDispatchService:
@@ -322,3 +326,83 @@ def _dispatch_service(request: Request, hub: Hub) -> RunDispatchService:
     svc = RunDispatchService(hub=hub, server_runner=server_runner)
     request.app.state.run_dispatch_service = svc
     return svc
+
+
+async def _build_error_summary(
+    run: Run, session: AsyncSession
+) -> Optional[Dict[str, Any]]:
+    """给前端一个轻量、稳定的错误归因摘要。
+
+    结构化来源优先级：
+    1. ``run_logs.error_category``：ServerRunnerService / agent_ws 写入的归因日志
+    2. ``run_commands.ok=false``：Server 大脑 RPC 命令失败
+    3. ``Run.reason``：老链路或人工 stop 的兜底原因
+    """
+    log_res = await session.execute(
+        select(RunLog)
+        .where(
+            RunLog.run_id == run.id,
+            or_(RunLog.error_category.is_not(None), RunLog.level >= 3),
+        )
+        .order_by(RunLog.id.desc())
+        .limit(1)
+    )
+    log = log_res.scalars().first()
+    if log is not None:
+        category = log.error_category or _category_from_reason(log.content or log.title)
+        return {
+            "category": category,
+            "error_class": log.error_class,
+            "message": log.content or log.title or run.reason or "",
+            "title": log.title or "",
+            "source": "run_log",
+            "trace_id": log.trace_id,
+            "step": log.step,
+        }
+
+    cmd_res = await session.execute(
+        select(RunCommand)
+        .where(RunCommand.run_id == run.id, RunCommand.ok.is_(False))
+        .order_by(RunCommand.id.desc())
+        .limit(1)
+    )
+    cmd = cmd_res.scalars().first()
+    if cmd is not None:
+        return {
+            "category": cmd.error_category or _category_from_reason(cmd.error_msg or ""),
+            "error_class": cmd.error_class,
+            "message": cmd.error_msg or "",
+            "title": cmd.method,
+            "source": "run_command",
+            "trace_id": cmd.message_id,
+            "step": cmd.step,
+            "method": cmd.method,
+            "command_id": cmd.message_id,
+        }
+
+    if run.status in ("failed", "stopped") and run.reason:
+        return {
+            "category": _category_from_reason(run.reason),
+            "error_class": None,
+            "message": run.reason,
+            "title": "",
+            "source": "run",
+            "trace_id": run.trace_id,
+            "step": None,
+        }
+    return None
+
+
+def _category_from_reason(reason: str) -> str:
+    text = (reason or "").lower()
+    if "agent_offline" in text or "agent offline" in text:
+        return "agent_offline"
+    if "timeout" in text or "rpc" in text or "network" in text or "server_restarted" in text:
+        return "network"
+    if "model" in text or "vlm" in text or "assert" in text:
+        return "model"
+    if "device" in text or "driver" in text or "adb" in text or "wda" in text:
+        return "device"
+    if "stopped" in text or "cancel" in text:
+        return "stopped"
+    return "unknown"

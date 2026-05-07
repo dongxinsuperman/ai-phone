@@ -39,6 +39,26 @@ const currentRunModeText = computed(() => (
 const currentRunAgent = computed(() => (
   currentRun.value?.agent_id_at_start || currentRun.value?.agent_id || ''
 ))
+const currentRunError = computed(() => normalizeErrorSummary(currentRun.value?.error_summary))
+
+function normalizeErrorSummary(summary) {
+  if (!summary) return null
+  const category = summary.category || 'unknown'
+  const meta = {
+    model: { label: '模型错误', cls: 'model' },
+    device: { label: '设备错误', cls: 'device' },
+    network: { label: '网络 / RPC', cls: 'network' },
+    agent_offline: { label: 'Agent 离线', cls: 'offline' },
+    stopped: { label: '已停止', cls: 'stopped' },
+    unknown: { label: '未知错误', cls: 'unknown' },
+  }[category] || { label: category, cls: 'unknown' }
+  return {
+    ...summary,
+    label: meta.label,
+    cls: meta.cls,
+    message: summary.message || summary.title || '',
+  }
+}
 
 // 两套镜像后端并存，收到第一条消息时定下 mirrorMode 再也不切：
 // - 'mse'  →  useMseMirror（<video> + H.264 + MSE）。Android scrcpy / iOS wda_mjpeg /
@@ -924,6 +944,11 @@ watch(
             <span v-if="currentRunAgent">Agent: <code>{{ currentRunAgent }}</code></span>
             <span v-if="currentRun.dispatch_source">入口: {{ currentRun.dispatch_source }}</span>
           </div>
+          <div v-if="currentRunError" class="error-summary" :class="currentRunError.cls">
+            <span class="error-label">{{ currentRunError.label }}</span>
+            <span v-if="currentRunError.error_class" class="error-class">{{ currentRunError.error_class }}</span>
+            <span class="error-message">{{ currentRunError.message }}</span>
+          </div>
           <!-- 外接引擎（如 Midscene）跑完后展示报告链接；vlm 路径永远不带这个字段 -->
           <p v-if="!currentRunId && currentRun && currentRun.external_report_url" class="info">
             <a :href="currentRun.external_report_url" target="_blank" rel="noopener">
@@ -1438,5 +1463,47 @@ h2 {
   color: #374151;
   background: #f3f4f6;
   border-color: #e5e7eb;
+}
+.error-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #374151;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.error-summary.model,
+.error-summary.network,
+.error-summary.unknown {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+.error-summary.device,
+.error-summary.offline {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.error-summary.stopped {
+  color: #374151;
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+.error-label {
+  font-weight: 800;
+}
+.error-class {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 0.85;
+}
+.error-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 </style>
