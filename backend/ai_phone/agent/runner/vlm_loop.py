@@ -707,6 +707,7 @@ class VLMRunner:
 
         elapsed_ms = int((time.monotonic() - task_start) * 1000)
         summary = self.counter.summary()
+        summary["vlm_backend"] = self._settings.vlm_backend
         await self._emit_event(
             make_event(EVT_TOKEN_SUMMARY, self.run_id, **summary)
         )
@@ -2258,6 +2259,7 @@ class VLMRunner:
         - 结构化 case：以"预期结果"为唯一验收标准，逐条核对
         - 自由对话：以"最后一个动作结果"为唯一验收对象，不审过程
         """
+        history = self._format_action_history(STRUCT_AUDIT_HISTORY_LIMIT)
         img_index_intro = (
             "本提示词附带两张图（按消息顺序）：\n"
             "- 附图 1：主 VLM **最后一个动作之前**看到的画面（动作前对照帧）\n"
@@ -2313,6 +2315,7 @@ class VLMRunner:
                 "- 语义等价可以通过，证据不足不能通过。\n"
                 "- FAIL 时必须明确指出：是哪一条预期结果没有被截图可靠支持。\n\n"
                 f"【用户目标】\n{self.goal}"
+                f"\n\n【最近动作历史】\n{history}"
                 f"\n\n【主VLM最后思考】\n{thought}"
                 f"\n\n【主VLM finished 内容】\n{finish_msg}\n"
             )
@@ -2349,6 +2352,8 @@ class VLMRunner:
             "   - 无法确认点击顺序\n"
             "   - 无法证明是否使用了双动作链\n"
             "   - 截图未体现中间过程\n"
+            "   - 最终页面标题/模块名没有逐字等于最后点击的按钮文案；"
+            "只要截图显示已进入该按钮对应的结果页或功能列表，就应 PASS\n"
             "4. 只有当最后一个动作对应的最终结果，与截图明确矛盾时，才允许 FAIL。\n"
             "   过程导向动作（如「返回」「关闭」）：附图 1 与附图 2 是同一页面、且 thought 自述了切换 → FAIL；\n"
             "   状态导向动作（如「拖到 30%」「选中某项」）：附图 2 没有 thought 自述的视觉证据 → FAIL。\n"
@@ -2361,6 +2366,7 @@ class VLMRunner:
             "- “过程不可回溯”绝不等于“结果未达成”。\n"
             "- 你的 FAIL 必须指出“最后一个动作结果”层面的明确矛盾，不能只谈过程。\n\n"
             f"【用户目标】\n{self.goal}"
+            f"\n\n【最近动作历史】\n{history}"
             f"\n\n【主VLM最后思考】\n{thought}"
             f"\n\n【主VLM finished 内容】\n{finish_msg}\n"
         )

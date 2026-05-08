@@ -9,7 +9,9 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from ai_phone.agent.runner.events import log_event
 from ai_phone.agent.runner.vlm_loop import VLMRunner
+from ai_phone.config import get_settings
 from ai_phone.server.hub import Hub
 from ai_phone.server.lockstore import DeviceLockStore
 from ai_phone.server.models import Run, RunCommand, RunLog
@@ -84,6 +86,7 @@ class ServerRunnerService:
                         run_id=run_id,
                         message_id=str(payload.get("message_id") or ""),
                         method=str(payload.get("method") or ""),
+                        params=dict(payload.get("params") or {}),
                         agent_id=agent_id,
                         serial=serial,
                     )
@@ -261,6 +264,14 @@ class ServerRunnerService:
         emitter: ServerRunEmitter,
     ) -> None:
         try:
+            replay_done = await self._maybe_run_trajectory_cache(
+                run_id=run_id,
+                goal=goal,
+                driver=driver,
+                emitter=emitter,
+            )
+            if replay_done:
+                return
             runner = self._runner_factory(
                 run_id=run_id,
                 driver=driver,
@@ -297,6 +308,106 @@ class ServerRunnerService:
                     runs.discard(run_id)
                     if not runs:
                         self._agent_runs.pop(agent_id, None)
+
+    async def _maybe_run_trajectory_cache(
+        self,
+        *,
+        run_id: str,
+        goal: str,
+        driver: RemoteDriver,
+        emitter: ServerRunEmitter,
+    ) -> bool:
+        settings = get_settings()
+        if not settings.vlm_trajectory_cache_replay_enabled:
+            return False
+
+        from ai_phone.server.trajectory_cache import (  # noqa: PLC0415
+            CacheReplayAssertionVerifier,
+            ReplayRunner,
+            get_active_trajectory_cache,
+        )
+
+        cache = await get_active_trajectory_cache(
+            self._session_factory,
+            device_code=driver.serial,
+            run_semantic_text=goal,
+        )
+        if cache is None:
+            emitter.emit(log_event(run_id, 1, "轨迹缓存", "未命中，继续走现有 VLMRunner"))
+            return False
+
+        trajectory = dict(cache.get("trajectory_json") or {})
+        cache_key = str(cache.get("cache_key") or "")
+        emitter.emit(
+            log_event(
+                run_id,
+                1,
+                "轨迹缓存",
+                f"命中轨迹回放 cache_key={cache_key[:12]}",
+            )
+        )
+
+        async def _log(level: int, title: str, content: str) -> None:
+            emitter.emit(log_event(run_id, level, title, content))
+
+        runner = ReplayRunner(
+            driver=driver,
+            trajectory=trajectory,
+            run_id=run_id,
+            log=_log,
+            emit=emitter.emit,
+            capture_after_each_action=True,
+        )
+        replay_result = await runner.run()
+        if not replay_result.success:
+            await emitter.force_finish(
+                result="error",
+                message=f"trajectory_replay_failed: {replay_result.error}",
+                error_class="TrajectoryReplayError",
+                error_category="device",
+            )
+            return True
+
+        final_frame = await runner.capture_final_frame()
+        assertion = await CacheReplayAssertionVerifier(settings=settings).verify(
+            goal=goal,
+            final_bytes=final_frame,
+            trajectory=trajectory,
+            prev_before_bytes=replay_result.final_before_bytes,
+        )
+        emitter.emit(
+            log_event(
+                run_id,
+                1 if assertion.verdict == "PASS" else 3,
+                "轨迹缓存断言",
+                f"{assertion.verdict}: {assertion.reason}",
+            )
+        )
+        if assertion.passed:
+            await emitter.force_finish(
+                result="pass",
+                message=f"trajectory_cache_pass: {assertion.reason}",
+            )
+        else:
+            await emitter.force_finish(
+                result="assert_fail",
+                message=f"trajectory_cache_assertion_{assertion.verdict.lower()}: {assertion.reason}",
+                error_class="TrajectoryCacheAssertionError",
+                error_category="model",
+            )
+        return True
+
+    async def _write_run_log(
+        self,
+        run_id: str,
+        *,
+        level: int,
+        title: str,
+        content: str,
+    ) -> None:
+        async with self._session_factory() as session:
+            session.add(RunLog(run_id=run_id, level=level, title=title, content=content))
+            await session.commit()
 
     async def _force_finish_run(
         self,

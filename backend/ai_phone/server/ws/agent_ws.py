@@ -552,6 +552,24 @@ async def _finalize_run(run_id: str, msg: Dict[str, Any]) -> None:
         await session.commit()
 
     await _with_session(op)
+    try:
+        from ai_phone.server.trajectory_cache import (  # noqa: PLC0415
+            delete_trajectory_cache_for_run,
+            save_trajectory_cache_after_success,
+        )
+
+        factory = get_session_factory()
+        if final_status == "success":
+            await save_trajectory_cache_after_success(factory, run_id)
+        else:
+            await delete_trajectory_cache_for_run(factory, run_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "轨迹缓存终态处理失败 run_id={} status={}: {}",
+            run_id,
+            final_status,
+            exc,
+        )
 
 
 async def _on_disconnect(

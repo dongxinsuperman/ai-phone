@@ -329,6 +329,9 @@ class RunCommand(Base):
     message_id: Mapped[str] = mapped_column(String(64), nullable=False)
     # screenshot_jpeg / click / type_text / window_size 等；DriverMethod 白名单
     method: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    # Driver 调用参数快照。轨迹缓存清洗优先使用这里的真实绝对坐标；老数据或
+    # agent_brain 路径为空时再回退解析 RunStep.action。
+    params: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
     # 派发时绑定的 Agent / 设备；Agent 重连不影响这条历史快照
     agent_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     serial: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
@@ -354,6 +357,7 @@ class RunCommand(Base):
             "step": self.step,
             "message_id": self.message_id,
             "method": self.method,
+            "params": self.params or {},
             "agent_id": self.agent_id,
             "serial": self.serial,
             "ok": self.ok,
@@ -363,6 +367,65 @@ class RunCommand(Base):
             "rpc_elapsed_ms": self.rpc_elapsed_ms,
             "sent_at": self.sent_at.isoformat() if self.sent_at else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+        }
+
+
+class VlmTrajectoryCache(Base):
+    """VLM 成功轨迹缓存。
+
+    key = device_code + run_semantic_hash + schema_version。命中后独立 replay
+    runner 顺序执行 trajectory_json.actions；主 VLMRunner 不感知这张表。
+    """
+
+    __tablename__ = "vlm_trajectory_cache"
+    __table_args__ = (
+        Index("ix_vlm_trajectory_cache_key", "cache_key", unique=True),
+        Index("ix_vlm_trajectory_device_semantic", "device_code", "run_semantic_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_short_id)
+    cache_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    device_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    run_semantic_hash: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    run_semantic_text: Mapped[str] = mapped_column(Text, default="")
+    case_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    platform: Mapped[str] = mapped_column(String(16), default="")
+    resolution: Mapped[str] = mapped_column(String(32), default="")
+    app_package_or_bundle: Mapped[str] = mapped_column(String(255), default="")
+    schema_version: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    source_run_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    trajectory_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_failed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "cache_key": self.cache_key,
+            "device_code": self.device_code,
+            "run_semantic_hash": self.run_semantic_hash,
+            "run_semantic_text": self.run_semantic_text,
+            "case_id": self.case_id,
+            "platform": self.platform,
+            "resolution": self.resolution,
+            "app_package_or_bundle": self.app_package_or_bundle,
+            "schema_version": self.schema_version,
+            "status": self.status,
+            "source_run_id": self.source_run_id,
+            "trajectory_json": self.trajectory_json or {},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "last_success_at": self.last_success_at.isoformat() if self.last_success_at else None,
+            "last_failed_at": self.last_failed_at.isoformat() if self.last_failed_at else None,
         }
 
 
@@ -521,6 +584,7 @@ __all__ = [
     "RunStep",
     "RunLog",
     "RunCommand",
+    "VlmTrajectoryCache",
     "Submission",
     "SubmissionItem",
 ]

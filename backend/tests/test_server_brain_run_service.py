@@ -162,7 +162,7 @@ async def test_api_run_dispatches_to_server_brain(app, client, session):
 
     logs = await client.get(f"/api/runs/{run_id}/logs")
     assert logs.status_code == 200
-    assert logs.json()["items"][0]["title"] == "fake runner"
+    assert any(item["title"] == "fake runner" for item in logs.json()["items"])
 
 
 @pytest.mark.asyncio

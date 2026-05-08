@@ -229,6 +229,7 @@ class ServerRunEmitter:
                 "cache_read_tokens",
                 "cache_write_tokens",
                 "cache_accounting",
+                "vlm_backend",
                 "by_scene",
             )
             if evt.get(k) is not None
@@ -327,6 +328,27 @@ class ServerRunEmitter:
                             )
                         )
                     await session.commit()
+            try:
+                from ai_phone.server.trajectory_cache import (  # noqa: PLC0415
+                    delete_trajectory_cache_for_run,
+                    save_trajectory_cache_after_success,
+                )
+
+                if final_status == "success":
+                    await save_trajectory_cache_after_success(
+                        self._session_factory, self.run_id
+                    )
+                else:
+                    await delete_trajectory_cache_for_run(
+                        self._session_factory, self.run_id
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "轨迹缓存终态处理失败 run_id={} status={}: {}",
+                    self.run_id,
+                    final_status,
+                    exc,
+                )
             lock = self._lock_store.peek(self.serial)
             if lock is not None and lock.holder == self.run_id and lock.meta.get("auto_acquired"):
                 try:
