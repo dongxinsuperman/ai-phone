@@ -185,13 +185,28 @@ def _run_single_task(
         elif t == EVT_TOKEN_SUMMARY:
             pt = int(evt.get("prompt_tokens") or 0)
             cached = int(evt.get("cached_tokens") or 0)
-            hit_rate = (cached * 100.0 / pt) if pt > 0 else 0.0
-            print(
-                f"[TOK ] calls={evt.get('call_count')} "
-                f"prompt={pt}(cached={cached}, {hit_rate:.1f}%) "
-                f"completion={evt.get('completion_tokens')} "
-                f"total={evt.get('total_tokens')}"
-            )
+            cache_read = int(evt.get("cache_read_tokens") or cached)
+            cache_write = int(evt.get("cache_write_tokens") or 0)
+            if evt.get("cache_accounting") == "read_write":
+                logical_input = pt + cache_read + cache_write
+                cache_share = (
+                    cache_read * 100.0 / logical_input if logical_input > 0 else 0.0
+                )
+                print(
+                    f"[TOK ] calls={evt.get('call_count')} "
+                    f"input={pt} cache_read={cache_read} cache_write={cache_write} "
+                    f"cache_share={cache_share:.1f}% "
+                    f"completion={evt.get('completion_tokens')} "
+                    f"total={evt.get('total_tokens')}"
+                )
+            else:
+                hit_rate = (cached * 100.0 / pt) if pt > 0 else 0.0
+                print(
+                    f"[TOK ] calls={evt.get('call_count')} "
+                    f"prompt={pt}(cached={cached}, {hit_rate:.1f}%) "
+                    f"completion={evt.get('completion_tokens')} "
+                    f"total={evt.get('total_tokens')}"
+                )
         elif t == EVT_RUN_FINISH:
             tag = "OK  " if evt.get("ok") else "FAIL"
             print(

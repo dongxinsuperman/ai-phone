@@ -132,6 +132,12 @@ const throughput = computed(() => snapshot.value?.throughput || {})
 const devicesToday = computed(() => snapshot.value?.devices?.today || { byDevice: [] })
 const devicesHealth = computed(() => snapshot.value?.devices?.health || { byDevice: [] })
 const token = computed(() => snapshot.value?.token || {})
+const tokenTotalLabel = computed(() => (
+  token.value.cacheAccounting === 'read_write' ? 'API Tokens' : '总 Tokens'
+))
+const tokenCacheLabel = computed(() => (
+  token.value.cacheAccounting === 'read_write' ? 'Cache Read' : '缓存命中'
+))
 const stability = computed(() => snapshot.value?.stability || {})
 const submissions = computed(() => snapshot.value?.submissions || [])
 
@@ -498,11 +504,15 @@ onBeforeUnmount(() => {
         <div class="kpis">
           <div class="kpi">
             <div class="kpi-num">{{ fmtNum(token.totalTokens) }}</div>
-            <div class="kpi-label">总 Tokens</div>
+            <div class="kpi-label">{{ tokenTotalLabel }}</div>
           </div>
           <div class="kpi">
-            <div class="kpi-num">{{ fmtNum(token.cachedTokens) }}</div>
-            <div class="kpi-label">缓存命中</div>
+            <div class="kpi-num">{{ fmtNum(token.cacheReadTokens ?? token.cachedTokens) }}</div>
+            <div class="kpi-label">{{ tokenCacheLabel }}</div>
+          </div>
+          <div class="kpi" v-if="token.cacheWriteTokens">
+            <div class="kpi-num">{{ fmtNum(token.cacheWriteTokens) }}</div>
+            <div class="kpi-label">Cache Write</div>
           </div>
           <div class="kpi">
             <div class="kpi-num">{{ fmtNum(token.callCount) }}</div>
@@ -513,7 +523,10 @@ onBeforeUnmount(() => {
         <div class="mini-title">按平台</div>
         <table class="mini-table" v-if="token.byPlatform && Object.keys(token.byPlatform).length">
           <thead>
-            <tr><th>平台</th><th>调用</th><th>Prompt</th><th>Completion</th><th>Cached</th><th>Total</th></tr>
+            <tr>
+              <th>平台</th><th>调用</th><th>Prompt/Input</th><th>Completion</th>
+              <th>{{ tokenCacheLabel }}</th><th>Cache Write</th><th>Total</th>
+            </tr>
           </thead>
           <tbody>
             <tr v-for="(v, platform) in token.byPlatform" :key="platform">
@@ -521,7 +534,8 @@ onBeforeUnmount(() => {
               <td>{{ v.callCount }}</td>
               <td>{{ fmtNum(v.promptTokens) }}</td>
               <td>{{ fmtNum(v.completionTokens) }}</td>
-              <td>{{ fmtNum(v.cachedTokens) }}</td>
+              <td>{{ fmtNum(v.cacheReadTokens ?? v.cachedTokens) }}</td>
+              <td>{{ fmtNum(v.cacheWriteTokens) }}</td>
               <td><b>{{ fmtNum(v.totalTokens) }}</b></td>
             </tr>
           </tbody>
@@ -534,14 +548,18 @@ onBeforeUnmount(() => {
         <div class="mini-title">消耗 Top 10 执行单元</div>
         <table class="mini-table" v-if="(token.topItems || []).length">
           <thead>
-            <tr><th>Case</th><th>平台</th><th>Prompt</th><th>Cached</th><th>Total</th></tr>
+            <tr>
+              <th>Case</th><th>平台</th><th>Prompt/Input</th>
+              <th>{{ tokenCacheLabel }}</th><th>Cache Write</th><th>Total</th>
+            </tr>
           </thead>
           <tbody>
             <tr v-for="(r, i) in token.topItems" :key="i">
               <td class="ellipsis" :title="`${r.caseName} · ${r.submissionId}`">{{ r.caseName }}</td>
               <td>{{ PLATFORM_LABEL[r.platform] || r.platform }}</td>
               <td>{{ fmtNum(r.promptTokens) }}</td>
-              <td>{{ fmtNum(r.cachedTokens) }}</td>
+              <td>{{ fmtNum(r.cacheReadTokens ?? r.cachedTokens) }}</td>
+              <td>{{ fmtNum(r.cacheWriteTokens) }}</td>
               <td><b>{{ fmtNum(r.totalTokens) }}</b></td>
             </tr>
           </tbody>

@@ -121,6 +121,7 @@ class ClaudeAssistant:
         # usage 归一化为 TokenCounter 兼容格式
         usage = data.get("usage") or {}
         normalized: Dict[str, Any] = {
+            "cache_accounting": "read_write",
             "input_tokens": usage.get("input_tokens", 0),
             "output_tokens": usage.get("output_tokens", 0),
             "total_tokens": (
@@ -128,9 +129,13 @@ class ClaudeAssistant:
                 + int(usage.get("output_tokens") or 0)
             ),
         }
-        cached = usage.get("cache_read_input_tokens")
-        if cached is not None:
-            normalized["input_tokens_details"] = {"cached_tokens": int(cached)}
+        cache_read = usage.get("cache_read_input_tokens")
+        cache_write = usage.get("cache_creation_input_tokens")
+        if cache_read is not None:
+            normalized["cache_read_tokens"] = int(cache_read)
+            normalized["input_tokens_details"] = {"cached_tokens": int(cache_read)}
+        if cache_write is not None:
+            normalized["cache_write_tokens"] = int(cache_write)
         self.counter.record(scene, model, normalized)
         return text
 
@@ -332,13 +337,18 @@ class ClaudeAssistant:
         completion_tokens = int(usage.get("output_tokens") or 0)
         # 归一化进 TokenCounter（与 _post 里的处理逻辑保持一致）
         normalized: Dict[str, Any] = {
+            "cache_accounting": "read_write",
             "input_tokens": prompt_tokens,
             "output_tokens": completion_tokens,
             "total_tokens": prompt_tokens + completion_tokens,
         }
-        cached = usage.get("cache_read_input_tokens")
-        if cached is not None:
-            normalized["input_tokens_details"] = {"cached_tokens": int(cached)}
+        cache_read = usage.get("cache_read_input_tokens")
+        cache_write = usage.get("cache_creation_input_tokens")
+        if cache_read is not None:
+            normalized["cache_read_tokens"] = int(cache_read)
+            normalized["input_tokens_details"] = {"cached_tokens": int(cache_read)}
+        if cache_write is not None:
+            normalized["cache_write_tokens"] = int(cache_write)
         self.counter.record(label, model, normalized)
 
         return AnalysisResult(

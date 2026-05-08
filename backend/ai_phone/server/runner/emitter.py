@@ -214,6 +214,9 @@ class ServerRunEmitter:
     def _cache_token_summary(self, evt: Dict[str, Any]) -> None:
         pt = int(evt.get("prompt_tokens") or 0)
         cached = int(evt.get("cached_tokens") or 0)
+        cache_read = int(evt.get("cache_read_tokens") or cached)
+        cache_write = int(evt.get("cache_write_tokens") or 0)
+        cache_accounting = str(evt.get("cache_accounting") or "")
         hit_rate = (cached * 100.0 / pt) if pt > 0 else 0.0
         self._last_token_stats = {
             k: evt.get(k)
@@ -223,21 +226,38 @@ class ServerRunEmitter:
                 "completion_tokens",
                 "total_tokens",
                 "cached_tokens",
+                "cache_read_tokens",
+                "cache_write_tokens",
+                "cache_accounting",
                 "by_scene",
             )
             if evt.get(k) is not None
         }
+        if cache_accounting == "read_write":
+            logical_input = pt + cache_read + cache_write
+            cache_share = (
+                cache_read * 100.0 / logical_input if logical_input > 0 else 0.0
+            )
+            token_content = (
+                f"calls={evt.get('call_count')} input={pt} "
+                f"cache_read={cache_read} cache_write={cache_write} "
+                f"cache_share={cache_share:.1f}% "
+                f"completion={evt.get('completion_tokens')} "
+                f"total={evt.get('total_tokens')}"
+            )
+        else:
+            token_content = (
+                f"calls={evt.get('call_count')} "
+                f"prompt={pt}(cached={cached}, 命中率={hit_rate:.1f}%) "
+                f"completion={evt.get('completion_tokens')} "
+                f"total={evt.get('total_tokens')}"
+            )
         self._enqueue(
             self._forward_log(
                 {
                     "level": 1,
                     "title": "Token 统计",
-                    "content": (
-                        f"calls={evt.get('call_count')} "
-                        f"prompt={pt}(cached={cached}, 命中率={hit_rate:.1f}%) "
-                        f"completion={evt.get('completion_tokens')} "
-                        f"total={evt.get('total_tokens')}"
-                    ),
+                    "content": token_content,
                 }
             )
         )

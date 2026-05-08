@@ -11,8 +11,9 @@ logTokenSummary。与老实现的关键差异：
    改成 ``pending_hints: List[str]``：主循环在"发现模型卡死 / 输出非法动作"时
    append 一条文本，下一轮 :meth:`decide` 把它们拼在 user content 最前头一次性
    发出去，发送后清空；请求失败时回滚，避免提示丢失。
-4. Token 统计兼容 Responses 返回的 ``input_tokens / output_tokens``，并新增
-   ``cached_tokens`` 命中统计（Chat API 通常为 0）。
+4. Token 统计兼容 Responses 返回的 ``input_tokens / output_tokens``，并区分
+   ``cached_tokens``（豆包式 prompt 子集）与 ``cache_read/write_tokens``
+   （Claude prompt caching 的独立读写口径）。
 5. 新增 :meth:`reset_session`：prompt_tokens 逼近单价跨档阈值时，外层可以主动
    归零 ``previous_response_id`` 把任务"切段"，后续每段重新从 system 前缀起步，
    避免整体被拉进 ×2 / ×3 档。
@@ -40,22 +41,34 @@ class _SceneAgg:
     completion_tokens: int = 0
     total_tokens: int = 0
     cached_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    cache_accounting: str = ""
     calls: int = 0
 
 
 @dataclass
 class TokenCounter:
-    """累计 prompt / completion / total / cached tokens，按 '{model}|{scene}' 分桶。
+    """累计 prompt / completion / total / cache tokens，按 '{model}|{scene}' 分桶。
 
     兼容 Chat API（prompt_tokens/completion_tokens）与 Responses API
-    （input_tokens/output_tokens）两套字段名；Responses 的 cached 命中走
-    ``prompt_tokens_details.cached_tokens`` / ``input_tokens_details.cached_tokens``。
+    （input_tokens/output_tokens）两套字段名。
+
+    注意：不同厂商的缓存字段不是同一口径。
+    - 豆包 / OpenAI 风格：``cached_tokens`` 通常是 prompt/input 的子集，
+      可粗略计算 ``cached / prompt`` 命中率。
+    - Claude prompt caching：``cache_read_input_tokens`` 与 ``input_tokens``
+      是并列 usage 字段，不是 input 的子集，不能用 ``cache_read / input`` 算
+      命中率，否则会出现 100%+ 的假数字。
     """
 
     total_prompt_tokens: int = 0
     total_completion_tokens: int = 0
     total_tokens: int = 0
     total_cached_tokens: int = 0
+    total_cache_read_tokens: int = 0
+    total_cache_write_tokens: int = 0
+    cache_accounting: str = ""
     call_count: int = 0
     # 上一次成功 record 的 prompt_tokens；主循环用它判定是否触发会话分段。
     last_prompt_tokens: int = 0
@@ -71,6 +84,16 @@ class TokenCounter:
         tt = int(usage.get("total_tokens") or (pt + ct))
 
         cached = 0
+        cache_read = int(
+            usage.get("cache_read_tokens")
+            or usage.get("cache_read_input_tokens")
+            or 0
+        )
+        cache_write = int(
+            usage.get("cache_write_tokens")
+            or usage.get("cache_creation_input_tokens")
+            or 0
+        )
         details = (
             usage.get("prompt_tokens_details")
             or usage.get("input_tokens_details")
@@ -78,11 +101,22 @@ class TokenCounter:
         )
         if isinstance(details, dict):
             cached = int(details.get("cached_tokens") or 0)
+        # 兼容旧字段：没有显式 cache_read 时，把历史 cached_tokens 视为读缓存。
+        if cache_read <= 0 and cached > 0:
+            cache_read = cached
+        # 兼容旧消费者：没有 cached 子集字段时，仍让 cached_tokens 表示读缓存。
+        if cached <= 0 and cache_read > 0:
+            cached = cache_read
+        cache_accounting = str(usage.get("cache_accounting") or "")
 
         self.total_prompt_tokens += pt
         self.total_completion_tokens += ct
         self.total_tokens += tt
         self.total_cached_tokens += cached
+        self.total_cache_read_tokens += cache_read
+        self.total_cache_write_tokens += cache_write
+        if cache_accounting:
+            self.cache_accounting = cache_accounting
         self.call_count += 1
         self.last_prompt_tokens = pt
 
@@ -92,24 +126,50 @@ class TokenCounter:
         agg.completion_tokens += ct
         agg.total_tokens += tt
         agg.cached_tokens += cached
+        agg.cache_read_tokens += cache_read
+        agg.cache_write_tokens += cache_write
+        if cache_accounting:
+            agg.cache_accounting = cache_accounting
         agg.calls += 1
 
-        hit_rate = (cached * 100.0 / pt) if pt > 0 else 0.0
-        logger.info(
-            "Token 记录 scene={} model={} prompt={}(cached={}, {:.1f}%) completion={} total={} "
-            "累计 prompt={} cached={} total={} calls={}",
-            scene,
-            model,
-            pt,
-            cached,
-            hit_rate,
-            ct,
-            tt,
-            self.total_prompt_tokens,
-            self.total_cached_tokens,
-            self.total_tokens,
-            self.call_count,
-        )
+        if cache_accounting == "read_write":
+            logical_input = pt + cache_read + cache_write
+            cache_share = (cache_read * 100.0 / logical_input) if logical_input > 0 else 0.0
+            logger.info(
+                "Token 记录 scene={} model={} input={} cache_read={} cache_write={} "
+                "cache_share={:.1f}% output={} total={} 累计 input={} cache_read={} "
+                "cache_write={} total={} calls={}",
+                scene,
+                model,
+                pt,
+                cache_read,
+                cache_write,
+                cache_share,
+                ct,
+                tt,
+                self.total_prompt_tokens,
+                self.total_cache_read_tokens,
+                self.total_cache_write_tokens,
+                self.total_tokens,
+                self.call_count,
+            )
+        else:
+            hit_rate = (cached * 100.0 / pt) if pt > 0 else 0.0
+            logger.info(
+                "Token 记录 scene={} model={} prompt={}(cached={}, {:.1f}%) "
+                "completion={} total={} 累计 prompt={} cached={} total={} calls={}",
+                scene,
+                model,
+                pt,
+                cached,
+                hit_rate,
+                ct,
+                tt,
+                self.total_prompt_tokens,
+                self.total_cached_tokens,
+                self.total_tokens,
+                self.call_count,
+            )
 
     def summary(self) -> Dict[str, Any]:
         details: List[Dict[str, Any]] = []
@@ -124,6 +184,9 @@ class TokenCounter:
                     "completion_tokens": agg.completion_tokens,
                     "total_tokens": agg.total_tokens,
                     "cached_tokens": agg.cached_tokens,
+                    "cache_read_tokens": agg.cache_read_tokens,
+                    "cache_write_tokens": agg.cache_write_tokens,
+                    "cache_accounting": agg.cache_accounting,
                 }
             )
         return {
@@ -132,6 +195,9 @@ class TokenCounter:
             "completion_tokens": self.total_completion_tokens,
             "total_tokens": self.total_tokens,
             "cached_tokens": self.total_cached_tokens,
+            "cache_read_tokens": self.total_cache_read_tokens,
+            "cache_write_tokens": self.total_cache_write_tokens,
+            "cache_accounting": self.cache_accounting,
             "by_scene": details,
         }
 
