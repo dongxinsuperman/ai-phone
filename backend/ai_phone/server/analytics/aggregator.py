@@ -371,6 +371,31 @@ def _token_summary(
     ``{call_count, prompt_tokens, completion_tokens, total_tokens, cached_tokens,
     cache_read_tokens, cache_write_tokens, by_scene}``
     """
+    def normalized_total(
+        *,
+        prompt_tokens: int,
+        completion_tokens: int,
+        total_tokens: int,
+        cache_read_tokens: int,
+        cache_write_tokens: int,
+        cache_accounting_value: str = "",
+    ) -> int:
+        """Return logical total tokens using the provider's cache accounting model.
+
+        Claude prompt caching reports cache read/write as usage fields that sit
+        beside input/output tokens. Older persisted summaries may still have
+        ``total_tokens`` as the raw provider total (input + output), so infer the
+        read/write model from cache_write or cache_read > prompt as a backfill.
+        """
+        is_read_write = (
+            cache_accounting_value == "read_write"
+            or cache_write_tokens > 0
+            or cache_read_tokens > prompt_tokens
+        )
+        if is_read_write:
+            return prompt_tokens + completion_tokens + cache_read_tokens + cache_write_tokens
+        return total_tokens or (prompt_tokens + completion_tokens)
+
     empty_bucket = {
         "callCount": 0,
         "promptTokens": 0,
@@ -392,12 +417,22 @@ def _token_summary(
         call_count = int(ts.get("call_count") or 0)
         pt = int(ts.get("prompt_tokens") or 0)
         ct = int(ts.get("completion_tokens") or 0)
-        tt = int(ts.get("total_tokens") or (pt + ct))
         cached = int(ts.get("cached_tokens") or 0)
         cache_read = int(ts.get("cache_read_tokens") or cached)
         cache_write = int(ts.get("cache_write_tokens") or 0)
+        item_cache_accounting = str(ts.get("cache_accounting") or "")
+        tt = normalized_total(
+            prompt_tokens=pt,
+            completion_tokens=ct,
+            total_tokens=int(ts.get("total_tokens") or 0),
+            cache_read_tokens=cache_read,
+            cache_write_tokens=cache_write,
+            cache_accounting_value=item_cache_accounting,
+        )
         if ts.get("cache_accounting"):
             cache_accounting = str(ts.get("cache_accounting") or "")
+        elif cache_write > 0 or cache_read > pt:
+            cache_accounting = "read_write"
         if tt <= 0 and call_count <= 0:
             continue
 
@@ -423,13 +458,25 @@ def _token_summary(
             if not model:
                 continue
             m_bucket = by_model.setdefault(model, dict(empty_bucket))
+            scene_prompt = int(scene.get("prompt_tokens") or 0)
+            scene_completion = int(scene.get("completion_tokens") or 0)
+            scene_cached = int(scene.get("cached_tokens") or 0)
+            scene_cache_read = int(scene.get("cache_read_tokens") or scene_cached or 0)
+            scene_cache_write = int(scene.get("cache_write_tokens") or 0)
             m_bucket["callCount"] += int(scene.get("calls") or 0)
-            m_bucket["promptTokens"] += int(scene.get("prompt_tokens") or 0)
-            m_bucket["completionTokens"] += int(scene.get("completion_tokens") or 0)
-            m_bucket["totalTokens"] += int(scene.get("total_tokens") or 0)
-            m_bucket["cachedTokens"] += int(scene.get("cached_tokens") or 0)
-            m_bucket["cacheReadTokens"] += int(scene.get("cache_read_tokens") or scene.get("cached_tokens") or 0)
-            m_bucket["cacheWriteTokens"] += int(scene.get("cache_write_tokens") or 0)
+            m_bucket["promptTokens"] += scene_prompt
+            m_bucket["completionTokens"] += scene_completion
+            m_bucket["totalTokens"] += normalized_total(
+                prompt_tokens=scene_prompt,
+                completion_tokens=scene_completion,
+                total_tokens=int(scene.get("total_tokens") or 0),
+                cache_read_tokens=scene_cache_read,
+                cache_write_tokens=scene_cache_write,
+                cache_accounting_value=str(scene.get("cache_accounting") or item_cache_accounting),
+            )
+            m_bucket["cachedTokens"] += scene_cached
+            m_bucket["cacheReadTokens"] += scene_cache_read
+            m_bucket["cacheWriteTokens"] += scene_cache_write
 
         top.append(
             {
