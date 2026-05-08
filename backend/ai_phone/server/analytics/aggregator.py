@@ -368,9 +368,20 @@ def _token_summary(
     """Token：总量 / 平台 / 模型 / TopN 执行单元。
 
     Run.token_summary 来自 VLMClient 的 TokenCounter.summary()：
-    ``{call_count, prompt_tokens, completion_tokens, total_tokens, cached_tokens, by_scene}``
+    ``{call_count, prompt_tokens, completion_tokens, total_tokens, cached_tokens,
+    cache_read_tokens, cache_write_tokens, by_scene}``
     """
-    total = {"callCount": 0, "promptTokens": 0, "completionTokens": 0, "totalTokens": 0, "cachedTokens": 0}
+    empty_bucket = {
+        "callCount": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "cachedTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+    }
+    total = dict(empty_bucket)
+    cache_accounting = ""
     by_platform: Dict[str, Dict[str, int]] = {}
     by_model: Dict[str, Dict[str, int]] = {}
     top: List[Dict[str, Any]] = []
@@ -383,6 +394,10 @@ def _token_summary(
         ct = int(ts.get("completion_tokens") or 0)
         tt = int(ts.get("total_tokens") or (pt + ct))
         cached = int(ts.get("cached_tokens") or 0)
+        cache_read = int(ts.get("cache_read_tokens") or cached)
+        cache_write = int(ts.get("cache_write_tokens") or 0)
+        if ts.get("cache_accounting"):
+            cache_accounting = str(ts.get("cache_accounting") or "")
         if tt <= 0 and call_count <= 0:
             continue
 
@@ -391,30 +406,30 @@ def _token_summary(
         total["completionTokens"] += ct
         total["totalTokens"] += tt
         total["cachedTokens"] += cached
+        total["cacheReadTokens"] += cache_read
+        total["cacheWriteTokens"] += cache_write
 
-        plat_bucket = by_platform.setdefault(
-            it.platform,
-            {"callCount": 0, "promptTokens": 0, "completionTokens": 0, "totalTokens": 0, "cachedTokens": 0},
-        )
+        plat_bucket = by_platform.setdefault(it.platform, dict(empty_bucket))
         plat_bucket["callCount"] += call_count
         plat_bucket["promptTokens"] += pt
         plat_bucket["completionTokens"] += ct
         plat_bucket["totalTokens"] += tt
         plat_bucket["cachedTokens"] += cached
+        plat_bucket["cacheReadTokens"] += cache_read
+        plat_bucket["cacheWriteTokens"] += cache_write
 
         for scene in ts.get("by_scene") or []:
             model = str(scene.get("model") or "")
             if not model:
                 continue
-            m_bucket = by_model.setdefault(
-                model,
-                {"callCount": 0, "promptTokens": 0, "completionTokens": 0, "totalTokens": 0, "cachedTokens": 0},
-            )
+            m_bucket = by_model.setdefault(model, dict(empty_bucket))
             m_bucket["callCount"] += int(scene.get("calls") or 0)
             m_bucket["promptTokens"] += int(scene.get("prompt_tokens") or 0)
             m_bucket["completionTokens"] += int(scene.get("completion_tokens") or 0)
             m_bucket["totalTokens"] += int(scene.get("total_tokens") or 0)
             m_bucket["cachedTokens"] += int(scene.get("cached_tokens") or 0)
+            m_bucket["cacheReadTokens"] += int(scene.get("cache_read_tokens") or scene.get("cached_tokens") or 0)
+            m_bucket["cacheWriteTokens"] += int(scene.get("cache_write_tokens") or 0)
 
         top.append(
             {
@@ -426,12 +441,15 @@ def _token_summary(
                 "totalTokens": tt,
                 "promptTokens": pt,
                 "cachedTokens": cached,
+                "cacheReadTokens": cache_read,
+                "cacheWriteTokens": cache_write,
             }
         )
 
     top.sort(key=lambda r: r["totalTokens"], reverse=True)
     return {
         **total,
+        "cacheAccounting": cache_accounting,
         "byPlatform": by_platform,
         "byModel": [{"model": m, **v} for m, v in sorted(by_model.items(), key=lambda kv: kv[1]["totalTokens"], reverse=True)],
         "topItems": top[:10],

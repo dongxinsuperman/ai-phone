@@ -379,9 +379,10 @@ class ClaudeComputerUseClient:
         # ⑧ Token 统计
         usage = data.get("usage") or {}
         # Anthropic 字段：input_tokens / output_tokens / cache_read_input_tokens /
-        # cache_creation_input_tokens；TokenCounter.record 兼容 input/output 字段
-        # 名，cache_* 通过 prompt_tokens_details.cached_tokens 兼容老 schema。
+        # cache_creation_input_tokens。cache_read 与 input 并列，不是 input 子集，
+        # 所以要用独立字段传给 TokenCounter，避免 cached/input 出现 100%+。
         normalized_usage: Dict[str, Any] = {
+            "cache_accounting": "read_write",
             "input_tokens": usage.get("input_tokens", 0),
             "output_tokens": usage.get("output_tokens", 0),
             "total_tokens": (
@@ -392,7 +393,10 @@ class ClaudeComputerUseClient:
         cache_read = usage.get("cache_read_input_tokens")
         cache_write = usage.get("cache_creation_input_tokens")
         if cache_read is not None:
+            normalized_usage["cache_read_tokens"] = int(cache_read)
             normalized_usage["input_tokens_details"] = {"cached_tokens": int(cache_read)}
+        if cache_write is not None:
+            normalized_usage["cache_write_tokens"] = int(cache_write)
         self.counter.record("VLM决策", self.model, normalized_usage)
 
         # 开启 prompt caching 时输出命中诊断（INFO 一行），让用户在生产
