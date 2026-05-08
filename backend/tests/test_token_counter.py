@@ -46,7 +46,7 @@ def test_token_counter_tracks_claude_cache_read_as_separate_accounting():
     summary = counter.summary()
     assert summary["prompt_tokens"] == 8109
     assert summary["completion_tokens"] == 1868
-    assert summary["total_tokens"] == 9977
+    assert summary["total_tokens"] == 21634
     assert summary["cached_tokens"] == 11145
     assert summary["cache_read_tokens"] == 11145
     assert summary["cache_write_tokens"] == 512

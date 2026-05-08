@@ -81,8 +81,6 @@ class TokenCounter:
         # Chat / Responses 两套字段名都兼容
         pt = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
         ct = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
-        tt = int(usage.get("total_tokens") or (pt + ct))
-
         cached = 0
         cache_read = int(
             usage.get("cache_read_tokens")
@@ -108,6 +106,13 @@ class TokenCounter:
         if cached <= 0 and cache_read > 0:
             cached = cache_read
         cache_accounting = str(usage.get("cache_accounting") or "")
+        # Anthropic/Claude 把 cache_read/cache_write 作为与 input 并列的 usage
+        # bucket 返回；此时 total 应表示 API 侧看到的总 token 流量，而不是仅
+        # input + output。豆包等旧口径仍沿用 provider 返回的 total。
+        if cache_accounting == "read_write":
+            tt = pt + cache_read + cache_write + ct
+        else:
+            tt = int(usage.get("total_tokens") or (pt + ct))
 
         self.total_prompt_tokens += pt
         self.total_completion_tokens += ct
