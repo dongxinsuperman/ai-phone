@@ -116,6 +116,7 @@ class RunnerBridge:
                         "cache_read_tokens",
                         "cache_write_tokens",
                         "cache_accounting",
+                        "vlm_backend",
                         "by_scene",
                     )
                     if evt.get(k) is not None

@@ -677,6 +677,8 @@ class SubmissionScheduler:
         - ``False`` = 暂时派不出去（没 ready 设备 / 全部被锁），保持 queued
         - ``None``  = 这条 item 已经不是 queued（被取消/超时），从队列里剔除
         """
+        dispatch_engine = "vlm"
+        trajectory: Optional[Dict[str, Any]] = None
         async with self._session_factory() as session:
             item = await session.get(SubmissionItem, item_id)
             if item is None:
@@ -727,6 +729,18 @@ class SubmissionScheduler:
             await session.commit()
             await session.refresh(run)
             await session.refresh(item)
+            from ..trajectory_cache import get_dispatch_trajectory_cache  # noqa: PLC0415
+
+            cache = await get_dispatch_trajectory_cache(
+                session,
+                run_id=run.id,
+                device_code=serial,
+                run_semantic_text=item.run_content,
+            )
+            await session.commit()
+            if cache is not None:
+                dispatch_engine = "trajectory_cache"
+                trajectory = dict(cache.get("trajectory_json") or {})
 
         # 4) 绑定 + 派发 WS。出错回滚状态 + 释放锁。
         await self._hub.bind_run(run.id, agent_id)
@@ -737,6 +751,8 @@ class SubmissionScheduler:
                 "run_id": run.id,
                 "device_serial": serial,
                 "goal": item.run_content,
+                "engine": dispatch_engine,
+                **({"trajectory": trajectory} if trajectory else {}),
             },
         )
         if not ok:

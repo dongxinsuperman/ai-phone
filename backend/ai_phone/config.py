@@ -204,6 +204,17 @@ class Settings(BaseSettings):
             "env: AI_PHONE_VLM_HISTORY_WINDOW_STEPS"
         ),
     )
+    # --- VLM 轨迹缓存回放 ---
+    # 默认关闭：成功/失败终态仍可维护缓存数据；真正命中后旁路 replay 需要
+    # 等断言、报告和实机烟测稳定后再打开，避免影响现有 VLM 首跑主流程。
+    vlm_trajectory_cache_replay_enabled: bool = Field(
+        default=False,
+        description=(
+            "是否启用 VLM 成功轨迹缓存回放。默认关闭；开启后 agent 路径会先按 "
+            "device_code + run 语义强匹配查缓存，命中则走独立 replay 通道。"
+            "env: AI_PHONE_VLM_TRAJECTORY_CACHE_REPLAY_ENABLED"
+        ),
+    )
     # Anthropic prompt caching 开关：
     # - 仅 claude_cu 生效（GPT 走 previous_response_id 服务端续历史，自带缓存；
     #   doubao_responses 同理）。
@@ -614,6 +625,68 @@ class Settings(BaseSettings):
             "单次 wait action 最大允许等待秒数。VLM 申请超过该值会被裁剪并标 clipped。"
             "默认 30 分钟为长等场景兜底；常规业务可调到 60-300s。"
             "env: AI_PHONE_RUN_MAX_WAIT_SEC"
+        ),
+    )
+    # 页面稳定检测：VLM 主通道与缓存回放通道共用同一个稳定函数，但配置完全独立。
+    # 关闭某个通道后，函数只抓一张当前截图并直接放行，不再做 pHash 轮询；
+    # 业务流程不会中断，但截图可能处于动画中间态。
+    vlm_page_stable_enabled: bool = Field(
+        default=True,
+        description=(
+            "VLM 主通道页面稳定检测开关。False=直接截图放行，不做像素哈希等待。"
+            "env: AI_PHONE_VLM_PAGE_STABLE_ENABLED"
+        ),
+    )
+    vlm_page_stable_timeout_s: float = Field(
+        default=5.0,
+        ge=0.1,
+        le=60.0,
+        description="VLM 主通道页面稳定检测总超时（秒）。env: AI_PHONE_VLM_PAGE_STABLE_TIMEOUT_S",
+    )
+    vlm_page_stable_poll_s: float = Field(
+        default=0.4,
+        ge=0.1,
+        le=10.0,
+        description="VLM 主通道页面稳定检测轮询间隔（秒）。env: AI_PHONE_VLM_PAGE_STABLE_POLL_S",
+    )
+    vlm_page_stable_threshold: float = Field(
+        default=0.04,
+        ge=0.0,
+        le=1.0,
+        description="VLM 主通道页面稳定检测 pHash 变化率阈值。env: AI_PHONE_VLM_PAGE_STABLE_THRESHOLD",
+    )
+    trajectory_cache_page_stable_enabled: bool = Field(
+        default=True,
+        description=(
+            "轨迹缓存回放通道页面稳定检测开关。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_PAGE_STABLE_ENABLED"
+        ),
+    )
+    trajectory_cache_page_stable_timeout_s: float = Field(
+        default=5.0,
+        ge=0.1,
+        le=60.0,
+        description=(
+            "轨迹缓存回放通道页面稳定检测总超时（秒）。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_PAGE_STABLE_TIMEOUT_S"
+        ),
+    )
+    trajectory_cache_page_stable_poll_s: float = Field(
+        default=0.4,
+        ge=0.1,
+        le=10.0,
+        description=(
+            "轨迹缓存回放通道页面稳定检测轮询间隔（秒）。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_PAGE_STABLE_POLL_S"
+        ),
+    )
+    trajectory_cache_page_stable_threshold: float = Field(
+        default=0.04,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "轨迹缓存回放通道页面稳定检测 pHash 变化率阈值。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_PAGE_STABLE_THRESHOLD"
         ),
     )
     # 审判系统单次调用超时；超时按 ALLOW 处理（不阻塞 Run 收尾）。

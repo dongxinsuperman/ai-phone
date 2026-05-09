@@ -420,6 +420,7 @@ async def _handle_start_run(
     # 引擎选择：缺省 'vlm'（与历史行为完全等价）。'midscene' 等外接引擎走不同路径，
     # 比如不开 ai-phone driver、不走 vlm_loop。详见 `Midscene执行器接入方案.md`。
     engine = str(msg.get("engine") or "vlm").strip().lower() or "vlm"
+    trajectory = msg.get("trajectory") or {}
     if not (run_id and serial and goal):
         logger.warning("start_run 参数不全 | run_id={} serial={} goal_len={}", run_id, serial, len(goal))
         return
@@ -452,7 +453,7 @@ async def _handle_start_run(
         # 客户端，由 bridge 子进程操作设备。这里跳过 _get_or_open_driver 既省时间，
         # 也避免在不需要时把 iOS WDA / scrcpy 这类副作用带起来。
         driver = None
-        if engine == "vlm":
+        if engine in {"vlm", "trajectory_cache"}:
             try:
                 driver = await asyncio.to_thread(_get_or_open_driver, serial)
             except Exception as exc:  # noqa: BLE001
@@ -480,6 +481,7 @@ async def _handle_start_run(
                 serial=serial,
                 driver=driver,
                 goal=goal,
+                trajectory=trajectory if isinstance(trajectory, dict) else None,
                 emit=bridge.emit,
                 settings=settings,
             )

@@ -229,6 +229,21 @@ async def create_run(
     dispatched = False
     if agent_id is not None:
         await hub.bind_run(run.id, agent_id)
+        dispatch_engine = engine
+        trajectory: Optional[Dict[str, Any]] = None
+        if engine == "vlm":
+            from ..trajectory_cache import get_dispatch_trajectory_cache  # noqa: PLC0415
+
+            cache = await get_dispatch_trajectory_cache(
+                session,
+                run_id=run.id,
+                device_code=body.device_serial,
+                run_semantic_text=goal,
+            )
+            await session.commit()
+            if cache is not None:
+                dispatch_engine = "trajectory_cache"
+                trajectory = dict(cache.get("trajectory_json") or {})
         dispatched = await hub.send_to_agent(
             agent_id,
             {
@@ -236,7 +251,8 @@ async def create_run(
                 "run_id": run.id,
                 "device_serial": body.device_serial,
                 "goal": goal,
-                "engine": engine,
+                "engine": dispatch_engine,
+                **({"trajectory": trajectory} if trajectory else {}),
             },
         )
         if not dispatched:

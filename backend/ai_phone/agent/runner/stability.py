@@ -22,6 +22,8 @@ import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
 
+from ai_phone.config import get_settings
+
 from .phash import compute_phash, diff_rate
 
 # 截图函数签名：同步（driver 返回 bytes）或异步都行，runner 里统一 awaitable 包装
@@ -42,9 +44,10 @@ async def wait_page_stable_pixel(
     screenshot: ScreenshotFn,
     frame_a_bytes: Optional[bytes] = None,
     *,
-    total_timeout_s: float = 5.0,
-    poll_interval_s: float = 0.4,
-    threshold: float = 0.04,
+    total_timeout_s: Optional[float] = None,
+    poll_interval_s: Optional[float] = None,
+    threshold: Optional[float] = None,
+    use_cache_settings: bool = False,
     log: Optional[LogFn] = None,
 ) -> StabilityResult:
     """轮询截图直到两帧 pHash 差异率 ≤ threshold 或超总时长。
@@ -52,12 +55,51 @@ async def wait_page_stable_pixel(
     返回稳定帧 bytes（兜底返回最后一张）。
     """
     start = time.monotonic()
-    total_timeout = total_timeout_s
-    poll_ms = max(0.1, poll_interval_s)
-
     def _log(level: int, title: str, content: str) -> None:
         if log is not None:
             log(level, title, content)
+
+    settings = get_settings()
+    if use_cache_settings:
+        enabled = bool(settings.trajectory_cache_page_stable_enabled)
+        default_timeout = float(settings.trajectory_cache_page_stable_timeout_s)
+        default_poll = float(settings.trajectory_cache_page_stable_poll_s)
+        default_threshold = float(settings.trajectory_cache_page_stable_threshold)
+    else:
+        enabled = bool(settings.vlm_page_stable_enabled)
+        default_timeout = float(settings.vlm_page_stable_timeout_s)
+        default_poll = float(settings.vlm_page_stable_poll_s)
+        default_threshold = float(settings.vlm_page_stable_threshold)
+
+    total_timeout_s = default_timeout if total_timeout_s is None else float(total_timeout_s)
+    poll_interval_s = default_poll if poll_interval_s is None else float(poll_interval_s)
+    threshold = default_threshold if threshold is None else float(threshold)
+    total_timeout = total_timeout_s
+    poll_ms = max(0.1, poll_interval_s)
+
+    if not enabled:
+        _log(
+            1,
+            "页面稳定检测",
+            "未开启，直接截图放行"
+            + (" | 忽略复用尾帧" if frame_a_bytes is not None else ""),
+        )
+        try:
+            current_bytes = await screenshot()
+            return StabilityResult(
+                current_bytes,
+                False,
+                int((time.monotonic() - start) * 1000),
+                0,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _log(3, "截图异常", f"错误: {exc} | 返回复用尾帧")
+            return StabilityResult(
+                frame_a_bytes,
+                False,
+                int((time.monotonic() - start) * 1000),
+                0,
+            )
 
     _log(
         1,

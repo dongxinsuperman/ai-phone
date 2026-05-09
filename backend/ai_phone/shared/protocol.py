@@ -147,8 +147,9 @@ RunResult = Literal["finished", "assert_fail", "error", "cancelled", "fail"]
 # 所有"任务声称失败"统一是 fail。Server 端 _finalize_run 会映射成 status='failed'。
 
 # 引擎选择。'vlm' = ai-phone 主 VLM 主循环（默认）；'midscene' = 外接寄居引擎。
+# 'trajectory_cache' 仅 server 内部下发，API 不直接接受。
 # 详细方案见仓库根 `Midscene执行器接入方案.md`。
-RunEngine = Literal["vlm", "midscene"]
+RunEngine = Literal["vlm", "midscene", "trajectory_cache"]
 
 
 class RunDoneMsg(TypedDict, total=False):
@@ -233,11 +234,13 @@ class DeviceReadinessMsg(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 # Server → Agent
 # ---------------------------------------------------------------------------
-class StartRunMsg(TypedDict):
+class StartRunMsg(TypedDict, total=False):
     type: Literal["start_run"]
     run_id: str
     device_serial: str
     goal: str
+    engine: RunEngine
+    trajectory: Dict[str, Any]
 
 
 class StopRunMsg(TypedDict):

@@ -707,6 +707,7 @@ class VLMRunner:
 
         elapsed_ms = int((time.monotonic() - task_start) * 1000)
         summary = self.counter.summary()
+        summary["vlm_backend"] = self._settings.vlm_backend
         await self._emit_event(
             make_event(EVT_TOKEN_SUMMARY, self.run_id, **summary)
         )

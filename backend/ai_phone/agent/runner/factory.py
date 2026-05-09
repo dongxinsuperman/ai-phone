@@ -32,6 +32,7 @@ def build_runner(
     serial: str,
     driver: Optional[BaseDriver],
     goal: str,
+    trajectory: Optional[Dict[str, Any]] = None,
     emit: Optional[Callable[[Dict[str, Any]], None]] = None,
     settings: Optional[Settings] = None,
 ) -> _RunnerLike:
@@ -63,6 +64,24 @@ def build_runner(
         logger.info("build_runner: 选用 VLMRunner | run_id={}", run_id)
         return VLMRunner(run_id=run_id, driver=driver, goal=goal, emit=emit)
 
+    if e == "trajectory_cache":
+        from ai_phone.agent.runner.trajectory_cache_runner import TrajectoryCacheRunner
+
+        if driver is None:
+            raise RuntimeError("trajectory_cache runner 需要 driver 不为空")
+        if not trajectory:
+            raise RuntimeError("trajectory_cache runner 缺少 trajectory")
+        logger.info("build_runner: 选用 TrajectoryCacheRunner | run_id={}", run_id)
+        return TrajectoryCacheRunner(
+            run_id=run_id,
+            serial=serial,
+            driver=driver,
+            goal=goal,
+            trajectory=trajectory,
+            emit=emit,
+            settings=settings,
+        )
+
     if e == "midscene":
         if not settings.midscene_enabled:
             raise RuntimeError(
@@ -80,7 +99,7 @@ def build_runner(
             settings=settings,
         )
 
-    raise RuntimeError(f"未知 engine：{engine!r}（已知：'vlm' / 'midscene'）")
+    raise RuntimeError(f"未知 engine：{engine!r}（已知：'vlm' / 'midscene' / 'trajectory_cache'）")
 
 
 __all__ = ["build_runner"]
