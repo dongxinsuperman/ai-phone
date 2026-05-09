@@ -690,6 +690,174 @@ class Settings(BaseSettings):
             "env: AI_PHONE_TRAJECTORY_CACHE_PAGE_STABLE_THRESHOLD"
         ),
     )
+    trajectory_cache_observe_delay_ms: int = Field(
+        default=500,
+        ge=0,
+        le=10_000,
+        description=(
+            "轨迹缓存回放 action 执行后、下一次页面稳定检测前的基础观察延迟（毫秒）。"
+            "用于避开点击反馈/动画早期帧；0=关闭。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_OBSERVE_DELAY_MS"
+        ),
+    )
+    trajectory_cache_alignment_enabled: bool = Field(
+        default=False,
+        description=(
+            "轨迹缓存回放整页状态路标对齐开关。False=保持 v1 稳定检测回放。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_ENABLED"
+        ),
+    )
+    trajectory_cache_alignment_threshold: float = Field(
+        default=0.03,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "轨迹缓存状态路标 pHash diff 阈值，越小越严格。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_THRESHOLD"
+        ),
+    )
+    trajectory_cache_alignment_roi_threshold: float = Field(
+        default=0.25,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "轨迹缓存状态路标中心 ROI 像素差阈值，越小越严格。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_ROI_THRESHOLD"
+        ),
+    )
+    trajectory_cache_alignment_black_ratio_threshold: float = Field(
+        default=0.15,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "轨迹缓存状态路标黑屏比例差异阈值，越小越严格。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_BLACK_RATIO_THRESHOLD"
+        ),
+    )
+    trajectory_cache_alignment_retry_interval_ms: int = Field(
+        default=300,
+        ge=50,
+        le=10_000,
+        description=(
+            "轨迹缓存状态路标 MISS 后的重试间隔（毫秒）。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_RETRY_INTERVAL_MS"
+        ),
+    )
+    trajectory_cache_alignment_min_wait_ms: int = Field(
+        default=1000,
+        ge=0,
+        le=60_000,
+        description=(
+            "轨迹缓存状态路标 MISS 后最小等待窗口（毫秒）。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_MIN_WAIT_MS"
+        ),
+    )
+    trajectory_cache_alignment_max_wait_ratio: float = Field(
+        default=1.3,
+        ge=0.1,
+        le=10.0,
+        description=(
+            "轨迹缓存状态路标等待窗口相对首跑 gap_to_next_action_ms 的放大系数。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_MAX_WAIT_RATIO"
+        ),
+    )
+    # ------------------------------------------------------------------
+    # v2 缓存回放 · recovery_vlm 三态裁决专线
+    # ------------------------------------------------------------------
+    # 通道独立：与辅助系统 / 断言系统 / 主 VLM 完全分离，所有字段都不 fallback。
+    # 典型用法是把 backend/url/key/model 填成与主 VLM 同款；也可以单独换成
+    # chat completions 端点做实验。
+    trajectory_cache_recovery_vlm_enabled: bool = Field(
+        default=False,
+        description=(
+            "v2 缓存回放 alignment_miss 后的 VLM 三态裁决专线开关。"
+            "False=维持当前行为（alignment 等待窗口耗尽直接 assert_fail）。"
+            "True 时还需配齐 backend / api_url / api_key / model 才会真正生效，"
+            "任何一项缺失都会按 ASSERT_FAIL 兜底。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_ENABLED"
+        ),
+    )
+    trajectory_cache_recovery_vlm_backend: str = Field(
+        default="doubao_responses",
+        description=(
+            "recovery_vlm 后端协议。支持 'doubao_responses'（可直接复用主 VLM responses "
+            "配置）/ 'openai_compatible'（豆包/OpenAI 兼容 chat completions）。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_BACKEND"
+        ),
+    )
+    trajectory_cache_recovery_vlm_api_url: str = Field(
+        default="",
+        description=(
+            "recovery_vlm 接口地址。doubao_responses 可填方舟 /responses；openai_compatible "
+            "可填 chat completions。留空 = 通道未配置。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_API_URL"
+        ),
+    )
+    trajectory_cache_recovery_vlm_api_key: str = Field(
+        default="",
+        description=(
+            "recovery_vlm api key。留空 = 通道未配置。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_API_KEY"
+        ),
+    )
+    trajectory_cache_recovery_vlm_model: str = Field(
+        default="",
+        description=(
+            "recovery_vlm 模型 ID。建议与主 vlm_model 同款，协议由 backend 决定。"
+            "留空 = 通道未配置。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_MODEL"
+        ),
+    )
+    trajectory_cache_recovery_vlm_timeout_sec: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=300.0,
+        description=(
+            "recovery_vlm 单次调用超时（秒）。超时按 ASSERT_FAIL 兜底，不阻塞 Run 收尾。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_TIMEOUT_SEC"
+        ),
+    )
+    trajectory_cache_recovery_vlm_wait_more_ms: int = Field(
+        default=1500,
+        ge=100,
+        le=10_000,
+        description=(
+            "recovery_vlm 判 WAIT_MORE 时默认等待时长（毫秒）。"
+            "VLM 响应里的数字若在 100-10_000 范围内会覆盖该默认值。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_WAIT_MORE_MS"
+        ),
+    )
+    trajectory_cache_recovery_vlm_max_wait_more: int = Field(
+        default=1,
+        ge=0,
+        le=5,
+        description=(
+            "recovery_vlm 在单个 alignment 周期内最多接受多少次 WAIT_MORE。"
+            "0=不允许 WAIT_MORE，超过即降级 ASSERT_FAIL。第一版默认 1，最保守。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_MAX_WAIT_MORE"
+        ),
+    )
+    trajectory_cache_recovery_vlm_max_repair_actions: int = Field(
+        default=5,
+        ge=0,
+        le=20,
+        description=(
+            "recovery_vlm 在单个 alignment 周期内最多执行多少个局部修复 action。"
+            "0=不允许修复动作，只允许 finished/wait/assert_fail。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_MAX_REPAIR_ACTIONS"
+        ),
+    )
+    trajectory_cache_recovery_vlm_max_calls_per_replay: int = Field(
+        default=5,
+        ge=0,
+        le=50,
+        description=(
+            "单条缓存回放最多允许召唤 recovery_vlm 多少次。"
+            "超过说明该 case/cache 健康度不足，直接失败，避免整条 run 被反复救场拖慢。"
+            "0=不允许调用 recovery_vlm。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_MAX_CALLS_PER_REPLAY"
+        ),
+    )
     # 审判系统单次调用超时；超时按 ALLOW 处理（不阻塞 Run 收尾）。
     audit_timeout_sec: float = Field(
         default=30.0,

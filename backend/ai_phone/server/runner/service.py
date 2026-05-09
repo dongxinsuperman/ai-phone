@@ -326,6 +326,9 @@ class ServerRunnerService:
             ReplayRunner,
             get_active_trajectory_cache,
         )
+        from ai_phone.server.trajectory_cache.recovery import (  # noqa: PLC0415
+            CacheReplayRecoveryVerifier,
+        )
 
         cache = await get_active_trajectory_cache(
             self._session_factory,
@@ -350,6 +353,25 @@ class ServerRunnerService:
         async def _log(level: int, title: str, content: str) -> None:
             emitter.emit(log_event(run_id, level, title, content))
 
+        recovery_verifier: Optional[CacheReplayRecoveryVerifier] = None
+        if settings.trajectory_cache_recovery_vlm_enabled:
+            recovery_verifier = CacheReplayRecoveryVerifier(settings=settings)
+            problem = recovery_verifier.configuration_problem()
+            if problem:
+                await _log(2, "轨迹缓存", f"recovery_vlm 已开启但配置不完整：{problem}")
+            else:
+                await _log(
+                    1,
+                    "轨迹缓存",
+                    (
+                        "recovery_vlm 专线已启用，"
+                        f"model={settings.trajectory_cache_recovery_vlm_model} "
+                        f"max_wait_more={settings.trajectory_cache_recovery_vlm_max_wait_more} "
+                        f"max_calls={settings.trajectory_cache_recovery_vlm_max_calls_per_replay} "
+                        f"timeout={settings.trajectory_cache_recovery_vlm_timeout_sec:.0f}s"
+                    ),
+                )
+
         runner = ReplayRunner(
             driver=driver,
             trajectory=trajectory,
@@ -357,12 +379,23 @@ class ServerRunnerService:
             log=_log,
             emit=emitter.emit,
             capture_after_each_action=True,
+            recovery_verifier=recovery_verifier,
+            goal=goal,
         )
         replay_result = await runner.run()
         if not replay_result.success:
+            error = str(replay_result.error or "")
+            if "alignment_miss" in error:
+                await emitter.force_finish(
+                    result="assert_fail",
+                    message=f"trajectory_cache_alignment_fail: {error}",
+                    error_class="TrajectoryCacheAlignmentError",
+                    error_category="model",
+                )
+                return True
             await emitter.force_finish(
                 result="error",
-                message=f"trajectory_replay_failed: {replay_result.error}",
+                message=f"trajectory_replay_failed: {error}",
                 error_class="TrajectoryReplayError",
                 error_category="device",
             )

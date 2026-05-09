@@ -10,6 +10,16 @@ from .assertion import (
     build_cache_assertion_prompt,
     parse_cache_assertion_response,
 )
+from .recovery import (
+    CacheReplayRecoveryVerifier,
+    RecoveryDecision,
+    VERDICT_ASSERT_FAIL,
+    VERDICT_CONTINUE,
+    VERDICT_REPAIR_ACTION,
+    VERDICT_WAIT_MORE,
+    build_recovery_prompt,
+    parse_recovery_response,
+)
 from .replay import ReplayActionDispatcher, ReplayActionError, ReplayResult, ReplayRunner
 from .service import (
     CACHE_SCHEMA_VERSION,
@@ -24,15 +34,23 @@ __all__ = [
     "CACHE_SCHEMA_VERSION",
     "CacheAssertionResult",
     "CacheReplayAssertionVerifier",
+    "CacheReplayRecoveryVerifier",
+    "RecoveryDecision",
     "ReplayActionDispatcher",
     "ReplayActionError",
     "ReplayResult",
     "ReplayRunner",
+    "VERDICT_ASSERT_FAIL",
+    "VERDICT_CONTINUE",
+    "VERDICT_REPAIR_ACTION",
+    "VERDICT_WAIT_MORE",
     "build_cache_assertion_prompt",
     "build_cache_key",
+    "build_recovery_prompt",
     "delete_trajectory_cache_for_run",
     "get_active_trajectory_cache",
     "normalize_run_semantic",
     "parse_cache_assertion_response",
+    "parse_recovery_response",
     "save_trajectory_cache_after_success",
 ]

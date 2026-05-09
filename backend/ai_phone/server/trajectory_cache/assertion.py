@@ -127,6 +127,7 @@ def build_cache_assertion_prompt(
         "本次没有动作前对照帧，请仅基于该图与用户目标判断。"
     )
     replay_summary = _format_replay_summary(trajectory)
+    source_completion = _format_source_completion(trajectory)
     structured = is_structured_goal(goal) if is_structured is None else is_structured
     if structured:
         return (
@@ -140,6 +141,10 @@ def build_cache_assertion_prompt(
             "- 本次执行是历史成功轨迹的回放，不是 VLM 实时决策。\n"
             "- 你不能相信历史轨迹一定仍然正确，必须以当前截图为准。\n"
             "- replay action 摘要只用于理解本次做过什么，不能替代视觉证据。\n\n"
+            "首次成功语义锚点说明：\n"
+            "- 这部分来自生成缓存的成功 Run，可用于理解业务别名、页面别名和"
+            "首跑对用户目标的解释。\n"
+            "- 它不能替代当前截图证据；最终仍必须由附图 2 支持。\n\n"
             "裁决规则：\n"
             "1. “预期结果”是唯一验收标准，优先级最高；你必须逐条检查预期结果"
             "是否被附图 2 可靠支持。\n"
@@ -156,6 +161,7 @@ def build_cache_assertion_prompt(
             "FAIL 时必须指出是哪一条预期结果没有被截图可靠支持。\n\n"
             f"【用户目标】\n{goal.strip()}\n\n"
             f"【缓存回放摘要】\n{replay_summary}\n"
+            f"\n\n【首次成功语义锚点】\n{source_completion}\n"
         )
 
     return (
@@ -167,6 +173,13 @@ def build_cache_assertion_prompt(
         "- 本次执行是历史成功轨迹的回放，不是 VLM 实时决策。\n"
         "- 你不能相信历史轨迹一定仍然正确，必须以当前截图为准。\n"
         "- replay action 摘要只用于理解本次做过什么，不能替代视觉证据。\n\n"
+        "首次成功语义锚点说明：\n"
+        "- 这部分来自生成缓存的成功 Run，可用于理解用户目标里的业务别名、"
+        "页面别名和首跑对目标的解释。\n"
+        "- 它不能替代当前截图证据；最终仍必须由附图 2 支持。\n"
+        "- 如果用户目标存在口语歧义，应优先采用首次成功语义锚点中的解释。"
+        "只要附图 2 显示的最终落点与首跑语义锚点中的目标解释一致，就不应"
+        "因为页面文案未逐字等于用户目标中的口语称呼而 FAIL。\n\n"
         "裁决规则：\n"
         "1. 先从用户目标中抽取最后一个动作或最终状态，再判断附图 2 是否支持"
         "这个结果已经成立。\n"
@@ -186,6 +199,7 @@ def build_cache_assertion_prompt(
         "FAIL 时必须说明是哪一条目标/预期没有被截图可靠支持。\n\n"
         f"【用户目标】\n{goal.strip()}\n\n"
         f"【缓存回放摘要】\n{replay_summary}\n"
+        f"\n\n【首次成功语义锚点】\n{source_completion}\n"
     )
 
 
@@ -204,6 +218,24 @@ def _format_replay_summary(trajectory: Dict[str, Any]) -> str:
     if len(actions) > 20:
         lines.insert(0, f"... 前面还有 {len(actions) - 20} 个 action")
     return "\n".join(lines)
+
+
+def _format_source_completion(trajectory: Dict[str, Any]) -> str:
+    completion = trajectory.get("source_completion") or {}
+    if not isinstance(completion, dict) or not completion:
+        return "(无首跑完成语义)"
+    labels = {
+        "run_reason": "Run 结束原因",
+        "task_done": "任务完成日志",
+        "final_thought": "首跑最后思考",
+        "assertion_pass": "首跑断言通过理由",
+    }
+    lines: List[str] = []
+    for key in ("run_reason", "task_done", "final_thought", "assertion_pass"):
+        value = str(completion.get(key) or "").strip()
+        if value:
+            lines.append(f"{labels[key]}: {value[:1200]}")
+    return "\n".join(lines) if lines else "(无首跑完成语义)"
 
 
 def _action_detail(action: Dict[str, Any]) -> str:

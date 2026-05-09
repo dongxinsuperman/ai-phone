@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from loguru import logger
@@ -20,10 +21,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ai_phone.shared import actions as A
 from ai_phone.config import get_settings
+from ai_phone.agent.runner.phash import compute_phash
 from ai_phone.server.models import Device, Run, RunCommand, RunLog, RunStep, VlmTrajectoryCache
 from ai_phone.server.trajectory_cache.action_adapters import parse_cache_action
 
-CACHE_SCHEMA_VERSION = 1
+CACHE_SCHEMA_VERSION = 2
 _WS_RE = re.compile(r"\s+")
 _EXEC_ACTION_RE = re.compile(r"动作\s*[:：]\s*([^,，]+)")
 _STRUCTURED_FIELD_RE = re.compile(
@@ -266,6 +268,14 @@ async def _build_trajectory(
             structured_goal=structured_goal,
             source_vlm_backend=source_vlm_backend,
         )
+    _assign_action_identity(actions)
+    state_landmarks = _build_state_landmarks(
+        actions=actions,
+        steps=steps,
+        logs=logs,
+        commands=commands,
+    )
+    source_completion = _build_source_completion(run, logs)
 
     return {
         "schema_version": CACHE_SCHEMA_VERSION,
@@ -280,6 +290,8 @@ async def _build_trajectory(
         "source_run_id": run.id,
         "source_vlm_backend": source_vlm_backend,
         "actions": actions,
+        "state_landmarks": state_landmarks,
+        "source_completion": source_completion,
     }
 
 
@@ -422,6 +434,29 @@ def _last_log_content(logs: Sequence[RunLog], title: str) -> str:
         if str(log.title or "") == title:
             return str(log.content or "")
     return ""
+
+
+def _build_source_completion(run: Run, logs: Sequence[RunLog]) -> Dict[str, str]:
+    """保留首跑成功时的最终语义，供缓存断言消解业务别名。
+
+    这份信息不能替代当前截图证据，但能避免缓存断言把“主页/返回页/目标页”
+    这类自由目标里的口语化表达解释成与首跑不同的页面。
+    """
+
+    reason = normalize_run_semantic(str(run.reason or ""))
+    task_done = normalize_run_semantic(_last_log_content(logs, "任务完成"))
+    final_thought = normalize_run_semantic(_last_log_content(logs, "思考"))
+    assertion_pass = normalize_run_semantic(_last_log_content(logs, "断言系统 · 通过"))
+    completion: Dict[str, str] = {}
+    if reason:
+        completion["run_reason"] = reason[:1200]
+    if task_done and task_done != reason:
+        completion["task_done"] = task_done[:1200]
+    if final_thought:
+        completion["final_thought"] = final_thought[:1200]
+    if assertion_pass:
+        completion["assertion_pass"] = assertion_pass[:1200]
+    return completion
 
 
 def _first_action_log_content(logs: Sequence[RunLog]) -> str:
@@ -838,6 +873,310 @@ def _enrich_action_metadata(
         action["thought"] = normalized_thought[:1000]
     if source_step is not None:
         action["source_step"] = source_step
+
+
+def _assign_action_identity(actions: List[Dict[str, Any]]) -> None:
+    """给清洗后的 replay action 补稳定内部身份。
+
+    ``index`` 继续作为回放顺序展示字段使用；v2 额外补 ``action_id`` 和
+    ``chain_index``，后续状态路标 / recovery 专线只依赖这些内部字段，不要求
+    业务 case 侧提供任何 id。
+    """
+    per_step_count: Dict[int, int] = {}
+    for idx, action in enumerate(actions, start=1):
+        action["index"] = idx
+        action["action_id"] = f"a{idx:03d}"
+        source_step = _safe_int(action.get("source_step"))
+        if source_step is None:
+            action["chain_index"] = 1
+            continue
+        chain_index = per_step_count.get(source_step, 0) + 1
+        per_step_count[source_step] = chain_index
+        action["chain_index"] = chain_index
+
+
+def _build_state_landmarks(
+    *,
+    actions: Sequence[Dict[str, Any]],
+    steps: Sequence[RunStep],
+    logs: Sequence[RunLog],
+    commands: Sequence[RunCommand],
+) -> List[Dict[str, Any]]:
+    """生成 v2 状态路标。
+
+    阶段 A 只记录，不改变 replay。缺图、链式动作无独立截图、日志时间缺失都只
+    进入 ``status`` / ``missing_reason``，不能影响缓存保存。
+    """
+    if not actions:
+        return []
+
+    steps_by_no = {int(step.step): step for step in steps}
+    logs_by_step = _group_logs_dict(logs)
+    commands_by_id = {
+        str(command.message_id): command
+        for command in commands
+        if str(command.message_id or "")
+    }
+    landmarks: List[Dict[str, Any]] = []
+
+    for idx, action in enumerate(actions):
+        next_action = actions[idx + 1] if idx + 1 < len(actions) else None
+        current_step = _safe_int(action.get("source_step"))
+        next_step = _safe_int(next_action.get("source_step")) if next_action else None
+        snapshot_step: Optional[RunStep] = None
+        phase = "before"
+        meaning = (
+            f"action {action.get('action_id')} 完成后，"
+            f"action {next_action.get('action_id')} 执行前的页面状态"
+            if next_action is not None
+            else f"action {action.get('action_id')} 完成后，最终断言前的页面状态"
+        )
+        missing_reason = ""
+
+        if next_action is not None:
+            if next_step is None:
+                missing_reason = "next_action_without_source_step"
+            elif current_step is not None and next_step == current_step:
+                missing_reason = "same_step_action_chain_no_handoff"
+            else:
+                snapshot_step = steps_by_no.get(next_step)
+        else:
+            snapshot_step, phase, missing_reason = _final_handoff_step(
+                steps=steps,
+                current_step=current_step,
+            )
+
+        if next_action is None and not snapshot_step and not missing_reason:
+            missing_reason = "final_snapshot_not_found"
+
+        image_url = _step_screenshot_url(snapshot_step, phase) if snapshot_step else ""
+        snapshot_meta = _snapshot_meta(image_url)
+        if not image_url and not missing_reason:
+            missing_reason = "image_url_empty"
+        if snapshot_meta["status"] != "available" and not missing_reason:
+            missing_reason = str(snapshot_meta.get("missing_reason") or "image_unavailable")
+
+        action_start_ms = _action_start_ms(action, logs_by_step, commands_by_id)
+        action_end_ms = _action_end_ms(action, logs_by_step, commands_by_id)
+        next_action_start_ms = (
+            _action_start_ms(next_action, logs_by_step, commands_by_id)
+            if next_action is not None
+            else None
+        )
+        gap_ms = (
+            max(0, next_action_start_ms - action_end_ms)
+            if action_end_ms is not None and next_action_start_ms is not None
+            else None
+        )
+
+        landmark = {
+            "landmark_id": f"lm_{str(action.get('action_id') or idx + 1)}",
+            "action_id": action.get("action_id"),
+            "after_action_index": int(action.get("index") or idx + 1),
+            "before_action_id": next_action.get("action_id") if next_action else None,
+            "before_action_index": (
+                int(next_action.get("index") or idx + 2) if next_action else None
+            ),
+            "source_step": current_step,
+            "snapshot_step": int(snapshot_step.step) if snapshot_step is not None else None,
+            "snapshot_phase": phase,
+            "meaning": meaning,
+            **snapshot_meta,
+            "timing": {
+                "action_start_ts_ms": action_start_ms,
+                "action_end_ts_ms": action_end_ms,
+                "handoff_snapshot_ts_ms": _snapshot_ts_ms(
+                    snapshot_step=snapshot_step,
+                    phase=phase,
+                    logs_by_step=logs_by_step,
+                )
+                if snapshot_step is not None
+                else None,
+                "next_action_start_ts_ms": next_action_start_ms,
+                "gap_to_next_action_ms": gap_ms,
+            },
+        }
+        if missing_reason and landmark["status"] != "available":
+            landmark["missing_reason"] = missing_reason
+        landmarks.append(landmark)
+
+    return landmarks
+
+
+def _group_logs_dict(logs: Sequence[RunLog]) -> Dict[int, List[RunLog]]:
+    grouped: Dict[int, List[RunLog]] = {}
+    for log in logs:
+        if log.step is None:
+            continue
+        grouped.setdefault(int(log.step), []).append(log)
+    return grouped
+
+
+def _final_handoff_step(
+    *,
+    steps: Sequence[RunStep],
+    current_step: Optional[int],
+) -> Tuple[Optional[RunStep], str, str]:
+    ordered = sorted(steps, key=lambda item: (int(item.step), int(item.id or 0)))
+    if current_step is not None:
+        later = [step for step in ordered if int(step.step) > current_step]
+        for step in later:
+            action_text = f"{step.action_type} {step.action}".lower()
+            if "finished" in action_text and step.screenshot_before:
+                return step, "before", ""
+        for step in later:
+            if step.screenshot_before:
+                return step, "before", ""
+    return None, "before", "final_handoff_snapshot_not_found"
+
+
+def _step_screenshot_url(step: Optional[RunStep], phase: str) -> str:
+    if step is None:
+        return ""
+    if phase == "after":
+        return str(step.screenshot_after or "")
+    return str(step.screenshot_before or "")
+
+
+def _snapshot_ts_ms(
+    *,
+    snapshot_step: RunStep,
+    phase: str,
+    logs_by_step: Dict[int, List[RunLog]],
+) -> Optional[int]:
+    step_logs = logs_by_step.get(int(snapshot_step.step), [])
+    matched: List[int] = []
+    for log in step_logs:
+        if str(log.title or "") != "截图":
+            continue
+        content = str(log.content or "")
+        if f"phase={phase}" in content or content.strip() == phase:
+            ts_ms = _dt_to_epoch_ms(log.ts)
+            if ts_ms is not None:
+                matched.append(ts_ms)
+    if matched:
+        return matched[-1] if phase != "before" else matched[0]
+    return _dt_to_epoch_ms(snapshot_step.created_at)
+
+
+def _snapshot_meta(image_url: str) -> Dict[str, Any]:
+    meta: Dict[str, Any] = {
+        "status": "unavailable",
+        "image_url": image_url or "",
+        "image_path": "",
+        "image_sha256": "",
+        "image_phash": "",
+        "image_size_bytes": 0,
+        "missing_reason": "image_url_empty" if not image_url else "",
+    }
+    if not image_url:
+        return meta
+    path = _resolve_file_url(image_url)
+    if path is None:
+        meta["missing_reason"] = "unsupported_image_url"
+        return meta
+    meta["image_path"] = str(path)
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError:
+        meta["missing_reason"] = "image_not_found"
+        return meta
+    except Exception as exc:  # noqa: BLE001
+        meta["missing_reason"] = f"image_read_failed:{type(exc).__name__}"
+        return meta
+    meta["status"] = "available"
+    meta["missing_reason"] = ""
+    meta["image_sha256"] = hashlib.sha256(data).hexdigest()
+    phash = compute_phash(data)
+    meta["image_phash"] = f"{phash:064x}" if phash is not None else ""
+    meta["image_size_bytes"] = len(data)
+    return meta
+
+
+def _resolve_file_url(image_url: str) -> Optional[Path]:
+    raw = str(image_url or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("/files/"):
+        rel = raw[len("/files/") :].lstrip("/")
+        root = Path(get_settings().storage_dir).expanduser().resolve()
+        return root / rel
+    path = Path(raw).expanduser()
+    if path.is_absolute():
+        return path
+    return None
+
+
+def _action_start_ms(
+    action: Optional[Dict[str, Any]],
+    logs_by_step: Dict[int, List[RunLog]],
+    commands_by_id: Dict[str, RunCommand],
+) -> Optional[int]:
+    if not action:
+        return None
+    command = commands_by_id.get(str(action.get("message_id") or ""))
+    if command is not None:
+        return _dt_to_epoch_ms(command.sent_at)
+    step_no = _safe_int(action.get("source_step"))
+    if step_no is None:
+        return None
+    return _first_log_ts_ms(logs_by_step.get(step_no, []), {"动作", "动作链"})
+
+
+def _action_end_ms(
+    action: Optional[Dict[str, Any]],
+    logs_by_step: Dict[int, List[RunLog]],
+    commands_by_id: Dict[str, RunCommand],
+) -> Optional[int]:
+    if not action:
+        return None
+    command = commands_by_id.get(str(action.get("message_id") or ""))
+    if command is not None:
+        return _dt_to_epoch_ms(command.finished_at) or _dt_to_epoch_ms(command.sent_at)
+    step_no = _safe_int(action.get("source_step"))
+    if step_no is None:
+        return None
+    return _last_log_ts_ms(logs_by_step.get(step_no, []), {"执行完成"})
+
+
+def _first_log_ts_ms(logs: Sequence[RunLog], titles: set[str]) -> Optional[int]:
+    for log in logs:
+        title = str(log.title or "")
+        if title in titles or any(title.startswith(prefix) for prefix in titles):
+            ts = _dt_to_epoch_ms(log.ts)
+            if ts is not None:
+                return ts
+    return None
+
+
+def _last_log_ts_ms(logs: Sequence[RunLog], titles: set[str]) -> Optional[int]:
+    for log in reversed(list(logs)):
+        title = str(log.title or "")
+        if title in titles or any(title.startswith(prefix) for prefix in titles):
+            ts = _dt_to_epoch_ms(log.ts)
+            if ts is not None:
+                return ts
+    return None
+
+
+def _dt_to_epoch_ms(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp() * 1000)
+    return None
+
+
+def _safe_int(value: Any) -> Optional[int]:
+    try:
+        if value is None or value == "":
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _intent_label(intent: str) -> str:
