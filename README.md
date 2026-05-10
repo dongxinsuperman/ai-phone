@@ -2,6 +2,19 @@
 
 [![CI](https://github.com/dongxinsuperman/ai-phone/actions/workflows/ci.yml/badge.svg)](https://github.com/dongxinsuperman/ai-phone/actions/workflows/ci.yml)
 
+> ## 本分支已进入归档冻结状态
+>
+> `main` 分支为 **Agent 大脑架构** 的 v0.1.x 稳定版本，自 2026-05 起 **停止新功能开发**，仅接受 P0 级别 bugfix。
+>
+> **新功能（轨迹缓存 V2/V3、Run 自动重跑、Server 集中决策、统一密钥/审计/K8s 化等）**
+> 全部在 [`next/server-brain`](../../tree/next/server-brain) 分支演进，且为**长期主力分支**。
+>
+> **如何选择**：
+> - 想看本机最小可跑、Agent 自带 VLM 的轻量端到端架构 → 留在本分支阅读 / 调试
+> - 想用最新能力 / 投入生产 / 多 Agent 集群 / 集中式缓存与审计 → 直接切到 [`next/server-brain`](../../tree/next/server-brain)
+>
+> 两条分支不再做整体合并；`next/server-brain` 不是 `main` 的"未来版本"，而是**架构层面的不同选型**。
+
 **面向中小型公司的三端真机 AI 自动化中台** —— iOS / Android / HarmonyOS 同级原生支持，自然语言驱动的纯视觉决策，开箱即用的调度队列与多设备并发，执行器可插拔，一台 Mac 即可起完整链路。
 
 > **产品形态**：ai-phone 不是一个执行器 SDK，而是把"投递批次 → 设备池调度 → 自然语言执行 → 终态广播 + HTML 报告 + 大盘统计"做成 QA 团队 / 业务回归大盘开箱即用的中台能力。**执行器是其中一个可替换组件**：默认内置自研的 VLM 纯视觉决策循环（带卡死检测 / 审判 / 断言等辅助系统），也可挂载第三方执行器作为额外引擎选项。
@@ -10,16 +23,7 @@
 
 ## 分支说明
 
-当前仓库长期保留两套架构分支，它们不是“主分支 / 临时实验分支”的关系，而是面向不同部署规模和演进阶段的两种执行架构。
-
-| 分支 | 定位 | 适合场景 |
-|---|---|---|
-| `main` | 轻量端到端架构，Agent 本地持有 VLM 决策与设备执行 | 个人开发者、微小公司、本机单套部署、端到端测试、真机调试验证 |
-| `next/server-brain` | Server 大脑架构，VLM 决策 / 缓存 / 断言 / 命令证据链集中在 Server，Agent 只执行设备动作 | 项目未来主力分支；适合多办公区、多 Agent、统一模型密钥、统一调度、统一报告、权限 / 审计 / K8s 等生产化场景 |
-
-两个分支会保持长期隔离：不做整体 merge，只按需同步通用能力和小修复。`next/server-brain` 是后续主力演进方向；`main` 主要用于轻量部署、个人/微小团队的端到端验证，以及对三端 driver、VLM、多模型协议等底层能力做快速调试。
-
-> **轨迹缓存说明**：两条架构线都已具备 VLM 成功轨迹缓存 / 回放能力，但轨迹回放对 case 的起跑状态、账号状态、设备状态、业务页面稳定性要求很高。当前建议保持 `AI_PHONE_VLM_TRAJECTORY_CACHE_REPLAY_ENABLED=false`，先沉淀成功轨迹和日志；只有在被测业务起跑状态高度可控、重复执行稳定后，再按场景打开回放。
+详见顶部归档卡。一句话：本分支冻结、仅接 P0 bugfix，新功能在 [`next/server-brain`](../../tree/next/server-brain)。
 
 ---
 
