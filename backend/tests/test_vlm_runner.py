@@ -447,26 +447,34 @@ def _set_audit_thresholds(monkeypatch, *, keep: Optional[str] = None) -> None:
     keep ∈ {"click", "scroll_osc", "scroll_no_progress", "screen", "periodic", None}。
     None 表示全部默认，不动。
 
+    被 keep 选中的通道会被**显式**设到一个测试可达的低阈值（3 或 2），不再
+    依赖 settings 的运行时默认；这样后续 ops 调整 settings.default 时不会
+    波及单测。其它通道一律抬到 999。
+
     注意：默认会同步把"周期巡检"间隔抬到测试碰不到，避免 step % 5 == 0 时
     多打一次 audit 让 detector 测试的 audit_log 计数错乱。要测周期巡检本身的
     测试，传 ``keep="periodic"``。
     """
-    if keep != "click":
-        monkeypatch.setattr(
-            "ai_phone.agent.runner.vlm_loop.STRUCT_CLICK_BUCKET_TRIGGER", 999
-        )
-    if keep != "scroll_osc":
-        monkeypatch.setattr(
-            "ai_phone.agent.runner.vlm_loop.STRUCT_SCROLL_FLIP_TRIGGER", 999
-        )
-    if keep != "scroll_no_progress":
-        monkeypatch.setattr(
-            "ai_phone.agent.runner.vlm_loop.STRUCT_SCROLL_NOPROGRESS_TRIGGER", 999
-        )
-    if keep != "screen":
-        monkeypatch.setattr(
-            "ai_phone.agent.runner.vlm_loop.STRUCT_SCREEN_REVISIT_TRIGGER", 999
-        )
+    monkeypatch.setattr(
+        "ai_phone.agent.runner.vlm_loop.STRUCT_CLICK_BUCKET_TRIGGER",
+        3 if keep == "click" else 999,
+    )
+    monkeypatch.setattr(
+        "ai_phone.agent.runner.vlm_loop.STRUCT_SCROLL_FLIP_WINDOW",
+        6 if keep == "scroll_osc" else 6,
+    )
+    monkeypatch.setattr(
+        "ai_phone.agent.runner.vlm_loop.STRUCT_SCROLL_FLIP_TRIGGER",
+        2 if keep == "scroll_osc" else 999,
+    )
+    monkeypatch.setattr(
+        "ai_phone.agent.runner.vlm_loop.STRUCT_SCROLL_NOPROGRESS_TRIGGER",
+        3 if keep == "scroll_no_progress" else 999,
+    )
+    monkeypatch.setattr(
+        "ai_phone.agent.runner.vlm_loop.STRUCT_SCREEN_REVISIT_TRIGGER",
+        3 if keep == "screen" else 999,
+    )
     if keep != "periodic":
         monkeypatch.setattr(
             "ai_phone.agent.runner.vlm_loop.STRUCT_AUDIT_PERIODIC_INTERVAL", 10**9

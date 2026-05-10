@@ -990,12 +990,13 @@ class Settings(BaseSettings):
         ),
     )
     audit_click_bucket_trigger: int = Field(
-        default=3,
+        default=10,
         ge=2,
         le=20,
         description=(
             "同坐标桶累计 click ≥ N 次召唤审判。"
             "调大允许更多合法重试；调小快速发现反复点同一处模式。"
+            "历史默认 3 在长 case / 多视觉证据复点场景偏严，调到 10。"
             "env: AI_PHONE_AUDIT_CLICK_BUCKET_TRIGGER"
         ),
     )
@@ -1010,16 +1011,17 @@ class Settings(BaseSettings):
         ),
     )
     audit_screen_revisit_trigger: int = Field(
-        default=3,
+        default=10,
         ge=2,
         le=20,
         description=(
             "同屏访问累计 ≥ N 次召唤审判。Tab 切换 / 抽屉开合等合法多次访问可调大。"
+            "历史默认 3 在'同一页面找多个视觉证据'场景偏严，调到 10。"
             "env: AI_PHONE_AUDIT_SCREEN_REVISIT_TRIGGER"
         ),
     )
     audit_scroll_flip_window: int = Field(
-        default=6,
+        default=10,
         ge=2,
         le=30,
         description=(
@@ -1028,11 +1030,12 @@ class Settings(BaseSettings):
         ),
     )
     audit_scroll_flip_trigger: int = Field(
-        default=2,
+        default=6,
         ge=1,
         le=10,
         description=(
             "窗口内方向翻转 ≥ N 次召唤审判（震荡 / 东找西找）。"
+            "长列表上下找东西天然有方向变化，历史默认 2 偏严，调到 6。"
             "env: AI_PHONE_AUDIT_SCROLL_FLIP_TRIGGER"
         ),
     )
@@ -1047,11 +1050,12 @@ class Settings(BaseSettings):
         ),
     )
     audit_scroll_noprogress_trigger: int = Field(
-        default=3,
+        default=10,
         ge=2,
         le=20,
         description=(
             "同方向连续无效滑动 ≥ N 次召唤审判（已到列表底/无更多内容场景）。"
+            "长页面翻 6-7 次找内容是正常行为，历史默认 3 偏严，调到 10。"
             "env: AI_PHONE_AUDIT_SCROLL_NOPROGRESS_TRIGGER"
         ),
     )
