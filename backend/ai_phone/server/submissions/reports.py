@@ -1129,13 +1129,23 @@ def _render_summary_spa_html(
 
     state_counts: Dict[str, int] = {}
     plat_counts: Dict[str, int] = {}
-    total_elapsed = 0
+    cumulative_elapsed = 0
     for it in items:
         state_counts[it.state] = state_counts.get(it.state, 0) + 1
         plat_counts[it.platform] = plat_counts.get(it.platform, 0) + 1
         em = _row_elapsed_ms(it)
         if em is not None:
-            total_elapsed += em
+            cumulative_elapsed += em
+
+    # 批次有两个时长口径，含义不同，并列展示便于横向对比：
+    # - "累计耗时"  = 各 item 耗时之和 → 反映总资源 / 设备占用量；
+    # - "实际耗时"  = finished_at - accepted_at（墙钟）→ 反映用户从投递到
+    #   收口的真实等待时间，并发场景下远小于累计。
+    # finished_at 在批次未收口时为 None，此时实际耗时显示 "—"。
+    wall_elapsed: Optional[int] = None
+    if submission.finished_at and submission.accepted_at:
+        delta = submission.finished_at - submission.accepted_at
+        wall_elapsed = max(0, int(delta.total_seconds() * 1000))
 
     overview_label = _submission_overview_label(submission, state_counts)
 
@@ -1209,7 +1219,8 @@ def _render_summary_spa_html(
         f'<span class="chip"><b>受理</b>{_esc(_fmt_ts(submission.accepted_at))}</span>',
         f'<span class="chip"><b>结束</b>{_esc(_fmt_ts(submission.finished_at))}</span>',
         f'<span class="chip"><b>总数</b>{len(items)}</span>',
-        f'<span class="chip"><b>总耗时</b>{_esc(_fmt_elapsed(total_elapsed) if total_elapsed else "—")}</span>',
+        f'<span class="chip"><b>累计耗时</b>{_esc(_fmt_elapsed(cumulative_elapsed) if cumulative_elapsed else "—")}</span>',
+        f'<span class="chip"><b>实际耗时</b>{_esc(_fmt_elapsed(wall_elapsed) if wall_elapsed else "—")}</span>',
     ]
     overview_html = (
         '<div class="hd">'
