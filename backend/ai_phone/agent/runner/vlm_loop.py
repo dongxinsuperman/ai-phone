@@ -321,9 +321,9 @@ def _classify_structured_local(
 #         → 用户显式要求重启场景（如稳定性回归 / 冷启 case）
 #
 #   档 2：goal 含"启动"类关键词且**紧贴**「App 名」 + 「App 名」
-#         → 简单"打开 X 做 Y"场景（error51 现场：goal="打开「洋葱学园」"
+#         → 简单"打开 X 做 Y"场景（如 goal="打开「淘宝」搜耳机"）。
 #           退回 VLM 后，Claude/GPT CU 没有 open_app 抽象，走 home + 找
-#           图标的路径既慢又不靠谱，必须由起跑线兜底）
+#           图标的路径既慢又不靠谱，必须由起跑线兜底
 #
 # 「应用名」始终要求 ASCII / CJK 引号包裹——避免误抓 goal 内 free-text 提
 # 到的菜单 / Tab 名当 App 名。
@@ -348,17 +348,82 @@ _OPEN_APP_TIGHT_RE = re.compile(
     r"\s*(?:的|了|下|一下)?\s*「([^」]+)」",
     re.IGNORECASE,
 )
+# 结构化 case 段切分：按 "测试标题：/前置条件：/操作步骤：/..." 这类标签把
+# goal 切成 {标签: 段内容}。只挑"段头"型标签（不含括号方括号变体），后者是
+# 内嵌内容标记，不是段头。
+_SEGMENT_HEAD_LABELS = ("测试标题", "测试用例", "前置条件", "操作步骤", "测试步骤", "预期结果")
+_SEGMENT_SPLIT_RE = re.compile(
+    r"(" + "|".join(re.escape(label) for label in _SEGMENT_HEAD_LABELS) + r")\s*[：:]\s*"
+)
+
+
+def _split_goal_by_segments(goal: str) -> Dict[str, str]:
+    """把结构化 case goal 按段头标签切成 {label: content}。
+
+    输入示例（标签 ∈ ``_SEGMENT_HEAD_LABELS``，半 / 全角冒号都吃）::
+
+        测试标题：<标题文案 · 内可能含「UI 元素名」>
+        前置条件：<环境准备 · 内可能含「App 名」与触发关键词>
+        操作步骤：<分步骤 · 内可能含「UI 元素名」>
+        预期结果：<断言文案 · 内可能含「UI 元素名」>
+
+    输出 ``{"测试标题": <…>, "前置条件": <…>, "操作步骤": <…>, "预期结果": <…>}``。
+
+    设计目的：让起跑线 / 子步骤拆解等系统能按段精确取数，避免"全文扫"
+    把段间内容混淆——例如测试标题段里的「UI 元素」与前置条件段里的
+    「App 名」频次并列时被误抓。
+
+    若 goal 不是结构化格式（无任何段头标签命中），返回空 dict —— 调用方应
+    退到 "全文扫" 兜底逻辑（兼容自由对话型 goal）。
+    """
+    parts = _SEGMENT_SPLIT_RE.split(goal)
+    if len(parts) < 3:
+        return {}
+    out: Dict[str, str] = {}
+    for i in range(1, len(parts) - 1, 2):
+        label = parts[i]
+        content = parts[i + 1].strip()
+        if label and content and label not in out:
+            out[label] = content
+    return out
 
 
 def _detect_app_lifecycle_prelude(goal: str) -> Optional[str]:
     """检查 goal 是否要求起跑线注入。命中返回 app 名，否则 None。
+
+    设计要点（按段感知，2026-05 重构）：
+
+    - 起跑线只对"前置条件"段有意义——"杀进程+重启 X"在前置条件段表示
+      "Run 启动前的环境准备"，应该提前；同样的关键词在"操作步骤"段则是
+      业务步骤的一部分（如"重启后验证配置持久化"），必须由 VLM 按顺序执
+      行，不能被起跑线偷跑。
+    - 因此结构化 case：只在"前置条件"段里跑档1/档2 判定；前置条件段不命
+      中就直接放弃起跑线，**不再 fallback 到全文**，避免"操作步骤段被起
+      跑线误抓"。
+    - 自由对话 / 平铺型 goal（无任何段头标签）：退到"全文扫"兜底逻辑，
+      行为与重构前一致，保留对"杀掉淘宝再打开"、"打开「淘宝」搜耳机"这
+      类短句的支持。
 
     返回的 app 名统一交给 _run_app_lifecycle_prelude 跑同一段 close_app +
     open_app 流程——两档之间不再分支：close_app 对未运行的 App 等价于
     no-op（驱动层 force-stop 报 "not running" 几十毫秒），重启对 case 行
     为更确定（避免上次脏 session 残留）。
     """
-    text_compact = goal.replace(" ", "")
+    segments = _split_goal_by_segments(goal)
+    if segments:
+        # 结构化 case：只看"前置条件"段；没有该段或段内不命中 → 放弃起跑线
+        precondition = segments.get("前置条件", "")
+        if not precondition:
+            return None
+        return _detect_in_text(precondition)
+
+    # 自由对话 / 平铺型 goal：兜底走原"全文扫"逻辑
+    return _detect_in_text(goal)
+
+
+def _detect_in_text(text: str) -> Optional[str]:
+    """在指定文本片段内跑档1/档2 判定。供前置条件段 / 全文扫共用。"""
+    text_compact = text.replace(" ", "")
 
     # 档 1：杀进程 AND 重新打开 AND 「App名」
     has_kill = any(k.replace(" ", "") in text_compact for k in _PRELUDE_KILL_KEYWORDS)
@@ -366,13 +431,13 @@ def _detect_app_lifecycle_prelude(goal: str) -> Optional[str]:
         k.replace(" ", "") in text_compact for k in _PRELUDE_RESTART_KEYWORDS
     )
     if has_kill and has_restart:
-        matches = _APP_NAME_RE.findall(goal)
+        matches = _APP_NAME_RE.findall(text)
         if matches:
-            # 多次出现取最高频，避免误抓 case 内提到的菜单 / 选项名当 App 名
+            # 多次出现取最高频，避免误抓段内偶提的菜单 / 选项名当 App 名
             return Counter(matches).most_common(1)[0][0]
 
-    # 档 2：启动词紧贴「App名」（"打开「洋葱学园」"、"进入「淘宝」搜索..." 类）
-    tight_matches = _OPEN_APP_TIGHT_RE.findall(goal)
+    # 档 2：启动词紧贴「App名」（"打开「淘宝」搜耳机"、"进入「微信」找联系人..." 类）
+    tight_matches = _OPEN_APP_TIGHT_RE.findall(text)
     if tight_matches:
         # 多次出现取最高频，与档 1 同语义
         return Counter(tight_matches).most_common(1)[0][0]
