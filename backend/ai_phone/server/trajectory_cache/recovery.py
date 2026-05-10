@@ -66,8 +66,20 @@ class CacheReplayRecoveryVerifier:
     执行由 ReplayRunner 完成。
     """
 
-    def __init__(self, *, settings: Optional[Settings] = None) -> None:
+    def __init__(
+        self,
+        *,
+        settings: Optional[Settings] = None,
+        main_vlm_backend: Optional[str] = None,
+    ) -> None:
         self.settings = settings or get_settings()
+        # 主 VLM backend 用于推断 recovery 输出的坐标空间：
+        #   - doubao_responses / 默认 → "normalized"（0-1000 归一化，豆包系约定）
+        #   - claude_cu / gpt_cu       → "absolute" （图像像素，海外 CU 系约定）
+        # 海外两家训练时就是按图像像素回坐标的，强行让它们输出 0-1000 归一化反
+        # 而不准；豆包系按 prompt 指令稳定输出 0-1000，所以让 recovery prompt 跟
+        # 主 VLM 训练习惯走，三家都拿到自己最稳的形式。
+        self._main_vlm_backend: str = (main_vlm_backend or "").strip().lower()
 
     # ------------------------------------------------------------------
     # 配置 / 可用性
@@ -105,6 +117,23 @@ class CacheReplayRecoveryVerifier:
     def max_wait_more(self) -> int:
         return int(self.settings.trajectory_cache_recovery_vlm_max_wait_more or 0)
 
+    @property
+    def coord_space(self) -> str:
+        """根据主 VLM backend 推断 recovery 输出的坐标空间。
+
+        覆盖范围保守：仅明确认得的海外 CU 系返回 ``absolute``；其它（豆包、
+        未知 / 自部署 OpenAI 兼容代理跑豆包模型等）一律按 ``normalized`` 兜
+        底，与历史豆包行为一致，不会破坏现网。
+        """
+        backend = self._main_vlm_backend
+        if not backend:
+            return "normalized"
+        if backend in {"claude_cu", "gpt_cu"}:
+            return "absolute"
+        if "claude" in backend or backend.startswith("gpt"):
+            return "absolute"
+        return "normalized"
+
     # ------------------------------------------------------------------
     # 主调用
     # ------------------------------------------------------------------
@@ -129,6 +158,7 @@ class CacheReplayRecoveryVerifier:
                 error="not_configured",
             )
 
+        coord_space = self.coord_space
         prompt = build_recovery_prompt(
             goal=goal,
             trajectory=trajectory,
@@ -138,6 +168,7 @@ class CacheReplayRecoveryVerifier:
             elapsed_ms=elapsed_ms,
             max_wait_ms=max_wait_ms,
             default_wait_ms=self.default_wait_ms,
+            coord_space=coord_space,
         )
 
         loop = asyncio.get_event_loop()
@@ -173,7 +204,11 @@ class CacheReplayRecoveryVerifier:
                 error=f"{type(exc).__name__}",
             )
 
-        decision = parse_recovery_response(text, default_wait_ms=self.default_wait_ms)
+        decision = parse_recovery_response(
+            text,
+            default_wait_ms=self.default_wait_ms,
+            coord_space=coord_space,
+        )
         decision.elapsed_ms = int((loop.time() - started_at) * 1000)
         return decision
 
@@ -201,9 +236,15 @@ class CacheReplayRecoveryVerifier:
                 landmark_bytes=landmark_bytes,
                 current_bytes=current_bytes,
             )
+        if backend == "claude_messages":
+            return await self._messages_double_image(
+                prompt=prompt,
+                landmark_bytes=landmark_bytes,
+                current_bytes=current_bytes,
+            )
         raise RuntimeError(
             f"recovery_vlm 暂不支持 backend={backend}，"
-            "当前支持 openai_compatible / doubao_responses"
+            "当前支持 doubao_responses / openai_compatible / claude_messages"
         )
 
     # ------------------------------------------------------------------
@@ -349,6 +390,104 @@ class CacheReplayRecoveryVerifier:
             raise RuntimeError("recovery_vlm 未返回可解析文本")
         return text
 
+    # ------------------------------------------------------------------
+    # Anthropic Messages API（Claude 主 VLM 用户的 recovery 通道）
+    # ------------------------------------------------------------------
+    async def _messages_double_image(
+        self,
+        *,
+        prompt: str,
+        landmark_bytes: bytes,
+        current_bytes: bytes,
+    ) -> str:
+        """走 Anthropic /v1/messages 协议做双图 recovery 调用。
+
+        与 chat completions / responses 三大差异（避免误用其它 backend）：
+        1. 鉴权头是 ``x-api-key`` + ``anthropic-version``，不是 Bearer。
+        2. 多模态 user content 用 ``{"type":"image","source":{"type":"base64",
+           "media_type":"image/jpeg","data":<b64>}}``，不是 ``image_url``。
+        3. 响应在 ``data.content`` 数组里，每块 ``{"type":"text","text":...}``
+           或 ``{"type":"thinking","text":...}``；要拼所有 text 块。
+
+        recovery 通道有意不开 thinking / 不开 tools——它只需要模型按 prompt 给
+        Thought/Action 文本，越简单越稳。"""
+        s = self.settings
+        landmark_b64 = base64.b64encode(landmark_bytes).decode("ascii")
+        current_b64 = base64.b64encode(current_bytes).decode("ascii")
+        user_content: List[Dict[str, Any]] = [
+            {"type": "text", "text": prompt},
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": landmark_b64,
+                },
+            },
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": current_b64,
+                },
+            },
+        ]
+        payload: Dict[str, Any] = {
+            "model": s.trajectory_cache_recovery_vlm_model,
+            "max_tokens": 1024,
+            "system": (
+                "你是轨迹缓存回放的局部恢复 VLM。"
+                "必须使用 Thought/Action 格式输出一个局部恢复动作、"
+                "wait、finished 或 assert_fail。"
+            ),
+            "messages": [{"role": "user", "content": user_content}],
+        }
+        headers = {
+            "x-api-key": s.trajectory_cache_recovery_vlm_api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+
+        timeout = httpx.Timeout(
+            float(s.trajectory_cache_recovery_vlm_timeout_sec),
+            connect=10.0,
+        )
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(
+                s.trajectory_cache_recovery_vlm_api_url,
+                json=payload,
+                headers=headers,
+            )
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"recovery_vlm messages 失败: status={resp.status_code} "
+                f"body={resp.text[:200]}"
+            )
+        text = _extract_messages_text(resp.json())
+        if not text:
+            raise RuntimeError("recovery_vlm 未返回可解析文本")
+        return text
+
+
+def _extract_messages_text(data: Dict[str, Any]) -> str:
+    """从 Anthropic Messages 响应中提取所有 text 块拼接后的文本。
+
+    Claude 响应：``{"content": [{"type":"text","text":"..."}, {"type":"thinking",
+    "text":"..."}, ...]}``。recovery 不开 thinking 时只会有 text 块；万一有
+    thinking 也一起拼，由后续 _strip_markdown_decorations + parse 兜底处理。
+    """
+    pieces: List[str] = []
+    for block in data.get("content") or []:
+        if not isinstance(block, dict):
+            continue
+        btype = block.get("type")
+        if btype in ("text", "thinking"):
+            t = block.get("text")
+            if isinstance(t, str) and t:
+                pieces.append(t)
+    return "\n".join(pieces).strip()
+
 
 def _extract_responses_text(data: Dict[str, Any]) -> str:
     """从 Responses API 返回中提取文本，兼容方舟/OpenAI 常见形态。"""
@@ -370,6 +509,7 @@ def parse_recovery_response(
     text: str,
     *,
     default_wait_ms: int = 1500,
+    coord_space: str = "normalized",
 ) -> RecoveryDecision:
     """recovery VLM 输出解析。
 
@@ -379,11 +519,26 @@ def parse_recovery_response(
         CONTINUE_REPLAY: <一句话原因>
         WAIT_MORE: <ms>: <一句话原因>
         ASSERT_FAIL: <一句话原因>
+
+    **跨 backend 兼容**：claude / gpt 系模型偶发会用 markdown 装饰 ``Thought:``
+    / ``Action:`` 行（如 ``**Action:**``、``` `Action:` ```、```` ```python ```` 包
+    起来），这些会让 ``A.extract_actions`` 的行首正则失配。入口先做一次预清洗
+    剥掉装饰，再走原解析路径，保证三家 backend 解析行为一致。
     """
-    raw = text or ""
+    raw_original = text or ""
+    raw = _strip_markdown_decorations(raw_original)
     action_texts = A.extract_actions(raw) if "Action:" in raw else []
     if action_texts:
         parsed_actions = [A.parse_action(item) for item in action_texts]
+        # 关键：A.parse_action 默认输出 coord_space="normalized"（豆包系约定）。
+        # recovery 走海外 backend（claude_cu / gpt_cu）时模型按 prompt 指令输出
+        # 的是图像绝对像素，必须显式覆写为 "absolute"，否则下游
+        # ReplayRunner._parsed_point_to_abs 会把它当 0-1000 反算，坐标全错。
+        normalized_coord_space = (coord_space or "normalized").strip().lower()
+        if normalized_coord_space not in ("normalized", "absolute"):
+            normalized_coord_space = "normalized"
+        for pa in parsed_actions:
+            pa.coord_space = normalized_coord_space
         parsed = parsed_actions[0]
         thought = A.extract_thought(raw)
         reason = parsed.content or thought or parsed.raw or ""
@@ -499,6 +654,43 @@ def _split_after_colon(line: str) -> str:
     return line.split(":", 1)[1].strip()
 
 
+# claude / gpt 偶发把 Thought / Action 行用 markdown 装饰起来，例如：
+#
+#     **Thought:** I need to wait...
+#     `Action:` click(point='<point>540 1024</point>')
+#     ```python
+#     Action: click(point='<point>540 1024</point>')
+#     ```
+#
+# 这些会让下游的 ``A.extract_actions`` / ``A.extract_thought`` 行首正则失配。
+# 入口先做一次"去装饰"，再走原解析路径，三家 backend 行为对齐。
+_MD_FENCE_RE = re.compile(r"^\s*```[\w-]*\s*$", re.MULTILINE)
+_MD_BOLD_KEYWORD_RE = re.compile(r"\*\*\s*(Thought|Action)\s*:?\s*\*\*", re.IGNORECASE)
+_MD_INLINE_CODE_KEYWORD_RE = re.compile(r"`\s*(Thought|Action)\s*:?\s*`", re.IGNORECASE)
+_MD_LIST_PREFIX_RE = re.compile(
+    r"^[ \t]*[-*+][ \t]+(?=(?:\*\*)?(?:Thought|Action)\b[: ])",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+
+def _strip_markdown_decorations(text: str) -> str:
+    """剥掉 Thought / Action 行常见的 markdown 装饰，让行首关键字裸露出来。
+
+    保守原则：只动 ``Thought:`` / ``Action:`` 关键字附近的装饰，**不**动 Action
+    参数体内部的反引号 / 引号等（豆包系 ``content='...'`` 字面量也可能含
+    反引号）。fence 行整行剔除（不删 fence 之间的 Action 内容，因为 Action 解
+    析器只需要看到一行裸的 ``Action: <call>``）。
+    """
+    if not text:
+        return text
+    out = text
+    out = _MD_BOLD_KEYWORD_RE.sub(lambda m: f"{m.group(1)}:", out)
+    out = _MD_INLINE_CODE_KEYWORD_RE.sub(lambda m: f"{m.group(1)}:", out)
+    out = _MD_LIST_PREFIX_RE.sub("", out)
+    out = _MD_FENCE_RE.sub("", out)
+    return out
+
+
 def build_recovery_prompt(
     *,
     goal: str,
@@ -509,7 +701,25 @@ def build_recovery_prompt(
     elapsed_ms: int,
     max_wait_ms: int,
     default_wait_ms: int,
+    coord_space: str = "normalized",
 ) -> str:
+    # 坐标系说明跟随主 VLM backend：豆包 normalized；claude_cu / gpt_cu absolute。
+    # 海外 CU 系训练就是按图像像素输出坐标的，强行让它们输出 0-1000 归一化反而
+    # 不准；豆包系按 prompt 指令稳定输出 0-1000，所以两类各按各家训练习惯走。
+    norm_cs = (coord_space or "normalized").strip().lower()
+    if norm_cs == "absolute":
+        coord_block = (
+            "【坐标系说明】\n"
+            "<point>x y</point> 中的 x y 必须是相对【附图 2（当前截图）】的"
+            "整数像素绝对坐标，原点在图片左上角，向右为 x、向下为 y。\n"
+            "**禁止**输出 0-1000 归一化坐标。坐标超出图像范围属于错误输出。\n\n"
+        )
+    else:
+        coord_block = (
+            "【坐标系说明】\n"
+            "<point>x y</point> 中的 x y 是 0-1000 归一化坐标，"
+            "0/0 表示左上角，1000/1000 表示右下角，相对【附图 2（当前截图）】。\n\n"
+        )
     return (
         "你是轨迹缓存回放的局部恢复 VLM。\n"
         "系统正在执行一次缓存轨迹回放，并已经定位到一个明确问题：\n"
@@ -552,6 +762,13 @@ def build_recovery_prompt(
         "Thought: <中文描述当前画面分析与局部恢复计划>\n"
         "Action: <一个动作调用>\n\n"
         "Action 行只能写一个动作调用，禁止尾部加注释 / 装饰；解释一律写到 Thought。\n"
+        "**严格约束（针对 Claude / GPT 系模型常见误用）**：\n"
+        "- 禁止用 markdown 加粗（如 **Action:**、**Thought:**），直接写纯文本前缀。\n"
+        "- 禁止用反引号或代码块（` 或 ```python ... ```）包装 Action 行；\n"
+        "  Action 行必须是裸文本，例如：``Action: click(point='<point>540 1024</point>')``。\n"
+        "- 禁止把 Thought / Action 写在 JSON / YAML / list 里。\n"
+        "- 动作名（click / type / scroll / wait / finished / assert_fail 等）保持英文。\n\n"
+        + coord_block +
         "可用动作：\n"
         "1. click(point='<point>x y</point>')\n"
         "2. long_press(point='<point>x y</point>')\n"

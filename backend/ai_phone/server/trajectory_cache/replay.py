@@ -15,7 +15,12 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tup
 from PIL import Image, ImageChops, ImageStat
 
 from ai_phone.agent.drivers.base import BaseDriver
-from ai_phone.agent.runner.events import EVT_SCREENSHOT, make_event
+from ai_phone.agent.runner.events import (
+    EVT_SCREENSHOT,
+    EVT_STEP_END,
+    EVT_STEP_START,
+    make_event,
+)
 from ai_phone.agent.runner.phash import compute_phash, diff_rate
 from ai_phone.agent.runner.stability import StabilityResult, wait_page_stable_pixel
 from ai_phone.config import get_settings
@@ -217,6 +222,12 @@ class ReplayRunner:
         self._final_after_bytes: Optional[bytes] = None
         self._carry_before_bytes: Optional[bytes] = None
         self._carry_before_index: Optional[int] = None
+        # claude_cu / gpt_cu recovery 路径专用：模型看到的截图实际像素尺寸
+        # （= self._screenshot_jpeg() 返回的 JPEG 解码后的 width/height，被
+        # driver.screenshot_jpeg(25, 720) 压缩到 720 max-edge）。模型按这个
+        # 尺寸输出 absolute 坐标，必须按 (model_image_size → device_window_size)
+        # 等比反算才能落到设备真实坐标系。豆包 normalized 路径不读本字段。
+        self._recovery_image_size: Optional[Tuple[int, int]] = None
 
     async def run(self) -> ReplayResult:
         actions = list(self.trajectory.get("actions") or [])
@@ -224,6 +235,12 @@ class ReplayRunner:
         await self._log(1, "轨迹缓存回放", f"开始回放 actions={len(actions)}")
         for action in actions:
             index = int(action.get("index") or executed + 1)
+            # —— 关键：cache replay 也要走 EVT_STEP_START / EVT_STEP_END 闭环，
+            # 否则 emitter 收到的 EVT_SCREENSHOT 会一直挂在 _pending_step_urls
+            # 里没人取走，RunStep 表里一行都不会写入，UI 时间线就看不到任何
+            # 步骤截图（看起来像"步=0、全程没图"，但其实截图都已经拍好了）。
+            self._emit_step_start(index)
+            step_started_at = time.monotonic()
             try:
                 before_bytes = await self._capture_before(index)
                 self._final_before_bytes = before_bytes
@@ -240,9 +257,22 @@ class ReplayRunner:
                     after_bytes = await self._capture_after(action)
                     self._final_after_bytes = after_bytes
                     self._emit_screenshot(index, "after", after_bytes)
+                self._emit_step_end(
+                    index,
+                    action=action,
+                    elapsed_ms=int((time.monotonic() - step_started_at) * 1000),
+                )
             except Exception as exc:  # noqa: BLE001
                 message = f"index={index} type={action.get('type')} error={exc}"
                 await self._log(3, "轨迹缓存回放失败", message)
+                # 失败也补一条 STEP_END，让 emitter 把已经拍好的 before 截图
+                # 落进 RunStep 表，便于排查时看到失败步骤的现场截图。
+                self._emit_step_end(
+                    index,
+                    action=action,
+                    elapsed_ms=int((time.monotonic() - step_started_at) * 1000),
+                    error=str(exc),
+                )
                 return ReplayResult(
                     success=False,
                     actions_total=len(actions),
@@ -517,6 +547,12 @@ class ReplayRunner:
                     f"alignment_miss {miss_summary} recovery=CALL_LIMIT_EXCEEDED"
                 )
             self._recovery_calls_used += 1
+            # 关键：claude_cu / gpt_cu 路径下，模型按"附图 2"实际像素估
+            # absolute 坐标。附图 2 是 _screenshot_jpeg() 出的 720 max-edge
+            # JPEG，跟设备 window_size 不一致，必须把它实际尺寸记下来，让
+            # _parsed_point_to_abs(absolute) 按比例缩回设备坐标。豆包
+            # normalized 路径解析时不读本字段，只缓存不影响。
+            self._recovery_image_size = _decode_image_size(latest_bytes)
             decision = await verifier.verify_alignment_miss(
                 goal=self.goal,
                 trajectory=self.trajectory,
@@ -762,10 +798,20 @@ class ReplayRunner:
 
     async def _parsed_point_to_abs(self, point: List[int], coord_space: str) -> Tuple[int, int]:
         w, h = await asyncio.to_thread(self.driver.window_size)
-        # recovery 第一版只走 doubao normalized；保留 absolute 分支给后续海外模型适配。
         if coord_space == "absolute":
-            abs_x = max(0, min(int(point[0]), w - 1))
-            abs_y = max(0, min(int(point[1]), h - 1))
+            # claude_cu / gpt_cu 路径：模型坐标是相对【附图 2】实际像素。
+            # 附图 2 = _screenshot_jpeg(25, 720) 出的 720 max-edge JPEG，跟设备
+            # 真实 (w, h) 不一致。如果调用方在 verify 前正确设置了
+            # _recovery_image_size，就按比例反算到设备坐标；否则退化为旧版
+            # "直接 clamp"行为（兜底）。
+            px, py = int(point[0]), int(point[1])
+            img_size = self._recovery_image_size
+            if img_size is not None and img_size[0] > 0 and img_size[1] > 0:
+                iw, ih = img_size
+                px = int(round(px * w / iw))
+                py = int(round(py * h / ih))
+            abs_x = max(0, min(px, w - 1))
+            abs_y = max(0, min(py, h - 1))
             return abs_x, abs_y
         x, y = A.vlm_point_to_abs(int(point[0]), int(point[1]), w, h)
         return int(x), int(y)
@@ -864,6 +910,54 @@ class ReplayRunner:
             )
         )
 
+    def _emit_step_start(self, step: int) -> None:
+        if self.emit is None or self.run_id is None:
+            return
+        self.emit(make_event(EVT_STEP_START, self.run_id, step=step))
+
+    def _emit_step_end(
+        self,
+        step: int,
+        *,
+        action: Dict[str, Any],
+        elapsed_ms: int,
+        error: Optional[str] = None,
+    ) -> None:
+        """补 STEP_END 让 emitter 把这次 cache replay 的 step 落 RunStep 表。
+
+        填字段思路：
+        - ``action`` 字段塞 ``_format_action_log`` 的可读串（与 RunLog 一致）
+        - ``thought`` 优先用 trajectory 里首跑保存的 thought（若有），fallback
+          标"轨迹缓存回放：<intent>" 让 UI 一眼能区分"这条来自缓存通道"
+        - ``action_type`` 直接复用 trajectory 里的 type 字段
+        - 失败路径附带 ``error`` 供 UI 显示出错原因
+        """
+        if self.emit is None or self.run_id is None:
+            return
+        action_log = _format_action_log(action)
+        intent_label = (
+            action.get("intent")
+            or action.get("label")
+            or _format_action_log(action)
+        )
+        thought = (
+            str(action.get("thought") or "").strip()
+            or f"轨迹缓存回放：{intent_label}"
+        )
+        if error:
+            thought = f"{thought}（执行失败：{error}）"
+        self.emit(
+            make_event(
+                EVT_STEP_END,
+                self.run_id,
+                step=step,
+                thought=thought,
+                action=action_log,
+                action_type=str(action.get("type") or ""),
+                elapsed_ms=elapsed_ms,
+            )
+        )
+
 
 def _point(action: Dict[str, Any], field: str) -> Tuple[int, int]:
     value = action.get(field)
@@ -892,6 +986,26 @@ def _parse_phash_hex(value: Any) -> Optional[int]:
     try:
         return int(text, 16)
     except ValueError:
+        return None
+
+
+def _decode_image_size(image_bytes: Optional[bytes]) -> Optional[Tuple[int, int]]:
+    """从 JPEG/PNG 字节流读出 (width, height)。
+
+    主要供 recovery_vlm absolute 坐标反算使用：模型看到的截图是
+    ``driver.screenshot_jpeg(25, 720)`` 出来的 720 max-edge JPEG，模型按这个
+    尺寸估 absolute 像素，而下游 dispatcher 走的是设备真实坐标系，必须按
+    (model_image_size → device_window_size) 等比缩回去。
+
+    解码失败时返回 ``None``，调用方应退化为"原值 clamp"，避免比例错把好坐标
+    扭曲。
+    """
+    if not image_bytes:
+        return None
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as im:
+            return int(im.width), int(im.height)
+    except Exception:  # noqa: BLE001 — PIL 失败原因很多，统一兜底
         return None
 
 

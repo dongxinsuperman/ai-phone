@@ -32,7 +32,16 @@ _STRUCTURED_FIELD_RE = re.compile(
     r"(测试标题|前置条件|操作步骤|预期结果|期望结果)\s*[:：]"
 )
 _ACTION_VERB_RE = re.compile(
-    r"(点击|轻点|tap|输入|打开|关闭|选择|切换|返回|滑动|上滑|下滑|左滑|右滑|长按|双击|等待|勾选|取消|进入)",
+    # 中英文双语动词集——豆包系 thought 是中文，claude_cu / gpt_cu 系 thought
+    # 是英文（含 thinking + cleaned_text 拼接），需要同时覆盖才能从 claude/gpt
+    # thought 里抽出 intent 句子。英文动词来自 Claude / OpenAI computer-use
+    # 工具的常见动作名（click / left_click / type / swipe / scroll / drag / 
+    # long_press / double_click / press_back / press_home / launch / wait 等）。
+    r"("
+    r"点击|轻点|输入|打开|关闭|选择|切换|返回|滑动|上滑|下滑|左滑|右滑|长按|双击|等待|勾选|取消|进入|"
+    r"tap|click|type|enter|swipe|scroll|drag|long[_\s-]?press|double[_\s-]?(?:click|tap)|"
+    r"press|launch|open|close|wait|select|toggle|back|home|navigate"
+    r")",
     re.IGNORECASE,
 )
 

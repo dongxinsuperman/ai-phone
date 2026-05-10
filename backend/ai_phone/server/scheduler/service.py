@@ -1056,7 +1056,12 @@ class SubmissionScheduler:
 
             result = str(msg.get("result") or "error").lower()
             raw_message = str(msg.get("message") or "")
-            if result == "finished":
+            # "pass" 是缓存通道（trajectory cache replay）断言 PASS 时 emitter
+            # 上报的 result 值（见 server/runner/service.py 的 trajectory cache
+            # 路径）。语义等同 "finished"，必须显式映射成 success/completed，
+            # 否则会落入下面的 else 分支被错误分类为 executor_error，导致
+            # UI 显示 Run 失败但 RunLog 里却是「轨迹缓存断言 — PASS」的矛盾态。
+            if result in ("finished", "pass"):
                 item.state = "success"
                 item.status_reason = "completed"
             elif result == "assert_fail":

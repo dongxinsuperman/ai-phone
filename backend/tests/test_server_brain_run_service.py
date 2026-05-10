@@ -431,6 +431,75 @@ async def test_recover_stale_server_brain_run_finalizes_scheduler_item(app, sess
 
 
 @pytest.mark.asyncio
+async def test_scheduler_on_run_done_treats_cache_replay_pass_as_success(app, session):
+    """缓存通道（trajectory cache replay）断言 PASS 时 emitter 上报
+    ``result="pass"``，scheduler.on_run_done 必须把它视作成功（state=success
+    + status_reason=completed），否则 SubmissionItem 会被错误归类成
+    executor_error，UI 显示矛盾："轨迹缓存断言 PASS" 但 Run 失败。
+    """
+    hub = Hub()
+    lock_store = DeviceLockStore()
+    publisher = MemoryPublisher()
+    scheduler = SubmissionScheduler(
+        hub=hub,
+        lock_store=lock_store,
+        session_factory=db_module.get_session_factory(),
+        publisher=publisher,
+    )
+
+    now = datetime.now(timezone.utc)
+    sub = Submission(
+        origin="internal",
+        submission_name="cache-pass-submission",
+        state="accepted",
+        raw_body={},
+        accepted_at=now,
+        expire_at=now + timedelta(hours=1),
+    )
+    item = SubmissionItem(
+        submission=sub,
+        case_id="case-cache-pass",
+        case_name="case-cache-pass",
+        platform="android",
+        run_content="do it",
+        state="running",
+        run_id="cache-pass-run",
+        device_serial="S1",
+        started_at=now,
+    )
+    run = Run(
+        id="cache-pass-run",
+        device_serial="S1",
+        agent_id="agent-server-brain",
+        goal="do it",
+        status="success",
+        reason="trajectory_cache_pass: 最终页面满足用户目标",
+        execution_mode="server_brain",
+        dispatch_source="scheduler",
+    )
+    session.add_all([sub, item, run])
+    await session.commit()
+    item_id = item.id
+
+    await scheduler.on_run_done(
+        "cache-pass-run",
+        {
+            "result": "pass",
+            "message": "trajectory_cache_pass: 最终页面满足用户目标",
+            "steps": 2,
+            "elapsed_ms": 27000,
+            "token_stats": {"total_tokens": 0},
+        },
+    )
+
+    async with db_module.get_session_factory()() as s:
+        got_item = await s.get(SubmissionItem, item_id)
+        assert got_item is not None
+        assert got_item.state == "success"
+        assert got_item.status_reason == "completed"
+
+
+@pytest.mark.asyncio
 async def test_malformed_driver_result_marks_command_failed(app, session):
     hub = Hub()
     waiter = DriverRpcWaiter()

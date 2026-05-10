@@ -1,5 +1,102 @@
 # VLM 高速缓存回放系统升级方案 v2：整页状态路标
 
+## 0. 为什么要做这个
+
+### 0.1 行业痛点：视觉缓存的"快"和"准"是对立的
+
+纯视觉驱动的 UI 自动化里有一对结构性矛盾：
+
+```text
+要快  →  缓存首跑结果，回放时不再问模型
+要准  →  每一步都重新看截图、重新规划、重新算坐标
+```
+
+两者**只能选一个，无法同时拿到**。这不是工程能力问题，是视觉自动化路线的固有约束：
+模型的判断带不确定性，缓存的判断带状态漂移；快慢和准不准本质上是同一枚硬币的两面。
+
+更扎心的是另一层：**纯缓存模式下，偏航不会被发现，发现也不知道是哪步出的事。**
+回放跑完看最终断言失败，回头排查却只看到一连串"成功 dispatch"的日志——
+中间哪一步开始走偏的，没人知道。
+
+### 0.2 主流方案的回避姿态
+
+我们调研了行业里能找到的所有正面方案，结论是：**没人正面解决这个问题，都在回避**。
+
+```text
+midscene-js
+  策略：直接放弃坐标缓存，每一步重新让模型看截图识别坐标
+  代价：跟没缓存差不多慢
+  状态：回避（用速度换准确）
+
+LangChain / browser-use / agent-zero / autogen UI 系
+  策略：默认不做轨迹缓存，每次 run 都从头跑模型
+  代价：完全不快
+  状态：回避（直接放弃缓存）
+
+商业 SaaS（Adept / MultiOn 等闭源产品）
+  策略：主流程跑模型 + 局部缓存（按钮位置之类的小颗粒度）
+  代价：复杂、不开源、效果不可验证
+  状态：回避（缓存力度不敢做大）
+```
+
+业界共识不是"我们要怎么解决"，而是"这个问题没解，所以你只能在快和准之间二选一"。
+
+### 0.3 我们的判断：缓存的中间态比纯缓存还鸡肋
+
+我们的历史脚本（早期版本）走过一条跟 midscene 很像的中间路线——**两层缓存：计划层 + 动作坐标层**。
+midscene 的做法是缓存计划、放弃坐标，每步重新识别。但我们最后判断这条路是错的：
+
+```text
+既然每一步都已经付出了"重新问模型"的开销，
+计划缓存就变得没有意义——
+反正都问了，不如把计划也重新编排，这样模型对当下页面的理解才是新鲜的，
+比"按缓存计划走、临时修坐标"更准。
+```
+
+所以中间态（缓存计划 + 重算坐标）在我们看来是个**两头不靠**的位置：
+- 速度上没拿到完整缓存的快（因为坐标还要算）
+- 准确性上又被旧计划锁住（因为计划是首跑那次的产物，没适应当下页面）
+
+我们直接放弃了这条路，走两端：
+**要快就完整缓存（V1）**，**要准就完整跑模型（VLMRunner）**——
+中间不要任何"省一半工"的伪优化。
+
+### 0.4 V2 的定位：不是兜底，是让 V1 不再失控
+
+V1 解决了"快"——一个机器一份缓存，命中后纯 dispatch，速度接近极限。
+但 V1 没解决"扑空不被发现"，跑挂了不知道是哪步挂的。
+
+V2 不试图把缓存做成 100% 准确——做不到，行业里没人做到。
+V2 的目标是：**在 V1 的快速通道上加一层"自检电路"，让偏航即时暴露 + 给一次自愈机会。**
+
+```text
+V2 解决的具体问题
+  - 每个 action 后实时校验"是不是真的对齐到首跑那一刻的页面状态"
+  - 偏航即时暴露，定位到具体哪一步出问题（不再等到最终断言才报错）
+  - 给一次"局部 VLM 救场"机会，能修就修，修不了立即终止 + 删缓存
+
+V2 不解决的
+  - 不保证 100% 不扑空（视觉自动化的固有约束）
+  - 不取代主 VLM 的判断（救场用同一家模型但走独立通道，不污染主流程）
+  - 不变成 midscene 那样的中间态（V1 还在，想要纯模型走 VLMRunner）
+```
+
+### 0.5 三档清晰区分
+
+跟前面调研的方案放一起看，我们的整体架构是：
+
+| 路线 | 速度 | 准确性 | 自检 | 我们的对应模式 |
+|---|---|---|---|---|
+| 完全跑模型（如 VLMRunner / midscene 极端版）| 慢 | 高 | 强 | VLMRunner（缓存关闭时） |
+| 缓存计划 + 重算坐标（midscene 默认）| 中等 | 中等 | 中等 | **被我们放弃** |
+| 完整缓存盲飞（V1） | 快 | 取决运气 | 无 | V1（V2 关闭时降级到这里） |
+| **完整缓存 + 自检 + 救场（V2）** | **健康 case 接近 V1，故障 case 慢 1-3s** | **比 V1 高一档** | **中等强度** | **V2（本方案）** |
+
+V2 的位置是：**保留 V1 的速度上限，把 V1 最大的盲点（扑空不被发现）补上**。
+不追求成为最准的方案，只追求"在快这条路上不再失控"。
+
+---
+
 ## 1. 结论
 
 该方案可行，并且适合在现有 v1 轨迹缓存之上演进。
@@ -1165,6 +1262,136 @@ ASSERT_FAIL（含通道未配置 / 调用失败 / 协议外内容 / 配额耗尽
    独立计费；如需对账请在外部接入额外统计。
 4. 当前支持 doubao_responses / openai_compatible；Claude messages API 后续再加，
    填错 backend 会在第一次调用时显式报错。
+```
+
+## 20.x 三家主 VLM backend 适配落地（2026-05-10）
+
+doubao_responses 路线先行打通后，沿"高冗余 / 低耦合 / 不动主 VLM"原则把
+recovery 通道扩展到 claude_cu / gpt_cu。所有改动只在 trajectory_cache /
+recovery 模块及其测试中，主 VLM 与 assistants 完全不动。
+
+```text
+Layer A · trajectory 写库阶段
+  - 改动：service.py::_ACTION_VERB_RE 扩为中英文双语动词集
+    （新增 click/type/swipe/scroll/drag/long_press/double_tap/press/launch/
+    open/close/wait/select/toggle/back/home/navigate 等英文动词）。
+  - 原因：claude_cu / gpt_cu 主 VLM 输出的 thought 是英文（thinking + text
+    拼接），原正则只识中文 + tap 单词，会让 _intent_from_thought() 在海外
+    backend 下抽不到含动词的句子，trajectory 落库后 intent 字段是首句而非
+    动作句。
+  - 测试：tests/test_trajectory_cache.py::
+    test_intent_from_thought_supports_chinese_and_english_verbs
+
+Layer C · recovery_vlm 三家适配
+  C-1 prompt 强约束：build_recovery_prompt 加一段"严格约束（针对 Claude /
+      GPT 系模型常见误用）"，禁止 markdown 加粗 / 反引号 / 代码块包装
+      Action 行；动作名保持英文 DSL。
+  C-2 parse 预清洗：parse_recovery_response 入口先调用
+      _strip_markdown_decorations，剥 **Action:**、`Action:`、```python
+      Action: ... ```、列表项 `- Action:` 等装饰，然后再走 A.extract_actions
+      原解析路径。三家偶发的装饰输出都能命中。
+  C-3 coord_space 自动派发：CacheReplayRecoveryVerifier 接受
+      ``main_vlm_backend`` 参数（service.py 实例化时传 settings.vlm_backend），
+      ``coord_space`` 属性按 backend 派发：
+        - doubao_responses / 默认 / 自部署代理 → "normalized" (0-1000 归一化)
+        - claude_cu / gpt_cu               → "absolute"  (图像绝对像素)
+      build_recovery_prompt(coord_space=...) 同步生成不同的"坐标系说明"段
+      塞进 prompt；parse_recovery_response(coord_space=...) 解析后给所有
+      ParsedAction.coord_space 显式覆写，下游 _parsed_point_to_abs 走对应
+      分支（normalized → vlm_point_to_abs 反算；absolute → 直接 clamp）。
+      未知 backend 兜底走 normalized，保护现网豆包行为。
+  C-4 REPAIR_ACTION 注入：replay.py::_replay_action_from_parsed +
+      _parsed_point_to_abs 的 absolute 分支已存在，本次落地时端到端
+      verify：claude/gpt 路径 REPAIR_ACTION → 设备坐标的链路打通。
+  C-5 absolute 坐标等比反算（关键 bug 修复）：模型看到的"附图 2"是
+      driver.screenshot_jpeg(25, 720) 出来的 720 max-edge 压缩 JPEG，
+      不是设备真实分辨率。claude/gpt 按这个尺寸输出 absolute 像素坐标，
+      下游 _parsed_point_to_abs 直接 clamp 到 device window_size 会**坐标
+      错位**。修复方案：
+        - replay.py 加 _decode_image_size(jpeg_bytes) 用 PIL 读出实际 (w,h)
+        - ReplayRunner._handle_alignment_miss 在每次 verify 前重置
+          self._recovery_image_size 为当下截图的实际尺寸
+        - _parsed_point_to_abs(absolute) 按 (img_size → device_size) 等比
+          反算，img_size 缺失时退化为兜底 clamp（不破坏老 fixture 测试）
+      这条 bug 在 v2 默认 OFF 状态下不会触发；只在用户主动开启 V2 + 海外
+      模型时显形。回归测试：
+        - test_decode_image_size_handles_jpeg_and_garbage（PIL 解码兜底）
+        - test_replay_runner_recovery_repair_action_absolute_rescales_to_device
+          （720x360 模型坐标 → 1000x2000 设备坐标等比反算）
+  C-6 claude_messages backend（Claude 用户的 recovery 通道）：
+      Anthropic /v1/messages 协议跟 OpenAI Chat Completions / 方舟
+      Responses 都不兼容（headers: x-api-key + anthropic-version；多模态用
+      ``{"type":"image","source":{"type":"base64",...}}``；响应在
+      ``data.content`` 数组里）。recovery.py 加 _messages_double_image +
+      _extract_messages_text；_chat_double_image 路由加 claude_messages
+      分支。三家 backend 一一对应主 VLM：
+        - 主 VLM=doubao_responses → recovery_vlm=doubao_responses
+        - 主 VLM=claude_cu        → recovery_vlm=claude_messages
+        - 主 VLM=gpt_cu           → recovery_vlm=openai_compatible（GPT
+          Responses + Chat 都按 chat completions 形式吃 image_url，复用即可）
+      .env / .env.example 注释同步三家 backend 可选值与对应 URL / model。
+      回归测试：
+        - test_recovery_extract_messages_text_concatenates_text_blocks
+          （text + thinking 块拼接、空 / 损坏 / 缺字段兜底）
+        - test_recovery_verifier_supports_claude_messages_backend（路由命中
+          messages、双图传参、coord_space 自动派发 absolute、_chat /
+          _responses 误调用断言）
+        - test_recovery_verifier_unknown_backend_raises_with_three_options
+          （报错信息列出三家可选 backend，方便用户自查 .env）
+
+Layer D / E · 测试矩阵
+  - parse_recovery_response 三家装饰样本单测：markdown bold / inline code /
+    code fence / list prefix（4 个，全部 pass）
+  - parse_recovery_response × 四种 verdict × absolute coord_space 矩阵
+    （CONTINUE / WAIT_MORE / REPAIR_ACTION / ASSERT_FAIL，全部 pass）
+  - verifier.coord_space backend 派发单测（doubao / claude_cu / gpt_cu /
+    custom_proxy / 空 backend，全部 pass）
+  - build_recovery_prompt 坐标系说明文案切换（normalized vs absolute，pass）
+  - ReplayRunner 集成测试：absolute coord_space 下 REPAIR_ACTION 注入到
+    driver.calls，断言 (540, 1024) 原样下发（不被 0-1000 反算成 (540, 1999)）
+
+不动的边界（避免影响主 VLM 与豆包现网 / 海外 V1）：
+  - vlm_loop / assistants / claude_cu / gpt_cu 主 VLM 路径全程不改。
+  - 默认 coord_space 仍是 normalized，未传 main_vlm_backend 或 backend 字符
+    串中不含 claude / 不以 gpt 开头时一律按 normalized 兜底，不会破坏豆包
+    现网行为。
+  - 海外 backend 接入后，recovery 通道直接输出 absolute 坐标，无需用户额外
+    配置；如需强制覆写，后续可加 trajectory_cache_recovery_vlm_coord_space
+    配置项做 override。
+  - V1/V2 共用的 trajectory 写库阶段（service.py）：_ACTION_VERB_RE 扩了双
+    语动词集，但 intent 字段只用于 UI/日志展示，不参与 cache_key 计算、不
+    参与 dispatch、不参与断言；V1 海外回放路径**0 执行影响**。
+  - V2 总开关：trajectory_cache_alignment_enabled / trajectory_cache_
+    recovery_vlm_enabled，两个 .env 默认 false；现网海外 V1 用户不动
+    env 时完全保持原 V1 行为，本次所有 V2 改动都不会触达 V1 路径。
+
+遗留观察项（不在本次升级范围，留给后续决策）：
+  - service.py::_action_from_parsed_raw 的 absolute 分支直接返回原坐标不
+    缩放。该路径仅在 RunCommand 缺失（极少）时触发；主流程下 vlm_loop 已
+    经把 claude/gpt 1344-缩图坐标反算到设备坐标存进 RunCommand。当前未触
+    发回归，如未来扩展把该路径变成主链路，需要补 (1344-img → device)
+    等比反算逻辑。
+```
+
+测试覆盖增量（共 +17 用例，trajectory_cache.py 累计 67 用例通过）：
+
+```text
+- test_intent_from_thought_supports_chinese_and_english_verbs
+- test_parse_recovery_response_strips_claude_markdown_bold
+- test_parse_recovery_response_strips_inline_code_keyword
+- test_parse_recovery_response_strips_code_fence_wrapper
+- test_parse_recovery_response_strips_list_prefix
+- test_parse_recovery_response_overrides_coord_space_for_absolute
+- test_parse_recovery_response_default_coord_space_is_normalized
+- test_recovery_verifier_coord_space_dispatch_by_backend
+- test_build_recovery_prompt_coord_space_block_switches
+- test_parse_recovery_response_absolute_covers_all_four_verdicts[*]（4 个）
+- test_replay_runner_recovery_repair_action_absolute_coord_space
+- test_decode_image_size_handles_jpeg_and_garbage
+- test_replay_runner_recovery_repair_action_absolute_rescales_to_device
+- test_recovery_extract_messages_text_concatenates_text_blocks
+- test_recovery_verifier_supports_claude_messages_backend
+- test_recovery_verifier_unknown_backend_raises_with_three_options
 ```
 
 ## 21. 一句话定义

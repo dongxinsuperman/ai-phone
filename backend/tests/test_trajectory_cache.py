@@ -31,11 +31,55 @@ from ai_phone.server.trajectory_cache import (
     parse_recovery_response,
     save_trajectory_cache_after_success,
 )
-from ai_phone.server.trajectory_cache.recovery import _extract_responses_text
+from ai_phone.server.trajectory_cache.recovery import (
+    _extract_messages_text,
+    _extract_responses_text,
+)
 
 
 def test_normalize_run_semantic_is_strict_and_deterministic():
     assert normalize_run_semantic("  打开　微信\n\n发送  hello  ") == "打开 微信 发送 hello"
+
+
+def test_intent_from_thought_supports_chinese_and_english_verbs():
+    """trajectory 写库阶段的 intent 抽取要兼容三家主 VLM backend：
+
+    - 豆包系：thought 是中文，已有；
+    - claude_cu / gpt_cu：thought 是英文（含 thinking + cleaned_text 拼接），
+      包含 click / type / swipe / open / close / scroll / drag / tap 等英文动词。
+    """
+    from ai_phone.server.trajectory_cache.service import _intent_from_thought
+
+    # 豆包系（中文）：第一句无动词、第二句含动词，应抽第二句
+    assert (
+        _intent_from_thought("当前页面显示得很完整。需要点击右上角的菜单按钮。")
+        == "需要点击右上角的菜单按钮"
+    )
+
+    # claude_cu 系（英文 + 多句）
+    claude_thought = (
+        "I need to verify the user's request and then close the target app. "
+        "I'll click the home button to return to the launcher."
+    )
+    intent = _intent_from_thought(claude_thought)
+    assert "click" in intent.lower(), f"claude thought 未抽到含 click 的句子：{intent!r}"
+
+    # gpt_cu 系（英文 + 不同动词）
+    gpt_thought = (
+        "First I observe the screen state. "
+        "Then I will swipe up from the bottom to open the app switcher."
+    )
+    intent = _intent_from_thought(gpt_thought)
+    assert any(v in intent.lower() for v in ("swipe", "open")), (
+        f"gpt thought 未抽到含 swipe/open 的句子：{intent!r}"
+    )
+
+    # 各家可能用 long_press / double_click / press_back 等带下划线/连字符的动词
+    long_press_thought = "I will perform a long_press on the icon to open the menu."
+    intent = _intent_from_thought(long_press_thought)
+    assert "long_press" in intent.lower(), (
+        f"long_press 类动词应被识别：{intent!r}"
+    )
 
 
 def test_parse_cache_assertion_response():
@@ -1518,6 +1562,151 @@ def test_parse_recovery_response_doubao_click_maps_to_repair_action():
     assert decision.parsed_actions[0].point == [500, 600]
 
 
+def test_parse_recovery_response_strips_claude_markdown_bold():
+    """Claude 偶发会用 markdown 加粗 ``**Action:**``，预清洗后应能命中。"""
+    decision = parse_recovery_response(
+        "**Thought:** 入口位置变化，重新点击。\n"
+        "**Action:** click(point='<point>520 740</point>')"
+    )
+    assert decision.verdict == VERDICT_REPAIR_ACTION
+    assert decision.parsed_actions[0].action == "click"
+    assert decision.parsed_actions[0].point == [520, 740]
+
+
+def test_parse_recovery_response_strips_inline_code_keyword():
+    """GPT 偶发会用 inline code 包关键字 ``\u0060Action:\u0060``，预清洗后应能命中。"""
+    decision = parse_recovery_response(
+        "`Thought:` 页面仍在加载骨架屏，需要再等一段。\n"
+        "`Action:` wait(seconds=2)"
+    )
+    assert decision.verdict == VERDICT_WAIT_MORE
+    assert decision.wait_ms == 2000
+
+
+def test_parse_recovery_response_strips_code_fence_wrapper():
+    """三家偶发会把 Thought / Action 放在 ```` ```python ```` 代码块里。"""
+    decision = parse_recovery_response(
+        "```python\n"
+        "Thought: 跳错页面了，本次轨迹无法继续。\n"
+        "Action: assert_fail(content='页面跳到了登录页')\n"
+        "```"
+    )
+    assert decision.verdict == VERDICT_ASSERT_FAIL
+    assert "登录" in decision.reason
+
+
+def test_parse_recovery_response_overrides_coord_space_for_absolute():
+    """recovery 在 claude_cu / gpt_cu 下应把 ParsedAction.coord_space 覆写为
+    absolute，否则下游 ReplayRunner 会按 0-1000 反算，坐标全错。"""
+    decision = parse_recovery_response(
+        "Thought: 重新点击当前控件。\n"
+        "Action: click(point='<point>540 1024</point>')",
+        coord_space="absolute",
+    )
+    assert decision.verdict == VERDICT_REPAIR_ACTION
+    assert decision.parsed_actions[0].coord_space == "absolute"
+    assert decision.parsed_actions[0].point == [540, 1024]
+
+
+def test_parse_recovery_response_default_coord_space_is_normalized():
+    """未传 coord_space 时保持豆包系默认行为（normalized）。"""
+    decision = parse_recovery_response(
+        "Thought: 重新点击。\nAction: click(point='<point>500 500</point>')"
+    )
+    assert decision.parsed_actions[0].coord_space == "normalized"
+
+
+@pytest.mark.parametrize(
+    "raw, expected_verdict, extra_check",
+    [
+        (
+            "Thought: 当前差异可接受。\nAction: finished(content='ok')",
+            VERDICT_CONTINUE,
+            None,
+        ),
+        (
+            "Thought: 还在加载。\nAction: wait(seconds=2)",
+            VERDICT_WAIT_MORE,
+            lambda d: d.wait_ms == 2000,
+        ),
+        (
+            "Thought: 入口位置变化。\nAction: click(point='<point>540 1024</point>')",
+            VERDICT_REPAIR_ACTION,
+            lambda d: d.parsed_actions[0].coord_space == "absolute"
+            and d.parsed_actions[0].point == [540, 1024],
+        ),
+        (
+            "Thought: 跳错页面。\nAction: assert_fail(content='wrong page')",
+            VERDICT_ASSERT_FAIL,
+            None,
+        ),
+    ],
+    ids=["CONTINUE", "WAIT_MORE", "REPAIR_ACTION", "ASSERT_FAIL"],
+)
+def test_parse_recovery_response_absolute_covers_all_four_verdicts(
+    raw, expected_verdict, extra_check
+):
+    """Layer D：absolute 坐标空间下，CONTINUE / WAIT_MORE / REPAIR / ASSERT_FAIL
+    四种 verdict 都必须解析正确——确保 C-3 的 coord_space 覆写不会误改非
+    REPAIR 路径的语义。三家海外 backend (claude_cu / gpt_cu) 共用此路径。
+    """
+    decision = parse_recovery_response(raw, coord_space="absolute")
+    assert decision.verdict == expected_verdict
+    if extra_check is not None:
+        assert extra_check(decision), f"extra_check failed for {expected_verdict}"
+
+
+def test_recovery_verifier_coord_space_dispatch_by_backend():
+    """verifier.coord_space 必须按主 VLM backend 推断。"""
+    s = Settings(trajectory_cache_recovery_vlm_enabled=False)
+    assert (
+        CacheReplayRecoveryVerifier(settings=s, main_vlm_backend="doubao_responses").coord_space
+        == "normalized"
+    )
+    assert (
+        CacheReplayRecoveryVerifier(settings=s, main_vlm_backend="claude_cu").coord_space
+        == "absolute"
+    )
+    assert (
+        CacheReplayRecoveryVerifier(settings=s, main_vlm_backend="gpt_cu").coord_space
+        == "absolute"
+    )
+    # 未知 / 自部署 backend → 兜底 normalized，保护现网豆包行为
+    assert CacheReplayRecoveryVerifier(settings=s, main_vlm_backend="").coord_space == "normalized"
+    assert (
+        CacheReplayRecoveryVerifier(settings=s, main_vlm_backend="custom_proxy").coord_space
+        == "normalized"
+    )
+
+
+def test_build_recovery_prompt_coord_space_block_switches():
+    """prompt 里坐标系说明段必须按 coord_space 切换文案。"""
+    common_kwargs = dict(
+        goal="g",
+        trajectory={"actions": []},
+        action={"action_id": "a001", "type": "click"},
+        landmark={"action_id": "a001"},
+        metrics={"global_diff": 0.04},
+        elapsed_ms=1300,
+        max_wait_ms=1300,
+        default_wait_ms=1500,
+    )
+    p_norm = build_recovery_prompt(coord_space="normalized", **common_kwargs)
+    p_abs = build_recovery_prompt(coord_space="absolute", **common_kwargs)
+    assert "0-1000 归一化" in p_norm
+    assert "整数像素绝对坐标" in p_abs
+    assert "禁止" in p_abs and "归一化" in p_abs
+
+
+def test_parse_recovery_response_strips_list_prefix():
+    """Claude 偶发会把 Thought / Action 写成 markdown 列表项 ``- Action: ...``。"""
+    decision = parse_recovery_response(
+        "- Thought: 当前差异可接受。\n"
+        "- Action: finished(content='放行')"
+    )
+    assert decision.verdict == VERDICT_CONTINUE
+
+
 def test_build_recovery_prompt_forbids_actions_and_lists_three_verbs():
     prompt = build_recovery_prompt(
         goal="点击我的，点击学习",
@@ -1658,6 +1847,115 @@ async def test_recovery_verifier_supports_doubao_responses_backend(monkeypatch):
 
     assert decision.verdict == VERDICT_CONTINUE
     assert "资源位变化" in decision.reason
+
+
+def test_recovery_extract_messages_text_concatenates_text_blocks():
+    """Anthropic Messages 响应的 content 是块数组：text / thinking 块都要拼起来。"""
+    data = {
+        "content": [
+            {"type": "thinking", "text": "(internal reasoning)"},
+            {"type": "text", "text": "Thought: 当前差异可接受。"},
+            {"type": "text", "text": "Action: finished(content='ok')"},
+        ]
+    }
+    out = _extract_messages_text(data)
+    assert "Thought:" in out
+    assert "Action: finished" in out
+    # 空 / 损坏 / 缺 content 字段都应安全返回 ""
+    assert _extract_messages_text({}) == ""
+    assert _extract_messages_text({"content": []}) == ""
+    assert _extract_messages_text({"content": [{"type": "text"}]}) == ""
+
+
+@pytest.mark.asyncio
+async def test_recovery_verifier_supports_claude_messages_backend(monkeypatch):
+    """claude_cu 主 VLM 用户的 recovery 通道走 Anthropic /v1/messages 协议。
+
+    backend 路由必须能命中 _messages_double_image 而不是误用其它两条
+    路径（chat completions / responses）——它们的 headers / payload 完全
+    不兼容 anthropic API，发上去会被 401/400 直接 reject。
+    """
+    settings = Settings(
+        trajectory_cache_recovery_vlm_enabled=True,
+        trajectory_cache_recovery_vlm_backend="claude_messages",
+        trajectory_cache_recovery_vlm_api_url="https://api.anthropic.com/v1/messages",
+        trajectory_cache_recovery_vlm_api_key="sk-ant-fake",
+        trajectory_cache_recovery_vlm_model="claude-sonnet-4-5",
+    )
+    verifier = CacheReplayRecoveryVerifier(
+        settings=settings, main_vlm_backend="claude_cu"
+    )
+
+    called: dict = {}
+
+    async def _fake_messages(*, prompt, landmark_bytes, current_bytes):
+        called["prompt_head"] = prompt[:60]
+        called["landmark_bytes"] = landmark_bytes
+        called["current_bytes"] = current_bytes
+        return "Thought: 重新点击当前控件。\nAction: click(point='<point>540 1024</point>')"
+
+    # 同时把另外两条路径换成"被调用就 raise"，确保路由真的命中 messages
+    async def _should_not_be_called(**_kwargs):  # pragma: no cover - 防御断言
+        raise AssertionError(
+            "claude_messages backend 路由错了！不应该走 chat / responses"
+        )
+
+    monkeypatch.setattr(verifier, "_messages_double_image", _fake_messages)
+    monkeypatch.setattr(
+        verifier, "_chat_completions_double_image", _should_not_be_called
+    )
+    monkeypatch.setattr(verifier, "_responses_double_image", _should_not_be_called)
+
+    decision = await verifier.verify_alignment_miss(
+        goal="g",
+        trajectory={"actions": []},
+        action={"action_id": "a001", "type": "click"},
+        landmark={"action_id": "a001"},
+        current_bytes=b"current_jpeg",
+        landmark_bytes=b"landmark_jpeg",
+        metrics={"global_diff": 0.5, "center_mae": 0.5, "black_ratio_diff": 0.0},
+        elapsed_ms=2000,
+        max_wait_ms=1500,
+    )
+
+    # _messages_double_image 必须被调用，且双图按顺序传入
+    assert called.get("landmark_bytes") == b"landmark_jpeg"
+    assert called.get("current_bytes") == b"current_jpeg"
+    # Claude 主 VLM → coord_space 应被推断成 absolute（C-3 派发逻辑）
+    assert decision.verdict == VERDICT_REPAIR_ACTION
+    assert decision.parsed_actions[0].coord_space == "absolute"
+    assert decision.parsed_actions[0].point == [540, 1024]
+
+
+@pytest.mark.asyncio
+async def test_recovery_verifier_unknown_backend_raises_with_three_options():
+    """未知 backend 时报错信息必须列出三家可选 backend，方便用户自查 .env。"""
+    settings = Settings(
+        trajectory_cache_recovery_vlm_enabled=True,
+        trajectory_cache_recovery_vlm_backend="some_typo_backend",
+        trajectory_cache_recovery_vlm_api_url="https://example.test",
+        trajectory_cache_recovery_vlm_api_key="key",
+        trajectory_cache_recovery_vlm_model="x",
+    )
+    verifier = CacheReplayRecoveryVerifier(settings=settings)
+
+    decision = await verifier.verify_alignment_miss(
+        goal="g",
+        trajectory={"actions": []},
+        action={"action_id": "a001", "type": "click"},
+        landmark={"action_id": "a001"},
+        current_bytes=b"c",
+        landmark_bytes=b"l",
+        metrics={"global_diff": 0.5, "center_mae": 0.5, "black_ratio_diff": 0.0},
+        elapsed_ms=2000,
+        max_wait_ms=1500,
+    )
+
+    # 走 verify_alignment_miss 内 try/except 通道，verdict=ASSERT_FAIL
+    assert decision.verdict == VERDICT_ASSERT_FAIL
+    assert "doubao_responses" in decision.reason
+    assert "openai_compatible" in decision.reason
+    assert "claude_messages" in decision.reason
 
 
 @pytest.mark.asyncio
@@ -1820,6 +2118,204 @@ async def test_replay_runner_recovery_repair_action_then_match(monkeypatch):
     assert any(
         title == "轨迹缓存状态路标" and "修复后对齐成功" in content
         for _level, title, content in logs
+    )
+
+
+def test_decode_image_size_handles_jpeg_and_garbage():
+    """recovery 路径专用：必须能从 JPEG 字节流读出真实 (w, h)；
+    解码失败时返回 None，让 _parsed_point_to_abs(absolute) 退化为兜底 clamp。"""
+    import io
+    from PIL import Image
+    from ai_phone.server.trajectory_cache.replay import _decode_image_size
+
+    buf = io.BytesIO()
+    Image.new("RGB", (640, 360), color=(255, 0, 0)).save(buf, format="JPEG", quality=70)
+    assert _decode_image_size(buf.getvalue()) == (640, 360)
+    assert _decode_image_size(b"") is None
+    assert _decode_image_size(None) is None
+    assert _decode_image_size(b"\x00\x01\x02not a real image") is None
+
+
+@pytest.mark.asyncio
+async def test_replay_runner_recovery_repair_action_absolute_rescales_to_device(monkeypatch):
+    """Bug 修复回归：claude_cu / gpt_cu 路径下，模型看到的"附图 2"是 720 max-edge
+    JPEG（来自 driver.screenshot_jpeg(25, 720)）。模型按这个尺寸输出 absolute
+    坐标 e.g. (320, 480)，**必须**按 (model_image_size 720x360 → device 1000x2000)
+    等比缩回设备坐标 (444, 2666→1999clamp)，不能直接 clamp。
+
+    场景：模型送图 720x360（横屏 720 max-edge），device 1000x2000，模型回 (320, 100)：
+      - 旧实现：直接 clamp → (320, 100) ← 错位（落在屏幕中上区）
+      - 新实现：等比 → (320*1000/720=444, 100*2000/360=555) ← 正确落点
+    """
+    logs: list = []
+    sleeps: list = []
+    driver = FakeDriver()
+    from ai_phone.server.trajectory_cache import replay as replay_module
+    from ai_phone.server.trajectory_cache import ReplayRunner
+
+    async def log(level, title, content):
+        logs.append((level, title, content))
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    compare_results = [
+        {"match": False, "global_diff": 0.04, "center_mae": 0.30, "black_ratio_diff": 0.0, "reason": "global>0.0300"},
+        {"match": False, "global_diff": 0.04, "center_mae": 0.30, "black_ratio_diff": 0.0, "reason": "global>0.0300"},
+        {"match": False, "global_diff": 0.04, "center_mae": 0.30, "black_ratio_diff": 0.0, "reason": "global>0.0300"},
+        {"match": True, "global_diff": 0.01, "center_mae": 0.05, "black_ratio_diff": 0.0, "reason": "match"},
+    ]
+    compare_calls = {"i": 0}
+
+    def fake_compare(**_kwargs):
+        i = compare_calls["i"]
+        compare_calls["i"] += 1
+        return compare_results[min(i, len(compare_results) - 1)]
+
+    monkeypatch.setattr(replay_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(replay_module, "_compare_alignment", fake_compare)
+
+    # 让 _screenshot_jpeg 返回一张已知尺寸的 JPEG（模拟 driver.screenshot_jpeg
+    # 输出 720 max-edge 压缩图），_decode_image_size 应该读到 (720, 360)
+    import io as _io
+    from PIL import Image as _Image
+    img_buf = _io.BytesIO()
+    _Image.new("RGB", (720, 360), color=(0, 0, 0)).save(img_buf, format="JPEG", quality=25)
+    fake_jpeg_bytes = img_buf.getvalue()
+
+    decision_abs = parse_recovery_response(
+        "Thought: 重新点击中部控件。\nAction: click(point='<point>320 100</point>')",
+        coord_space="absolute",
+    )
+    verifier = FakeRecoveryVerifier([decision_abs])
+    runner = ReplayRunner(
+        driver=driver,
+        trajectory={
+            "actions": [
+                {"index": 1, "action_id": "a001", "type": "click", "point": {"x": 1, "y": 2}},
+            ],
+            "state_landmarks": [
+                {
+                    "action_id": "a001",
+                    "before_action_index": 2,
+                    "status": "available",
+                    "image_phash": "01",
+                    "timing": {"gap_to_next_action_ms": 600},
+                },
+            ],
+        },
+        log=log,
+        capture_after_each_action=True,
+        observe_delay_ms=500,
+        recovery_verifier=verifier,
+        goal="点击入口",
+    )
+    runner.alignment_enabled = True
+    runner.alignment_min_wait_ms = 1000
+    runner.alignment_retry_interval_ms = 300
+    runner.alignment_max_wait_ratio = 1.3
+    runner._landmark_image_bytes = lambda _landmark: b"ref"  # type: ignore[method-assign]
+    # 强制 _screenshot_jpeg 返回我们准备好的 720x360 JPEG
+    async def fake_shot():
+        return fake_jpeg_bytes
+    runner._screenshot_jpeg = fake_shot  # type: ignore[method-assign]
+
+    result = await runner.run()
+
+    # device 1000x2000，模型送图 720x360 上的 (320, 100)
+    # 等比缩回设备坐标：
+    #   x = round(320 * 1000 / 720) = 444
+    #   y = round(100 * 2000 / 360)  = 556
+    expected_x = round(320 * 1000 / 720)
+    expected_y = round(100 * 2000 / 360)
+    assert result.success is True
+    assert ("click", expected_x, expected_y) in driver.calls, (
+        f"absolute 坐标必须按 (720x360 -> 1000x2000) 等比缩回设备坐标，"
+        f"期望 ({expected_x}, {expected_y})，实际 driver.calls={driver.calls}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_replay_runner_recovery_repair_action_absolute_coord_space(monkeypatch):
+    """C-4 端到端：claude_cu / gpt_cu backend 下，recovery 产出的 REPAIR_ACTION
+    坐标是 ``coord_space="absolute"`` 的设备像素，ReplayRunner 必须按 absolute
+    分支直接 clamp，**不能**走 vlm_point_to_abs(0-1000) 反算，否则坐标全错。
+
+    断言点：driver.calls 含 ("click", 540, 1024)；如果错误地走了 normalized 反
+    算，FakeDriver(window_size=1000x2000) 下 540*1000/1000=540, 1024*2000/1000
+    =2048（被 clamp 到 1999），断言会失败暴露问题。
+    """
+    logs: list = []
+    sleeps: list = []
+    driver = FakeDriver()
+    from ai_phone.server.trajectory_cache import replay as replay_module
+    from ai_phone.server.trajectory_cache import ReplayRunner
+
+    async def log(level, title, content):
+        logs.append((level, title, content))
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    compare_results = [
+        {"match": False, "global_diff": 0.04, "center_mae": 0.30, "black_ratio_diff": 0.0, "reason": "global>0.0300"},
+        {"match": False, "global_diff": 0.04, "center_mae": 0.30, "black_ratio_diff": 0.0, "reason": "global>0.0300"},
+        {"match": False, "global_diff": 0.04, "center_mae": 0.30, "black_ratio_diff": 0.0, "reason": "global>0.0300"},
+        {"match": True, "global_diff": 0.01, "center_mae": 0.05, "black_ratio_diff": 0.0, "reason": "match"},
+    ]
+    compare_calls = {"i": 0}
+
+    def fake_compare(**_kwargs):
+        i = compare_calls["i"]
+        compare_calls["i"] += 1
+        return compare_results[min(i, len(compare_results) - 1)]
+
+    monkeypatch.setattr(replay_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(replay_module, "_compare_alignment", fake_compare)
+
+    decision_abs = parse_recovery_response(
+        "Thought: 重新点击当前控件。\nAction: click(point='<point>540 1024</point>')",
+        coord_space="absolute",
+    )
+    assert decision_abs.parsed_actions[0].coord_space == "absolute", (
+        "前置：parse 必须把 coord_space 覆写为 absolute"
+    )
+    verifier = FakeRecoveryVerifier([decision_abs])
+    runner = ReplayRunner(
+        driver=driver,
+        trajectory={
+            "actions": [
+                {"index": 1, "action_id": "a001", "type": "click", "point": {"x": 1, "y": 2}},
+            ],
+            "state_landmarks": [
+                {
+                    "action_id": "a001",
+                    "before_action_index": 2,
+                    "status": "available",
+                    "image_phash": "01",
+                    "timing": {"gap_to_next_action_ms": 600},
+                },
+            ],
+        },
+        log=log,
+        capture_after_each_action=True,
+        observe_delay_ms=500,
+        recovery_verifier=verifier,
+        goal="点击入口",
+    )
+    runner.alignment_enabled = True
+    runner.alignment_min_wait_ms = 1000
+    runner.alignment_retry_interval_ms = 300
+    runner.alignment_max_wait_ratio = 1.3
+    runner._landmark_image_bytes = lambda _landmark: b"ref"  # type: ignore[method-assign]
+
+    result = await runner.run()
+
+    assert result.success is True
+    assert ("click", 1, 2) in driver.calls, "首条缓存 action 应正常下发"
+    # 关键：absolute 路径 → 直接 clamp，坐标就是模型输出的 (540, 1024)
+    assert ("click", 540, 1024) in driver.calls, (
+        f"absolute 坐标应被原样 clamp，driver.calls={driver.calls}"
     )
 
 

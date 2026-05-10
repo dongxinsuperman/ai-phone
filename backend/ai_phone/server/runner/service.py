@@ -355,7 +355,12 @@ class ServerRunnerService:
 
         recovery_verifier: Optional[CacheReplayRecoveryVerifier] = None
         if settings.trajectory_cache_recovery_vlm_enabled:
-            recovery_verifier = CacheReplayRecoveryVerifier(settings=settings)
+            # 把主 VLM backend 透传给 recovery，让它推断坐标空间：
+            # doubao → normalized；claude_cu / gpt_cu → absolute。
+            recovery_verifier = CacheReplayRecoveryVerifier(
+                settings=settings,
+                main_vlm_backend=settings.vlm_backend,
+            )
             problem = recovery_verifier.configuration_problem()
             if problem:
                 await _log(2, "轨迹缓存", f"recovery_vlm 已开启但配置不完整：{problem}")
