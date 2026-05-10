@@ -129,6 +129,10 @@ class DoubaoAssistant:
             "2. 从包名列表中找出最匹配的应用\n"
             "3. 只返回一个完整的包名，不要有任何解释或额外文字\n"
             "4. 如果无法匹配，返回\"NONE\"\n\n"
+            "业务特别关注：如果用户描述里含「洋葱」（如「洋葱学园」「洋葱数学」），"
+            "请在包名中重点扫描带 yangcong / guanghe / ycmath 等代号的项——"
+            "iOS 端洋葱集团旗下 app 命名风格不统一（公开版常用 yangcong345，"
+            "企业测试版常用 guanghe / ycmath 等内部代号），不要因为字面无 yangcong 就忽略。\n\n"
             "输出格式：仅输出包名"
         )
         target = await self._post(

@@ -164,6 +164,12 @@ class ClaudeAssistant:
             "2. Find the best-matching package from the list\n"
             "3. Output ONLY the full package name (no explanation, no extra text)\n"
             "4. If no match, output \"NONE\"\n\n"
+            "Business note: if the user description contains 「洋葱」 (e.g. 「洋葱学园」, "
+            "「洋葱数学」), pay special attention to packages whose name contains "
+            "\"yangcong\", \"guanghe\", or \"ycmath\". On iOS the apps from this "
+            "vendor use multiple naming conventions (public builds often use "
+            "yangcong345, enterprise/test builds often use guanghe or ycmath); "
+            "do NOT skip a candidate just because it lacks the literal \"yangcong\".\n\n"
             "Output format: package name only"
         )
         target = await self._post(

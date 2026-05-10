@@ -671,41 +671,221 @@ class IosDriver(BaseDriver):
         return self._list_apps(application_type="Any")
 
     def _list_apps(self, *, application_type: str) -> List[str]:
-        try:
-            from pymobiledevice3.services.installation_proxy import (  # noqa: PLC0415
-                InstallationProxyService,
-            )
-            ip = InstallationProxyService(lockdown=self._lockdown)
-            _maybe_sync(ip.connect())
+        """iOS 取已装应用 bundle_id 列表。
+
+        iOS 17+ 把 ``com.apple.mobile.installation_proxy`` 列为 trusted lockdown
+        service：USB usbmuxd lockdown 通道直接 connect 会被 ``NotPairedError``
+        打回，必须走 tunneld 提供的 RemoteServiceDiscovery（RSD）lockdown。
+        本函数策略：
+
+        1. **优先**走 tunneld + RSD（iOS 17+ 唯一可行通道）
+        2. RSD 不可用时**回落**到 usbmux ``self._lockdown``（兼容 iOS 16 / 没起
+           tunneld 的环境，行为与升级前一致）
+        3. 全部失败时**不再吞异常返回空列表**，而是带原因 raise RuntimeError，
+           交由 vlm_loop 上层翻成「执行失败」RunLog，避免前端只看到含糊的
+           「无法获取设备应用列表」却不知道该开 tunneld。
+
+        附注：实测同一台 iOS 17+ 设备上，tunneld+RSD 与 usbmux 两路通道返回的
+        app 集合是一致的（差集为 0），所以不再做"两路合并去重"——多一次 IPC
+        没有收益，反而拖慢 close_app/open_app 起跑线。
+        """
+        last_exc: Optional[BaseException] = None
+
+        rsd = self._try_get_tunneld_rsd()
+        if rsd is not None:
             try:
-                apps = _maybe_sync(ip.get_apps(application_type=application_type)) or {}
+                apps = self._fetch_apps_via_lockdown(rsd, application_type)
+                logger.info(
+                    "iOS list_apps udid={} type={} via=tunneld+RSD count={}",
+                    self.serial,
+                    application_type,
+                    len(apps),
+                )
+                return apps
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                logger.warning(
+                    "iOS list_apps via tunneld+RSD 失败 udid={} type={}: {}",
+                    self.serial,
+                    application_type,
+                    exc,
+                )
             finally:
                 try:
-                    _maybe_sync(ip.close())
+                    _maybe_sync(rsd.close())
                 except Exception:  # noqa: BLE001
                     pass
-            # apps 是 dict[bundle_id -> {info}]；只回 bundle id 列表，对齐 Android 行为
-            return list(apps.keys())
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "iOS 列应用失败 udid={} type={}: {}",
+
+        try:
+            apps = self._fetch_apps_via_lockdown(self._lockdown, application_type)
+            logger.info(
+                "iOS list_apps udid={} type={} via=usbmux count={}",
                 self.serial,
                 application_type,
+                len(apps),
+            )
+            return apps
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+
+        hint = ""
+        exc_name = type(last_exc).__name__ if last_exc is not None else "未知"
+        if "NotPaired" in exc_name:
+            hint = (
+                "（iOS 17+ 需要 tunneld：在另一终端跑 "
+                "`sudo pymobiledevice3 remote tunneld` 并在 iPhone 上完成"
+                " Remote Pairing 确认弹窗，必要时先在 设置 → 隐私与安全性 → "
+                "开发者模式 中打开 Developer Mode）"
+            )
+        raise RuntimeError(
+            f"iOS 列应用失败 udid={self.serial} type={application_type}: "
+            f"{exc_name}: {last_exc}{hint}"
+        )
+
+    def _try_get_tunneld_rsd(self):
+        """尝试从 tunneld 拿到 RSD device。失败一律返回 None（让上层走回落）。
+
+        失败按 ``DEBUG`` 级别记录，不打 warning：tunneld 没启动是合法状态
+        （iOS 16 / 用户暂未配置），不应该刷 warning 日志干扰排查。
+        """
+        try:
+            from pymobiledevice3.tunneld.api import (  # noqa: PLC0415
+                get_tunneld_device_by_udid,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("udid={} pmd3 tunneld API 不可用: {}", self.serial, exc)
+            return None
+        try:
+            rsd = _maybe_sync(get_tunneld_device_by_udid(self.serial))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "udid={} 查询 tunneld 失败（未起 tunneld？）: {}",
+                self.serial,
                 exc,
             )
-            return []
+            return None
+        if rsd is None:
+            logger.debug(
+                "udid={} tunneld 没有这台设备；iOS 17+ 请先跑 "
+                "`sudo pymobiledevice3 remote tunneld`",
+                self.serial,
+            )
+        return rsd
+
+    def _fetch_apps_via_lockdown(self, lockdown, application_type: str) -> List[str]:
+        from pymobiledevice3.services.installation_proxy import (  # noqa: PLC0415
+            InstallationProxyService,
+        )
+        ip = InstallationProxyService(lockdown=lockdown)
+        _maybe_sync(ip.connect())
+        try:
+            apps = _maybe_sync(ip.get_apps(application_type=application_type)) or {}
+        finally:
+            try:
+                _maybe_sync(ip.close())
+            except Exception:  # noqa: BLE001
+                pass
+        return list(apps.keys())
 
     def activate_app(self, package_name: str) -> None:
         self._wda.launch_app(package_name)
 
     def terminate_app(self, package_name: str) -> None:
-        self._wda.terminate_app(package_name)
+        """命令级杀进程：DVT ProcessControl（Xcode Instruments 同款通道）。
+
+        WDA 的 ``POST /wda/apps/terminate`` 在 iOS 17+ / 18 / 26 上对**前台 app**
+        经常返回 success 但 SpringBoard 静默拒绝（API 行为，不是 bug），表现是
+        close_app 日志看着成功、屏幕没变、VLM 反复重试到 case 终止。
+
+        正确做法是走 DVT 的 ``ProcessControl`` instrument 直接 kill 进程，
+        等同 Xcode Instruments / iOS Simulator 杀 app 的官方通道，命令级执行，
+        不依赖 SpringBoard 拒绝/同意：
+
+        1. 拿 tunneld 提供的 RSD lockdown（iOS 17+ 唯一可走的 DVT 通道）
+        2. 起 DvtProvider + ProcessControl（需要 DDI 已挂在设备上）
+        3. ``process_identifier_for_bundle_identifier(bundle)`` 拿 pid
+           - pid <= 0：进程不在跑，直接当成功（语义对齐 force-stop）
+           - pid > 0：``kill(pid)`` 真杀
+        4. 释放 ProcessControl / DvtProvider / RSD
+
+        前提缺失（tunneld 没起 / DDI 未挂 / 通道异常）一律 raise RuntimeError，
+        带原因和操作建议，由上层翻成「执行失败」RunLog；**不再 fallback 到 WDA
+        terminate**，避免回到不可靠路径产生静默"成功"。
+        """
+        rsd = self._try_get_tunneld_rsd()
+        if rsd is None:
+            raise RuntimeError(
+                f"iOS terminate_app 失败 udid={self.serial} bundle={package_name}: "
+                "tunneld 不可用（iOS 17+ 需要 DVT 通道才能命令级杀进程）；"
+                "请在另一终端跑 `sudo pymobiledevice3 remote tunneld` 并在 iPhone "
+                "上完成 Remote Pairing，必要时先在 设置 → 隐私与安全性 → "
+                "开发者模式 中打开 Developer Mode"
+            )
+
+        last_exc: Optional[BaseException] = None
+        try:
+            try:
+                from pymobiledevice3.services.dvt.instruments.dvt_provider import (  # noqa: PLC0415
+                    DvtProvider,
+                )
+                from pymobiledevice3.services.dvt.instruments.process_control import (  # noqa: PLC0415
+                    ProcessControl,
+                )
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError(
+                    f"pymobiledevice3 DVT ProcessControl 模块不可用：{exc}"
+                ) from exc
+
+            provider = DvtProvider(lockdown=rsd)
+            _maybe_sync(provider.connect())
+            pc = ProcessControl(provider)
+            _maybe_sync(pc.connect())
+            try:
+                pid_raw = _maybe_sync(
+                    pc.process_identifier_for_bundle_identifier(package_name)
+                )
+                pid = int(pid_raw or 0)
+                if pid <= 0:
+                    logger.info(
+                        "iOS terminate_app: 进程未在跑，视为成功 udid={} bundle={}",
+                        self.serial, package_name,
+                    )
+                    return
+                _maybe_sync(pc.kill(pid))
+                logger.info(
+                    "iOS terminate_app: 已 kill udid={} bundle={} pid={}",
+                    self.serial, package_name, pid,
+                )
+            finally:
+                try:
+                    _maybe_sync(pc.close())
+                except Exception:  # noqa: BLE001
+                    pass
+        except RuntimeError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            hint = ""
+            if "DDI" in str(exc) or "DeveloperDiskImage" in str(exc) or "PersonalizedImage" in str(exc):
+                hint = (
+                    "（DDI 似乎没挂上：跑 `sudo pymobiledevice3 mounter "
+                    "auto-mount --udid <udid>` 一次；重启手机或电脑后需要重挂）"
+                )
+            raise RuntimeError(
+                f"iOS terminate_app 失败 udid={self.serial} bundle={package_name}: "
+                f"{type(last_exc).__name__}: {last_exc}{hint}"
+            ) from last_exc
+        finally:
+            try:
+                _maybe_sync(rsd.close())
+            except Exception:  # noqa: BLE001
+                pass
 
     def current_app(self) -> str:
         try:
-            info = self._wda.active_app()
+            info = self._wda.active_app() or {}
             return str(info.get("bundleId") or "")
-        except Exception:
+        except Exception:  # noqa: BLE001
             return ""
 
     # ------------------------------------------------------------------
