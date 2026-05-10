@@ -32,17 +32,35 @@ def build_system_prompt(goal: str, substeps_text: str | None = None) -> str:
     if substeps_text and substeps_text.strip():
         # 子步骤清单语义与豆包版一致；Claude 看长清单的能力更强，可以更详细
         # 一些。但保持 ASCII 编号，避免某些 token 化在中文标点上不稳定。
+        # 与豆包版同步加入"forced verdict line"协议：每轮 thinking block 第一
+        # 句必须是固定句式的判读结论，治本 VLM 看到截图直接想动作的反复点击
+        # 病。代价：thinking 长 30-50 token / 轮，远小于一次卡死的成本。
         substeps_block = (
             "\n## Operation Substeps Checklist (active throughout the run)\n"
             f"{substeps_text.strip()}\n\n"
+            "### Forced verdict line every turn (violations = KILL)\n"
+            "The **first sentence** of your reasoning (thinking block) must"
+            " follow this exact template:\n"
+            "  \"Substep N '<original phrase>' -> target state: <verb"
+            " translated to state>. Current screenshot: [SATISFIED / NOT"
+            " SATISFIED], evidence: <concrete visual feature>.\"\n\n"
+            "Branch on the verdict:\n"
+            "- **[SATISFIED]** -> next sentence: \"skip substep N, next is"
+            " N+1\". **Do NOT issue an action for substep N.** The action"
+            " call should target substep N+1 (or run another verdict line for"
+            " N+1 first to decide whether to skip again).\n"
+            "- **[NOT SATISFIED]** -> proceed with normal reasoning then"
+            " issue an action for substep N.\n\n"
+            "**Most common failure (auto-KILL)**: the screenshot clearly"
+            " shows the tab is already highlighted / option already selected"
+            " / page is already the target page, but you still click that"
+            " location. That is \"hammering an already-done substep\" — worse"
+            " than skipping the wrong one.\n\n"
             "**Two equally-important iron rules**:\n"
-            "1. Advance through these substeps in order; in your reasoning"
-            " (thinking block) state which substep number you are working on.\n"
-            "2. **Skip a substep when its target state is already satisfied**"
-            " in the current screenshot — repeating an already-done substep is"
-            " treated as stuck and will be killed by the supervisor.\n"
-            "When skipping, explicitly state the visual evidence (e.g."
-            " 'tab X is already highlighted, skipping substep N').\n"
+            "1. Advance through substeps in order — no merging, reordering,"
+            " or premature drilling.\n"
+            "2. Skip when the target state is already satisfied — repeated"
+            " clicks on a satisfied state = stuck = supervisor KILL.\n"
             "Detailed rules in §B-1.\n"
         )
 
@@ -179,6 +197,8 @@ Substeps separated by `、` / `，` / `。` are **ordered**. Two equally-importa
 | Type X | Field contains X | Input shows X |
 
 **Skip duty**: When skipping, your reasoning must say "Screenshot shows <state evidence> — substep N already satisfied; skipping." Without an explicit reason the periodic supervisor will judge it as a deviation and KILL the run.
+
+**Forced verdict line**: The first sentence of every turn's reasoning must follow the fixed template defined in the top-of-prompt "Operation Substeps Checklist" block — output the [SATISFIED / NOT SATISFIED] verdict before deciding the action. This is a hard protocol; skipping it will be killed by the supervisor.
 
 **Forbidden**:
 - ⚠️ **Hammering an already-done substep**: tab already highlighted / target state already satisfied yet you keep clicking that location → stuck.

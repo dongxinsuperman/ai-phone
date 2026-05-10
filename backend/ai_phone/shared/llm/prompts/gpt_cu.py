@@ -23,16 +23,34 @@ def build_system_prompt(goal: str, substeps_text: str | None = None) -> str:
     """根据用户 goal 构建 OpenAI computer-use-preview 专用 system prompt。"""
     substeps_block = ""
     if substeps_text and substeps_text.strip():
+        # 与豆包版同步加入"forced verdict line"协议：每轮 reasoning 第一句
+        # 必须是固定句式的判读结论。详见 shared/prompt.py 的设计动机注释。
         substeps_block = (
             "\n## Operation Substeps Checklist (active throughout the run)\n"
             f"{substeps_text.strip()}\n\n"
+            "### Forced verdict line every turn (violations = KILL)\n"
+            "The **first sentence** of your reasoning each turn must follow"
+            " this exact template:\n"
+            "  \"Substep N '<original phrase>' -> target state: <verb"
+            " translated to state>. Current screenshot: [SATISFIED / NOT"
+            " SATISFIED], evidence: <concrete visual feature>.\"\n\n"
+            "Branch on the verdict:\n"
+            "- **[SATISFIED]** -> next sentence: \"skip substep N, next is"
+            " N+1\". **Do NOT issue an action for substep N.** The action"
+            " call should target substep N+1 (or run another verdict line"
+            " for N+1 first to decide).\n"
+            "- **[NOT SATISFIED]** -> proceed with normal reasoning then"
+            " issue an action for substep N.\n\n"
+            "**Most common failure (auto-KILL)**: the screenshot clearly"
+            " shows the tab is already highlighted / option already selected"
+            " / page is already the target page, but you still click that"
+            " location. That is \"hammering an already-done substep\" — worse"
+            " than skipping the wrong one.\n\n"
             "**Two equally-important iron rules**:\n"
-            "1. Advance through these substeps in order. State which substep"
-            " you are on in your reasoning each turn.\n"
-            "2. **Skip a substep when its target state is already satisfied**"
-            " in the current screenshot — repeating an already-done substep is"
-            " treated as stuck and will be killed by the supervisor.\n"
-            "When skipping, explicitly state the visual evidence.\n"
+            "1. Advance through substeps in order — no merging, reordering,"
+            " or premature drilling.\n"
+            "2. Skip when the target state is already satisfied — repeated"
+            " clicks on a satisfied state = stuck = supervisor KILL.\n"
             "Detailed rules in §B-1.\n"
         )
 
@@ -139,6 +157,8 @@ Has-target-state-been-met checklist (verb → state → screenshot evidence):
 - "Type X" → field contains X → input shows X
 
 When skipping, your reasoning must say "Screenshot shows <evidence> — substep N already satisfied; skipping."
+
+**Forced verdict line**: The first sentence of every turn's reasoning must follow the fixed template defined in the top-of-prompt "Operation Substeps Checklist" block — output the [SATISFIED / NOT SATISFIED] verdict before deciding the action. Hard protocol; skipping it will be killed by the supervisor.
 
 Forbidden:
 - ⚠️ Hammering an already-done substep (target state met yet you keep clicking).
