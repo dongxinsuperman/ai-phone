@@ -51,6 +51,10 @@ class ReplayResult:
     error: str = ""
     final_before_bytes: Optional[bytes] = None
     final_after_bytes: Optional[bytes] = None
+    # 缓存回放整段的 wall-clock 耗时（ms），由 ReplayRunner.run() 自己计时填充。
+    # 调用方在 force_finish 时把它透传给 emitter，让"任务总耗时"在缓存通道
+    # 也能被记录到 RunLog / 单 case 报告 / 批次累计耗时里，而不是固定为 0。
+    elapsed_ms: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -59,6 +63,7 @@ class ReplayResult:
             "actions_executed": self.actions_executed,
             "failed_index": self.failed_index,
             "error": self.error,
+            "elapsed_ms": self.elapsed_ms,
         }
 
 
@@ -232,6 +237,7 @@ class ReplayRunner:
     async def run(self) -> ReplayResult:
         actions = list(self.trajectory.get("actions") or [])
         executed = 0
+        run_started_at = time.monotonic()
         await self._log(1, "轨迹缓存回放", f"开始回放 actions={len(actions)}")
         for action in actions:
             index = int(action.get("index") or executed + 1)
@@ -279,6 +285,7 @@ class ReplayRunner:
                     actions_executed=executed,
                     failed_index=index,
                     error=message,
+                    elapsed_ms=int((time.monotonic() - run_started_at) * 1000),
                 )
         await self._log(1, "轨迹缓存回放", f"动作回放完成 actions={executed}")
         return ReplayResult(
@@ -287,6 +294,7 @@ class ReplayRunner:
             actions_executed=executed,
             final_before_bytes=self._final_before_bytes,
             final_after_bytes=self._final_after_bytes,
+            elapsed_ms=int((time.monotonic() - run_started_at) * 1000),
         )
 
     async def capture_final_frame(self) -> bytes:

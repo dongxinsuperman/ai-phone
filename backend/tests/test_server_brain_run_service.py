@@ -307,6 +307,93 @@ async def test_server_emitter_finalizes_run_once_under_stop_race(app, session):
 
 
 @pytest.mark.asyncio
+async def test_server_emitter_force_finish_with_explicit_metrics(app, session):
+    """缓存通道显式传 elapsed_ms/steps/token_stats 时必须按原样写入。
+
+    防止 force_finish 又把可知的"任务总耗时""执行步数""Token 统计"硬编码
+    成 0 / 空：单 case 报告、批次累计耗时、缓存加速度量化都依赖这三个字段。
+    """
+    started = datetime.now(timezone.utc) - timedelta(seconds=5)
+    run = Run(
+        id="finish-metrics",
+        device_serial="S1",
+        goal="g",
+        status="running",
+        execution_mode="server_brain",
+        started_at=started,
+    )
+    session.add(run)
+    await session.commit()
+
+    emitter = ServerRunEmitter(
+        run_id="finish-metrics",
+        serial="S1",
+        hub=Hub(),
+        lock_store=DeviceLockStore(),
+        session_factory=db_module.get_session_factory(),
+    )
+    await emitter.force_finish(
+        result="pass",
+        message="ok",
+        elapsed_ms=4321,
+        steps=7,
+        token_stats={
+            "call_count": 1,
+            "prompt_tokens": 100,
+            "completion_tokens": 20,
+            "total_tokens": 120,
+            "cached_tokens": 0,
+        },
+        token_summary_note="仅缓存断言通道",
+    )
+    await emitter.aclose()
+
+    async with db_module.get_session_factory()() as s:
+        got = await s.get(Run, "finish-metrics")
+        assert got is not None
+        assert got.status == "success"
+        assert got.steps == 7
+        assert got.elapsed_ms == 4321
+        assert got.token_summary.get("total_tokens") == 120
+
+
+@pytest.mark.asyncio
+async def test_server_emitter_force_finish_falls_back_to_wallclock(app, session):
+    """没传 elapsed_ms 时用 run.started_at 兜底，避免归零。"""
+    started = datetime.now(timezone.utc) - timedelta(seconds=2)
+    run = Run(
+        id="finish-fallback",
+        device_serial="S1",
+        goal="g",
+        status="running",
+        execution_mode="server_brain",
+        started_at=started,
+        steps=3,
+    )
+    session.add(run)
+    await session.commit()
+
+    emitter = ServerRunEmitter(
+        run_id="finish-fallback",
+        serial="S1",
+        hub=Hub(),
+        lock_store=DeviceLockStore(),
+        session_factory=db_module.get_session_factory(),
+    )
+    await emitter.force_finish(result="error", message="oops")
+    await emitter.aclose()
+
+    async with db_module.get_session_factory()() as s:
+        got = await s.get(Run, "finish-fallback")
+        assert got is not None
+        assert got.status == "failed"
+        # steps 没传 → 沿用 DB 里已经累计的 3
+        assert got.steps == 3
+        # elapsed_ms 没传 → 至少要 ≥ 1500ms（started 在 2s 前），避免归零
+        assert got.elapsed_ms >= 1500
+
+
+@pytest.mark.asyncio
 async def test_agent_disconnect_fails_active_server_brain_run(app, session):
     hub = Hub()
     fake_ws = FakeWS()

@@ -247,6 +247,8 @@ class FakeReplayRunner:
             success=True,
             error="",
             final_before_bytes=b"before",
+            actions_executed=1,
+            elapsed_ms=42,
             to_dict=lambda: {},
         )
 
@@ -261,13 +263,16 @@ class FakeAlignmentMissReplayRunner(FakeReplayRunner):
             success=False,
             error="index=1 type=click error=alignment_miss action_id=a001 elapsed=1000/1000ms",
             final_before_bytes=None,
+            actions_executed=0,
+            elapsed_ms=11,
             to_dict=lambda: {},
         )
 
 
 class FakeCacheVerifier:
-    def __init__(self, *, settings):
+    def __init__(self, *, settings, counter=None):
         self.settings = settings
+        self.counter = counter
 
     async def verify(self, *, goal, final_bytes, trajectory, prev_before_bytes=None):
         return SimpleNamespace(verdict="PASS", reason="fake assertion", passed=True)
@@ -1384,7 +1389,16 @@ async def test_server_runner_cache_replay_finishes_when_assertion_passes(
     )
 
     assert handled is True
-    assert emitter.finishes == [{"result": "pass", "message": "trajectory_cache_pass: fake assertion"}]
+    assert len(emitter.finishes) == 1
+    finish = emitter.finishes[0]
+    assert finish["result"] == "pass"
+    assert finish["message"] == "trajectory_cache_pass: fake assertion"
+    # 缓存通道收口必须把 elapsed_ms / steps 透传给 emitter，避免历史 bug：
+    # force_finish 硬编码 0 → "任务总耗时" / "执行步数" 在缓存回放归零。
+    assert finish["elapsed_ms"] >= 0
+    assert finish["steps"] == 1
+    # FakeCacheVerifier 没真正调 LLM，counter 全 0，token_stats 应为空 dict。
+    assert finish["token_stats"] == {}
     assert [event.get("title") for event in emitter.events] == [
         "轨迹缓存",
         "fake replay",
@@ -1448,14 +1462,20 @@ async def test_server_runner_cache_alignment_miss_finishes_as_assert_fail(
     )
 
     assert handled is True
-    assert emitter.finishes == [
-        {
-            "result": "assert_fail",
-            "message": "trajectory_cache_alignment_fail: index=1 type=click error=alignment_miss action_id=a001 elapsed=1000/1000ms",
-            "error_class": "TrajectoryCacheAlignmentError",
-            "error_category": "model",
-        }
-    ]
+    assert len(emitter.finishes) == 1
+    finish = emitter.finishes[0]
+    assert finish["result"] == "assert_fail"
+    assert (
+        finish["message"]
+        == "trajectory_cache_alignment_fail: index=1 type=click error=alignment_miss action_id=a001 elapsed=1000/1000ms"
+    )
+    assert finish["error_class"] == "TrajectoryCacheAlignmentError"
+    assert finish["error_category"] == "model"
+    # 失败分支也要带上 elapsed_ms / steps，避免 RunLog 报告归零；
+    # 断言 VLM 没被调用，token_stats 应为空。
+    assert finish["elapsed_ms"] >= 0
+    assert finish["steps"] == 0
+    assert finish["token_stats"] == {}
 
 
 # ---------------------------------------------------------------------------

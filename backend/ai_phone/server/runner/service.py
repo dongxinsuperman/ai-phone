@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional
 
@@ -329,6 +330,23 @@ class ServerRunnerService:
         from ai_phone.server.trajectory_cache.recovery import (  # noqa: PLC0415
             CacheReplayRecoveryVerifier,
         )
+        from ai_phone.shared.llm import TokenCounter  # noqa: PLC0415
+
+        # 缓存通道在最终断言里会调一次断言 VLM；这里准备一个独立 counter，
+        # 用完后通过 force_finish 透传给 emitter，让"任务总耗时""Token 统计"
+        # 这两条历史在缓存通道也能露出（recovery 走 httpx 自调，不在此口径）。
+        replay_started_at = time.monotonic()
+        assertion_counter = TokenCounter()
+
+        def _build_token_stats() -> Dict[str, Any]:
+            if assertion_counter.call_count <= 0:
+                return {}
+            stats = assertion_counter.summary()
+            stats["vlm_backend"] = settings.vlm_backend or ""
+            return stats
+
+        def _elapsed_ms() -> int:
+            return int((time.monotonic() - replay_started_at) * 1000)
 
         cache = await get_active_trajectory_cache(
             self._session_factory,
@@ -388,14 +406,23 @@ class ServerRunnerService:
             goal=goal,
         )
         replay_result = await runner.run()
+        # 注意：alignment_miss / replay_failed 都发生在调用断言 VLM 之前，
+        # token_stats 多半为空；但 elapsed_ms / steps 仍要传，保持单 case
+        # 报告的"任务总耗时""执行步数"在失败分支也能正确归档。
         if not replay_result.success:
             error = str(replay_result.error or "")
+            common_kwargs: Dict[str, Any] = {
+                "elapsed_ms": replay_result.elapsed_ms or _elapsed_ms(),
+                "steps": replay_result.actions_executed,
+                "token_stats": _build_token_stats(),
+            }
             if "alignment_miss" in error:
                 await emitter.force_finish(
                     result="assert_fail",
                     message=f"trajectory_cache_alignment_fail: {error}",
                     error_class="TrajectoryCacheAlignmentError",
                     error_category="model",
+                    **common_kwargs,
                 )
                 return True
             await emitter.force_finish(
@@ -403,11 +430,15 @@ class ServerRunnerService:
                 message=f"trajectory_replay_failed: {error}",
                 error_class="TrajectoryReplayError",
                 error_category="device",
+                **common_kwargs,
             )
             return True
 
         final_frame = await runner.capture_final_frame()
-        assertion = await CacheReplayAssertionVerifier(settings=settings).verify(
+        assertion = await CacheReplayAssertionVerifier(
+            settings=settings,
+            counter=assertion_counter,
+        ).verify(
             goal=goal,
             final_bytes=final_frame,
             trajectory=trajectory,
@@ -421,10 +452,19 @@ class ServerRunnerService:
                 f"{assertion.verdict}: {assertion.reason}",
             )
         )
+        # 关掉断言后才知道整段缓存通道总耗时；优先用 ReplayRunner 内部计时，
+        # 兜底再用 service 这一层的 wall-clock，保证至少有一个非零值。
+        finish_kwargs: Dict[str, Any] = {
+            "elapsed_ms": _elapsed_ms(),
+            "steps": replay_result.actions_executed,
+            "token_stats": _build_token_stats(),
+            "token_summary_note": "仅缓存断言通道",
+        }
         if assertion.passed:
             await emitter.force_finish(
                 result="pass",
                 message=f"trajectory_cache_pass: {assertion.reason}",
+                **finish_kwargs,
             )
         else:
             await emitter.force_finish(
@@ -432,6 +472,7 @@ class ServerRunnerService:
                 message=f"trajectory_cache_assertion_{assertion.verdict.lower()}: {assertion.reason}",
                 error_class="TrajectoryCacheAssertionError",
                 error_category="model",
+                **finish_kwargs,
             )
         return True
 

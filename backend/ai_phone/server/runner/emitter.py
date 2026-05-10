@@ -96,17 +96,33 @@ class ServerRunEmitter:
         *,
         result: str,
         message: str,
+        elapsed_ms: Optional[int] = None,
+        steps: Optional[int] = None,
+        token_stats: Optional[Dict[str, Any]] = None,
+        token_summary_note: str = "",
         error_class: str = "",
         error_category: str = "",
     ) -> None:
+        # 历史实现把 elapsed_ms / steps 硬编码成 0，导致缓存回放等"绕开
+        # VLMRunner emit EVT_RUN_FINISH"的通道在 RunLog/Run 里失去任务总耗时
+        # 与步数 —— 单 case 报告、批次累计耗时、缓存加速度量化都全部归零。
+        # 现在所有可知字段都允许调用方显式传入，没传则交给 _finalize_run 在
+        # _finish_lock 内做 DB 兜底（用 run.started_at / run.steps），保证哪怕
+        # token 不全，时间和步数至少能被还原出来；同时不打破 race 语义：
+        # 拿锁前不能 await DB，否则取消信号 vs runner finish 的优先级会被颠倒。
         if self.finished:
             return
+        resolved_tokens: Dict[str, Any] = (
+            dict(token_stats) if token_stats else dict(self._last_token_stats or {})
+        )
+        if resolved_tokens:
+            self._log_token_summary(resolved_tokens, note=token_summary_note)
         await self._finalize_run(
             result=result,
             message=message,
-            steps=0,
-            elapsed_ms=0,
-            token_stats=self._last_token_stats,
+            steps=int(steps) if steps is not None else None,
+            elapsed_ms=int(elapsed_ms) if elapsed_ms is not None else None,
+            token_stats=resolved_tokens,
             error_class=error_class,
             error_category=error_category,
         )
@@ -212,12 +228,6 @@ class ServerRunEmitter:
         await self._hub.broadcast_to_serial(self.serial, payload)
 
     def _cache_token_summary(self, evt: Dict[str, Any]) -> None:
-        pt = int(evt.get("prompt_tokens") or 0)
-        cached = int(evt.get("cached_tokens") or 0)
-        cache_read = int(evt.get("cache_read_tokens") or cached)
-        cache_write = int(evt.get("cache_write_tokens") or 0)
-        cache_accounting = str(evt.get("cache_accounting") or "")
-        hit_rate = (cached * 100.0 / pt) if pt > 0 else 0.0
         self._last_token_stats = {
             k: evt.get(k)
             for k in (
@@ -234,25 +244,46 @@ class ServerRunEmitter:
             )
             if evt.get(k) is not None
         }
+        self._log_token_summary(self._last_token_stats)
+
+    def _log_token_summary(
+        self, stats: Dict[str, Any], *, note: str = ""
+    ) -> None:
+        """把 token_stats dict 渲染成 "Token 统计" 日志行。
+
+        既被 EVT_TOKEN_SUMMARY（VLMRunner 主流程）路径调用，也被 force_finish
+        显式传入 token_stats 的路径（缓存回放等绕开 VLMRunner 的通道）调用，
+        UI 体感上"任何完成的 Run 都能看到一行 Token 统计"。
+        """
+        if not stats:
+            return
+        pt = int(stats.get("prompt_tokens") or 0)
+        cached = int(stats.get("cached_tokens") or 0)
+        cache_read = int(stats.get("cache_read_tokens") or cached)
+        cache_write = int(stats.get("cache_write_tokens") or 0)
+        cache_accounting = str(stats.get("cache_accounting") or "")
+        hit_rate = (cached * 100.0 / pt) if pt > 0 else 0.0
         if cache_accounting == "read_write":
             logical_input = pt + cache_read + cache_write
             cache_share = (
                 cache_read * 100.0 / logical_input if logical_input > 0 else 0.0
             )
             token_content = (
-                f"calls={evt.get('call_count')} input={pt} "
+                f"calls={stats.get('call_count')} input={pt} "
                 f"cache_read={cache_read} cache_write={cache_write} "
                 f"cache_share={cache_share:.1f}% "
-                f"completion={evt.get('completion_tokens')} "
-                f"total={evt.get('total_tokens')}"
+                f"completion={stats.get('completion_tokens')} "
+                f"total={stats.get('total_tokens')}"
             )
         else:
             token_content = (
-                f"calls={evt.get('call_count')} "
+                f"calls={stats.get('call_count')} "
                 f"prompt={pt}(cached={cached}, 命中率={hit_rate:.1f}%) "
-                f"completion={evt.get('completion_tokens')} "
-                f"total={evt.get('total_tokens')}"
+                f"completion={stats.get('completion_tokens')} "
+                f"total={stats.get('total_tokens')}"
             )
+        if note:
+            token_content = f"{token_content} ({note})"
         self._enqueue(
             self._forward_log(
                 {
@@ -273,6 +304,7 @@ class ServerRunEmitter:
         if prefix in ("finished", "assert_fail", "error", "cancelled", "fail"):
             result = prefix
         message = reason.split(":", 1)[1].strip() if ":" in reason else reason
+        # VLMRunner 路径会显式带上 steps / elapsed_ms / token_stats，按原样写。
         await self._finalize_run(
             result=result,
             message=message,
@@ -286,8 +318,8 @@ class ServerRunEmitter:
         *,
         result: str,
         message: str,
-        steps: int,
-        elapsed_ms: int,
+        steps: Optional[int],
+        elapsed_ms: Optional[int],
         token_stats: Dict[str, Any],
         error_class: str = "",
         error_category: str = "",
@@ -310,8 +342,24 @@ class ServerRunEmitter:
                 if run is not None:
                     run.status = final_status
                     run.reason = message
-                    run.steps = int(steps or run.steps or 0)
-                    run.elapsed_ms = int(elapsed_ms or run.elapsed_ms or 0)
+                    # 缓存通道 force_finish 显式传 steps/elapsed_ms 时按原样写；
+                    # 没传（None）则保留 DB 现有值或按 wall-clock 兜底，避免把
+                    # 已经落库的步数 / 耗时被覆盖成 0。
+                    if steps is not None:
+                        run.steps = int(steps or run.steps or 0)
+                    elif not run.steps:
+                        run.steps = 0
+                    if elapsed_ms is not None and elapsed_ms > 0:
+                        run.elapsed_ms = int(elapsed_ms)
+                    elif not run.elapsed_ms and run.started_at is not None:
+                        # _forward_run_finish 在 evt 缺 elapsed_ms 时也会落到这里
+                        # （传入 0），同样用 wall-clock 兜底，与 force_finish 一致。
+                        started = run.started_at
+                        if started.tzinfo is None:
+                            started = started.replace(tzinfo=timezone.utc)
+                        delta = (datetime.now(timezone.utc) - started).total_seconds()
+                        if delta > 0:
+                            run.elapsed_ms = int(delta * 1000)
                     run.token_summary = token_stats or run.token_summary or {}
                     run.finished_at = datetime.now(timezone.utc)
                     if error_category == "agent_offline":
