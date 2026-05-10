@@ -982,7 +982,7 @@ async def test_chain_with_disallowed_action_falls_back_to_first():
 async def test_chain_clicks_both_count_in_stuck_detection():
     """链内每个 click 都进卡死检测，避免 VLM 用'链式 2 击同坐标'绕过同位置上限。"""
     driver = FakeDriver()
-    # 2 步链 × 2 = 4 次同坐标 click，正好达到 CLICK_STUCK_THRESHOLD
+    # 2 步链 × 2 = 4 次同坐标 click，远超 CLICK_STUCK_THRESHOLD（默认 2）
     vlm = ChainScriptedVLMClient([
         ScriptedStep(
             "链 1",
