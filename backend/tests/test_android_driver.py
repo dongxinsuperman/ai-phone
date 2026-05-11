@@ -34,6 +34,45 @@ def test_window_size_returns_tuple():
     fake.window_size.assert_called_once()
 
 
+def test_window_size_falls_back_to_last_success():
+    driver, fake = _make_driver()
+    assert driver.window_size() == (1080, 1920)
+    fake.window_size.side_effect = RuntimeError("rotation get failed")
+    assert driver.window_size() == (1080, 1920)
+
+
+def test_window_size_falls_back_to_screenshot_when_no_cache():
+    fake = MagicMock()
+    fake.serial = "EMU-TEST-SHOT"
+    fake.window_size.side_effect = RuntimeError("rotation get failed")
+    fake.rotation.return_value = 0
+    fake.screenshot.return_value = Image.new("RGB", (1200, 800), color=(0, 0, 0))
+    driver = AndroidDriver(fake, setup_power=False)
+    assert driver.window_size() == (1200, 800)
+
+
+def test_window_size_falls_back_to_wm_size_after_screenshot_failure():
+    fake = MagicMock()
+    fake.serial = "EMU-TEST-WM"
+    fake.window_size.side_effect = RuntimeError("rotation get failed")
+    fake.screenshot.side_effect = RuntimeError("screenshot failed")
+    fake.shell.return_value = "Physical size: 1080x2400\n"
+    fake.rotation.return_value = 0
+    driver = AndroidDriver(fake, setup_power=False)
+    assert driver.window_size() == (1080, 2400)
+
+
+def test_window_size_wm_size_swaps_when_landscape():
+    fake = MagicMock()
+    fake.serial = "EMU-TEST-WM-LAND"
+    fake.window_size.side_effect = RuntimeError("rotation get failed")
+    fake.screenshot.side_effect = RuntimeError("screenshot failed")
+    fake.shell.return_value = "Physical size: 1080x2400\n"
+    fake.rotation.return_value = 1
+    driver = AndroidDriver(fake, setup_power=False)
+    assert driver.window_size() == (2400, 1080)
+
+
 def test_click_maps_to_adb_click():
     driver, fake = _make_driver()
     driver.click(100, 200)

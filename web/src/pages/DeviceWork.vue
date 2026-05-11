@@ -480,11 +480,25 @@ function onMirrorDragStart(ev) {
 
 // MSE 段计数器：仅用于 console 节流诊断，不参与渲染（不需要 ref）
 let _segCount = 0
+let _logSeq = 0
+
+function logTsMs(value) {
+  if (!value) return Date.now()
+  if (typeof value === 'number') return value > 1e12 ? value : value * 1000
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : Date.now()
+}
 
 function pushLog(entry) {
+  const timestamp = entry.timestamp || entry.ts || Date.now() / 1000
   logs.value.push({
     ...entry,
-    timestamp: entry.timestamp || entry.ts || Date.now() / 1000,
+    timestamp,
+    __seq: _logSeq++,
+  })
+  logs.value.sort((a, b) => {
+    const d = logTsMs(a.timestamp || a.ts) - logTsMs(b.timestamp || b.ts)
+    return d || ((a.__seq || 0) - (b.__seq || 0))
   })
   if (logs.value.length > 2000) {
     logs.value.splice(0, logs.value.length - 2000)
@@ -498,16 +512,14 @@ function onMessage(msg) {
       pushLog(msg)
       break
     case 'step_done':
-      // 步骤截图只进日志面板（缩略图 + 全屏预览），不再覆盖到 mirror 上：
-      // mirror 始终显示 <video> 实时流；步骤截图属于"事后存档"，覆盖反而打断观感
+      // step_done 是步骤文字汇总；截图已经由 frame 事件单独展示，避免同一张
+      // after 图在实时日志里重复出现。
       pushLog({
         level: msg.unknown ? 2 : 1,
-        title: `第 ${msg.step} 步 ${msg.action_type || msg.action || ''}`,
+        title: `第 ${msg.step} 步完成${msg.action_type || msg.action ? ` · ${msg.action_type || msg.action}` : ''}`,
         content: msg.thought ? `${msg.thought}` : '',
         step: msg.step,
-        timestamp: Date.now() / 1000,
-        image_url: msg.after_url || msg.before_url || null,
-        image_label: msg.after_url ? 'after' : msg.before_url ? 'before' : null,
+        timestamp: msg.ts || Date.now() / 1000,
       })
       break
     case 'video_init':
@@ -553,7 +565,7 @@ function onMessage(msg) {
           content: `phase=${msg.phase || 'frame'}`,
           image_url: msg.frame_url,
           image_label: msg.phase || 'frame',
-          timestamp: Date.now() / 1000,
+          timestamp: msg.ts || Date.now() / 1000,
         })
       }
       break
@@ -564,7 +576,7 @@ function onMessage(msg) {
         level: isOk ? 1 : 3,
         title: `Run 结束 → ${msg.result}`,
         content: msg.message || '',
-        timestamp: Date.now() / 1000,
+        timestamp: msg.ts || Date.now() / 1000,
       })
       // 拿一次最新的 Run 记录，把 external_report_url（外接引擎，如 Midscene）刷出来
       // 让"打开外部报告"按钮生效
@@ -585,7 +597,7 @@ function onMessage(msg) {
         level: 1,
         title: '设备状态',
         content: `status=${msg.status}`,
-        timestamp: Date.now() / 1000,
+        timestamp: msg.ts || Date.now() / 1000,
       })
       break
     case 'device_status':
@@ -597,7 +609,7 @@ function onMessage(msg) {
           level: 3,
           title: msg.title || 'WDA 启动失败',
           content: msg.hint || '',
-          timestamp: Date.now() / 1000,
+          timestamp: msg.ts || Date.now() / 1000,
         })
       }
       break

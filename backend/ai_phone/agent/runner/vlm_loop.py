@@ -256,6 +256,16 @@ _ACTION_VERBS = (
     "验证", "勾选", "选择",
 )
 
+_PARSE_FAILURE_MARKERS = ("无法解析决策输出", "无法解析 Action")
+
+
+def _is_parser_fallback_action(parsed: A.ParsedAction) -> bool:
+    """系统解析器生成的格式失败，不等同于模型主动 assert_fail。"""
+    if (parsed.action or "") != A.ACTION_ASSERT_FAIL:
+        return False
+    text = f"{parsed.content or ''}\n{parsed.raw or ''}"
+    return any(marker in text for marker in _PARSE_FAILURE_MARKERS)
+
 
 @dataclass
 class StructuredSignal:
@@ -964,31 +974,53 @@ class VLMRunner:
             backend = (self._settings.vlm_backend or "").lower()
             if backend in ("claude_cu", "gpt_cu"):
                 self._last_vlm_screenshot_size = _decode_jpeg_size(screenshot_bytes)
-            try:
-                # driver.screenshot_jpeg 出来是 JPEG；显式告诉 VLMClient 用哪种 mime
-                decision = await self.vlm.decide(screenshot_bytes, mime="image/jpeg")
-            except Exception as exc:  # noqa: BLE001
-                await self._log(3, "决策失败", f"错误: {exc}", step=step)
-                return False, f"vlm_error: {exc}"
+            parse_retry_used = False
+            while True:
+                try:
+                    # driver.screenshot_jpeg 出来是 JPEG；显式告诉 VLMClient 用哪种 mime
+                    decision = await self.vlm.decide(screenshot_bytes, mime="image/jpeg")
+                except Exception as exc:  # noqa: BLE001
+                    await self._log(3, "决策失败", f"错误: {exc}", step=step)
+                    return False, f"vlm_error: {exc}"
 
-            thought = decision.thought
-            # —— 链式动作解析 ——
-            # VLM 默认每轮输出 1 个 Action；遇到瞬态 UI（视频工具栏 / Toast 等
-            # 自动隐藏的浮层）允许在同一 Thought 下输出 ≤ CHAIN_MAX_ACTIONS
-            # 个 Action。这里把所有 Action 一次性解析为 ParsedAction 列表，
-            # 后面分别做"长度截断 / 白名单过滤 / 顺序执行"。
-            #
-            # 多协议适配：豆包系输出文本 DSL，走 parse_action 文本解析；Claude/GPT
-            # 通过 tool_use / computer_call 已经给出结构化字段，会在 client 内直接
-            # 构造 ParsedAction 列表挂到 decision.parsed_actions。优先消费结构化
-            # 字段，没有再 fallback 到文本解析。
-            if decision.parsed_actions:
-                parsed_chain: List[A.ParsedAction] = list(decision.parsed_actions)
-            else:
-                all_action_strs = decision.action_strs or [decision.action_str]
-                parsed_chain = [A.parse_action(s) for s in all_action_strs]
-            for pa in parsed_chain:
-                pa.thought = thought
+                thought = decision.thought
+                # —— 链式动作解析 ——
+                # VLM 默认每轮输出 1 个 Action；遇到瞬态 UI（视频工具栏 / Toast 等
+                # 自动隐藏的浮层）允许在同一 Thought 下输出 ≤ CHAIN_MAX_ACTIONS
+                # 个 Action。这里把所有 Action 一次性解析为 ParsedAction 列表，
+                # 后面分别做"长度截断 / 白名单过滤 / 顺序执行"。
+                #
+                # 多协议适配：豆包系输出文本 DSL，走 parse_action 文本解析；Claude/GPT
+                # 通过 tool_use / computer_call 已经给出结构化字段，会在 client 内直接
+                # 构造 ParsedAction 列表挂到 decision.parsed_actions。优先消费结构化
+                # 字段，没有再 fallback 到文本解析。
+                if decision.parsed_actions:
+                    parsed_chain = list(decision.parsed_actions)
+                else:
+                    all_action_strs = decision.action_strs or [decision.action_str]
+                    parsed_chain = [A.parse_action(s) for s in all_action_strs]
+                for pa in parsed_chain:
+                    pa.thought = thought
+
+                parser_fallback = parsed_chain and _is_parser_fallback_action(parsed_chain[0])
+                if parser_fallback and not parse_retry_used:
+                    parse_retry_used = True
+                    bad = (parsed_chain[0].content or parsed_chain[0].raw or "")[:180]
+                    self.vlm.add_hint(
+                        "⚠️ 上一轮输出无法被系统解析，本轮请基于同一张截图重新决策一次。"
+                        "必须输出 Thought 和单独一行 Action；Action 行只写一个合法动作调用，"
+                        "例如 click(...), scroll(...), type(...), wait(...), finished(...), "
+                        "assert_fail(...)。不要把 Action 写进自然语言句子里，不要加 markdown "
+                        "代码块、编号、冒号解释或尾部注释。"
+                    )
+                    await self._log(
+                        2,
+                        "VLM 输出解析失败",
+                        f"已要求模型按 Action DSL 重试一次 | {bad}",
+                        step=step,
+                    )
+                    continue
+                break
 
             # 链长度截断：超出 CHAIN_MAX_ACTIONS 一律按规范丢回提示
             if len(parsed_chain) > CHAIN_MAX_ACTIONS:

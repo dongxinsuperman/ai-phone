@@ -45,6 +45,17 @@ from ._deps import (
 router = APIRouter()
 
 
+def _message_datetime(msg: Dict[str, Any]) -> datetime:
+    raw = msg.get("ts")
+    try:
+        value = float(raw)
+        if value > 100_000_000_000:
+            value = value / 1000.0
+        return datetime.fromtimestamp(value, tz=timezone.utc)
+    except Exception:  # noqa: BLE001
+        return datetime.now(timezone.utc)
+
+
 @router.websocket("/ws/agent")
 async def agent_ws(
     ws: WebSocket,
@@ -452,6 +463,7 @@ async def _persist_log(msg: Dict[str, Any]) -> None:
                 trace_id=msg.get("trace_id"),
                 error_class=msg.get("error_class"),
                 error_category=msg.get("error_category"),
+                ts=_message_datetime(msg),
             )
         )
         await session.commit()
@@ -480,6 +492,7 @@ async def _persist_step(msg: Dict[str, Any]) -> None:
                 driver_method=msg.get("driver_method"),
                 command_id=msg.get("command_id"),
                 rpc_elapsed_ms=msg.get("rpc_elapsed_ms"),
+                created_at=_message_datetime(msg),
             )
         )
         # 顺便更新 Run.steps

@@ -6,12 +6,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 import pytest
+from sqlalchemy import select
 
-from ai_phone.agent.runner.events import EVT_RUN_FINISH, make_event, log_event
+from ai_phone.agent.runner.events import EVT_RUN_FINISH, EVT_STEP_END, make_event, log_event
 from ai_phone.server import db as db_module
 from ai_phone.server.hub import Hub
 from ai_phone.server.lockstore import DeviceLockStore
-from ai_phone.server.models import Device, Run, RunCommand, Submission, SubmissionItem
+from ai_phone.server.models import Device, Run, RunCommand, RunStep, Submission, SubmissionItem
 from ai_phone.server.runner.dispatch import RunDispatchService
 from ai_phone.server.runner.emitter import ServerRunEmitter
 from ai_phone.server.runner.rpc import DriverRpcWaiter
@@ -304,6 +305,51 @@ async def test_server_emitter_finalizes_run_once_under_stop_race(app, session):
         assert got.reason == "stopped_by_user"
         assert got.steps == 0
         assert got.elapsed_ms == 0
+
+
+@pytest.mark.asyncio
+async def test_server_emitter_step_uses_event_timestamp(app, session):
+    """Step 卡片按事件真实时间排序，不受截图上传/入库延迟影响。"""
+    run = Run(
+        id="step-ts-run",
+        device_serial="S1",
+        agent_id="agent-server-brain",
+        goal="g",
+        status="running",
+        execution_mode="server_brain",
+    )
+    session.add(run)
+    await session.commit()
+
+    emitter = ServerRunEmitter(
+        run_id="step-ts-run",
+        serial="S1",
+        hub=Hub(),
+        lock_store=DeviceLockStore(),
+        session_factory=db_module.get_session_factory(),
+    )
+    event_ts_ms = 1_700_000_000_123
+    evt = make_event(
+        EVT_STEP_END,
+        "step-ts-run",
+        step=1,
+        thought="done",
+        action="click(point='<point>1 1</point>')",
+        action_type="click",
+        elapsed_ms=12,
+    )
+    evt["ts"] = event_ts_ms
+
+    await emitter._forward_step_end(evt)  # noqa: SLF001
+
+    async with db_module.get_session_factory()() as s:
+        row = (
+            await s.execute(select(RunStep).where(RunStep.run_id == "step-ts-run"))
+        ).scalars().one()
+        expected = datetime.fromtimestamp(
+            event_ts_ms / 1000, tz=timezone.utc
+        ).replace(tzinfo=None)
+        assert row.created_at.replace(tzinfo=None) == expected
 
 
 @pytest.mark.asyncio

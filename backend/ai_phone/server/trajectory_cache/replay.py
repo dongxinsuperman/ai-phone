@@ -227,6 +227,9 @@ class ReplayRunner:
         self._final_after_bytes: Optional[bytes] = None
         self._carry_before_bytes: Optional[bytes] = None
         self._carry_before_index: Optional[int] = None
+        # action_id -> recovery_vlm 局部修复次数。仅用于 STEP_END / 报告文案，
+        # 不参与执行决策，避免用户误以为修复成功后又重复回放了同一步。
+        self._recovery_repaired_actions: Dict[str, int] = {}
         # claude_cu / gpt_cu recovery 路径专用：模型看到的截图实际像素尺寸
         # （= self._screenshot_jpeg() 返回的 JPEG 解码后的 width/height，被
         # driver.screenshot_jpeg(25, 720) 压缩到 720 max-edge）。模型按这个
@@ -666,6 +669,8 @@ class ReplayRunner:
                         ),
                     )
                     self._last_frame = latest_bytes
+                    if action_id:
+                        self._recovery_repaired_actions[action_id] = repair_used
                     before_index = _optional_int(landmark.get("before_action_index"))
                     if before_index is not None:
                         self._carry_before_bytes = latest_bytes
@@ -952,6 +957,14 @@ class ReplayRunner:
             str(action.get("thought") or "").strip()
             or f"轨迹缓存回放：{intent_label}"
         )
+        action_id = str(action.get("action_id") or "")
+        repair_count = self._recovery_repaired_actions.get(action_id)
+        if repair_count and not error:
+            thought = (
+                f"{thought}（缓存回放：本步原回放结果未对齐，"
+                f"已由 recovery_vlm 执行 {repair_count} 次局部修复并对齐；"
+                "此处是修复后的 after 记录，不是重复执行本步）"
+            )
         if error:
             thought = f"{thought}（执行失败：{error}）"
         self.emit(

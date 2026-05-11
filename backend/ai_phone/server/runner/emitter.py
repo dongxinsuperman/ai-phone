@@ -35,6 +35,17 @@ from ai_phone.server.storage import save_bytes
 from ai_phone.shared import protocol as P
 
 
+def _event_datetime(evt: Dict[str, Any]) -> datetime:
+    raw = evt.get("ts")
+    try:
+        value = float(raw)
+        if value > 100_000_000_000:
+            value = value / 1000.0
+        return datetime.fromtimestamp(value, tz=timezone.utc)
+    except Exception:  # noqa: BLE001
+        return datetime.now(timezone.utc)
+
+
 class ServerRunEmitter:
     """一个 server_brain Run 一个 emitter。"""
 
@@ -134,6 +145,7 @@ class ServerRunEmitter:
             "serial": self.serial,
             "level": int(evt.get("level", 1)),
             "step": evt.get("step"),
+            "ts": evt.get("ts"),
             "title": evt.get("title", ""),
             "content": evt.get("content", ""),
             "trace_id": evt.get("trace_id"),
@@ -151,6 +163,7 @@ class ServerRunEmitter:
                     trace_id=payload["trace_id"],
                     error_class=payload["error_class"],
                     error_category=payload["error_category"],
+                    ts=_event_datetime(evt),
                 )
             )
             await session.commit()
@@ -193,6 +206,7 @@ class ServerRunEmitter:
             "run_id": self.run_id,
             "serial": self.serial,
             "step": step,
+            "ts": evt.get("ts"),
             "thought": evt.get("thought", ""),
             "action": evt.get("action", ""),
             "action_type": evt.get("action_type", ""),
@@ -219,6 +233,7 @@ class ServerRunEmitter:
                     driver_method=payload.get("driver_method"),
                     command_id=payload.get("command_id"),
                     rpc_elapsed_ms=payload.get("rpc_elapsed_ms"),
+                    created_at=_event_datetime(evt),
                 )
             )
             run = await session.get(Run, self.run_id)

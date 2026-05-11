@@ -289,7 +289,8 @@ async def test_unparseable_action_falls_back_to_assert_fail_not_finished():
     """
     driver = FakeDriver()
     vlm = ScriptedVLMClient([
-        ScriptedStep("乱码动作", "completely garbage no parens"),
+        ScriptedStep("第一次乱码动作", "completely garbage no parens"),
+        ScriptedStep("第二次仍然乱码动作", "still garbage no parens"),
     ])
     _events, emit = _collect_events()
     runner = VLMRunner(
@@ -299,6 +300,28 @@ async def test_unparseable_action_falls_back_to_assert_fail_not_finished():
     assert result.ok is False, f"期望失败退出，实际 reason={result.reason}"
     assert "assert_fail" in result.reason
     assert "无法解析" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_parser_fallback_retries_once_before_assert_fail():
+    """系统解析器兜底的 assert_fail 属于格式抖动，先给 VLM 一次自修机会。"""
+    driver = FakeDriver()
+    vlm = ScriptedVLMClient([
+        ScriptedStep(
+            "第一轮格式坏了",
+            "assert_fail(content='无法解析决策输出: Thought: 需要点击 Action: click(...)')",
+        ),
+        ScriptedStep("重试后点中间", "click(point='<point>500 500</point>')"),
+        ScriptedStep("收工", "finished(content='done')"),
+    ])
+    _events, emit = _collect_events()
+    runner = VLMRunner(
+        run_id="R-parse-retry", driver=driver, goal="点中间", emit=emit, vlm_client=vlm
+    )
+    result = await runner.run()
+    assert result.ok is True, result.reason
+    assert ("click", (540, 960)) in driver.calls
+    assert any("上一轮输出无法被系统解析" in hint for hint in vlm.pending_hints)
 
 
 @pytest.mark.asyncio

@@ -269,6 +269,30 @@ class TestExtractActions:
         assert len(actions) == 1
         assert actions[0].startswith("assert_fail(")
 
+    def test_inline_action_after_thought_is_extracted(self):
+        text = (
+            "Thought: 当前页面未到底部，需要继续下滑。"
+            "Action: scroll(point='<point>559 500</point>', direction='down', amount=1)"
+        )
+        actions = extract_actions(text)
+        assert actions == [
+            "scroll(point='<point>559 500</point>', direction='down', amount=1)"
+        ]
+
+    def test_fullwidth_action_colon_is_extracted(self):
+        text = (
+            "Thought: 二次重试后决定点击二维码。"
+            "Action：click(point='<point>607 950</point>')"
+        )
+        assert extract_actions(text) == ["click(point='<point>607 950</point>')"]
+
+    def test_chinese_action_prefix_is_extracted(self):
+        text = (
+            "Thought: 继续点击。"
+            "动作：click(point='<point>607 950</point>')"
+        )
+        assert extract_actions(text) == ["click(point='<point>607 950</point>')"]
+
     def test_blank_lines_between_actions(self):
         text = (
             "Thought: 中间空行不影响解析\n"
