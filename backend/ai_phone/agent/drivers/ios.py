@@ -600,9 +600,22 @@ class IosDriver(BaseDriver):
     # 输入 & 按键
     # ------------------------------------------------------------------
     def type_text(self, text: str) -> None:
+        """文本输入。
+
+        与 Android (``input text`` 直接 IME 注入) / Harmony (``hmdriver.input_text``)
+        的语义对齐：写完字立即收起软键盘，让后续 VLM 决策看到的截图是"键盘
+        已落"的状态。iOS WDA 走 IOHIDEvent，每次 type_text 必然弹起软键盘
+        且不会自动收，常常遮挡"完成 / 提交"等下方按钮，导致 VLM 后续无法
+        点击业务按钮。
+        """
         if not text:
             return
         self._wda.type_text(text)
+        try:
+            self._wda.dismiss_keyboard()
+        except Exception as exc:  # noqa: BLE001
+            # 极端兜底：老 WDA / 非常规键盘场景失败都不影响输入本身
+            logger.debug("[ios] dismiss_keyboard 忽略 udid={}: {}", self.serial, exc)
 
     def press_home(self) -> None:
         self._wda.press_button("home")

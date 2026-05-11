@@ -45,6 +45,30 @@ class TestParseAction:
         assert r.action == ACTION_SCROLL
         assert r.point == [500, 800]
         assert r.direction == "up"
+        # 不传 amount → 默认 1（与历史豆包路径行为一致）
+        assert r.scroll_amount == 1
+
+    def test_scroll_with_amount(self):
+        # 豆包路径暴露 amount 后 VLM 可以传 amount=N 表达"长滑 N 屏"
+        r = parse_action(
+            "scroll(point='<point>500 800</point>', direction='down', amount=5)"
+        )
+        assert r.action == ACTION_SCROLL
+        assert r.point == [500, 800]
+        assert r.direction == "down"
+        assert r.scroll_amount == 5
+
+    def test_scroll_amount_quoted_and_clamped(self):
+        # 既能解析带引号的数值，也能把 0 / 负值钳到 1
+        r = parse_action(
+            "scroll(point='<point>500 800</point>', direction='down', amount='3')"
+        )
+        assert r.scroll_amount == 3
+        # amount=0 不合法 → 钳到 1
+        r0 = parse_action(
+            "scroll(point='<point>500 800</point>', direction='down', amount=0)"
+        )
+        assert r0.scroll_amount == 1
 
     def test_drag(self):
         r = parse_action(

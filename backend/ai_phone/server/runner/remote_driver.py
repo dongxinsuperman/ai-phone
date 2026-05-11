@@ -76,7 +76,9 @@ DEFAULT_DEADLINE_MS: Dict[str, int] = {
     "press_home": 5_000,
     "press_back": 5_000,
     "press_keycode": 5_000,
-    "window_size": 3_000,
+    # 取尺寸常被坐标换算隐式调用（click/scroll/drag 前都可能触发）。
+    # 设备或 Agent 正忙时 3s 太激进，会把原本可恢复的动作直接打成执行失败。
+    "window_size": 10_000,
     "rotation": 3_000,
     "list_third_party_packages": 15_000,
     "list_all_packages": 15_000,

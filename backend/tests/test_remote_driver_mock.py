@@ -343,7 +343,7 @@ def test_rpc_timeout_when_agent_silent(server_loop, waiter):
     agent = FakeAgent(server_loop, waiter, replier=None)  # 不回复
     driver = _build_driver(server_loop, waiter, agent)
 
-    # window_size 默认 deadline_ms=3000，加 1s 网络冗余共 4s。我们想测得快点：
+    # window_size 默认 deadline_ms 较长，加 1s 网络冗余会更慢。我们想测得快点：
     # 直接用一个超短的 method？没有；但 _call 暴露了 deadline_ms 参数。
     # 这里我们调内部接口，把 deadline 拉到 200ms。
     t0 = time.monotonic()

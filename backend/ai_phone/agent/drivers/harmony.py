@@ -427,13 +427,29 @@ class HarmonyDriver(BaseDriver):
         - L1 失败 → L2 重建 Driver 并重试
         - L2 失败 → L3 杀 daemon + 重建 并重试
         - L3 仍失败 → 把最后这次异常原样抛给调用方，supervisor 据此下线设备
-        其它异常（业务异常等）不属于 socket 级错误，不做兜底，直接抛。
+
+        **L0+ 非 socket 异常的轻量重试**（hypium daemon 抖动兜底）：
+        L0 抛非 socket 异常时（如 ``display_rotation get failed`` /
+        ``display_size get failed``，常见于 hypium daemon 在 hdc shell 多端
+        并发下的瞬态卡顿），等 50ms 重试一次再决定是否抛回——这类异常 90%
+        是一过性的，但又不属于 socket 级故障（不该走 L1/L2/L3 重连重建，那
+        会拖几秒），轻量重试是性价比最高的修法。仍失败才把原异常抛给调用
+        方，避免吞掉真正的业务错误。
         """
         # L0：首次尝试。不拿锁，乐观路径零开销
         try:
             return fn(*args, **kwargs)
         except self._SOCKET_DEAD_ERRORS as exc_l0:
             first_exc: BaseException = exc_l0
+        except Exception as exc_l0_business:  # noqa: BLE001
+            # hypium daemon 偶发的非 socket 异常（如 display_rotation/size get
+            # failed）：50ms 退避重试 1 次，仍异常照原样抛出（保持业务语义）
+            logger.debug(
+                "harmony serial={} L0 非 socket 异常 ({}: {})，50ms 后重试 1 次",
+                self.serial, exc_l0_business.__class__.__name__, exc_l0_business,
+            )
+            time.sleep(0.05)
+            return fn(*args, **kwargs)
 
         # 进入自愈：串行化
         with self._heal_lock:

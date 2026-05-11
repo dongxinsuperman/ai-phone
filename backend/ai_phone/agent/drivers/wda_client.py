@@ -370,6 +370,26 @@ class WdaClient:
         )
 
     @_auto_recover_session
+    def dismiss_keyboard(self) -> None:
+        """关闭软键盘（iOS WDA 端点）。
+
+        与 Android ``input text`` / Harmony hmdriver 的"直接注入字符不弹键盘"
+        语义对齐——iOS WDA 走 IOHIDEvent 必然弹软键盘且不会自动收起，常导致
+        键盘遮挡下方按钮（"完成"/"提交"等）让 VLM 后续点击失效。``type_text``
+        之后统一调一次本接口主动收起。
+
+        Appium WDA 的标准路由是 ``POST /session/{sid}/wda/keyboard/dismiss``。
+        老版本 WDA 没有该端点会回 404，本方法吞掉异常退化为 no-op，确保
+        升级路径平滑。
+        """
+        sid = self._ensure_session()
+        try:
+            self._request("POST", f"/session/{sid}/wda/keyboard/dismiss", {})
+        except WdaError as exc:
+            # 老 WDA / 非全屏键盘场景拿不到 dismiss 按钮都会抛；不致命
+            logger.debug("dismiss_keyboard 忽略: {}", exc)
+
+    @_auto_recover_session
     def press_button(self, name: str) -> None:
         """``home`` / ``volumeup`` / ``volumedown``。WDA 端按字符串识别。"""
         sid = self._ensure_session()

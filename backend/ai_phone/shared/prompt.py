@@ -74,8 +74,12 @@ Action: <一个动作调用>
 1. `click(point='<point>x y</point>')` — 点击
 2. `long_press(point='<point>x y</point>')` — 长按 ~1s
 3. `type(content='文本')` — 在已激活输入框内输入文本
-4. `scroll(point='<point>x y</point>', direction='up|down|left|right')` — 滑动
+4. `scroll(point='<point>x y</point>', direction='up|down|left|right', amount=N)` — 滑动
    - 方向 = **你想浏览的方向**（不是手指方向）：`down`=看底部内容，`up`=回顶
+   - `amount` 可选，默认 1（约 60% 屏幕，温和翻一页保证不漏内容）；范围 1-10
+     - 截图能看到目标 / 需要逐屏扫读：用 `amount=1`（默认即可，**不必显式写**）
+     - 离目标明显较远 / 已知就是要"滑到底"（如查看协议底部按钮、跳到列表末尾）：可一次给 `amount=3~6`，单次相当于翻 3-6 页
+     - 给大 amount 后下一帧仍未看到目标：**立即降回 `amount=1`** 慢扫，避免"刷过去了没看见"
 5. `drag(start_point='<point>x1 y1</point>', end_point='<point>x2 y2</point>')` — 拖拽
 6. `open_app(app_name='应用名')` / `close_app(name='应用名')` — 直接开 / 关 App
 7. `press_home()` / `press_back()` — Home / 返回键
