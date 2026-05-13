@@ -143,7 +143,7 @@ class V3PlanLocator:
     @property
     def coord_space(self) -> str:
         backend, _api_url, _api_key, _model, _timeout = self._config()
-        return _coord_space_for_v3_backend(backend)
+        return _coord_space_for_v3_backend(backend, model=_model)
 
     async def locate_action(
         self,
@@ -432,7 +432,7 @@ class V3RescueVerifier:
     @property
     def coord_space(self) -> str:
         backend, _api_url, _api_key, _model, _timeout = self._config()
-        return _coord_space_for_v3_backend(backend)
+        return _coord_space_for_v3_backend(backend, model=_model)
 
     async def decide(
         self,
@@ -1372,13 +1372,12 @@ def _v3_rescue_label(verdict: str) -> str:
     return labels.get(str(verdict or "").upper(), str(verdict or "未知"))
 
 
-def _coord_space_for_v3_backend(backend: str) -> str:
+def _coord_space_for_v3_backend(backend: str, *, model: str = "") -> str:
     normalized = (backend or "").strip().lower()
-    if normalized in {"claude_cu", "gpt_cu"}:
-        return "absolute"
-    if "claude" in normalized or normalized.startswith("gpt"):
-        return "absolute"
-    return "normalized"
+    model_name = (model or "").strip().lower()
+    if normalized == "doubao_responses" or "doubao" in model_name:
+        return "normalized"
+    return "absolute"
 
 
 def _decode_image_size(image_bytes: Optional[bytes]) -> Optional[Tuple[int, int]]:

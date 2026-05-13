@@ -182,6 +182,20 @@ def test_v3_coord_space_follows_actual_locator_backend_family():
 
     assert doubao_locator.coord_space == "normalized"
 
+    generic_settings = Settings(
+        _env_file=None,
+        trajectory_cache_v3_coord_use_recovery_vlm_config=True,
+        trajectory_cache_recovery_vlm_backend="openai_compatible",
+        trajectory_cache_recovery_vlm_api_url="https://example.test/chat",
+        trajectory_cache_recovery_vlm_api_key="key",
+        trajectory_cache_recovery_vlm_model="generic-vision-model",
+        trajectory_cache_v3_rescue_use_recovery_vlm_config=True,
+        trajectory_cache_v3_rescue_enabled=True,
+    )
+    generic_locator = V3PlanLocator(settings=generic_settings, main_vlm_backend="doubao_responses")
+
+    assert generic_locator.coord_space == "absolute"
+
 
 def test_intent_from_thought_supports_chinese_and_english_verbs():
     """trajectory 写库阶段的 intent 抽取要兼容三家主 VLM backend：
