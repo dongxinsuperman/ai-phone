@@ -97,12 +97,34 @@ class CacheEphemeralActionClassifier:
         )
 
     def is_configured(self) -> bool:
-        s = self.settings
+        backend, api_url, api_key, model, _timeout = self._config()
         return bool(
             self.is_enabled()
-            and s.trajectory_cache_ephemeral_classifier_api_url
-            and s.trajectory_cache_ephemeral_classifier_api_key
-            and s.trajectory_cache_ephemeral_classifier_model
+            and backend
+            and api_url
+            and api_key
+            and model
+        )
+
+    def _config(self) -> Tuple[str, str, str, str, float]:
+        s = self.settings
+        explicit_url = str(s.trajectory_cache_ephemeral_classifier_api_url or "").strip()
+        explicit_key = str(s.trajectory_cache_ephemeral_classifier_api_key or "").strip()
+        explicit_model = str(s.trajectory_cache_ephemeral_classifier_model or "").strip()
+        if explicit_url or explicit_key or explicit_model:
+            return (
+                s.trajectory_cache_ephemeral_classifier_backend,
+                explicit_url,
+                explicit_key,
+                explicit_model,
+                float(s.trajectory_cache_ephemeral_classifier_timeout_sec),
+            )
+        return (
+            _assistant_backend_to_ephemeral_backend(s.assistant_backend),
+            str(s.assistant_api_url or "").strip(),
+            str(s.assistant_api_key or s.vlm_api_key or "").strip(),
+            str(s.assistant_model or "").strip(),
+            float(s.trajectory_cache_ephemeral_classifier_timeout_sec),
         )
 
     def configuration_problem(self) -> str:
@@ -111,12 +133,15 @@ class CacheEphemeralActionClassifier:
             return "ephemeral action 总开关未启用"
         if not s.trajectory_cache_ephemeral_classify_enabled:
             return "ephemeral classifier 未启用"
+        backend, api_url, api_key, model, _timeout = self._config()
         missing: List[str] = []
-        if not s.trajectory_cache_ephemeral_classifier_api_url:
+        if not backend:
+            missing.append("backend")
+        if not api_url:
             missing.append("api_url")
-        if not s.trajectory_cache_ephemeral_classifier_api_key:
+        if not api_key:
             missing.append("api_key")
-        if not s.trajectory_cache_ephemeral_classifier_model:
+        if not model:
             missing.append("model")
         if missing:
             return f"ephemeral classifier 配置缺失：{','.join(missing)}"
@@ -149,12 +174,13 @@ class CacheEphemeralActionClassifier:
                 self.settings.trajectory_cache_ephemeral_classify_min_confidence
             ),
         )
+        backend, api_url, api_key, model, timeout_sec = self._config()
         text = await _call_vlm_with_images(
-            backend=self.settings.trajectory_cache_ephemeral_classifier_backend,
-            api_url=self.settings.trajectory_cache_ephemeral_classifier_api_url,
-            api_key=self.settings.trajectory_cache_ephemeral_classifier_api_key,
-            model=self.settings.trajectory_cache_ephemeral_classifier_model,
-            timeout_sec=float(self.settings.trajectory_cache_ephemeral_classifier_timeout_sec),
+            backend=backend,
+            api_url=api_url,
+            api_key=api_key,
+            model=model,
+            timeout_sec=timeout_sec,
             system=(
                 "你是轨迹缓存的瞬态弹窗动作 classifier。"
                 "只输出 JSON，不要输出 markdown。"
@@ -601,9 +627,14 @@ async def _chat_completions_images(
         ],
     }
     # classifier/gate 都属于高风险裁决：宁可慢一点，也不要“扫一眼”误标。
-    # 对豆包 chat completions 这是显式开启混合推理；OpenAI 端若不识别该字段，
-    # 通常会忽略，失败也会由调用方走保守降级。
-    payload["thinking"] = {"type": "enabled"}
+    # 但 chat-completions 兼容层里各家字段并不一致：
+    # - 火山方舟 / 豆包：thinking.type=enabled
+    # - OpenAI o 系列：reasoning_effort=medium
+    # - 其它 OpenAI-compatible 代理：不强塞私有字段，避免 400 后降级。
+    if _is_doubao_chat_url(api_url):
+        payload["thinking"] = {"type": "enabled"}
+    elif _is_openai_chat_url(api_url):
+        payload["reasoning_effort"] = "medium"
     data = await _post_json(api_url, api_key, payload, timeout_sec)
     message = (data.get("choices") or [{}])[0].get("message") or {}
     value = message.get("content")
@@ -644,10 +675,16 @@ async def _messages_images(
         )
     payload: Dict[str, Any] = {
         "model": model,
-        "max_tokens": 1024,
+        "max_tokens": 4096,
         "system": system,
         "messages": [{"role": "user", "content": content}],
     }
+    settings = get_settings()
+    if int(settings.vlm_main_thinking_budget or 0) > 0:
+        payload["thinking"] = {
+            "type": "enabled",
+            "budget_tokens": int(settings.vlm_main_thinking_budget),
+        }
     headers = {
         "x-api-key": api_key,
         "anthropic-version": "2023-06-01",
@@ -690,9 +727,7 @@ def _extract_json_object(text: str) -> Optional[Dict[str, Any]]:
     raw = (text or "").strip()
     if not raw:
         return None
-    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, flags=re.DOTALL | re.IGNORECASE)
-    if fenced:
-        raw = fenced.group(1).strip()
+    raw = _strip_json_fence(raw)
     if not raw.startswith("{"):
         start = raw.find("{")
         end = raw.rfind("}")
@@ -703,6 +738,42 @@ def _extract_json_object(text: str) -> Optional[Dict[str, Any]]:
     except Exception:  # noqa: BLE001
         return None
     return data if isinstance(data, dict) else None
+
+
+def _strip_json_fence(raw: str) -> str:
+    text = raw.strip()
+    if not text.startswith("```"):
+        return text
+    lines = text.splitlines()
+    if not lines:
+        return text
+    if lines[0].strip().startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip().startswith("```"):
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _is_doubao_chat_url(api_url: str) -> bool:
+    url = (api_url or "").lower()
+    return "volces.com" in url or "ark.cn-" in url
+
+
+def _is_openai_chat_url(api_url: str) -> bool:
+    return "api.openai.com" in (api_url or "").lower()
+
+
+def _assistant_backend_to_ephemeral_backend(assistant_backend: str) -> str:
+    backend = (assistant_backend or "").strip().lower()
+    if backend == "claude":
+        return "claude_messages"
+    # doubao_chat 与 openai 都是 chat-completions 形态；具体 thinking/reasoning
+    # 字段由 URL 再细分。
+    if backend in {"doubao_chat", "openai", "openai_compatible"}:
+        return "openai_compatible"
+    if backend in {"doubao_responses", "claude_messages"}:
+        return backend
+    return "openai_compatible"
 
 
 def _action_brief(action: Optional[Dict[str, Any]]) -> Dict[str, Any]:

@@ -876,30 +876,31 @@ class Settings(BaseSettings):
         ),
     )
     trajectory_cache_ephemeral_classifier_backend: str = Field(
-        default="doubao_responses",
+        default="openai_compatible",
         description=(
             "瞬态 action classifier 后端协议：doubao_responses / openai_compatible / "
-            "claude_messages。env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_BACKEND"
+            "claude_messages。classifier url/key/model 留空时会复用 ASSISTANT_* 并按 "
+            "assistant_backend 自动映射。env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_BACKEND"
         ),
     )
     trajectory_cache_ephemeral_classifier_api_url: str = Field(
         default="",
         description=(
-            "瞬态 action classifier 接口地址。留空=不启用 classifier。"
+            "瞬态 action classifier 接口地址。留空=复用 assistant_api_url。"
             "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_API_URL"
         ),
     )
     trajectory_cache_ephemeral_classifier_api_key: str = Field(
         default="",
         description=(
-            "瞬态 action classifier API key。留空=不启用 classifier。"
+            "瞬态 action classifier API key。留空=复用 assistant_api_key / vlm_api_key。"
             "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_API_KEY"
         ),
     )
     trajectory_cache_ephemeral_classifier_model: str = Field(
         default="",
         description=(
-            "瞬态 action classifier 模型 ID。"
+            "瞬态 action classifier 模型 ID。留空=复用 assistant_model。"
             "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_MODEL"
         ),
     )
@@ -937,7 +938,7 @@ class Settings(BaseSettings):
         ),
     )
     trajectory_cache_ephemeral_gate_backend: str = Field(
-        default="doubao_responses",
+        default="openai_compatible",
         description=(
             "ephemeral gate 独立后端协议。仅在 GATE_USE_RECOVERY_VLM_CONFIG=false 时使用。"
             "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_BACKEND"

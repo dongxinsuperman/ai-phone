@@ -40,6 +40,7 @@ from ai_phone.server.trajectory_cache.recovery import (
     _extract_messages_text,
     _extract_responses_text,
 )
+from ai_phone.server.trajectory_cache import ephemeral as ephemeral_module
 
 
 def test_normalize_run_semantic_is_strict_and_deterministic():
@@ -135,6 +136,137 @@ def test_parse_ephemeral_gate_response_requires_repair_action():
         '{"verdict":"EXECUTE_REPAIR","reason":"没给动作"}'
     )
     assert missing.verdict == "ESCALATE"
+
+
+def test_parse_ephemeral_gate_response_accepts_fenced_nested_json():
+    decision = parse_ephemeral_gate_response(
+        """```json
+{
+  "verdict": "EXECUTE_REPAIR",
+  "reason": "close button moved",
+  "repair_action": {
+    "type": "click",
+    "point": {"x": 540, "y": 1024}
+  }
+}
+```"""
+    )
+
+    assert decision.verdict == "EXECUTE_REPAIR"
+    assert decision.repair_action["point"] == {"x": 540, "y": 1024}
+
+
+def test_ephemeral_classifier_falls_back_to_assistant_config():
+    settings = Settings(
+        _env_file=None,
+        trajectory_cache_ephemeral_action_enabled=True,
+        trajectory_cache_ephemeral_classify_enabled=True,
+        trajectory_cache_ephemeral_classifier_api_url="",
+        trajectory_cache_ephemeral_classifier_api_key="",
+        trajectory_cache_ephemeral_classifier_model="",
+        assistant_backend="claude",
+        assistant_api_url="https://api.anthropic.com/v1/messages",
+        assistant_api_key="sk-ant-test",
+        assistant_model="claude-sonnet-4-5",
+    )
+    classifier = ephemeral_module.CacheEphemeralActionClassifier(settings=settings)
+
+    assert classifier.is_configured() is True
+    backend, api_url, api_key, model, _timeout = classifier._config()
+    assert backend == "claude_messages"
+    assert api_url == "https://api.anthropic.com/v1/messages"
+    assert api_key == "sk-ant-test"
+    assert model == "claude-sonnet-4-5"
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_chat_payload_uses_provider_reasoning_fields(monkeypatch):
+    captured = []
+
+    async def fake_post_json(api_url, api_key, payload, timeout_sec):
+        captured.append((api_url, payload))
+        return {"choices": [{"message": {"content": "{\"verdict\":\"SKIP\"}"}}]}
+
+    monkeypatch.setattr(ephemeral_module, "_post_json", fake_post_json)
+
+    await ephemeral_module._chat_completions_images(
+        api_url="https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+        api_key="key",
+        model="doubao",
+        timeout_sec=30,
+        system="sys",
+        prompt="prompt",
+        images=[("current", b"jpeg")],
+    )
+    await ephemeral_module._chat_completions_images(
+        api_url="https://api.openai.com/v1/chat/completions",
+        api_key="key",
+        model="o4-mini",
+        timeout_sec=30,
+        system="sys",
+        prompt="prompt",
+        images=[("current", b"jpeg")],
+    )
+
+    doubao_payload = captured[0][1]
+    openai_payload = captured[1][1]
+    assert doubao_payload["thinking"] == {"type": "enabled"}
+    assert "reasoning_effort" not in doubao_payload
+    assert openai_payload["reasoning_effort"] == "medium"
+    assert "thinking" not in openai_payload
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_claude_messages_payload_enables_thinking(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {"content": [{"type": "text", "text": "{\"verdict\":\"SKIP\"}"}]}
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, api_url, json, headers):
+            captured["api_url"] = api_url
+            captured["payload"] = json
+            captured["headers"] = headers
+            return FakeResponse()
+
+    monkeypatch.setattr(ephemeral_module.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(
+        ephemeral_module,
+        "get_settings",
+        lambda: Settings(_env_file=None, vlm_main_thinking_budget=1024),
+    )
+
+    text = await ephemeral_module._messages_images(
+        api_url="https://api.anthropic.com/v1/messages",
+        api_key="sk-ant-test",
+        model="claude-sonnet-4-5",
+        timeout_sec=30,
+        system="sys",
+        prompt="prompt",
+        images=[("current", b"jpeg")],
+    )
+
+    assert text == '{"verdict":"SKIP"}'
+    assert captured["headers"]["x-api-key"] == "sk-ant-test"
+    assert captured["payload"]["thinking"] == {
+        "type": "enabled",
+        "budget_tokens": 1024,
+    }
+    assert captured["payload"]["max_tokens"] == 4096
 
 
 def test_build_cache_assertion_prompt_contains_replay_summary():
