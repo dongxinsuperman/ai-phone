@@ -150,7 +150,7 @@ def test_parse_v3_rescue_response_accepts_continue_and_repair_action():
     assert repair.repair_action["point"] == {"x": 500, "y": 500}
 
 
-def test_v3_coord_space_uses_actual_locator_backend_not_main_backend():
+def test_v3_coord_space_follows_actual_locator_backend_family():
     settings = Settings(
         _env_file=None,
         trajectory_cache_v3_coord_use_recovery_vlm_config=True,
@@ -165,8 +165,22 @@ def test_v3_coord_space_uses_actual_locator_backend_not_main_backend():
     locator = V3PlanLocator(settings=settings, main_vlm_backend="claude_cu")
     rescue = V3RescueVerifier(settings=settings, main_vlm_backend="claude_cu")
 
-    assert locator.coord_space == "normalized"
-    assert rescue.coord_space == "normalized"
+    assert locator.coord_space == "absolute"
+    assert rescue.coord_space == "absolute"
+
+    doubao_settings = Settings(
+        _env_file=None,
+        trajectory_cache_v3_coord_use_recovery_vlm_config=True,
+        trajectory_cache_recovery_vlm_backend="openai_compatible",
+        trajectory_cache_recovery_vlm_api_url="https://example.test/chat",
+        trajectory_cache_recovery_vlm_api_key="key",
+        trajectory_cache_recovery_vlm_model="doubao-seed",
+        trajectory_cache_v3_rescue_use_recovery_vlm_config=True,
+        trajectory_cache_v3_rescue_enabled=True,
+    )
+    doubao_locator = V3PlanLocator(settings=doubao_settings, main_vlm_backend="claude_cu")
+
+    assert doubao_locator.coord_space == "normalized"
 
 
 def test_intent_from_thought_supports_chinese_and_english_verbs():

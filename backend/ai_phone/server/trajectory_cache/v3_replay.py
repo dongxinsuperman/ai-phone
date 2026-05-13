@@ -1376,6 +1376,8 @@ def _coord_space_for_v3_backend(backend: str) -> str:
     normalized = (backend or "").strip().lower()
     if normalized in {"claude_cu", "gpt_cu"}:
         return "absolute"
+    if "claude" in normalized or normalized.startswith("gpt"):
+        return "absolute"
     return "normalized"
 
 
