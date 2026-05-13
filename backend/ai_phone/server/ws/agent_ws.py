@@ -14,7 +14,6 @@
 """
 from __future__ import annotations
 
-import socket
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -26,15 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ai_phone.config import get_settings
 from ai_phone.shared import protocol as P
 
-from ..db import get_session_factory
-from ..hub import Hub
-
-# serial → 累计未送达的 video_segment 计数；用于节流警告
-_NO_SUB_COUNT: Dict[str, int] = {}
 from ..lockstore import DeviceLockStore
 from ..models import Device, Run, RunLog, RunStep
 from ..runner.rpc import DriverRpcWaiter
 from ..runner.service import ServerRunnerService
+from ..db import get_session_factory
+from ..hub import Hub
 from ._deps import (
     get_driver_rpc_waiter,
     get_hub,
@@ -43,6 +39,9 @@ from ._deps import (
 )
 
 router = APIRouter()
+
+# serial → 累计未送达的 video_segment 计数；用于节流警告
+_NO_SUB_COUNT: Dict[str, int] = {}
 
 
 def _message_datetime(msg: Dict[str, Any]) -> datetime:
@@ -566,19 +565,14 @@ async def _finalize_run(run_id: str, msg: Dict[str, Any]) -> None:
 
     await _with_session(op)
     try:
-        from ai_phone.server.trajectory_cache import (  # noqa: PLC0415
-            delete_trajectory_cache_for_run,
-            save_trajectory_cache_after_success,
+        from ai_phone.server.trajectory_cache.finalize import (  # noqa: PLC0415
+            schedule_trajectory_cache_finalize,
         )
 
-        factory = get_session_factory()
-        if final_status == "success":
-            await save_trajectory_cache_after_success(factory, run_id)
-        else:
-            await delete_trajectory_cache_for_run(factory, run_id)
+        schedule_trajectory_cache_finalize(get_session_factory(), run_id, final_status)
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "轨迹缓存终态处理失败 run_id={} status={}: {}",
+            "轨迹缓存后台整理调度失败 run_id={} status={}: {}",
             run_id,
             final_status,
             exc,

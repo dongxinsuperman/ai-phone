@@ -29,8 +29,10 @@ from ai_phone.server.trajectory_cache import (
     RecoveryDecision,
     ReplayActionDispatcher,
     V3LocateResult,
+    V3PlanLocator,
     V3ReplayRunner,
     V3RescueDecision,
+    V3RescueVerifier,
     VERDICT_ASSERT_FAIL,
     VERDICT_CONTINUE,
     VERDICT_REPAIR_ACTION,
@@ -146,6 +148,25 @@ def test_parse_v3_rescue_response_accepts_continue_and_repair_action():
     assert cont.verdict == "CONTINUE_REPLAY"
     assert repair.verdict == "REPAIR_ACTION"
     assert repair.repair_action["point"] == {"x": 500, "y": 500}
+
+
+def test_v3_coord_space_uses_actual_locator_backend_not_main_backend():
+    settings = Settings(
+        _env_file=None,
+        trajectory_cache_v3_coord_use_recovery_vlm_config=True,
+        trajectory_cache_recovery_vlm_backend="claude_messages",
+        trajectory_cache_recovery_vlm_api_url="https://example.test/messages",
+        trajectory_cache_recovery_vlm_api_key="key",
+        trajectory_cache_recovery_vlm_model="claude-sonnet",
+        trajectory_cache_v3_rescue_use_recovery_vlm_config=True,
+        trajectory_cache_v3_rescue_enabled=True,
+    )
+
+    locator = V3PlanLocator(settings=settings, main_vlm_backend="claude_cu")
+    rescue = V3RescueVerifier(settings=settings, main_vlm_backend="claude_cu")
+
+    assert locator.coord_space == "normalized"
+    assert rescue.coord_space == "normalized"
 
 
 def test_intent_from_thought_supports_chinese_and_english_verbs():

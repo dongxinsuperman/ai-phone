@@ -142,10 +142,8 @@ class V3PlanLocator:
 
     @property
     def coord_space(self) -> str:
-        backend = self._main_vlm_backend
-        if backend in {"claude_cu", "gpt_cu"} or "claude" in backend or backend.startswith("gpt"):
-            return "absolute"
-        return "normalized"
+        backend, _api_url, _api_key, _model, _timeout = self._config()
+        return _coord_space_for_v3_backend(backend)
 
     async def locate_action(
         self,
@@ -433,10 +431,8 @@ class V3RescueVerifier:
 
     @property
     def coord_space(self) -> str:
-        backend = self._main_vlm_backend
-        if backend in {"claude_cu", "gpt_cu"} or "claude" in backend or backend.startswith("gpt"):
-            return "absolute"
-        return "normalized"
+        backend, _api_url, _api_key, _model, _timeout = self._config()
+        return _coord_space_for_v3_backend(backend)
 
     async def decide(
         self,
@@ -1374,6 +1370,13 @@ def _v3_rescue_label(verdict: str) -> str:
         V3_RESCUE_GIVE_UP: "放弃缓存回放",
     }
     return labels.get(str(verdict or "").upper(), str(verdict or "未知"))
+
+
+def _coord_space_for_v3_backend(backend: str) -> str:
+    normalized = (backend or "").strip().lower()
+    if normalized in {"claude_cu", "gpt_cu"}:
+        return "absolute"
+    return "normalized"
 
 
 def _decode_image_size(image_bytes: Optional[bytes]) -> Optional[Tuple[int, int]]:

@@ -391,43 +391,6 @@ class ServerRunEmitter:
                             )
                         )
                     await session.commit()
-            try:
-                from ai_phone.server.trajectory_cache import (  # noqa: PLC0415
-                    delete_trajectory_cache_for_run,
-                    delete_trajectory_cache_v3_for_run,
-                    save_trajectory_cache_after_success,
-                    save_trajectory_cache_v3_after_success,
-                )
-
-                cache_mode = "off"
-                async with self._session_factory() as session:
-                    run = await session.get(Run, self.run_id)
-                    cache_mode = str(getattr(run, "effective_cache_mode", "") or "off")
-                if final_status == "success":
-                    if cache_mode == "v3":
-                        await save_trajectory_cache_v3_after_success(
-                            self._session_factory, self.run_id
-                        )
-                    elif cache_mode in {"v1", "v2"}:
-                        await save_trajectory_cache_after_success(
-                            self._session_factory, self.run_id
-                        )
-                else:
-                    if cache_mode == "v3":
-                        await delete_trajectory_cache_v3_for_run(
-                            self._session_factory, self.run_id
-                        )
-                    elif cache_mode in {"v1", "v2"}:
-                        await delete_trajectory_cache_for_run(
-                            self._session_factory, self.run_id
-                        )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "轨迹缓存终态处理失败 run_id={} status={}: {}",
-                    self.run_id,
-                    final_status,
-                    exc,
-                )
             lock = self._lock_store.peek(self.serial)
             if lock is not None and lock.holder == self.run_id and lock.meta.get("auto_acquired"):
                 try:
@@ -451,6 +414,23 @@ class ServerRunEmitter:
                     await self._on_run_done(self.run_id, payload)
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("server_brain run_done 回调失败 run_id={}: {}", self.run_id, exc)
+            try:
+                from ai_phone.server.trajectory_cache.finalize import (  # noqa: PLC0415
+                    schedule_trajectory_cache_finalize,
+                )
+
+                schedule_trajectory_cache_finalize(
+                    self._session_factory,
+                    self.run_id,
+                    final_status,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "轨迹缓存后台整理调度失败 run_id={} status={}: {}",
+                    self.run_id,
+                    final_status,
+                    exc,
+                )
 
     def _enqueue(self, coro) -> asyncio.Task:
         task = asyncio.ensure_future(coro, loop=self._loop)
