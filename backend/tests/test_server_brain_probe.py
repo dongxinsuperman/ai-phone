@@ -92,6 +92,14 @@ def probe_app(storage_tmp, tmp_path):
 
     @app.on_event("shutdown")
     async def _close_db() -> None:
+        try:
+            app.state.driver_rpc_waiter.cancel_all(reason="test shutdown")
+        except Exception:
+            pass
+        try:
+            app.state.driver_pool.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
         await db_module.dispose_engine()
 
     yield app
