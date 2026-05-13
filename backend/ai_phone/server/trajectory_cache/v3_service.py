@@ -30,6 +30,12 @@ _CLICK_TARGET_RE = re.compile(
     r"(?:需要|应该|要|去|再|然后|下一步|点击|选择|按下|打开)*"
     r"点击[“\"'「『]?([^，。；;、\n”\"'」』]{1,24})[”\"'」』]?"
 )
+_EN_CLICK_TARGET_RE = re.compile(
+    r"(?:click|tap|select|press|open)(?:ing)?\s+"
+    r"(?:the\s+)?[“\"'「『]?([^，。；;、\n”\"'」』]{1,48})[”\"'」』]?",
+    re.IGNORECASE,
+)
+_EN_TARGET_TAIL_RE = re.compile(r"\s+(?:to|in order to|so that|because|and then)\b.*$", re.IGNORECASE)
 
 
 async def save_trajectory_cache_v3_after_success(
@@ -288,13 +294,14 @@ def _plan_intent_for_action(action: Dict[str, Any]) -> str:
             A.ACTION_DOUBLE_TAP: "双击",
             A.ACTION_LONG_PRESS: "长按",
         }[action_type]
-        target = _short_click_target(_candidate_text(action))
+        target = _short_click_target(_candidate_text(action, prefer_thought=True))
         return _ensure_verb(target, verb, fallback=f"{verb}目标元素")
     return _ensure_verb(_candidate_text(action), "点击", fallback=f"执行{action_type or '动作'}")
 
 
-def _candidate_text(action: Dict[str, Any]) -> str:
-    for key in ("label", "intent", "thought", "raw"):
+def _candidate_text(action: Dict[str, Any], *, prefer_thought: bool = False) -> str:
+    keys = ("thought", "label", "intent", "raw") if prefer_thought else ("label", "intent", "thought", "raw")
+    for key in keys:
         text = _clean_text(action.get(key) or "")
         if text:
             return text
@@ -313,6 +320,11 @@ def _short_click_target(text: str) -> str:
         target = _clean_text(matches[-1])
         target = re.sub(r"(按钮|卡片|入口|图标|区域)$", r"\1", target).strip()
         return target
+    english_matches = _EN_CLICK_TARGET_RE.findall(text)
+    if english_matches:
+        target = _clean_text(english_matches[-1])
+        target = _EN_TARGET_TAIL_RE.sub("", target).strip()
+        return target
     return text
 
 
@@ -327,4 +339,4 @@ def _ensure_verb(text: str, verb: str, *, fallback: str) -> str:
 
 def _clean_text(value: Any) -> str:
     text = _WS_RE.sub(" ", str(value or "").replace("\u3000", " ")).strip()
-    return text.strip(" ，。；;:：")
+    return text.strip(" ，。；;:：.")

@@ -62,6 +62,7 @@ from ai_phone.server.trajectory_cache.recovery import (
     _extract_messages_text,
     _extract_responses_text,
 )
+from ai_phone.server.trajectory_cache.v3_replay import V3LocatorMiss
 from ai_phone.server.trajectory_cache import ephemeral as ephemeral_module
 
 
@@ -112,6 +113,8 @@ def test_build_v3_locator_prompt_is_minimal_and_action_specific():
     assert "目标：点击开始挑战" in prompt
     assert "动作：click" in prompt
     assert "Action: click(point='<point>x y</point>')" in prompt
+    assert "不要复用缓存旧坐标" in prompt
+    assert "只能猜测" in prompt
     assert "不要进入 prompt" not in prompt
     assert "也不要进入 prompt" not in prompt
     assert "V3" not in prompt
@@ -153,6 +156,7 @@ def test_parse_v3_rescue_response_accepts_continue_and_repair_action():
 def test_v3_coord_space_follows_actual_locator_backend_family():
     settings = Settings(
         _env_file=None,
+        vlm_backend="claude_cu",
         trajectory_cache_v3_coord_use_recovery_vlm_config=True,
         trajectory_cache_recovery_vlm_backend="claude_messages",
         trajectory_cache_recovery_vlm_api_url="https://example.test/messages",
@@ -167,6 +171,24 @@ def test_v3_coord_space_follows_actual_locator_backend_family():
 
     assert locator.coord_space == "absolute"
     assert rescue.coord_space == "absolute"
+    assert locator.is_configured() is False
+
+    main_cu_settings = Settings(
+        _env_file=None,
+        vlm_backend="claude_cu",
+        trajectory_cache_v3_coord_use_recovery_vlm_config=True,
+        trajectory_cache_recovery_vlm_backend="doubao_responses",
+        trajectory_cache_recovery_vlm_api_url="",
+        trajectory_cache_recovery_vlm_api_key="",
+        trajectory_cache_recovery_vlm_model="",
+        vlm_api_url="https://api.anthropic.com/v1/messages",
+        vlm_api_key="key",
+        vlm_model="claude-sonnet",
+    )
+    main_cu_locator = V3PlanLocator(settings=main_cu_settings, main_vlm_backend="claude_cu")
+
+    assert main_cu_locator.coord_space == "absolute"
+    assert main_cu_locator.is_configured() is True
 
     doubao_settings = Settings(
         _env_file=None,
@@ -195,6 +217,30 @@ def test_v3_coord_space_follows_actual_locator_backend_family():
     generic_locator = V3PlanLocator(settings=generic_settings, main_vlm_backend="doubao_responses")
 
     assert generic_locator.coord_space == "absolute"
+
+
+def test_v3_locator_rejects_screen_edge_and_repeated_points_for_different_targets():
+    runner = V3ReplayRunner(driver=FakeDriver(), trajectory={"actions": []})
+
+    with pytest.raises(V3LocatorMiss, match="屏幕边缘"):
+        runner._validate_located_action(
+            {"type": "click", "plan_intent": "点击 BloFin App"},
+            {"type": "click", "point": {"x": 1079, "y": 1667}},
+            window_size=(1080, 2400),
+        )
+
+    runner._validate_located_action(
+        {"type": "click", "plan_intent": "点击 Cancel"},
+        {"type": "click", "point": {"x": 500, "y": 500}},
+        window_size=(1080, 2400),
+    )
+
+    with pytest.raises(V3LocatorMiss, match="不同目标返回同一坐标"):
+        runner._validate_located_action(
+            {"type": "click", "plan_intent": "点击 Futures Tab"},
+            {"type": "click", "point": {"x": 500, "y": 500}},
+            window_size=(1080, 2400),
+        )
 
 
 def test_intent_from_thought_supports_chinese_and_english_verbs():
@@ -824,6 +870,21 @@ def test_build_v3_cache_payload_adds_plan_intent_and_preserves_optional_role():
                 {
                     "index": 4,
                     "action_id": "a004",
+                    "type": "click",
+                    "label": "Futures页面",
+                    "intent": "点击Futures页面",
+                    "thought": "当前弹出升级弹窗，需要点击「Cancel」关闭弹窗。",
+                },
+                {
+                    "index": 5,
+                    "action_id": "a005",
+                    "type": "click",
+                    "label": "Futures Tab",
+                    "thought": "The upgrade popup is closed, now click the Futures bottom tab.",
+                },
+                {
+                    "index": 6,
+                    "action_id": "a006",
                     "type": "type",
                     "content": "hello",
                 },
@@ -839,7 +900,9 @@ def test_build_v3_cache_payload_adds_plan_intent_and_preserves_optional_role():
     assert payload["actions"][1]["role"] == "business_required"
     assert payload["actions"][1]["plan_intent"] == "点击教材同步"
     assert payload["actions"][2]["plan_intent"] == "点击开始挑战"
-    assert payload["actions"][3]["plan_intent"] == "输入hello"
+    assert payload["actions"][3]["plan_intent"] == "点击Cancel"
+    assert payload["actions"][4]["plan_intent"] == "点击Futures bottom tab"
+    assert payload["actions"][5]["plan_intent"] == "输入hello"
     assert payload["source_completion"]["assertion_pass"] == "已进入教材同步"
 
 

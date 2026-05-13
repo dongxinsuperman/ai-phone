@@ -50,6 +50,7 @@ from ai_phone.server.trajectory_cache.replay import (
     ReplayResult,
     _resolve_landmark_path,
 )
+from ai_phone.server.trajectory_cache.service import normalize_run_semantic
 from ai_phone.shared import actions as A
 
 
@@ -96,6 +97,8 @@ class V3PlanLocator:
         self._main_vlm_backend = (main_vlm_backend or "").strip().lower()
 
     def is_configured(self) -> bool:
+        if self._use_main_claude_cu_locator():
+            return bool(self.settings.vlm_api_url and self.settings.vlm_api_key and self.settings.vlm_model)
         backend, api_url, api_key, model, _timeout = self._config()
         return bool(self.settings.trajectory_cache_v3_coord_enabled and backend and api_url and api_key and model)
 
@@ -121,6 +124,17 @@ class V3PlanLocator:
         s = self.settings
         if not s.trajectory_cache_v3_coord_enabled:
             return "v3 coord 未启用（trajectory_cache_v3_coord_enabled=false）"
+        if self._use_main_claude_cu_locator():
+            missing: List[str] = []
+            if not s.vlm_api_url:
+                missing.append("vlm_api_url")
+            if not s.vlm_api_key:
+                missing.append("vlm_api_key")
+            if not s.vlm_model:
+                missing.append("vlm_model")
+            if missing:
+                return f"主 VLM Claude Computer Use 配置缺失：{','.join(missing)}"
+            return ""
         backend, api_url, api_key, model, _timeout = self._config()
         missing: List[str] = []
         if not backend:
@@ -142,8 +156,22 @@ class V3PlanLocator:
 
     @property
     def coord_space(self) -> str:
+        if self._use_main_claude_cu_locator():
+            return "absolute"
         backend, _api_url, _api_key, _model, _timeout = self._config()
         return _coord_space_for_v3_backend(backend, model=_model)
+
+    def _use_main_claude_cu_locator(self) -> bool:
+        if self._main_vlm_backend != "claude_cu":
+            return False
+        if (self.settings.vlm_backend or "").strip().lower() != "claude_cu":
+            return False
+        if not bool(self.settings.trajectory_cache_v3_coord_enabled):
+            return False
+        backend, _api_url, _api_key, _model, _timeout = self._config()
+        if (backend or "").strip().lower() == "claude_messages":
+            return True
+        return not (_api_url and _api_key and _model)
 
     async def locate_action(
         self,
@@ -157,6 +185,15 @@ class V3PlanLocator:
     ) -> V3LocateResult:
         if not self.is_configured():
             raise ReplayActionError(self.configuration_problem() or "v3 locator 不可用")
+        if self._use_main_claude_cu_locator():
+            return await self._locate_action_with_claude_cu(
+                goal=goal,
+                trajectory=trajectory,
+                action=action,
+                screenshot_bytes=screenshot_bytes,
+                image_size=image_size,
+                window_size=window_size,
+            )
         prompt = build_v3_locator_prompt(
             goal=goal,
             trajectory=trajectory,
@@ -221,6 +258,48 @@ class V3PlanLocator:
         raise RuntimeError(
             f"v3 locator 暂不支持 backend={backend}，"
             "当前支持 doubao_responses / openai_compatible / claude_messages"
+        )
+
+    async def _locate_action_with_claude_cu(
+        self,
+        *,
+        goal: str,
+        trajectory: Dict[str, Any],
+        action: Dict[str, Any],
+        screenshot_bytes: bytes,
+        image_size: Optional[Tuple[int, int]],
+        window_size: Tuple[int, int],
+    ) -> V3LocateResult:
+        from ai_phone.shared.llm.main.claude_cu import ClaudeComputerUseClient
+
+        system_prompt = build_v3_claude_cu_locator_prompt(action=action)
+        client = ClaudeComputerUseClient(
+            system_prompt=system_prompt,
+            api_url=self.settings.vlm_api_url,
+            api_key=self.settings.vlm_api_key,
+            model=self.settings.vlm_model,
+            timeout_seconds=float(self.settings.trajectory_cache_v3_coord_timeout_sec),
+        )
+        decision = await client.decide(screenshot_bytes)
+        parsed_actions = list(decision.parsed_actions or [])
+        parsed = next((item for item in parsed_actions if getattr(item, "is_known", False)), None)
+        if parsed is None:
+            raise V3LocatorMiss(f"v3 Claude CU locator 未返回动作: {decision.raw_content[:160]}")
+        expected_type = str(action.get("type") or "")
+        if parsed.action != expected_type:
+            raise V3LocatorMiss(
+                f"v3 Claude CU locator 动作类型不匹配 expected={expected_type} actual={parsed.action}"
+            )
+        replay_action = _replay_action_from_parsed(
+            parsed,
+            source_action=action,
+            image_size=image_size,
+            window_size=window_size,
+        )
+        return V3LocateResult(
+            action=replay_action,
+            raw=decision.raw_content,
+            reason=decision.thought,
         )
 
     async def _chat_completions_single_image(
@@ -548,6 +627,8 @@ class V3ReplayRunner:
         self._ephemeral_gate_max_calls = int(settings.trajectory_cache_ephemeral_gate_max_calls or 0)
         self._v3_rescue_calls_used = 0
         self._v3_rescue_max_calls = int(settings.trajectory_cache_v3_rescue_max_calls_per_replay or 0)
+        self._last_locator_point: Optional[Tuple[int, int]] = None
+        self._last_locator_target = ""
 
     async def run(self) -> ReplayResult:
         actions = list(self.trajectory.get("actions") or [])
@@ -753,6 +834,7 @@ class V3ReplayRunner:
             image_size=image_size,
             window_size=window_size,
         )
+        self._validate_located_action(action, located.action, window_size=window_size)
         plan_intent = str(action.get("plan_intent") or action.get("intent") or "")
         await self._log(
             1,
@@ -769,6 +851,38 @@ class V3ReplayRunner:
                 f"#{action.get('index')} {located.reason[:120]}",
             )
         return located.action
+
+    def _validate_located_action(
+        self,
+        source_action: Dict[str, Any],
+        located_action: Dict[str, Any],
+        *,
+        window_size: Tuple[int, int],
+    ) -> None:
+        point = _action_primary_point(located_action)
+        if point is None:
+            return
+        w, h = int(window_size[0]), int(window_size[1])
+        target = _v3_target_text(source_action)
+        if _point_on_screen_edge(point, window_size):
+            raise V3LocatorMiss(
+                f"v3 locator 返回屏幕边缘坐标 target={target} point={point} window={w}x{h}"
+            )
+        previous_point = self._last_locator_point
+        previous_target = self._last_locator_target
+        if (
+            previous_point is not None
+            and previous_point == point
+            and previous_target
+            and target
+            and normalize_run_semantic(previous_target) != normalize_run_semantic(target)
+        ):
+            raise V3LocatorMiss(
+                "v3 locator 对不同目标返回同一坐标 "
+                f"prev={previous_target} current={target} point={point}"
+            )
+        self._last_locator_point = point
+        self._last_locator_target = target
 
     async def _rescue_and_retry_locator(
         self,
@@ -1143,11 +1257,38 @@ def build_v3_locator_prompt(
         "请在当前截图中定位目标并返回动作。\n"
         f"目标：{plan_intent}\n"
         f"动作：{action_type}\n"
+        f"缓存原始动作：{_action_brief(action)}\n"
         f"坐标：{coord_hint}\n"
+        "要求：必须找到目标元素的中心点；不要复用缓存旧坐标；"
+        "如果目标不可见、被弹窗遮挡、或只能猜测，请输出：无。\n"
         "只输出：\n"
         f"Action: {action_schema}\n"
         "找不到输出：无\n"
         "不要输出其他内容。"
+    )
+
+
+def build_v3_claude_cu_locator_prompt(*, action: Dict[str, Any]) -> str:
+    action_type = str(action.get("type") or "")
+    plan_intent = str(action.get("plan_intent") or action.get("intent") or "").strip()
+    if action_type == A.ACTION_DRAG:
+        action_instruction = "use one drag action from the center of the source element to the target position"
+    elif action_type == A.ACTION_DOUBLE_TAP:
+        action_instruction = "use one double-click action on the target element center"
+    elif action_type == A.ACTION_LONG_PRESS:
+        action_instruction = "use one long-press action on the target element center"
+    else:
+        action_instruction = "use one left-click action on the target element center"
+    return (
+        "You are locating one cached mobile UI step on the current screenshot.\n"
+        "Use the computer tool exactly once for the requested action.\n"
+        "Do not complete the whole task. Do not perform any extra navigation.\n"
+        "Do not reuse old cached coordinates; inspect the current screenshot.\n"
+        "If the target is not visible, is covered by a popup, or you would need to guess, "
+        "do not click. Reply with text: ASSERT_FAIL: target not found.\n\n"
+        f"Target: {plan_intent or action_type}\n"
+        f"Required action: {action_type}; {action_instruction}.\n"
+        "Coordinates are absolute pixels in the screenshot provided to you."
     )
 
 
@@ -1336,6 +1477,35 @@ def _point_to_abs(
             py = int(round(py * h / ih))
         return max(0, min(px, w - 1)), max(0, min(py, h - 1))
     return A.vlm_point_to_abs(int(point[0]), int(point[1]), w, h)
+
+
+def _action_primary_point(action: Dict[str, Any]) -> Optional[Tuple[int, int]]:
+    raw = action.get("point")
+    if isinstance(raw, dict):
+        try:
+            return int(raw["x"]), int(raw["y"])
+        except (KeyError, TypeError, ValueError):
+            return None
+    if isinstance(raw, (list, tuple)) and len(raw) >= 2:
+        try:
+            return int(raw[0]), int(raw[1])
+        except (TypeError, ValueError):
+            return None
+    start = action.get("start")
+    if isinstance(start, dict):
+        try:
+            return int(start["x"]), int(start["y"])
+        except (KeyError, TypeError, ValueError):
+            return None
+    return None
+
+
+def _point_on_screen_edge(point: Tuple[int, int], window_size: Tuple[int, int]) -> bool:
+    w, h = int(window_size[0]), int(window_size[1])
+    if w <= 1 or h <= 1:
+        return False
+    x, y = int(point[0]), int(point[1])
+    return x <= 0 or y <= 0 or x >= w - 1 or y >= h - 1
 
 
 def _action_brief(action: Optional[Dict[str, Any]]) -> str:
