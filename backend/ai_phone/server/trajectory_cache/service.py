@@ -24,6 +24,12 @@ from ai_phone.config import get_settings
 from ai_phone.agent.runner.phash import compute_phash
 from ai_phone.server.models import Device, Run, RunCommand, RunLog, RunStep, VlmTrajectoryCache
 from ai_phone.server.trajectory_cache.action_adapters import parse_cache_action
+from ai_phone.server.trajectory_cache.ephemeral import (
+    ROLE_BUSINESS_REQUIRED,
+    ROLE_OPTIONAL_EPHEMERAL,
+    CacheEphemeralActionClassifier,
+    EphemeralClassification,
+)
 
 CACHE_SCHEMA_VERSION = 2
 _WS_RE = re.compile(r"\s+")
@@ -284,6 +290,13 @@ async def _build_trajectory(
         logs=logs,
         commands=commands,
     )
+    await _classify_ephemeral_actions(
+        session=session,
+        run=run,
+        actions=actions,
+        steps=steps,
+        state_landmarks=state_landmarks,
+    )
     source_completion = _build_source_completion(run, logs)
 
     return {
@@ -302,6 +315,157 @@ async def _build_trajectory(
         "state_landmarks": state_landmarks,
         "source_completion": source_completion,
     }
+
+
+async def _classify_ephemeral_actions(
+    *,
+    session: AsyncSession,
+    run: Run,
+    actions: List[Dict[str, Any]],
+    steps: Sequence[RunStep],
+    state_landmarks: Sequence[Dict[str, Any]],
+) -> None:
+    """给新保存的 V2 action 补 ``role`` / ``ephemeral_meta``。
+
+    关闭总开关时完全不写新字段，保证旧 V2 行为和缓存结构不变。开启后所有
+    action 默认都是 ``business_required``，只有 classifier 高置信度通过的
+    非业务瞬态遮挡动作才标为 ``optional_ephemeral``。
+    """
+    settings = get_settings()
+    if not bool(settings.trajectory_cache_ephemeral_action_enabled):
+        return
+
+    for action in actions:
+        action.setdefault("role", ROLE_BUSINESS_REQUIRED)
+
+    classifier = CacheEphemeralActionClassifier(settings=settings)
+    if not classifier.is_enabled():
+        await _write_log(
+            session,
+            run.id,
+            level=1,
+            title="轨迹缓存瞬态标记",
+            content="ephemeral classifier 未启用，仅写入 business_required 默认角色",
+        )
+        return
+    if not classifier.is_configured():
+        await _write_log(
+            session,
+            run.id,
+            level=2,
+            title="轨迹缓存瞬态标记",
+            content=f"classifier 配置不完整：{classifier.configuration_problem()}",
+        )
+        return
+
+    steps_by_no = {int(step.step): step for step in steps}
+    landmarks_by_action_id = {
+        str(item.get("action_id")): item
+        for item in state_landmarks
+        if str(item.get("action_id") or "")
+    }
+    for idx, action in enumerate(actions):
+        if not _is_ephemeral_candidate_action(action):
+            continue
+        action_id = str(action.get("action_id") or "")
+        before_url = _action_before_image_url(action, steps_by_no)
+        after_landmark = landmarks_by_action_id.get(action_id) or {}
+        before_bytes = _read_image_url_bytes(before_url)
+        after_bytes = _read_landmark_bytes(after_landmark)
+        if not before_bytes or not after_bytes:
+            await _write_log(
+                session,
+                run.id,
+                level=1,
+                title="轨迹缓存瞬态标记",
+                content=(
+                    f"action_id={action_id} role=business_required "
+                    "reason=缺少 before/after 截图证据，跳过 classifier"
+                ),
+            )
+            continue
+        try:
+            result = await classifier.classify_action(
+                goal=str(run.goal or ""),
+                action=action,
+                before_bytes=before_bytes,
+                after_bytes=after_bytes,
+                prev_action=actions[idx - 1] if idx > 0 else None,
+                next_action=actions[idx + 1] if idx + 1 < len(actions) else None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            result = EphemeralClassification(
+                role=ROLE_BUSINESS_REQUIRED,
+                category="uncertain",
+                confidence=0.0,
+                skip_if_absent=False,
+                reason=f"classifier 调用失败：{type(exc).__name__}: {str(exc)[:160]}",
+            )
+        if result.is_optional:
+            action["role"] = ROLE_OPTIONAL_EPHEMERAL
+            action["ephemeral_meta"] = {
+                "enabled": True,
+                "category": result.category,
+                "skip_if_absent": True,
+                "confidence": float(result.confidence),
+                "reason": result.reason,
+                "business_risk": result.business_risk or "low",
+                "cached_popup_before_snapshot": before_url,
+                "cached_popup_before_path": str(_resolve_file_url(before_url) or ""),
+                "cached_after_snapshot": str(after_landmark.get("image_url") or ""),
+                "cached_after_path": str(after_landmark.get("image_path") or ""),
+            }
+        await _write_log(
+            session,
+            run.id,
+            level=1,
+            title="轨迹缓存瞬态标记",
+            content=(
+                f"action_id={action_id} role={action.get('role')} "
+                f"category={result.category} confidence={result.confidence:.2f} "
+                f"reason={result.reason}"
+            ),
+        )
+
+
+def _is_ephemeral_candidate_action(action: Dict[str, Any]) -> bool:
+    return str(action.get("type") or "") in {
+        A.ACTION_CLICK,
+        A.ACTION_DOUBLE_TAP,
+        A.ACTION_LONG_PRESS,
+        A.ACTION_PRESS_BACK,
+    }
+
+
+def _action_before_image_url(
+    action: Dict[str, Any],
+    steps_by_no: Dict[int, RunStep],
+) -> str:
+    source_step = _safe_int(action.get("source_step"))
+    if source_step is None:
+        return ""
+    step = steps_by_no.get(source_step)
+    return str(getattr(step, "screenshot_before", "") or "") if step is not None else ""
+
+
+def _read_image_url_bytes(image_url: str) -> Optional[bytes]:
+    path = _resolve_file_url(image_url)
+    if path is None:
+        return None
+    try:
+        return path.read_bytes()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _read_landmark_bytes(landmark: Dict[str, Any]) -> Optional[bytes]:
+    path_text = str(landmark.get("image_path") or "").strip()
+    if path_text:
+        try:
+            return Path(path_text).expanduser().read_bytes()
+        except Exception:  # noqa: BLE001
+            return None
+    return _read_image_url_bytes(str(landmark.get("image_url") or ""))
 
 
 def _build_actions_from_steps(

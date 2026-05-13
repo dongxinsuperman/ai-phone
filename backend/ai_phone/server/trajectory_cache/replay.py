@@ -24,6 +24,16 @@ from ai_phone.agent.runner.events import (
 from ai_phone.agent.runner.phash import compute_phash, diff_rate
 from ai_phone.agent.runner.stability import StabilityResult, wait_page_stable_pixel
 from ai_phone.config import get_settings
+from ai_phone.server.trajectory_cache.ephemeral import (
+    GATE_ASSERT_FAIL,
+    GATE_ESCALATE,
+    GATE_EXECUTE_ORIGINAL,
+    GATE_EXECUTE_REPAIR,
+    GATE_SKIP,
+    ROLE_OPTIONAL_EPHEMERAL,
+    CacheEphemeralGateVerifier,
+    EphemeralGateDecision,
+)
 from ai_phone.server.trajectory_cache.recovery import (
     VERDICT_ASSERT_FAIL,
     VERDICT_CONTINUE,
@@ -159,6 +169,7 @@ class ReplayRunner:
         dispatcher: Optional[ReplayActionDispatcher] = None,
         observe_delay_ms: Optional[int] = None,
         recovery_verifier: Optional[CacheReplayRecoveryVerifier] = None,
+        ephemeral_gate_verifier: Optional[CacheEphemeralGateVerifier] = None,
         goal: Optional[str] = None,
     ):
         self.driver = driver
@@ -169,6 +180,7 @@ class ReplayRunner:
         self.capture_after_each_action = capture_after_each_action
         self.dispatcher = dispatcher or ReplayActionDispatcher(driver)
         self.recovery_verifier = recovery_verifier
+        self.ephemeral_gate_verifier = ephemeral_gate_verifier
         self.goal = (
             goal
             if goal is not None
@@ -215,7 +227,21 @@ class ReplayRunner:
                 or 0
             ),
         )
+        self.ephemeral_gate_max_calls = max(
+            0,
+            int(getattr(settings, "trajectory_cache_ephemeral_gate_max_calls", 3) or 0),
+        )
+        if self.ephemeral_gate_verifier is None:
+            self.ephemeral_gate_verifier = CacheEphemeralGateVerifier(
+                settings=settings,
+                main_vlm_backend=str(
+                    self.trajectory.get("source_vlm_backend")
+                    or getattr(settings, "vlm_backend", "")
+                    or ""
+                ),
+            )
         self._recovery_calls_used = 0
+        self._ephemeral_gate_calls_used = 0
         self._landmarks_by_action_id = {
             str(item.get("action_id")): item
             for item in (self.trajectory.get("state_landmarks") or [])
@@ -242,7 +268,7 @@ class ReplayRunner:
         executed = 0
         run_started_at = time.monotonic()
         await self._log(1, "轨迹缓存回放", f"开始回放 actions={len(actions)}")
-        for action in actions:
+        for action_pos, action in enumerate(actions):
             index = int(action.get("index") or executed + 1)
             # —— 关键：cache replay 也要走 EVT_STEP_START / EVT_STEP_END 闭环，
             # 否则 emitter 收到的 EVT_SCREENSHOT 会一直挂在 _pending_step_urls
@@ -254,21 +280,70 @@ class ReplayRunner:
                 before_bytes = await self._capture_before(index)
                 self._final_before_bytes = before_bytes
                 self._emit_screenshot(index, "before", before_bytes)
-                await self.dispatcher.execute(action)
+                execution_action = action
+                alignment_action = action
+                step_action = action
+                if self._is_optional_ephemeral_action(action):
+                    gate_outcome = await self._handle_ephemeral_action(
+                        action=action,
+                        index=index,
+                        current_bytes=before_bytes or b"",
+                        next_action=(
+                            actions[action_pos + 1]
+                            if action_pos + 1 < len(actions)
+                            else None
+                        ),
+                    )
+                    if gate_outcome["mode"] == "skip":
+                        self._last_frame = before_bytes
+                        self._final_after_bytes = before_bytes
+                        if self.capture_after_each_action:
+                            self._emit_screenshot(index, "after", before_bytes)
+                        step_action = dict(action)
+                        step_action["_ephemeral_gate_note"] = gate_outcome["note"]
+                        self._emit_step_end(
+                            index,
+                            action=step_action,
+                            elapsed_ms=int((time.monotonic() - step_started_at) * 1000),
+                        )
+                        continue
+                    if gate_outcome["mode"] == "accepted":
+                        accepted_bytes = gate_outcome.get("after_bytes") or before_bytes
+                        self._last_frame = accepted_bytes
+                        self._final_after_bytes = accepted_bytes
+                        if self.capture_after_each_action:
+                            self._emit_screenshot(index, "after", accepted_bytes)
+                        step_action = dict(action)
+                        step_action["_ephemeral_gate_note"] = gate_outcome["note"]
+                        self._emit_step_end(
+                            index,
+                            action=step_action,
+                            elapsed_ms=int((time.monotonic() - step_started_at) * 1000),
+                        )
+                        continue
+                    if gate_outcome["mode"] == "execute_repair":
+                        execution_action = gate_outcome["action"]
+                        alignment_action = action
+                        step_action = dict(action)
+                        step_action["_ephemeral_gate_note"] = gate_outcome["note"]
+
+                await self.dispatcher.execute(execution_action)
                 executed += 1
                 await self._log(
                     1,
-                    "轨迹缓存 action",
-                    _format_action_log(action),
+                    "轨迹缓存 action"
+                    if execution_action is action
+                    else "轨迹缓存瞬态修复动作",
+                    _format_action_log(execution_action),
                 )
                 await self._observe_after_action()
                 if self.capture_after_each_action:
-                    after_bytes = await self._capture_after(action)
+                    after_bytes = await self._capture_after(alignment_action)
                     self._final_after_bytes = after_bytes
                     self._emit_screenshot(index, "after", after_bytes)
                 self._emit_step_end(
                     index,
-                    action=action,
+                    action=step_action,
                     elapsed_ms=int((time.monotonic() - step_started_at) * 1000),
                 )
             except Exception as exc:  # noqa: BLE001
@@ -809,6 +884,245 @@ class ReplayRunner:
             return out
         raise ReplayActionError(f"unsupported recovery action type: {action!r}")
 
+    def _is_optional_ephemeral_action(self, action: Dict[str, Any]) -> bool:
+        return (
+            str(action.get("role") or "") == ROLE_OPTIONAL_EPHEMERAL
+            and isinstance(action.get("ephemeral_meta"), dict)
+        )
+
+    async def _handle_ephemeral_action(
+        self,
+        *,
+        action: Dict[str, Any],
+        index: int,
+        current_bytes: bytes,
+        next_action: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        action_id = str(action.get("action_id") or "")
+        meta = action.get("ephemeral_meta") if isinstance(action.get("ephemeral_meta"), dict) else {}
+        category = str(meta.get("category") or "unknown")
+        verifier = self.ephemeral_gate_verifier
+        if verifier is None or not verifier.is_configured():
+            problem = verifier.configuration_problem() if verifier is not None else "gate 未注入"
+            await self._log(
+                2,
+                "轨迹缓存瞬态动作",
+                (
+                    f"action_id={action_id} category={category} verdict=EXECUTE_ORIGINAL "
+                    f"reason={problem}；按保守策略执行原 action executed=true skipped=false"
+                ),
+            )
+            return {"mode": "execute_original", "note": f"ephemeral gate 不可用：{problem}"}
+        if self._ephemeral_gate_calls_used >= self.ephemeral_gate_max_calls:
+            raise ReplayActionError(
+                f"ephemeral_gate_limit_exceeded action_id={action_id} "
+                f"limit={self.ephemeral_gate_max_calls}"
+            )
+        popup_before = self._ephemeral_meta_image_bytes(meta, "cached_popup_before")
+        cached_after = self._ephemeral_meta_image_bytes(meta, "cached_after")
+        if not popup_before or not cached_after:
+            await self._log(
+                2,
+                "轨迹缓存瞬态动作",
+                (
+                    f"action_id={action_id} category={category} verdict=EXECUTE_ORIGINAL "
+                    "reason=缺少 cached_popup_before/cached_after 证据；"
+                    "按保守策略执行原 action executed=true skipped=false"
+                ),
+            )
+            return {"mode": "execute_original", "note": "ephemeral gate 缺少截图证据，执行原动作"}
+
+        self._ephemeral_gate_calls_used += 1
+        self._recovery_image_size = _decode_image_size(current_bytes)
+        decision = await verifier.decide(
+            goal=self.goal,
+            action=action,
+            current_bytes=current_bytes,
+            cached_popup_before_bytes=popup_before,
+            cached_after_bytes=cached_after,
+            next_action=next_action,
+        )
+        await self._record_ephemeral_gate_decision(
+            action=action,
+            category=category,
+            decision=decision,
+        )
+
+        if decision.verdict == GATE_SKIP:
+            return {
+                "mode": "skip",
+                "note": f"ephemeral gate SKIP：{decision.reason}",
+            }
+        if decision.verdict == GATE_EXECUTE_ORIGINAL:
+            return {
+                "mode": "execute_original",
+                "note": f"ephemeral gate EXECUTE_ORIGINAL：{decision.reason}",
+            }
+        if decision.verdict == GATE_EXECUTE_REPAIR:
+            repair_action = await self._replay_action_from_gate_repair(decision, index=index)
+            return {
+                "mode": "execute_repair",
+                "action": repair_action,
+                "note": f"ephemeral gate EXECUTE_REPAIR：{decision.reason}",
+            }
+        if decision.verdict == GATE_ESCALATE:
+            after_bytes = await self._handle_ephemeral_escalate(
+                action=action,
+                current_bytes=current_bytes,
+                cached_after_bytes=cached_after,
+                reason=decision.reason,
+            )
+            return {
+                "mode": "accepted",
+                "after_bytes": after_bytes,
+                "note": f"ephemeral gate ESCALATE → recovery_vlm：{decision.reason}",
+            }
+        if decision.verdict == GATE_ASSERT_FAIL:
+            raise ReplayActionError(
+                f"ephemeral_gate_assert_fail action_id={action_id}: {decision.reason}"
+            )
+        raise ReplayActionError(
+            f"ephemeral_gate_unknown_verdict action_id={action_id}: {decision.verdict}"
+        )
+
+    def _ephemeral_meta_image_bytes(
+        self,
+        meta: Dict[str, Any],
+        prefix: str,
+    ) -> Optional[bytes]:
+        for key in (f"{prefix}_path", f"{prefix}_snapshot", f"{prefix}_url"):
+            raw = str(meta.get(key) or "").strip()
+            if not raw:
+                continue
+            path = Path(raw).expanduser()
+            if not path.is_absolute():
+                if raw.startswith("/files/"):
+                    path = _resolve_landmark_path({"image_url": raw}) or path
+                else:
+                    continue
+            try:
+                return path.read_bytes()
+            except Exception:  # noqa: BLE001
+                continue
+        return None
+
+    async def _handle_ephemeral_escalate(
+        self,
+        *,
+        action: Dict[str, Any],
+        current_bytes: bytes,
+        cached_after_bytes: bytes,
+        reason: str,
+    ) -> bytes:
+        action_id = str(action.get("action_id") or "")
+        verifier = self.recovery_verifier
+        if verifier is None or not verifier.is_configured():
+            problem = (
+                verifier.configuration_problem()
+                if verifier is not None
+                else "recovery_vlm 未注入"
+            )
+            raise ReplayActionError(
+                f"ephemeral_gate_escalate action_id={action_id} reason={reason} "
+                f"but {problem}"
+            )
+        target_hash = compute_phash(cached_after_bytes)
+        if target_hash is None:
+            raise ReplayActionError(
+                f"ephemeral_gate_escalate action_id={action_id} cached_after_phash_empty"
+            )
+        landmark = self._landmarks_by_action_id.get(action_id) or {
+            "action_id": action_id,
+            "before_action_index": None,
+            "status": "available",
+        }
+        metrics = {
+            "match": False,
+            "global_diff": 1.0,
+            "center_mae": 1.0,
+            "black_ratio_diff": 1.0,
+            "reason": f"ephemeral_gate_escalate:{reason}",
+        }
+        return await self._handle_alignment_miss(
+            action=action,
+            action_id=action_id,
+            landmark=landmark,
+            landmark_bytes=cached_after_bytes,
+            target_hash=target_hash,
+            current_bytes=current_bytes,
+            metrics=metrics,
+            elapsed_ms=0,
+            max_wait_ms=0,
+        )
+
+    async def _replay_action_from_gate_repair(
+        self,
+        decision: EphemeralGateDecision,
+        *,
+        index: int,
+    ) -> Dict[str, Any]:
+        raw = dict(decision.repair_action or {})
+        action_type = str(raw.get("type") or raw.get("action") or A.ACTION_CLICK)
+        out: Dict[str, Any] = {
+            "index": f"ephemeral-{index}",
+            "type": action_type,
+            "intent": decision.reason or "ephemeral gate repair",
+            "source": "ephemeral_gate",
+        }
+        if action_type in (A.ACTION_CLICK, A.ACTION_DOUBLE_TAP, A.ACTION_LONG_PRESS):
+            point = raw.get("point")
+            if point is None:
+                raise ReplayActionError("ephemeral gate repair 缺少 point")
+            x, y = await self._gate_point_to_abs(point, decision.coord_space)
+            out["point"] = {"x": x, "y": y}
+            if action_type == A.ACTION_LONG_PRESS:
+                out["duration_ms"] = int(raw.get("duration_ms") or 1000)
+            return out
+        if action_type == A.ACTION_WAIT:
+            out["seconds"] = max(1, min(60, int(raw.get("seconds") or 1)))
+            return out
+        if action_type == A.ACTION_PRESS_BACK:
+            return out
+        raise ReplayActionError(f"unsupported ephemeral repair action type: {action_type!r}")
+
+    async def _gate_point_to_abs(self, value: Any, coord_space: str) -> Tuple[int, int]:
+        point = _coerce_point(value)
+        if point is None:
+            raise ReplayActionError("invalid ephemeral gate point")
+        w, h = await asyncio.to_thread(self.driver.window_size)
+        if coord_space == "absolute":
+            px, py = int(point[0]), int(point[1])
+            img_size = self._recovery_image_size
+            if img_size is not None and img_size[0] > 0 and img_size[1] > 0:
+                iw, ih = img_size
+                px = int(round(px * w / iw))
+                py = int(round(py * h / ih))
+            return max(0, min(px, w - 1)), max(0, min(py, h - 1))
+        x, y = A.vlm_point_to_abs(int(point[0]), int(point[1]), w, h)
+        return int(x), int(y)
+
+    async def _record_ephemeral_gate_decision(
+        self,
+        *,
+        action: Dict[str, Any],
+        category: str,
+        decision: EphemeralGateDecision,
+    ) -> None:
+        action_id = str(action.get("action_id") or "")
+        await self._log(
+            1 if decision.verdict in {GATE_SKIP, GATE_EXECUTE_ORIGINAL} else 2,
+            "轨迹缓存瞬态动作",
+            (
+                f"action_id={action_id} category={category} "
+                f"verdict={decision.verdict} reason={decision.reason} "
+                f"elapsed={decision.elapsed_ms}ms "
+                f"executed={decision.verdict in {GATE_EXECUTE_ORIGINAL, GATE_EXECUTE_REPAIR}} "
+                f"skipped={decision.verdict == GATE_SKIP} "
+                f"recovery={decision.verdict == GATE_ESCALATE}"
+                + (f" error={decision.error}" if decision.error else "")
+            ),
+        )
+
     async def _parsed_point_to_abs(self, point: List[int], coord_space: str) -> Tuple[int, int]:
         w, h = await asyncio.to_thread(self.driver.window_size)
         if coord_space == "absolute":
@@ -965,6 +1279,9 @@ class ReplayRunner:
                 f"已由 recovery_vlm 执行 {repair_count} 次局部修复并对齐；"
                 "此处是修复后的 after 记录，不是重复执行本步）"
             )
+        gate_note = str(action.get("_ephemeral_gate_note") or "").strip()
+        if gate_note and not error:
+            thought = f"{thought}（{gate_note}）"
         if error:
             thought = f"{thought}（执行失败：{error}）"
         self.emit(

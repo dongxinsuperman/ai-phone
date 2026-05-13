@@ -15,6 +15,9 @@ from ai_phone.server.runner.service import ServerRunnerService
 from ai_phone.server.trajectory_cache import (
     CacheReplayAssertionVerifier,
     CacheReplayRecoveryVerifier,
+    EphemeralGateDecision,
+    GATE_EXECUTE_REPAIR,
+    GATE_SKIP,
     RecoveryDecision,
     ReplayActionDispatcher,
     VERDICT_ASSERT_FAIL,
@@ -28,6 +31,8 @@ from ai_phone.server.trajectory_cache import (
     get_active_trajectory_cache,
     normalize_run_semantic,
     parse_cache_assertion_response,
+    parse_ephemeral_classification_response,
+    parse_ephemeral_gate_response,
     parse_recovery_response,
     save_trajectory_cache_after_success,
 )
@@ -86,6 +91,50 @@ def test_parse_cache_assertion_response():
     assert parse_cache_assertion_response("PASS: ok").verdict == "PASS"
     assert parse_cache_assertion_response("FAIL: bad").reason == "bad"
     assert parse_cache_assertion_response("MAYBE").verdict == "SKIP"
+
+
+def test_parse_ephemeral_classification_response_is_conservative():
+    optional = parse_ephemeral_classification_response(
+        '{"role":"optional_ephemeral","category":"marketing_popup",'
+        '"confidence":0.91,"skip_if_absent":true,"business_risk":"low",'
+        '"reason":"营销弹窗遮挡，关闭后回到业务页"}',
+        min_confidence=0.85,
+    )
+    assert optional.role == "optional_ephemeral"
+    assert optional.is_optional is True
+
+    low_conf = parse_ephemeral_classification_response(
+        '{"role":"optional_ephemeral","category":"marketing_popup",'
+        '"confidence":0.50,"skip_if_absent":true,"reason":"不够确定"}',
+        min_confidence=0.85,
+    )
+    assert low_conf.role == "business_required"
+
+    high_risk = parse_ephemeral_classification_response(
+        '{"role":"optional_ephemeral","category":"payment_or_trade_confirm",'
+        '"confidence":0.99,"skip_if_absent":true,"reason":"像确认弹窗"}',
+        min_confidence=0.85,
+    )
+    assert high_risk.role == "business_required"
+
+
+def test_parse_ephemeral_gate_response_requires_repair_action():
+    skip = parse_ephemeral_gate_response(
+        '{"verdict":"SKIP","reason":"当前无同类弹窗，下一步按钮可见"}'
+    )
+    assert skip.verdict == "SKIP"
+
+    repair = parse_ephemeral_gate_response(
+        '{"verdict":"EXECUTE_REPAIR","reason":"关闭按钮换位置",'
+        '"repair_action":{"type":"click","point":{"x":500,"y":500}}}'
+    )
+    assert repair.verdict == "EXECUTE_REPAIR"
+    assert repair.repair_action["type"] == "click"
+
+    missing = parse_ephemeral_gate_response(
+        '{"verdict":"EXECUTE_REPAIR","reason":"没给动作"}'
+    )
+    assert missing.verdict == "ESCALATE"
 
 
 def test_build_cache_assertion_prompt_contains_replay_summary():
@@ -256,6 +305,22 @@ class FakeReplayRunner:
         return b"jpeg"
 
 
+class FakeEphemeralGate:
+    def __init__(self, decision):
+        self.decision = decision
+        self.calls = []
+
+    def is_configured(self):
+        return True
+
+    def configuration_problem(self):
+        return ""
+
+    async def decide(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.decision
+
+
 class FakeAlignmentMissReplayRunner(FakeReplayRunner):
     async def run(self):
         await self.log(3, "轨迹缓存状态路标", "轨迹偏航，终止缓存回放")
@@ -279,7 +344,11 @@ class FakeCacheVerifier:
 
 
 @pytest.mark.asyncio
-async def test_save_trajectory_cache_from_run_steps(_test_engine, session):
+async def test_save_trajectory_cache_from_run_steps(monkeypatch, _test_engine, session):
+    from ai_phone.server.trajectory_cache import service as service_module
+
+    settings = Settings(_env_file=None, trajectory_cache_ephemeral_action_enabled=False)
+    monkeypatch.setattr(service_module, "get_settings", lambda: settings)
     session.add(Device(serial="D1", platform="android", screen_width=1000, screen_height=2000))
     run = Run(
         id="run-cache-ok",
@@ -416,7 +485,15 @@ async def test_save_trajectory_cache_prefers_command_params(_test_engine, sessio
 
 
 @pytest.mark.asyncio
-async def test_save_trajectory_cache_from_unlinked_run_commands(_test_engine, session):
+async def test_save_trajectory_cache_from_unlinked_run_commands(
+    monkeypatch,
+    _test_engine,
+    session,
+):
+    from ai_phone.server.trajectory_cache import service as service_module
+
+    settings = Settings(_env_file=None, trajectory_cache_ephemeral_action_enabled=False)
+    monkeypatch.setattr(service_module, "get_settings", lambda: settings)
     session.add(Device(serial="D1", platform="android", screen_width=1000, screen_height=2000))
     run = Run(id="run-cache-unlinked-command", device_serial="D1", goal="tap sequence", status="success")
     session.add(run)
@@ -1039,6 +1116,113 @@ async def test_replay_runner_logs_observe_delay(monkeypatch):
     assert result.success is True
     assert sleeps == [0.5]
     assert any(title == "轨迹缓存观察延迟" and "500ms" in content for _level, title, content in logs)
+
+
+@pytest.mark.asyncio
+async def test_replay_runner_ephemeral_gate_skip_does_not_click(tmp_path):
+    logs = []
+    driver = FakeDriver()
+    from ai_phone.server.trajectory_cache import ReplayRunner
+
+    before_path = tmp_path / "popup_before.jpg"
+    after_path = tmp_path / "after.jpg"
+    before_path.write_bytes(b"popup")
+    after_path.write_bytes(b"after")
+
+    async def log(level, title, content):
+        logs.append((level, title, content))
+
+    runner = ReplayRunner(
+        driver=driver,
+        trajectory={
+            "actions": [
+                {
+                    "index": 1,
+                    "action_id": "a001",
+                    "type": "click",
+                    "point": {"x": 10, "y": 20},
+                    "role": "optional_ephemeral",
+                    "ephemeral_meta": {
+                        "category": "marketing_popup",
+                        "cached_popup_before_path": str(before_path),
+                        "cached_after_path": str(after_path),
+                    },
+                }
+            ]
+        },
+        log=log,
+        observe_delay_ms=0,
+        ephemeral_gate_verifier=FakeEphemeralGate(
+            EphemeralGateDecision(verdict=GATE_SKIP, reason="当前无同类弹窗")
+        ),
+    )
+
+    async def stable():
+        return SimpleNamespace(bytes_=b"current")
+
+    runner._wait_stable = stable  # type: ignore[method-assign]
+
+    result = await runner.run()
+
+    assert result.success is True
+    assert result.actions_executed == 0
+    assert not any(call[0] == "click" for call in driver.calls)
+    assert any(
+        title == "轨迹缓存瞬态动作" and "verdict=SKIP" in content
+        for _level, title, content in logs
+    )
+
+
+@pytest.mark.asyncio
+async def test_replay_runner_ephemeral_gate_repair_executes_new_click(tmp_path):
+    driver = FakeDriver()
+    from ai_phone.server.trajectory_cache import ReplayRunner
+
+    before_path = tmp_path / "popup_before.jpg"
+    after_path = tmp_path / "after.jpg"
+    before_path.write_bytes(b"popup")
+    after_path.write_bytes(b"after")
+
+    runner = ReplayRunner(
+        driver=driver,
+        trajectory={
+            "actions": [
+                {
+                    "index": 1,
+                    "action_id": "a001",
+                    "type": "click",
+                    "point": {"x": 10, "y": 20},
+                    "role": "optional_ephemeral",
+                    "ephemeral_meta": {
+                        "category": "marketing_popup",
+                        "cached_popup_before_path": str(before_path),
+                        "cached_after_path": str(after_path),
+                    },
+                }
+            ]
+        },
+        observe_delay_ms=0,
+        ephemeral_gate_verifier=FakeEphemeralGate(
+            EphemeralGateDecision(
+                verdict=GATE_EXECUTE_REPAIR,
+                reason="关闭按钮位置变化",
+                repair_action={"type": "click", "point": {"x": 500, "y": 500}},
+                coord_space="normalized",
+            )
+        ),
+    )
+
+    async def stable():
+        return SimpleNamespace(bytes_=b"current")
+
+    runner._wait_stable = stable  # type: ignore[method-assign]
+
+    result = await runner.run()
+
+    assert result.success is True
+    assert result.actions_executed == 1
+    assert ("click", 500, 1000) in driver.calls
+    assert ("click", 10, 20) not in driver.calls
 
 
 @pytest.mark.asyncio

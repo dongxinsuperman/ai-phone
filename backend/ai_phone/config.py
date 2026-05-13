@@ -858,6 +858,130 @@ class Settings(BaseSettings):
             "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_MAX_CALLS_PER_REPLAY"
         ),
     )
+    # ------------------------------------------------------------------
+    # v2 缓存回放 · 瞬态弹窗动作标记与按需回放
+    # ------------------------------------------------------------------
+    trajectory_cache_ephemeral_action_enabled: bool = Field(
+        default=False,
+        description=(
+            "轨迹缓存 optional_ephemeral 动作总开关。False=不标记、不 gate，"
+            "完全保持旧 V2 回放。env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_ACTION_ENABLED"
+        ),
+    )
+    trajectory_cache_ephemeral_classify_enabled: bool = Field(
+        default=True,
+        description=(
+            "成功轨迹保存阶段是否启用瞬态 action classifier。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFY_ENABLED"
+        ),
+    )
+    trajectory_cache_ephemeral_classifier_backend: str = Field(
+        default="doubao_responses",
+        description=(
+            "瞬态 action classifier 后端协议：doubao_responses / openai_compatible / "
+            "claude_messages。env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_BACKEND"
+        ),
+    )
+    trajectory_cache_ephemeral_classifier_api_url: str = Field(
+        default="",
+        description=(
+            "瞬态 action classifier 接口地址。留空=不启用 classifier。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_API_URL"
+        ),
+    )
+    trajectory_cache_ephemeral_classifier_api_key: str = Field(
+        default="",
+        description=(
+            "瞬态 action classifier API key。留空=不启用 classifier。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_API_KEY"
+        ),
+    )
+    trajectory_cache_ephemeral_classifier_model: str = Field(
+        default="",
+        description=(
+            "瞬态 action classifier 模型 ID。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_MODEL"
+        ),
+    )
+    trajectory_cache_ephemeral_classifier_timeout_sec: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=300.0,
+        description=(
+            "瞬态 action classifier 单次调用超时（秒）。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_TIMEOUT_SEC"
+        ),
+    )
+    trajectory_cache_ephemeral_classify_min_confidence: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "classifier 判 optional_ephemeral 的最低置信度；低于阈值一律 business_required。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFY_MIN_CONFIDENCE"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_enabled: bool = Field(
+        default=True,
+        description=(
+            "回放遇到 optional_ephemeral action 时是否启用 gate。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_ENABLED"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_use_recovery_vlm_config: bool = Field(
+        default=True,
+        description=(
+            "ephemeral gate 是否复用 recovery_vlm 的 backend/url/key/model 连接配置。"
+            "只复用连接，不复用 prompt。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_USE_RECOVERY_VLM_CONFIG"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_backend: str = Field(
+        default="doubao_responses",
+        description=(
+            "ephemeral gate 独立后端协议。仅在 GATE_USE_RECOVERY_VLM_CONFIG=false 时使用。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_BACKEND"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_api_url: str = Field(
+        default="",
+        description=(
+            "ephemeral gate 独立接口地址。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_API_URL"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_api_key: str = Field(
+        default="",
+        description=(
+            "ephemeral gate 独立 API key。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_API_KEY"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_model: str = Field(
+        default="",
+        description=(
+            "ephemeral gate 独立模型 ID。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_MODEL"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_timeout_sec: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=300.0,
+        description=(
+            "ephemeral gate 独立通道单次调用超时（秒）。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_TIMEOUT_SEC"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_max_calls: int = Field(
+        default=3,
+        ge=0,
+        le=50,
+        description=(
+            "单条缓存回放最多允许调用 ephemeral gate 多少次。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_MAX_CALLS"
+        ),
+    )
     # 审判系统单次调用超时；超时按 ALLOW 处理（不阻塞 Run 收尾）。
     audit_timeout_sec: float = Field(
         default=30.0,

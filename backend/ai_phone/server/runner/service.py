@@ -323,6 +323,7 @@ class ServerRunnerService:
             return False
 
         from ai_phone.server.trajectory_cache import (  # noqa: PLC0415
+            CacheEphemeralGateVerifier,
             CacheReplayAssertionVerifier,
             ReplayRunner,
             get_active_trajectory_cache,
@@ -395,6 +396,31 @@ class ServerRunnerService:
                     ),
                 )
 
+        ephemeral_gate_verifier: Optional[CacheEphemeralGateVerifier] = None
+        if (
+            bool(getattr(settings, "trajectory_cache_ephemeral_action_enabled", False))
+            and bool(getattr(settings, "trajectory_cache_ephemeral_gate_enabled", True))
+        ):
+            ephemeral_gate_verifier = CacheEphemeralGateVerifier(
+                settings=settings,
+                main_vlm_backend=trajectory.get("source_vlm_backend")
+                or getattr(settings, "vlm_backend", ""),
+            )
+            problem = ephemeral_gate_verifier.configuration_problem()
+            if problem:
+                await _log(2, "轨迹缓存", f"ephemeral gate 已开启但配置不完整：{problem}")
+            else:
+                await _log(
+                    1,
+                    "轨迹缓存",
+                    (
+                        "ephemeral gate 已启用，"
+                        f"max_calls={getattr(settings, 'trajectory_cache_ephemeral_gate_max_calls', 3)} "
+                        f"use_recovery_config="
+                        f"{getattr(settings, 'trajectory_cache_ephemeral_gate_use_recovery_vlm_config', True)}"
+                    ),
+                )
+
         runner = ReplayRunner(
             driver=driver,
             trajectory=trajectory,
@@ -403,6 +429,7 @@ class ServerRunnerService:
             emit=emitter.emit,
             capture_after_each_action=True,
             recovery_verifier=recovery_verifier,
+            ephemeral_gate_verifier=ephemeral_gate_verifier,
             goal=goal,
         )
         replay_result = await runner.run()

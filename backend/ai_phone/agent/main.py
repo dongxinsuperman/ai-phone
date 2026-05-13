@@ -1643,6 +1643,12 @@ async def _handle_stop_mirror(
         await asyncio.to_thread(supervisor.stop, serial)
 
 
+def _normalize_agent_token(raw: Optional[str]) -> str:
+    """清理 CLI/env token 两端常见复制粘贴字符。"""
+
+    return str(raw or "").strip().strip("'\"‘’“”")
+
+
 def run(
     server_ws: Optional[str] = None,
     token: Optional[str] = None,
@@ -1657,7 +1663,7 @@ def run(
         effective_http_base = derived_http_base
     else:
         effective_http_base = settings.server_http_base.rstrip("/")
-    effective_token = token or settings.agent_token
+    effective_token = _normalize_agent_token(token or settings.agent_token)
     effective_name = name or settings.agent_name or socket.gethostname()
     agent_id = stable_agent_id(effective_name)
 
