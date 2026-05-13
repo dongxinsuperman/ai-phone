@@ -1272,17 +1272,17 @@ def build_v3_claude_cu_locator_prompt(*, action: Dict[str, Any]) -> str:
     action_type = str(action.get("type") or "")
     plan_intent = str(action.get("plan_intent") or action.get("intent") or "").strip()
     if action_type == A.ACTION_DRAG:
-        action_instruction = "use one drag action from the center of the source element to the target position"
+        action_instruction = "use one drag action from the source position to the target position"
     elif action_type == A.ACTION_DOUBLE_TAP:
-        action_instruction = "use one double-click action on the target element center"
+        action_instruction = "use one double-click action on the target control center"
     elif action_type == A.ACTION_LONG_PRESS:
-        action_instruction = "use one long-press action on the target element center"
+        action_instruction = "use one long-press action on the target control center"
     else:
-        action_instruction = "use one left-click action on the target element center"
+        action_instruction = "use one left-click action on the target control center"
     return (
-        "You are locating one cached mobile UI step on the current screenshot.\n"
+        "You are locating one cached screen action on the current screenshot.\n"
         "Use the computer tool exactly once for the requested action.\n"
-        "Do not complete the whole task. Do not perform any extra navigation.\n"
+        "Do not infer or execute any surrounding steps.\n"
         "Do not reuse old cached coordinates; inspect the current screenshot.\n"
         "If the target is not visible, is covered by a popup, or you would need to guess, "
         "do not click. Reply with text: ASSERT_FAIL: target not found.\n\n"
@@ -1309,8 +1309,8 @@ def build_v3_rescue_prompt(
         f"整体目标：{goal}\n"
         f"缓存语义：{trajectory.get('run_semantic_text') or ''}\n"
         f"当前步骤：{_action_brief(action)}\n"
-        f"上一业务步骤：{_action_brief(previous_action) if previous_action else '无'}\n"
-        f"下一业务步骤：{_action_brief(next_action) if next_action else '无'}\n"
+        f"上一缓存步骤：{_action_brief(previous_action) if previous_action else '无'}\n"
+        f"下一缓存步骤：{_action_brief(next_action) if next_action else '无'}\n"
         f"定位失败原因：{miss_reason}\n"
         f"修复动作坐标要求：{coord_hint}。\n\n"
         "输出 schema：\n"
@@ -1321,7 +1321,7 @@ def build_v3_rescue_prompt(
         '  "repair_action": {"type":"click","point":{"x":500,"y":500}}\n'
         "}\n"
         "规则：页面可能还在加载则 WAIT，并给出等待毫秒数；"
-        "有明显非业务弹窗遮挡则 POPUP_CLOSE 并给关闭动作；"
+        "有明显可关闭遮挡层则 POPUP_CLOSE 并给关闭动作；"
         "需要一个安全局部动作才能回到缓存路线则 REPAIR_ACTION；"
         "如果当前步骤已完成、页面已经能衔接下一条缓存动作，则 CONTINUE_REPLAY；"
         "页面不对、目标不存在或不确定则 GIVE_UP。不要重跑完整任务。"

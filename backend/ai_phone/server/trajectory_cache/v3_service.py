@@ -30,12 +30,6 @@ _CLICK_TARGET_RE = re.compile(
     r"(?:需要|应该|要|去|再|然后|下一步|点击|选择|按下|打开)*"
     r"点击[“\"'「『]?([^，。；;、\n”\"'」』]{1,24})[”\"'」』]?"
 )
-_EN_CLICK_TARGET_RE = re.compile(
-    r"(?:click|tap|select|press|open)(?:ing)?\s+"
-    r"(?:the\s+)?[“\"'「『]?([^，。；;、\n”\"'」』]{1,48})[”\"'」』]?",
-    re.IGNORECASE,
-)
-_EN_TARGET_TAIL_RE = re.compile(r"\s+(?:to|in order to|so that|because|and then)\b.*$", re.IGNORECASE)
 
 
 async def save_trajectory_cache_v3_after_success(
@@ -319,11 +313,6 @@ def _short_click_target(text: str) -> str:
     if matches:
         target = _clean_text(matches[-1])
         target = re.sub(r"(按钮|卡片|入口|图标|区域)$", r"\1", target).strip()
-        return target
-    english_matches = _EN_CLICK_TARGET_RE.findall(text)
-    if english_matches:
-        target = _clean_text(english_matches[-1])
-        target = _EN_TARGET_TAIL_RE.sub("", target).strip()
         return target
     return text
 

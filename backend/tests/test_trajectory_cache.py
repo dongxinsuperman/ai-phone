@@ -224,20 +224,20 @@ def test_v3_locator_rejects_screen_edge_and_repeated_points_for_different_target
 
     with pytest.raises(V3LocatorMiss, match="屏幕边缘"):
         runner._validate_located_action(
-            {"type": "click", "plan_intent": "点击 BloFin App"},
+            {"type": "click", "plan_intent": "点击应用图标"},
             {"type": "click", "point": {"x": 1079, "y": 1667}},
             window_size=(1080, 2400),
         )
 
     runner._validate_located_action(
-        {"type": "click", "plan_intent": "点击 Cancel"},
+        {"type": "click", "plan_intent": "点击关闭按钮"},
         {"type": "click", "point": {"x": 500, "y": 500}},
         window_size=(1080, 2400),
     )
 
     with pytest.raises(V3LocatorMiss, match="不同目标返回同一坐标"):
         runner._validate_located_action(
-            {"type": "click", "plan_intent": "点击 Futures Tab"},
+            {"type": "click", "plan_intent": "点击底部标签"},
             {"type": "click", "point": {"x": 500, "y": 500}},
             window_size=(1080, 2400),
         )
@@ -871,16 +871,16 @@ def test_build_v3_cache_payload_adds_plan_intent_and_preserves_optional_role():
                     "index": 4,
                     "action_id": "a004",
                     "type": "click",
-                    "label": "Futures页面",
-                    "intent": "点击Futures页面",
-                    "thought": "当前弹出升级弹窗，需要点击「Cancel」关闭弹窗。",
+                    "label": "底部标签页面",
+                    "intent": "点击底部标签页面",
+                    "thought": "当前存在遮挡层，需要点击「关闭」按钮。",
                 },
                 {
                     "index": 5,
                     "action_id": "a005",
                     "type": "click",
-                    "label": "Futures Tab",
-                    "thought": "The upgrade popup is closed, now click the Futures bottom tab.",
+                    "label": "Bottom Tab",
+                    "thought": "当前遮挡层已关闭，需要点击底部标签。",
                 },
                 {
                     "index": 6,
@@ -900,8 +900,8 @@ def test_build_v3_cache_payload_adds_plan_intent_and_preserves_optional_role():
     assert payload["actions"][1]["role"] == "business_required"
     assert payload["actions"][1]["plan_intent"] == "点击教材同步"
     assert payload["actions"][2]["plan_intent"] == "点击开始挑战"
-    assert payload["actions"][3]["plan_intent"] == "点击Cancel"
-    assert payload["actions"][4]["plan_intent"] == "点击Futures bottom tab"
+    assert payload["actions"][3]["plan_intent"] == "关闭"
+    assert payload["actions"][4]["plan_intent"] == "点击底部标签"
     assert payload["actions"][5]["plan_intent"] == "输入hello"
     assert payload["source_completion"]["assertion_pass"] == "已进入教材同步"
 
