@@ -43,6 +43,7 @@ from ..hub import Hub
 from ..lockstore import DeviceLockStore, LockConflict
 from ..models import Device, Run, Submission, SubmissionItem
 from ..runner.dispatch import RunDispatchService
+from ..trajectory_cache.mode import normalize_requested_cache_mode, resolve_effective_cache_mode
 from ..submissions import (
     ResultPublisher,
     StdoutPublisher,
@@ -160,6 +161,7 @@ class ItemDraft:
     device_alias_pool: Optional[List[str]] = None
     # 外部传 caseName 时透传；缺省由调用方回填（一般 = case_id）。
     case_name: Optional[str] = None
+    cache_mode: str = "off"
 
 
 def parse_and_validate(
@@ -241,6 +243,8 @@ def parse_and_validate(
             )
         callback_url = cb_str
 
+    default_cache_mode = normalize_requested_cache_mode(raw_body.get("cacheMode"))
+
     items_list = raw_body.get("items")
     if not isinstance(items_list, list):
         raise AdmissionError(
@@ -262,6 +266,7 @@ def parse_and_validate(
         case_name_raw = raw.get("caseName")
         case_name = str(case_name_raw).strip() if case_name_raw else ""
         run_content = str(raw.get("runContent") or "").strip()
+        item_cache_mode = normalize_requested_cache_mode(raw.get("cacheMode") or default_cache_mode)
 
         if not case_id:
             raise AdmissionError("missing_field", "caseId 必填", index=i)
@@ -360,6 +365,7 @@ def parse_and_validate(
                 run_content=run_content,
                 device_alias_pool=normalized_pool,
                 case_name=case_name or None,
+                cache_mode=item_cache_mode,
             ))
     return submission_name, callback_url, out
 
@@ -585,6 +591,7 @@ class SubmissionScheduler:
                     platform=d.platform,
                     run_content=d.run_content,
                     device_alias_pool=list(d.device_alias_pool) if d.device_alias_pool else None,
+                    cache_mode=d.cache_mode,
                     state="queued",
                     enqueued_at=now,
                 )
@@ -623,6 +630,7 @@ class SubmissionScheduler:
                     "platform": it.platform,
                     "deviceAliasPool": list(it.device_alias_pool or []) or None,
                     "state": it.state,
+                    "requestedCacheMode": it.cache_mode or "off",
                 }
                 for it in items
             ],
@@ -719,6 +727,11 @@ class SubmissionScheduler:
                 case_id=None,
                 goal=item.run_content,
                 status="pending",
+                requested_cache_mode=item.cache_mode,
+                effective_cache_mode=resolve_effective_cache_mode(
+                    env_cache_enabled=bool(self._settings.trajectory_cache_enabled),
+                    requested_cache_mode=item.cache_mode,
+                ),
             )
             session.add(run)
 

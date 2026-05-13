@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import (
     JSON,
@@ -171,6 +171,12 @@ class Run(Base):
     agent_offline_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    requested_cache_mode: Mapped[str] = mapped_column(
+        String(8), default="off", server_default="off"
+    )
+    effective_cache_mode: Mapped[str] = mapped_column(
+        String(8), default="off", server_default="off", index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -204,6 +210,9 @@ class Run(Base):
             "trace_id": self.trace_id,
             "agent_id_at_start": self.agent_id_at_start,
             "agent_offline_at": self.agent_offline_at.isoformat() if self.agent_offline_at else None,
+            "requested_cache_mode": self.requested_cache_mode or "off",
+            "effective_cache_mode": self.effective_cache_mode or "off",
+            "cacheMode": self.effective_cache_mode or "off",
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
@@ -429,6 +438,72 @@ class VlmTrajectoryCache(Base):
         }
 
 
+class VlmTrajectoryCacheV3(Base):
+    """V3 语义坐标回放缓存。
+
+    V3 与 V2 分表：V2 保留完整 action + handoff landmark 路线；V3 保留增强
+    source actions，但正常复跑只信任 ``plan_intent`` 和 action 类型，不信任旧坐标。
+    """
+
+    __tablename__ = "vlm_trajectory_cache_v3"
+    __table_args__ = (
+        Index("ix_vlm_trajectory_cache_v3_key", "cache_key", unique=True),
+        Index("ix_vlm_trajectory_v3_device_semantic", "device_code", "run_semantic_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_short_id)
+    cache_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    device_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    run_semantic_hash: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    run_semantic_text: Mapped[str] = mapped_column(Text, default="")
+    case_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    platform: Mapped[str] = mapped_column(String(16), default="")
+    resolution: Mapped[str] = mapped_column(String(32), default="")
+    app_package_or_bundle: Mapped[str] = mapped_column(String(255), default="")
+    schema_version: Mapped[int] = mapped_column(Integer, default=3)
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    source_run_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    source_vlm_backend: Mapped[str] = mapped_column(String(64), default="")
+    actions_json: Mapped[List[Dict[str, Any]]] = mapped_column(JSON, default=list)
+    source_completion: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    meta_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_failed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "mode": "v3",
+            "cache_key": self.cache_key,
+            "device_code": self.device_code,
+            "run_semantic_hash": self.run_semantic_hash,
+            "run_semantic_text": self.run_semantic_text,
+            "case_id": self.case_id,
+            "platform": self.platform,
+            "resolution": self.resolution,
+            "app_package_or_bundle": self.app_package_or_bundle,
+            "schema_version": self.schema_version,
+            "status": self.status,
+            "source_run_id": self.source_run_id,
+            "source_vlm_backend": self.source_vlm_backend,
+            "actions": self.actions_json or [],
+            "source_completion": self.source_completion or {},
+            "meta": self.meta_json or {},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "last_success_at": self.last_success_at.isoformat() if self.last_success_at else None,
+            "last_failed_at": self.last_failed_at.isoformat() if self.last_failed_at else None,
+        }
+
+
 class Submission(Base):
     """一次外部请求的批次容器（v1 第 2 梯队）。
 
@@ -529,6 +604,7 @@ class SubmissionItem(Base):
     #   哪台先 ready 哪台拿下一条；自然形成"快机多跑、慢机少跑"的负载分担
     # 写入时以 list[str] 形式（按 sorted+dedup 之后的顺序），DB 用 JSON 列承载
     device_alias_pool: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    cache_mode: Mapped[str] = mapped_column(String(8), default="off", server_default="off")
 
     # queued / running / success / failed / cancelled
     state: Mapped[str] = mapped_column(String(16), default="queued", index=True)
@@ -565,6 +641,7 @@ class SubmissionItem(Base):
             "platform": self.platform,
             "run_content": self.run_content,
             "device_alias_pool": list(self.device_alias_pool or []) or None,
+            "cacheMode": self.cache_mode or "off",
             "state": self.state,
             "status_reason": self.status_reason or None,
             "run_id": self.run_id,
@@ -585,6 +662,7 @@ __all__ = [
     "RunLog",
     "RunCommand",
     "VlmTrajectoryCache",
+    "VlmTrajectoryCacheV3",
     "Submission",
     "SubmissionItem",
 ]

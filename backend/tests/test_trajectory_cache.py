@@ -9,7 +9,15 @@ from ai_phone.config import Settings
 from ai_phone.server import db as db_module
 from ai_phone.server.hub import Hub
 from ai_phone.server.lockstore import DeviceLockStore
-from ai_phone.server.models import Device, Run, RunCommand, RunLog, RunStep, VlmTrajectoryCache
+from ai_phone.server.models import (
+    Device,
+    Run,
+    RunCommand,
+    RunLog,
+    RunStep,
+    VlmTrajectoryCache,
+    VlmTrajectoryCacheV3,
+)
 from ai_phone.server.runner.rpc import DriverRpcWaiter
 from ai_phone.server.runner.service import ServerRunnerService
 from ai_phone.server.trajectory_cache import (
@@ -20,21 +28,33 @@ from ai_phone.server.trajectory_cache import (
     GATE_SKIP,
     RecoveryDecision,
     ReplayActionDispatcher,
+    V3LocateResult,
+    V3ReplayRunner,
+    V3RescueDecision,
     VERDICT_ASSERT_FAIL,
     VERDICT_CONTINUE,
     VERDICT_REPAIR_ACTION,
     VERDICT_WAIT_MORE,
     build_cache_assertion_prompt,
     build_cache_key,
+    build_v3_locator_prompt,
+    build_v3_cache_payload,
     build_recovery_prompt,
     delete_trajectory_cache_for_run,
+    get_active_trajectory_cache_v3,
     get_active_trajectory_cache,
+    mark_trajectory_cache_v3_suspect,
     normalize_run_semantic,
+    normalize_requested_cache_mode,
     parse_cache_assertion_response,
     parse_ephemeral_classification_response,
     parse_ephemeral_gate_response,
     parse_recovery_response,
+    parse_v3_locator_response,
+    parse_v3_rescue_response,
+    resolve_effective_cache_mode,
     save_trajectory_cache_after_success,
+    save_trajectory_cache_v3_after_success,
 )
 from ai_phone.server.trajectory_cache.recovery import (
     _extract_messages_text,
@@ -45,6 +65,87 @@ from ai_phone.server.trajectory_cache import ephemeral as ephemeral_module
 
 def test_normalize_run_semantic_is_strict_and_deterministic():
     assert normalize_run_semantic("  打开　微信\n\n发送  hello  ") == "打开 微信 发送 hello"
+
+
+def test_cache_mode_resolution_is_tolerant_and_env_gated():
+    assert normalize_requested_cache_mode(None) == "off"
+    assert normalize_requested_cache_mode(" V3 ") == "v3"
+    assert normalize_requested_cache_mode("bad") == "off"
+    assert (
+        resolve_effective_cache_mode(
+            env_cache_enabled=False,
+            requested_cache_mode="v3",
+        )
+        == "off"
+    )
+    assert (
+        resolve_effective_cache_mode(
+            env_cache_enabled=True,
+            requested_cache_mode="v3",
+        )
+        == "v3"
+    )
+
+
+def test_parse_v3_locator_response_accepts_markdown_action():
+    parsed = parse_v3_locator_response(
+        "**Thought:** 当前按钮在右下角\n**Action:** click(point='<point>500 250</point>')",
+        coord_space="normalized",
+    )
+
+    assert parsed is not None
+    assert parsed.action == "click"
+    assert parsed.point == [500, 250]
+    assert parsed.coord_space == "normalized"
+
+
+def test_build_v3_locator_prompt_is_minimal_and_action_specific():
+    prompt = build_v3_locator_prompt(
+        goal="不要进入 prompt",
+        trajectory={"run_semantic_text": "也不要进入 prompt"},
+        action={"index": 2, "type": "click", "plan_intent": "点击开始挑战"},
+        coord_space="normalized",
+    )
+
+    assert "目标：点击开始挑战" in prompt
+    assert "动作：click" in prompt
+    assert "Action: click(point='<point>x y</point>')" in prompt
+    assert "不要进入 prompt" not in prompt
+    assert "也不要进入 prompt" not in prompt
+    assert "V3" not in prompt
+    assert "Thought" not in prompt
+
+    drag_prompt = build_v3_locator_prompt(
+        goal="",
+        trajectory={},
+        action={"index": 1, "type": "drag", "plan_intent": "向上拖动列表"},
+        coord_space="absolute",
+    )
+    assert "动作：drag" in drag_prompt
+    assert "Action: drag(start='<point>x1 y1</point>', end='<point>x2 y2</point>')" in drag_prompt
+
+
+def test_parse_v3_rescue_response_accepts_popup_close_json():
+    decision = parse_v3_rescue_response(
+        '{"verdict":"POPUP_CLOSE","reason":"弹窗遮挡",'
+        '"repair_action":{"type":"click","point":{"x":900,"y":100}}}',
+        coord_space="normalized",
+    )
+
+    assert decision.verdict == "POPUP_CLOSE"
+    assert decision.repair_action["point"] == {"x": 900, "y": 100}
+
+
+def test_parse_v3_rescue_response_accepts_continue_and_repair_action():
+    cont = parse_v3_rescue_response('{"verdict":"CONTINUE","reason":"已到下一步页面"}')
+    repair = parse_v3_rescue_response(
+        '{"verdict":"REPAIR_ACTION","reason":"需要点确认",'
+        '"repair_action":{"type":"click","point":{"x":500,"y":500}}}'
+    )
+
+    assert cont.verdict == "CONTINUE_REPLAY"
+    assert repair.verdict == "REPAIR_ACTION"
+    assert repair.repair_action["point"] == {"x": 500, "y": 500}
 
 
 def test_intent_from_thought_supports_chinese_and_english_verbs():
@@ -475,6 +576,70 @@ class FakeCacheVerifier:
         return SimpleNamespace(verdict="PASS", reason="fake assertion", passed=True)
 
 
+class FakeV3Locator:
+    def __init__(self):
+        self.calls = []
+
+    @property
+    def coord_space(self):
+        return "normalized"
+
+    async def locate_action(self, **kwargs):
+        self.calls.append(kwargs)
+        return V3LocateResult(
+            action={
+                "index": kwargs["action"].get("index"),
+                "type": "click",
+                "point": {"x": 111, "y": 222},
+                "plan_intent": kwargs["action"].get("plan_intent"),
+            },
+            reason="found target",
+        )
+
+
+class FakeV3LocatorMissThenHit:
+    def __init__(self, *, miss_count: int = 1):
+        self.calls = []
+        self.miss_count = miss_count
+
+    @property
+    def coord_space(self):
+        return "normalized"
+
+    async def locate_action(self, **kwargs):
+        from ai_phone.server.trajectory_cache.v3_replay import V3LocatorMiss
+
+        self.calls.append(kwargs)
+        if len(self.calls) <= self.miss_count:
+            raise V3LocatorMiss("无")
+        return V3LocateResult(
+            action={
+                "index": kwargs["action"].get("index"),
+                "type": kwargs["action"].get("type"),
+                "point": {"x": 333, "y": 444},
+                "plan_intent": kwargs["action"].get("plan_intent"),
+            },
+            reason="found after rescue",
+        )
+
+
+class FakeV3Rescue:
+    def __init__(self, decision):
+        self.decisions = list(decision) if isinstance(decision, list) else [decision]
+        self.calls = []
+
+    def is_configured(self):
+        return True
+
+    def configuration_problem(self):
+        return ""
+
+    async def decide(self, **kwargs):
+        self.calls.append(kwargs)
+        index = min(len(self.calls), len(self.decisions)) - 1
+        return self.decisions[index]
+
+
 @pytest.mark.asyncio
 async def test_save_trajectory_cache_from_run_steps(monkeypatch, _test_engine, session):
     from ai_phone.server.trajectory_cache import service as service_module
@@ -572,6 +737,495 @@ async def test_save_trajectory_cache_from_run_steps(monkeypatch, _test_engine, s
     )
     assert hit and hit["cache_key"] == cache_key
     assert miss is None
+
+
+def test_build_v3_cache_payload_adds_plan_intent_and_preserves_optional_role():
+    payload = build_v3_cache_payload(
+        {
+            "schema_version": 2,
+            "cache_key": "k3",
+            "device_code": "D1",
+            "run_semantic_hash": "h",
+            "run_semantic_text": "点击教材同步",
+            "source_run_id": "run-v2",
+            "source_vlm_backend": "doubao_responses",
+            "actions": [
+                {
+                    "index": 1,
+                    "action_id": "a001",
+                    "type": "click",
+                    "label": "推荐意愿调查弹窗关闭按钮",
+                    "role": "optional_ephemeral",
+                    "ephemeral_meta": {"category": "marketing_popup"},
+                    "point": {"x": 900, "y": 1200},
+                },
+                {
+                    "index": 2,
+                    "action_id": "a002",
+                    "type": "click",
+                    "label": "教材同步",
+                    "point": {"x": 700, "y": 800},
+                },
+                {
+                    "index": 3,
+                    "action_id": "a003",
+                    "type": "click",
+                    "thought": "现在弹出了选择难度的窗口，要进入习题页，需要点击“开始挑战”按钮，这样就能进入对应的习题挑战页面了。",
+                },
+                {
+                    "index": 4,
+                    "action_id": "a004",
+                    "type": "type",
+                    "content": "hello",
+                },
+            ],
+            "source_completion": {"assertion_pass": "已进入教材同步"},
+        }
+    )
+
+    assert payload["mode"] == "v3"
+    assert payload["schema_version"] == 3
+    assert payload["actions"][0]["role"] == "optional_ephemeral"
+    assert payload["actions"][0]["plan_intent"] == "点击推荐意愿调查弹窗关闭按钮"
+    assert payload["actions"][1]["role"] == "business_required"
+    assert payload["actions"][1]["plan_intent"] == "点击教材同步"
+    assert payload["actions"][2]["plan_intent"] == "点击开始挑战"
+    assert payload["actions"][3]["plan_intent"] == "输入hello"
+    assert payload["source_completion"]["assertion_pass"] == "已进入教材同步"
+
+
+@pytest.mark.asyncio
+async def test_save_v3_trajectory_cache_from_run_steps(monkeypatch, _test_engine, session):
+    from ai_phone.server.trajectory_cache import service as service_module
+
+    settings = Settings(_env_file=None, trajectory_cache_ephemeral_action_enabled=False)
+    monkeypatch.setattr(service_module, "get_settings", lambda: settings)
+    session.add(Device(serial="D3", platform="android", screen_width=1000, screen_height=2000))
+    run = Run(
+        id="run-cache-v3-ok",
+        device_serial="D3",
+        goal="点击教材同步",
+        status="success",
+        engine="vlm",
+        reason="已成功进入教材同步页面",
+    )
+    session.add(run)
+    session.add_all(
+        [
+            RunStep(
+                run_id=run.id,
+                step=1,
+                action="click(point='<point>721 806</point>')",
+                action_type="click",
+            ),
+            RunStep(
+                run_id=run.id,
+                step=2,
+                action="finished(content='done')",
+                action_type="finished",
+            ),
+            RunLog(
+                run_id=run.id,
+                step=1,
+                level=1,
+                title="思考",
+                content="现在需要点击教材同步卡片进入页面",
+            ),
+            RunLog(
+                run_id=run.id,
+                step=2,
+                level=1,
+                title="断言系统 · 通过",
+                content="附图显示已进入教材同步页面",
+            ),
+        ]
+    )
+    await session.commit()
+
+    cache_key = await save_trajectory_cache_v3_after_success(
+        db_module.get_session_factory(),
+        run.id,
+    )
+
+    assert cache_key
+    row = (
+        await session.execute(
+            select(VlmTrajectoryCacheV3).where(VlmTrajectoryCacheV3.cache_key == cache_key)
+        )
+    ).scalars().one()
+    assert row.schema_version == 3
+    assert row.device_code == "D3"
+    assert row.run_semantic_text == "点击教材同步"
+    assert row.source_vlm_backend == "doubao_responses"
+    assert row.actions_json[0]["plan_intent"] == "点击教材同步"
+    assert row.actions_json[0]["role"] == "business_required"
+    assert row.actions_json[0]["point"] == {"x": 721, "y": 1612}
+    assert row.source_completion["assertion_pass"] == "附图显示已进入教材同步页面"
+
+    hit = await get_active_trajectory_cache_v3(
+        db_module.get_session_factory(),
+        device_code="D3",
+        run_semantic_text="点击教材同步",
+    )
+    assert hit and hit["cache_key"] == cache_key
+    assert hit["actions"][0]["plan_intent"] == "点击教材同步"
+
+
+@pytest.mark.asyncio
+async def test_save_v3_trajectory_cache_skips_v3_cache_pass(_test_engine, session):
+    run = Run(
+        id="run-cache-v3-pass",
+        device_serial="D3",
+        goal="点击教材同步",
+        status="success",
+        reason="trajectory_cache_v3_pass: ok",
+        requested_cache_mode="v3",
+        effective_cache_mode="v3",
+    )
+    session.add(run)
+    await session.commit()
+
+    cache_key = await save_trajectory_cache_v3_after_success(
+        db_module.get_session_factory(),
+        run.id,
+    )
+
+    assert cache_key is None
+    rows = (
+        await session.execute(
+            select(VlmTrajectoryCacheV3).where(VlmTrajectoryCacheV3.source_run_id == run.id)
+        )
+    ).scalars().all()
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_mark_v3_cache_suspect_hides_it_from_active_lookup(_test_engine, session):
+    run = Run(id="run-v3-suspect", device_serial="D3", goal="点击教材同步", status="running")
+    cache_key, normalized, semantic_hash = build_cache_key(
+        device_code="D3",
+        run_semantic_text="点击教材同步",
+        schema_version=3,
+    )
+    session.add(run)
+    session.add(
+        VlmTrajectoryCacheV3(
+            cache_key=cache_key,
+            device_code="D3",
+            run_semantic_hash=semantic_hash,
+            run_semantic_text=normalized,
+            status="active",
+            actions_json=[{"index": 1, "type": "click", "plan_intent": "点击教材同步"}],
+        )
+    )
+    await session.commit()
+
+    changed = await mark_trajectory_cache_v3_suspect(
+        db_module.get_session_factory(),
+        cache_key=cache_key,
+        run_id=run.id,
+        reason="assertion_fail",
+    )
+
+    assert changed == 1
+    row = (
+        await session.execute(
+            select(VlmTrajectoryCacheV3).where(VlmTrajectoryCacheV3.cache_key == cache_key)
+        )
+    ).scalars().one()
+    await session.refresh(row)
+    assert row.status == "suspect"
+    hit = await get_active_trajectory_cache_v3(
+        db_module.get_session_factory(),
+        device_code="D3",
+        run_semantic_text="点击教材同步",
+    )
+    assert hit is None
+
+
+@pytest.mark.asyncio
+async def test_v3_replay_runner_relocates_click_by_plan_intent(monkeypatch):
+    from ai_phone.server.trajectory_cache import v3_replay as v3_replay_module
+
+    monkeypatch.setattr(
+        v3_replay_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            trajectory_cache_observe_delay_ms=0,
+            trajectory_cache_ephemeral_gate_max_calls=3,
+            trajectory_cache_v3_rescue_max_calls_per_replay=3,
+        ),
+    )
+    stable_calls = []
+
+    async def fake_wait_stable(screenshot, frame_a_bytes=None, **kwargs):
+        stable_calls.append({"frame_a": frame_a_bytes, **kwargs})
+        return SimpleNamespace(bytes_=b"stable-jpeg")
+
+    monkeypatch.setattr(v3_replay_module, "wait_page_stable_pixel", fake_wait_stable)
+    driver = FakeDriver()
+    locator = FakeV3Locator()
+    logs = []
+
+    async def log(level, title, content):
+        logs.append((level, title, content))
+
+    runner = V3ReplayRunner(
+        driver=driver,
+        trajectory={
+            "run_semantic_text": "点击教材同步",
+            "source_vlm_backend": "doubao_responses",
+            "actions": [
+                {
+                    "index": 1,
+                    "action_id": "a001",
+                    "type": "click",
+                    "point": {"x": 999, "y": 999},
+                    "plan_intent": "点击教材同步",
+                }
+            ],
+        },
+        locator=locator,
+        log=log,
+        capture_after_each_action=True,
+        goal="点击教材同步",
+    )
+
+    result = await runner.run()
+
+    assert result.success is True
+    assert result.actions_executed == 1
+    assert ("click", 111, 222) in driver.calls
+    assert len(stable_calls) == 2
+    assert stable_calls[0]["use_cache_settings"] is True
+    assert locator.calls[0]["action"]["plan_intent"] == "点击教材同步"
+    assert any(title == "V3寻找目标" and "点击教材同步" in content for _level, title, content in logs)
+
+
+@pytest.mark.asyncio
+async def test_v3_replay_runner_skips_optional_ephemeral_when_gate_says_skip(
+    monkeypatch,
+    tmp_path,
+):
+    from ai_phone.server.trajectory_cache import v3_replay as v3_replay_module
+
+    monkeypatch.setattr(
+        v3_replay_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            trajectory_cache_observe_delay_ms=0,
+            trajectory_cache_ephemeral_gate_max_calls=3,
+            trajectory_cache_v3_rescue_max_calls_per_replay=3,
+        ),
+    )
+
+    async def fake_wait_stable(screenshot, frame_a_bytes=None, **kwargs):
+        return SimpleNamespace(bytes_=b"stable-jpeg")
+
+    monkeypatch.setattr(v3_replay_module, "wait_page_stable_pixel", fake_wait_stable)
+    popup_before = tmp_path / "popup-before.jpg"
+    cached_after = tmp_path / "cached-after.jpg"
+    popup_before.write_bytes(b"before")
+    cached_after.write_bytes(b"after")
+    gate = FakeEphemeralGate(EphemeralGateDecision(verdict=GATE_SKIP, reason="弹窗不存在"))
+    driver = FakeDriver()
+
+    runner = V3ReplayRunner(
+        driver=driver,
+        trajectory={
+            "run_semantic_text": "点击教材同步",
+            "source_vlm_backend": "doubao_responses",
+            "actions": [
+                {
+                    "index": 1,
+                    "action_id": "a001",
+                    "type": "click",
+                    "role": "optional_ephemeral",
+                    "plan_intent": "关闭推荐弹窗",
+                    "ephemeral_meta": {
+                        "category": "marketing_popup",
+                        "cached_popup_before_path": str(popup_before),
+                        "cached_after_path": str(cached_after),
+                    },
+                }
+            ],
+        },
+        locator=FakeV3Locator(),
+        ephemeral_gate_verifier=gate,
+    )
+
+    result = await runner.run()
+
+    assert result.success is True
+    assert result.actions_executed == 0
+    assert not any(call[0] == "click" for call in driver.calls)
+    assert gate.calls[0]["action"]["plan_intent"] == "关闭推荐弹窗"
+
+
+@pytest.mark.asyncio
+async def test_v3_replay_runner_locates_type_input_before_typing(monkeypatch):
+    from ai_phone.server.trajectory_cache import v3_replay as v3_replay_module
+
+    monkeypatch.setattr(
+        v3_replay_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            trajectory_cache_observe_delay_ms=0,
+            trajectory_cache_ephemeral_gate_max_calls=3,
+            trajectory_cache_v3_rescue_max_calls_per_replay=3,
+        ),
+    )
+
+    async def fake_wait_stable(screenshot, frame_a_bytes=None, **kwargs):
+        return SimpleNamespace(bytes_=b"stable-jpeg")
+
+    monkeypatch.setattr(v3_replay_module, "wait_page_stable_pixel", fake_wait_stable)
+    driver = FakeDriver()
+    locator = FakeV3Locator()
+    runner = V3ReplayRunner(
+        driver=driver,
+        trajectory={
+            "run_semantic_text": "搜索咖啡",
+            "source_vlm_backend": "doubao_responses",
+            "actions": [{"index": 1, "type": "type", "content": "咖啡", "plan_intent": "输入咖啡"}],
+        },
+        locator=locator,
+    )
+
+    result = await runner.run()
+
+    assert result.success is True
+    assert locator.calls[0]["action"]["type"] == "click"
+    assert ("click", 111, 222) in driver.calls
+    assert ("type_text", "咖啡") in driver.calls
+
+
+@pytest.mark.asyncio
+async def test_v3_replay_runner_uses_rescue_wait_after_locator_miss(monkeypatch):
+    from ai_phone.server.trajectory_cache import v3_replay as v3_replay_module
+
+    monkeypatch.setattr(
+        v3_replay_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            trajectory_cache_observe_delay_ms=0,
+            trajectory_cache_ephemeral_gate_max_calls=3,
+            trajectory_cache_v3_rescue_max_calls_per_replay=3,
+        ),
+    )
+
+    async def fake_wait_stable(screenshot, frame_a_bytes=None, **kwargs):
+        return SimpleNamespace(bytes_=b"stable-jpeg")
+
+    monkeypatch.setattr(v3_replay_module, "wait_page_stable_pixel", fake_wait_stable)
+    locator = FakeV3LocatorMissThenHit()
+    rescue = FakeV3Rescue(V3RescueDecision(verdict="WAIT", reason="页面加载中", wait_ms=100))
+    driver = FakeDriver()
+    runner = V3ReplayRunner(
+        driver=driver,
+        trajectory={
+            "run_semantic_text": "点击全部功能",
+            "source_vlm_backend": "doubao_responses",
+            "actions": [{"index": 1, "type": "click", "plan_intent": "点击全部功能"}],
+        },
+        locator=locator,
+        rescue_verifier=rescue,
+    )
+
+    result = await runner.run()
+
+    assert result.success is True
+    assert len(locator.calls) == 2
+    assert len(rescue.calls) == 1
+    assert ("click", 333, 444) in driver.calls
+
+
+@pytest.mark.asyncio
+async def test_v3_replay_runner_keeps_rescuing_until_locator_hits(monkeypatch):
+    from ai_phone.server.trajectory_cache import v3_replay as v3_replay_module
+
+    monkeypatch.setattr(
+        v3_replay_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            trajectory_cache_observe_delay_ms=0,
+            trajectory_cache_ephemeral_gate_max_calls=3,
+            trajectory_cache_v3_rescue_max_calls_per_replay=3,
+        ),
+    )
+
+    async def fake_wait_stable(screenshot, frame_a_bytes=None, **kwargs):
+        return SimpleNamespace(bytes_=b"stable-jpeg")
+
+    monkeypatch.setattr(v3_replay_module, "wait_page_stable_pixel", fake_wait_stable)
+    locator = FakeV3LocatorMissThenHit(miss_count=2)
+    rescue = FakeV3Rescue(
+        [
+            V3RescueDecision(verdict="WAIT", reason="页面加载中", wait_ms=100),
+            V3RescueDecision(verdict="WAIT", reason="继续加载", wait_ms=100),
+        ]
+    )
+    driver = FakeDriver()
+    runner = V3ReplayRunner(
+        driver=driver,
+        trajectory={
+            "run_semantic_text": "点击全部功能",
+            "source_vlm_backend": "doubao_responses",
+            "actions": [{"index": 1, "type": "click", "plan_intent": "点击全部功能"}],
+        },
+        locator=locator,
+        rescue_verifier=rescue,
+    )
+
+    result = await runner.run()
+
+    assert result.success is True
+    assert len(locator.calls) == 3
+    assert len(rescue.calls) == 2
+    assert ("click", 333, 444) in driver.calls
+
+
+@pytest.mark.asyncio
+async def test_v3_rescue_continue_replay_skips_current_action(monkeypatch):
+    from ai_phone.server.trajectory_cache import v3_replay as v3_replay_module
+
+    monkeypatch.setattr(
+        v3_replay_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            trajectory_cache_observe_delay_ms=0,
+            trajectory_cache_ephemeral_gate_max_calls=3,
+            trajectory_cache_v3_rescue_max_calls_per_replay=3,
+        ),
+    )
+
+    async def fake_wait_stable(screenshot, frame_a_bytes=None, **kwargs):
+        return SimpleNamespace(bytes_=b"stable-jpeg")
+
+    monkeypatch.setattr(v3_replay_module, "wait_page_stable_pixel", fake_wait_stable)
+    locator = FakeV3LocatorMissThenHit(miss_count=1)
+    rescue = FakeV3Rescue(
+        V3RescueDecision(verdict="CONTINUE_REPLAY", reason="已在下一步页面")
+    )
+    driver = FakeDriver()
+    runner = V3ReplayRunner(
+        driver=driver,
+        trajectory={
+            "run_semantic_text": "点击卡片进入习题页",
+            "source_vlm_backend": "doubao_responses",
+            "actions": [{"index": 1, "type": "click", "plan_intent": "点击卡片"}],
+        },
+        locator=locator,
+        rescue_verifier=rescue,
+    )
+
+    result = await runner.run()
+
+    assert result.success is True
+    assert result.actions_executed == 0
+    assert len(locator.calls) == 1
+    assert len(rescue.calls) == 1
+    assert driver.calls == []
 
 
 @pytest.mark.asyncio
@@ -1655,6 +2309,7 @@ async def test_server_runner_cache_replay_finishes_when_assertion_passes(
 
     settings = SimpleNamespace(
         vlm_trajectory_cache_replay_enabled=True,
+        trajectory_cache_enabled=True,
         assistant_api_key="key",
         assistant_api_url="https://example.test",
         assistant_model="model",
@@ -1671,7 +2326,14 @@ async def test_server_runner_cache_replay_finishes_when_assertion_passes(
         FakeCacheVerifier,
     )
 
-    run = Run(id="run-replay-ok", device_serial="D1", goal="cached goal", status="running")
+    run = Run(
+        id="run-replay-ok",
+        device_serial="D1",
+        goal="cached goal",
+        status="running",
+        requested_cache_mode="v2",
+        effective_cache_mode="v2",
+    )
     cache_key, normalized, semantic_hash = build_cache_key(
         device_code="D1",
         run_semantic_text="cached goal",
@@ -1723,6 +2385,89 @@ async def test_server_runner_cache_replay_finishes_when_assertion_passes(
 
 
 @pytest.mark.asyncio
+async def test_server_runner_v3_cache_replay_finishes_when_assertion_passes(
+    monkeypatch,
+    _test_engine,
+    session,
+):
+    import ai_phone.server.runner.service as service_module
+    import ai_phone.server.trajectory_cache as trajectory_cache_module
+
+    settings = SimpleNamespace(
+        trajectory_cache_enabled=True,
+        vlm_backend="doubao_responses",
+        assistant_api_key="key",
+        assistant_api_url="https://example.test",
+        assistant_model="model",
+        assistant_thinking_assertion=True,
+    )
+    monkeypatch.setattr(service_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(trajectory_cache_module, "V3ReplayRunner", FakeReplayRunner)
+    monkeypatch.setattr(
+        trajectory_cache_module,
+        "CacheReplayAssertionVerifier",
+        FakeCacheVerifier,
+    )
+
+    run = Run(
+        id="run-v3-replay-ok",
+        device_serial="D1",
+        goal="cached goal",
+        status="running",
+        requested_cache_mode="v3",
+        effective_cache_mode="v3",
+    )
+    cache_key, normalized, semantic_hash = build_cache_key(
+        device_code="D1",
+        run_semantic_text="cached goal",
+        schema_version=3,
+    )
+    session.add(run)
+    session.add(
+        VlmTrajectoryCacheV3(
+            cache_key=cache_key,
+            device_code="D1",
+            run_semantic_hash=semantic_hash,
+            run_semantic_text=normalized,
+            status="active",
+            actions_json=[
+                {
+                    "index": 1,
+                    "type": "click",
+                    "plan_intent": "点击缓存目标",
+                }
+            ],
+        )
+    )
+    await session.commit()
+
+    emitter = FakeEmitter()
+    service = ServerRunnerService(
+        hub=Hub(),
+        lock_store=DeviceLockStore(),
+        session_factory=db_module.get_session_factory(),
+        waiter=DriverRpcWaiter(),
+    )
+
+    handled = await service._maybe_run_trajectory_cache(
+        run_id=run.id,
+        goal="cached goal",
+        driver=FakeDriver(),
+        emitter=emitter,
+    )
+
+    assert handled is True
+    assert len(emitter.finishes) == 1
+    assert emitter.finishes[0]["result"] == "pass"
+    assert emitter.finishes[0]["message"] == "trajectory_cache_v3_pass: fake assertion"
+    assert [event.get("title") for event in emitter.events] == [
+        "V3缓存回放",
+        "fake replay",
+        "V3最终校验",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_server_runner_cache_alignment_miss_finishes_as_assert_fail(
     monkeypatch,
     _test_engine,
@@ -1733,6 +2478,7 @@ async def test_server_runner_cache_alignment_miss_finishes_as_assert_fail(
 
     settings = SimpleNamespace(
         vlm_trajectory_cache_replay_enabled=True,
+        trajectory_cache_enabled=True,
         assistant_api_key="key",
         assistant_api_url="https://example.test",
         assistant_model="model",
@@ -1744,7 +2490,14 @@ async def test_server_runner_cache_alignment_miss_finishes_as_assert_fail(
     monkeypatch.setattr(service_module, "get_settings", lambda: settings)
     monkeypatch.setattr(trajectory_cache_module, "ReplayRunner", FakeAlignmentMissReplayRunner)
 
-    run = Run(id="run-replay-align-miss", device_serial="D1", goal="cached goal", status="running")
+    run = Run(
+        id="run-replay-align-miss",
+        device_serial="D1",
+        goal="cached goal",
+        status="running",
+        requested_cache_mode="v2",
+        effective_cache_mode="v2",
+    )
     cache_key, normalized, semantic_hash = build_cache_key(
         device_code="D1",
         run_semantic_text="cached goal",

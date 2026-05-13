@@ -24,6 +24,7 @@ const submitError = ref(null)
 // 详见仓库根 Midscene执行器接入方案.md
 const selectedEngine = ref('vlm')
 const midsceneEnabled = ref(false)
+const selectedCacheMode = ref('off')
 // 屏幕尺寸（设备端逻辑像素），用于点击坐标归一化；没拿到前按 video 元素尺寸兜底
 const devicePixel = ref({ w: 0, h: 0 })
 const tapBusy = ref(false)
@@ -634,6 +635,7 @@ async function startRun() {
       // engine：缺省 'vlm'（与历史行为完全等价）；'midscene' 仅在后端
       // AI_PHONE_MIDSCENE_ENABLED=true 时被接受，下拉框也仅在那时可见
       engine: selectedEngine.value || 'vlm',
+      cacheMode: selectedCacheMode.value || 'off',
     })
     currentRunId.value = res.id
     currentRun.value = res
@@ -933,6 +935,18 @@ watch(
               <option value="midscene">midscene（外接寄居）</option>
             </select>
           </div>
+          <div class="engine-row">
+            <label>轨迹缓存</label>
+            <select
+              v-model="selectedCacheMode"
+              :disabled="!!currentRunId || lock.readonly.value"
+            >
+              <option value="off">off（不使用缓存）</option>
+              <option value="v1">v1（旧轨迹缓存）</option>
+              <option value="v2">v2（路标回放）</option>
+              <option value="v3">v3（语义重定位）</option>
+            </select>
+          </div>
           <label>Goal（自然语言目标）</label>
           <textarea
             v-model="goal"
@@ -952,6 +966,7 @@ watch(
             <span class="mode-pill" :class="currentRun.execution_mode === 'server_brain' ? 'server' : 'agent'">
               {{ currentRunModeText }}
             </span>
+            <span class="mode-pill cache">cache: {{ currentRun.cacheMode || currentRun.effective_cache_mode || 'off' }}</span>
             <span>run_id: <code>{{ currentRun.id }}</code></span>
             <span v-if="currentRunAgent">Agent: <code>{{ currentRunAgent }}</code></span>
             <span v-if="currentRun.dispatch_source">入口: {{ currentRun.dispatch_source }}</span>
@@ -1475,6 +1490,11 @@ h2 {
   color: #374151;
   background: #f3f4f6;
   border-color: #e5e7eb;
+}
+.mode-pill.cache {
+  color: #1e40af;
+  background: #dbeafe;
+  border-color: #bfdbfe;
 }
 .error-summary {
   display: flex;

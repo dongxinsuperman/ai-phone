@@ -215,6 +215,14 @@ class Settings(BaseSettings):
             "env: AI_PHONE_VLM_TRAJECTORY_CACHE_REPLAY_ENABLED"
         ),
     )
+    trajectory_cache_enabled: bool = Field(
+        default=False,
+        description=(
+            "统一轨迹缓存能力总开关。true 时 Run payload 可通过 cacheMode 选择 "
+            "off/v1/v2/v3；false 时任何 cacheMode 都静默对齐为 off。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ENABLED"
+        ),
+    )
     # Anthropic prompt caching 开关：
     # - 仅 claude_cu 生效（GPT 走 previous_response_id 服务端续历史，自带缓存；
     #   doubao_responses 同理）。
@@ -856,6 +864,121 @@ class Settings(BaseSettings):
             "超过说明该 case/cache 健康度不足，直接失败，避免整条 run 被反复救场拖慢。"
             "0=不允许调用 recovery_vlm。"
             "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_MAX_CALLS_PER_REPLAY"
+        ),
+    )
+    # ------------------------------------------------------------------
+    # v3 语义轨迹回放 · 坐标定位 / 救场专线
+    # ------------------------------------------------------------------
+    trajectory_cache_v3_coord_enabled: bool = Field(
+        default=True,
+        description=(
+            "V3 plan_intent 坐标定位专线开关。默认开启；连接配置默认复用 recovery_vlm，"
+            "可通过 V3_COORD_USE_RECOVERY_VLM_CONFIG=false 单独配置。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_ENABLED"
+        ),
+    )
+    trajectory_cache_v3_coord_use_recovery_vlm_config: bool = Field(
+        default=True,
+        description=(
+            "V3 coord 是否复用 recovery_vlm 的 backend/url/key/model。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_USE_RECOVERY_VLM_CONFIG"
+        ),
+    )
+    trajectory_cache_v3_coord_backend: str = Field(
+        default="doubao_responses",
+        description=(
+            "V3 coord 独立后端协议。仅在 V3_COORD_USE_RECOVERY_VLM_CONFIG=false 时使用。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_BACKEND"
+        ),
+    )
+    trajectory_cache_v3_coord_api_url: str = Field(
+        default="",
+        description=(
+            "V3 coord 独立接口地址。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_API_URL"
+        ),
+    )
+    trajectory_cache_v3_coord_api_key: str = Field(
+        default="",
+        description=(
+            "V3 coord 独立 API key。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_API_KEY"
+        ),
+    )
+    trajectory_cache_v3_coord_model: str = Field(
+        default="",
+        description=(
+            "V3 coord 独立模型 ID。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_MODEL"
+        ),
+    )
+    trajectory_cache_v3_coord_timeout_sec: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=300.0,
+        description=(
+            "V3 coord 单次调用超时（秒）。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_TIMEOUT_SEC"
+        ),
+    )
+    trajectory_cache_v3_rescue_enabled: bool = Field(
+        default=True,
+        description=(
+            "V3 coord 连续未定位后的救场 VLM 开关。默认复用 recovery_vlm 连接配置。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_ENABLED"
+        ),
+    )
+    trajectory_cache_v3_rescue_use_recovery_vlm_config: bool = Field(
+        default=True,
+        description=(
+            "V3 rescue 是否复用 recovery_vlm 的 backend/url/key/model。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_USE_RECOVERY_VLM_CONFIG"
+        ),
+    )
+    trajectory_cache_v3_rescue_backend: str = Field(
+        default="doubao_responses",
+        description=(
+            "V3 rescue 独立后端协议。仅在 V3_RESCUE_USE_RECOVERY_VLM_CONFIG=false 时使用。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_BACKEND"
+        ),
+    )
+    trajectory_cache_v3_rescue_api_url: str = Field(
+        default="",
+        description=(
+            "V3 rescue 独立接口地址。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_API_URL"
+        ),
+    )
+    trajectory_cache_v3_rescue_api_key: str = Field(
+        default="",
+        description=(
+            "V3 rescue 独立 API key。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_API_KEY"
+        ),
+    )
+    trajectory_cache_v3_rescue_model: str = Field(
+        default="",
+        description=(
+            "V3 rescue 独立模型 ID。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_MODEL"
+        ),
+    )
+    trajectory_cache_v3_rescue_timeout_sec: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=300.0,
+        description=(
+            "V3 rescue 单次调用超时（秒）。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_TIMEOUT_SEC"
+        ),
+    )
+    trajectory_cache_v3_rescue_max_calls_per_replay: int = Field(
+        default=3,
+        ge=0,
+        le=20,
+        description=(
+            "单条 V3 回放最多允许调用 rescue VLM 多少次。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_MAX_CALLS_PER_REPLAY"
         ),
     )
     # ------------------------------------------------------------------

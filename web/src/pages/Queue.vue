@@ -400,12 +400,20 @@ const drawerCommandSummary = computed(() => {
 //   - 长度 1（["A1"]） = 锁单台
 //   - 长度 N（["A1","B1"]）= 子集池，调度器派发瞬间动态选 ready 的一台
 // 前端按"每端一个文本框"输入（逗号分隔多个别名），切端时旧值就地保留。
+const CACHE_MODE_OPTIONS = [
+  { value: 'off', label: 'off（不使用缓存）' },
+  { value: 'v1', label: 'v1（旧轨迹缓存）' },
+  { value: 'v2', label: 'v2（路标回放）' },
+  { value: 'v3', label: 'v3（语义重定位）' },
+]
+
 function newFormItem() {
   return {
     caseId: '',
     caseName: '',
     platforms: ['android'],
     runContent: '',
+    cacheMode: '',
     // 每端一段池文本（逗号分隔多个别名，留空 = 该端全池任挑）
     aliasPoolText: { android: '', ios: '', harmony: '' },
   }
@@ -419,7 +427,7 @@ function parsePool(text) {
     .filter(Boolean)
   return [...new Set(arr)].sort()
 }
-const form = ref({ submissionName: '', items: [newFormItem()] })
+const form = ref({ submissionName: '', cacheMode: 'off', items: [newFormItem()] })
 const submitErr = ref('')
 const submitting = ref(false)
 
@@ -441,7 +449,7 @@ function togglePlatform(item, p) {
   }
 }
 function resetForm() {
-  form.value = { submissionName: '', items: [newFormItem()] }
+  form.value = { submissionName: '', cacheMode: 'off', items: [newFormItem()] }
   submitErr.value = ''
 }
 function openSubmitDlg() {
@@ -463,6 +471,7 @@ function buildRawItem(it) {
     platforms: [...it.platforms],
   }
   if (caseName) obj.caseName = caseName
+  if (it.cacheMode) obj.cacheMode = it.cacheMode
   // 只把"当前仍被勾选、且非空池"的端发出去，防止用户切换端后残留脏数据
   const pools = {}
   for (const p of it.platforms) {
@@ -475,6 +484,7 @@ function buildRawItem(it) {
 // 发送 payload：每条 form-item → 一条 raw item（不在前端预展开，后端会做）
 const previewPayload = computed(() => ({
   submissionName: (form.value.submissionName || '').trim(),
+  cacheMode: form.value.cacheMode || 'off',
   items: form.value.items.map(buildRawItem),
 }))
 // 展示预览：用"按端一条"的视图，让用户一眼看出批次最终会起几条 Run
@@ -487,6 +497,7 @@ const previewRows = computed(() => {
         caseName: (it.caseName || '').trim(),
         platform: p,
         pool: parsePool(it.aliasPoolText?.[p]),
+        cacheMode: it.cacheMode || form.value.cacheMode || 'off',
       })
     }
   }
@@ -1072,7 +1083,7 @@ function loadDemoData() {
         <div class="modal-body">
           <div class="help small-help">
             本入口只是第 2 梯队阶段<b>临时验证用</b>，正式调用方后续用对外 HTTP API。
-            请求体（v1.7 唯一形态）：<code>{ submissionName, items: [{ caseId, runContent, platforms[], deviceAliasPools? }] }</code>。
+            请求体（v1.9）：<code>{ submissionName, cacheMode, items: [{ caseId, runContent, platforms[], cacheMode?, deviceAliasPools? }] }</code>。
             <code>deviceAliasPools[p]</code> 留空 = 该端任意 ready 设备；
             填多个用逗号分隔即子集池（场景 5：调度器派发瞬间动态选 ready 的一台）。
           </div>
@@ -1086,6 +1097,21 @@ function loadDemoData() {
                 v-model="form.submissionName"
                 placeholder="例如：回归冒烟-2026-04-18 · 主流程"
               />
+            </div>
+            <div class="form-row">
+              <label>
+                cacheMode (批次默认)
+                <span class="label-hint">每条 item 可单独覆盖；V3 会语义重定位后回放</span>
+              </label>
+              <select v-model="form.cacheMode">
+                <option
+                  v-for="opt in CACHE_MODE_OPTIONS"
+                  :key="opt.value"
+                  :value="opt.value"
+                >
+                  {{ opt.label }}
+                </option>
+              </select>
             </div>
           </div>
           <div v-for="(it, i) in form.items" :key="i" class="form-item">
@@ -1120,6 +1146,22 @@ function loadDemoData() {
                   {{ PLATFORM_LABEL[p] }}
                 </label>
               </div>
+            </div>
+            <div class="form-row">
+              <label>
+                cacheMode (本条覆盖，可选)
+                <span class="label-hint">留空则使用批次默认 {{ form.cacheMode || 'off' }}</span>
+              </label>
+              <select v-model="it.cacheMode">
+                <option value="">跟随批次默认</option>
+                <option
+                  v-for="opt in CACHE_MODE_OPTIONS"
+                  :key="opt.value"
+                  :value="opt.value"
+                >
+                  {{ opt.label }}
+                </option>
+              </select>
             </div>
             <!-- v1.7 唯一受理：每端一段池文本，逗号分隔多个别名 -->
             <div class="form-row">
@@ -1166,6 +1208,7 @@ function loadDemoData() {
                 }}</span>
                 <span v-if="p.caseName" class="pr-name">{{ p.caseName }}</span>
                 <code>{{ p.caseId || '(未填)' }}</code>
+                <span class="pr-cache">cache={{ p.cacheMode }}</span>
                 <span
                   v-if="p.pool.length"
                   class="pr-alias"
@@ -2053,6 +2096,15 @@ function loadDemoData() {
   color: #374151;
 }
 .preview-row .pr-alias { color: #1565c0; font-size: 11px; }
+.preview-row .pr-cache {
+  color: #1d4ed8;
+  background: #dbeafe;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
 .help { font-size: 12px; color: #374151; line-height: 1.5; }
 .help code { background: #f3f4f6; padding: 1px 4px; border-radius: 3px; }
 .modal.small input {

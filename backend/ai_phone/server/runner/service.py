@@ -319,7 +319,23 @@ class ServerRunnerService:
         emitter: ServerRunEmitter,
     ) -> bool:
         settings = get_settings()
-        if not settings.vlm_trajectory_cache_replay_enabled:
+        if not bool(getattr(settings, "trajectory_cache_enabled", False)):
+            return False
+        async with self._session_factory() as session:
+            run = await session.get(Run, run_id)
+            cache_mode = str(getattr(run, "effective_cache_mode", "") or "off")
+        if cache_mode == "off":
+            return False
+        if cache_mode == "v3":
+            return await self._run_trajectory_cache_v3(
+                run_id=run_id,
+                goal=goal,
+                driver=driver,
+                emitter=emitter,
+                settings=settings,
+            )
+        if cache_mode not in {"v1", "v2"}:
+            emitter.emit(log_event(run_id, 1, "轨迹缓存", f"cacheMode={cache_mode} 不支持，继续走 VLMRunner"))
             return False
 
         from ai_phone.server.trajectory_cache import (  # noqa: PLC0415
@@ -498,6 +514,136 @@ class ServerRunnerService:
                 result="assert_fail",
                 message=f"trajectory_cache_assertion_{assertion.verdict.lower()}: {assertion.reason}",
                 error_class="TrajectoryCacheAssertionError",
+                error_category="model",
+                **finish_kwargs,
+            )
+        return True
+
+    async def _run_trajectory_cache_v3(
+        self,
+        *,
+        run_id: str,
+        goal: str,
+        driver: RemoteDriver,
+        emitter: ServerRunEmitter,
+        settings: Any,
+    ) -> bool:
+        from ai_phone.server.trajectory_cache import (  # noqa: PLC0415
+            CacheReplayAssertionVerifier,
+            V3ReplayRunner,
+            get_active_trajectory_cache_v3,
+            mark_trajectory_cache_v3_suspect,
+        )
+        from ai_phone.shared.llm import TokenCounter  # noqa: PLC0415
+
+        replay_started_at = time.monotonic()
+        assertion_counter = TokenCounter()
+
+        def _build_token_stats() -> Dict[str, Any]:
+            if assertion_counter.call_count <= 0:
+                return {}
+            stats = assertion_counter.summary()
+            stats["vlm_backend"] = settings.vlm_backend or ""
+            return stats
+
+        def _elapsed_ms() -> int:
+            return int((time.monotonic() - replay_started_at) * 1000)
+
+        cache = await get_active_trajectory_cache_v3(
+            self._session_factory,
+            device_code=driver.serial,
+            run_semantic_text=goal,
+        )
+        if cache is None:
+            emitter.emit(log_event(run_id, 1, "V3缓存回放", "未命中缓存，继续走现有 VLMRunner"))
+            return False
+
+        trajectory = dict(cache)
+        cache_key = str(cache.get("cache_key") or "")
+        emitter.emit(
+            log_event(
+                run_id,
+                1,
+                "V3缓存回放",
+                f"命中缓存：复用上次成功路线 cache_key={cache_key[:12]}",
+            )
+        )
+
+        async def _log(level: int, title: str, content: str) -> None:
+            emitter.emit(log_event(run_id, level, title, content))
+
+        runner = V3ReplayRunner(
+            driver=driver,
+            trajectory=trajectory,
+            run_id=run_id,
+            log=_log,
+            emit=emitter.emit,
+            capture_after_each_action=True,
+            goal=goal,
+            main_vlm_backend=trajectory.get("source_vlm_backend")
+            or getattr(settings, "vlm_backend", ""),
+        )
+        replay_result = await runner.run()
+        if not replay_result.success:
+            error = str(replay_result.error or "")
+            await mark_trajectory_cache_v3_suspect(
+                self._session_factory,
+                cache_key=cache_key,
+                run_id=run_id,
+                reason=f"replay_failed: {error}",
+            )
+            await emitter.force_finish(
+                result="error",
+                message=f"trajectory_cache_v3_replay_failed: {error}",
+                error_class="TrajectoryCacheV3ReplayError",
+                error_category="model" if "locator" in error else "device",
+                elapsed_ms=replay_result.elapsed_ms or _elapsed_ms(),
+                steps=replay_result.actions_executed,
+                token_stats=_build_token_stats(),
+            )
+            return True
+
+        final_frame = await runner.capture_final_frame()
+        assertion = await CacheReplayAssertionVerifier(
+            settings=settings,
+            counter=assertion_counter,
+        ).verify(
+            goal=goal,
+            final_bytes=final_frame,
+            trajectory=trajectory,
+            prev_before_bytes=replay_result.final_before_bytes,
+        )
+        emitter.emit(
+            log_event(
+                run_id,
+                1 if assertion.verdict == "PASS" else 3,
+                "V3最终校验",
+                f"{assertion.verdict}: {assertion.reason}",
+            )
+        )
+        finish_kwargs: Dict[str, Any] = {
+            "elapsed_ms": _elapsed_ms(),
+            "steps": replay_result.actions_executed,
+            "token_stats": _build_token_stats(),
+            "token_summary_note": "仅 V3 缓存断言通道",
+        }
+        if assertion.passed:
+            await emitter.force_finish(
+                result="pass",
+                message=f"trajectory_cache_v3_pass: {assertion.reason}",
+                **finish_kwargs,
+            )
+        else:
+            await mark_trajectory_cache_v3_suspect(
+                self._session_factory,
+                cache_key=cache_key,
+                run_id=run_id,
+                reason=f"assertion_{assertion.verdict.lower()}: {assertion.reason}",
+            )
+            await emitter.force_finish(
+                result="assert_fail",
+                message=f"trajectory_cache_v3_assertion_{assertion.verdict.lower()}: {assertion.reason}",
+                error_class="TrajectoryCacheV3AssertionError",
                 error_category="model",
                 **finish_kwargs,
             )

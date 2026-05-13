@@ -17,7 +17,7 @@ from ai_phone.server.runner.dispatch import RunDispatchService
 from ai_phone.server.runner.emitter import ServerRunEmitter
 from ai_phone.server.runner.rpc import DriverRpcWaiter
 from ai_phone.server.runner.service import ServerRunnerService
-from ai_phone.server.scheduler.service import SubmissionScheduler
+from ai_phone.server.scheduler.service import SubmissionScheduler, parse_and_validate
 from ai_phone.server.submissions import ResultPublisher
 from ai_phone.shared.protocol import MSG_DRIVER_RESULT
 
@@ -104,6 +104,36 @@ class MemoryPublisher(ResultPublisher):
 
     async def publish_terminal(self, event: Dict[str, Any]) -> None:
         self.events.append(event)
+
+
+def test_submission_parse_accepts_top_level_and_item_cache_mode():
+    _name, _callback, drafts = parse_and_validate(
+        {
+            "submissionName": "cache-mode",
+            "cacheMode": "v2",
+            "items": [
+                {
+                    "caseId": "case-a",
+                    "runContent": "点击教材同步",
+                    "platforms": ["android"],
+                },
+                {
+                    "caseId": "case-b",
+                    "runContent": "点击开始挑战",
+                    "platforms": ["ios"],
+                    "cacheMode": "v3",
+                },
+                {
+                    "caseId": "case-c",
+                    "runContent": "普通执行",
+                    "platforms": ["android"],
+                    "cacheMode": "wrong",
+                },
+            ],
+        }
+    )
+
+    assert [d.cache_mode for d in drafts] == ["v2", "v3", "off"]
 
 
 @pytest.mark.asyncio

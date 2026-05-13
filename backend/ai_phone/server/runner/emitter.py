@@ -394,17 +394,33 @@ class ServerRunEmitter:
             try:
                 from ai_phone.server.trajectory_cache import (  # noqa: PLC0415
                     delete_trajectory_cache_for_run,
+                    delete_trajectory_cache_v3_for_run,
                     save_trajectory_cache_after_success,
+                    save_trajectory_cache_v3_after_success,
                 )
 
+                cache_mode = "off"
+                async with self._session_factory() as session:
+                    run = await session.get(Run, self.run_id)
+                    cache_mode = str(getattr(run, "effective_cache_mode", "") or "off")
                 if final_status == "success":
-                    await save_trajectory_cache_after_success(
-                        self._session_factory, self.run_id
-                    )
+                    if cache_mode == "v3":
+                        await save_trajectory_cache_v3_after_success(
+                            self._session_factory, self.run_id
+                        )
+                    elif cache_mode in {"v1", "v2"}:
+                        await save_trajectory_cache_after_success(
+                            self._session_factory, self.run_id
+                        )
                 else:
-                    await delete_trajectory_cache_for_run(
-                        self._session_factory, self.run_id
-                    )
+                    if cache_mode == "v3":
+                        await delete_trajectory_cache_v3_for_run(
+                            self._session_factory, self.run_id
+                        )
+                    elif cache_mode in {"v1", "v2"}:
+                        await delete_trajectory_cache_for_run(
+                            self._session_factory, self.run_id
+                        )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "轨迹缓存终态处理失败 run_id={} status={}: {}",

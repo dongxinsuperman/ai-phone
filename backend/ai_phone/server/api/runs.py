@@ -29,7 +29,7 @@ M1.6a 历史说明（保留方便溯源）：
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, model_validator
@@ -43,6 +43,7 @@ from ..hub import Hub
 from ..lockstore import DeviceLockStore, LockConflict
 from ..models import Case, Device, Run, RunCommand, RunLog, RunStep
 from ..runner.dispatch import RunDispatchService
+from ..trajectory_cache.mode import normalize_requested_cache_mode, resolve_effective_cache_mode
 from ._deps import DBSession, HubDep, LockStoreDep
 
 # 白名单：API 接受的 engine 取值。新增引擎时同步本表 + factory.py。
@@ -66,6 +67,14 @@ class RunCreate(BaseModel):
     # 'midscene' 仅在 settings.midscene_enabled=True 时被接受；详见
     # `Midscene执行器接入方案.md`。批次投递（/api/submissions）不接受此字段。
     engine: Optional[str] = Field(default=None, max_length=32)
+    cache_mode: Optional[Annotated[str, Field(max_length=8)]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_camel_cache_mode(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "cacheMode" in data and "cache_mode" not in data:
+            return {**data, "cache_mode": data.get("cacheMode")}
+        return data
 
     @model_validator(mode="after")
     def _require_goal_or_case(self) -> "RunCreate":
@@ -234,6 +243,12 @@ async def create_run(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="midscene 引擎未启用：请在 .env 中设置 AI_PHONE_MIDSCENE_ENABLED=true",
         )
+    settings = get_settings()
+    requested_cache_mode = normalize_requested_cache_mode(body.cache_mode)
+    effective_cache_mode = resolve_effective_cache_mode(
+        env_cache_enabled=bool(settings.trajectory_cache_enabled),
+        requested_cache_mode=requested_cache_mode,
+    )
 
     run = Run(
         id=pre_run_id,
@@ -243,6 +258,8 @@ async def create_run(
         goal=goal,
         status="pending",
         engine=engine,
+        requested_cache_mode=requested_cache_mode,
+        effective_cache_mode=effective_cache_mode,
     )
     session.add(run)
     await session.commit()
