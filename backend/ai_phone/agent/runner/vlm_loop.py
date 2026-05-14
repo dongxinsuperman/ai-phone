@@ -1123,6 +1123,17 @@ class VLMRunner:
                     f"共执行 {step} 步 | {fail_msg}",
                     step=step,
                 )
+                await self._emit_event(
+                    make_event(
+                        EVT_STEP_END,
+                        self.run_id,
+                        step=step,
+                        thought=thought,
+                        action=display_action,
+                        action_type=action_type,
+                        elapsed_ms=int(decision.elapsed_ms or 0),
+                    )
+                )
                 return False, f"assert_fail: {fail_msg}"
 
             if action_type == A.ACTION_FINISHED:
@@ -1157,6 +1168,17 @@ class VLMRunner:
                         f"共执行 {step} 步 | {fail_msg}",
                         step=step,
                     )
+                    await self._emit_event(
+                        make_event(
+                            EVT_STEP_END,
+                            self.run_id,
+                            step=step,
+                            thought=thought,
+                            action=display_action,
+                            action_type=action_type,
+                            elapsed_ms=int(decision.elapsed_ms or 0),
+                        )
+                    )
                     return False, f"assert_fail: {fail_msg}"
                 if verdict == "PASS":
                     await self._log(
@@ -1172,6 +1194,17 @@ class VLMRunner:
                     "任务完成",
                     f"共执行 {step} 步 | {finish_msg}",
                     step=step,
+                )
+                await self._emit_event(
+                    make_event(
+                        EVT_STEP_END,
+                        self.run_id,
+                        step=step,
+                        thought=thought,
+                        action=display_action,
+                        action_type=action_type,
+                        elapsed_ms=int(decision.elapsed_ms or 0),
+                    )
                 )
                 return True, f"finished: {finish_msg}"
 

@@ -1793,6 +1793,14 @@ async def test_finalize_v2_waits_for_finished_step_before_saving_final_landmark(
             action_type="click",
         )
     )
+    session.add(
+        RunStep(
+            run_id=run.id,
+            step=2,
+            action="click(point='<point>600 600</point>')",
+            action_type="click",
+        )
+    )
     await session.commit()
 
     async def insert_finished_step_later():
@@ -1801,7 +1809,7 @@ async def test_finalize_v2_waits_for_finished_step_before_saving_final_landmark(
             delayed_session.add(
                 RunStep(
                     run_id=run.id,
-                    step=2,
+                    step=3,
                     action="finished(content='done')",
                     action_type="finished",
                     screenshot_before=str(final_image),
@@ -1823,9 +1831,9 @@ async def test_finalize_v2_waits_for_finished_step_before_saving_final_landmark(
             select(VlmTrajectoryCacheV2).where(VlmTrajectoryCacheV2.cache_key == cache_key)
         )
     ).scalars().one()
-    landmark = row.trajectory_json["state_landmarks"][0]
-    assert landmark["action_id"] == "a001"
-    assert landmark["snapshot_step"] == 2
+    landmark = row.trajectory_json["state_landmarks"][-1]
+    assert landmark["action_id"] == "a002"
+    assert landmark["snapshot_step"] == 3
     assert landmark["snapshot_phase"] == "before"
     assert landmark["image_url"] == str(final_image)
     assert landmark["status"] == "available"
@@ -2411,7 +2419,7 @@ async def test_replay_runner_unavailable_landmark_uses_historical_action_gap(mon
     assert stable_calls == 2
     assert sleeps == [0.5, 1.3, 0.5]
     assert any(
-        "landmark unavailable" in content and "改用首次成功 action 交接间隔" in content
+        "目标图不可用" in content and "按首次真实间隔兜底等待" in content
         for _level, title, content in logs
         if title == "轨迹缓存状态路标"
     )

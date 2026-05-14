@@ -223,6 +223,10 @@ async def test_finished_action_returns_ok():
     assert "finished" in result.reason
     types = [e["type"] for e in events]
     assert "run_start" in types and "run_finish" in types
+    assert "step_end" in types
+    terminal_step = next(e for e in events if e["type"] == "step_end")
+    assert terminal_step["step"] == 1
+    assert terminal_step["action_type"] == "finished"
     assert {"type": "run_finish", "ok": True}.items() <= events[-1].items()
 
 

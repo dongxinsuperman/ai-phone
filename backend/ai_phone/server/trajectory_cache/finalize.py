@@ -148,23 +148,50 @@ async def _wait_for_run_steps_ready(
                 return
             rows = (
                 await session.execute(
+                    select(
+                        RunStep.step,
+                        RunStep.action,
+                        RunStep.action_type,
+                        RunStep.screenshot_before,
+                    ).where(RunStep.run_id == run_id)
+                )
+            ).all()
+            has_finished_step = any(
+                "finished" in f"{action_type or ''} {action or ''}".lower()
+                for _step, action, action_type, _before in rows
+            )
+            finished_before_ready = any(
+                "finished" in f"{action_type or ''} {action or ''}".lower()
+                and str(before or "")
+                for _step, action, action_type, before in rows
+            )
+            if finished_before_ready:
+                return
+            if has_finished_step:
+                # The terminal row exists but its before screenshot is empty. This is unusual,
+                # but waiting longer will not help once the row is committed.
+                return
+
+            # Older/non-VLM paths may not persist a terminal ``finished`` row. Keep the
+            # previous readiness check as a compatibility escape hatch only after timeout;
+            # VLM cache save should wait for the terminal step so the last real action gets
+            # its final-page landmark.
+            legacy_rows = (
+                await session.execute(
                     select(RunStep.step, RunStep.screenshot_before).where(
                         RunStep.run_id == run_id
                     )
                 )
             ).all()
-            seen_steps = {int(step or 0) for step, _before in rows}
+            seen_steps = {int(step or 0) for step, _before in legacy_rows}
             final_before_ready = any(
                 int(step or 0) == expected_steps and str(before or "")
-                for step, before in rows
+                for step, before in legacy_rows
             )
-            if len(seen_steps) >= expected_steps and expected_steps in seen_steps:
-                if final_before_ready:
-                    return
-                # The last row exists but its before screenshot is empty. This is unusual,
-                # but waiting longer will not help once the row is committed.
-                return
+            legacy_ready = len(seen_steps) >= expected_steps and final_before_ready
         if time.monotonic() - started >= timeout_sec:
+            if legacy_ready:
+                return
             logger.warning(
                 "轨迹缓存后台整理等待 RunStep 落库超时 run_id={} timeout={}s",
                 run_id,

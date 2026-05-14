@@ -440,24 +440,28 @@ class ReplayRunner:
             return None
         action_id = str(action.get("action_id") or "")
         if not action_id:
-            await self._log(1, "轨迹缓存状态路标", "跳过：action 无 action_id，回落页面稳定检测")
+            await self._log(
+                1,
+                "轨迹缓存状态路标",
+                "缺少 action_id，无法做缓存图对比；临时兜底等待页面稳定",
+            )
             return None
         landmark = self._landmarks_by_action_id.get(action_id)
         if not landmark:
             await self._log(
                 1,
                 "轨迹缓存状态路标",
-                f"跳过：action_id={action_id} 无 landmark，回落页面稳定检测",
+                f"action_id={action_id} 缺少首次成功后的目标图记录；临时兜底等待页面稳定",
             )
             return None
         if str(landmark.get("status") or "") != "available":
+            reason = str(landmark.get("missing_reason") or "")
             await self._log(
                 1,
                 "轨迹缓存状态路标",
                 (
-                    f"跳过：action_id={action_id} landmark unavailable "
-                    f"reason={landmark.get('missing_reason') or ''}，"
-                    "改用首次成功 action 交接间隔"
+                    f"action_id={action_id} 的首次成功目标图不可用 reason={reason or 'unknown'}；"
+                    "先按首次真实间隔兜底等待"
                 ),
             )
             return await self._capture_after_historical_gap(action_id=action_id, landmark=landmark)
@@ -466,7 +470,7 @@ class ReplayRunner:
             await self._log(
                 1,
                 "轨迹缓存状态路标",
-                f"跳过：action_id={action_id} landmark phash 为空，回落页面稳定检测",
+                f"action_id={action_id} 的目标图指纹为空；临时兜底等待页面稳定",
             )
             return None
         landmark_bytes = self._landmark_image_bytes(landmark)
@@ -474,7 +478,7 @@ class ReplayRunner:
             await self._log(
                 1,
                 "轨迹缓存状态路标",
-                f"跳过：action_id={action_id} landmark 图片不可读，回落页面稳定检测",
+                f"action_id={action_id} 的目标图文件不可读；临时兜底等待页面稳定",
             )
             return None
 
@@ -603,7 +607,7 @@ class ReplayRunner:
             await self._log(
                 1,
                 "轨迹缓存状态路标",
-                f"action_id={action_id} 无历史交接间隔，回落页面稳定检测",
+                f"action_id={action_id} 缺少目标图且没有首次真实间隔；临时兜底等待页面稳定",
             )
             return None
         remaining_ms = max(0, int(gap_ms) - int(self.observe_delay_ms or 0))
