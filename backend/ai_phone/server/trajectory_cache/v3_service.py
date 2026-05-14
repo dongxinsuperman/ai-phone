@@ -58,7 +58,40 @@ _NOISY_PLAN_TEXT_RE = re.compile(
     r"verdict|traceback|exception|error=|raw=|thought:|action:",
     re.IGNORECASE,
 )
-_COMPUTER_USE_BACKEND_RE = re.compile(r"(claude|gpt).*_cu|computer[_-]?use", re.IGNORECASE)
+_ACTION_TARGET_PATTERNS = (
+    re.compile(r"(?:需要|应该|下一步|现在|当前|先)?(?:点击|轻点|按下)(?P<target>.+)", re.IGNORECASE),
+    re.compile(
+        r"(?:need to|should|will|next|now|currently)?\s*"
+        r"(?:click|tap|press)(?:\s+on)?(?:\s+the)?\s+(?P<target>.+)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"(?:需要|应该|下一步|现在|当前|先)?(?:选择|勾选|取消)(?P<target>.+)", re.IGNORECASE),
+    re.compile(
+        r"(?:need to|should|will|next|now|currently)?\s*"
+        r"(?:select|toggle)(?:\s+on)?(?:\s+the)?\s+(?P<target>.+)",
+        re.IGNORECASE,
+    ),
+)
+_LATIN_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_+-]*")
+_PLAN_STOPWORDS = {
+    "the",
+    "a",
+    "an",
+    "to",
+    "on",
+    "in",
+    "of",
+    "and",
+    "or",
+    "button",
+    "tab",
+    "page",
+    "target",
+    "click",
+    "tap",
+    "press",
+    "select",
+}
 
 
 async def save_trajectory_cache_v3_after_success(
@@ -310,7 +343,9 @@ async def _clean_v3_plan_intents(
 
     actions = list(payload.get("actions") or [])
     cleaned = 0
+    rejected = 0
     for idx, action in enumerate(actions):
+        rule_plan_intent = _clean_text(action.get("plan_intent") or "")
         try:
             result = await cleaner.clean_action(
                 goal=str(run.goal or ""),
@@ -333,6 +368,26 @@ async def _clean_v3_plan_intents(
         plan_intent = _clean_text(result.get("plan_intent") or "")
         if not plan_intent:
             continue
+        if not _should_accept_cleaned_plan_intent(action, plan_intent, rule_plan_intent):
+            action["plan_intent_meta"] = {
+                "source": "v3_plan_cleaner_rejected",
+                "rejected_plan_intent": plan_intent[:120],
+                "kept_plan_intent": rule_plan_intent[:120],
+                "reason": str(result.get("reason") or "")[:300],
+                "confidence": _safe_float(result.get("confidence"), default=0.0),
+            }
+            rejected += 1
+            await _write_log(
+                session,
+                run.id,
+                level=2,
+                title="V3语义清洗",
+                content=(
+                    f"action_id={action.get('action_id')} cleaner 输出与真实动作候选冲突，"
+                    f"保留规则候选={rule_plan_intent[:120]}，拒绝={plan_intent[:120]}"
+                ),
+            )
+            continue
         action["plan_intent"] = plan_intent[:120]
         action["plan_intent_meta"] = {
             "source": "v3_plan_cleaner",
@@ -354,6 +409,9 @@ async def _clean_v3_plan_intents(
         payload["meta"] = dict(payload.get("meta") or {})
         payload["meta"]["plan_intent_cleaner"] = "model"
         payload["meta"]["plan_intent_cleaned_actions"] = cleaned
+    if rejected:
+        payload["meta"] = dict(payload.get("meta") or {})
+        payload["meta"]["plan_intent_cleaner_rejected_actions"] = rejected
 
 
 class V3PlanIntentCleaner:
@@ -450,8 +508,9 @@ def build_v3_plan_cleaner_prompt(
         "生成规则：\n"
         "- 不要生成、翻译、改写动作协议；当前 action 的 type / driver_method 已由系统保存。\n"
         "- plan_intent 只输出当前 action 实际要操作的目标对象、目标区域或输入焦点。\n"
-        "- actual_thought 是首跑主 VLM 对本次实际操作的描述，优先级最高；先从这里提取被点的 UI 元素。\n"
-        "- weak_business_intent / weak_label 可能是用户子步骤、业务结果或页面目标，只能弱参考；如果和 actual_thought 冲突，必须服从 actual_thought。\n"
+        "- actual_thought 是首跑主 VLM 对本次实际操作的描述，必须作为主体；可理解为 8 成权重。\n"
+        "- weak_business_intent / weak_label 可能是用户子步骤、业务结果或页面目标，只能低权重润色；可理解为 2 成权重。\n"
+        "- 如果 weak_business_intent / weak_label 和 actual_thought 冲突，必须服从 actual_thought。\n"
         "- 如果当前 action 是点按类，输出被点按的控件或区域，不要输出下一步页面、业务结果或原因。\n"
         "- 如果当前 action 是输入类，输出输入框或输入区域，不要把输入内容当作目标。\n"
         "- 如果当前 action 是移动/拖拽/滚动类，输出起点区域、目标区域或可滚动区域，不要输出整段操作解释。\n"
@@ -486,6 +545,8 @@ def _v3_action_brief(action: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         brief["weak_label"] = action.get("label")
     if action.get("intent") not in (None, ""):
         brief["weak_business_intent"] = action.get("intent")
+    if action.get("plan_intent") not in (None, ""):
+        brief["rule_plan_intent"] = action.get("plan_intent")
     if action.get("raw") not in (None, ""):
         brief["raw_action_text"] = action.get("raw")
     return brief
@@ -503,23 +564,41 @@ def _normalize_v3_action(action: Dict[str, Any], *, source_vlm_backend: str = ""
 
 def _plan_intent_for_action(action: Dict[str, Any], *, source_vlm_backend: str = "") -> str:
     action_type = str(action.get("type") or "").strip()
+    actual_target = _action_target_from_text(action.get("thought")) or _action_sentence_from_text(
+        action.get("thought")
+    )
     if action_type == A.ACTION_TYPE:
+        target = actual_target or _candidate_text(action)
+        if target:
+            return _ensure_action_statement(target, "输入", fallback="输入文本")
         content = _clean_text(action.get("content") or action.get("text") or "")
         return f"输入{content}" if content else "输入文本"
     if action_type == A.ACTION_WAIT:
+        if actual_target:
+            return _ensure_action_statement(actual_target, "等待", fallback="等待页面稳定")
         seconds = action.get("seconds")
         return f"等待{seconds}秒" if seconds is not None else "等待页面稳定"
     if action_type == A.ACTION_OPEN_APP:
+        if actual_target:
+            return _ensure_action_statement(actual_target, "打开", fallback="打开应用")
         target = _clean_text(action.get("app") or action.get("name") or action.get("bundle_id") or "")
         return f"打开{target}" if target else "打开应用"
     if action_type == A.ACTION_CLOSE_APP:
+        if actual_target:
+            return _ensure_action_statement(actual_target, "关闭", fallback="关闭应用")
         target = _clean_text(action.get("app") or action.get("name") or action.get("bundle_id") or "")
         return f"关闭{target}" if target else "关闭应用"
     if action_type == A.ACTION_PRESS_BACK:
+        if actual_target:
+            return _ensure_action_statement(actual_target, "返回", fallback="返回")
         return "返回"
     if action_type == A.ACTION_PRESS_HOME:
+        if actual_target:
+            return _ensure_action_statement(actual_target, "返回", fallback="返回桌面")
         return "返回桌面"
     if action_type in {A.ACTION_SCROLL, A.ACTION_DRAG}:
+        if actual_target:
+            return _ensure_action_statement(actual_target, "滑动", fallback="滑动页面")
         direction = _clean_text(action.get("direction") or "")
         target = _candidate_text(action)
         if direction:
@@ -547,24 +626,20 @@ def _candidate_text(action: Dict[str, Any], *, prefer_thought: bool = False) -> 
 def _click_plan_intent(action: Dict[str, Any], verb: str, *, source_vlm_backend: str = "") -> str:
     """生成给 V3 定位器使用的短动作语义。
 
-    V3 保存的是下一次可执行的目标，不是首跑模型的完整推理记录。Computer Use
-    后端的 thought 常包含长英文观察/裁决文本，所以只在缺少 label/intent 时把
-    thought 中的动作短句作为兜底；普通后端也会先过滤掉非动作元信息。
+    V3 保存的是下一次可执行的目标，不是首跑模型的完整推理记录。首跑 thought
+    里的动作短句最接近“实际点了什么”；label/intent 可能是业务子目标或下一步
+    结果，只能作为弱兜底。
     """
     label = _usable_semantic_text(action.get("label"))
     intent = _usable_semantic_text(action.get("intent"))
-    thought_action = _action_sentence_from_text(action.get("thought"))
+    thought_action = _action_target_from_text(action.get("thought")) or _action_sentence_from_text(
+        action.get("thought")
+    )
     raw = _usable_semantic_text(action.get("raw"))
-    computer_use = bool(_COMPUTER_USE_BACKEND_RE.search(source_vlm_backend or ""))
+    if thought_action:
+        return _compose_action_statement(verb, thought_action, fallback=f"{verb}目标元素")
 
-    if computer_use:
-        target = label or thought_action or raw or intent
-        return _compose_action_statement(verb, target, fallback=f"{verb}目标元素")
-
-    if thought_action and _should_prefer_thought_action(thought_action, label=label, intent=intent):
-        return _ensure_action_statement(thought_action, verb, fallback=f"{verb}目标元素")
-
-    target = label or intent or thought_action or raw
+    target = label or intent or raw
     purpose = intent if label and intent and not _same_semantic(label, intent) else ""
     return _compose_action_statement(verb, target, purpose=purpose, fallback=f"{verb}目标元素")
 
@@ -596,24 +671,32 @@ def _action_sentence_from_text(value: Any) -> str:
     return ""
 
 
+def _action_target_from_text(value: Any) -> str:
+    sentence = _action_sentence_from_text(value)
+    if not sentence:
+        return ""
+    for pattern in _ACTION_TARGET_PATTERNS:
+        match = pattern.search(sentence)
+        if not match:
+            continue
+        target = _clean_text(match.group("target"))
+        target = re.split(
+            r"(?:，|。|；|;|,|\bto\b|\bin order to\b|\bso that\b|\bso\b|\bthen\b|\bfirst\b|这样|从而|然后|才能|就能|以便|来)",
+            target,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0]
+        target = _clean_text(target)
+        if target and not _is_noisy_plan_text(target):
+            return target[:120]
+    return ""
+
+
 def _is_noisy_plan_text(text: str) -> bool:
     cleaned = _clean_text(text)
     if not cleaned:
         return True
     return bool(_NOISY_PLAN_TEXT_RE.search(cleaned))
-
-
-def _should_prefer_thought_action(thought_action: str, *, label: str, intent: str) -> bool:
-    if not thought_action:
-        return False
-    if not label and not intent:
-        return True
-    if len(thought_action) > 90:
-        return False
-    if _same_semantic(thought_action, label) or _same_semantic(thought_action, intent):
-        return False
-    # 短 thought 明确描述了清障/切换等实际动作时，优先保留首跑真实动作语义。
-    return bool(_CLICK_LIKE_VERB_RE.search(thought_action) and re.search(r"关闭|遮挡|弹窗|close|dismiss", thought_action, re.IGNORECASE))
 
 
 def _compose_action_statement(verb: str, target: str, *, purpose: str = "", fallback: str) -> str:
@@ -632,6 +715,34 @@ def _same_semantic(left: str, right: str) -> bool:
     if not left_norm or not right_norm:
         return False
     return left_norm in right_norm or right_norm in left_norm
+
+
+def _should_accept_cleaned_plan_intent(
+    action: Dict[str, Any],
+    cleaned: str,
+    rule_candidate: str,
+) -> bool:
+    cleaned = _clean_text(cleaned)
+    rule_candidate = _clean_text(rule_candidate)
+    if not cleaned:
+        return False
+    if not rule_candidate:
+        return True
+    if _same_semantic(cleaned, rule_candidate):
+        return True
+    cleaned_tokens = _latin_tokens(cleaned)
+    rule_tokens = _latin_tokens(rule_candidate)
+    if cleaned_tokens and rule_tokens and cleaned_tokens.isdisjoint(rule_tokens):
+        return False
+    return True
+
+
+def _latin_tokens(text: str) -> set[str]:
+    return {
+        token.lower()
+        for token in _LATIN_TOKEN_RE.findall(_clean_text(text))
+        if len(token) >= 2 and token.lower() not in _PLAN_STOPWORDS
+    }
 
 
 def _semantic_fingerprint(text: str) -> str:

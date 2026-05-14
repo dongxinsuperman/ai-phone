@@ -1241,12 +1241,9 @@ def test_build_v3_cache_payload_adds_plan_intent_and_preserves_optional_role():
     assert payload["actions"][0]["plan_intent"] == "点击推荐意愿调查弹窗关闭按钮"
     assert payload["actions"][1]["role"] == "business_required"
     assert payload["actions"][1]["plan_intent"] == "点击教材同步"
-    assert payload["actions"][2]["plan_intent"] == (
-        "现在弹出了选择难度的窗口，要进入习题页，需要点击“开始挑战”按钮，"
-        "这样就能进入对应的习题挑战页面了"
-    )
-    assert payload["actions"][3]["plan_intent"] == "当前存在遮挡层，需要点击「关闭」按钮"
-    assert payload["actions"][4]["plan_intent"] == "当前遮挡层已关闭，需要点击底部标签"
+    assert payload["actions"][2]["plan_intent"] == "点击“开始挑战”按钮"
+    assert payload["actions"][3]["plan_intent"] == "点击「关闭」按钮"
+    assert payload["actions"][4]["plan_intent"] == "点击底部标签"
     assert payload["actions"][5]["plan_intent"] == "输入hello"
     assert payload["source_completion"]["assertion_pass"] == "已进入教材同步"
 
@@ -1286,8 +1283,8 @@ def test_build_v3_cache_payload_keeps_cu_plan_intent_executable():
         }
     )
 
-    assert payload["actions"][0]["plan_intent"] == "点击底部目标标签"
-    assert payload["actions"][1]["plan_intent"] == "点击确认按钮"
+    assert payload["actions"][0]["plan_intent"] == "点击bottom target tab"
+    assert payload["actions"][1]["plan_intent"] == "点击确认按钮，完成当前确认"
     joined = "\n".join(action["plan_intent"] for action in payload["actions"])
     assert "Let me analyze" not in joined
     assert "Forced verdict" not in joined
@@ -1309,6 +1306,7 @@ def test_build_v3_cache_payload_cu_prefers_actual_click_over_business_intent():
                     "index": 5,
                     "action_id": "a005",
                     "type": "click",
+                    "label": "Copy标签页",
                     "intent": "进入Copy下单器",
                     "thought": "当前需要点击底部导航栏的 Futures 标签页，先进入 Futures 页面。",
                 },
@@ -1367,9 +1365,69 @@ async def test_v3_plan_intent_cleaner_uses_model_contract(monkeypatch):
     assert seen["images"] == []
     assert "actual_thought" in seen["prompt"]
     assert "weak_business_intent" in seen["prompt"]
-    assert "如果和 actual_thought 冲突，必须服从 actual_thought" in seen["prompt"]
+    assert "actual_thought 是首跑主 VLM 对本次实际操作的描述，必须作为主体" in seen["prompt"]
+    assert "如果 weak_business_intent / weak_label 和 actual_thought 冲突，必须服从 actual_thought" in seen["prompt"]
     assert "不要把首次屏幕里偶然出现的具体文案升级成下次必须寻找的目标" in seen["prompt"]
     assert "如果 role=optional_ephemeral" in seen["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_v3_plan_intent_cleaner_rejects_conflicting_target(monkeypatch, _test_engine, session):
+    from ai_phone.server.trajectory_cache import v3_service as v3_service_module
+
+    async def fake_call_vlm_with_images(**_kwargs):
+        return '{"plan_intent":"Copy标签页","confidence":0.91,"reason":"模型误取了下一步业务目标"}'
+
+    monkeypatch.setattr(v3_service_module, "_call_vlm_with_images", fake_call_vlm_with_images)
+    monkeypatch.setattr(
+        v3_service_module,
+        "get_settings",
+        lambda: Settings(
+            _env_file=None,
+            assistant_backend="doubao_responses",
+            assistant_api_url="https://example.test/responses",
+            assistant_api_key="key",
+            assistant_model="vision-model",
+        ),
+    )
+    run = Run(
+        id="run-v3-cleaner-conflict",
+        device_serial="D1",
+        goal="进入 Copy 下单器",
+        status="success",
+        engine="vlm",
+        reason="ok",
+    )
+    session.add(run)
+    await session.flush()
+    payload = build_v3_cache_payload(
+        {
+            "schema_version": 2,
+            "cache_key": "k3-cleaner-conflict",
+            "device_code": "D1",
+            "run_semantic_hash": "h",
+            "run_semantic_text": "进入 Copy 下单器",
+            "source_run_id": run.id,
+            "source_vlm_backend": "claude_cu",
+            "actions": [
+                {
+                    "index": 5,
+                    "action_id": "a005",
+                    "type": "click",
+                    "label": "Copy标签页",
+                    "intent": "进入Copy下单器",
+                    "thought": "当前需要点击底部导航栏的 Futures 标签页，先进入 Futures 页面。",
+                }
+            ],
+            "source_completion": {},
+        }
+    )
+
+    await v3_service_module._clean_v3_plan_intents(session=session, run=run, payload=payload)
+
+    assert "Futures" in payload["actions"][0]["plan_intent"]
+    assert payload["actions"][0]["plan_intent_meta"]["source"] == "v3_plan_cleaner_rejected"
+    assert payload["meta"]["plan_intent_cleaner_rejected_actions"] == 1
 
 
 @pytest.mark.asyncio

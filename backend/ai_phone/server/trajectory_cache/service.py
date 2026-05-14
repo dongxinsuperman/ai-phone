@@ -460,6 +460,13 @@ async def _classify_ephemeral_actions(
     """
     settings = get_settings()
     if not bool(settings.trajectory_cache_ephemeral_action_enabled):
+        await _write_log(
+            session,
+            run.id,
+            level=1,
+            title="轨迹缓存瞬态标记",
+            content="ephemeral action 总开关未启用，所有动作按 business_required 保存",
+        )
         return
 
     for action in actions:
@@ -491,15 +498,20 @@ async def _classify_ephemeral_actions(
         for item in state_landmarks
         if str(item.get("action_id") or "")
     }
+    candidate_count = 0
+    optional_count = 0
+    skipped_count = 0
     for idx, action in enumerate(actions):
         if not _is_ephemeral_candidate_action(action):
             continue
+        candidate_count += 1
         action_id = str(action.get("action_id") or "")
         before_url = _action_before_image_url(action, steps_by_no)
         after_landmark = landmarks_by_action_id.get(action_id) or {}
         before_bytes = _read_image_url_bytes(before_url)
         after_bytes = _read_landmark_bytes(after_landmark)
         if not before_bytes or not after_bytes:
+            skipped_count += 1
             await _write_log(
                 session,
                 run.id,
@@ -529,6 +541,7 @@ async def _classify_ephemeral_actions(
                 reason=f"classifier 调用失败：{type(exc).__name__}: {str(exc)[:160]}",
             )
         if result.is_optional:
+            optional_count += 1
             action["role"] = ROLE_OPTIONAL_EPHEMERAL
             action["ephemeral_meta"] = {
                 "enabled": True,
@@ -553,6 +566,16 @@ async def _classify_ephemeral_actions(
                 f"reason={result.reason}"
             ),
         )
+    await _write_log(
+        session,
+        run.id,
+        level=1,
+        title="轨迹缓存瞬态标记",
+        content=(
+            f"完成：候选动作={candidate_count} optional_ephemeral={optional_count} "
+            f"证据缺失跳过={skipped_count}"
+        ),
+    )
 
 
 def _is_ephemeral_candidate_action(action: Dict[str, Any]) -> bool:
