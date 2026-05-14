@@ -449,8 +449,10 @@ def build_v3_plan_cleaner_prompt(
         f"下一 action：{_json_dumps_compact(_v3_action_brief(next_action))}\n\n"
         "生成规则：\n"
         "- 不要生成、翻译、改写动作协议；当前 action 的 type / driver_method 已由系统保存。\n"
-        "- plan_intent 只输出当前 action 要定位的目标对象、目标区域或输入焦点。\n"
-        "- 如果当前 action 是点按类，输出被点按的控件或区域，不要输出原因或结果。\n"
+        "- plan_intent 只输出当前 action 实际要操作的目标对象、目标区域或输入焦点。\n"
+        "- actual_thought 是首跑主 VLM 对本次实际操作的描述，优先级最高；先从这里提取被点的 UI 元素。\n"
+        "- weak_business_intent / weak_label 可能是用户子步骤、业务结果或页面目标，只能弱参考；如果和 actual_thought 冲突，必须服从 actual_thought。\n"
+        "- 如果当前 action 是点按类，输出被点按的控件或区域，不要输出下一步页面、业务结果或原因。\n"
         "- 如果当前 action 是输入类，输出输入框或输入区域，不要把输入内容当作目标。\n"
         "- 如果当前 action 是移动/拖拽/滚动类，输出起点区域、目标区域或可滚动区域，不要输出整段操作解释。\n"
         "- 如果当前 action 不需要屏幕定位，且无法提炼目标，plan_intent 输出空字符串。\n"
@@ -459,6 +461,7 @@ def build_v3_plan_cleaner_prompt(
         "- 普通业务 action 要保持用户目标粒度；用户没指定具体文案/编号/条目时，不要把首次屏幕里偶然出现的具体文案升级成下次必须寻找的目标。\n"
         "- 可以保留稳定控件文字；按钮、标签页、输入框占位符属于控件文字，列表项、题目、商品、活动、文章标题属于业务内容。\n"
         "- 多个候选都可点击时，优先用稳定 UI 特征表达：位置 + 控件类型 + 稳定文字；不要使用动态业务内容。\n"
+        "- 如果 actual_thought 说点击 A 控件，而 weak_business_intent 说进入 B 页面，plan_intent 必须写 A 控件，不要写 B 页面。\n"
         "- 禁止输出完整 thought、页面描述、原因分析、坐标、截图状态、模型裁决词。\n"
         "- 不确定时输出当前 action 的保守通用目标，不要加戏。\n\n"
         "只输出 JSON：\n"
@@ -473,18 +476,19 @@ def build_v3_plan_cleaner_prompt(
 def _v3_action_brief(action: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not action:
         return {}
-    keys = (
-        "action_id",
-        "index",
-        "type",
-        "intent",
-        "label",
-        "thought",
-        "role",
-        "ephemeral_meta",
-        "content",
-    )
-    return {key: action.get(key) for key in keys if action.get(key) not in (None, "")}
+    brief: Dict[str, Any] = {}
+    for key in ("action_id", "index", "type", "role", "ephemeral_meta", "content"):
+        if action.get(key) not in (None, ""):
+            brief[key] = action.get(key)
+    if action.get("thought") not in (None, ""):
+        brief["actual_thought"] = action.get("thought")
+    if action.get("label") not in (None, ""):
+        brief["weak_label"] = action.get("label")
+    if action.get("intent") not in (None, ""):
+        brief["weak_business_intent"] = action.get("intent")
+    if action.get("raw") not in (None, ""):
+        brief["raw_action_text"] = action.get("raw")
+    return brief
 
 
 def _normalize_v3_action(action: Dict[str, Any], *, source_vlm_backend: str = "") -> Dict[str, Any]:
@@ -554,9 +558,8 @@ def _click_plan_intent(action: Dict[str, Any], verb: str, *, source_vlm_backend:
     computer_use = bool(_COMPUTER_USE_BACKEND_RE.search(source_vlm_backend or ""))
 
     if computer_use:
-        target = label or intent or thought_action or raw
-        purpose = intent if label and intent and not _same_semantic(label, intent) else ""
-        return _compose_action_statement(verb, target, purpose=purpose, fallback=f"{verb}目标元素")
+        target = label or thought_action or raw or intent
+        return _compose_action_statement(verb, target, fallback=f"{verb}目标元素")
 
     if thought_action and _should_prefer_thought_action(thought_action, label=label, intent=intent):
         return _ensure_action_statement(thought_action, verb, fallback=f"{verb}目标元素")

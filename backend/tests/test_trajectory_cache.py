@@ -207,17 +207,6 @@ def test_v3_coord_space_follows_actual_locator_backend_family():
     assert main_cu_locator.coord_space == "absolute"
     assert main_cu_locator.is_configured() is True
 
-    independent_locator_settings = main_cu_settings.model_copy(
-        update={"trajectory_cache_v3_coord_use_main_vlm_config": False}
-    )
-    independent_locator = V3PlanLocator(
-        settings=independent_locator_settings,
-        main_vlm_backend="claude_cu",
-    )
-
-    assert independent_locator.coord_space == "normalized"
-    assert independent_locator.is_configured() is False
-
     doubao_settings = Settings(
         _env_file=None,
         trajectory_cache_v3_coord_use_recovery_vlm_config=True,
@@ -490,8 +479,64 @@ async def test_v3_locator_gpt_cu_uses_main_computer_use_config(monkeypatch):
     )
 
     assert FakeGPTCU.seen["init"]["api_key"] == "main-key"
+    assert FakeGPTCU.seen["init"]["reasoning_effort"] == "low"
     assert locator.coord_space == "absolute"
     assert result.action["point"] == {"x": 500, "y": 1000}
+
+
+@pytest.mark.asyncio
+async def test_v3_locator_claude_cu_uses_main_config_with_coord_thinking_budget(monkeypatch):
+    import ai_phone.shared.llm.main.claude_cu as claude_cu_module
+
+    class FakeClaudeCU:
+        seen = {}
+
+        def __init__(self, **kwargs):
+            FakeClaudeCU.seen["init"] = kwargs
+
+        async def decide(self, screenshot_bytes, *, mime="image/jpeg"):
+            return SimpleNamespace(
+                thought="locate target",
+                raw_content="raw",
+                parsed_actions=[
+                    ParsedAction(
+                        action="click",
+                        point=[40, 80],
+                        raw="computer.left_click",
+                        coord_space="absolute",
+                    )
+                ],
+            )
+
+    monkeypatch.setattr(claude_cu_module, "ClaudeComputerUseClient", FakeClaudeCU)
+    settings = Settings(
+        _env_file=None,
+        vlm_backend="claude_cu",
+        vlm_api_url="https://api.anthropic.com/v1/messages",
+        vlm_api_key="main-key",
+        vlm_model="claude-sonnet-4-5",
+        trajectory_cache_v3_coord_enabled=True,
+        trajectory_cache_v3_coord_claude_thinking_budget=128,
+        trajectory_cache_v3_coord_use_recovery_vlm_config=True,
+        trajectory_cache_recovery_vlm_api_url="",
+        trajectory_cache_recovery_vlm_api_key="",
+        trajectory_cache_recovery_vlm_model="",
+    )
+    locator = V3PlanLocator(settings=settings, main_vlm_backend="claude_cu")
+
+    result = await locator.locate_action(
+        goal="g",
+        trajectory={"actions": []},
+        action={"index": 1, "type": "click", "plan_intent": "点击目标"},
+        screenshot_bytes=_test_jpeg(100, 200, (20, 20, 20)),
+        image_size=(100, 200),
+        window_size=(1000, 2000),
+    )
+
+    assert FakeClaudeCU.seen["init"]["api_key"] == "main-key"
+    assert FakeClaudeCU.seen["init"]["thinking_budget"] == 128
+    assert locator.coord_space == "absolute"
+    assert result.action["point"] == {"x": 400, "y": 800}
 
 
 @pytest.mark.asyncio
@@ -1241,12 +1286,48 @@ def test_build_v3_cache_payload_keeps_cu_plan_intent_executable():
         }
     )
 
-    assert payload["actions"][0]["plan_intent"] == "点击底部目标标签，进入目标页面"
-    assert payload["actions"][1]["plan_intent"] == "点击确认按钮，完成当前确认"
+    assert payload["actions"][0]["plan_intent"] == "点击底部目标标签"
+    assert payload["actions"][1]["plan_intent"] == "点击确认按钮"
     joined = "\n".join(action["plan_intent"] for action in payload["actions"])
     assert "Let me analyze" not in joined
     assert "Forced verdict" not in joined
     assert "ASSERT_FAIL" not in joined
+
+
+def test_build_v3_cache_payload_cu_prefers_actual_click_over_business_intent():
+    payload = build_v3_cache_payload(
+        {
+            "schema_version": 2,
+            "cache_key": "k3-cu-conflict",
+            "device_code": "D1",
+            "run_semantic_hash": "h",
+            "run_semantic_text": "进入 Copy 下单器",
+            "source_run_id": "run-cu-conflict",
+            "source_vlm_backend": "claude_cu",
+            "actions": [
+                {
+                    "index": 5,
+                    "action_id": "a005",
+                    "type": "click",
+                    "intent": "进入Copy下单器",
+                    "thought": "当前需要点击底部导航栏的 Futures 标签页，先进入 Futures 页面。",
+                },
+                {
+                    "index": 6,
+                    "action_id": "a006",
+                    "type": "click",
+                    "intent": "选择Order Type为Trigger",
+                    "thought": "现在已经进入 Futures 页面，需要点击顶部的 Copy 标签页。",
+                },
+            ],
+            "source_completion": {},
+        }
+    )
+
+    assert "Futures" in payload["actions"][0]["plan_intent"]
+    assert "Copy" not in payload["actions"][0]["plan_intent"]
+    assert "Copy" in payload["actions"][1]["plan_intent"]
+    assert "Order Type" not in payload["actions"][1]["plan_intent"]
 
 
 @pytest.mark.asyncio
@@ -1284,6 +1365,9 @@ async def test_v3_plan_intent_cleaner_uses_model_contract(monkeypatch):
 
     assert result["plan_intent"] == "点击弹窗的知道了按钮"
     assert seen["images"] == []
+    assert "actual_thought" in seen["prompt"]
+    assert "weak_business_intent" in seen["prompt"]
+    assert "如果和 actual_thought 冲突，必须服从 actual_thought" in seen["prompt"]
     assert "不要把首次屏幕里偶然出现的具体文案升级成下次必须寻找的目标" in seen["prompt"]
     assert "如果 role=optional_ephemeral" in seen["prompt"]
 

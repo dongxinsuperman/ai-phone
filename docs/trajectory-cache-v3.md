@@ -72,26 +72,16 @@ V3 有三类模型角色：
 - 标签 VLM：处理 `optional_ephemeral` 弹窗动作本次是否需要执行。
 - 辅助 VLM：定位失败后的局部纠偏。
 
-定位 VLM 负责在当前截图里找目标坐标。对海外主链路，它默认复用主 VLM 的
+定位 VLM 负责在当前截图里找目标坐标。对海外主链路，它必须复用主 VLM 的
 Computer Use 能力配置，保证坐标协议和可执行链路一致；但每次定位都会新建一次性
-短会话，只给当前截图和当前 `plan_intent`，不复用主 Run 上下文。Claude 路径强制
-关闭 thinking budget，GPT 路径使用 low reasoning effort。
+短会话，只给当前截图和当前 `plan_intent`，不复用主 Run 上下文。
 
-如需把定位 VLM 完全切到独立模型，再设置：
-
-```env
-AI_PHONE_TRAJECTORY_CACHE_V3_COORD_USE_MAIN_VLM_CONFIG=false
-AI_PHONE_TRAJECTORY_CACHE_V3_COORD_USE_RECOVERY_VLM_CONFIG=false
-AI_PHONE_TRAJECTORY_CACHE_V3_COORD_BACKEND=claude_messages
-AI_PHONE_TRAJECTORY_CACHE_V3_COORD_API_URL=...
-AI_PHONE_TRAJECTORY_CACHE_V3_COORD_API_KEY=...
-AI_PHONE_TRAJECTORY_CACHE_V3_COORD_MODEL=...
-```
-
-默认值是：
+定位专线只允许单独调运行参数，不允许切掉主 VLM 能力链路：
 
 ```env
-AI_PHONE_TRAJECTORY_CACHE_V3_COORD_USE_MAIN_VLM_CONFIG=true
+AI_PHONE_TRAJECTORY_CACHE_V3_COORD_TIMEOUT_SEC=30
+AI_PHONE_TRAJECTORY_CACHE_V3_COORD_CLAUDE_THINKING_BUDGET=0
+AI_PHONE_TRAJECTORY_CACHE_V3_COORD_GPT_REASONING_EFFORT=low
 ```
 
 标签 VLM 和辅助 VLM 可能会输出清障或修复动作。只要它们可能操作手机，就必须使用

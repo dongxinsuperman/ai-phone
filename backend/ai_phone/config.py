@@ -876,20 +876,10 @@ class Settings(BaseSettings):
         description=(
             "V3 plan_intent 坐标定位专线开关。默认开启。定位层只做单图短 prompt "
             "坐标询问；当主 VLM 为 claude_cu/gpt_cu 时默认复用主 VLM Computer "
-            "Use 能力配置，但使用一次性短会话并压低/关闭 thinking，不携带主 Run "
-            "上下文。其它路径默认复用 recovery_vlm，也可通过 "
-            "V3_COORD_USE_MAIN_VLM_CONFIG=false + "
-            "V3_COORD_USE_RECOVERY_VLM_CONFIG=false 单独配置。"
+            "Use 能力配置，但使用一次性短会话，不携带主 Run 上下文。其它路径默认"
+            "复用 recovery_vlm，或通过 V3_COORD_USE_RECOVERY_VLM_CONFIG=false "
+            "单独配置历史兼容定位模型。"
             "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_ENABLED"
-        ),
-    )
-    trajectory_cache_v3_coord_use_main_vlm_config: bool = Field(
-        default=True,
-        description=(
-            "V3 coord 是否在主 VLM 为 claude_cu/gpt_cu 时复用主 VLM Computer Use "
-            "能力配置。默认 True；locator 仍是一次性短会话，不复用主 Run 上下文。"
-            "需要完全独立 V3_COORD_* 模型时设为 False。"
-            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_USE_MAIN_VLM_CONFIG"
         ),
     )
     trajectory_cache_v3_coord_use_recovery_vlm_config: bool = Field(
@@ -902,28 +892,29 @@ class Settings(BaseSettings):
     trajectory_cache_v3_coord_backend: str = Field(
         default="doubao_responses",
         description=(
-            "V3 coord 独立后端协议。仅在 V3_COORD_USE_RECOVERY_VLM_CONFIG=false 时使用。"
+            "V3 coord 非 CU/历史兼容后端协议。claude_cu/gpt_cu 主链路不会读取此字段；"
+            "仅在非 CU 路径且 V3_COORD_USE_RECOVERY_VLM_CONFIG=false 时使用。"
             "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_BACKEND"
         ),
     )
     trajectory_cache_v3_coord_api_url: str = Field(
         default="",
         description=(
-            "V3 coord 独立接口地址。"
+            "V3 coord 非 CU/历史兼容接口地址。"
             "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_API_URL"
         ),
     )
     trajectory_cache_v3_coord_api_key: str = Field(
         default="",
         description=(
-            "V3 coord 独立 API key。"
+            "V3 coord 非 CU/历史兼容 API key。"
             "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_API_KEY"
         ),
     )
     trajectory_cache_v3_coord_model: str = Field(
         default="",
         description=(
-            "V3 coord 独立模型 ID。"
+            "V3 coord 非 CU/历史兼容模型 ID。"
             "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_MODEL"
         ),
     )
@@ -934,6 +925,24 @@ class Settings(BaseSettings):
         description=(
             "V3 coord 单次调用超时（秒）。"
             "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_TIMEOUT_SEC"
+        ),
+    )
+    trajectory_cache_v3_coord_claude_thinking_budget: int = Field(
+        default=0,
+        ge=0,
+        le=64000,
+        description=(
+            "V3 coord 使用 claude_cu 主链路定位时的 thinking token 预算。"
+            "默认 0=关闭 thinking，只做短 prompt 坐标定位。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_CLAUDE_THINKING_BUDGET"
+        ),
+    )
+    trajectory_cache_v3_coord_gpt_reasoning_effort: str = Field(
+        default="low",
+        description=(
+            "V3 coord 使用 gpt_cu 主链路定位时的 reasoning effort：low/medium/high。"
+            "默认 low，只做短 prompt 坐标定位。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_GPT_REASONING_EFFORT"
         ),
     )
     trajectory_cache_v3_rescue_enabled: bool = Field(
