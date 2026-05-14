@@ -899,9 +899,12 @@ def test_build_v3_cache_payload_adds_plan_intent_and_preserves_optional_role():
     assert payload["actions"][0]["plan_intent"] == "点击推荐意愿调查弹窗关闭按钮"
     assert payload["actions"][1]["role"] == "business_required"
     assert payload["actions"][1]["plan_intent"] == "点击教材同步"
-    assert payload["actions"][2]["plan_intent"] == "点击开始挑战"
-    assert payload["actions"][3]["plan_intent"] == "关闭"
-    assert payload["actions"][4]["plan_intent"] == "点击底部标签"
+    assert payload["actions"][2]["plan_intent"] == (
+        "现在弹出了选择难度的窗口，要进入习题页，需要点击“开始挑战”按钮，"
+        "这样就能进入对应的习题挑战页面了"
+    )
+    assert payload["actions"][3]["plan_intent"] == "当前存在遮挡层，需要点击「关闭」按钮"
+    assert payload["actions"][4]["plan_intent"] == "当前遮挡层已关闭，需要点击底部标签"
     assert payload["actions"][5]["plan_intent"] == "输入hello"
     assert payload["source_completion"]["assertion_pass"] == "已进入教材同步"
 

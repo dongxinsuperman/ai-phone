@@ -25,10 +25,23 @@ from ai_phone.shared import actions as A
 
 V3_CACHE_SCHEMA_VERSION = 3
 _WS_RE = re.compile(r"\s+")
-_QUOTED_TARGET_RE = re.compile(r"[“\"'「『]([^”\"'」』]{1,24})[”\"'」』]")
-_CLICK_TARGET_RE = re.compile(
-    r"(?:需要|应该|要|去|再|然后|下一步|点击|选择|按下|打开)*"
-    r"点击[“\"'「『]?([^，。；;、\n”\"'」』]{1,24})[”\"'」』]?"
+_ACTION_VERB_RE = re.compile(
+    r"点击|轻点|输入|打开|关闭|选择|切换|返回|滑动|上滑|下滑|左滑|右滑|长按|双击|"
+    r"等待|勾选|取消|进入|tap|click|type|enter|swipe|scroll|drag|"
+    r"long[_\s-]?press|double[_\s-]?(?:click|tap)|press|launch|open|close|"
+    r"wait|select|toggle|back|home|navigate",
+    re.IGNORECASE,
+)
+_CLICK_LIKE_VERB_RE = re.compile(
+    r"点击|轻点|选择|按下|勾选|取消|tap|click|press|select|toggle",
+    re.IGNORECASE,
+)
+_LEADING_ACTION_VERB_RE = re.compile(
+    r"^(点击|轻点|输入|打开|关闭|选择|切换|返回|滑动|上滑|下滑|左滑|右滑|长按|双击|"
+    r"等待|勾选|取消|进入|tap|click|type|enter|swipe|scroll|drag|"
+    r"long[_\s-]?press|double[_\s-]?(?:click|tap)|press|launch|open|close|"
+    r"wait|select|toggle|back|home|navigate)",
+    re.IGNORECASE,
 )
 
 
@@ -288,8 +301,8 @@ def _plan_intent_for_action(action: Dict[str, Any]) -> str:
             A.ACTION_DOUBLE_TAP: "双击",
             A.ACTION_LONG_PRESS: "长按",
         }[action_type]
-        target = _short_click_target(_candidate_text(action, prefer_thought=True))
-        return _ensure_verb(target, verb, fallback=f"{verb}目标元素")
+        text = _candidate_text(action, prefer_thought=True)
+        return _ensure_action_statement(text, verb, fallback=f"{verb}目标元素")
     return _ensure_verb(_candidate_text(action), "点击", fallback=f"执行{action_type or '动作'}")
 
 
@@ -302,21 +315,6 @@ def _candidate_text(action: Dict[str, Any], *, prefer_thought: bool = False) -> 
     return ""
 
 
-def _short_click_target(text: str) -> str:
-    text = _clean_text(text)
-    if not text:
-        return ""
-    quoted = _QUOTED_TARGET_RE.findall(text)
-    if quoted:
-        return _clean_text(quoted[-1])
-    matches = _CLICK_TARGET_RE.findall(text)
-    if matches:
-        target = _clean_text(matches[-1])
-        target = re.sub(r"(按钮|卡片|入口|图标|区域)$", r"\1", target).strip()
-        return target
-    return text
-
-
 def _ensure_verb(text: str, verb: str, *, fallback: str) -> str:
     text = _clean_text(text)
     if not text:
@@ -326,6 +324,15 @@ def _ensure_verb(text: str, verb: str, *, fallback: str) -> str:
     return f"{verb}{text}"[:80]
 
 
+def _ensure_action_statement(text: str, verb: str, *, fallback: str) -> str:
+    text = _clean_text(text)
+    if not text:
+        return fallback
+    if _CLICK_LIKE_VERB_RE.search(text) or _LEADING_ACTION_VERB_RE.search(text):
+        return text[:160]
+    return f"{verb}{text}"[:160]
+
+
 def _clean_text(value: Any) -> str:
     text = _WS_RE.sub(" ", str(value or "").replace("\u3000", " ")).strip()
-    return text.strip(" ，。；;:：.")
+    return text.strip(" ，。；;:：.!?！？")
