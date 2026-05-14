@@ -874,8 +874,9 @@ class Settings(BaseSettings):
     trajectory_cache_v3_coord_enabled: bool = Field(
         default=True,
         description=(
-            "V3 plan_intent 坐标定位专线开关。默认开启；连接配置默认复用 recovery_vlm，"
-            "可通过 V3_COORD_USE_RECOVERY_VLM_CONFIG=false 单独配置。"
+            "V3 plan_intent 坐标定位专线开关。默认开启；当主 VLM 为 claude_cu/gpt_cu "
+            "时优先复用主 VLM Computer Use 配置；其它路径默认复用 recovery_vlm，"
+            "也可通过 V3_COORD_USE_RECOVERY_VLM_CONFIG=false 单独配置。"
             "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_ENABLED"
         ),
     )
@@ -926,7 +927,8 @@ class Settings(BaseSettings):
     trajectory_cache_v3_rescue_enabled: bool = Field(
         default=True,
         description=(
-            "V3 coord 连续未定位后的救场 VLM 开关。默认复用 recovery_vlm 连接配置。"
+            "V3 coord 未定位后的救场 VLM 开关。当主 VLM 为 claude_cu/gpt_cu 时优先"
+            "复用主 VLM Computer Use 配置；其它路径默认复用 recovery_vlm 连接配置。"
             "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_ENABLED"
         ),
     )

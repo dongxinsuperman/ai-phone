@@ -429,6 +429,115 @@ async def test_ephemeral_gate_overseas_uses_main_computer_use_config(monkeypatch
     assert decision.repair_action["point"] == {"x": 40, "y": 40}
 
 
+@pytest.mark.asyncio
+async def test_v3_locator_gpt_cu_uses_main_computer_use_config(monkeypatch):
+    import ai_phone.shared.llm.main.gpt_cu as gpt_cu_module
+
+    class FakeGPTCU:
+        seen = {}
+
+        def __init__(self, **kwargs):
+            FakeGPTCU.seen["init"] = kwargs
+
+        async def decide(self, screenshot_bytes, *, mime="image/jpeg"):
+            FakeGPTCU.seen["screenshot_bytes"] = screenshot_bytes
+            return SimpleNamespace(
+                thought="locate target",
+                raw_content="raw",
+                parsed_actions=[
+                    ParsedAction(
+                        action="click",
+                        point=[50, 100],
+                        raw="computer.click",
+                        coord_space="absolute",
+                    )
+                ],
+            )
+
+    monkeypatch.setattr(gpt_cu_module, "GPTComputerUseClient", FakeGPTCU)
+    settings = Settings(
+        _env_file=None,
+        vlm_backend="gpt_cu",
+        vlm_api_url="https://api.openai.com/v1/responses",
+        vlm_api_key="main-key",
+        vlm_model="computer-use-preview",
+        trajectory_cache_v3_coord_enabled=True,
+        trajectory_cache_v3_coord_use_recovery_vlm_config=True,
+        trajectory_cache_recovery_vlm_api_url="",
+        trajectory_cache_recovery_vlm_api_key="",
+        trajectory_cache_recovery_vlm_model="",
+    )
+    locator = V3PlanLocator(settings=settings, main_vlm_backend="gpt_cu")
+
+    result = await locator.locate_action(
+        goal="g",
+        trajectory={"actions": []},
+        action={"index": 1, "type": "click", "plan_intent": "点击目标"},
+        screenshot_bytes=_test_jpeg(100, 200, (20, 20, 20)),
+        image_size=(100, 200),
+        window_size=(1000, 2000),
+    )
+
+    assert FakeGPTCU.seen["init"]["api_key"] == "main-key"
+    assert locator.coord_space == "absolute"
+    assert result.action["point"] == {"x": 500, "y": 1000}
+
+
+@pytest.mark.asyncio
+async def test_v3_rescue_overseas_uses_main_computer_use_config(monkeypatch):
+    import ai_phone.shared.llm.main.claude_cu as claude_cu_module
+
+    class FakeClaudeCU:
+        seen = {}
+
+        def __init__(self, **kwargs):
+            FakeClaudeCU.seen["init"] = kwargs
+
+        async def decide(self, screenshot_bytes, *, mime="image/jpeg"):
+            FakeClaudeCU.seen["screenshot_bytes"] = screenshot_bytes
+            return SimpleNamespace(
+                thought="关闭遮挡后继续",
+                raw_content="raw",
+                parsed_actions=[
+                    ParsedAction(
+                        action="click",
+                        point=[25, 40],
+                        raw="computer.left_click",
+                        coord_space="absolute",
+                    )
+                ],
+            )
+
+    monkeypatch.setattr(claude_cu_module, "ClaudeComputerUseClient", FakeClaudeCU)
+    settings = Settings(
+        _env_file=None,
+        vlm_backend="claude_cu",
+        vlm_api_url="https://api.anthropic.com/v1/messages",
+        vlm_api_key="main-key",
+        vlm_model="claude-sonnet-4-5",
+        trajectory_cache_v3_rescue_enabled=True,
+        trajectory_cache_v3_rescue_use_recovery_vlm_config=True,
+        trajectory_cache_recovery_vlm_api_url="",
+        trajectory_cache_recovery_vlm_api_key="",
+        trajectory_cache_recovery_vlm_model="",
+    )
+    rescue = V3RescueVerifier(settings=settings, main_vlm_backend="claude_cu")
+
+    decision = await rescue.decide(
+        goal="g",
+        trajectory={"actions": []},
+        action={"index": 1, "type": "click", "plan_intent": "点击目标"},
+        current_bytes=_test_jpeg(100, 200, (20, 20, 20)),
+        miss_reason="target missing",
+    )
+
+    assert FakeClaudeCU.seen["init"]["api_key"] == "main-key"
+    assert rescue.coord_space == "absolute"
+    assert decision.verdict == "REPAIR_ACTION"
+    assert decision.coord_space == "absolute"
+    assert decision.repair_action["point"] == {"x": 25, "y": 40}
+
+
 def test_ephemeral_classifier_falls_back_to_assistant_config():
     settings = Settings(
         _env_file=None,
@@ -1084,6 +1193,49 @@ def test_build_v3_cache_payload_adds_plan_intent_and_preserves_optional_role():
     assert payload["actions"][4]["plan_intent"] == "当前遮挡层已关闭，需要点击底部标签"
     assert payload["actions"][5]["plan_intent"] == "输入hello"
     assert payload["source_completion"]["assertion_pass"] == "已进入教材同步"
+
+
+def test_build_v3_cache_payload_keeps_cu_plan_intent_executable():
+    payload = build_v3_cache_payload(
+        {
+            "schema_version": 2,
+            "cache_key": "k3-cu",
+            "device_code": "D1",
+            "run_semantic_hash": "h",
+            "run_semantic_text": "进入目标页面",
+            "source_run_id": "run-cu",
+            "source_vlm_backend": "claude_cu",
+            "actions": [
+                {
+                    "index": 1,
+                    "action_id": "a001",
+                    "type": "click",
+                    "label": "底部目标标签",
+                    "intent": "进入目标页面",
+                    "thought": (
+                        "Let me analyze the current screenshot. I can see a long UI state. "
+                        "I need to click the bottom target tab to continue."
+                    ),
+                },
+                {
+                    "index": 2,
+                    "action_id": "a002",
+                    "type": "click",
+                    "label": "确认按钮",
+                    "intent": "完成当前确认",
+                    "thought": "**Forced verdict for Substep 1** target state: ASSERT_FAIL",
+                },
+            ],
+            "source_completion": {"assertion_pass": "已进入目标页面"},
+        }
+    )
+
+    assert payload["actions"][0]["plan_intent"] == "点击底部目标标签，进入目标页面"
+    assert payload["actions"][1]["plan_intent"] == "点击确认按钮，完成当前确认"
+    joined = "\n".join(action["plan_intent"] for action in payload["actions"])
+    assert "Let me analyze" not in joined
+    assert "Forced verdict" not in joined
+    assert "ASSERT_FAIL" not in joined
 
 
 @pytest.mark.asyncio

@@ -9,6 +9,7 @@ import asyncio
 import base64
 import io
 import json
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -94,10 +95,12 @@ class V3PlanLocator:
         main_vlm_backend: Optional[str] = None,
     ) -> None:
         self.settings = settings or get_settings()
-        self._main_vlm_backend = (main_vlm_backend or "").strip().lower()
+        self._main_vlm_backend = (
+            main_vlm_backend or str(getattr(self.settings, "vlm_backend", "") or "")
+        ).strip().lower()
 
     def is_configured(self) -> bool:
-        if self._use_main_claude_cu_locator():
+        if self._use_main_executable_vlm():
             return bool(self.settings.vlm_api_url and self.settings.vlm_api_key and self.settings.vlm_model)
         backend, api_url, api_key, model, _timeout = self._config()
         return bool(self.settings.trajectory_cache_v3_coord_enabled and backend and api_url and api_key and model)
@@ -124,7 +127,7 @@ class V3PlanLocator:
         s = self.settings
         if not s.trajectory_cache_v3_coord_enabled:
             return "v3 coord 未启用（trajectory_cache_v3_coord_enabled=false）"
-        if self._use_main_claude_cu_locator():
+        if self._use_main_executable_vlm():
             missing: List[str] = []
             if not s.vlm_api_url:
                 missing.append("vlm_api_url")
@@ -133,7 +136,7 @@ class V3PlanLocator:
             if not s.vlm_model:
                 missing.append("vlm_model")
             if missing:
-                return f"主 VLM Claude Computer Use 配置缺失：{','.join(missing)}"
+                return f"主 VLM Computer Use 配置缺失：{','.join(missing)}"
             return ""
         backend, api_url, api_key, model, _timeout = self._config()
         missing: List[str] = []
@@ -156,22 +159,22 @@ class V3PlanLocator:
 
     @property
     def coord_space(self) -> str:
-        if self._use_main_claude_cu_locator():
+        if self._use_main_executable_vlm():
             return "absolute"
         backend, _api_url, _api_key, _model, _timeout = self._config()
         return _coord_space_for_v3_backend(backend, model=_model)
 
-    def _use_main_claude_cu_locator(self) -> bool:
-        if self._main_vlm_backend != "claude_cu":
-            return False
-        if (self.settings.vlm_backend or "").strip().lower() != "claude_cu":
-            return False
-        if not bool(self.settings.trajectory_cache_v3_coord_enabled):
-            return False
-        backend, _api_url, _api_key, _model, _timeout = self._config()
-        if (backend or "").strip().lower() == "claude_messages":
-            return True
-        return not (_api_url and _api_key and _model)
+    def _use_main_executable_vlm(self) -> bool:
+        backend = (
+            self._main_vlm_backend
+            or str(getattr(self.settings, "vlm_backend", "") or "")
+        ).strip().lower()
+        configured = str(getattr(self.settings, "vlm_backend", "") or "").strip().lower()
+        return (
+            bool(self.settings.trajectory_cache_v3_coord_enabled)
+            and backend in {"claude_cu", "gpt_cu"}
+            and configured == backend
+        )
 
     async def locate_action(
         self,
@@ -185,8 +188,8 @@ class V3PlanLocator:
     ) -> V3LocateResult:
         if not self.is_configured():
             raise ReplayActionError(self.configuration_problem() or "v3 locator 不可用")
-        if self._use_main_claude_cu_locator():
-            return await self._locate_action_with_claude_cu(
+        if self._use_main_executable_vlm():
+            return await self._locate_action_with_main_executable_vlm(
                 goal=goal,
                 trajectory=trajectory,
                 action=action,
@@ -260,7 +263,7 @@ class V3PlanLocator:
             "当前支持 doubao_responses / openai_compatible / claude_messages"
         )
 
-    async def _locate_action_with_claude_cu(
+    async def _locate_action_with_main_executable_vlm(
         self,
         *,
         goal: str,
@@ -270,25 +273,36 @@ class V3PlanLocator:
         image_size: Optional[Tuple[int, int]],
         window_size: Tuple[int, int],
     ) -> V3LocateResult:
-        from ai_phone.shared.llm.main.claude_cu import ClaudeComputerUseClient
+        system_prompt = build_v3_computer_use_locator_prompt(action=action)
+        if self._main_vlm_backend == "gpt_cu":
+            from ai_phone.shared.llm.main.gpt_cu import GPTComputerUseClient
 
-        system_prompt = build_v3_claude_cu_locator_prompt(action=action)
-        client = ClaudeComputerUseClient(
-            system_prompt=system_prompt,
-            api_url=self.settings.vlm_api_url,
-            api_key=self.settings.vlm_api_key,
-            model=self.settings.vlm_model,
-            timeout_seconds=float(self.settings.trajectory_cache_v3_coord_timeout_sec),
-        )
+            client = GPTComputerUseClient(
+                system_prompt=system_prompt,
+                api_url=self.settings.vlm_api_url,
+                api_key=self.settings.vlm_api_key,
+                model=self.settings.vlm_model,
+                timeout_seconds=float(self.settings.trajectory_cache_v3_coord_timeout_sec),
+            )
+        else:
+            from ai_phone.shared.llm.main.claude_cu import ClaudeComputerUseClient
+
+            client = ClaudeComputerUseClient(
+                system_prompt=system_prompt,
+                api_url=self.settings.vlm_api_url,
+                api_key=self.settings.vlm_api_key,
+                model=self.settings.vlm_model,
+                timeout_seconds=float(self.settings.trajectory_cache_v3_coord_timeout_sec),
+            )
         decision = await client.decide(screenshot_bytes)
         parsed_actions = list(decision.parsed_actions or [])
         parsed = next((item for item in parsed_actions if getattr(item, "is_known", False)), None)
         if parsed is None:
-            raise V3LocatorMiss(f"v3 Claude CU locator 未返回动作: {decision.raw_content[:160]}")
+            raise V3LocatorMiss(f"v3 Computer Use locator 未返回动作: {decision.raw_content[:160]}")
         expected_type = str(action.get("type") or "")
         if parsed.action != expected_type:
             raise V3LocatorMiss(
-                f"v3 Claude CU locator 动作类型不匹配 expected={expected_type} actual={parsed.action}"
+                f"v3 Computer Use locator 动作类型不匹配 expected={expected_type} actual={parsed.action}"
             )
         replay_action = _replay_action_from_parsed(
             parsed,
@@ -455,9 +469,19 @@ class V3RescueVerifier:
         main_vlm_backend: Optional[str] = None,
     ) -> None:
         self.settings = settings or get_settings()
-        self._main_vlm_backend = (main_vlm_backend or "").strip().lower()
+        self._main_vlm_backend = (
+            main_vlm_backend or str(getattr(self.settings, "vlm_backend", "") or "")
+        ).strip().lower()
 
     def is_configured(self) -> bool:
+        if self._use_main_executable_vlm():
+            s = self.settings
+            return bool(
+                s.trajectory_cache_v3_rescue_enabled
+                and s.vlm_api_url
+                and s.vlm_api_key
+                and s.vlm_model
+            )
         backend, api_url, api_key, model, _timeout = self._config()
         return bool(
             self.settings.trajectory_cache_v3_rescue_enabled
@@ -489,6 +513,17 @@ class V3RescueVerifier:
         s = self.settings
         if not s.trajectory_cache_v3_rescue_enabled:
             return "v3 rescue 未启用（trajectory_cache_v3_rescue_enabled=false）"
+        if self._use_main_executable_vlm():
+            missing: List[str] = []
+            if not s.vlm_api_url:
+                missing.append("vlm_api_url")
+            if not s.vlm_api_key:
+                missing.append("vlm_api_key")
+            if not s.vlm_model:
+                missing.append("vlm_model")
+            if missing:
+                return f"主 VLM Computer Use 配置缺失：{','.join(missing)}"
+            return ""
         backend, api_url, api_key, model, _timeout = self._config()
         missing: List[str] = []
         if not backend:
@@ -510,8 +545,22 @@ class V3RescueVerifier:
 
     @property
     def coord_space(self) -> str:
+        if self._use_main_executable_vlm():
+            return "absolute"
         backend, _api_url, _api_key, _model, _timeout = self._config()
         return _coord_space_for_v3_backend(backend, model=_model)
+
+    def _use_main_executable_vlm(self) -> bool:
+        backend = (
+            self._main_vlm_backend
+            or str(getattr(self.settings, "vlm_backend", "") or "")
+        ).strip().lower()
+        configured = str(getattr(self.settings, "vlm_backend", "") or "").strip().lower()
+        return (
+            bool(self.settings.trajectory_cache_v3_rescue_enabled)
+            and backend in {"claude_cu", "gpt_cu"}
+            and configured == backend
+        )
 
     async def decide(
         self,
@@ -541,6 +590,11 @@ class V3RescueVerifier:
             miss_reason=miss_reason,
             coord_space=self.coord_space,
         )
+        if self._use_main_executable_vlm():
+            return await self._decide_with_main_executable_vlm(
+                prompt=prompt,
+                current_bytes=current_bytes,
+            )
         started = time.monotonic()
         try:
             text = await asyncio.wait_for(
@@ -578,6 +632,73 @@ class V3RescueVerifier:
         decision = parse_v3_rescue_response(text, coord_space=self.coord_space)
         decision.elapsed_ms = int((time.monotonic() - started) * 1000)
         return decision
+
+    async def _decide_with_main_executable_vlm(
+        self,
+        *,
+        prompt: str,
+        current_bytes: bytes,
+    ) -> V3RescueDecision:
+        system_prompt = (
+            "You are the V3 trajectory replay local recovery model for a real mobile device.\n"
+            "You are looking at the current live phone screen only.\n"
+            "If the current cached step target is not visible because the page is loading, "
+            "do not use the computer tool; answer FINISHED: WAIT: <milliseconds>: <reason>.\n"
+            "If the cached step is already complete and replay can continue, answer "
+            "FINISHED: CONTINUE_REPLAY: <reason>.\n"
+            "If a safe local UI action can reconnect the cached route, use the computer "
+            "tool exactly once on the current screen.\n"
+            "If recovery is unsafe or uncertain, answer ASSERT_FAIL: <reason>.\n\n"
+            "Important: the policy text below is shared with non-Computer-Use backends "
+            "and may mention JSON output. For this Computer Use call, ignore that output "
+            "format section. Use only the computer tool, FINISHED, or ASSERT_FAIL.\n\n"
+            + prompt
+        )
+        started = time.monotonic()
+        try:
+            if self._main_vlm_backend == "gpt_cu":
+                from ai_phone.shared.llm.main.gpt_cu import GPTComputerUseClient
+
+                client = GPTComputerUseClient(
+                    system_prompt=system_prompt,
+                    api_url=self.settings.vlm_api_url,
+                    api_key=self.settings.vlm_api_key,
+                    model=self.settings.vlm_model,
+                    timeout_seconds=float(self.settings.trajectory_cache_v3_rescue_timeout_sec),
+                )
+            else:
+                from ai_phone.shared.llm.main.claude_cu import ClaudeComputerUseClient
+
+                client = ClaudeComputerUseClient(
+                    system_prompt=system_prompt,
+                    api_url=self.settings.vlm_api_url,
+                    api_key=self.settings.vlm_api_key,
+                    model=self.settings.vlm_model,
+                    timeout_seconds=float(self.settings.trajectory_cache_v3_rescue_timeout_sec),
+                )
+            model_decision = await asyncio.wait_for(
+                client.decide(current_bytes),
+                timeout=float(self.settings.trajectory_cache_v3_rescue_timeout_sec),
+            )
+        except asyncio.TimeoutError:
+            return V3RescueDecision(
+                verdict=V3_RESCUE_GIVE_UP,
+                reason="v3 rescue 主 VLM Computer Use 调用超时",
+                elapsed_ms=int((time.monotonic() - started) * 1000),
+                error="timeout",
+                coord_space="absolute",
+            )
+        except Exception as exc:  # noqa: BLE001
+            return V3RescueDecision(
+                verdict=V3_RESCUE_GIVE_UP,
+                reason=f"v3 rescue 主 VLM Computer Use 调用失败：{type(exc).__name__}: {str(exc)[:160]}",
+                elapsed_ms=int((time.monotonic() - started) * 1000),
+                error=type(exc).__name__,
+                coord_space="absolute",
+            )
+        out = _v3_rescue_decision_from_main_vlm_decision(model_decision)
+        out.elapsed_ms = int((time.monotonic() - started) * 1000)
+        return out
 
 
 class V3ReplayRunner:
@@ -1268,7 +1389,7 @@ def build_v3_locator_prompt(
     )
 
 
-def build_v3_claude_cu_locator_prompt(*, action: Dict[str, Any]) -> str:
+def build_v3_computer_use_locator_prompt(*, action: Dict[str, Any]) -> str:
     action_type = str(action.get("type") or "")
     plan_intent = str(action.get("plan_intent") or action.get("intent") or "").strip()
     if action_type == A.ACTION_DRAG:
@@ -1389,6 +1510,109 @@ def parse_v3_rescue_response(text: str, *, coord_space: str = "normalized") -> V
         raw=text,
         coord_space=coord_space if coord_space in {"normalized", "absolute"} else "normalized",
     )
+
+
+def _v3_rescue_decision_from_main_vlm_decision(model_decision: Any) -> V3RescueDecision:
+    parsed_actions = list(getattr(model_decision, "parsed_actions", None) or [])
+    thought = str(getattr(model_decision, "thought", "") or "")
+    raw = str(getattr(model_decision, "raw_content", "") or "")
+    if not parsed_actions:
+        return V3RescueDecision(
+            verdict=V3_RESCUE_GIVE_UP,
+            reason="主 VLM Computer Use 未返回可解析动作",
+            raw=raw,
+            error="empty_action",
+            coord_space="absolute",
+        )
+    parsed = parsed_actions[0]
+    reason = parsed.content or thought or parsed.raw or ""
+    if parsed.action == A.ACTION_FINISHED:
+        verdict, wait_ms, parsed_reason = _parse_v3_rescue_finished_content(reason)
+        return V3RescueDecision(
+            verdict=verdict,
+            reason=parsed_reason or reason or verdict,
+            wait_ms=wait_ms,
+            raw=raw,
+            coord_space="absolute",
+        )
+    if parsed.action == A.ACTION_WAIT:
+        return V3RescueDecision(
+            verdict=V3_RESCUE_WAIT,
+            reason=reason or "主 VLM Computer Use 判断页面仍在加载",
+            wait_ms=max(100, min(10_000, int(parsed.seconds or 1) * 1000)),
+            raw=raw,
+            coord_space="absolute",
+        )
+    if parsed.action == A.ACTION_ASSERT_FAIL:
+        return V3RescueDecision(
+            verdict=V3_RESCUE_GIVE_UP,
+            reason=reason or "主 VLM Computer Use 判断无法安全恢复",
+            raw=raw,
+            coord_space="absolute",
+        )
+    if parsed.is_known:
+        return V3RescueDecision(
+            verdict=V3_RESCUE_REPAIR_ACTION,
+            reason=thought or f"执行局部修复动作 {parsed.action}",
+            repair_action=_v3_repair_action_from_parsed(parsed),
+            raw=raw,
+            coord_space="absolute",
+        )
+    return V3RescueDecision(
+        verdict=V3_RESCUE_GIVE_UP,
+        reason=f"主 VLM Computer Use 输出未知动作：{parsed.action}",
+        raw=raw,
+        error="unknown_action",
+        coord_space="absolute",
+    )
+
+
+def _parse_v3_rescue_finished_content(content: str) -> Tuple[str, int, str]:
+    text = str(content or "").strip()
+    upper = text.upper()
+    if upper.startswith(V3_RESCUE_WAIT):
+        rest = _split_v3_rescue_content(text, V3_RESCUE_WAIT)
+        wait_ms = 800
+        match = re.match(r"\s*(\d{2,6})\s*(?:ms|毫秒)?\s*[:：,，\-]?\s*(.*)", rest)
+        if match:
+            wait_ms = max(100, min(10_000, int(match.group(1))))
+            reason = match.group(2).strip() or "主 VLM Computer Use 判断页面仍在加载"
+        else:
+            reason = rest or "主 VLM Computer Use 判断页面仍在加载"
+        return V3_RESCUE_WAIT, wait_ms, reason
+    if upper.startswith(V3_RESCUE_CONTINUE_REPLAY) or upper.startswith("CONTINUE"):
+        return V3_RESCUE_CONTINUE_REPLAY, 0, _split_v3_rescue_content(text, V3_RESCUE_CONTINUE_REPLAY) or text
+    if upper.startswith(V3_RESCUE_GIVE_UP) or upper.startswith("ASSERT_FAIL"):
+        return V3_RESCUE_GIVE_UP, 0, _split_v3_rescue_content(text, V3_RESCUE_GIVE_UP) or text
+    return V3_RESCUE_GIVE_UP, 0, f"主 VLM Computer Use finished 未声明 V3 rescue verdict：{text[:120]}"
+
+
+def _split_v3_rescue_content(text: str, verdict: str) -> str:
+    raw = str(text or "").strip()
+    if raw.upper().startswith(verdict):
+        raw = raw[len(verdict):]
+    if raw.startswith(":") or raw.startswith("："):
+        raw = raw[1:]
+    return raw.strip()
+
+
+def _v3_repair_action_from_parsed(parsed: A.ParsedAction) -> Dict[str, Any]:
+    out: Dict[str, Any] = {"type": parsed.action}
+    if parsed.point is not None:
+        out["point"] = {"x": int(parsed.point[0]), "y": int(parsed.point[1])}
+    if parsed.start_point is not None:
+        out["start"] = {"x": int(parsed.start_point[0]), "y": int(parsed.start_point[1])}
+    if parsed.end_point is not None:
+        out["end"] = {"x": int(parsed.end_point[0]), "y": int(parsed.end_point[1])}
+    if parsed.direction:
+        out["direction"] = parsed.direction
+    if parsed.content:
+        out["content"] = parsed.content
+    if parsed.seconds is not None:
+        out["seconds"] = int(parsed.seconds)
+    if parsed.name:
+        out["name"] = parsed.name
+    return out
 
 
 def _replay_action_from_parsed(

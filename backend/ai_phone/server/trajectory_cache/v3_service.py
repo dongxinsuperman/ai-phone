@@ -43,6 +43,14 @@ _LEADING_ACTION_VERB_RE = re.compile(
     r"wait|select|toggle|back|home|navigate)",
     re.IGNORECASE,
 )
+_SENTENCE_SPLIT_RE = re.compile(r"[\n。；;.!?！？]+")
+_NOISY_PLAN_TEXT_RE = re.compile(
+    r"let me analyze|current screenshot|i can see|appears to|forced verdict|"
+    r"substep|target state|assert_fail|continue_replay|give_up|locator|"
+    r"verdict|traceback|exception|error=|raw=|thought:|action:",
+    re.IGNORECASE,
+)
+_COMPUTER_USE_BACKEND_RE = re.compile(r"(claude|gpt).*_cu|computer[_-]?use", re.IGNORECASE)
 
 
 async def save_trajectory_cache_v3_after_success(
@@ -243,7 +251,11 @@ async def mark_trajectory_cache_v3_suspect(
 
 
 def build_v3_cache_payload(source: Dict[str, Any]) -> Dict[str, Any]:
-    actions = [_normalize_v3_action(action) for action in list(source.get("actions") or [])]
+    source_vlm_backend = str(source.get("source_vlm_backend") or "")
+    actions = [
+        _normalize_v3_action(action, source_vlm_backend=source_vlm_backend)
+        for action in list(source.get("actions") or [])
+    ]
     return {
         "mode": "v3",
         "schema_version": V3_CACHE_SCHEMA_VERSION,
@@ -266,14 +278,17 @@ def build_v3_cache_payload(source: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _normalize_v3_action(action: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_v3_action(action: Dict[str, Any], *, source_vlm_backend: str = "") -> Dict[str, Any]:
     normalized = dict(action)
     normalized.setdefault("role", ROLE_BUSINESS_REQUIRED)
-    normalized["plan_intent"] = _plan_intent_for_action(normalized)
+    normalized["plan_intent"] = _plan_intent_for_action(
+        normalized,
+        source_vlm_backend=source_vlm_backend,
+    )
     return normalized
 
 
-def _plan_intent_for_action(action: Dict[str, Any]) -> str:
+def _plan_intent_for_action(action: Dict[str, Any], *, source_vlm_backend: str = "") -> str:
     action_type = str(action.get("type") or "").strip()
     if action_type == A.ACTION_TYPE:
         content = _clean_text(action.get("content") or action.get("text") or "")
@@ -303,18 +318,115 @@ def _plan_intent_for_action(action: Dict[str, Any]) -> str:
             A.ACTION_DOUBLE_TAP: "双击",
             A.ACTION_LONG_PRESS: "长按",
         }[action_type]
-        text = _candidate_text(action, prefer_thought=True)
-        return _ensure_action_statement(text, verb, fallback=f"{verb}目标元素")
+        return _click_plan_intent(action, verb, source_vlm_backend=source_vlm_backend)
     return _ensure_verb(_candidate_text(action), "点击", fallback=f"执行{action_type or '动作'}")
 
 
 def _candidate_text(action: Dict[str, Any], *, prefer_thought: bool = False) -> str:
     keys = ("thought", "label", "intent", "raw") if prefer_thought else ("label", "intent", "thought", "raw")
     for key in keys:
-        text = _clean_text(action.get(key) or "")
+        text = _usable_semantic_text(action.get(key))
         if text:
             return text
     return ""
+
+
+def _click_plan_intent(action: Dict[str, Any], verb: str, *, source_vlm_backend: str = "") -> str:
+    """生成给 V3 定位器使用的短动作语义。
+
+    V3 保存的是下一次可执行的目标，不是首跑模型的完整推理记录。Computer Use
+    后端的 thought 常包含长英文观察/裁决文本，所以只在缺少 label/intent 时把
+    thought 中的动作短句作为兜底；普通后端也会先过滤掉非动作元信息。
+    """
+    label = _usable_semantic_text(action.get("label"))
+    intent = _usable_semantic_text(action.get("intent"))
+    thought_action = _action_sentence_from_text(action.get("thought"))
+    raw = _usable_semantic_text(action.get("raw"))
+    computer_use = bool(_COMPUTER_USE_BACKEND_RE.search(source_vlm_backend or ""))
+
+    if computer_use:
+        target = label or intent or thought_action or raw
+        purpose = intent if label and intent and not _same_semantic(label, intent) else ""
+        return _compose_action_statement(verb, target, purpose=purpose, fallback=f"{verb}目标元素")
+
+    if thought_action and _should_prefer_thought_action(thought_action, label=label, intent=intent):
+        return _ensure_action_statement(thought_action, verb, fallback=f"{verb}目标元素")
+
+    target = label or intent or thought_action or raw
+    purpose = intent if label and intent and not _same_semantic(label, intent) else ""
+    return _compose_action_statement(verb, target, purpose=purpose, fallback=f"{verb}目标元素")
+
+
+def _usable_semantic_text(value: Any) -> str:
+    text = _clean_text(value)
+    if not text or _is_noisy_plan_text(text):
+        return ""
+    action_sentence = _action_sentence_from_text(text)
+    if len(text) > 140 and action_sentence:
+        return action_sentence
+    if len(text) > 180:
+        return ""
+    return text
+
+
+def _action_sentence_from_text(value: Any) -> str:
+    text = _clean_text(value)
+    if not text:
+        return ""
+    for sentence in _SENTENCE_SPLIT_RE.split(text):
+        candidate = _clean_text(sentence)
+        if not candidate or _is_noisy_plan_text(candidate):
+            continue
+        if _ACTION_VERB_RE.search(candidate):
+            return candidate[:140]
+    if _ACTION_VERB_RE.search(text) and not _is_noisy_plan_text(text):
+        return text[:140]
+    return ""
+
+
+def _is_noisy_plan_text(text: str) -> bool:
+    cleaned = _clean_text(text)
+    if not cleaned:
+        return True
+    return bool(_NOISY_PLAN_TEXT_RE.search(cleaned))
+
+
+def _should_prefer_thought_action(thought_action: str, *, label: str, intent: str) -> bool:
+    if not thought_action:
+        return False
+    if not label and not intent:
+        return True
+    if len(thought_action) > 90:
+        return False
+    if _same_semantic(thought_action, label) or _same_semantic(thought_action, intent):
+        return False
+    # 短 thought 明确描述了清障/切换等实际动作时，优先保留首跑真实动作语义。
+    return bool(_CLICK_LIKE_VERB_RE.search(thought_action) and re.search(r"关闭|遮挡|弹窗|close|dismiss", thought_action, re.IGNORECASE))
+
+
+def _compose_action_statement(verb: str, target: str, *, purpose: str = "", fallback: str) -> str:
+    base = _ensure_action_statement(target, verb, fallback=fallback)
+    purpose = _usable_semantic_text(purpose)
+    if not purpose or _same_semantic(base, purpose):
+        return base
+    if len(base) + len(purpose) + 1 > 140:
+        return base
+    return f"{base}，{purpose}"[:140]
+
+
+def _same_semantic(left: str, right: str) -> bool:
+    left_norm = _semantic_fingerprint(left)
+    right_norm = _semantic_fingerprint(right)
+    if not left_norm or not right_norm:
+        return False
+    return left_norm in right_norm or right_norm in left_norm
+
+
+def _semantic_fingerprint(text: str) -> str:
+    text = _clean_text(text).lower()
+    for token in ("点击", "轻点", "选择", "按下", "tap", "click", "press", "select"):
+        text = text.replace(token, "")
+    return re.sub(r"[\s\"'“”‘’「」《》()（）\[\]{}。，,;；:：.!?！？_-]+", "", text)
 
 
 def _ensure_verb(text: str, verb: str, *, fallback: str) -> str:
@@ -330,6 +442,9 @@ def _ensure_action_statement(text: str, verb: str, *, fallback: str) -> str:
     text = _clean_text(text)
     if not text:
         return fallback
+    sentence = _action_sentence_from_text(text)
+    if sentence and len(text) > 140:
+        text = sentence
     if _CLICK_LIKE_VERB_RE.search(text) or _LEADING_ACTION_VERB_RE.search(text):
         return text[:160]
     return f"{verb}{text}"[:160]

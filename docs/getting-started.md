@@ -144,6 +144,7 @@ psql "$AI_PHONE_DB_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 - [Server 大脑架构说明（next/server-brain）](./server-brain.md)
 - [主 VLM / 回放可执行链路契约](./executable-logic-contract.md)
 - [轨迹缓存 V1 / V2 方案契约](./trajectory-cache-v1-v2.md)
+- [轨迹缓存 V3 方案契约](./trajectory-cache-v3.md)
 - [使用功能介绍（产品手册）](../使用功能介绍.md)
 - [辅助系统核心逻辑及效果（含 26 项阈值调参）](../ai-phone的辅助系统核心逻辑及效果.md)
 - [Midscene 执行器挂载方案](../Midscene执行器接入方案.md)
