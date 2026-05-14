@@ -1269,6 +1269,21 @@ def _build_state_landmarks(
             else None
         )
 
+        handoff_snapshot_ts_ms = (
+            _snapshot_ts_ms(
+                snapshot_step=snapshot_step,
+                phase=phase,
+                logs_by_step=logs_by_step,
+            )
+            if snapshot_step is not None
+            else None
+        )
+        handoff_wait_ms = (
+            max(0, handoff_snapshot_ts_ms - action_end_ms)
+            if handoff_snapshot_ts_ms is not None and action_end_ms is not None
+            else None
+        )
+
         landmark = {
             "landmark_id": f"lm_{str(action.get('action_id') or idx + 1)}",
             "action_id": action.get("action_id"),
@@ -1285,13 +1300,8 @@ def _build_state_landmarks(
             "timing": {
                 "action_start_ts_ms": action_start_ms,
                 "action_end_ts_ms": action_end_ms,
-                "handoff_snapshot_ts_ms": _snapshot_ts_ms(
-                    snapshot_step=snapshot_step,
-                    phase=phase,
-                    logs_by_step=logs_by_step,
-                )
-                if snapshot_step is not None
-                else None,
+                "handoff_snapshot_ts_ms": handoff_snapshot_ts_ms,
+                "handoff_wait_ms": handoff_wait_ms,
                 "next_action_start_ts_ms": next_action_start_ms,
                 "gap_to_next_action_ms": gap_ms,
             },
@@ -1356,6 +1366,16 @@ def _snapshot_ts_ms(
                 matched.append(ts_ms)
     if matched:
         return matched[-1] if phase != "before" else matched[0]
+    if phase == "before":
+        stable_matched = [
+            ts_ms
+            for log in step_logs
+            if str(log.title or "") == "截图已稳定"
+            for ts_ms in [_dt_to_epoch_ms(log.ts)]
+            if ts_ms is not None
+        ]
+        if stable_matched:
+            return stable_matched[0]
     return _dt_to_epoch_ms(snapshot_step.created_at)
 
 

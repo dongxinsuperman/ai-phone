@@ -1552,7 +1552,9 @@ def _optional_int(value: Any) -> Optional[int]:
 
 def _alignment_gap_ms(landmark: Dict[str, Any]) -> Optional[int]:
     timing = landmark.get("timing") if isinstance(landmark.get("timing"), dict) else {}
-    return _optional_int(timing.get("gap_to_next_action_ms"))
+    return _optional_int(timing.get("gap_to_next_action_ms")) or _optional_int(
+        timing.get("handoff_wait_ms")
+    )
 
 
 def _app_target(action: Dict[str, Any]) -> str:

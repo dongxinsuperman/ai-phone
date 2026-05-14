@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -742,6 +743,24 @@ class FakeV3Rescue:
         self.calls.append(kwargs)
         index = min(len(self.calls), len(self.decisions)) - 1
         return self.decisions[index]
+
+
+def test_snapshot_ts_prefers_stable_screenshot_log_for_terminal_step():
+    from ai_phone.server.trajectory_cache.service import _snapshot_ts_ms
+
+    stable_ts = datetime(2026, 5, 14, 7, 27, 36, 808000, tzinfo=timezone.utc)
+    step_end_ts = datetime(2026, 5, 14, 7, 27, 54, 72000, tzinfo=timezone.utc)
+    step = RunStep(run_id="r", step=4, created_at=step_end_ts)
+    logs_by_step = {
+        4: [
+            RunLog(run_id="r", step=4, title="截图已稳定", content="变化率=0.0000", ts=stable_ts),
+            RunLog(run_id="r", step=4, title="任务完成", content="done", ts=step_end_ts),
+        ]
+    }
+
+    assert _snapshot_ts_ms(snapshot_step=step, phase="before", logs_by_step=logs_by_step) == int(
+        stable_ts.timestamp() * 1000
+    )
 
 
 @pytest.mark.asyncio
@@ -4049,6 +4068,94 @@ async def test_replay_runner_recovery_wait_more_then_match(monkeypatch):
     assert any(
         title == "轨迹缓存状态路标" and "MATCH-after-WAIT_MORE" in content
         for _level, title, content in logs
+    )
+
+
+@pytest.mark.asyncio
+async def test_replay_runner_final_action_uses_handoff_wait_ms(monkeypatch):
+    logs: list = []
+    sleeps: list = []
+    driver = FakeDriver()
+    from ai_phone.server.trajectory_cache import replay as replay_module
+    from ai_phone.server.trajectory_cache import ReplayRunner
+
+    async def log(level, title, content):
+        logs.append((level, title, content))
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    compare_results = [
+        {
+            "match": False,
+            "global_diff": 0.25,
+            "center_mae": 0.02,
+            "black_ratio_diff": 0.0,
+            "reason": "global>0.0300",
+        },
+        {
+            "match": True,
+            "global_diff": 0.01,
+            "center_mae": 0.01,
+            "black_ratio_diff": 0.0,
+            "reason": "match",
+        },
+    ]
+    compare_calls = {"i": 0}
+
+    def fake_compare(**_kwargs):
+        i = compare_calls["i"]
+        compare_calls["i"] += 1
+        return compare_results[min(i, len(compare_results) - 1)]
+
+    monkeypatch.setattr(replay_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(replay_module, "_compare_alignment", fake_compare)
+
+    runner = ReplayRunner(
+        driver=driver,
+        trajectory={
+            "actions": [
+                {"index": 1, "action_id": "a001", "type": "click", "point": {"x": 1, "y": 2}},
+            ],
+            "state_landmarks": [
+                {
+                    "action_id": "a001",
+                    "before_action_index": None,
+                    "status": "available",
+                    "image_phash": "01",
+                    "timing": {
+                        "gap_to_next_action_ms": None,
+                        "handoff_wait_ms": 1500,
+                    },
+                },
+            ],
+        },
+        log=log,
+        capture_after_each_action=True,
+        observe_delay_ms=500,
+        goal="g",
+    )
+    runner.alignment_enabled = True
+    runner._landmark_image_bytes = lambda _landmark: b"ref"  # type: ignore[method-assign]
+
+    async def stable():
+        return SimpleNamespace(bytes_=b"before")
+
+    runner._wait_stable = stable  # type: ignore[method-assign]
+
+    result = await runner.run()
+
+    assert result.success is True
+    assert sleeps == [0.5, 1.0]
+    assert any(
+        "执行后截图比对 action_id=a001" in content and "首次真实间隔=1500ms" in content
+        for _level, title, content in logs
+        if title == "轨迹缓存状态路标"
+    )
+    assert any(
+        "按首次真实间隔再等待 1000ms" in content
+        for _level, title, content in logs
+        if title == "轨迹缓存状态路标"
     )
 
 
