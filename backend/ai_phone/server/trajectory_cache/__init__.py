@@ -46,14 +46,26 @@ from .recovery import (
     build_recovery_prompt,
     parse_recovery_response,
 )
-from .replay import ReplayActionDispatcher, ReplayActionError, ReplayResult, ReplayRunner
+from .replay import (
+    ReplayActionDispatcher,
+    ReplayActionError,
+    ReplayResult,
+    ReplayRunner,
+    V1ReplayRunner,
+    V2ReplayRunner,
+)
 from .service import (
     CACHE_SCHEMA_VERSION,
+    CACHE_SCHEMA_VERSION_V1,
+    CACHE_SCHEMA_VERSION_V2,
     build_cache_key,
-    delete_trajectory_cache_for_run,
-    get_active_trajectory_cache,
+    delete_trajectory_cache_v1_for_run,
+    delete_trajectory_cache_v2_for_run,
+    get_active_trajectory_cache_v1,
+    get_active_trajectory_cache_v2,
     normalize_run_semantic,
-    save_trajectory_cache_after_success,
+    save_trajectory_cache_v1_after_success,
+    save_trajectory_cache_v2_after_success,
 )
 from .v3_replay import (
     V3LocateResult,
@@ -77,6 +89,8 @@ from .v3_service import (
 
 __all__ = [
     "CACHE_SCHEMA_VERSION",
+    "CACHE_SCHEMA_VERSION_V1",
+    "CACHE_SCHEMA_VERSION_V2",
     "CacheAssertionResult",
     "CacheEphemeralActionClassifier",
     "CacheEphemeralGateVerifier",
@@ -99,6 +113,8 @@ __all__ = [
     "ReplayActionError",
     "ReplayResult",
     "ReplayRunner",
+    "V1ReplayRunner",
+    "V2ReplayRunner",
     "ROLE_BUSINESS_REQUIRED",
     "ROLE_OPTIONAL_EPHEMERAL",
     "VERDICT_ASSERT_FAIL",
@@ -119,9 +135,11 @@ __all__ = [
     "build_v3_locator_prompt",
     "build_v3_rescue_prompt",
     "build_v3_cache_payload",
-    "delete_trajectory_cache_for_run",
+    "delete_trajectory_cache_v1_for_run",
+    "delete_trajectory_cache_v2_for_run",
     "delete_trajectory_cache_v3_for_run",
-    "get_active_trajectory_cache",
+    "get_active_trajectory_cache_v1",
+    "get_active_trajectory_cache_v2",
     "get_active_trajectory_cache_v3",
     "mark_trajectory_cache_v3_suspect",
     "normalize_run_semantic",
@@ -132,7 +150,8 @@ __all__ = [
     "parse_recovery_response",
     "parse_v3_locator_response",
     "parse_v3_rescue_response",
-    "save_trajectory_cache_after_success",
+    "save_trajectory_cache_v1_after_success",
+    "save_trajectory_cache_v2_after_success",
     "save_trajectory_cache_v3_after_success",
     "resolve_effective_cache_mode",
 ]

@@ -154,7 +154,8 @@ class ReplayActionDispatcher:
 class ReplayRunner:
     """独立缓存回放 runner。
 
-    第一阶段只做顺序回放和页面稳定等待；最终断言由后续独立断言器接入。
+    V1 只做固定动作回放；V2 在固定动作后按「截图比对 → 首次真实间隔
+    → 再比对 → 局部 VLM」处理。
     """
 
     def __init__(
@@ -171,6 +172,7 @@ class ReplayRunner:
         recovery_verifier: Optional[CacheReplayRecoveryVerifier] = None,
         ephemeral_gate_verifier: Optional[CacheEphemeralGateVerifier] = None,
         goal: Optional[str] = None,
+        replay_mode: str = "v2",
     ):
         self.driver = driver
         self.trajectory = trajectory
@@ -179,6 +181,8 @@ class ReplayRunner:
         self.emit = emit
         self.capture_after_each_action = capture_after_each_action
         self.dispatcher = dispatcher or ReplayActionDispatcher(driver)
+        self.replay_mode = str(replay_mode or "v2").lower()
+        self._is_v1_replay = self.replay_mode == "v1"
         self.recovery_verifier = recovery_verifier
         self.ephemeral_gate_verifier = ephemeral_gate_verifier
         self.goal = (
@@ -192,7 +196,11 @@ class ReplayRunner:
             if observe_delay_ms is not None
             else max(0, int(settings.trajectory_cache_observe_delay_ms or 0))
         )
-        self.alignment_enabled = bool(settings.trajectory_cache_alignment_enabled)
+        self.alignment_enabled = (
+            False
+            if self._is_v1_replay
+            else bool(settings.trajectory_cache_alignment_enabled)
+        )
         self.alignment_threshold = float(settings.trajectory_cache_alignment_threshold or 0)
         self.alignment_roi_threshold = float(
             settings.trajectory_cache_alignment_roi_threshold or 0
@@ -227,11 +235,17 @@ class ReplayRunner:
                 or 0
             ),
         )
-        self.ephemeral_gate_max_calls = max(
-            0,
-            int(getattr(settings, "trajectory_cache_ephemeral_gate_max_calls", 3) or 0),
+        self.ephemeral_gate_max_calls = (
+            0
+            if self._is_v1_replay
+            else max(
+                0,
+                int(getattr(settings, "trajectory_cache_ephemeral_gate_max_calls", 3) or 0),
+            )
         )
-        if self.ephemeral_gate_verifier is None:
+        if self._is_v1_replay:
+            self.ephemeral_gate_verifier = None
+        elif self.ephemeral_gate_verifier is None:
             self.ephemeral_gate_verifier = CacheEphemeralGateVerifier(
                 settings=settings,
                 main_vlm_backend=str(
@@ -442,10 +456,11 @@ class ReplayRunner:
                 "轨迹缓存状态路标",
                 (
                     f"跳过：action_id={action_id} landmark unavailable "
-                    f"reason={landmark.get('missing_reason') or ''}，回落页面稳定检测"
+                    f"reason={landmark.get('missing_reason') or ''}，"
+                    "改用首次成功 action 交接间隔"
                 ),
             )
-            return None
+            return await self._capture_after_historical_gap(action_id=action_id, landmark=landmark)
         target_hash = _parse_phash_hex(landmark.get("image_phash"))
         if target_hash is None:
             await self._log(
@@ -463,25 +478,51 @@ class ReplayRunner:
             )
             return None
 
-        max_wait_ms = self._alignment_wait_window_ms(landmark)
         gap_ms = _alignment_gap_ms(landmark)
         await self._log(
             1,
             "轨迹缓存状态路标",
             (
-                f"开始对比 action_id={action_id}，"
-                f"目标=首次成功轨迹 handoff 图；"
-                f"历史间隔={gap_ms if gap_ms is not None else 'none'}ms，"
-                f"最多等待={max_wait_ms}ms"
+                f"执行后截图比对 action_id={action_id}，"
+                f"目标=首次成功轨迹 action 后缓存图；"
+                f"首次真实间隔={gap_ms if gap_ms is not None else 'none'}ms"
             ),
         )
-        started_at = time.monotonic() - (self.observe_delay_ms / 1000)
-        scheduled_elapsed_ms = self.observe_delay_ms
-        elapsed_ms = self.observe_delay_ms
-        attempt = 1
-        logged_wait = False
-        last_result: Optional[Dict[str, Any]] = None
-        while True:
+        current = await self._screenshot_jpeg()
+        result = _compare_alignment(
+            current_bytes=current,
+            landmark_bytes=landmark_bytes,
+            target_hash=target_hash,
+            phash_threshold=self.alignment_threshold,
+            roi_threshold=self.alignment_roi_threshold,
+            black_ratio_threshold=self.alignment_black_ratio_threshold,
+        )
+        elapsed_ms = int(self.observe_delay_ms or 0)
+        if result["match"]:
+            return await self._accept_alignment_frame(
+                action_id=action_id,
+                landmark=landmark,
+                current=current,
+                result=result,
+                elapsed_ms=elapsed_ms,
+                note="截图一致，继续下一 action",
+            )
+
+        wait_ms = max(0, int(gap_ms or 0) - int(self.observe_delay_ms or 0))
+        if gap_ms is not None:
+            await self._log(
+                1,
+                "轨迹缓存状态路标",
+                (
+                    f"截图不一致 action_id={action_id} "
+                    f"elapsed={elapsed_ms}ms "
+                    f"global={result['global_diff']:.4f} center={result['center_mae']:.4f} "
+                    f"black={result['black_ratio_diff']:.4f} reason={result['reason']}；"
+                    f"按首次真实间隔再等待 {wait_ms}ms 后复核"
+                ),
+            )
+            if wait_ms > 0:
+                await asyncio.sleep(wait_ms / 1000)
             current = await self._screenshot_jpeg()
             result = _compare_alignment(
                 current_bytes=current,
@@ -491,56 +532,26 @@ class ReplayRunner:
                 roi_threshold=self.alignment_roi_threshold,
                 black_ratio_threshold=self.alignment_black_ratio_threshold,
             )
-            last_result = result
-            elapsed_ms = max(
-                scheduled_elapsed_ms,
-                int((time.monotonic() - started_at) * 1000),
-            )
+            elapsed_ms = max(int(gap_ms), int(self.observe_delay_ms or 0) + wait_ms)
             if result["match"]:
-                self._last_frame = current
-                before_index = _optional_int(landmark.get("before_action_index"))
-                if before_index is not None:
-                    self._carry_before_bytes = current
-                    self._carry_before_index = before_index
-                await self._log(
-                    1,
-                    "轨迹缓存状态路标",
-                    (
-                        f"对齐成功 action_id={action_id} "
-                        f"elapsed={elapsed_ms}ms attempts={attempt} "
-                        f"global={result['global_diff']:.4f} "
-                        f"center={result['center_mae']:.4f} "
-                        f"black={result['black_ratio_diff']:.4f}，跳过完整页面稳定检测"
-                    ),
+                return await self._accept_alignment_frame(
+                    action_id=action_id,
+                    landmark=landmark,
+                    current=current,
+                    result=result,
+                    elapsed_ms=elapsed_ms,
+                    note="按首次真实间隔等待后截图一致，继续下一 action",
                 )
-                return current
-            if elapsed_ms >= max_wait_ms:
-                break
-            wait_ms = min(self.alignment_retry_interval_ms, max_wait_ms - elapsed_ms)
-            if not logged_wait:
-                remaining_ms = max(0, max_wait_ms - elapsed_ms)
-                await self._log(
-                    1,
-                    "轨迹缓存状态路标",
-                    (
-                        f"与缓存路标不一致 action_id={action_id} "
-                        f"elapsed={elapsed_ms}/{max_wait_ms}ms "
-                        f"global={result['global_diff']:.4f} center={result['center_mae']:.4f} "
-                        f"black={result['black_ratio_diff']:.4f} reason={result['reason']}；"
-                        f"开始按历史窗口等待，剩余最多 {remaining_ms}ms 后复核"
-                    ),
-                )
-                logged_wait = True
-            await asyncio.sleep(wait_ms / 1000)
-            scheduled_elapsed_ms += wait_ms
-            attempt += 1
-        result = last_result or {
-            "match": False,
-            "global_diff": 1.0,
-            "center_mae": 1.0,
-            "black_ratio_diff": 1.0,
-            "reason": "compare_not_run",
-        }
+        else:
+            await self._log(
+                1,
+                "轨迹缓存状态路标",
+                (
+                    f"截图不一致 action_id={action_id}，且没有首次真实间隔；"
+                    "直接转入 recovery_vlm 局部恢复"
+                ),
+            )
+
         return await self._handle_alignment_miss(
             action=action,
             action_id=action_id,
@@ -550,8 +561,69 @@ class ReplayRunner:
             current_bytes=current,
             metrics=result,
             elapsed_ms=elapsed_ms,
-            max_wait_ms=max_wait_ms,
+            max_wait_ms=max(elapsed_ms, int(gap_ms or 0), int(self.observe_delay_ms or 0)),
         )
+
+    async def _accept_alignment_frame(
+        self,
+        *,
+        action_id: str,
+        landmark: Dict[str, Any],
+        current: bytes,
+        result: Dict[str, Any],
+        elapsed_ms: int,
+        note: str,
+    ) -> bytes:
+        self._last_frame = current
+        before_index = _optional_int(landmark.get("before_action_index"))
+        if before_index is not None:
+            self._carry_before_bytes = current
+            self._carry_before_index = before_index
+        await self._log(
+            1,
+            "轨迹缓存状态路标",
+            (
+                f"对齐成功 action_id={action_id} "
+                f"elapsed={elapsed_ms}ms "
+                f"global={result['global_diff']:.4f} "
+                f"center={result['center_mae']:.4f} "
+                f"black={result['black_ratio_diff']:.4f}；{note}"
+            ),
+        )
+        return current
+
+    async def _capture_after_historical_gap(
+        self,
+        *,
+        action_id: str,
+        landmark: Dict[str, Any],
+    ) -> Optional[bytes]:
+        gap_ms = _alignment_gap_ms(landmark)
+        if gap_ms is None:
+            await self._log(
+                1,
+                "轨迹缓存状态路标",
+                f"action_id={action_id} 无历史交接间隔，回落页面稳定检测",
+            )
+            return None
+        remaining_ms = max(0, int(gap_ms) - int(self.observe_delay_ms or 0))
+        if remaining_ms > 0:
+            await self._log(
+                1,
+                "轨迹缓存状态路标",
+                (
+                    f"action_id={action_id} 按首次成功交接间隔等待 "
+                    f"{remaining_ms}ms（历史 gap={gap_ms}ms，已观察={self.observe_delay_ms}ms）"
+                ),
+            )
+            await asyncio.sleep(remaining_ms / 1000)
+        current = await self._screenshot_jpeg()
+        self._last_frame = current
+        before_index = _optional_int(landmark.get("before_action_index"))
+        if before_index is not None:
+            self._carry_before_bytes = current
+            self._carry_before_index = before_index
+        return current
 
     async def _handle_alignment_miss(
         self,
@@ -886,7 +958,8 @@ class ReplayRunner:
 
     def _is_optional_ephemeral_action(self, action: Dict[str, Any]) -> bool:
         return (
-            str(action.get("role") or "") == ROLE_OPTIONAL_EPHEMERAL
+            self.ephemeral_gate_verifier is not None
+            and str(action.get("role") or "") == ROLE_OPTIONAL_EPHEMERAL
             and isinstance(action.get("ephemeral_meta"), dict)
         )
 
@@ -1297,6 +1370,24 @@ class ReplayRunner:
         )
 
 
+class V1ReplayRunner(ReplayRunner):
+    """V1 固定动作回放入口。"""
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs["replay_mode"] = "v1"
+        kwargs["recovery_verifier"] = None
+        kwargs["ephemeral_gate_verifier"] = None
+        super().__init__(**kwargs)
+
+
+class V2ReplayRunner(ReplayRunner):
+    """V2 增强轨迹回放入口。"""
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs["replay_mode"] = "v2"
+        super().__init__(**kwargs)
+
+
 def _point(action: Dict[str, Any], field: str) -> Tuple[int, int]:
     value = action.get(field)
     point = _coerce_point(value)
@@ -1503,4 +1594,6 @@ __all__ = [
     "ReplayActionError",
     "ReplayResult",
     "ReplayRunner",
+    "V1ReplayRunner",
+    "V2ReplayRunner",
 ]

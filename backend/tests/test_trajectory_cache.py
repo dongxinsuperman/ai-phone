@@ -16,6 +16,7 @@ from ai_phone.server.models import (
     RunLog,
     RunStep,
     VlmTrajectoryCache,
+    VlmTrajectoryCacheV2,
     VlmTrajectoryCacheV3,
 )
 from ai_phone.server.runner.rpc import DriverRpcWaiter
@@ -42,9 +43,11 @@ from ai_phone.server.trajectory_cache import (
     build_v3_locator_prompt,
     build_v3_cache_payload,
     build_recovery_prompt,
-    delete_trajectory_cache_for_run,
+    delete_trajectory_cache_v1_for_run,
+    delete_trajectory_cache_v2_for_run,
     get_active_trajectory_cache_v3,
-    get_active_trajectory_cache,
+    get_active_trajectory_cache_v1,
+    get_active_trajectory_cache_v2,
     mark_trajectory_cache_v3_suspect,
     normalize_run_semantic,
     normalize_requested_cache_mode,
@@ -55,7 +58,8 @@ from ai_phone.server.trajectory_cache import (
     parse_v3_locator_response,
     parse_v3_rescue_response,
     resolve_effective_cache_mode,
-    save_trajectory_cache_after_success,
+    save_trajectory_cache_v1_after_success,
+    save_trajectory_cache_v2_after_success,
     save_trajectory_cache_v3_after_success,
 )
 from ai_phone.server.trajectory_cache.recovery import (
@@ -613,10 +617,14 @@ class FakeEmitter:
 
 
 class FakeReplayRunner:
+    last_init_kwargs = None
+
     def __init__(self, *, driver, trajectory, log, **kwargs):
         self.driver = driver
         self.trajectory = trajectory
         self.log = log
+        self.kwargs = kwargs
+        FakeReplayRunner.last_init_kwargs = kwargs
 
     async def run(self):
         await self.log(1, "fake replay", "ok")
@@ -774,7 +782,7 @@ async def test_save_trajectory_cache_from_run_steps(monkeypatch, _test_engine, s
     )
     await session.commit()
 
-    cache_key = await save_trajectory_cache_after_success(
+    cache_key = await save_trajectory_cache_v2_after_success(
         db_module.get_session_factory(),
         run.id,
     )
@@ -782,7 +790,7 @@ async def test_save_trajectory_cache_from_run_steps(monkeypatch, _test_engine, s
     assert cache_key
     row = (
         await session.execute(
-            select(VlmTrajectoryCache).where(VlmTrajectoryCache.cache_key == cache_key)
+            select(VlmTrajectoryCacheV2).where(VlmTrajectoryCacheV2.cache_key == cache_key)
         )
     ).scalars().one()
     assert row.device_code == "D1"
@@ -820,18 +828,96 @@ async def test_save_trajectory_cache_from_run_steps(monkeypatch, _test_engine, s
     assert landmarks[0]["status"] == "unavailable"
     assert landmarks[0]["missing_reason"] == "image_url_empty"
 
-    hit = await get_active_trajectory_cache(
+    hit = await get_active_trajectory_cache_v2(
         db_module.get_session_factory(),
         device_code="D1",
         run_semantic_text="打开 微信 发送 hello",
     )
-    miss = await get_active_trajectory_cache(
+    miss = await get_active_trajectory_cache_v2(
         db_module.get_session_factory(),
         device_code="D2",
         run_semantic_text="打开 微信 发送 hello",
     )
     assert hit and hit["cache_key"] == cache_key
     assert miss is None
+
+
+@pytest.mark.asyncio
+async def test_v1_and_v2_cache_use_separate_tables(monkeypatch, _test_engine, session):
+    from ai_phone.server.trajectory_cache import service as service_module
+
+    settings = Settings(_env_file=None, trajectory_cache_ephemeral_action_enabled=False)
+    monkeypatch.setattr(service_module, "get_settings", lambda: settings)
+    session.add(Device(serial="D1", platform="android", screen_width=1000, screen_height=2000))
+    for run_id in ("run-cache-v1", "run-cache-v2"):
+        session.add(
+            Run(
+                id=run_id,
+                device_serial="D1",
+                goal="点击全部功能",
+                status="success",
+                engine="vlm",
+            )
+        )
+        session.add(
+            RunStep(
+                run_id=run_id,
+                step=1,
+                action="click(point='<point>500 250</point>')",
+                action_type="click",
+            )
+        )
+    await session.commit()
+
+    v1_key = await save_trajectory_cache_v1_after_success(
+        db_module.get_session_factory(),
+        "run-cache-v1",
+    )
+    v2_key = await save_trajectory_cache_v2_after_success(
+        db_module.get_session_factory(),
+        "run-cache-v2",
+    )
+
+    assert v1_key and v2_key and v1_key != v2_key
+    v1_row = (
+        await session.execute(
+            select(VlmTrajectoryCache).where(VlmTrajectoryCache.cache_key == v1_key)
+        )
+    ).scalars().one()
+    v2_row = (
+        await session.execute(
+            select(VlmTrajectoryCacheV2).where(VlmTrajectoryCacheV2.cache_key == v2_key)
+        )
+    ).scalars().one()
+    assert v1_row.trajectory_json["cache_mode"] == "v1"
+    assert v1_row.trajectory_json["schema_version"] == 1
+    assert v1_row.trajectory_json["state_landmarks"] == []
+    assert v2_row.trajectory_json["cache_mode"] == "v2"
+    assert v2_row.trajectory_json["schema_version"] == 2
+    assert v2_row.trajectory_json["state_landmarks"]
+
+    assert await get_active_trajectory_cache_v1(
+        db_module.get_session_factory(),
+        device_code="D1",
+        run_semantic_text="点击全部功能",
+    )
+    assert await get_active_trajectory_cache_v2(
+        db_module.get_session_factory(),
+        device_code="D1",
+        run_semantic_text="点击全部功能",
+    )
+
+    deleted_v1 = await delete_trajectory_cache_v1_for_run(
+        db_module.get_session_factory(),
+        "run-cache-v1",
+    )
+    assert deleted_v1 == 1
+    still_v2 = await get_active_trajectory_cache_v2(
+        db_module.get_session_factory(),
+        device_code="D1",
+        run_semantic_text="点击全部功能",
+    )
+    assert still_v2 and still_v2["cache_key"] == v2_key
 
 
 def test_build_v3_cache_payload_adds_plan_intent_and_preserves_optional_role():
@@ -1369,14 +1455,14 @@ async def test_save_trajectory_cache_prefers_command_params(_test_engine, sessio
     )
     await session.commit()
 
-    cache_key = await save_trajectory_cache_after_success(
+    cache_key = await save_trajectory_cache_v2_after_success(
         db_module.get_session_factory(),
         run.id,
     )
 
     row = (
         await session.execute(
-            select(VlmTrajectoryCache).where(VlmTrajectoryCache.cache_key == cache_key)
+            select(VlmTrajectoryCacheV2).where(VlmTrajectoryCacheV2.cache_key == cache_key)
         )
     ).scalars().one()
     assert row.trajectory_json["actions"][0]["source"] == "run_command"
@@ -1420,14 +1506,14 @@ async def test_save_trajectory_cache_from_unlinked_run_commands(
     )
     await session.commit()
 
-    cache_key = await save_trajectory_cache_after_success(
+    cache_key = await save_trajectory_cache_v2_after_success(
         db_module.get_session_factory(),
         run.id,
     )
 
     row = (
         await session.execute(
-            select(VlmTrajectoryCache).where(VlmTrajectoryCache.cache_key == cache_key)
+            select(VlmTrajectoryCacheV2).where(VlmTrajectoryCacheV2.cache_key == cache_key)
         )
     ).scalars().one()
     assert row.trajectory_json["actions"] == [
@@ -1501,14 +1587,14 @@ async def test_save_trajectory_cache_labels_structured_precondition_commands(
     )
     await session.commit()
 
-    cache_key = await save_trajectory_cache_after_success(
+    cache_key = await save_trajectory_cache_v2_after_success(
         db_module.get_session_factory(),
         run.id,
     )
 
     row = (
         await session.execute(
-            select(VlmTrajectoryCache).where(VlmTrajectoryCache.cache_key == cache_key)
+            select(VlmTrajectoryCacheV2).where(VlmTrajectoryCacheV2.cache_key == cache_key)
         )
     ).scalars().one()
     actions = row.trajectory_json["actions"]
@@ -1558,14 +1644,14 @@ async def test_save_trajectory_cache_uses_run_log_timeline_for_wait_and_commands
     )
     await session.commit()
 
-    cache_key = await save_trajectory_cache_after_success(
+    cache_key = await save_trajectory_cache_v2_after_success(
         db_module.get_session_factory(),
         run.id,
     )
 
     row = (
         await session.execute(
-            select(VlmTrajectoryCache).where(VlmTrajectoryCache.cache_key == cache_key)
+            select(VlmTrajectoryCacheV2).where(VlmTrajectoryCacheV2.cache_key == cache_key)
         )
     ).scalars().one()
     actions = row.trajectory_json["actions"]
@@ -1612,14 +1698,14 @@ async def test_save_trajectory_cache_landmark_missing_image_does_not_fail(
     )
     await session.commit()
 
-    cache_key = await save_trajectory_cache_after_success(
+    cache_key = await save_trajectory_cache_v2_after_success(
         db_module.get_session_factory(),
         run.id,
     )
 
     row = (
         await session.execute(
-            select(VlmTrajectoryCache).where(VlmTrajectoryCache.cache_key == cache_key)
+            select(VlmTrajectoryCacheV2).where(VlmTrajectoryCacheV2.cache_key == cache_key)
         )
     ).scalars().one()
     landmark = row.trajectory_json["state_landmarks"][0]
@@ -1653,14 +1739,14 @@ async def test_save_trajectory_cache_does_not_use_action_after_as_final_handoff(
     )
     await session.commit()
 
-    cache_key = await save_trajectory_cache_after_success(
+    cache_key = await save_trajectory_cache_v2_after_success(
         db_module.get_session_factory(),
         run.id,
     )
 
     row = (
         await session.execute(
-            select(VlmTrajectoryCache).where(VlmTrajectoryCache.cache_key == cache_key)
+            select(VlmTrajectoryCacheV2).where(VlmTrajectoryCacheV2.cache_key == cache_key)
         )
     ).scalars().one()
     landmark = row.trajectory_json["state_landmarks"][0]
@@ -1709,14 +1795,14 @@ async def test_save_trajectory_cache_uses_timeline_for_system_prelude(
     )
     await session.commit()
 
-    cache_key = await save_trajectory_cache_after_success(
+    cache_key = await save_trajectory_cache_v2_after_success(
         db_module.get_session_factory(),
         run.id,
     )
 
     row = (
         await session.execute(
-            select(VlmTrajectoryCache).where(VlmTrajectoryCache.cache_key == cache_key)
+            select(VlmTrajectoryCacheV2).where(VlmTrajectoryCacheV2.cache_key == cache_key)
         )
     ).scalars().one()
     actions = row.trajectory_json["actions"]
@@ -1768,14 +1854,14 @@ async def test_save_trajectory_cache_parses_claude_computer_actions(
     )
     await session.commit()
 
-    cache_key = await save_trajectory_cache_after_success(
+    cache_key = await save_trajectory_cache_v2_after_success(
         db_module.get_session_factory(),
         run.id,
     )
 
     row = (
         await session.execute(
-            select(VlmTrajectoryCache).where(VlmTrajectoryCache.cache_key == cache_key)
+            select(VlmTrajectoryCacheV2).where(VlmTrajectoryCacheV2.cache_key == cache_key)
         )
     ).scalars().one()
     actions = row.trajectory_json["actions"]
@@ -1823,14 +1909,14 @@ async def test_save_trajectory_cache_parses_gpt_computer_actions_without_command
     )
     await session.commit()
 
-    cache_key = await save_trajectory_cache_after_success(
+    cache_key = await save_trajectory_cache_v2_after_success(
         db_module.get_session_factory(),
         run.id,
     )
 
     row = (
         await session.execute(
-            select(VlmTrajectoryCache).where(VlmTrajectoryCache.cache_key == cache_key)
+            select(VlmTrajectoryCacheV2).where(VlmTrajectoryCacheV2.cache_key == cache_key)
         )
     ).scalars().one()
     actions = row.trajectory_json["actions"]
@@ -1870,14 +1956,14 @@ async def test_save_trajectory_cache_falls_back_when_command_params_missing(
     )
     await session.commit()
 
-    cache_key = await save_trajectory_cache_after_success(
+    cache_key = await save_trajectory_cache_v2_after_success(
         db_module.get_session_factory(),
         run.id,
     )
 
     row = (
         await session.execute(
-            select(VlmTrajectoryCache).where(VlmTrajectoryCache.cache_key == cache_key)
+            select(VlmTrajectoryCacheV2).where(VlmTrajectoryCacheV2.cache_key == cache_key)
         )
     ).scalars().one()
     assert row.trajectory_json["actions"][0]["source"] == "run_step"
@@ -1894,7 +1980,7 @@ async def test_delete_trajectory_cache_for_run_is_idempotent(_test_engine, sessi
         run_semantic_text="same goal",
     )
     session.add(
-        VlmTrajectoryCache(
+        VlmTrajectoryCacheV2(
             cache_key=cache_key,
             device_code="D1",
             run_semantic_hash=semantic_hash,
@@ -1905,8 +1991,8 @@ async def test_delete_trajectory_cache_for_run_is_idempotent(_test_engine, sessi
     )
     await session.commit()
 
-    deleted = await delete_trajectory_cache_for_run(db_module.get_session_factory(), run.id)
-    deleted_again = await delete_trajectory_cache_for_run(db_module.get_session_factory(), run.id)
+    deleted = await delete_trajectory_cache_v2_for_run(db_module.get_session_factory(), run.id)
+    deleted_again = await delete_trajectory_cache_v2_for_run(db_module.get_session_factory(), run.id)
 
     assert deleted == 1
     assert deleted_again == 0
@@ -2199,6 +2285,70 @@ async def test_replay_runner_alignment_match_skips_stability(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_replay_runner_unavailable_landmark_uses_historical_action_gap(monkeypatch):
+    logs = []
+    sleeps = []
+    stable_calls = 0
+    driver = FakeDriver()
+    from ai_phone.server.trajectory_cache import replay as replay_module
+    from ai_phone.server.trajectory_cache import ReplayRunner
+
+    async def log(level, title, content):
+        logs.append((level, title, content))
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(replay_module.asyncio, "sleep", fake_sleep)
+    runner = ReplayRunner(
+        driver=driver,
+        trajectory={
+            "actions": [
+                {"index": 1, "action_id": "a001", "type": "click", "point": {"x": 1, "y": 2}},
+                {"index": 2, "action_id": "a002", "type": "click", "point": {"x": 3, "y": 4}},
+            ],
+            "state_landmarks": [
+                {
+                    "action_id": "a001",
+                    "before_action_index": 2,
+                    "status": "unavailable",
+                    "missing_reason": "image_url_empty",
+                    "timing": {"gap_to_next_action_ms": 1800},
+                },
+            ],
+        },
+        log=log,
+        capture_after_each_action=True,
+        observe_delay_ms=500,
+    )
+    runner.alignment_enabled = True
+
+    async def stable():
+        nonlocal stable_calls
+        stable_calls += 1
+        return SimpleNamespace(bytes_=b"stable")
+
+    runner._wait_stable = stable  # type: ignore[method-assign]
+
+    result = await runner.run()
+
+    assert result.success is True
+    assert stable_calls == 2
+    assert sleeps == [0.5, 1.3, 0.5]
+    assert any(
+        "landmark unavailable" in content and "改用首次成功 action 交接间隔" in content
+        for _level, title, content in logs
+        if title == "轨迹缓存状态路标"
+    )
+    assert any(
+        "按首次成功交接间隔等待 1300ms" in content
+        for _level, title, content in logs
+        if title == "轨迹缓存状态路标"
+    )
+    assert any("复用上一 action 路标帧作为 #2 before" in content for _level, title, content in logs if title == "轨迹缓存状态路标")
+
+
+@pytest.mark.asyncio
 async def test_replay_runner_alignment_also_handles_wait_action(monkeypatch):
     sleeps = []
     stable_calls = 0
@@ -2257,7 +2407,7 @@ async def test_replay_runner_alignment_also_handles_wait_action(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_replay_runner_alignment_miss_retries_then_stops_replay(monkeypatch):
+async def test_replay_runner_alignment_miss_uses_historical_gap_then_stops_replay(monkeypatch):
     logs = []
     sleeps = []
     stable_calls = 0
@@ -2321,9 +2471,9 @@ async def test_replay_runner_alignment_miss_retries_then_stops_replay(monkeypatc
     assert result.success is False
     assert result.error and "alignment_miss action_id=a001" in result.error
     assert stable_calls == 1
-    assert sleeps == [0.5, 0.3, 0.2]
-    assert any("开始对比 action_id=a001" in content and "历史间隔=600ms" in content for _level, title, content in logs if title == "轨迹缓存状态路标")
-    assert any("与缓存路标不一致 action_id=a001" in content and "开始按历史窗口等待" in content for _level, title, content in logs if title == "轨迹缓存状态路标")
+    assert sleeps == [0.5, 0.1]
+    assert any("执行后截图比对 action_id=a001" in content and "首次真实间隔=600ms" in content for _level, title, content in logs if title == "轨迹缓存状态路标")
+    assert any("截图不一致 action_id=a001" in content and "按首次真实间隔再等待 100ms" in content for _level, title, content in logs if title == "轨迹缓存状态路标")
     assert any("轨迹偏航，终止缓存回放" in content for _level, title, content in logs if title == "轨迹缓存状态路标")
 
 
@@ -2434,7 +2584,7 @@ async def test_server_runner_cache_replay_finishes_when_assertion_passes(
         trajectory_cache_recovery_vlm_enabled=False,
     )
     monkeypatch.setattr(service_module, "get_settings", lambda: settings)
-    monkeypatch.setattr(trajectory_cache_module, "ReplayRunner", FakeReplayRunner)
+    monkeypatch.setattr(trajectory_cache_module, "V2ReplayRunner", FakeReplayRunner)
     monkeypatch.setattr(
         trajectory_cache_module,
         "CacheReplayAssertionVerifier",
@@ -2455,7 +2605,7 @@ async def test_server_runner_cache_replay_finishes_when_assertion_passes(
     )
     session.add(run)
     session.add(
-        VlmTrajectoryCache(
+        VlmTrajectoryCacheV2(
             cache_key=cache_key,
             device_code="D1",
             run_semantic_hash=semantic_hash,
@@ -2497,6 +2647,85 @@ async def test_server_runner_cache_replay_finishes_when_assertion_passes(
         "fake replay",
         "轨迹缓存断言",
     ]
+
+
+@pytest.mark.asyncio
+async def test_server_runner_v1_cache_reads_v1_table_and_disables_enhancements(
+    monkeypatch,
+    _test_engine,
+    session,
+):
+    import ai_phone.server.runner.service as service_module
+    import ai_phone.server.trajectory_cache as trajectory_cache_module
+
+    settings = SimpleNamespace(
+        trajectory_cache_enabled=True,
+        trajectory_cache_recovery_vlm_enabled=True,
+        trajectory_cache_ephemeral_action_enabled=True,
+        trajectory_cache_ephemeral_gate_enabled=True,
+        assistant_api_key="key",
+        assistant_api_url="https://example.test",
+        assistant_model="model",
+        vlm_backend="doubao_responses",
+        vlm_api_key="",
+        assistant_thinking_assertion=True,
+        assertion_timeout_sec=1,
+    )
+    monkeypatch.setattr(service_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(trajectory_cache_module, "V1ReplayRunner", FakeReplayRunner)
+    monkeypatch.setattr(
+        trajectory_cache_module,
+        "CacheReplayAssertionVerifier",
+        FakeCacheVerifier,
+    )
+    FakeReplayRunner.last_init_kwargs = None
+
+    run = Run(
+        id="run-v1-replay-ok",
+        device_serial="D1",
+        goal="cached goal",
+        status="running",
+        requested_cache_mode="v1",
+        effective_cache_mode="v1",
+    )
+    cache_key, normalized, semantic_hash = build_cache_key(
+        device_code="D1",
+        run_semantic_text="cached goal",
+        schema_version=1,
+    )
+    session.add(run)
+    session.add(
+        VlmTrajectoryCache(
+            cache_key=cache_key,
+            device_code="D1",
+            run_semantic_hash=semantic_hash,
+            run_semantic_text=normalized,
+            status="active",
+            trajectory_json={"actions": [{"index": 1, "type": "click", "point": {"x": 1, "y": 2}}]},
+        )
+    )
+    await session.commit()
+
+    emitter = FakeEmitter()
+    service = ServerRunnerService(
+        hub=Hub(),
+        lock_store=DeviceLockStore(),
+        session_factory=db_module.get_session_factory(),
+        waiter=DriverRpcWaiter(),
+    )
+
+    handled = await service._maybe_run_trajectory_cache(
+        run_id=run.id,
+        goal="cached goal",
+        driver=FakeDriver(),
+        emitter=emitter,
+    )
+
+    assert handled is True
+    assert emitter.finishes[0]["result"] == "pass"
+    assert FakeReplayRunner.last_init_kwargs
+    assert FakeReplayRunner.last_init_kwargs["recovery_verifier"] is None
+    assert FakeReplayRunner.last_init_kwargs["ephemeral_gate_verifier"] is None
 
 
 @pytest.mark.asyncio
@@ -2603,7 +2832,7 @@ async def test_server_runner_cache_alignment_miss_finishes_as_assert_fail(
         trajectory_cache_recovery_vlm_enabled=False,
     )
     monkeypatch.setattr(service_module, "get_settings", lambda: settings)
-    monkeypatch.setattr(trajectory_cache_module, "ReplayRunner", FakeAlignmentMissReplayRunner)
+    monkeypatch.setattr(trajectory_cache_module, "V2ReplayRunner", FakeAlignmentMissReplayRunner)
 
     run = Run(
         id="run-replay-align-miss",
@@ -2619,7 +2848,7 @@ async def test_server_runner_cache_alignment_miss_finishes_as_assert_fail(
     )
     session.add(run)
     session.add(
-        VlmTrajectoryCache(
+        VlmTrajectoryCacheV2(
             cache_key=cache_key,
             device_code="D1",
             run_semantic_hash=semantic_hash,
@@ -3261,7 +3490,6 @@ async def test_replay_runner_recovery_repair_action_then_match(monkeypatch):
     compare_results = [
         {"match": False, "global_diff": 0.04, "center_mae": 0.30, "black_ratio_diff": 0.0, "reason": "global>0.0300"},
         {"match": False, "global_diff": 0.04, "center_mae": 0.30, "black_ratio_diff": 0.0, "reason": "global>0.0300"},
-        {"match": False, "global_diff": 0.04, "center_mae": 0.30, "black_ratio_diff": 0.0, "reason": "global>0.0300"},
         {"match": True, "global_diff": 0.01, "center_mae": 0.05, "black_ratio_diff": 0.0, "reason": "match"},
     ]
     compare_calls = {"i": 0}
@@ -3366,7 +3594,6 @@ async def test_replay_runner_recovery_repair_action_absolute_rescales_to_device(
     compare_results = [
         {"match": False, "global_diff": 0.04, "center_mae": 0.30, "black_ratio_diff": 0.0, "reason": "global>0.0300"},
         {"match": False, "global_diff": 0.04, "center_mae": 0.30, "black_ratio_diff": 0.0, "reason": "global>0.0300"},
-        {"match": False, "global_diff": 0.04, "center_mae": 0.30, "black_ratio_diff": 0.0, "reason": "global>0.0300"},
         {"match": True, "global_diff": 0.01, "center_mae": 0.05, "black_ratio_diff": 0.0, "reason": "match"},
     ]
     compare_calls = {"i": 0}
@@ -3464,7 +3691,6 @@ async def test_replay_runner_recovery_repair_action_absolute_coord_space(monkeyp
     compare_results = [
         {"match": False, "global_diff": 0.04, "center_mae": 0.30, "black_ratio_diff": 0.0, "reason": "global>0.0300"},
         {"match": False, "global_diff": 0.04, "center_mae": 0.30, "black_ratio_diff": 0.0, "reason": "global>0.0300"},
-        {"match": False, "global_diff": 0.04, "center_mae": 0.30, "black_ratio_diff": 0.0, "reason": "global>0.0300"},
         {"match": True, "global_diff": 0.01, "center_mae": 0.05, "black_ratio_diff": 0.0, "reason": "match"},
     ]
     compare_calls = {"i": 0}
@@ -3537,19 +3763,14 @@ async def test_replay_runner_recovery_wait_more_then_match(monkeypatch):
     async def fake_sleep(seconds):
         sleeps.append(seconds)
 
-    # alignment 主循环 max_wait=1000 / observe=500 / retry=300：跑 3 次 MISS
-    # 后耗尽窗口，进入 _handle_alignment_miss → verifier(WAIT_MORE) → sleep →
-    # 第 4 次 _compare_alignment（recheck）才命中 MATCH。
+    # V2 主线：执行后截图 MISS → 按首次真实间隔补等后仍 MISS →
+    # 进入 recovery_vlm；WAIT_MORE 等待结束后的 recheck 才命中 MATCH。
     compare_results = [
-        {  # attempt 1：observe 后立刻比，MISS
+        {  # 执行后截图：MISS
             "match": False, "global_diff": 0.04, "center_mae": 0.30,
             "black_ratio_diff": 0.0, "reason": "global>0.0300",
         },
-        {  # attempt 2：retry 后比，MISS
-            "match": False, "global_diff": 0.04, "center_mae": 0.30,
-            "black_ratio_diff": 0.0, "reason": "global>0.0300",
-        },
-        {  # attempt 3：再 retry 后比，MISS（达到 max_wait 后 break）
+        {  # 按首次真实间隔补等后：MISS
             "match": False, "global_diff": 0.04, "center_mae": 0.30,
             "black_ratio_diff": 0.0, "reason": "global>0.0300",
         },

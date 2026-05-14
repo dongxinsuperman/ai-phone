@@ -22,7 +22,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ai_phone.shared import actions as A
 from ai_phone.config import get_settings
 from ai_phone.agent.runner.phash import compute_phash
-from ai_phone.server.models import Device, Run, RunCommand, RunLog, RunStep, VlmTrajectoryCache
+from ai_phone.server.models import (
+    Device,
+    Run,
+    RunCommand,
+    RunLog,
+    RunStep,
+    VlmTrajectoryCache,
+    VlmTrajectoryCacheV2,
+)
 from ai_phone.server.trajectory_cache.action_adapters import parse_cache_action
 from ai_phone.server.trajectory_cache.ephemeral import (
     ROLE_BUSINESS_REQUIRED,
@@ -31,7 +39,9 @@ from ai_phone.server.trajectory_cache.ephemeral import (
     EphemeralClassification,
 )
 
-CACHE_SCHEMA_VERSION = 2
+CACHE_SCHEMA_VERSION_V1 = 1
+CACHE_SCHEMA_VERSION_V2 = 2
+CACHE_SCHEMA_VERSION = CACHE_SCHEMA_VERSION_V2
 _WS_RE = re.compile(r"\s+")
 _EXEC_ACTION_RE = re.compile(r"动作\s*[:：]\s*([^,，]+)")
 _STRUCTURED_FIELD_RE = re.compile(
@@ -78,15 +88,43 @@ def build_cache_key(
     return cache_key, normalized, semantic_hash
 
 
-async def save_trajectory_cache_after_success(
+async def save_trajectory_cache_v1_after_success(
     session_factory: async_sessionmaker[AsyncSession],
     run_id: str,
 ) -> Optional[str]:
-    """成功 run 结束后清洗并保存轨迹缓存。
+    """成功 run 结束后保存 V1 固定动作缓存。"""
+    return await _save_trajectory_cache_after_success(
+        session_factory,
+        run_id,
+        cache_mode="v1",
+        model=VlmTrajectoryCache,
+        schema_version=CACHE_SCHEMA_VERSION_V1,
+    )
 
-    返回 cache_key；如果 run 不存在、非 success、没有可回放动作则返回 None。
-    调用方应捕获异常，本函数内部也尽量只抛真正的数据库异常。
-    """
+
+async def save_trajectory_cache_v2_after_success(
+    session_factory: async_sessionmaker[AsyncSession],
+    run_id: str,
+) -> Optional[str]:
+    """成功 run 结束后保存 V2 增强轨迹缓存。"""
+    return await _save_trajectory_cache_after_success(
+        session_factory,
+        run_id,
+        cache_mode="v2",
+        model=VlmTrajectoryCacheV2,
+        schema_version=CACHE_SCHEMA_VERSION_V2,
+    )
+
+
+async def _save_trajectory_cache_after_success(
+    session_factory: async_sessionmaker[AsyncSession],
+    run_id: str,
+    *,
+    cache_mode: str,
+    model: Any,
+    schema_version: int,
+) -> Optional[str]:
+    """成功 run 结束后清洗并保存指定模式的轨迹缓存。"""
     async with session_factory() as session:
         run = await session.get(Run, run_id)
         if run is None:
@@ -111,8 +149,17 @@ async def save_trajectory_cache_after_success(
         cache_key, normalized_goal, semantic_hash = build_cache_key(
             device_code=device_code,
             run_semantic_text=run.goal,
+            schema_version=schema_version,
         )
-        trajectory = await _build_trajectory(session, run, cache_key, normalized_goal, semantic_hash)
+        trajectory = await _build_trajectory(
+            session,
+            run,
+            cache_key,
+            normalized_goal,
+            semantic_hash,
+            cache_mode=cache_mode,
+            schema_version=schema_version,
+        )
         actions = trajectory.get("actions") or []
         if not actions:
             await _write_log(
@@ -128,11 +175,11 @@ async def save_trajectory_cache_after_success(
         now = datetime.now(timezone.utc)
         row = (
             await session.execute(
-                select(VlmTrajectoryCache).where(VlmTrajectoryCache.cache_key == cache_key)
+                select(model).where(model.cache_key == cache_key)
             )
         ).scalars().first()
         if row is None:
-            row = VlmTrajectoryCache(cache_key=cache_key)
+            row = model(cache_key=cache_key)
             session.add(row)
 
         row.device_code = device_code
@@ -142,7 +189,7 @@ async def save_trajectory_cache_after_success(
         row.platform = trajectory.get("platform") or ""
         row.resolution = trajectory.get("resolution") or ""
         row.app_package_or_bundle = trajectory.get("app_package_or_bundle") or ""
-        row.schema_version = CACHE_SCHEMA_VERSION
+        row.schema_version = schema_version
         row.status = "active"
         row.source_run_id = run.id
         row.trajectory_json = trajectory
@@ -155,13 +202,14 @@ async def save_trajectory_cache_after_success(
             level=1,
             title="轨迹缓存",
             content=(
-                f"已保存轨迹缓存 cache_key={cache_key[:12]} "
+                f"已保存 {cache_mode.upper()} 轨迹缓存 cache_key={cache_key[:12]} "
                 f"actions={len(actions)} device_code={device_code}"
             ),
         )
         await session.commit()
         logger.info(
-            "轨迹缓存已保存 run_id={} cache_key={} actions={}",
+            "{} 轨迹缓存已保存 run_id={} cache_key={} actions={}",
+            cache_mode.upper(),
             run_id,
             cache_key,
             len(actions),
@@ -169,11 +217,45 @@ async def save_trajectory_cache_after_success(
         return cache_key
 
 
-async def get_active_trajectory_cache(
+async def get_active_trajectory_cache_v1(
     session_factory: async_sessionmaker[AsyncSession],
     *,
     device_code: str,
     run_semantic_text: str,
+) -> Optional[Dict[str, Any]]:
+    """按 device_code + run 语义强匹配查询 V1 active 缓存。"""
+    return await _get_active_trajectory_cache(
+        session_factory,
+        device_code=device_code,
+        run_semantic_text=run_semantic_text,
+        model=VlmTrajectoryCache,
+        schema_version=CACHE_SCHEMA_VERSION_V1,
+    )
+
+
+async def get_active_trajectory_cache_v2(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    device_code: str,
+    run_semantic_text: str,
+) -> Optional[Dict[str, Any]]:
+    """按 device_code + run 语义强匹配查询 V2 active 缓存。"""
+    return await _get_active_trajectory_cache(
+        session_factory,
+        device_code=device_code,
+        run_semantic_text=run_semantic_text,
+        model=VlmTrajectoryCacheV2,
+        schema_version=CACHE_SCHEMA_VERSION_V2,
+    )
+
+
+async def _get_active_trajectory_cache(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    device_code: str,
+    run_semantic_text: str,
+    model: Any,
+    schema_version: int,
 ) -> Optional[Dict[str, Any]]:
     """按 device_code + run 语义强匹配查询 active 轨迹缓存。"""
     normalized_device = str(device_code or "").strip()
@@ -182,24 +264,57 @@ async def get_active_trajectory_cache(
     cache_key, _normalized, _semantic_hash = build_cache_key(
         device_code=normalized_device,
         run_semantic_text=run_semantic_text,
+        schema_version=schema_version,
     )
     async with session_factory() as session:
         row = (
             await session.execute(
-                select(VlmTrajectoryCache).where(
-                    VlmTrajectoryCache.cache_key == cache_key,
-                    VlmTrajectoryCache.status == "active",
+                select(model).where(
+                    model.cache_key == cache_key,
+                    model.status == "active",
                 )
             )
         ).scalars().first()
         return row.to_dict() if row is not None else None
 
 
-async def delete_trajectory_cache_for_run(
+async def delete_trajectory_cache_v1_for_run(
     session_factory: async_sessionmaker[AsyncSession],
     run_id: str,
 ) -> int:
-    """按 run 的 device_code + run_semantic_hash 删除缓存。
+    """按 run 的 device_code + run_semantic_hash 删除 V1 缓存。"""
+    return await _delete_trajectory_cache_for_run(
+        session_factory,
+        run_id,
+        cache_mode="v1",
+        model=VlmTrajectoryCache,
+        schema_version=CACHE_SCHEMA_VERSION_V1,
+    )
+
+
+async def delete_trajectory_cache_v2_for_run(
+    session_factory: async_sessionmaker[AsyncSession],
+    run_id: str,
+) -> int:
+    """按 run 的 device_code + run_semantic_hash 删除 V2 缓存。"""
+    return await _delete_trajectory_cache_for_run(
+        session_factory,
+        run_id,
+        cache_mode="v2",
+        model=VlmTrajectoryCacheV2,
+        schema_version=CACHE_SCHEMA_VERSION_V2,
+    )
+
+
+async def _delete_trajectory_cache_for_run(
+    session_factory: async_sessionmaker[AsyncSession],
+    run_id: str,
+    *,
+    cache_mode: str,
+    model: Any,
+    schema_version: int,
+) -> int:
+    """按 run 的 device_code + run_semantic_hash 删除指定模式缓存。
 
     删除允许为空；run 不存在也返回 0。失败路径调用方不需要区分原因。
     """
@@ -213,9 +328,10 @@ async def delete_trajectory_cache_for_run(
         cache_key, _normalized, _semantic_hash = build_cache_key(
             device_code=device_code,
             run_semantic_text=run.goal,
+            schema_version=schema_version,
         )
         result = await session.execute(
-            delete(VlmTrajectoryCache).where(VlmTrajectoryCache.cache_key == cache_key)
+            delete(model).where(model.cache_key == cache_key)
         )
         deleted = int(result.rowcount or 0)
         await _write_log(
@@ -224,13 +340,19 @@ async def delete_trajectory_cache_for_run(
             level=1,
             title="轨迹缓存",
             content=(
-                f"case 失败已触发缓存删除 cache_key={cache_key[:12]} "
-                f"deleted={deleted}"
+                f"case 失败已触发 {cache_mode.upper()} 缓存删除 "
+                f"cache_key={cache_key[:12]} deleted={deleted}"
             ),
         )
         await session.commit()
         if deleted:
-            logger.info("轨迹缓存已删除 run_id={} cache_key={} deleted={}", run_id, cache_key, deleted)
+            logger.info(
+                "{} 轨迹缓存已删除 run_id={} cache_key={} deleted={}",
+                cache_mode.upper(),
+                run_id,
+                cache_key,
+                deleted,
+            )
         return deleted
 
 
@@ -240,6 +362,8 @@ async def _build_trajectory(
     cache_key: str,
     normalized_goal: str,
     semantic_hash: str,
+    cache_mode: str,
+    schema_version: int,
 ) -> Dict[str, Any]:
     device = await session.get(Device, run.device_serial)
     screen_w = int(getattr(device, "screen_width", 0) or 0)
@@ -284,23 +408,26 @@ async def _build_trajectory(
             source_vlm_backend=source_vlm_backend,
         )
     _assign_action_identity(actions)
-    state_landmarks = _build_state_landmarks(
-        actions=actions,
-        steps=steps,
-        logs=logs,
-        commands=commands,
-    )
-    await _classify_ephemeral_actions(
-        session=session,
-        run=run,
-        actions=actions,
-        steps=steps,
-        state_landmarks=state_landmarks,
-    )
+    state_landmarks: List[Dict[str, Any]] = []
+    if cache_mode != "v1":
+        state_landmarks = _build_state_landmarks(
+            actions=actions,
+            steps=steps,
+            logs=logs,
+            commands=commands,
+        )
+        await _classify_ephemeral_actions(
+            session=session,
+            run=run,
+            actions=actions,
+            steps=steps,
+            state_landmarks=state_landmarks,
+        )
     source_completion = _build_source_completion(run, logs)
 
     return {
-        "schema_version": CACHE_SCHEMA_VERSION,
+        "schema_version": schema_version,
+        "cache_mode": cache_mode,
         "cache_key": cache_key,
         "device_code": run.device_serial,
         "run_semantic_hash": semantic_hash,

@@ -341,8 +341,10 @@ class ServerRunnerService:
         from ai_phone.server.trajectory_cache import (  # noqa: PLC0415
             CacheEphemeralGateVerifier,
             CacheReplayAssertionVerifier,
-            ReplayRunner,
-            get_active_trajectory_cache,
+            V1ReplayRunner,
+            V2ReplayRunner,
+            get_active_trajectory_cache_v1,
+            get_active_trajectory_cache_v2,
         )
         from ai_phone.server.trajectory_cache.recovery import (  # noqa: PLC0415
             CacheReplayRecoveryVerifier,
@@ -365,7 +367,12 @@ class ServerRunnerService:
         def _elapsed_ms() -> int:
             return int((time.monotonic() - replay_started_at) * 1000)
 
-        cache = await get_active_trajectory_cache(
+        get_cache = (
+            get_active_trajectory_cache_v1
+            if cache_mode == "v1"
+            else get_active_trajectory_cache_v2
+        )
+        cache = await get_cache(
             self._session_factory,
             device_code=driver.serial,
             run_semantic_text=goal,
@@ -389,7 +396,7 @@ class ServerRunnerService:
             emitter.emit(log_event(run_id, level, title, content))
 
         recovery_verifier: Optional[CacheReplayRecoveryVerifier] = None
-        if settings.trajectory_cache_recovery_vlm_enabled:
+        if cache_mode == "v2" and settings.trajectory_cache_recovery_vlm_enabled:
             # 把主 VLM backend 透传给 recovery，让它推断坐标空间：
             # doubao → normalized；claude_cu / gpt_cu → absolute。
             recovery_verifier = CacheReplayRecoveryVerifier(
@@ -415,6 +422,7 @@ class ServerRunnerService:
         ephemeral_gate_verifier: Optional[CacheEphemeralGateVerifier] = None
         if (
             bool(getattr(settings, "trajectory_cache_ephemeral_action_enabled", False))
+            and cache_mode == "v2"
             and bool(getattr(settings, "trajectory_cache_ephemeral_gate_enabled", True))
         ):
             ephemeral_gate_verifier = CacheEphemeralGateVerifier(
@@ -437,7 +445,8 @@ class ServerRunnerService:
                     ),
                 )
 
-        runner = ReplayRunner(
+        runner_cls = V1ReplayRunner if cache_mode == "v1" else V2ReplayRunner
+        runner = runner_cls(
             driver=driver,
             trajectory=trajectory,
             run_id=run_id,

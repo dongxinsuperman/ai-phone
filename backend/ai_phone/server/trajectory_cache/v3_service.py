@@ -84,6 +84,8 @@ async def save_trajectory_cache_v3_after_success(
             cache_key,
             normalized_goal,
             semantic_hash,
+            cache_mode="v3",
+            schema_version=V3_CACHE_SCHEMA_VERSION,
         )
         v3_payload = build_v3_cache_payload(source)
         actions = v3_payload.get("actions") or []

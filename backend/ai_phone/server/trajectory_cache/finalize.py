@@ -54,8 +54,10 @@ async def finalize_trajectory_cache_for_run(
 ) -> Optional[str]:
     """Save or delete trajectory cache after a run has already finished."""
     from ai_phone.server.trajectory_cache.service import (  # noqa: PLC0415
-        delete_trajectory_cache_for_run,
-        save_trajectory_cache_after_success,
+        delete_trajectory_cache_v1_for_run,
+        delete_trajectory_cache_v2_for_run,
+        save_trajectory_cache_v1_after_success,
+        save_trajectory_cache_v2_after_success,
     )
     from ai_phone.server.trajectory_cache.v3_service import (  # noqa: PLC0415
         delete_trajectory_cache_v3_for_run,
@@ -84,13 +86,17 @@ async def finalize_trajectory_cache_for_run(
         if final_status == "success":
             if cache_mode == "v3":
                 result = await save_trajectory_cache_v3_after_success(session_factory, run_id)
-            elif cache_mode in {"v1", "v2"}:
-                result = await save_trajectory_cache_after_success(session_factory, run_id)
+            elif cache_mode == "v1":
+                result = await save_trajectory_cache_v1_after_success(session_factory, run_id)
+            elif cache_mode == "v2":
+                result = await save_trajectory_cache_v2_after_success(session_factory, run_id)
         else:
             if cache_mode == "v3":
                 await delete_trajectory_cache_v3_for_run(session_factory, run_id)
-            elif cache_mode in {"v1", "v2"}:
-                await delete_trajectory_cache_for_run(session_factory, run_id)
+            elif cache_mode == "v1":
+                await delete_trajectory_cache_v1_for_run(session_factory, run_id)
+            elif cache_mode == "v2":
+                await delete_trajectory_cache_v2_for_run(session_factory, run_id)
         elapsed_ms = int((time.monotonic() - started) * 1000)
         await _write_background_log(
             session_factory,
