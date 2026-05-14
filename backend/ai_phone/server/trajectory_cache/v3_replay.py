@@ -165,6 +165,8 @@ class V3PlanLocator:
         return _coord_space_for_v3_backend(backend, model=_model)
 
     def _use_main_executable_vlm(self) -> bool:
+        if not bool(getattr(self.settings, "trajectory_cache_v3_coord_use_main_vlm_config", False)):
+            return False
         backend = (
             self._main_vlm_backend
             or str(getattr(self.settings, "vlm_backend", "") or "")
@@ -283,6 +285,7 @@ class V3PlanLocator:
                 api_key=self.settings.vlm_api_key,
                 model=self.settings.vlm_model,
                 timeout_seconds=float(self.settings.trajectory_cache_v3_coord_timeout_sec),
+                reasoning_effort="low",
             )
         else:
             from ai_phone.shared.llm.main.claude_cu import ClaudeComputerUseClient
@@ -293,6 +296,7 @@ class V3PlanLocator:
                 api_key=self.settings.vlm_api_key,
                 model=self.settings.vlm_model,
                 timeout_seconds=float(self.settings.trajectory_cache_v3_coord_timeout_sec),
+                thinking_budget=0,
             )
         decision = await client.decide(screenshot_bytes)
         parsed_actions = list(decision.parsed_actions or [])

@@ -47,6 +47,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from loguru import logger
 
+from ai_phone.config import get_settings
+from ai_phone.shared.actions import ParsedAction, X11_TO_ANDROID_KEYCODE
+from ai_phone.shared.llm.base import Decision, TokenCounter
+
 
 # 网络/超时类异常 → 自动重试 1 次（与 VLMClient / ClaudeCUClient 保持一致）。
 # ``TransportError`` 是基类，覆盖 ``NetworkError`` / ``RemoteProtocolError``
@@ -55,10 +59,6 @@ _GPT_RETRIABLE_NET_ERRORS: Tuple[type, ...] = (
     httpx.TimeoutException,
     httpx.TransportError,
 )
-
-from ai_phone.config import get_settings
-from ai_phone.shared.actions import ParsedAction, X11_TO_ANDROID_KEYCODE
-from ai_phone.shared.llm.base import Decision, TokenCounter
 
 __all__ = ["GPTComputerUseClient"]
 
@@ -101,6 +101,7 @@ class GPTComputerUseClient:
         api_key: Optional[str] = None,
         model: Optional[str] = None,
         timeout_seconds: float = 180.0,
+        reasoning_effort: Optional[str] = None,
     ) -> None:
         settings = get_settings()
         self.api_url = (api_url or settings.vlm_api_url or "").strip()
@@ -134,7 +135,7 @@ class GPTComputerUseClient:
 
         # 推理强度（low/medium/high），从 settings 读，默认 medium。
         # computer-use-preview 自带推理，必须有非零 effort，不能关。
-        effort = (settings.vlm_main_reasoning_effort or "medium").strip().lower()
+        effort = (reasoning_effort or settings.vlm_main_reasoning_effort or "medium").strip().lower()
         if effort not in ("low", "medium", "high"):
             logger.warning(
                 "vlm_main_reasoning_effort 取值非法 ({}), 回退 medium", effort

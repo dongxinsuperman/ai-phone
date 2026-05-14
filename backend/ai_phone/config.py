@@ -874,10 +874,22 @@ class Settings(BaseSettings):
     trajectory_cache_v3_coord_enabled: bool = Field(
         default=True,
         description=(
-            "V3 plan_intent 坐标定位专线开关。默认开启；当主 VLM 为 claude_cu/gpt_cu "
-            "时优先复用主 VLM Computer Use 配置；其它路径默认复用 recovery_vlm，"
-            "也可通过 V3_COORD_USE_RECOVERY_VLM_CONFIG=false 单独配置。"
+            "V3 plan_intent 坐标定位专线开关。默认开启。定位层只做单图短 prompt "
+            "坐标询问；当主 VLM 为 claude_cu/gpt_cu 时默认复用主 VLM Computer "
+            "Use 能力配置，但使用一次性短会话并压低/关闭 thinking，不携带主 Run "
+            "上下文。其它路径默认复用 recovery_vlm，也可通过 "
+            "V3_COORD_USE_MAIN_VLM_CONFIG=false + "
+            "V3_COORD_USE_RECOVERY_VLM_CONFIG=false 单独配置。"
             "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_ENABLED"
+        ),
+    )
+    trajectory_cache_v3_coord_use_main_vlm_config: bool = Field(
+        default=True,
+        description=(
+            "V3 coord 是否在主 VLM 为 claude_cu/gpt_cu 时复用主 VLM Computer Use "
+            "能力配置。默认 True；locator 仍是一次性短会话，不复用主 Run 上下文。"
+            "需要完全独立 V3_COORD_* 模型时设为 False。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_USE_MAIN_VLM_CONFIG"
         ),
     )
     trajectory_cache_v3_coord_use_recovery_vlm_config: bool = Field(

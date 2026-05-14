@@ -207,6 +207,17 @@ def test_v3_coord_space_follows_actual_locator_backend_family():
     assert main_cu_locator.coord_space == "absolute"
     assert main_cu_locator.is_configured() is True
 
+    independent_locator_settings = main_cu_settings.model_copy(
+        update={"trajectory_cache_v3_coord_use_main_vlm_config": False}
+    )
+    independent_locator = V3PlanLocator(
+        settings=independent_locator_settings,
+        main_vlm_backend="claude_cu",
+    )
+
+    assert independent_locator.coord_space == "normalized"
+    assert independent_locator.is_configured() is False
+
     doubao_settings = Settings(
         _env_file=None,
         trajectory_cache_v3_coord_use_recovery_vlm_config=True,
@@ -1236,6 +1247,45 @@ def test_build_v3_cache_payload_keeps_cu_plan_intent_executable():
     assert "Let me analyze" not in joined
     assert "Forced verdict" not in joined
     assert "ASSERT_FAIL" not in joined
+
+
+@pytest.mark.asyncio
+async def test_v3_plan_intent_cleaner_uses_model_contract(monkeypatch):
+    from ai_phone.server.trajectory_cache import v3_service as v3_service_module
+
+    seen = {}
+
+    async def fake_call_vlm_with_images(**kwargs):
+        seen.update(kwargs)
+        return '{"plan_intent":"点击弹窗的知道了按钮","confidence":0.96,"reason":"清障动作"}'
+
+    monkeypatch.setattr(v3_service_module, "_call_vlm_with_images", fake_call_vlm_with_images)
+    cleaner = v3_service_module.V3PlanIntentCleaner(
+        settings=Settings(
+            _env_file=None,
+            assistant_backend="doubao_responses",
+            assistant_api_url="https://example.test/responses",
+            assistant_api_key="key",
+            assistant_model="vision-model",
+        )
+    )
+
+    result = await cleaner.clean_action(
+        goal="点击卡片进入习题页",
+        action={
+            "index": 1,
+            "type": "click",
+            "role": "optional_ephemeral",
+            "intent": "点击卡片进入习题页",
+            "thought": "弹出了护眼提醒，需要点击“知道了”按钮关闭后继续。",
+        },
+        next_action={"index": 2, "type": "click", "intent": "点击卡片"},
+    )
+
+    assert result["plan_intent"] == "点击弹窗的知道了按钮"
+    assert seen["images"] == []
+    assert "不要把首次屏幕里偶然出现的具体文案升级成下次必须寻找的目标" in seen["prompt"]
+    assert "如果 role=optional_ephemeral" in seen["prompt"]
 
 
 @pytest.mark.asyncio

@@ -43,6 +43,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from loguru import logger
 
+from ai_phone.config import get_settings
+from ai_phone.shared.actions import ParsedAction, X11_TO_ANDROID_KEYCODE
+from ai_phone.shared.llm.base import Decision, TokenCounter
+
 
 # 网络/超时类异常 → 自动重试 1 次（与 VLMClient / GPTCUClient 保持一致）。
 # ``TransportError`` 是基类，覆盖 ``NetworkError`` / ``RemoteProtocolError``
@@ -51,10 +55,6 @@ _CLAUDE_RETRIABLE_NET_ERRORS: Tuple[type, ...] = (
     httpx.TimeoutException,
     httpx.TransportError,
 )
-
-from ai_phone.config import get_settings
-from ai_phone.shared.actions import ParsedAction, X11_TO_ANDROID_KEYCODE
-from ai_phone.shared.llm.base import Decision, TokenCounter
 
 __all__ = ["ClaudeComputerUseClient"]
 
@@ -111,6 +111,7 @@ class ClaudeComputerUseClient:
         timeout_seconds: float = 120.0,
         # 留给单测注入的 hook，生产路径不传
         history_window_steps: Optional[int] = None,
+        thinking_budget: Optional[int] = None,
     ) -> None:
         settings = get_settings()
         self.api_url = (api_url or settings.vlm_api_url or "").strip()
@@ -146,7 +147,10 @@ class ClaudeComputerUseClient:
         )
 
         # 思考预算（tokens），0 / 负数 → 关闭 thinking
-        self._thinking_budget = max(0, int(settings.vlm_main_thinking_budget))
+        self._thinking_budget = max(
+            0,
+            int(settings.vlm_main_thinking_budget if thinking_budget is None else thinking_budget),
+        )
 
         # Anthropic prompt caching 开关。开启时 system / tools / 历史前缀打
         # cache_control 标记，Anthropic 端按 5min TTL 缓存复用——cache hit
