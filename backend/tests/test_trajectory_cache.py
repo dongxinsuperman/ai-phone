@@ -2650,7 +2650,7 @@ async def test_server_runner_cache_replay_finishes_when_assertion_passes(
 
 
 @pytest.mark.asyncio
-async def test_server_runner_v2_recovery_uses_cache_source_vlm_backend(
+async def test_server_runner_v2_recovery_and_gate_use_current_config_backend(
     monkeypatch,
     _test_engine,
     session,
@@ -2673,10 +2673,27 @@ async def test_server_runner_v2_recovery_uses_cache_source_vlm_backend(
         def is_configured(self):
             return True
 
+    class FakeGate:
+        last_main_vlm_backend = None
+
+        def __init__(self, *, settings, main_vlm_backend):
+            self.settings = settings
+            self.main_vlm_backend = main_vlm_backend
+            FakeGate.last_main_vlm_backend = main_vlm_backend
+
+        def configuration_problem(self):
+            return ""
+
+        def is_configured(self):
+            return True
+
     settings = SimpleNamespace(
         trajectory_cache_enabled=True,
         trajectory_cache_recovery_vlm_enabled=True,
-        trajectory_cache_ephemeral_action_enabled=False,
+        trajectory_cache_ephemeral_action_enabled=True,
+        trajectory_cache_ephemeral_gate_enabled=True,
+        trajectory_cache_ephemeral_gate_max_calls=3,
+        trajectory_cache_ephemeral_gate_use_recovery_vlm_config=True,
         assistant_api_key="key",
         assistant_api_url="https://example.test",
         assistant_model="model",
@@ -2691,6 +2708,7 @@ async def test_server_runner_v2_recovery_uses_cache_source_vlm_backend(
     )
     monkeypatch.setattr(service_module, "get_settings", lambda: settings)
     monkeypatch.setattr(recovery_module, "CacheReplayRecoveryVerifier", FakeRecovery)
+    monkeypatch.setattr(trajectory_cache_module, "CacheEphemeralGateVerifier", FakeGate)
     monkeypatch.setattr(trajectory_cache_module, "V2ReplayRunner", FakeReplayRunner)
     monkeypatch.setattr(
         trajectory_cache_module,
@@ -2699,9 +2717,10 @@ async def test_server_runner_v2_recovery_uses_cache_source_vlm_backend(
     )
     FakeReplayRunner.last_init_kwargs = None
     FakeRecovery.last_main_vlm_backend = None
+    FakeGate.last_main_vlm_backend = None
 
     run = Run(
-        id="run-v2-recovery-source-backend",
+        id="run-v2-current-config-backend",
         device_serial="D1",
         goal="cached goal",
         status="running",
@@ -2743,9 +2762,11 @@ async def test_server_runner_v2_recovery_uses_cache_source_vlm_backend(
     )
 
     assert handled is True
-    assert FakeRecovery.last_main_vlm_backend == "claude_cu"
+    assert FakeRecovery.last_main_vlm_backend == "doubao_responses"
+    assert FakeGate.last_main_vlm_backend == "doubao_responses"
     assert FakeReplayRunner.last_init_kwargs
     assert isinstance(FakeReplayRunner.last_init_kwargs["recovery_verifier"], FakeRecovery)
+    assert isinstance(FakeReplayRunner.last_init_kwargs["ephemeral_gate_verifier"], FakeGate)
 
 
 @pytest.mark.asyncio

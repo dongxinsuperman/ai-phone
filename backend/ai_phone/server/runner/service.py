@@ -397,15 +397,11 @@ class ServerRunnerService:
 
         recovery_verifier: Optional[CacheReplayRecoveryVerifier] = None
         if cache_mode == "v2" and settings.trajectory_cache_recovery_vlm_enabled:
-            # 把主 VLM backend 透传给 recovery，让它推断坐标空间：
-            # doubao → normalized；claude_cu / gpt_cu → absolute。
-            source_vlm_backend = (
-                trajectory.get("source_vlm_backend")
-                or getattr(settings, "vlm_backend", "")
-            )
+            # recovery 是实时重新问当前配置的 VLM 输出局部修复动作；坐标空间
+            # 必须跟当前 recovery/gate 使用的模型配置走，而不是跟历史缓存来源走。
             recovery_verifier = CacheReplayRecoveryVerifier(
                 settings=settings,
-                main_vlm_backend=source_vlm_backend,
+                main_vlm_backend=getattr(settings, "vlm_backend", ""),
             )
             problem = recovery_verifier.configuration_problem()
             if problem:
@@ -431,8 +427,7 @@ class ServerRunnerService:
         ):
             ephemeral_gate_verifier = CacheEphemeralGateVerifier(
                 settings=settings,
-                main_vlm_backend=trajectory.get("source_vlm_backend")
-                or getattr(settings, "vlm_backend", ""),
+                main_vlm_backend=getattr(settings, "vlm_backend", ""),
             )
             problem = ephemeral_gate_verifier.configuration_problem()
             if problem:
