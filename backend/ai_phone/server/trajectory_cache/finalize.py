@@ -7,9 +7,10 @@ import time
 from typing import Optional
 
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ai_phone.server.models import Run, RunLog
+from ai_phone.server.models import Run, RunLog, RunStep
 
 _BACKGROUND_TASKS: set[asyncio.Task[Optional[str]]] = set()
 
@@ -82,6 +83,8 @@ async def finalize_trajectory_cache_for_run(
         content=f"已进入后台处理 cacheMode={cache_mode} status={final_status}，不阻塞 Run 结束",
     )
     try:
+        if final_status == "success":
+            await _wait_for_run_steps_ready(session_factory, run_id)
         result: Optional[str] = None
         if final_status == "success":
             if cache_mode == "v3":
@@ -119,6 +122,56 @@ async def finalize_trajectory_cache_for_run(
             ),
         )
         raise
+
+
+async def _wait_for_run_steps_ready(
+    session_factory: async_sessionmaker[AsyncSession],
+    run_id: str,
+    *,
+    timeout_sec: float = 8.0,
+    poll_sec: float = 0.2,
+) -> None:
+    """Wait for async screenshot/RunStep writes before saving cache.
+
+    Run finish and screenshot/step persistence are both asynchronous in the server runner.
+    Cache saving is already a background job, so it can afford to wait briefly for the
+    final ``finished`` step to land. Without this, the last real action loses its final
+    comparison image and V2 can only rely on final assertion.
+    """
+
+    started = time.monotonic()
+    while True:
+        async with session_factory() as session:
+            run = await session.get(Run, run_id)
+            expected_steps = int(getattr(run, "steps", 0) or 0) if run is not None else 0
+            if expected_steps <= 0:
+                return
+            rows = (
+                await session.execute(
+                    select(RunStep.step, RunStep.screenshot_before).where(
+                        RunStep.run_id == run_id
+                    )
+                )
+            ).all()
+            seen_steps = {int(step or 0) for step, _before in rows}
+            final_before_ready = any(
+                int(step or 0) == expected_steps and str(before or "")
+                for step, before in rows
+            )
+            if len(seen_steps) >= expected_steps and expected_steps in seen_steps:
+                if final_before_ready:
+                    return
+                # The last row exists but its before screenshot is empty. This is unusual,
+                # but waiting longer will not help once the row is committed.
+                return
+        if time.monotonic() - started >= timeout_sec:
+            logger.warning(
+                "轨迹缓存后台整理等待 RunStep 落库超时 run_id={} timeout={}s",
+                run_id,
+                timeout_sec,
+            )
+            return
+        await asyncio.sleep(poll_sec)
 
 
 async def _write_background_log(

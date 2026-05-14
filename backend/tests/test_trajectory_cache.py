@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -1755,6 +1756,80 @@ async def test_save_trajectory_cache_does_not_use_action_after_as_final_handoff(
     assert landmark["image_url"] == ""
     assert landmark["status"] == "unavailable"
     assert landmark["missing_reason"] == "final_handoff_snapshot_not_found"
+
+
+@pytest.mark.asyncio
+async def test_finalize_v2_waits_for_finished_step_before_saving_final_landmark(
+    monkeypatch,
+    _test_engine,
+    session,
+    tmp_path,
+):
+    from PIL import Image
+    from ai_phone.server.trajectory_cache.finalize import finalize_trajectory_cache_for_run
+    from ai_phone.server.trajectory_cache import service as service_module
+
+    settings = Settings(_env_file=None, trajectory_cache_ephemeral_action_enabled=False)
+    monkeypatch.setattr(service_module, "get_settings", lambda: settings)
+    final_image = tmp_path / "final.jpg"
+    Image.new("RGB", (120, 80), color=(30, 60, 90)).save(final_image, format="JPEG")
+
+    session.add(Device(serial="D1", platform="android", screen_width=1000, screen_height=2000))
+    run = Run(
+        id="run-finalize-waits-final-step",
+        device_serial="D1",
+        goal="点击入口并断言结果",
+        status="success",
+        effective_cache_mode="v2",
+        requested_cache_mode="v2",
+        steps=2,
+    )
+    session.add(run)
+    session.add(
+        RunStep(
+            run_id=run.id,
+            step=1,
+            action="click(point='<point>500 500</point>')",
+            action_type="click",
+        )
+    )
+    await session.commit()
+
+    async def insert_finished_step_later():
+        await asyncio.sleep(0.05)
+        async with db_module.get_session_factory()() as delayed_session:
+            delayed_session.add(
+                RunStep(
+                    run_id=run.id,
+                    step=2,
+                    action="finished(content='done')",
+                    action_type="finished",
+                    screenshot_before=str(final_image),
+                )
+            )
+            await delayed_session.commit()
+
+    task = asyncio.create_task(insert_finished_step_later())
+    cache_key = await finalize_trajectory_cache_for_run(
+        session_factory=db_module.get_session_factory(),
+        run_id=run.id,
+        final_status="success",
+    )
+    await task
+
+    assert cache_key
+    row = (
+        await session.execute(
+            select(VlmTrajectoryCacheV2).where(VlmTrajectoryCacheV2.cache_key == cache_key)
+        )
+    ).scalars().one()
+    landmark = row.trajectory_json["state_landmarks"][0]
+    assert landmark["action_id"] == "a001"
+    assert landmark["snapshot_step"] == 2
+    assert landmark["snapshot_phase"] == "before"
+    assert landmark["image_url"] == str(final_image)
+    assert landmark["status"] == "available"
+    assert landmark["missing_reason"] == ""
 
 
 @pytest.mark.asyncio
