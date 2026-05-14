@@ -2650,6 +2650,105 @@ async def test_server_runner_cache_replay_finishes_when_assertion_passes(
 
 
 @pytest.mark.asyncio
+async def test_server_runner_v2_recovery_uses_cache_source_vlm_backend(
+    monkeypatch,
+    _test_engine,
+    session,
+):
+    import ai_phone.server.runner.service as service_module
+    import ai_phone.server.trajectory_cache as trajectory_cache_module
+    import ai_phone.server.trajectory_cache.recovery as recovery_module
+
+    class FakeRecovery:
+        last_main_vlm_backend = None
+
+        def __init__(self, *, settings, main_vlm_backend):
+            self.settings = settings
+            self.main_vlm_backend = main_vlm_backend
+            FakeRecovery.last_main_vlm_backend = main_vlm_backend
+
+        def configuration_problem(self):
+            return ""
+
+        def is_configured(self):
+            return True
+
+    settings = SimpleNamespace(
+        trajectory_cache_enabled=True,
+        trajectory_cache_recovery_vlm_enabled=True,
+        trajectory_cache_ephemeral_action_enabled=False,
+        assistant_api_key="key",
+        assistant_api_url="https://example.test",
+        assistant_model="model",
+        vlm_backend="doubao_responses",
+        vlm_api_key="",
+        assistant_thinking_assertion=True,
+        assertion_timeout_sec=1,
+        trajectory_cache_recovery_vlm_model="model",
+        trajectory_cache_recovery_vlm_max_wait_more=1,
+        trajectory_cache_recovery_vlm_max_calls_per_replay=5,
+        trajectory_cache_recovery_vlm_timeout_sec=30,
+    )
+    monkeypatch.setattr(service_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(recovery_module, "CacheReplayRecoveryVerifier", FakeRecovery)
+    monkeypatch.setattr(trajectory_cache_module, "V2ReplayRunner", FakeReplayRunner)
+    monkeypatch.setattr(
+        trajectory_cache_module,
+        "CacheReplayAssertionVerifier",
+        FakeCacheVerifier,
+    )
+    FakeReplayRunner.last_init_kwargs = None
+    FakeRecovery.last_main_vlm_backend = None
+
+    run = Run(
+        id="run-v2-recovery-source-backend",
+        device_serial="D1",
+        goal="cached goal",
+        status="running",
+        requested_cache_mode="v2",
+        effective_cache_mode="v2",
+    )
+    cache_key, normalized, semantic_hash = build_cache_key(
+        device_code="D1",
+        run_semantic_text="cached goal",
+    )
+    session.add(run)
+    session.add(
+        VlmTrajectoryCacheV2(
+            cache_key=cache_key,
+            device_code="D1",
+            run_semantic_hash=semantic_hash,
+            run_semantic_text=normalized,
+            status="active",
+            trajectory_json={
+                "source_vlm_backend": "claude_cu",
+                "actions": [{"index": 1, "type": "click", "point": {"x": 1, "y": 2}}],
+            },
+        )
+    )
+    await session.commit()
+
+    service = ServerRunnerService(
+        hub=Hub(),
+        lock_store=DeviceLockStore(),
+        session_factory=db_module.get_session_factory(),
+        waiter=DriverRpcWaiter(),
+    )
+
+    handled = await service._maybe_run_trajectory_cache(
+        run_id=run.id,
+        goal="cached goal",
+        driver=FakeDriver(),
+        emitter=FakeEmitter(),
+    )
+
+    assert handled is True
+    assert FakeRecovery.last_main_vlm_backend == "claude_cu"
+    assert FakeReplayRunner.last_init_kwargs
+    assert isinstance(FakeReplayRunner.last_init_kwargs["recovery_verifier"], FakeRecovery)
+
+
+@pytest.mark.asyncio
 async def test_server_runner_v1_cache_reads_v1_table_and_disables_enhancements(
     monkeypatch,
     _test_engine,

@@ -399,9 +399,13 @@ class ServerRunnerService:
         if cache_mode == "v2" and settings.trajectory_cache_recovery_vlm_enabled:
             # 把主 VLM backend 透传给 recovery，让它推断坐标空间：
             # doubao → normalized；claude_cu / gpt_cu → absolute。
+            source_vlm_backend = (
+                trajectory.get("source_vlm_backend")
+                or getattr(settings, "vlm_backend", "")
+            )
             recovery_verifier = CacheReplayRecoveryVerifier(
                 settings=settings,
-                main_vlm_backend=settings.vlm_backend,
+                main_vlm_backend=source_vlm_backend,
             )
             problem = recovery_verifier.configuration_problem()
             if problem:
