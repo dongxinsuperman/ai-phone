@@ -36,7 +36,7 @@ cp .env.example .env
 | 变量 | 用途 |
 |---|---|
 | `AI_PHONE_VLM_BACKEND` | 切换主 VLM 协议：`doubao_responses`（默认）/ `claude_cu` / `gpt_cu` |
-| `AI_PHONE_ASSISTANT_BACKEND` | 切换辅助系统协议：`doubao_chat` / `claude` / `openai`（与主 VLM 解耦，可异家组合） |
+| `AI_PHONE_ASSISTANT_BACKEND` | 切换非执行型辅助系统协议：`doubao_chat` / `claude` / `openai`。注意：轨迹缓存回放中会产出手机动作的 gate / recovery 不属于普通辅助聊天链路，必须遵守 [可执行链路契约](./executable-logic-contract.md)。 |
 | `AI_PHONE_MIRROR_*` | Android 画质 / 延迟参数（详见 `.env.example` §8） |
 | `AI_PHONE_VLM_SESSION_RESET_PROMPT_THRESHOLD` | Doubao Responses 超阈值自动切段（默认 30000，≤0 关闭） |
 | `AI_PHONE_WDA_PROJECT_DIR` | iOS 接入入口，留空走"手动 Xcode + iproxy"过渡态 |
@@ -142,6 +142,8 @@ psql "$AI_PHONE_DB_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 - [对外调用 API 契约（投递 / 查询 / 取消 / Kafka / Webhook）](../对外调用清单.md)
 - [架构设计](../架构设计.md)
 - [Server 大脑架构说明（next/server-brain）](./server-brain.md)
+- [主 VLM / 回放可执行链路契约](./executable-logic-contract.md)
+- [轨迹缓存 V1 / V2 方案契约](./trajectory-cache-v1-v2.md)
 - [使用功能介绍（产品手册）](../使用功能介绍.md)
 - [辅助系统核心逻辑及效果（含 26 项阈值调参）](../ai-phone的辅助系统核心逻辑及效果.md)
 - [Midscene 执行器挂载方案](../Midscene执行器接入方案.md)

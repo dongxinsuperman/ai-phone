@@ -407,12 +407,25 @@ class ServerRunnerService:
             if problem:
                 await _log(2, "轨迹缓存", f"recovery_vlm 已开启但配置不完整：{problem}")
             else:
+                recovery_model = (
+                    settings.vlm_model
+                    if str(getattr(settings, "vlm_backend", "") or "").strip().lower()
+                    in {"claude_cu", "gpt_cu"}
+                    else getattr(settings, "trajectory_cache_recovery_vlm_model", "")
+                )
+                recovery_backend = (
+                    settings.vlm_backend
+                    if str(getattr(settings, "vlm_backend", "") or "").strip().lower()
+                    in {"claude_cu", "gpt_cu"}
+                    else getattr(settings, "trajectory_cache_recovery_vlm_backend", "")
+                )
                 await _log(
                     1,
                     "轨迹缓存",
                     (
                         "recovery_vlm 专线已启用，"
-                        f"model={settings.trajectory_cache_recovery_vlm_model} "
+                        f"backend={recovery_backend} "
+                        f"model={recovery_model} "
                         f"max_wait_more={settings.trajectory_cache_recovery_vlm_max_wait_more} "
                         f"max_calls={settings.trajectory_cache_recovery_vlm_max_calls_per_replay} "
                         f"timeout={settings.trajectory_cache_recovery_vlm_timeout_sec:.0f}s"

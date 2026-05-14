@@ -70,6 +70,17 @@ from ai_phone.server.trajectory_cache.recovery import (
 )
 from ai_phone.server.trajectory_cache.v3_replay import V3LocatorMiss
 from ai_phone.server.trajectory_cache import ephemeral as ephemeral_module
+from ai_phone.shared.actions import ParsedAction
+
+
+def _test_jpeg(width: int = 80, height: int = 120, color=(30, 60, 90)) -> bytes:
+    from io import BytesIO
+
+    from PIL import Image
+
+    buf = BytesIO()
+    Image.new("RGB", (width, height), color=color).save(buf, format="JPEG")
+    return buf.getvalue()
 
 
 def test_normalize_run_semantic_is_strict_and_deterministic():
@@ -356,6 +367,66 @@ def test_parse_ephemeral_gate_response_accepts_fenced_nested_json():
 
     assert decision.verdict == "EXECUTE_REPAIR"
     assert decision.repair_action["point"] == {"x": 540, "y": 1024}
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_gate_overseas_uses_main_computer_use_config(monkeypatch):
+    import ai_phone.shared.llm.main.claude_cu as claude_cu_module
+
+    class FakeClaudeCU:
+        seen = {}
+
+        def __init__(self, **kwargs):
+            FakeClaudeCU.seen["init"] = kwargs
+
+        async def decide(self, screenshot_bytes, *, mime="image/jpeg"):
+            FakeClaudeCU.seen["screenshot_bytes"] = screenshot_bytes
+            return SimpleNamespace(
+                thought="关闭按钮换位置",
+                raw_content="raw",
+                parsed_actions=[
+                    ParsedAction(
+                        action="click",
+                        point=[40, 74],
+                        raw="computer.left_click",
+                        coord_space="absolute",
+                    )
+                ],
+            )
+
+    monkeypatch.setattr(claude_cu_module, "ClaudeComputerUseClient", FakeClaudeCU)
+    settings = Settings(
+        _env_file=None,
+        vlm_backend="claude_cu",
+        vlm_api_url="https://api.anthropic.com/v1/messages",
+        vlm_api_key="main-key",
+        vlm_model="claude-sonnet-4-5",
+        trajectory_cache_ephemeral_action_enabled=True,
+        trajectory_cache_ephemeral_gate_enabled=True,
+        trajectory_cache_ephemeral_gate_timeout_sec=30,
+        trajectory_cache_ephemeral_gate_use_recovery_vlm_config=True,
+        trajectory_cache_recovery_vlm_api_url="",
+        trajectory_cache_recovery_vlm_api_key="",
+        trajectory_cache_recovery_vlm_model="",
+    )
+    gate = ephemeral_module.CacheEphemeralGateVerifier(
+        settings=settings,
+        main_vlm_backend="claude_cu",
+    )
+
+    decision = await gate.decide(
+        goal="g",
+        action={"action_id": "a001", "type": "click"},
+        current_bytes=_test_jpeg(80, 120, (20, 20, 20)),
+        cached_popup_before_bytes=_test_jpeg(80, 120, (220, 220, 220)),
+        cached_after_bytes=_test_jpeg(80, 120, (120, 120, 120)),
+        next_action={"action_id": "a002", "type": "click"},
+    )
+
+    assert FakeClaudeCU.seen["init"]["api_key"] == "main-key"
+    assert decision.verdict == GATE_EXECUTE_REPAIR
+    assert decision.coord_space == "absolute"
+    assert decision.repair_action["point"] == {"x": 40, "y": 40}
 
 
 def test_ephemeral_classifier_falls_back_to_assistant_config():
@@ -3383,6 +3454,8 @@ def test_build_recovery_prompt_forbids_actions_and_lists_three_verbs():
     assert "Thought:" in prompt
     assert "Action:" in prompt
     assert "finished(content='放行原因')" in prompt
+    assert "handoff 路标图）本身就是加载中" in prompt
+    assert "让缓存里的 wait 自己执行" in prompt
     assert "wait(seconds=N)" in prompt
     assert "assert_fail(content='失败原因')" in prompt
 
@@ -3580,6 +3653,65 @@ async def test_recovery_verifier_supports_claude_messages_backend(monkeypatch):
     assert decision.verdict == VERDICT_REPAIR_ACTION
     assert decision.parsed_actions[0].coord_space == "absolute"
     assert decision.parsed_actions[0].point == [540, 1024]
+
+
+@pytest.mark.asyncio
+async def test_recovery_overseas_uses_main_computer_use_config(monkeypatch):
+    import ai_phone.shared.llm.main.claude_cu as claude_cu_module
+
+    class FakeClaudeCU:
+        seen = {}
+
+        def __init__(self, **kwargs):
+            FakeClaudeCU.seen["init"] = kwargs
+
+        async def decide(self, screenshot_bytes, *, mime="image/jpeg"):
+            FakeClaudeCU.seen["screenshot_bytes"] = screenshot_bytes
+            return SimpleNamespace(
+                thought="点击当前页按钮",
+                raw_content="raw",
+                parsed_actions=[
+                    ParsedAction(
+                        action="click",
+                        point=[130, 74],
+                        raw="computer.left_click",
+                        coord_space="absolute",
+                    )
+                ],
+            )
+
+    monkeypatch.setattr(claude_cu_module, "ClaudeComputerUseClient", FakeClaudeCU)
+    settings = Settings(
+        _env_file=None,
+        vlm_backend="claude_cu",
+        vlm_api_url="https://api.anthropic.com/v1/messages",
+        vlm_api_key="main-key",
+        vlm_model="claude-sonnet-4-5",
+        trajectory_cache_recovery_vlm_enabled=True,
+        trajectory_cache_recovery_vlm_api_url="",
+        trajectory_cache_recovery_vlm_api_key="",
+        trajectory_cache_recovery_vlm_model="",
+        trajectory_cache_recovery_vlm_timeout_sec=30,
+    )
+    verifier = CacheReplayRecoveryVerifier(settings=settings, main_vlm_backend="claude_cu")
+
+    decision = await verifier.verify_alignment_miss(
+        goal="g",
+        trajectory={"actions": []},
+        action={"action_id": "a001", "type": "click"},
+        landmark={"action_id": "a001"},
+        current_bytes=_test_jpeg(80, 120, (20, 20, 20)),
+        landmark_bytes=_test_jpeg(80, 120, (220, 220, 220)),
+        metrics={"global_diff": 0.5, "center_mae": 0.5, "black_ratio_diff": 0.0},
+        elapsed_ms=2000,
+        max_wait_ms=1500,
+    )
+
+    assert FakeClaudeCU.seen["init"]["api_key"] == "main-key"
+    assert decision.verdict == VERDICT_REPAIR_ACTION
+    assert decision.parsed_actions[0].coord_space == "absolute"
+    # The fake click is in the second/current pane: x subtracts left pane + gap.
+    assert decision.parsed_actions[0].point == [34, 40]
 
 
 @pytest.mark.asyncio

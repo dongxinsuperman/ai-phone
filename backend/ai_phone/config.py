@@ -789,7 +789,9 @@ class Settings(BaseSettings):
         default="doubao_responses",
         description=(
             "recovery_vlm 后端协议。支持 'doubao_responses'（可直接复用主 VLM responses "
-            "配置）/ 'openai_compatible'（豆包/OpenAI 兼容 chat completions）。"
+            "配置）/ 'openai_compatible'（豆包/OpenAI 兼容 chat completions）/ "
+            "'claude_messages'。当主 VLM 为 claude_cu/gpt_cu 时，V2 recovery "
+            "会优先复用主 VLM Computer Use 配置，本字段仅作为非 CU/历史兼容路径。"
             "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_BACKEND"
         ),
     )
@@ -1056,7 +1058,8 @@ class Settings(BaseSettings):
         default=True,
         description=(
             "ephemeral gate 是否复用 recovery_vlm 的 backend/url/key/model 连接配置。"
-            "只复用连接，不复用 prompt。"
+            "只复用连接，不复用 prompt。当主 VLM 为 claude_cu/gpt_cu 时，V2 gate "
+            "会优先复用主 VLM Computer Use 配置，本字段仅作为非 CU/历史兼容路径。"
             "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_USE_RECOVERY_VLM_CONFIG"
         ),
     )

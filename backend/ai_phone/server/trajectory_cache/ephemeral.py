@@ -18,9 +18,12 @@ import httpx
 
 from ai_phone.config import Settings, get_settings
 from ai_phone.server.trajectory_cache.recovery import (
+    _build_labeled_image_canvas,
     _extract_messages_text,
     _extract_responses_text,
+    _project_parsed_action_to_pane,
 )
+from ai_phone.shared import actions as A
 
 ROLE_BUSINESS_REQUIRED = "business_required"
 ROLE_OPTIONAL_EPHEMERAL = "optional_ephemeral"
@@ -217,6 +220,14 @@ class CacheEphemeralGateVerifier:
 
     def _config(self) -> Tuple[str, str, str, str, float]:
         s = self.settings
+        if self._use_main_executable_vlm():
+            return (
+                str(s.vlm_backend or ""),
+                str(s.vlm_api_url or ""),
+                str(s.vlm_api_key or ""),
+                str(s.vlm_model or ""),
+                float(s.trajectory_cache_ephemeral_gate_timeout_sec),
+            )
         if s.trajectory_cache_ephemeral_gate_use_recovery_vlm_config:
             return (
                 s.trajectory_cache_recovery_vlm_backend,
@@ -243,6 +254,17 @@ class CacheEphemeralGateVerifier:
             return "ephemeral action 总开关未启用"
         if not s.trajectory_cache_ephemeral_gate_enabled:
             return "ephemeral gate 未启用"
+        if self._use_main_executable_vlm():
+            missing: List[str] = []
+            if not s.vlm_api_url:
+                missing.append("vlm_api_url")
+            if not s.vlm_api_key:
+                missing.append("vlm_api_key")
+            if not s.vlm_model:
+                missing.append("vlm_model")
+            if missing:
+                return f"主 VLM Computer Use 配置缺失：{','.join(missing)}"
+            return ""
         backend, api_url, api_key, model, _timeout = self._config()
         missing: List[str] = []
         if not backend:
@@ -271,6 +293,14 @@ class CacheEphemeralGateVerifier:
             return "absolute"
         return "normalized"
 
+    def _use_main_executable_vlm(self) -> bool:
+        backend = (
+            self._main_vlm_backend
+            or str(getattr(self.settings, "vlm_backend", "") or "")
+        ).strip().lower()
+        configured = str(getattr(self.settings, "vlm_backend", "") or "").strip().lower()
+        return backend in {"claude_cu", "gpt_cu"} and configured == backend
+
     async def decide(
         self,
         *,
@@ -286,6 +316,15 @@ class CacheEphemeralGateVerifier:
                 verdict=GATE_ESCALATE,
                 reason=self.configuration_problem() or "ephemeral gate 不可用",
                 error="not_configured",
+            )
+        if self._use_main_executable_vlm():
+            return await self._decide_with_main_executable_vlm(
+                goal=goal,
+                action=action,
+                current_bytes=current_bytes,
+                cached_popup_before_bytes=cached_popup_before_bytes,
+                cached_after_bytes=cached_after_bytes,
+                next_action=next_action,
             )
         backend, api_url, api_key, model, timeout_sec = self._config()
         prompt = build_ephemeral_gate_prompt(
@@ -335,6 +374,196 @@ class CacheEphemeralGateVerifier:
         decision.elapsed_ms = int((time.monotonic() - started) * 1000)
         decision.coord_space = self.coord_space
         return decision
+
+    async def _decide_with_main_executable_vlm(
+        self,
+        *,
+        goal: str,
+        action: Dict[str, Any],
+        current_bytes: bytes,
+        cached_popup_before_bytes: bytes,
+        cached_after_bytes: bytes,
+        next_action: Optional[Dict[str, Any]] = None,
+    ) -> EphemeralGateDecision:
+        canvas = _build_labeled_image_canvas(
+            [
+                ("current replay screen - operate only here", current_bytes),
+                ("cached popup before reference - do not operate here", cached_popup_before_bytes),
+                ("cached after reference - do not operate here", cached_after_bytes),
+            ]
+        )
+        current_pane = canvas.panes[0]
+        prompt = build_ephemeral_gate_prompt(
+            goal=goal,
+            action=action,
+            next_action=next_action,
+            coord_space="absolute",
+        )
+        system_prompt = (
+            "You are the trajectory replay optional-ephemeral gate for a real mobile device.\n"
+            "The screenshot is a diagnostic canvas. Pane 1 is the current live phone screen. "
+            "Pane 2 is the cached popup-before reference. Pane 3 is the cached after reference.\n"
+            "Use the computer tool ONLY on Pane 1 when the correct verdict is EXECUTE_REPAIR.\n"
+            "For SKIP, EXECUTE_ORIGINAL, or ESCALATE, do not use the computer tool; answer with "
+            "FINISHED: SKIP: <reason>, FINISHED: EXECUTE_ORIGINAL: <reason>, or "
+            "FINISHED: ESCALATE: <reason>. For unrecoverable failure answer ASSERT_FAIL: <reason>.\n\n"
+            "Important: the policy text below is shared with non-Computer-Use backends "
+            "and may mention JSON output. For this Computer Use call, ignore that output "
+            "format section. Use only the computer tool, FINISHED, or ASSERT_FAIL.\n\n"
+            + prompt
+        )
+        started = time.monotonic()
+        try:
+            if self._main_vlm_backend == "gpt_cu":
+                from ai_phone.shared.llm.main.gpt_cu import GPTComputerUseClient
+
+                client = GPTComputerUseClient(
+                    system_prompt=system_prompt,
+                    api_url=self.settings.vlm_api_url,
+                    api_key=self.settings.vlm_api_key,
+                    model=self.settings.vlm_model,
+                    timeout_seconds=float(self.settings.trajectory_cache_ephemeral_gate_timeout_sec),
+                )
+            else:
+                from ai_phone.shared.llm.main.claude_cu import ClaudeComputerUseClient
+
+                client = ClaudeComputerUseClient(
+                    system_prompt=system_prompt,
+                    api_url=self.settings.vlm_api_url,
+                    api_key=self.settings.vlm_api_key,
+                    model=self.settings.vlm_model,
+                    timeout_seconds=float(self.settings.trajectory_cache_ephemeral_gate_timeout_sec),
+                )
+            model_decision = await asyncio.wait_for(
+                client.decide(canvas.bytes),
+                timeout=float(self.settings.trajectory_cache_ephemeral_gate_timeout_sec),
+            )
+        except asyncio.TimeoutError:
+            return EphemeralGateDecision(
+                verdict=GATE_ESCALATE,
+                reason="ephemeral gate 主 VLM Computer Use 调用超时，转入 recovery",
+                elapsed_ms=int((time.monotonic() - started) * 1000),
+                error="timeout",
+            )
+        except Exception as exc:  # noqa: BLE001
+            return EphemeralGateDecision(
+                verdict=GATE_ESCALATE,
+                reason=(
+                    f"ephemeral gate 主 VLM Computer Use 调用失败："
+                    f"{type(exc).__name__}: {str(exc)[:160]}"
+                ),
+                elapsed_ms=int((time.monotonic() - started) * 1000),
+                error=type(exc).__name__,
+            )
+        out = _gate_decision_from_main_vlm_decision(
+            model_decision,
+            current_pane=current_pane,
+        )
+        out.elapsed_ms = int((time.monotonic() - started) * 1000)
+        return out
+
+
+def _repair_action_from_parsed(parsed: A.ParsedAction) -> Dict[str, Any]:
+    out: Dict[str, Any] = {"type": parsed.action}
+    if parsed.point is not None:
+        out["point"] = {"x": int(parsed.point[0]), "y": int(parsed.point[1])}
+    if parsed.start_point is not None:
+        out["start_point"] = {
+            "x": int(parsed.start_point[0]),
+            "y": int(parsed.start_point[1]),
+        }
+    if parsed.end_point is not None:
+        out["end_point"] = {"x": int(parsed.end_point[0]), "y": int(parsed.end_point[1])}
+    if parsed.direction:
+        out["direction"] = parsed.direction
+    if parsed.content:
+        out["content"] = parsed.content
+    if parsed.seconds is not None:
+        out["seconds"] = int(parsed.seconds)
+    if parsed.name:
+        out["name"] = parsed.name
+    return out
+
+
+def _gate_decision_from_main_vlm_decision(
+    model_decision: Any,
+    *,
+    current_pane: Tuple[int, int, int, int],
+) -> EphemeralGateDecision:
+    parsed_actions = list(getattr(model_decision, "parsed_actions", None) or [])
+    thought = str(getattr(model_decision, "thought", "") or "")
+    raw = str(getattr(model_decision, "raw_content", "") or "")
+    if not parsed_actions:
+        return EphemeralGateDecision(
+            verdict=GATE_ESCALATE,
+            reason="主 VLM Computer Use 未返回可解析动作，转入 recovery",
+            raw=raw,
+            error="empty_action",
+            coord_space="absolute",
+        )
+    parsed = parsed_actions[0]
+    if parsed.action == A.ACTION_ASSERT_FAIL:
+        return EphemeralGateDecision(
+            verdict=GATE_ASSERT_FAIL,
+            reason=parsed.content or thought or "主 VLM Computer Use 判定清障动作不可安全处理",
+            raw=raw,
+            coord_space="absolute",
+        )
+    if parsed.action == A.ACTION_FINISHED:
+        content = (parsed.content or thought or "").strip()
+        upper = content.upper()
+        if upper.startswith(GATE_SKIP):
+            return EphemeralGateDecision(
+                verdict=GATE_SKIP,
+                reason=content,
+                raw=raw,
+                coord_space="absolute",
+            )
+        if upper.startswith(GATE_EXECUTE_ORIGINAL):
+            return EphemeralGateDecision(
+                verdict=GATE_EXECUTE_ORIGINAL,
+                reason=content,
+                raw=raw,
+                coord_space="absolute",
+            )
+        if upper.startswith(GATE_ESCALATE):
+            return EphemeralGateDecision(
+                verdict=GATE_ESCALATE,
+                reason=content,
+                raw=raw,
+                coord_space="absolute",
+            )
+        return EphemeralGateDecision(
+            verdict=GATE_ESCALATE,
+            reason=f"主 VLM Computer Use finished 未声明 gate verdict：{content[:120]}",
+            raw=raw,
+            error="missing_gate_verdict",
+            coord_space="absolute",
+        )
+    if parsed.is_known:
+        projected = _project_parsed_action_to_pane(parsed, pane=current_pane)
+        if projected is None:
+            return EphemeralGateDecision(
+                verdict=GATE_ESCALATE,
+                reason="主 VLM Computer Use 返回的清障坐标不在当前截图区域，转入 recovery",
+                raw=raw,
+                error="point_outside_current_pane",
+                coord_space="absolute",
+            )
+        return EphemeralGateDecision(
+            verdict=GATE_EXECUTE_REPAIR,
+            reason=thought or f"执行瞬态清障修复动作 {projected.action}",
+            repair_action=_repair_action_from_parsed(projected),
+            raw=raw,
+            coord_space="absolute",
+        )
+    return EphemeralGateDecision(
+        verdict=GATE_ESCALATE,
+        reason=f"主 VLM Computer Use 输出未知 gate 动作：{parsed.action}",
+        raw=raw,
+        error="unknown_action",
+        coord_space="absolute",
+    )
 
 
 def parse_ephemeral_classification_response(

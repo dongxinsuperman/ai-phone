@@ -1,8 +1,9 @@
-"""轨迹缓存状态路标 MISS 后的独立 VLM 局部恢复。
+"""轨迹缓存状态路标 MISS 后的 VLM 局部恢复。
 
-通道独立：与辅助系统 / 断言系统 / 主 VLMRunner 完全分离。配置只读
-``trajectory_cache_recovery_vlm_*``，不 fallback 任何其他通道，防止把
-recovery 决策耦合进辅助系统的 token / 限流统计。
+执行能力同源：doubao 系沿用可执行 Thought/Action vision 协议；海外
+``claude_cu`` / ``gpt_cu`` 主链路沿用主 VLM Computer Use 能力，只通过 prompt
+把职责收窄到当前 action 的局部恢复。普通 chat/messages 兼容路径保留给非 CU
+或历史配置，但不能作为海外 CU 的执行能力降级。
 
 当前 doubao 系复用主 VLM 的 Thought/Action DSL，不另起 JSON 协议。recovery
 VLM 的作用域不是重跑完整 case，而是在 action_i 的 handoff 不一致时做局部
@@ -19,11 +20,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import re
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass, field, replace
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
+from PIL import Image, ImageDraw
 
 from ai_phone.config import Settings, get_settings
 from ai_phone.shared import actions as A
@@ -86,6 +89,13 @@ class CacheReplayRecoveryVerifier:
     # ------------------------------------------------------------------
     def is_configured(self) -> bool:
         s = self.settings
+        if self._use_main_executable_vlm():
+            return bool(
+                s.trajectory_cache_recovery_vlm_enabled
+                and s.vlm_api_url
+                and s.vlm_api_key
+                and s.vlm_model
+            )
         return bool(
             s.trajectory_cache_recovery_vlm_enabled
             and s.trajectory_cache_recovery_vlm_api_url
@@ -98,6 +108,17 @@ class CacheReplayRecoveryVerifier:
         s = self.settings
         if not s.trajectory_cache_recovery_vlm_enabled:
             return "recovery_vlm 未启用（trajectory_cache_recovery_vlm_enabled=false）"
+        if self._use_main_executable_vlm():
+            missing: List[str] = []
+            if not s.vlm_api_url:
+                missing.append("vlm_api_url")
+            if not s.vlm_api_key:
+                missing.append("vlm_api_key")
+            if not s.vlm_model:
+                missing.append("vlm_model")
+            if missing:
+                return f"主 VLM Computer Use 配置缺失：{','.join(missing)}"
+            return ""
         missing: List[str] = []
         if not s.trajectory_cache_recovery_vlm_api_url:
             missing.append("api_url")
@@ -133,6 +154,14 @@ class CacheReplayRecoveryVerifier:
         if "claude" in backend or backend.startswith("gpt"):
             return "absolute"
         return "normalized"
+
+    def _use_main_executable_vlm(self) -> bool:
+        backend = (
+            self._main_vlm_backend
+            or str(getattr(self.settings, "vlm_backend", "") or "")
+        ).strip().lower()
+        configured = str(getattr(self.settings, "vlm_backend", "") or "").strip().lower()
+        return backend in {"claude_cu", "gpt_cu"} and configured == backend
 
     # ------------------------------------------------------------------
     # 主调用
@@ -170,6 +199,13 @@ class CacheReplayRecoveryVerifier:
             default_wait_ms=self.default_wait_ms,
             coord_space=coord_space,
         )
+
+        if self._use_main_executable_vlm():
+            return await self._decide_with_main_executable_vlm(
+                prompt=prompt,
+                landmark_bytes=landmark_bytes,
+                current_bytes=current_bytes,
+            )
 
         loop = asyncio.get_event_loop()
         started_at = loop.time()
@@ -211,6 +247,93 @@ class CacheReplayRecoveryVerifier:
         )
         decision.elapsed_ms = int((loop.time() - started_at) * 1000)
         return decision
+
+    async def _decide_with_main_executable_vlm(
+        self,
+        *,
+        prompt: str,
+        landmark_bytes: bytes,
+        current_bytes: bytes,
+    ) -> RecoveryDecision:
+        """海外 CU 主链路专用：使用同源 Computer Use 能力做局部恢复。
+
+        Claude / GPT Computer Use 每轮只吃一张屏幕图。这里把“缓存 handoff
+        参考图”和“当前真实截图”拼成一张诊断图，要求模型只在当前截图区域
+        操作；返回后再把坐标投回当前截图坐标，交给 replay runner 按 absolute
+        分支缩放到设备坐标。
+        """
+        canvas = _build_labeled_image_canvas(
+            [
+                ("cached handoff reference - do not operate here", landmark_bytes),
+                ("current replay screen - operate only here", current_bytes),
+            ]
+        )
+        current_pane = canvas.panes[1]
+        system_prompt = (
+            "You are the trajectory replay recovery VLM for a real mobile device.\n"
+            "The screenshot is a diagnostic canvas with two panes. The left pane is "
+            "only a cached reference. The right pane is the current live phone screen.\n"
+            "If you need to perform a UI action, use the computer tool on the RIGHT "
+            "current-screen pane only. Never click the left reference pane.\n"
+            "If the replay can continue, do not use the computer tool; answer with "
+            "FINISHED: <reason>. If it cannot recover, answer ASSERT_FAIL: <reason>.\n\n"
+            "Important: the policy text below is shared with non-Computer-Use backends "
+            "and may mention Thought/Action text DSL. For this Computer Use call, ignore "
+            "that output-format section. Use the computer tool for repair actions, or "
+            "FINISHED / ASSERT_FAIL text for terminal decisions.\n\n"
+            + prompt
+        )
+        loop = asyncio.get_event_loop()
+        started_at = loop.time()
+        try:
+            if self._main_vlm_backend == "gpt_cu":
+                from ai_phone.shared.llm.main.gpt_cu import GPTComputerUseClient
+
+                client = GPTComputerUseClient(
+                    system_prompt=system_prompt,
+                    api_url=self.settings.vlm_api_url,
+                    api_key=self.settings.vlm_api_key,
+                    model=self.settings.vlm_model,
+                    timeout_seconds=float(self.settings.trajectory_cache_recovery_vlm_timeout_sec),
+                )
+            else:
+                from ai_phone.shared.llm.main.claude_cu import ClaudeComputerUseClient
+
+                client = ClaudeComputerUseClient(
+                    system_prompt=system_prompt,
+                    api_url=self.settings.vlm_api_url,
+                    api_key=self.settings.vlm_api_key,
+                    model=self.settings.vlm_model,
+                    timeout_seconds=float(self.settings.trajectory_cache_recovery_vlm_timeout_sec),
+                )
+            model_decision = await asyncio.wait_for(
+                client.decide(canvas.bytes),
+                timeout=float(self.settings.trajectory_cache_recovery_vlm_timeout_sec),
+            )
+        except asyncio.TimeoutError:
+            return RecoveryDecision(
+                verdict=VERDICT_ASSERT_FAIL,
+                reason="recovery_vlm 主 VLM Computer Use 调用超时，按保守策略终止缓存回放",
+                elapsed_ms=int((loop.time() - started_at) * 1000),
+                error="timeout",
+            )
+        except Exception as exc:  # noqa: BLE001
+            return RecoveryDecision(
+                verdict=VERDICT_ASSERT_FAIL,
+                reason=(
+                    f"recovery_vlm 主 VLM Computer Use 调用失败："
+                    f"{type(exc).__name__}: {str(exc)[:160]}"
+                ),
+                elapsed_ms=int((loop.time() - started_at) * 1000),
+                error=type(exc).__name__,
+            )
+
+        out = _recovery_decision_from_main_vlm_decision(
+            model_decision,
+            current_pane=current_pane,
+        )
+        out.elapsed_ms = int((loop.time() - started_at) * 1000)
+        return out
 
     # ------------------------------------------------------------------
     # VLM 协议后端
@@ -691,6 +814,155 @@ def _strip_markdown_decorations(text: str) -> str:
     return out
 
 
+class CanvasResult:
+    def __init__(
+        self,
+        *,
+        bytes_: bytes,
+        panes: List[Tuple[int, int, int, int]],
+    ) -> None:
+        self.bytes = bytes_
+        self.panes = panes
+
+
+def _build_labeled_image_canvas(
+    items: List[Tuple[str, bytes]],
+    *,
+    gap: int = 16,
+    label_h: int = 34,
+) -> CanvasResult:
+    images: List[Image.Image] = []
+    for _label, data in items:
+        img = Image.open(io.BytesIO(data)).convert("RGB")
+        images.append(img)
+    total_w = sum(img.width for img in images) + gap * (len(images) - 1)
+    max_h = max((img.height for img in images), default=1)
+    canvas = Image.new("RGB", (total_w, max_h + label_h), "white")
+    draw = ImageDraw.Draw(canvas)
+    panes: List[Tuple[int, int, int, int]] = []
+    x = 0
+    for (label, _data), img in zip(items, images):
+        draw.rectangle([x, 0, x + img.width - 1, label_h - 1], fill=(238, 242, 247))
+        draw.text((x + 8, 9), label, fill=(20, 24, 31))
+        canvas.paste(img, (x, label_h))
+        panes.append((x, label_h, img.width, img.height))
+        x += img.width + gap
+    buf = io.BytesIO()
+    canvas.save(buf, format="JPEG", quality=90)
+    return CanvasResult(bytes_=buf.getvalue(), panes=panes)
+
+
+def _project_parsed_action_to_pane(
+    parsed: A.ParsedAction,
+    *,
+    pane: Tuple[int, int, int, int],
+) -> Optional[A.ParsedAction]:
+    x0, y0, w, h = pane
+
+    def project(point: Optional[List[int]]) -> Optional[List[int]]:
+        if point is None:
+            return None
+        px = int(point[0]) - x0
+        py = int(point[1]) - y0
+        if px < 0 or py < 0 or px >= w or py >= h:
+            return None
+        return [max(0, min(px, w - 1)), max(0, min(py, h - 1))]
+
+    point = project(parsed.point)
+    start = project(parsed.start_point)
+    end = project(parsed.end_point)
+    if parsed.point is not None and point is None:
+        return None
+    if parsed.start_point is not None and start is None:
+        return None
+    if parsed.end_point is not None and end is None:
+        return None
+    return replace(
+        parsed,
+        point=point,
+        start_point=start,
+        end_point=end,
+        coord_space="absolute",
+    )
+
+
+def _recovery_decision_from_main_vlm_decision(
+    model_decision: Any,
+    *,
+    current_pane: Tuple[int, int, int, int],
+) -> RecoveryDecision:
+    parsed_actions = list(getattr(model_decision, "parsed_actions", None) or [])
+    thought = str(getattr(model_decision, "thought", "") or "")
+    raw = str(getattr(model_decision, "raw_content", "") or "")
+    if not parsed_actions:
+        return RecoveryDecision(
+            verdict=VERDICT_ASSERT_FAIL,
+            reason="主 VLM Computer Use 未返回可解析动作",
+            raw=raw,
+            thought=thought,
+            error="empty_action",
+        )
+    parsed = parsed_actions[0]
+    reason = parsed.content or thought or parsed.raw or ""
+    if parsed.action == A.ACTION_FINISHED:
+        return RecoveryDecision(
+            verdict=VERDICT_CONTINUE,
+            reason=reason or "主 VLM Computer Use 判断当前差异可接受，继续回放",
+            raw=raw,
+            thought=thought,
+            action_text=parsed.raw,
+            parsed_actions=[parsed],
+        )
+    if parsed.action == A.ACTION_WAIT:
+        return RecoveryDecision(
+            verdict=VERDICT_WAIT_MORE,
+            reason=reason or "主 VLM Computer Use 判断页面仍可能在加载",
+            wait_ms=max(100, min(10_000, int(parsed.seconds or 1) * 1000)),
+            raw=raw,
+            thought=thought,
+            action_text=parsed.raw,
+            parsed_actions=[parsed],
+        )
+    if parsed.action == A.ACTION_ASSERT_FAIL:
+        return RecoveryDecision(
+            verdict=VERDICT_ASSERT_FAIL,
+            reason=reason or "主 VLM Computer Use 判断轨迹已偏航或功能不可达",
+            raw=raw,
+            thought=thought,
+            action_text=parsed.raw,
+            parsed_actions=[parsed],
+        )
+    if parsed.is_known:
+        projected = _project_parsed_action_to_pane(parsed, pane=current_pane)
+        if projected is None:
+            return RecoveryDecision(
+                verdict=VERDICT_ASSERT_FAIL,
+                reason="主 VLM Computer Use 返回的动作坐标不在当前截图区域",
+                raw=raw,
+                thought=thought,
+                action_text=parsed.raw,
+                parsed_actions=[parsed],
+                error="point_outside_current_pane",
+            )
+        return RecoveryDecision(
+            verdict=VERDICT_REPAIR_ACTION,
+            reason=thought or f"执行局部修复动作 {projected.action}",
+            raw=raw,
+            thought=thought,
+            action_text=projected.raw,
+            parsed_actions=[projected],
+        )
+    return RecoveryDecision(
+        verdict=VERDICT_ASSERT_FAIL,
+        reason=f"主 VLM Computer Use 输出未知动作：{parsed.action}",
+        raw=raw,
+        thought=thought,
+        action_text=parsed.raw,
+        parsed_actions=parsed_actions,
+        error="unknown_action",
+    )
+
+
 def build_recovery_prompt(
     *,
     goal: str,
@@ -749,9 +1021,22 @@ def build_recovery_prompt(
         "3. 如果当前 action_i 已经达成，且当前页面已经满足 handoff 语义：\n"
         "   - 输出 finished(content='放行原因')，表示放行继续缓存回放。\n"
         "   - finished 只表示“当前 handoff 可衔接”，不是完成整个用户 goal。\n"
-        "4. 如果页面像是在加载、动画、跳转、刷新、数据渲染、异步请求中：\n"
+        "4. 如果附图 1（handoff 路标图）本身就是加载中、进度条、骨架屏、动画、"
+        "跳转、刷新、数据渲染、异步请求等过渡态：\n"
+        "   - 这类 handoff 图不适合做严格像素对齐，因为进度、文案、题目内容、"
+        "资源位、动画帧都可能天然变化。\n"
+        "   - 此时不要继续要求附图 2 与附图 1 完全一致；应降级判断附图 2 的"
+        "当前页面状态是否仍可衔接下一条缓存 action。\n"
+        "   - 如果附图 2 也是同类加载/过渡态，或已经进入比附图 1 更靠后的可衔接页面，"
+        "输出 finished(content='放行原因')，让系统继续执行下一条缓存 action。\n"
+        "   - 特别是下一条缓存 action 很可能就是 wait(seconds=N)：这时必须优先"
+        "finished 放行，让缓存里的 wait 自己执行；不要在当前 recovery 中再输出 wait。\n"
+        "   - 只有当附图 2 明显跑到无关页面、错误页面、或无法衔接下一条缓存 action 时，"
+        "才按修复 action 或 assert_fail 处理。\n"
+        "5. 如果附图 1 是稳定业务页面，但附图 2 像是在加载、动画、跳转、刷新、"
+        "数据渲染、异步请求中：\n"
         "   - 输出 wait(seconds=N)，等待后系统会重新截图并再次对齐。\n"
-        "5. 只有在以下情况下才输出 assert_fail：\n"
+        "6. 只有在以下情况下才输出 assert_fail：\n"
         "   - action_i 的目标功能/入口/控件确实不存在；\n"
         "   - 当前页面和本 case 路径明显无关，无法通过少量操作恢复；\n"
         "   - 目标被阻挡且无法处理；\n"
@@ -849,6 +1134,8 @@ __all__ = [
     "VERDICT_WAIT_MORE",
     "VERDICT_ASSERT_FAIL",
     "VERDICT_REPAIR_ACTION",
+    "_build_labeled_image_canvas",
+    "_project_parsed_action_to_pane",
     "build_recovery_prompt",
     "parse_recovery_response",
 ]
