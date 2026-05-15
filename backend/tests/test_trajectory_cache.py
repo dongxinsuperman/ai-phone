@@ -27,6 +27,7 @@ from ai_phone.server.trajectory_cache import (
     CacheReplayAssertionVerifier,
     CacheReplayRecoveryVerifier,
     EphemeralGateDecision,
+    GATE_EXECUTE_ORIGINAL,
     GATE_EXECUTE_REPAIR,
     GATE_SKIP,
     RecoveryDecision,
@@ -107,16 +108,25 @@ def test_cache_mode_resolution_is_tolerant_and_env_gated():
     )
 
 
-def test_parse_v3_locator_response_accepts_markdown_action():
+def test_parse_v3_locator_response_accepts_point_only_contract():
     parsed = parse_v3_locator_response(
-        "**Thought:** 当前按钮在右下角\n**Action:** click(point='<point>500 250</point>')",
+        "<point>500 250</point>",
         coord_space="normalized",
+        expected_action_type="click",
     )
 
     assert parsed is not None
     assert parsed.action == "click"
     assert parsed.point == [500, 250]
     assert parsed.coord_space == "normalized"
+    assert (
+        parse_v3_locator_response(
+            "Action: click(point='<point>500 250</point>')",
+            coord_space="normalized",
+            expected_action_type="click",
+        )
+        is None
+    )
 
 
 def test_build_v3_locator_prompt_is_minimal_and_action_specific():
@@ -127,15 +137,17 @@ def test_build_v3_locator_prompt_is_minimal_and_action_specific():
         coord_space="normalized",
     )
 
-    assert "目标：点击开始挑战" in prompt
-    assert "动作：click" in prompt
-    assert "Action: click(point='<point>x y</point>')" in prompt
+    assert "目标描述：点击开始挑战" in prompt
+    assert "缓存动作类型：click" in prompt
+    assert "输出：<point>x y</point>" in prompt
+    assert "不负责决定动作类型" in prompt
     assert "不要复用缓存旧坐标" in prompt
-    assert "只能猜测" in prompt
+    assert "需要猜测" in prompt
     assert "不要进入 prompt" not in prompt
     assert "也不要进入 prompt" not in prompt
     assert "V3" not in prompt
     assert "Thought" not in prompt
+    assert "Action:" not in prompt
 
     drag_prompt = build_v3_locator_prompt(
         goal="",
@@ -143,8 +155,9 @@ def test_build_v3_locator_prompt_is_minimal_and_action_specific():
         action={"index": 1, "type": "drag", "plan_intent": "向上拖动列表"},
         coord_space="absolute",
     )
-    assert "动作：drag" in drag_prompt
-    assert "Action: drag(start='<point>x1 y1</point>', end='<point>x2 y2</point>')" in drag_prompt
+    assert "缓存动作类型：drag" in drag_prompt
+    assert "<start>x1 y1</start>" in drag_prompt
+    assert "<end>x2 y2</end>" in drag_prompt
 
 
 def test_parse_v3_rescue_response_accepts_popup_close_json():
@@ -370,31 +383,38 @@ def test_parse_ephemeral_gate_response_accepts_fenced_nested_json():
 
 
 @pytest.mark.asyncio
-async def test_ephemeral_gate_overseas_uses_main_computer_use_config(monkeypatch):
+async def test_ephemeral_gate_overseas_claude_cu_falls_back_to_chat_messages(monkeypatch):
+    """主 vlm = claude_cu 时，ephemeral gate 不再走 Computer Use 通道，
+    而是用主 vlm 同 model + 同 key + 同 url 走普通 messages chat 协议
+    （不挂 computer 工具、不开 anthropic-beta），避免 CU agent 反射导致 verdict 解析失效。
+    """
+    seen = {}
+
+    async def fake_call(*, backend, api_url, api_key, model, timeout_sec,
+                        system, prompt, images):
+        seen["backend"] = backend
+        seen["api_url"] = api_url
+        seen["api_key"] = api_key
+        seen["model"] = model
+        seen["images"] = list(images)
+        return (
+            "{\"verdict\": \"SKIP\","
+            " \"reason\": \"current popup absent, safe to skip\"}"
+        )
+
+    monkeypatch.setattr(ephemeral_module, "_call_vlm_with_images", fake_call)
+
+    # 即使没有任何阻塞，确保不会被旧 CU 客户端拦截
     import ai_phone.shared.llm.main.claude_cu as claude_cu_module
 
-    class FakeClaudeCU:
-        seen = {}
-
+    class _ShouldNotBeCalled:
         def __init__(self, **kwargs):
-            FakeClaudeCU.seen["init"] = kwargs
-
-        async def decide(self, screenshot_bytes, *, mime="image/jpeg"):
-            FakeClaudeCU.seen["screenshot_bytes"] = screenshot_bytes
-            return SimpleNamespace(
-                thought="关闭按钮换位置",
-                raw_content="raw",
-                parsed_actions=[
-                    ParsedAction(
-                        action="click",
-                        point=[40, 74],
-                        raw="computer.left_click",
-                        coord_space="absolute",
-                    )
-                ],
+            raise AssertionError(
+                "ephemeral gate 不应再调 ClaudeComputerUseClient（已切到 chat 协议）"
             )
 
-    monkeypatch.setattr(claude_cu_module, "ClaudeComputerUseClient", FakeClaudeCU)
+    monkeypatch.setattr(claude_cu_module, "ClaudeComputerUseClient", _ShouldNotBeCalled)
+
     settings = Settings(
         _env_file=None,
         vlm_backend="claude_cu",
@@ -423,10 +443,169 @@ async def test_ephemeral_gate_overseas_uses_main_computer_use_config(monkeypatch
         next_action={"action_id": "a002", "type": "click"},
     )
 
-    assert FakeClaudeCU.seen["init"]["api_key"] == "main-key"
-    assert decision.verdict == GATE_EXECUTE_REPAIR
+    assert seen["backend"] == "claude_messages"
+    assert seen["api_url"] == "https://api.anthropic.com/v1/messages"
+    assert seen["api_key"] == "main-key"
+    assert seen["model"] == "claude-sonnet-4-5"
+    assert [label for label, _ in seen["images"]] == [
+        "current_replay",
+        "cached_popup_before",
+        "cached_after",
+    ]
+    assert decision.verdict == GATE_SKIP
     assert decision.coord_space == "absolute"
-    assert decision.repair_action["point"] == {"x": 40, "y": 40}
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_gate_overseas_gpt_cu_translates_responses_url_to_chat(monkeypatch):
+    """主 vlm = gpt_cu（用 /v1/responses 端点）时，ephemeral gate 自动翻译成
+    /v1/chat/completions + openai_compatible backend，复用主 vlm key/model。
+    """
+    seen = {}
+
+    async def fake_call(*, backend, api_url, api_key, model, timeout_sec,
+                        system, prompt, images):
+        seen["backend"] = backend
+        seen["api_url"] = api_url
+        seen["model"] = model
+        seen["api_key"] = api_key
+        return (
+            "{\"verdict\": \"EXECUTE_ORIGINAL\","
+            " \"reason\": \"popup still present, replay original close\"}"
+        )
+
+    monkeypatch.setattr(ephemeral_module, "_call_vlm_with_images", fake_call)
+
+    settings = Settings(
+        _env_file=None,
+        vlm_backend="gpt_cu",
+        vlm_api_url="https://api.openai.com/v1/responses",
+        vlm_api_key="main-key",
+        vlm_model="computer-use-preview",
+        trajectory_cache_ephemeral_action_enabled=True,
+        trajectory_cache_ephemeral_gate_enabled=True,
+        trajectory_cache_ephemeral_gate_timeout_sec=30,
+        trajectory_cache_ephemeral_gate_use_recovery_vlm_config=True,
+        trajectory_cache_recovery_vlm_api_url="",
+        trajectory_cache_recovery_vlm_api_key="",
+        trajectory_cache_recovery_vlm_model="",
+    )
+    gate = ephemeral_module.CacheEphemeralGateVerifier(
+        settings=settings,
+        main_vlm_backend="gpt_cu",
+    )
+
+    decision = await gate.decide(
+        goal="g",
+        action={"action_id": "a001", "type": "click"},
+        current_bytes=_test_jpeg(80, 120, (20, 20, 20)),
+        cached_popup_before_bytes=_test_jpeg(80, 120, (220, 220, 220)),
+        cached_after_bytes=_test_jpeg(80, 120, (120, 120, 120)),
+    )
+
+    assert seen["backend"] == "openai_compatible"
+    assert seen["api_url"] == "https://api.openai.com/v1/chat/completions"
+    assert seen["model"] == "computer-use-preview"
+    assert seen["api_key"] == "main-key"
+    assert decision.verdict == GATE_EXECUTE_ORIGINAL
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_gate_call_failure_falls_back_to_execute_original(monkeypatch):
+    """调用异常 / 解析失败时，gate 默认 EXECUTE_ORIGINAL（保底执行原 action），
+    不再 ESCALATE。原因：ESCALATE → recovery 也可能失败 → ASSERT_FAIL → 整个回放卡死。
+    optional_ephemeral 本来就是低风险，最坏空点一下。
+    """
+    async def boom(**_kwargs):
+        raise RuntimeError("upstream 5xx")
+
+    monkeypatch.setattr(ephemeral_module, "_call_vlm_with_images", boom)
+
+    settings = Settings(
+        _env_file=None,
+        vlm_backend="doubao_responses",
+        trajectory_cache_ephemeral_action_enabled=True,
+        trajectory_cache_ephemeral_gate_enabled=True,
+        trajectory_cache_ephemeral_gate_timeout_sec=30,
+        trajectory_cache_ephemeral_gate_backend="openai_compatible",
+        trajectory_cache_ephemeral_gate_api_url="https://example.com/chat",
+        trajectory_cache_ephemeral_gate_api_key="key",
+        trajectory_cache_ephemeral_gate_model="m",
+        trajectory_cache_ephemeral_gate_use_recovery_vlm_config=False,
+    )
+    gate = ephemeral_module.CacheEphemeralGateVerifier(
+        settings=settings,
+        main_vlm_backend="doubao_responses",
+    )
+
+    decision = await gate.decide(
+        goal="g",
+        action={"action_id": "a001", "type": "click"},
+        current_bytes=_test_jpeg(),
+        cached_popup_before_bytes=_test_jpeg(),
+        cached_after_bytes=_test_jpeg(),
+    )
+    assert decision.verdict == GATE_EXECUTE_ORIGINAL
+    assert decision.error == "RuntimeError"
+    assert "保底执行" in decision.reason or "EXECUTE_ORIGINAL" in decision.reason
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_gate_unparseable_response_falls_back_to_execute_original(monkeypatch):
+    async def fake_call(**_kwargs):
+        return "I think you should probably skip this popup."  # 自然语言，非 JSON 也无 verdict 关键字
+
+    monkeypatch.setattr(ephemeral_module, "_call_vlm_with_images", fake_call)
+
+    settings = Settings(
+        _env_file=None,
+        vlm_backend="doubao_responses",
+        trajectory_cache_ephemeral_action_enabled=True,
+        trajectory_cache_ephemeral_gate_enabled=True,
+        trajectory_cache_ephemeral_gate_backend="openai_compatible",
+        trajectory_cache_ephemeral_gate_api_url="https://example.com/chat",
+        trajectory_cache_ephemeral_gate_api_key="key",
+        trajectory_cache_ephemeral_gate_model="m",
+        trajectory_cache_ephemeral_gate_use_recovery_vlm_config=False,
+    )
+    gate = ephemeral_module.CacheEphemeralGateVerifier(
+        settings=settings,
+        main_vlm_backend="doubao_responses",
+    )
+
+    decision = await gate.decide(
+        goal="g",
+        action={"action_id": "a001", "type": "click"},
+        current_bytes=_test_jpeg(),
+        cached_popup_before_bytes=_test_jpeg(),
+        cached_after_bytes=_test_jpeg(),
+    )
+    assert decision.verdict == GATE_EXECUTE_ORIGINAL
+    assert decision.error == "parse_error"
+
+
+def test_overseas_cu_to_chat_config_translates_claude_and_gpt():
+    assert ephemeral_module._overseas_cu_to_chat_config(
+        main_backend="claude_cu",
+        main_api_url="https://api.anthropic.com/v1/messages",
+        main_api_key="k",
+        main_model="claude-sonnet",
+    ) == ("claude_messages", "https://api.anthropic.com/v1/messages", "k", "claude-sonnet")
+
+    assert ephemeral_module._overseas_cu_to_chat_config(
+        main_backend="gpt_cu",
+        main_api_url="https://api.openai.com/v1/responses",
+        main_api_key="k",
+        main_model="cu-preview",
+    ) == ("openai_compatible", "https://api.openai.com/v1/chat/completions", "k", "cu-preview")
+
+    # 自部署代理保留 host 前缀
+    assert ephemeral_module._overseas_cu_to_chat_config(
+        main_backend="gpt_cu",
+        main_api_url="https://my-proxy.internal/openai/v1/responses",
+        main_api_key="k",
+        main_model="m",
+    ) == ("openai_compatible", "https://my-proxy.internal/openai/v1/chat/completions", "k", "m")
 
 
 @pytest.mark.asyncio
