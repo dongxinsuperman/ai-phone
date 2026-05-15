@@ -382,9 +382,14 @@ class V3PlanLocator:
         timeout_sec: float,
     ) -> str:
         image_b64 = base64.b64encode(image_bytes).decode("ascii")
+        # max_tokens=8192：locator 表面只输出 <point>x y</point> 或 "无"，
+        # 但 thinking budget 打开时模型会先生成长 thought 再吐坐标，整段还是
+        # 走 max_tokens 同一份预算。1024 在 thinking 模式下偶发把 thinking
+        # 内容写完就没 budget 写坐标了，导致 locator 看似无返回。统一拉到
+        # 8192 与其它辅助 vlm 对齐，不会让模型主动多写。
         payload: Dict[str, Any] = {
             "model": model,
-            "max_tokens": 1024,
+            "max_tokens": 8192,
             "system": (
                 "你是手机截图元素定位器。只输出坐标标签或 无，"
                 "不负责决定动作类型。"

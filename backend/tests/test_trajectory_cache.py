@@ -868,7 +868,7 @@ async def test_ephemeral_claude_messages_payload_enables_thinking(monkeypatch):
         "type": "enabled",
         "budget_tokens": 1024,
     }
-    assert captured["payload"]["max_tokens"] == 4096
+    assert captured["payload"]["max_tokens"] == 8192
 
 
 def test_build_cache_assertion_prompt_contains_replay_summary():

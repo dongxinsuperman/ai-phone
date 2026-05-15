@@ -747,9 +747,13 @@ async def _messages_images(
                 },
             }
         )
+    # max_tokens=8192：见 recovery.py 同位置注释。anthropic /v1/messages 是硬
+    # 上限不是目标值，调高只是防截断，不会让模型多输出。瞬态 UI 标签判定的
+    # 长尾同样可能写"附图1有 X，附图2有 Y，所以放行/拒绝/接管" 完整 thought，
+    # 4096 偶发也能压到边缘，统一拉到 8192 给所有辅助 vlm 一致 buffer。
     payload: Dict[str, Any] = {
         "model": model,
-        "max_tokens": 4096,
+        "max_tokens": 8192,
         "system": system,
         "messages": [{"role": "user", "content": content}],
     }

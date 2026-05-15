@@ -364,9 +364,15 @@ class ClaudeComputerUseClient:
         else:
             system_field = self.system_prompt
 
+        # max_tokens=8192：主 VLM 走 Computer Use agent loop，每轮要在同一个
+        # response 里写完 thought + tool_use（claude 4.x 还可能挂 thinking 块）。
+        # 4096 在长 thought / extended thinking 场景偶发把 tool_use 截掉一半，
+        # 整步动作丢失（比 finished 截断后果更严重，是直接卡死 agent loop）。
+        # 8192 是 claude 3.5 / 4 / 4.5 全系合法上限，调高不会让模型主动多写，
+        # 只是把"输出预算"这个硬约束抬到长尾之外，与辅助 vlm 各站点对齐。
         payload: Dict[str, Any] = {
             "model": self.model,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "system": system_field,
             "messages": request_messages,
             "tools": [computer_tool],
