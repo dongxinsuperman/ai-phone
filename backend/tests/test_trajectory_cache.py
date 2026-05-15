@@ -1330,6 +1330,15 @@ def test_build_v3_cache_payload_cu_prefers_actual_click_over_business_intent():
 
 @pytest.mark.asyncio
 async def test_v3_plan_intent_cleaner_uses_model_contract(monkeypatch):
+    """V3 cleaner 输入瘦身：只暴露当前 action 的 type / thought + 用户原始 goal。
+
+    刻意守住"输入最小化"这条线：
+    - 必须暴露：goal（仅作为「该步用泛化还是用具体文案」的判断锚点）+ type + thought。
+    - 不暴露：业务子目标（intent / label）、上下文（prev / next）、规则候选
+      （rule_plan_intent）、raw 等。否则模型容易把"下一步要干嘛"或"业务侧
+      子目标"当成"当前一步在做什么"。
+    """
+
     from ai_phone.server.trajectory_cache import v3_service as v3_service_module
 
     seen = {}
@@ -1350,25 +1359,42 @@ async def test_v3_plan_intent_cleaner_uses_model_contract(monkeypatch):
     )
 
     result = await cleaner.clean_action(
-        goal="点击卡片进入习题页",
         action={
             "index": 1,
             "type": "click",
             "role": "optional_ephemeral",
             "intent": "点击卡片进入习题页",
+            "label": "知道了按钮",
+            "plan_intent": "点击知道了",
             "thought": "弹出了护眼提醒，需要点击“知道了”按钮关闭后继续。",
         },
-        next_action={"index": 2, "type": "click", "intent": "点击卡片"},
+        goal="点击卡片进入习题页",
     )
+
+    prompt = seen["prompt"]
 
     assert result["plan_intent"] == "点击弹窗的知道了按钮"
     assert seen["images"] == []
-    assert "actual_thought" in seen["prompt"]
-    assert "weak_business_intent" in seen["prompt"]
-    assert "actual_thought 是首跑主 VLM 对本次实际操作的描述，必须作为主体" in seen["prompt"]
-    assert "如果 weak_business_intent / weak_label 和 actual_thought 冲突，必须服从 actual_thought" in seen["prompt"]
-    assert "不要把首次屏幕里偶然出现的具体文案升级成下次必须寻找的目标" in seen["prompt"]
-    assert "如果 role=optional_ephemeral" in seen["prompt"]
+
+    assert "用户原始目标：点击卡片进入习题页" in prompt
+    assert "当前 action：" in prompt
+    assert "thought" in prompt
+    assert "弹出了护眼提醒" in prompt
+    assert "plan_intent 必须以中文动词开头" in prompt
+    assert "用户原意决定泛化粒度" in prompt
+    assert "状态 / 反思 / 完成时态描述" in prompt
+
+    assert "上一 action" not in prompt
+    assert "下一 action" not in prompt
+    assert "weak_label" not in prompt
+    assert "weak_business_intent" not in prompt
+    assert "rule_plan_intent" not in prompt
+    assert "raw_action_text" not in prompt
+    assert "actual_thought" not in prompt
+    assert "8 成权重" not in prompt
+    assert "role=optional_ephemeral" not in prompt
+    assert "知道了按钮" not in prompt
+    assert "点击知道了" not in prompt
 
 
 @pytest.mark.asyncio
@@ -1433,13 +1459,15 @@ async def test_v3_plan_intent_cleaner_rejects_conflicting_target(monkeypatch, _t
 def test_build_v3_cache_payload_rejects_cu_english_state_description_thought():
     """海外模型常见的英文"陈述/反思/状态"thought 不能被规则误抓为 plan_intent 目标。
 
-    场景对应真实 Claude CU 输出：
-        "The app has been opened but I'm not yet at the WAR OF WHALES ad screen..."
-        "The current page shows Home content..."
-        "I've entered 24 as the Trigger Price..."
-        "00%, indicating BAND/USDT is already selected"
+    用通用占位（Alpha / Beta / Gamma 控件名 + 通用 UI 类型词）演示问题形态：
+        "The X has been opened but I'm not yet at the Y screen..."
+        "The current page shows Z content..."
+        "I've entered ... in the input field"
+        "..., indicating ... is already selected"
     这些都是"我刚才看到 / 我刚才做了"的描述，不是"下一步要做"的动作。规则
-    兜底必须识破，让出空间给 cleaner；如有可用 label 则直接用 label。
+    兜底必须识破，让出空间给上层 cleaner；如规则候选不可用，至少要退化到
+    "<动词>目标元素"这种保守通用 fallback，而不是把英文陈述句原样写进
+    plan_intent。
     """
 
     payload = build_v3_cache_payload(
@@ -1448,7 +1476,7 @@ def test_build_v3_cache_payload_rejects_cu_english_state_description_thought():
             "cache_key": "k3-cu-state-desc",
             "device_code": "D1",
             "run_semantic_hash": "h",
-            "run_semantic_text": "完成下单流程",
+            "run_semantic_text": "完成示例流程",
             "source_run_id": "run-cu-state-desc",
             "source_vlm_backend": "claude_cu",
             "actions": [
@@ -1457,46 +1485,41 @@ def test_build_v3_cache_payload_rejects_cu_english_state_description_thought():
                     "action_id": "a001",
                     "type": "click",
                     "thought": (
-                        "The app has been opened but I'm not yet at the WAR OF WHALES ad "
-                        "screen, dismiss it"
+                        "The app has been opened but I'm not yet at the Alpha screen, "
+                        "dismiss it"
                     ),
                 },
                 {
                     "index": 2,
                     "action_id": "a002",
                     "type": "click",
-                    "label": "Cancel按钮",
                     "thought": (
-                        "The new version dialog has appeared and I'm at the upgrade prompt, "
-                        "tap Cancel"
+                        "The dialog has appeared and I'm at the upgrade prompt, "
+                        "tap the Cancel button"
                     ),
                 },
                 {
                     "index": 3,
                     "action_id": "a003",
                     "type": "click",
-                    "label": "Futures标签页",
                     "thought": "The current page shows Home content and is currently displayed.",
                 },
                 {
                     "index": 4,
                     "action_id": "a004",
                     "type": "click",
-                    "label": "Copy标签页",
-                    "thought": "00%, indicating BAND/USDT is already selected on the page",
+                    "thought": "0%, indicating Alpha is already selected on the page",
                 },
                 {
                     "index": 5,
                     "action_id": "a005",
                     "type": "click",
-                    "label": "下一步按钮",
-                    "thought": "I've entered 24 as the Trigger Price in the input field",
+                    "thought": "I've entered text in the input field",
                 },
                 {
                     "index": 6,
                     "action_id": "a006",
                     "type": "click",
-                    "label": "Confirm按钮",
                     "thought": "The confirmation dialog has appeared on screen",
                 },
             ],
@@ -1507,22 +1530,21 @@ def test_build_v3_cache_payload_rejects_cu_english_state_description_thought():
     plan_intents = [a["plan_intent"] for a in payload["actions"]]
 
     for plan_intent in plan_intents:
-        assert "has been" not in plan_intent.lower()
-        assert "i've" not in plan_intent.lower()
-        assert "i'm" not in plan_intent.lower()
-        assert "appeared" not in plan_intent.lower()
-        assert "indicating" not in plan_intent.lower()
-        assert "currently" not in plan_intent.lower()
-        assert "not yet" not in plan_intent.lower()
-        assert "shows" not in plan_intent.lower()
+        lowered = plan_intent.lower()
+        assert "has been" not in lowered
+        assert "i've" not in lowered
+        assert "i'm" not in lowered
+        assert "appeared" not in lowered
+        assert "indicating" not in lowered
+        assert "currently" not in lowered
+        assert "not yet" not in lowered
+        assert "shows" not in lowered
+        assert "the page" not in lowered
+        assert "the dialog" not in lowered
+        assert plan_intent.startswith(("点击", "关闭", "打开", "选择", "切换", "输入", "返回")), (
+            f"规则候选必须以中文动词开头，实际：{plan_intent!r}"
+        )
         assert len(plan_intent) <= 60
-
-    assert plan_intents[0] == "点击目标元素"
-    assert plan_intents[1] == "点击Cancel按钮"
-    assert plan_intents[2] == "点击Futures标签页"
-    assert plan_intents[3] == "点击Copy标签页"
-    assert plan_intents[4] == "点击下一步按钮"
-    assert plan_intents[5] == "点击Confirm按钮"
 
 
 @pytest.mark.asyncio
@@ -1542,9 +1564,9 @@ async def test_v3_plan_intent_cleaner_accepts_chinese_for_english_state_thought(
 
     cleaner_outputs = iter(
         [
-            '{"plan_intent":"关闭WAR OF WHALES广告","confidence":0.95,"reason":"清障"}',
+            '{"plan_intent":"关闭顶部广告弹窗","confidence":0.95,"reason":"清障"}',
             '{"plan_intent":"点击Cancel按钮关闭升级弹窗","confidence":0.92,"reason":"清障"}',
-            '{"plan_intent":"点击Buy(Long)按钮","confidence":0.93,"reason":"业务点击"}',
+            '{"plan_intent":"点击主操作按钮","confidence":0.93,"reason":"业务点击"}',
             '{"plan_intent":"点击Confirm按钮","confidence":0.94,"reason":"业务点击"}',
         ]
     )
@@ -1568,7 +1590,7 @@ async def test_v3_plan_intent_cleaner_accepts_chinese_for_english_state_thought(
     run = Run(
         id="run-v3-cleaner-cu-en",
         device_serial="D1",
-        goal="完成下单流程",
+        goal="完成示例流程",
         status="success",
         engine="vlm",
         reason="ok",
@@ -1581,7 +1603,7 @@ async def test_v3_plan_intent_cleaner_accepts_chinese_for_english_state_thought(
             "cache_key": "k3-cleaner-cu-en",
             "device_code": "D1",
             "run_semantic_hash": "h",
-            "run_semantic_text": "完成下单流程",
+            "run_semantic_text": "完成示例流程",
             "source_run_id": run.id,
             "source_vlm_backend": "claude_cu",
             "actions": [
@@ -1590,8 +1612,8 @@ async def test_v3_plan_intent_cleaner_accepts_chinese_for_english_state_thought(
                     "action_id": "a001",
                     "type": "click",
                     "thought": (
-                        "The app has been opened but I'm not yet at the WAR OF WHALES ad "
-                        "screen, dismiss it"
+                        "The app has been opened but I'm not yet at the Alpha screen, "
+                        "dismiss it"
                     ),
                 },
                 {
@@ -1600,13 +1622,13 @@ async def test_v3_plan_intent_cleaner_accepts_chinese_for_english_state_thought(
                     "type": "click",
                     "role": "optional_ephemeral",
                     "ephemeral_meta": {"category": "version_upgrade"},
-                    "thought": "The new version dialog has appeared, tap Cancel to dismiss",
+                    "thought": "The dialog has appeared, tap the Cancel button to dismiss",
                 },
                 {
                     "index": 3,
                     "action_id": "a003",
                     "type": "click",
-                    "thought": "I've entered 24 as the Trigger Price in the input field",
+                    "thought": "I've entered text in the input field",
                 },
                 {
                     "index": 4,
@@ -1625,9 +1647,9 @@ async def test_v3_plan_intent_cleaner_accepts_chinese_for_english_state_thought(
     sources = [a.get("plan_intent_meta", {}).get("source") for a in payload["actions"]]
 
     assert plan_intents == [
-        "关闭WAR OF WHALES广告",
+        "关闭顶部广告弹窗",
         "点击Cancel按钮关闭升级弹窗",
-        "点击Buy(Long)按钮",
+        "点击主操作按钮",
         "点击Confirm按钮",
     ]
     assert sources == [
@@ -1642,11 +1664,88 @@ async def test_v3_plan_intent_cleaner_accepts_chinese_for_english_state_thought(
 
 
 @pytest.mark.asyncio
+async def test_v3_plan_intent_cleaner_preserves_ordinal_generalization(
+    monkeypatch, _test_engine, session
+):
+    """泛化保留：用户说"点击第一个卡片"，cleaner 输出"点击第一个卡片"必须被采纳，
+    不能因为 thought 里偶然出现的具体卡片文案就被规则候选误杀。
+
+    这条守住"事实优先 + 泛化保留"原则：
+    - 用户原意是"第一个"这种序号泛化，复跑当天第一个卡片可能换内容；
+    - cleaner 看 thought 后输出泛化短语；
+    - 安全网不能因为 rule 候选误带具体内容就拒绝 cleaner 的泛化短语；
+    - 收集层 strip 必须把 label 移除，避免具体业务文案沉淀到 cache。
+    """
+
+    from ai_phone.server.trajectory_cache import v3_service as v3_service_module
+
+    async def fake_call_vlm_with_images(**_kwargs):
+        return '{"plan_intent":"点击第一个卡片","confidence":0.94,"reason":"用户原意是序号泛化"}'
+
+    monkeypatch.setattr(v3_service_module, "_call_vlm_with_images", fake_call_vlm_with_images)
+    monkeypatch.setattr(
+        v3_service_module,
+        "get_settings",
+        lambda: Settings(
+            _env_file=None,
+            assistant_backend="doubao_responses",
+            assistant_api_url="https://example.test/responses",
+            assistant_api_key="key",
+            assistant_model="vision-model",
+        ),
+    )
+
+    run = Run(
+        id="run-v3-cleaner-ordinal",
+        device_serial="D1",
+        goal="点击第一个卡片",
+        status="success",
+        engine="vlm",
+        reason="ok",
+    )
+    session.add(run)
+    await session.flush()
+    payload = build_v3_cache_payload(
+        {
+            "schema_version": 2,
+            "cache_key": "k3-cleaner-ordinal",
+            "device_code": "D1",
+            "run_semantic_hash": "h",
+            "run_semantic_text": "点击第一个卡片",
+            "source_run_id": run.id,
+            "source_vlm_backend": "doubao_responses",
+            "actions": [
+                {
+                    "index": 1,
+                    "action_id": "a001",
+                    "type": "click",
+                    "label": "示例条目 ALPHA",
+                    "intent": "点击示例条目 ALPHA 进入详情",
+                    "thought": "用户要点击第一个卡片，当前屏幕第一个卡片显示示例条目 ALPHA，点击它。",
+                }
+            ],
+            "source_completion": {},
+        }
+    )
+
+    await v3_service_module._clean_v3_plan_intents(session=session, run=run, payload=payload)
+
+    action = payload["actions"][0]
+    assert action["plan_intent"] == "点击第一个卡片"
+    assert action["plan_intent_meta"]["source"] == "v3_plan_cleaner"
+    assert "label" not in action, "V3 cache 必须从源头剔除 label，避免业务子目标污染"
+    assert "ALPHA" not in action["plan_intent"]
+    assert "示例条目" not in action["plan_intent"]
+
+
+@pytest.mark.asyncio
 async def test_save_v3_trajectory_cache_from_run_steps(monkeypatch, _test_engine, session):
     from ai_phone.server.trajectory_cache import service as service_module
+    from ai_phone.server.trajectory_cache import v3_service as v3_service_module
 
     settings = Settings(_env_file=None, trajectory_cache_ephemeral_action_enabled=False)
     monkeypatch.setattr(service_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(v3_service_module, "get_settings", lambda: settings)
     session.add(Device(serial="D3", platform="android", screen_width=1000, screen_height=2000))
     run = Run(
         id="run-cache-v3-ok",

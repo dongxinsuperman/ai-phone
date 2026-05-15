@@ -353,18 +353,14 @@ async def _clean_v3_plan_intents(
         )
         return
 
+    goal = str(run.goal or "")
     actions = list(payload.get("actions") or [])
     cleaned = 0
     rejected = 0
-    for idx, action in enumerate(actions):
+    for action in actions:
         rule_plan_intent = _clean_text(action.get("plan_intent") or "")
         try:
-            result = await cleaner.clean_action(
-                goal=str(run.goal or ""),
-                action=action,
-                prev_action=actions[idx - 1] if idx > 0 else None,
-                next_action=actions[idx + 1] if idx + 1 < len(actions) else None,
-            )
+            result = await cleaner.clean_action(action=action, goal=goal)
         except Exception as exc:  # noqa: BLE001
             await _write_log(
                 session,
@@ -473,10 +469,8 @@ class V3PlanIntentCleaner:
     async def clean_action(
         self,
         *,
-        goal: str,
         action: Dict[str, Any],
-        prev_action: Optional[Dict[str, Any]] = None,
-        next_action: Optional[Dict[str, Any]] = None,
+        goal: str = "",
     ) -> Dict[str, Any]:
         backend, api_url, api_key, model, timeout_sec = self._config()
         started = time.monotonic()
@@ -487,12 +481,7 @@ class V3PlanIntentCleaner:
             model=model,
             timeout_sec=timeout_sec,
             system="你是 V3 轨迹缓存的动作语义清洗器。只输出 JSON，不要 markdown。",
-            prompt=build_v3_plan_cleaner_prompt(
-                goal=goal,
-                action=action,
-                prev_action=prev_action,
-                next_action=next_action,
-            ),
+            prompt=build_v3_plan_cleaner_prompt(action=action, goal=goal),
             images=[],
         )
         data = _extract_json_object(text)
@@ -502,54 +491,48 @@ class V3PlanIntentCleaner:
         return data
 
 
-def build_v3_plan_cleaner_prompt(
-    *,
-    goal: str,
-    action: Dict[str, Any],
-    prev_action: Optional[Dict[str, Any]] = None,
-    next_action: Optional[Dict[str, Any]] = None,
-) -> str:
+def build_v3_plan_cleaner_prompt(*, action: Dict[str, Any], goal: str = "") -> str:
+    """V3 cleaner 极简 prompt。
+
+    输入只暴露三件事：
+    - 用户原始目标 goal：仅作为「该步用泛化还是用具体文案」的判断锚点，
+      不参与「操作的是哪个控件」的判断（那由 thought 决定）。
+    - 当前 action 的 type 和 thought：当前一步真正做了什么的唯一事实源。
+    刻意不传：上一/下一 action（避免承上启下的拼接污染）、label / intent /
+    规则候选 / raw（避免业务子目标和规则猜测引入幻觉）。
+    """
+    goal_text = (goal or "").strip() or "（未提供，按 thought 自身决定泛化粒度）"
     return (
         "请把一次成功轨迹中的当前 action 清洗成 V3 回放用的 plan_intent。\n"
-        "plan_intent 是下次回放时给定位模型使用的目标短语。\n"
-        "它不是思考摘要、不是页面总结、不是用户总目标，也不是最终结果。\n\n"
-        f"用户原始目标：{goal}\n"
-        f"上一 action：{_json_dumps_compact(_v3_action_brief(prev_action))}\n"
-        f"当前 action：{_json_dumps_compact(_v3_action_brief(action))}\n"
-        f"下一 action：{_json_dumps_compact(_v3_action_brief(next_action))}\n\n"
+        "plan_intent 是下次回放时给定位模型使用的目标短语，定位模型会拿当前截图 + 这条短语去找控件。\n"
+        "因此 plan_intent 只描述「当前 action 这一步真正在做什么」，不写下一步、不写业务结果、不写页面状态。\n\n"
+        f"用户原始目标：{goal_text}\n"
+        f"当前 action：{_json_dumps_compact(_v3_action_brief(action))}\n\n"
         "生成规则：\n"
-        "- 不要生成、翻译、改写动作协议；当前 action 的 type / driver_method 已由系统保存。\n"
-        "- plan_intent 只输出当前 action 实际要操作的目标对象、目标区域或输入焦点。\n"
-        "- actual_thought 是首跑主 VLM 对本次实际操作的描述，必须作为主体；可理解为 8 成权重。\n"
-        "- weak_business_intent / weak_label 可能是用户子步骤、业务结果或页面目标，只能低权重润色；可理解为 2 成权重。\n"
-        "- 如果 weak_business_intent / weak_label 和 actual_thought 冲突，必须服从 actual_thought。\n"
-        "- 如果当前 action 是点按类，输出被点按的控件或区域，不要输出下一步页面、业务结果或原因。\n"
-        "- 如果当前 action 是输入类，输出输入框或输入区域，不要把输入内容当作目标。\n"
-        "- 如果当前 action 是移动/拖拽/滚动类，输出起点区域、目标区域或可滚动区域，不要输出整段操作解释。\n"
-        "- 如果当前 action 不需要屏幕定位，且无法提炼目标，plan_intent 输出空字符串。\n"
-        "- 目标短语建议 6-30 个中文字符；必须表达当前 action 实际目标，不要复制用户总目标。\n"
-        "- plan_intent 必须以中文动词开头：点击 / 输入 / 关闭 / 打开 / 选择 / 切换 / 滑动 / 长按 / 双击 / 返回 / 等待。\n"
-        "- 即使 actual_thought / weak_label / weak_business_intent 全是英文，也必须输出中文动词开头的短语；\n"
-        "  英文 thought 不允许原样照搬到 plan_intent，必须先理解再用中文动词重写。\n"
-        "- 截图上稳定可见的 UI 文案（按钮文字、标签页名、输入框 placeholder、菜单项、品牌/产品名等）\n"
-        "  无论是中文还是英文，都必须按截图原文照写到 plan_intent，不要翻译、不要意译、不要大小写改写，\n"
-        "  以便定位模型按截图原文逐字符搜索；其它解释性 / 推理性英文必须翻译为中文或删除。\n"
-        "- 当 actual_thought 是状态/反思/完成时态描述，例如包含「has been / have been / I've / I'm /\n"
-        "  appeared / not yet / opened but / is already / indicating / the page shows / the dialog has」\n"
-        "  这类标记，说明模型在描述「现在屏幕长什么样」或「刚刚做了什么」，不是下一步动作；\n"
-        "  必须从中识别真正的「被点按 / 被输入 / 被关闭」的控件，再用中文动词 + 控件名重写，\n"
-        "  绝不能把这种描述句原样写进 plan_intent。\n"
-        "- 如果 role=optional_ephemeral，必须表达真实清障目标；不要写后续业务目标。\n"
-        "- 普通业务 action 要保持用户目标粒度；用户没指定具体文案/编号/条目时，不要把首次屏幕里偶然出现的具体文案升级成下次必须寻找的目标。\n"
-        "- 可以保留稳定控件文字；按钮、标签页、输入框占位符属于控件文字，列表项、题目、商品、活动、文章标题属于业务内容。\n"
-        "- 多个候选都可点击时，优先用稳定 UI 特征表达：位置 + 控件类型 + 稳定文字；不要使用动态业务内容。\n"
-        "- 如果 actual_thought 说点击 A 控件，而 weak_business_intent 说进入 B 页面，plan_intent 必须写 A 控件，不要写 B 页面。\n"
-        "- 禁止输出完整 thought、页面描述、原因分析、坐标、截图状态、模型裁决词。\n"
-        "- 不确定时输出当前 action 的保守通用目标，不要加戏。\n"
-        "- 输出形式参考（仅参考结构，禁止照抄文案，文案必须来自当前 action 的真实 UI）：\n"
-        "  · <动词> + <控件原文> + <控件类型>，例如：点击 <按钮原文> 按钮 / 切换到 <标签原文> 标签页\n"
-        "  · <动词> + <控件类型> + （区域 / 位置）：点击 输入框（顶部）/ 关闭 弹窗\n"
-        "  · 输入类：输入 <内容>（<输入框文案 / 占位符>）\n\n"
+        "1. plan_intent 必须以中文动词开头：点击 / 输入 / 关闭 / 打开 / 选择 / 切换 / 滑动 / 长按 / 双击 / 返回 / 等待。\n"
+        "2. thought 是英文时必须翻译为中文动词短语，禁止把英文整句照搬到 plan_intent。\n"
+        "3. 截图上稳定可见的 UI 原文（按钮文字、标签名、输入框 placeholder、菜单项、品牌/产品名）\n"
+        "   无论中英文都按原文照写，不翻译、不意译、不大小写改写，以便定位模型逐字符搜索。\n"
+        "4. 状态 / 反思 / 完成时态描述（典型标记：has been / have been / I've / I'm / appeared /\n"
+        "   not yet / opened but / is already / indicating / the page shows / the dialog has /\n"
+        "   现在屏幕 / 已经 / 刚刚），说明模型在描述「屏幕现状」或「刚做了什么」，\n"
+        "   不是下一步动作；必须从中识别真正被点按 / 被输入 / 被关闭的控件后用中文动词重写。\n"
+        "5. 用户原意决定泛化粒度（最高优先级）：参考用户原始目标判断这一步该用泛化还是具体——\n"
+        "   · 用户原始目标里用泛化指代（序号 / 位置 / 语义化指代等）来描述这一步的目标 →\n"
+        "     plan_intent 必须保留同等泛化粒度，**禁止使用 thought 里同时出现的任何具体文案**\n"
+        "     （那只是首跑当天屏幕上恰好显示的内容，下次回放屏幕上很可能换成别的内容）；\n"
+        "   · 用户原始目标里直接给了某个具体控件文案 → plan_intent 按该具体文案 +\n"
+        "     thought 描述的控件类型写。\n"
+        "   thought 里同时出现「泛化指代 + 具体文案」时（这是首跑模型描述屏幕实际内容\n"
+        "   的常见模式），一律按用户原意决定，**不要被 thought 后半段的具体文案带偏**。\n"
+        "6. thought 决定操作的控件（次优先级）：plan_intent 描述哪个控件，由 thought\n"
+        "   决定（哪个按钮 / 哪个卡片 / 哪个输入框）；用户原始目标只决定描述粒度，\n"
+        "   不决定操作哪个控件。如果 thought 描述的控件和用户原始目标无关\n"
+        "   （首跑可能多了清障 / 中转动作），按 thought 写真实操作的控件即可，\n"
+        "   不要硬把用户原始目标塞进 plan_intent。\n"
+        "7. 不输出下一步、不输出业务结果、不输出原因分析、不输出页面状态、不输出坐标。\n"
+        "8. 不确定时按 thought 里能识别到的「控件类型 + 大致位置」保守输出，不要加戏；\n"
+        "   thought 完全无法识别任何控件信息时返回空字符串，由系统兜底，禁止凭空捏造或输出占位短语。\n\n"
         "只输出 JSON：\n"
         "{\n"
         '  "plan_intent": "目标控件短语",\n'
@@ -560,22 +543,19 @@ def build_v3_plan_cleaner_prompt(
 
 
 def _v3_action_brief(action: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """V3 cleaner 最小输入：只暴露"实际 action 行为"两件事。
+
+    刻意不暴露 label / intent / rule_plan_intent / raw / role / ephemeral_meta，
+    避免业务子目标、规则候选、协议噪点把 cleaner 引偏。prev_action / next_action /
+    用户 goal 也不在这里 —— 调用方根本不传，治本不传胜过 prompt 里劝模型不看。
+    """
     if not action:
         return {}
     brief: Dict[str, Any] = {}
-    for key in ("action_id", "index", "type", "role", "ephemeral_meta", "content"):
-        if action.get(key) not in (None, ""):
-            brief[key] = action.get(key)
+    if action.get("type") not in (None, ""):
+        brief["type"] = action.get("type")
     if action.get("thought") not in (None, ""):
-        brief["actual_thought"] = action.get("thought")
-    if action.get("label") not in (None, ""):
-        brief["weak_label"] = action.get("label")
-    if action.get("intent") not in (None, ""):
-        brief["weak_business_intent"] = action.get("intent")
-    if action.get("plan_intent") not in (None, ""):
-        brief["rule_plan_intent"] = action.get("plan_intent")
-    if action.get("raw") not in (None, ""):
-        brief["raw_action_text"] = action.get("raw")
+        brief["thought"] = action.get("thought")
     return brief
 
 
@@ -586,7 +566,20 @@ def _normalize_v3_action(action: Dict[str, Any], *, source_vlm_backend: str = ""
         normalized,
         source_vlm_backend=source_vlm_backend,
     )
-    return normalized
+    return _strip_v3_action_for_cache(normalized)
+
+
+def _strip_v3_action_for_cache(action: Dict[str, Any]) -> Dict[str, Any]:
+    """收集层瘦身：V3 cache 只落"实际 action 行为"+ plan_intent + audit。
+
+    `label` 是 V2 业务侧子目标标签，V3 回放层完全不消费，且会让事后排查容易把
+    "业务子目标"误读成"当前一步真正点了什么"。在写库前直接剔除，从源头降噪。
+    其它回放/audit 字段（type / driver_method / role / point / start / end /
+    content / app / name / bundle_id / seconds / direction / duration_ms /
+    plan_intent / intent / raw / thought）保持不动。
+    """
+    action.pop("label", None)
+    return action
 
 
 def _plan_intent_for_action(action: Dict[str, Any], *, source_vlm_backend: str = "") -> str:

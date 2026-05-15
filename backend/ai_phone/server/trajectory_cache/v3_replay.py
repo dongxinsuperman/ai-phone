@@ -208,7 +208,11 @@ class V3PlanLocator:
             self._chat_single_image(prompt=prompt, image_bytes=screenshot_bytes),
             timeout=timeout_sec,
         )
-        parsed = parse_v3_locator_response(text, coord_space=self.coord_space)
+        parsed = parse_v3_locator_response(
+            text,
+            coord_space=self.coord_space,
+            expected_action_type=str(action.get("type") or ""),
+        )
         if parsed is None or not parsed.is_known:
             raise V3LocatorMiss(f"v3 locator 未定位: {text[:160]}")
         expected_type = str(action.get("type") or "")
@@ -340,8 +344,8 @@ class V3PlanLocator:
                 {
                     "role": "system",
                     "content": (
-                        "你是截图元素定位器。只输出 Action 或 无，"
-                        "Action 必须使用请求中的动作类型。"
+                        "你是手机截图元素定位器。只输出坐标标签或 无，"
+                        "不负责决定动作类型。"
                     ),
                 },
                 {
@@ -380,8 +384,8 @@ class V3PlanLocator:
                 {
                     "role": "system",
                     "content": (
-                        "你是截图元素定位器。只输出 Action 或 无，"
-                        "Action 必须使用请求中的动作类型。"
+                        "你是手机截图元素定位器。只输出坐标标签或 无，"
+                        "不负责决定动作类型。"
                     ),
                 },
                 {
@@ -428,8 +432,8 @@ class V3PlanLocator:
             "model": model,
             "max_tokens": 1024,
             "system": (
-                "你是截图元素定位器。只输出 Action 或 无，"
-                "Action 必须使用请求中的动作类型。"
+                "你是手机截图元素定位器。只输出坐标标签或 无，"
+                "不负责决定动作类型。"
             ),
             "messages": [
                 {
@@ -1367,30 +1371,41 @@ def build_v3_locator_prompt(
     trajectory: Dict[str, Any],
     action: Dict[str, Any],
     coord_space: str,
-    ) -> str:
+) -> str:
     action_type = str(action.get("type") or "")
+    source_action_type = str(action.get("locator_source_type") or action_type)
     plan_intent = str(action.get("plan_intent") or action.get("intent") or "").strip()
-    coord_hint = (
-        "输出截图实际像素坐标"
-        if coord_space == "absolute"
-        else "输出 0-1000 归一化坐标"
-    )
-    if action_type == A.ACTION_DRAG:
-        action_schema = "drag(start='<point>x1 y1</point>', end='<point>x2 y2</point>')"
+    target = plan_intent or _v3_target_text(action)
+    if source_action_type == A.ACTION_TYPE:
+        locate_rule = (
+            "- 输入类动作：只定位要输入的输入框、文本框或可编辑区域的中心点，"
+            "输出：<point>x y</point>。输入内容由缓存执行，定位模型不要输出输入内容。\n"
+        )
+    elif source_action_type == A.ACTION_DRAG:
+        locate_rule = (
+            "- 拖拽/滑动类动作：定位拖拽起点和终点，输出：\n"
+            "  <start>x1 y1</start>\n"
+            "  <end>x2 y2</end>\n"
+        )
     else:
-        action_schema = f"{action_type}(point='<point>x y</point>')"
+        locate_rule = (
+            "- 点击 / 双击 / 长按类动作：定位目标控件、目标区域或目标元素的中心点，"
+            "输出：<point>x y</point>。\n"
+        )
     return (
-        "请在当前截图中定位目标并返回动作。\n"
-        f"目标：{plan_intent}\n"
-        f"动作：{action_type}\n"
-        f"缓存原始动作：{_action_brief(action)}\n"
-        f"坐标：{coord_hint}\n"
-        "要求：必须找到目标元素的中心点；不要复用缓存旧坐标；"
-        "如果目标不可见、被弹窗遮挡、或只能猜测，请输出：无。\n"
-        "只输出：\n"
-        f"Action: {action_schema}\n"
-        "找不到输出：无\n"
-        "不要输出其他内容。"
+        "请在当前手机截图中定位目标控件。\n\n"
+        f"缓存动作类型：{source_action_type}\n"
+        f"目标描述：{target}\n\n"
+        "规则：\n"
+        "1. 只根据当前截图定位，不要复用缓存旧坐标。\n"
+        "2. 你只负责找位置，不负责决定动作类型，不负责执行业务步骤。\n"
+        "3. 如果目标被弹窗遮挡、当前不可见、页面未到达、或需要猜测，输出：无。\n"
+        "4. 不要输出思考过程，不要输出动作解释，不要输出业务结果。\n"
+        "5. 不要改变动作类型，动作类型由系统缓存决定。\n\n"
+        "输出规则：\n"
+        f"{locate_rule}"
+        "- 找不到时只输出：无\n"
+        "- 除上述坐标标签或 无 之外，不要输出任何其他内容。"
     )
 
 
@@ -1454,17 +1469,54 @@ def build_v3_rescue_prompt(
     )
 
 
-def parse_v3_locator_response(text: str, *, coord_space: str = "normalized") -> Optional[A.ParsedAction]:
+def parse_v3_locator_response(
+    text: str,
+    *,
+    coord_space: str = "normalized",
+    expected_action_type: str = "",
+) -> Optional[A.ParsedAction]:
     raw = _strip_markdown_decorations(text or "")
     if raw.strip() in {"无", "none", "None", "NONE", "null"}:
         return None
-    action_texts = A.extract_actions(raw) if "Action:" in raw else []
-    if not action_texts:
-        return None
-    parsed = A.parse_action(action_texts[0])
     normalized_coord_space = (coord_space or "normalized").strip().lower()
-    parsed.coord_space = normalized_coord_space if normalized_coord_space in {"normalized", "absolute"} else "normalized"
-    return parsed
+    if normalized_coord_space not in {"normalized", "absolute"}:
+        normalized_coord_space = "normalized"
+
+    expected = (expected_action_type or "").strip()
+    if expected:
+        if expected == A.ACTION_DRAG:
+            start = _parse_locator_tag_point(raw, "start")
+            end = _parse_locator_tag_point(raw, "end")
+            if start and end:
+                return A.ParsedAction(
+                    action=A.ACTION_DRAG,
+                    start_point=list(start),
+                    end_point=list(end),
+                    raw=raw,
+                    coord_space=normalized_coord_space,
+                )
+        else:
+            point = _parse_locator_tag_point(raw, "point")
+            if point:
+                return A.ParsedAction(
+                    action=expected,
+                    point=list(point),
+                    raw=raw,
+                    coord_space=normalized_coord_space,
+                )
+
+    return None
+
+
+def _parse_locator_tag_point(text: str, tag: str) -> Optional[Tuple[int, int]]:
+    match = re.search(
+        rf"<{re.escape(tag)}>\s*(-?\d+)\s+(-?\d+)\s*</{re.escape(tag)}>",
+        text or "",
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
 
 
 def parse_v3_rescue_response(text: str, *, coord_space: str = "normalized") -> V3RescueDecision:
