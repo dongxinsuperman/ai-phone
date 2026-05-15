@@ -26,7 +26,7 @@ import re
 import time
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
 
 from loguru import logger
 
@@ -394,8 +394,9 @@ def _classify_structured_local(
 #           退回 VLM 后，Claude/GPT CU 没有 open_app 抽象，走 home + 找
 #           图标的路径既慢又不靠谱，必须由起跑线兜底
 #
-# 「应用名」始终要求 ASCII / CJK 引号包裹——避免误抓 goal 内 free-text 提
-# 到的菜单 / Tab 名当 App 名。
+# 「应用名」始终要求成对包裹符号包住——避免误抓 goal 内 free-text 提到的
+# 菜单 / Tab 名当 App 名。这里支持常见 CJK / ASCII 包裹符号，但要求成对
+# 匹配，避免 【淘宝」 这类脏文本被误收。
 _PRELUDE_KILL_KEYWORDS = (
     "杀进程", "杀掉", "关闭app", "关闭App", "kill", "关掉",
     "强制停止", "强制关闭", "强制退出",
@@ -404,17 +405,50 @@ _PRELUDE_RESTART_KEYWORDS = (
     "重新打开", "重启app", "重启App", "重开", "再次打开", "重新启动",
 )
 # 启动型关键词集合：和「App名」紧贴匹配才算触发档 2。"打开" 这种泛动词单独
-# 出现不算（goal="打开蓝牙开关" 不应触发），必须紧跟 「」 包裹的 App 名。
+# 出现不算（goal="打开蓝牙开关" 不应触发），必须紧跟成对符号包裹的 App 名。
 _PRELUDE_OPEN_KEYWORDS = (
     "打开", "进入", "启动", "跳转到", "跳转至", "前往",
     "open", "launch", "go to", "goto", "enter",
 )
-_APP_NAME_RE = re.compile(r"「([^」]+)」")
-# 档 2 专用：检测"启动词 + 「App名」"的紧贴模式。允许中间有空格 / "的" 等
+_APP_NAME_WRAP_PAIRS = (
+    ("「", "」"),
+    ("『", "』"),
+    ("【", "】"),
+    ("〖", "〗"),
+    ("〔", "〕"),
+    ("《", "》"),
+    ("〈", "〉"),
+    ("（", "）"),
+    ("(", ")"),
+    ("[", "]"),
+    ("{", "}"),
+    ("<", ">"),
+    ("“", "”"),
+    ('"', '"'),
+    ("'", "'"),
+)
+
+
+def _build_wrapped_name_pattern() -> str:
+    parts: List[str] = []
+    for left, right in _APP_NAME_WRAP_PAIRS:
+        parts.append(
+            re.escape(left)
+            + r"([^"
+            + re.escape(right)
+            + r"\n]{1,80})"
+            + re.escape(right)
+        )
+    return "(?:" + "|".join(parts) + ")"
+
+
+_WRAPPED_APP_NAME_PATTERN = _build_wrapped_name_pattern()
+_APP_NAME_RE = re.compile(_WRAPPED_APP_NAME_PATTERN)
+# 档 2 专用：检测"启动词 + 包裹 App 名"的紧贴模式。允许中间有空格 / "的" 等
 # 助词，但不允许换行或长 free text 间隔。
 _OPEN_APP_TIGHT_RE = re.compile(
     r"(?:" + "|".join(re.escape(k) for k in _PRELUDE_OPEN_KEYWORDS) + r")"
-    r"\s*(?:的|了|下|一下)?\s*「([^」]+)」",
+    r"\s*(?:的|了|下|一下)?\s*" + _WRAPPED_APP_NAME_PATTERN,
     re.IGNORECASE,
 )
 # 结构化 case 段切分：按 "测试标题：/前置条件：/操作步骤：/..." 这类标签把
@@ -500,18 +534,36 @@ def _detect_in_text(text: str) -> Optional[str]:
         k.replace(" ", "") in text_compact for k in _PRELUDE_RESTART_KEYWORDS
     )
     if has_kill and has_restart:
-        matches = _APP_NAME_RE.findall(text)
+        matches = _extract_wrapped_app_names(text)
         if matches:
             # 多次出现取最高频，避免误抓段内偶提的菜单 / 选项名当 App 名
             return Counter(matches).most_common(1)[0][0]
 
-    # 档 2：启动词紧贴「App名」（"打开「淘宝」搜耳机"、"进入「微信」找联系人..." 类）
-    tight_matches = _OPEN_APP_TIGHT_RE.findall(text)
+    # 档 2：启动词紧贴包裹 App 名（"打开「淘宝」搜耳机"、"进入【微信】找联系人..." 类）
+    tight_matches = _extract_wrapped_app_names_from_matches(
+        _OPEN_APP_TIGHT_RE.finditer(text)
+    )
     if tight_matches:
         # 多次出现取最高频，与档 1 同语义
         return Counter(tight_matches).most_common(1)[0][0]
 
     return None
+
+
+def _extract_wrapped_app_names(text: str) -> List[str]:
+    """提取被成对包裹符号包住的候选 App 名。"""
+    return _extract_wrapped_app_names_from_matches(_APP_NAME_RE.finditer(text))
+
+
+def _extract_wrapped_app_names_from_matches(matches: Iterable[re.Match[str]]) -> List[str]:
+    out: List[str] = []
+    for match in matches:
+        for group in match.groups():
+            value = (group or "").strip()
+            if value:
+                out.append(value)
+                break
+    return out
 
 
 def _parse_csv_keywords(raw: str) -> List[str]:

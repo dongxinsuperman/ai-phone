@@ -124,6 +124,31 @@ def test_detect_prelude_standard_precondition_still_triggers():
     assert _detect_app_lifecycle_prelude(goal) == "淘宝"
 
 
+@pytest.mark.parametrize(
+    ("wrapped_app", "expected"),
+    [
+        ("「淘宝」", "淘宝"),
+        ("【淘宝】", "淘宝"),
+        ("{淘宝}", "淘宝"),
+        ("[淘宝]", "淘宝"),
+        ("《淘宝》", "淘宝"),
+        ('"淘宝"', "淘宝"),
+    ],
+)
+def test_detect_prelude_accepts_common_wrapped_app_names_in_precondition(
+    wrapped_app: str,
+    expected: str,
+):
+    """前置条件内的 App 名可以用常见成对符号包裹，不再只认 ``「」``。"""
+    goal = (
+        "测试标题：登录主流程验证\n"
+        f"前置条件：杀进程并重新打开{wrapped_app}\n"
+        "操作步骤：输入手机号、获取验证码、点击登录\n"
+        "预期结果：成功进入首页"
+    )
+    assert _detect_app_lifecycle_prelude(goal) == expected
+
+
 def test_detect_prelude_freeform_goal_falls_back_to_fulltext_scan():
     """自由对话 / 平铺型 goal（无任何段头标签）—— 退到原"全文扫"逻辑，
     短句"杀掉 X 重新打开"或"打开 X 做 Y"都应正确触发。
@@ -132,6 +157,7 @@ def test_detect_prelude_freeform_goal_falls_back_to_fulltext_scan():
     assert _detect_app_lifecycle_prelude("杀掉「淘宝」重新打开做下单") == "淘宝"
     # 档 2：启动词紧贴「App」 → 命中
     assert _detect_app_lifecycle_prelude("打开「微信」找联系人") == "微信"
+    assert _detect_app_lifecycle_prelude("打开【微信】找联系人") == "微信"
 
 
 def test_detect_prelude_returns_none_when_no_app_or_no_trigger():
