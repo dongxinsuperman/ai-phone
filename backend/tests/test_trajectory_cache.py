@@ -1430,6 +1430,217 @@ async def test_v3_plan_intent_cleaner_rejects_conflicting_target(monkeypatch, _t
     assert payload["meta"]["plan_intent_cleaner_rejected_actions"] == 1
 
 
+def test_build_v3_cache_payload_rejects_cu_english_state_description_thought():
+    """海外模型常见的英文"陈述/反思/状态"thought 不能被规则误抓为 plan_intent 目标。
+
+    场景对应真实 Claude CU 输出：
+        "The app has been opened but I'm not yet at the WAR OF WHALES ad screen..."
+        "The current page shows Home content..."
+        "I've entered 24 as the Trigger Price..."
+        "00%, indicating BAND/USDT is already selected"
+    这些都是"我刚才看到 / 我刚才做了"的描述，不是"下一步要做"的动作。规则
+    兜底必须识破，让出空间给 cleaner；如有可用 label 则直接用 label。
+    """
+
+    payload = build_v3_cache_payload(
+        {
+            "schema_version": 2,
+            "cache_key": "k3-cu-state-desc",
+            "device_code": "D1",
+            "run_semantic_hash": "h",
+            "run_semantic_text": "完成下单流程",
+            "source_run_id": "run-cu-state-desc",
+            "source_vlm_backend": "claude_cu",
+            "actions": [
+                {
+                    "index": 1,
+                    "action_id": "a001",
+                    "type": "click",
+                    "thought": (
+                        "The app has been opened but I'm not yet at the WAR OF WHALES ad "
+                        "screen, dismiss it"
+                    ),
+                },
+                {
+                    "index": 2,
+                    "action_id": "a002",
+                    "type": "click",
+                    "label": "Cancel按钮",
+                    "thought": (
+                        "The new version dialog has appeared and I'm at the upgrade prompt, "
+                        "tap Cancel"
+                    ),
+                },
+                {
+                    "index": 3,
+                    "action_id": "a003",
+                    "type": "click",
+                    "label": "Futures标签页",
+                    "thought": "The current page shows Home content and is currently displayed.",
+                },
+                {
+                    "index": 4,
+                    "action_id": "a004",
+                    "type": "click",
+                    "label": "Copy标签页",
+                    "thought": "00%, indicating BAND/USDT is already selected on the page",
+                },
+                {
+                    "index": 5,
+                    "action_id": "a005",
+                    "type": "click",
+                    "label": "下一步按钮",
+                    "thought": "I've entered 24 as the Trigger Price in the input field",
+                },
+                {
+                    "index": 6,
+                    "action_id": "a006",
+                    "type": "click",
+                    "label": "Confirm按钮",
+                    "thought": "The confirmation dialog has appeared on screen",
+                },
+            ],
+            "source_completion": {},
+        }
+    )
+
+    plan_intents = [a["plan_intent"] for a in payload["actions"]]
+
+    for plan_intent in plan_intents:
+        assert "has been" not in plan_intent.lower()
+        assert "i've" not in plan_intent.lower()
+        assert "i'm" not in plan_intent.lower()
+        assert "appeared" not in plan_intent.lower()
+        assert "indicating" not in plan_intent.lower()
+        assert "currently" not in plan_intent.lower()
+        assert "not yet" not in plan_intent.lower()
+        assert "shows" not in plan_intent.lower()
+        assert len(plan_intent) <= 60
+
+    assert plan_intents[0] == "点击目标元素"
+    assert plan_intents[1] == "点击Cancel按钮"
+    assert plan_intents[2] == "点击Futures标签页"
+    assert plan_intents[3] == "点击Copy标签页"
+    assert plan_intents[4] == "点击下一步按钮"
+    assert plan_intents[5] == "点击Confirm按钮"
+
+
+@pytest.mark.asyncio
+async def test_v3_plan_intent_cleaner_accepts_chinese_for_english_state_thought(
+    monkeypatch, _test_engine, session
+):
+    """cleaner 给英文陈述句 thought 输出的合理中文短语，必须被新的安全网放行。
+
+    旧逻辑下 rule 兜底吐出 `点击目标元素` 之类保守候选时安全网放行没问题；
+    但当 rule 兜底退化为带英文垃圾的"点击The app has been opened..."时，
+    它会和 cleaner 的合理中文（如"关闭 WAR OF WHALES 广告"）latin token 不相交，
+    安全网就会误杀 cleaner，把英文垃圾保留下来。本用例守住"垃圾 rule 候选不
+    应作为参照系否决 cleaner"。
+    """
+
+    from ai_phone.server.trajectory_cache import v3_service as v3_service_module
+
+    cleaner_outputs = iter(
+        [
+            '{"plan_intent":"关闭WAR OF WHALES广告","confidence":0.95,"reason":"清障"}',
+            '{"plan_intent":"点击Cancel按钮关闭升级弹窗","confidence":0.92,"reason":"清障"}',
+            '{"plan_intent":"点击Buy(Long)按钮","confidence":0.93,"reason":"业务点击"}',
+            '{"plan_intent":"点击Confirm按钮","confidence":0.94,"reason":"业务点击"}',
+        ]
+    )
+
+    async def fake_call_vlm_with_images(**_kwargs):
+        return next(cleaner_outputs)
+
+    monkeypatch.setattr(v3_service_module, "_call_vlm_with_images", fake_call_vlm_with_images)
+    monkeypatch.setattr(
+        v3_service_module,
+        "get_settings",
+        lambda: Settings(
+            _env_file=None,
+            assistant_backend="doubao_responses",
+            assistant_api_url="https://example.test/responses",
+            assistant_api_key="key",
+            assistant_model="vision-model",
+        ),
+    )
+
+    run = Run(
+        id="run-v3-cleaner-cu-en",
+        device_serial="D1",
+        goal="完成下单流程",
+        status="success",
+        engine="vlm",
+        reason="ok",
+    )
+    session.add(run)
+    await session.flush()
+    payload = build_v3_cache_payload(
+        {
+            "schema_version": 2,
+            "cache_key": "k3-cleaner-cu-en",
+            "device_code": "D1",
+            "run_semantic_hash": "h",
+            "run_semantic_text": "完成下单流程",
+            "source_run_id": run.id,
+            "source_vlm_backend": "claude_cu",
+            "actions": [
+                {
+                    "index": 1,
+                    "action_id": "a001",
+                    "type": "click",
+                    "thought": (
+                        "The app has been opened but I'm not yet at the WAR OF WHALES ad "
+                        "screen, dismiss it"
+                    ),
+                },
+                {
+                    "index": 2,
+                    "action_id": "a002",
+                    "type": "click",
+                    "role": "optional_ephemeral",
+                    "ephemeral_meta": {"category": "version_upgrade"},
+                    "thought": "The new version dialog has appeared, tap Cancel to dismiss",
+                },
+                {
+                    "index": 3,
+                    "action_id": "a003",
+                    "type": "click",
+                    "thought": "I've entered 24 as the Trigger Price in the input field",
+                },
+                {
+                    "index": 4,
+                    "action_id": "a004",
+                    "type": "click",
+                    "thought": "The confirmation dialog has appeared on screen",
+                },
+            ],
+            "source_completion": {},
+        }
+    )
+
+    await v3_service_module._clean_v3_plan_intents(session=session, run=run, payload=payload)
+
+    plan_intents = [a["plan_intent"] for a in payload["actions"]]
+    sources = [a.get("plan_intent_meta", {}).get("source") for a in payload["actions"]]
+
+    assert plan_intents == [
+        "关闭WAR OF WHALES广告",
+        "点击Cancel按钮关闭升级弹窗",
+        "点击Buy(Long)按钮",
+        "点击Confirm按钮",
+    ]
+    assert sources == [
+        "v3_plan_cleaner",
+        "v3_plan_cleaner",
+        "v3_plan_cleaner",
+        "v3_plan_cleaner",
+    ]
+    assert payload["meta"]["plan_intent_cleaner"] == "model"
+    assert payload["meta"]["plan_intent_cleaned_actions"] == 4
+    assert "plan_intent_cleaner_rejected_actions" not in payload["meta"]
+
+
 @pytest.mark.asyncio
 async def test_save_v3_trajectory_cache_from_run_steps(monkeypatch, _test_engine, session):
     from ai_phone.server.trajectory_cache import service as service_module

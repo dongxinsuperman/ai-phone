@@ -55,7 +55,19 @@ _SENTENCE_SPLIT_RE = re.compile(r"[\n。；;.!?！？]+")
 _NOISY_PLAN_TEXT_RE = re.compile(
     r"let me analyze|current screenshot|i can see|appears to|forced verdict|"
     r"substep|target state|assert_fail|continue_replay|give_up|locator|"
-    r"verdict|traceback|exception|error=|raw=|thought:|action:",
+    r"verdict|traceback|exception|error=|raw=|thought:|action:|"
+    r"\b(?:has|have|had)\s+been\b|"
+    r"\b(?:has|have|had)\s+(?:opened|appeared|loaded|shown|displayed|entered|"
+    r"selected|closed|been\s+opened)\b|"
+    r"\bappeared\b|\bopened\s+but\b|\bnot\s+yet\b|"
+    r"\bi['\u2019]?ve\b|"
+    r"\bi['\u2019]?m\s+(?:at|in|on|not|now|already|currently|still)\b|"
+    r"\bi\s+am\s+(?:at|in|on|not|now|already|currently|still)\b|"
+    r"\b(?:is|are|was|were)\s+(?:already|currently|now|still)\b|"
+    r"\bindicating\b|\bsuggesting\b|\bshowing\s+that\b|"
+    r"\bcurrent(?:ly)?\s+(?:page|state|screen|view)\s+(?:shows|is|displays|has)\b|"
+    r"\bthe\s+(?:app|page|screen|dialog|window|popup|view)\s+(?:has|is|was)\b|"
+    r"\b\d+\s*%\b",
     re.IGNORECASE,
 )
 _ACTION_TARGET_PATTERNS = (
@@ -516,13 +528,28 @@ def build_v3_plan_cleaner_prompt(
         "- 如果当前 action 是移动/拖拽/滚动类，输出起点区域、目标区域或可滚动区域，不要输出整段操作解释。\n"
         "- 如果当前 action 不需要屏幕定位，且无法提炼目标，plan_intent 输出空字符串。\n"
         "- 目标短语建议 6-30 个中文字符；必须表达当前 action 实际目标，不要复制用户总目标。\n"
+        "- plan_intent 必须以中文动词开头：点击 / 输入 / 关闭 / 打开 / 选择 / 切换 / 滑动 / 长按 / 双击 / 返回 / 等待。\n"
+        "- 即使 actual_thought / weak_label / weak_business_intent 全是英文，也必须输出中文动词开头的短语；\n"
+        "  英文 thought 不允许原样照搬到 plan_intent，必须先理解再用中文动词重写。\n"
+        "- 截图上稳定可见的 UI 文案（按钮文字、标签页名、输入框 placeholder、菜单项、品牌/产品名等）\n"
+        "  无论是中文还是英文，都必须按截图原文照写到 plan_intent，不要翻译、不要意译、不要大小写改写，\n"
+        "  以便定位模型按截图原文逐字符搜索；其它解释性 / 推理性英文必须翻译为中文或删除。\n"
+        "- 当 actual_thought 是状态/反思/完成时态描述，例如包含「has been / have been / I've / I'm /\n"
+        "  appeared / not yet / opened but / is already / indicating / the page shows / the dialog has」\n"
+        "  这类标记，说明模型在描述「现在屏幕长什么样」或「刚刚做了什么」，不是下一步动作；\n"
+        "  必须从中识别真正的「被点按 / 被输入 / 被关闭」的控件，再用中文动词 + 控件名重写，\n"
+        "  绝不能把这种描述句原样写进 plan_intent。\n"
         "- 如果 role=optional_ephemeral，必须表达真实清障目标；不要写后续业务目标。\n"
         "- 普通业务 action 要保持用户目标粒度；用户没指定具体文案/编号/条目时，不要把首次屏幕里偶然出现的具体文案升级成下次必须寻找的目标。\n"
         "- 可以保留稳定控件文字；按钮、标签页、输入框占位符属于控件文字，列表项、题目、商品、活动、文章标题属于业务内容。\n"
         "- 多个候选都可点击时，优先用稳定 UI 特征表达：位置 + 控件类型 + 稳定文字；不要使用动态业务内容。\n"
         "- 如果 actual_thought 说点击 A 控件，而 weak_business_intent 说进入 B 页面，plan_intent 必须写 A 控件，不要写 B 页面。\n"
         "- 禁止输出完整 thought、页面描述、原因分析、坐标、截图状态、模型裁决词。\n"
-        "- 不确定时输出当前 action 的保守通用目标，不要加戏。\n\n"
+        "- 不确定时输出当前 action 的保守通用目标，不要加戏。\n"
+        "- 输出形式参考（仅参考结构，禁止照抄文案，文案必须来自当前 action 的真实 UI）：\n"
+        "  · <动词> + <控件原文> + <控件类型>，例如：点击 <按钮原文> 按钮 / 切换到 <标签原文> 标签页\n"
+        "  · <动词> + <控件类型> + （区域 / 位置）：点击 输入框（顶部）/ 关闭 弹窗\n"
+        "  · 输入类：输入 <内容>（<输入框文案 / 占位符>）\n\n"
         "只输出 JSON：\n"
         "{\n"
         '  "plan_intent": "目标控件短语",\n'
@@ -666,7 +693,13 @@ def _action_sentence_from_text(value: Any) -> str:
             continue
         if _ACTION_VERB_RE.search(candidate):
             return candidate[:140]
-    if _ACTION_VERB_RE.search(text) and not _is_noisy_plan_text(text):
+    # 整段 fallback：仅在没有句号切分、长度可控、且不含任何陈述/完成时态标记时启用。
+    # 防止 Claude/CU 海外模型一整段无标点的英文陈述句被当成动作短语。
+    if (
+        len(text) <= 80
+        and _ACTION_VERB_RE.search(text)
+        and not _is_noisy_plan_text(text)
+    ):
         return text[:140]
     return ""
 
@@ -728,11 +761,37 @@ def _should_accept_cleaned_plan_intent(
         return False
     if not rule_candidate:
         return True
+    # 规则候选自己就是垃圾（典型来源：海外模型英文陈述句被规则误抓为目标），
+    # 不能用它去否决 cleaner 的输出。
+    if not _rule_candidate_quality_ok(rule_candidate):
+        return True
     if _same_semantic(cleaned, rule_candidate):
         return True
     cleaned_tokens = _latin_tokens(cleaned)
     rule_tokens = _latin_tokens(rule_candidate)
     if cleaned_tokens and rule_tokens and cleaned_tokens.isdisjoint(rule_tokens):
+        return False
+    return True
+
+
+def _rule_candidate_quality_ok(rule_candidate: str) -> bool:
+    """评估规则兜底产出的 plan_intent 候选是否可以作为对 cleaner 的"参照系"。
+
+    plan_intent 的合格形态是"动词 + 简短目标控件"。一旦候选明显是英文长描述句、
+    含完成时态/状态描述、或长度过长，就应视为低质量，安全网不应用它去否决 cleaner。
+    """
+    if not rule_candidate:
+        return False
+    if _is_noisy_plan_text(rule_candidate):
+        return False
+    if len(rule_candidate) > 60:
+        return False
+    if re.search(
+        r"\b(?:has|have|had)\s+been\b|\bi['\u2019]?ve\b|\bi['\u2019]?m\s+(?:at|in|on|not)\b|"
+        r"\bappeared\b|\bopened\s+but\b|\bnot\s+yet\b|\bis\s+already\b|\bindicating\b",
+        rule_candidate,
+        re.IGNORECASE,
+    ):
         return False
     return True
 
