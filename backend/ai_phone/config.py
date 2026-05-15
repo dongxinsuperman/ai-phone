@@ -945,6 +945,33 @@ class Settings(BaseSettings):
             "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_GPT_REASONING_EFFORT"
         ),
     )
+    trajectory_cache_v3_stable_threshold: float = Field(
+        default=0.08,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "V3 回放专用稳定检测 global pHash diff 阈值。独立于 V2 alignment。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_STABLE_THRESHOLD"
+        ),
+    )
+    trajectory_cache_v3_stable_roi_threshold: float = Field(
+        default=0.30,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "V3 回放专用稳定检测中心 ROI 像素差阈值。独立于 V2 alignment。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_STABLE_ROI_THRESHOLD"
+        ),
+    )
+    trajectory_cache_v3_stable_black_ratio_threshold: float = Field(
+        default=0.15,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "V3 回放专用稳定检测黑屏比例差异阈值。独立于 V2 alignment。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_STABLE_BLACK_RATIO_THRESHOLD"
+        ),
+    )
     trajectory_cache_v3_rescue_enabled: bool = Field(
         default=True,
         description=(

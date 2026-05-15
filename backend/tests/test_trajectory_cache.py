@@ -609,44 +609,36 @@ def test_overseas_cu_to_chat_config_translates_claude_and_gpt():
 
 
 @pytest.mark.asyncio
-async def test_v3_locator_gpt_cu_uses_main_computer_use_config(monkeypatch):
-    import ai_phone.shared.llm.main.gpt_cu as gpt_cu_module
+async def test_v3_locator_gpt_cu_falls_back_to_chat_completions(monkeypatch):
+    """gpt_cu 主 vlm → v3 locator 翻译为 openai_compatible chat completions。
 
-    class FakeGPTCU:
-        seen = {}
-
-        def __init__(self, **kwargs):
-            FakeGPTCU.seen["init"] = kwargs
-
-        async def decide(self, screenshot_bytes, *, mime="image/jpeg"):
-            FakeGPTCU.seen["screenshot_bytes"] = screenshot_bytes
-            return SimpleNamespace(
-                thought="locate target",
-                raw_content="raw",
-                parsed_actions=[
-                    ParsedAction(
-                        action="click",
-                        point=[50, 100],
-                        raw="computer.click",
-                        coord_space="absolute",
-                    )
-                ],
-            )
-
-    monkeypatch.setattr(gpt_cu_module, "GPTComputerUseClient", FakeGPTCU)
+    见 docs/executable-logic-contract.md §14：定位 vlm 和主 vlm 用同一把 key、
+    同一个模型，但不走 CU agent loop——/v1/responses 后缀翻译为
+    /v1/chat/completions。坐标空间仍然 absolute（gpt 训练就是按图像像素回坐标）。
+    """
     settings = Settings(
         _env_file=None,
         vlm_backend="gpt_cu",
         vlm_api_url="https://api.openai.com/v1/responses",
-        vlm_api_key="main-key",
-        vlm_model="computer-use-preview",
+        vlm_api_key="main-openai-key",
+        vlm_model="gpt-4o",
         trajectory_cache_v3_coord_enabled=True,
-        trajectory_cache_v3_coord_use_recovery_vlm_config=True,
-        trajectory_cache_recovery_vlm_api_url="",
-        trajectory_cache_recovery_vlm_api_key="",
-        trajectory_cache_recovery_vlm_model="",
     )
     locator = V3PlanLocator(settings=settings, main_vlm_backend="gpt_cu")
+    backend, api_url, api_key, model, _timeout = locator._config()
+    assert backend == "openai_compatible"
+    assert api_url == "https://api.openai.com/v1/chat/completions"
+    assert api_key == "main-openai-key"
+    assert model == "gpt-4o"
+    assert locator.coord_space == "absolute"
+
+    captured: dict = {}
+
+    async def _fake_chat(**kwargs):
+        captured.update(kwargs)
+        return "<point>50 100</point>"
+
+    monkeypatch.setattr(locator, "_chat_completions_single_image", _fake_chat)
 
     result = await locator.locate_action(
         goal="g",
@@ -657,51 +649,52 @@ async def test_v3_locator_gpt_cu_uses_main_computer_use_config(monkeypatch):
         window_size=(1000, 2000),
     )
 
-    assert FakeGPTCU.seen["init"]["api_key"] == "main-key"
-    assert FakeGPTCU.seen["init"]["reasoning_effort"] == "low"
-    assert locator.coord_space == "absolute"
+    assert captured["api_url"] == "https://api.openai.com/v1/chat/completions"
+    assert captured["api_key"] == "main-openai-key"
+    assert captured["model"] == "gpt-4o"
+    # absolute 坐标按 image_size→window_size 等比放大
     assert result.action["point"] == {"x": 500, "y": 1000}
 
 
 @pytest.mark.asyncio
-async def test_v3_locator_claude_cu_uses_main_config_with_coord_thinking_budget(monkeypatch):
-    import ai_phone.shared.llm.main.claude_cu as claude_cu_module
+async def test_v3_locator_claude_cu_falls_back_to_chat_messages(monkeypatch):
+    """claude_cu 主 vlm → v3 locator 走 anthropic /v1/messages chat 协议。
 
-    class FakeClaudeCU:
-        seen = {}
-
-        def __init__(self, **kwargs):
-            FakeClaudeCU.seen["init"] = kwargs
-
-        async def decide(self, screenshot_bytes, *, mime="image/jpeg"):
-            return SimpleNamespace(
-                thought="locate target",
-                raw_content="raw",
-                parsed_actions=[
-                    ParsedAction(
-                        action="click",
-                        point=[40, 80],
-                        raw="computer.left_click",
-                        coord_space="absolute",
-                    )
-                ],
-            )
-
-    monkeypatch.setattr(claude_cu_module, "ClaudeComputerUseClient", FakeClaudeCU)
+    URL 复用主 vlm（anthropic /v1/messages 既能跑 CU 也能跑普通 chat），不打
+    CU beta header / 不挂 computer 工具——这就把 Claude 从 agent 模式切回
+    普通看图回坐标的模式。
+    """
     settings = Settings(
         _env_file=None,
         vlm_backend="claude_cu",
         vlm_api_url="https://api.anthropic.com/v1/messages",
-        vlm_api_key="main-key",
+        vlm_api_key="main-anthropic-key",
         vlm_model="claude-sonnet-4-5",
         trajectory_cache_v3_coord_enabled=True,
-        trajectory_cache_v3_coord_claude_thinking_budget=128,
-        trajectory_cache_v3_coord_use_recovery_vlm_config=True,
-        trajectory_cache_recovery_vlm_api_url="",
-        trajectory_cache_recovery_vlm_api_key="",
-        trajectory_cache_recovery_vlm_model="",
     )
     locator = V3PlanLocator(settings=settings, main_vlm_backend="claude_cu")
+    backend, api_url, api_key, model, _timeout = locator._config()
+    assert backend == "claude_messages"
+    assert api_url == "https://api.anthropic.com/v1/messages"
+    assert api_key == "main-anthropic-key"
+    assert model == "claude-sonnet-4-5"
+    assert locator.coord_space == "absolute"
+
+    captured: dict = {}
+
+    async def _fake_messages(**kwargs):
+        captured.update(kwargs)
+        return "<point>40 80</point>"
+
+    async def _no_completions(**_kwargs):  # pragma: no cover
+        raise AssertionError("claude_cu 不应路由到 chat completions")
+
+    async def _no_responses(**_kwargs):  # pragma: no cover
+        raise AssertionError("claude_cu 不应路由到 responses")
+
+    monkeypatch.setattr(locator, "_messages_single_image", _fake_messages)
+    monkeypatch.setattr(locator, "_chat_completions_single_image", _no_completions)
+    monkeypatch.setattr(locator, "_responses_single_image", _no_responses)
 
     result = await locator.locate_action(
         goal="g",
@@ -712,51 +705,42 @@ async def test_v3_locator_claude_cu_uses_main_config_with_coord_thinking_budget(
         window_size=(1000, 2000),
     )
 
-    assert FakeClaudeCU.seen["init"]["api_key"] == "main-key"
-    assert FakeClaudeCU.seen["init"]["thinking_budget"] == 128
-    assert locator.coord_space == "absolute"
+    assert captured["api_key"] == "main-anthropic-key"
+    assert captured["model"] == "claude-sonnet-4-5"
+    assert captured["api_url"] == "https://api.anthropic.com/v1/messages"
     assert result.action["point"] == {"x": 400, "y": 800}
 
 
 @pytest.mark.asyncio
-async def test_v3_rescue_overseas_uses_main_computer_use_config(monkeypatch):
-    import ai_phone.shared.llm.main.claude_cu as claude_cu_module
+async def test_v3_rescue_overseas_falls_back_to_chat_messages(monkeypatch):
+    """claude_cu 主 vlm → v3 rescue 走 chat 协议（_call_vlm_with_images）。"""
+    from ai_phone.server.trajectory_cache import v3_replay as v3_replay_module
 
-    class FakeClaudeCU:
-        seen = {}
+    captured: dict = {}
 
-        def __init__(self, **kwargs):
-            FakeClaudeCU.seen["init"] = kwargs
+    async def _fake_call(**kwargs):
+        captured.update(kwargs)
+        return (
+            '{"verdict":"REPAIR_ACTION","reason":"关闭弹窗",'
+            '"repair_action":{"type":"click","point":{"x":25,"y":40}}}'
+        )
 
-        async def decide(self, screenshot_bytes, *, mime="image/jpeg"):
-            FakeClaudeCU.seen["screenshot_bytes"] = screenshot_bytes
-            return SimpleNamespace(
-                thought="关闭遮挡后继续",
-                raw_content="raw",
-                parsed_actions=[
-                    ParsedAction(
-                        action="click",
-                        point=[25, 40],
-                        raw="computer.left_click",
-                        coord_space="absolute",
-                    )
-                ],
-            )
-
-    monkeypatch.setattr(claude_cu_module, "ClaudeComputerUseClient", FakeClaudeCU)
+    monkeypatch.setattr(v3_replay_module, "_call_vlm_with_images", _fake_call)
     settings = Settings(
         _env_file=None,
         vlm_backend="claude_cu",
         vlm_api_url="https://api.anthropic.com/v1/messages",
-        vlm_api_key="main-key",
+        vlm_api_key="main-anthropic-key",
         vlm_model="claude-sonnet-4-5",
         trajectory_cache_v3_rescue_enabled=True,
-        trajectory_cache_v3_rescue_use_recovery_vlm_config=True,
-        trajectory_cache_recovery_vlm_api_url="",
-        trajectory_cache_recovery_vlm_api_key="",
-        trajectory_cache_recovery_vlm_model="",
     )
     rescue = V3RescueVerifier(settings=settings, main_vlm_backend="claude_cu")
+    backend, api_url, api_key, model, _timeout = rescue._config()
+    assert backend == "claude_messages"
+    assert api_url == "https://api.anthropic.com/v1/messages"
+    assert api_key == "main-anthropic-key"
+    assert model == "claude-sonnet-4-5"
+    assert rescue.coord_space == "absolute"
 
     decision = await rescue.decide(
         goal="g",
@@ -766,8 +750,9 @@ async def test_v3_rescue_overseas_uses_main_computer_use_config(monkeypatch):
         miss_reason="target missing",
     )
 
-    assert FakeClaudeCU.seen["init"]["api_key"] == "main-key"
-    assert rescue.coord_space == "absolute"
+    assert captured["backend"] == "claude_messages"
+    assert captured["api_key"] == "main-anthropic-key"
+    assert captured["model"] == "claude-sonnet-4-5"
     assert decision.verdict == "REPAIR_ACTION"
     assert decision.coord_space == "absolute"
     assert decision.repair_action["point"] == {"x": 25, "y": 40}
@@ -2087,7 +2072,7 @@ async def test_v3_replay_runner_relocates_click_by_plan_intent(monkeypatch):
         stable_calls.append({"frame_a": frame_a_bytes, **kwargs})
         return SimpleNamespace(bytes_=b"stable-jpeg")
 
-    monkeypatch.setattr(v3_replay_module, "wait_page_stable_pixel", fake_wait_stable)
+    monkeypatch.setattr(v3_replay_module, "wait_page_stable_v2_compare", fake_wait_stable)
     driver = FakeDriver()
     locator = FakeV3Locator()
     logs = []
@@ -2122,7 +2107,6 @@ async def test_v3_replay_runner_relocates_click_by_plan_intent(monkeypatch):
     assert result.actions_executed == 1
     assert ("click", 111, 222) in driver.calls
     assert len(stable_calls) == 2
-    assert stable_calls[0]["use_cache_settings"] is True
     assert locator.calls[0]["action"]["plan_intent"] == "点击教材同步"
     assert any(title == "V3寻找目标" and "点击教材同步" in content for _level, title, content in logs)
 
@@ -2147,7 +2131,7 @@ async def test_v3_replay_runner_skips_optional_ephemeral_when_gate_says_skip(
     async def fake_wait_stable(screenshot, frame_a_bytes=None, **kwargs):
         return SimpleNamespace(bytes_=b"stable-jpeg")
 
-    monkeypatch.setattr(v3_replay_module, "wait_page_stable_pixel", fake_wait_stable)
+    monkeypatch.setattr(v3_replay_module, "wait_page_stable_v2_compare", fake_wait_stable)
     popup_before = tmp_path / "popup-before.jpg"
     cached_after = tmp_path / "cached-after.jpg"
     popup_before.write_bytes(b"before")
@@ -2204,7 +2188,7 @@ async def test_v3_replay_runner_locates_type_input_before_typing(monkeypatch):
     async def fake_wait_stable(screenshot, frame_a_bytes=None, **kwargs):
         return SimpleNamespace(bytes_=b"stable-jpeg")
 
-    monkeypatch.setattr(v3_replay_module, "wait_page_stable_pixel", fake_wait_stable)
+    monkeypatch.setattr(v3_replay_module, "wait_page_stable_v2_compare", fake_wait_stable)
     driver = FakeDriver()
     locator = FakeV3Locator()
     runner = V3ReplayRunner(
@@ -2242,7 +2226,7 @@ async def test_v3_replay_runner_uses_rescue_wait_after_locator_miss(monkeypatch)
     async def fake_wait_stable(screenshot, frame_a_bytes=None, **kwargs):
         return SimpleNamespace(bytes_=b"stable-jpeg")
 
-    monkeypatch.setattr(v3_replay_module, "wait_page_stable_pixel", fake_wait_stable)
+    monkeypatch.setattr(v3_replay_module, "wait_page_stable_v2_compare", fake_wait_stable)
     locator = FakeV3LocatorMissThenHit()
     rescue = FakeV3Rescue(V3RescueDecision(verdict="WAIT", reason="页面加载中", wait_ms=100))
     driver = FakeDriver()
@@ -2282,7 +2266,7 @@ async def test_v3_replay_runner_keeps_rescuing_until_locator_hits(monkeypatch):
     async def fake_wait_stable(screenshot, frame_a_bytes=None, **kwargs):
         return SimpleNamespace(bytes_=b"stable-jpeg")
 
-    monkeypatch.setattr(v3_replay_module, "wait_page_stable_pixel", fake_wait_stable)
+    monkeypatch.setattr(v3_replay_module, "wait_page_stable_v2_compare", fake_wait_stable)
     locator = FakeV3LocatorMissThenHit(miss_count=2)
     rescue = FakeV3Rescue(
         [
@@ -2327,7 +2311,7 @@ async def test_v3_rescue_continue_replay_skips_current_action(monkeypatch):
     async def fake_wait_stable(screenshot, frame_a_bytes=None, **kwargs):
         return SimpleNamespace(bytes_=b"stable-jpeg")
 
-    monkeypatch.setattr(v3_replay_module, "wait_page_stable_pixel", fake_wait_stable)
+    monkeypatch.setattr(v3_replay_module, "wait_page_stable_v2_compare", fake_wait_stable)
     locator = FakeV3LocatorMissThenHit(miss_count=1)
     rescue = FakeV3Rescue(
         V3RescueDecision(verdict="CONTINUE_REPLAY", reason="已在下一步页面")

@@ -13,7 +13,7 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import httpx
 from PIL import Image
@@ -25,8 +25,13 @@ from ai_phone.agent.runner.events import (
     EVT_STEP_START,
     make_event,
 )
-from ai_phone.agent.runner.stability import wait_page_stable_pixel
+from ai_phone.agent.runner.phash import compute_phash
+from ai_phone.agent.runner.stability import StabilityResult
 from ai_phone.config import Settings, get_settings
+from ai_phone.server.trajectory_cache._overseas_chat import (
+    main_vlm_is_overseas_cu,
+    overseas_cu_to_chat_config,
+)
 from ai_phone.server.trajectory_cache.ephemeral import (
     GATE_ASSERT_FAIL,
     GATE_ESCALATE,
@@ -49,6 +54,7 @@ from ai_phone.server.trajectory_cache.replay import (
     ReplayEmitFn,
     ReplayLogFn,
     ReplayResult,
+    _compare_alignment,
     _resolve_landmark_path,
 )
 from ai_phone.server.trajectory_cache.service import normalize_run_semantic
@@ -100,13 +106,39 @@ class V3PlanLocator:
         ).strip().lower()
 
     def is_configured(self) -> bool:
-        if self._use_main_executable_vlm():
-            return bool(self.settings.vlm_api_url and self.settings.vlm_api_key and self.settings.vlm_model)
         backend, api_url, api_key, model, _timeout = self._config()
-        return bool(self.settings.trajectory_cache_v3_coord_enabled and backend and api_url and api_key and model)
+        return bool(
+            self.settings.trajectory_cache_v3_coord_enabled
+            and backend
+            and api_url
+            and api_key
+            and model
+        )
 
     def _config(self) -> Tuple[str, str, str, str, float]:
+        """决定 v3 locator 走哪条 chat 通道。
+
+        - 海外主 vlm（claude_cu / gpt_cu）：用主 vlm key/url/model + 翻译协议，
+          locator 跟主 vlm 用同一把 key、同一个模型，只是不开 CU agent loop。
+          见 _overseas_chat.overseas_cu_to_chat_config 注释。
+        - use_recovery_vlm_config 开关打开：复用 recovery_vlm 配置（历史路径）。
+        - 其它：用 trajectory_cache_v3_coord_* 独立配置。
+        """
         s = self.settings
+        if self._main_vlm_is_overseas_cu():
+            backend, api_url, api_key, model = overseas_cu_to_chat_config(
+                main_backend=str(s.vlm_backend or ""),
+                main_api_url=str(s.vlm_api_url or ""),
+                main_api_key=str(s.vlm_api_key or ""),
+                main_model=str(s.vlm_model or ""),
+            )
+            return (
+                backend,
+                api_url,
+                api_key,
+                model,
+                float(s.trajectory_cache_v3_coord_timeout_sec),
+            )
         if s.trajectory_cache_v3_coord_use_recovery_vlm_config:
             return (
                 s.trajectory_cache_recovery_vlm_backend,
@@ -127,17 +159,6 @@ class V3PlanLocator:
         s = self.settings
         if not s.trajectory_cache_v3_coord_enabled:
             return "v3 coord 未启用（trajectory_cache_v3_coord_enabled=false）"
-        if self._use_main_executable_vlm():
-            missing: List[str] = []
-            if not s.vlm_api_url:
-                missing.append("vlm_api_url")
-            if not s.vlm_api_key:
-                missing.append("vlm_api_key")
-            if not s.vlm_model:
-                missing.append("vlm_model")
-            if missing:
-                return f"主 VLM Computer Use 配置缺失：{','.join(missing)}"
-            return ""
         backend, api_url, api_key, model, _timeout = self._config()
         missing: List[str] = []
         if not backend:
@@ -149,31 +170,31 @@ class V3PlanLocator:
         if not model:
             missing.append("model")
         if missing:
-            source = (
-                "recovery_vlm 连接配置"
-                if s.trajectory_cache_v3_coord_use_recovery_vlm_config
-                else "v3 coord 独立配置"
-            )
+            if self._main_vlm_is_overseas_cu():
+                source = "海外主 vlm chat 协议翻译"
+            elif s.trajectory_cache_v3_coord_use_recovery_vlm_config:
+                source = "recovery_vlm 连接配置"
+            else:
+                source = "v3 coord 独立配置"
             return f"{source}缺失：{','.join(missing)}"
         return ""
 
     @property
     def coord_space(self) -> str:
-        if self._use_main_executable_vlm():
+        # 海外主 vlm 系（claude / gpt）训练就按图像像素绝对坐标；豆包按
+        # 0-1000 归一化。这里依然按主 vlm 训练习惯派发，跟主 vlm 链路一致；
+        # _replay_action_from_parsed 会按 coord_space 缩放回设备坐标。
+        if self._main_vlm_is_overseas_cu():
             return "absolute"
-        backend, _api_url, _api_key, _model, _timeout = self._config()
-        return _coord_space_for_v3_backend(backend, model=_model)
+        backend, _api_url, _api_key, model, _timeout = self._config()
+        return _coord_space_for_v3_backend(backend, model=model)
 
-    def _use_main_executable_vlm(self) -> bool:
-        backend = (
-            self._main_vlm_backend
-            or str(getattr(self.settings, "vlm_backend", "") or "")
-        ).strip().lower()
-        configured = str(getattr(self.settings, "vlm_backend", "") or "").strip().lower()
-        return (
-            bool(self.settings.trajectory_cache_v3_coord_enabled)
-            and backend in {"claude_cu", "gpt_cu"}
-            and configured == backend
+    def _main_vlm_is_overseas_cu(self) -> bool:
+        if not self.settings.trajectory_cache_v3_coord_enabled:
+            return False
+        return main_vlm_is_overseas_cu(
+            main_vlm_backend=self._main_vlm_backend,
+            configured_vlm_backend=str(getattr(self.settings, "vlm_backend", "") or ""),
         )
 
     async def locate_action(
@@ -188,15 +209,6 @@ class V3PlanLocator:
     ) -> V3LocateResult:
         if not self.is_configured():
             raise ReplayActionError(self.configuration_problem() or "v3 locator 不可用")
-        if self._use_main_executable_vlm():
-            return await self._locate_action_with_main_executable_vlm(
-                goal=goal,
-                trajectory=trajectory,
-                action=action,
-                screenshot_bytes=screenshot_bytes,
-                image_size=image_size,
-                window_size=window_size,
-            )
         prompt = build_v3_locator_prompt(
             goal=goal,
             trajectory=trajectory,
@@ -265,64 +277,6 @@ class V3PlanLocator:
         raise RuntimeError(
             f"v3 locator 暂不支持 backend={backend}，"
             "当前支持 doubao_responses / openai_compatible / claude_messages"
-        )
-
-    async def _locate_action_with_main_executable_vlm(
-        self,
-        *,
-        goal: str,
-        trajectory: Dict[str, Any],
-        action: Dict[str, Any],
-        screenshot_bytes: bytes,
-        image_size: Optional[Tuple[int, int]],
-        window_size: Tuple[int, int],
-    ) -> V3LocateResult:
-        system_prompt = build_v3_computer_use_locator_prompt(action=action)
-        if self._main_vlm_backend == "gpt_cu":
-            from ai_phone.shared.llm.main.gpt_cu import GPTComputerUseClient
-
-            client = GPTComputerUseClient(
-                system_prompt=system_prompt,
-                api_url=self.settings.vlm_api_url,
-                api_key=self.settings.vlm_api_key,
-                model=self.settings.vlm_model,
-                timeout_seconds=float(self.settings.trajectory_cache_v3_coord_timeout_sec),
-                reasoning_effort=str(
-                    self.settings.trajectory_cache_v3_coord_gpt_reasoning_effort or "low"
-                ),
-            )
-        else:
-            from ai_phone.shared.llm.main.claude_cu import ClaudeComputerUseClient
-
-            thinking_budget = int(self.settings.trajectory_cache_v3_coord_claude_thinking_budget or 0)
-            client = ClaudeComputerUseClient(
-                system_prompt=system_prompt,
-                api_url=self.settings.vlm_api_url,
-                api_key=self.settings.vlm_api_key,
-                model=self.settings.vlm_model,
-                timeout_seconds=float(self.settings.trajectory_cache_v3_coord_timeout_sec),
-                thinking_budget=thinking_budget,
-            )
-        decision = await client.decide(screenshot_bytes)
-        parsed_actions = list(decision.parsed_actions or [])
-        parsed = next((item for item in parsed_actions if getattr(item, "is_known", False)), None)
-        if parsed is None:
-            raise V3LocatorMiss(f"v3 Computer Use locator 未返回动作: {decision.raw_content[:160]}")
-        expected_type = str(action.get("type") or "")
-        if parsed.action != expected_type:
-            raise V3LocatorMiss(
-                f"v3 Computer Use locator 动作类型不匹配 expected={expected_type} actual={parsed.action}"
-            )
-        replay_action = _replay_action_from_parsed(
-            parsed,
-            source_action=action,
-            image_size=image_size,
-            window_size=window_size,
-        )
-        return V3LocateResult(
-            action=replay_action,
-            raw=decision.raw_content,
-            reason=decision.thought,
         )
 
     async def _chat_completions_single_image(
@@ -483,14 +437,6 @@ class V3RescueVerifier:
         ).strip().lower()
 
     def is_configured(self) -> bool:
-        if self._use_main_executable_vlm():
-            s = self.settings
-            return bool(
-                s.trajectory_cache_v3_rescue_enabled
-                and s.vlm_api_url
-                and s.vlm_api_key
-                and s.vlm_model
-            )
         backend, api_url, api_key, model, _timeout = self._config()
         return bool(
             self.settings.trajectory_cache_v3_rescue_enabled
@@ -501,7 +447,27 @@ class V3RescueVerifier:
         )
 
     def _config(self) -> Tuple[str, str, str, str, float]:
+        """决定 v3 rescue 走哪条 chat 通道。
+
+        - 海外主 vlm（claude_cu / gpt_cu）：用主 vlm key/url/model + 翻译协议。
+        - use_recovery_vlm_config 开关打开：复用 recovery_vlm 配置。
+        - 其它：用 trajectory_cache_v3_rescue_* 独立配置。
+        """
         s = self.settings
+        if self._main_vlm_is_overseas_cu():
+            backend, api_url, api_key, model = overseas_cu_to_chat_config(
+                main_backend=str(s.vlm_backend or ""),
+                main_api_url=str(s.vlm_api_url or ""),
+                main_api_key=str(s.vlm_api_key or ""),
+                main_model=str(s.vlm_model or ""),
+            )
+            return (
+                backend,
+                api_url,
+                api_key,
+                model,
+                float(s.trajectory_cache_v3_rescue_timeout_sec),
+            )
         if s.trajectory_cache_v3_rescue_use_recovery_vlm_config:
             return (
                 s.trajectory_cache_recovery_vlm_backend,
@@ -522,17 +488,6 @@ class V3RescueVerifier:
         s = self.settings
         if not s.trajectory_cache_v3_rescue_enabled:
             return "v3 rescue 未启用（trajectory_cache_v3_rescue_enabled=false）"
-        if self._use_main_executable_vlm():
-            missing: List[str] = []
-            if not s.vlm_api_url:
-                missing.append("vlm_api_url")
-            if not s.vlm_api_key:
-                missing.append("vlm_api_key")
-            if not s.vlm_model:
-                missing.append("vlm_model")
-            if missing:
-                return f"主 VLM Computer Use 配置缺失：{','.join(missing)}"
-            return ""
         backend, api_url, api_key, model, _timeout = self._config()
         missing: List[str] = []
         if not backend:
@@ -544,31 +499,28 @@ class V3RescueVerifier:
         if not model:
             missing.append("model")
         if missing:
-            source = (
-                "recovery_vlm 连接配置"
-                if s.trajectory_cache_v3_rescue_use_recovery_vlm_config
-                else "v3 rescue 独立配置"
-            )
+            if self._main_vlm_is_overseas_cu():
+                source = "海外主 vlm chat 协议翻译"
+            elif s.trajectory_cache_v3_rescue_use_recovery_vlm_config:
+                source = "recovery_vlm 连接配置"
+            else:
+                source = "v3 rescue 独立配置"
             return f"{source}缺失：{','.join(missing)}"
         return ""
 
     @property
     def coord_space(self) -> str:
-        if self._use_main_executable_vlm():
+        if self._main_vlm_is_overseas_cu():
             return "absolute"
-        backend, _api_url, _api_key, _model, _timeout = self._config()
-        return _coord_space_for_v3_backend(backend, model=_model)
+        backend, _api_url, _api_key, model, _timeout = self._config()
+        return _coord_space_for_v3_backend(backend, model=model)
 
-    def _use_main_executable_vlm(self) -> bool:
-        backend = (
-            self._main_vlm_backend
-            or str(getattr(self.settings, "vlm_backend", "") or "")
-        ).strip().lower()
-        configured = str(getattr(self.settings, "vlm_backend", "") or "").strip().lower()
-        return (
-            bool(self.settings.trajectory_cache_v3_rescue_enabled)
-            and backend in {"claude_cu", "gpt_cu"}
-            and configured == backend
+    def _main_vlm_is_overseas_cu(self) -> bool:
+        if not self.settings.trajectory_cache_v3_rescue_enabled:
+            return False
+        return main_vlm_is_overseas_cu(
+            main_vlm_backend=self._main_vlm_backend,
+            configured_vlm_backend=str(getattr(self.settings, "vlm_backend", "") or ""),
         )
 
     async def decide(
@@ -599,11 +551,6 @@ class V3RescueVerifier:
             miss_reason=miss_reason,
             coord_space=self.coord_space,
         )
-        if self._use_main_executable_vlm():
-            return await self._decide_with_main_executable_vlm(
-                prompt=prompt,
-                current_bytes=current_bytes,
-            )
         started = time.monotonic()
         try:
             text = await asyncio.wait_for(
@@ -641,74 +588,6 @@ class V3RescueVerifier:
         decision = parse_v3_rescue_response(text, coord_space=self.coord_space)
         decision.elapsed_ms = int((time.monotonic() - started) * 1000)
         return decision
-
-    async def _decide_with_main_executable_vlm(
-        self,
-        *,
-        prompt: str,
-        current_bytes: bytes,
-    ) -> V3RescueDecision:
-        system_prompt = (
-            "You are the V3 trajectory replay local recovery model for a real mobile device.\n"
-            "You are looking at the current live phone screen only.\n"
-            "If the current cached step target is not visible because the page is loading, "
-            "do not use the computer tool; answer FINISHED: WAIT: <milliseconds>: <reason>.\n"
-            "If the cached step is already complete and replay can continue, answer "
-            "FINISHED: CONTINUE_REPLAY: <reason>.\n"
-            "If a safe local UI action can reconnect the cached route, use the computer "
-            "tool exactly once on the current screen.\n"
-            "If recovery is unsafe or uncertain, answer ASSERT_FAIL: <reason>.\n\n"
-            "Important: the policy text below is shared with non-Computer-Use backends "
-            "and may mention JSON output. For this Computer Use call, ignore that output "
-            "format section. Use only the computer tool, FINISHED, or ASSERT_FAIL.\n\n"
-            + prompt
-        )
-        started = time.monotonic()
-        try:
-            if self._main_vlm_backend == "gpt_cu":
-                from ai_phone.shared.llm.main.gpt_cu import GPTComputerUseClient
-
-                client = GPTComputerUseClient(
-                    system_prompt=system_prompt,
-                    api_url=self.settings.vlm_api_url,
-                    api_key=self.settings.vlm_api_key,
-                    model=self.settings.vlm_model,
-                    timeout_seconds=float(self.settings.trajectory_cache_v3_rescue_timeout_sec),
-                )
-            else:
-                from ai_phone.shared.llm.main.claude_cu import ClaudeComputerUseClient
-
-                client = ClaudeComputerUseClient(
-                    system_prompt=system_prompt,
-                    api_url=self.settings.vlm_api_url,
-                    api_key=self.settings.vlm_api_key,
-                    model=self.settings.vlm_model,
-                    timeout_seconds=float(self.settings.trajectory_cache_v3_rescue_timeout_sec),
-                )
-            model_decision = await asyncio.wait_for(
-                client.decide(current_bytes),
-                timeout=float(self.settings.trajectory_cache_v3_rescue_timeout_sec),
-            )
-        except asyncio.TimeoutError:
-            return V3RescueDecision(
-                verdict=V3_RESCUE_GIVE_UP,
-                reason="v3 rescue 主 VLM Computer Use 调用超时",
-                elapsed_ms=int((time.monotonic() - started) * 1000),
-                error="timeout",
-                coord_space="absolute",
-            )
-        except Exception as exc:  # noqa: BLE001
-            return V3RescueDecision(
-                verdict=V3_RESCUE_GIVE_UP,
-                reason=f"v3 rescue 主 VLM Computer Use 调用失败：{type(exc).__name__}: {str(exc)[:160]}",
-                elapsed_ms=int((time.monotonic() - started) * 1000),
-                error=type(exc).__name__,
-                coord_space="absolute",
-            )
-        out = _v3_rescue_decision_from_main_vlm_decision(model_decision)
-        out.elapsed_ms = int((time.monotonic() - started) * 1000)
-        return out
-
 
 class V3ReplayRunner:
     """按 V3 语义脚本逐步定位并执行。"""
@@ -759,6 +638,7 @@ class V3ReplayRunner:
         self._v3_rescue_max_calls = int(settings.trajectory_cache_v3_rescue_max_calls_per_replay or 0)
         self._last_locator_point: Optional[Tuple[int, int]] = None
         self._last_locator_target = ""
+        self._reuse_next_before_frame = False
 
     async def run(self) -> ReplayResult:
         actions = list(self.trajectory.get("actions") or [])
@@ -778,9 +658,18 @@ class V3ReplayRunner:
                         f"{_v3_target_text(action)}"
                     ),
                 )
-                before_bytes = await self._wait_stable()
-                if before_bytes is None:
-                    before_bytes = await self._screenshot_jpeg()
+                if self._reuse_next_before_frame and self._last_frame is not None:
+                    before_bytes = self._last_frame
+                    self._reuse_next_before_frame = False
+                    await self._log(
+                        1,
+                        "V3页面稳定检测",
+                        f"复用上一 action after 稳定帧作为 #{index} before，跳过稳定检测",
+                    )
+                else:
+                    before_bytes = await self._wait_stable()
+                    if before_bytes is None:
+                        before_bytes = await self._screenshot_jpeg()
                 self._final_before_bytes = before_bytes
                 self._emit_screenshot(index, "before", before_bytes)
                 execution_action = await self._materialize_action(
@@ -797,6 +686,7 @@ class V3ReplayRunner:
                         f"#{index} 当前页面已可衔接后续缓存动作，跳过本动作",
                     )
                     self._last_frame = before_bytes
+                    self._reuse_next_before_frame = True
                     self._final_after_bytes = before_bytes
                     if self.capture_after_each_action:
                         self._emit_screenshot(index, "after", before_bytes)
@@ -832,6 +722,8 @@ class V3ReplayRunner:
                     if after_bytes is None:
                         after_bytes = await self._screenshot_jpeg()
                     self._final_after_bytes = after_bytes
+                    self._last_frame = after_bytes
+                    self._reuse_next_before_frame = True
                     self._emit_screenshot(index, "after", after_bytes)
                 self._emit_step_end(
                     index,
@@ -1296,10 +1188,9 @@ class V3ReplayRunner:
         return await asyncio.to_thread(self.driver.screenshot_jpeg, 25, 720)
 
     async def _wait_stable(self) -> Optional[bytes]:
-        result = await wait_page_stable_pixel(
+        result = await wait_page_stable_v2_compare(
             self._screenshot_jpeg,
             frame_a_bytes=self._last_frame,
-            use_cache_settings=True,
             log=(
                 None
                 if self.log is None
@@ -1365,6 +1256,124 @@ class V3ReplayRunner:
         )
 
 
+ScreenshotFn = Callable[[], Awaitable[bytes]]
+LogFn = Callable[[int, str, str], None]
+
+
+async def wait_page_stable_v2_compare(
+    screenshot: ScreenshotFn,
+    frame_a_bytes: Optional[bytes] = None,
+    *,
+    log: Optional[LogFn] = None,
+) -> StabilityResult:
+    """V3 回放专用稳定检测：流程沿用两帧轮询，比较方式使用 V2 alignment 指标。
+
+    这不是 V2 路标对齐；这里没有缓存图。它只是把"上一帧 vs 当前帧"的差异
+    判断从单一 pHash 换成 V2 的 global/center/black/orientation 组合判定。
+    """
+
+    started = time.monotonic()
+    settings = get_settings()
+    enabled = bool(settings.trajectory_cache_page_stable_enabled)
+    total_timeout_s = float(settings.trajectory_cache_page_stable_timeout_s)
+    poll_interval_s = max(0.1, float(settings.trajectory_cache_page_stable_poll_s))
+    phash_threshold = float(settings.trajectory_cache_v3_stable_threshold)
+    roi_threshold = float(settings.trajectory_cache_v3_stable_roi_threshold)
+    black_threshold = float(settings.trajectory_cache_v3_stable_black_ratio_threshold)
+
+    def _log(level: int, title: str, content: str) -> None:
+        if log is not None:
+            log(level, title, content)
+
+    def _elapsed_ms() -> int:
+        return int((time.monotonic() - started) * 1000)
+
+    if not enabled:
+        _log(
+            1,
+            "V3页面稳定检测",
+            "未开启，直接截图放行"
+            + (" | 忽略复用尾帧" if frame_a_bytes is not None else ""),
+        )
+        try:
+            current_bytes = await screenshot()
+            return StabilityResult(current_bytes, False, _elapsed_ms(), 0)
+        except Exception as exc:  # noqa: BLE001
+            _log(3, "截图异常", f"错误: {exc} | 返回复用尾帧")
+            return StabilityResult(frame_a_bytes, False, _elapsed_ms(), 0)
+
+    _log(
+        1,
+        "V3页面稳定检测",
+        (
+            "策略=V2图像对比 | "
+            f"总超时={total_timeout_s}s | 轮询={poll_interval_s}s | "
+            f"global阈值={phash_threshold} | center阈值={roi_threshold} | "
+            f"black阈值={black_threshold}"
+            + (" | 复用上步尾帧" if frame_a_bytes is not None else "")
+        ),
+    )
+
+    last_bytes = frame_a_bytes
+    if last_bytes is None:
+        try:
+            last_bytes = await screenshot()
+        except Exception as exc:  # noqa: BLE001
+            _log(3, "基准截图失败", f"错误: {exc}")
+            return StabilityResult(None, False, _elapsed_ms(), 0)
+
+    checks = 0
+    while (time.monotonic() - started) < total_timeout_s:
+        await asyncio.sleep(poll_interval_s)
+        try:
+            current_bytes = await screenshot()
+        except Exception as exc:  # noqa: BLE001
+            _log(3, "截图异常", f"错误: {exc} | 返回最后帧")
+            return StabilityResult(last_bytes, False, _elapsed_ms(), checks)
+
+        checks += 1
+        target_hash = compute_phash(last_bytes)
+        result = _compare_alignment(
+            current_bytes=current_bytes,
+            landmark_bytes=last_bytes,
+            target_hash=target_hash,  # type: ignore[arg-type]
+            phash_threshold=phash_threshold,
+            roi_threshold=roi_threshold,
+            black_ratio_threshold=black_threshold,
+        )
+        if bool(result.get("match")):
+            _log(
+                1,
+                "V3截图已稳定",
+                (
+                    f"global={result['global_diff']:.4f} "
+                    f"center={result['center_mae']:.4f} "
+                    f"black={result['black_ratio_diff']:.4f} | "
+                    f"检测{checks}次 | 耗时{_elapsed_ms() / 1000:.1f}s"
+                ),
+            )
+            return StabilityResult(current_bytes, True, _elapsed_ms(), checks)
+
+        _log(
+            1,
+            "V3页面变化中",
+            (
+                f"global={result['global_diff']:.4f} "
+                f"center={result['center_mae']:.4f} "
+                f"black={result['black_ratio_diff']:.4f} "
+                f"reason={result['reason']} | 第{checks}次 | 继续等待"
+            ),
+        )
+        last_bytes = current_bytes
+
+    _log(
+        2,
+        "V3检测超时",
+        f"已检测{_elapsed_ms() / 1000:.1f}s（{checks}次），返回最后帧继续执行",
+    )
+    return StabilityResult(last_bytes, False, _elapsed_ms(), checks)
+
+
 def build_v3_locator_prompt(
     *,
     goal: str,
@@ -1406,30 +1415,6 @@ def build_v3_locator_prompt(
         f"{locate_rule}"
         "- 找不到时只输出：无\n"
         "- 除上述坐标标签或 无 之外，不要输出任何其他内容。"
-    )
-
-
-def build_v3_computer_use_locator_prompt(*, action: Dict[str, Any]) -> str:
-    action_type = str(action.get("type") or "")
-    plan_intent = str(action.get("plan_intent") or action.get("intent") or "").strip()
-    if action_type == A.ACTION_DRAG:
-        action_instruction = "use one drag action from the source position to the target position"
-    elif action_type == A.ACTION_DOUBLE_TAP:
-        action_instruction = "use one double-click action on the target control center"
-    elif action_type == A.ACTION_LONG_PRESS:
-        action_instruction = "use one long-press action on the target control center"
-    else:
-        action_instruction = "use one left-click action on the target control center"
-    return (
-        "You are locating one cached screen action on the current screenshot.\n"
-        "Use the computer tool exactly once for the requested action.\n"
-        "Do not infer or execute any surrounding steps.\n"
-        "Do not reuse old cached coordinates; inspect the current screenshot.\n"
-        "If the target is not visible, is covered by a popup, or you would need to guess, "
-        "do not click. Reply with text: ASSERT_FAIL: target not found.\n\n"
-        f"Target: {plan_intent or action_type}\n"
-        f"Required action: {action_type}; {action_instruction}.\n"
-        "Coordinates are absolute pixels in the screenshot provided to you."
     )
 
 
@@ -1483,10 +1468,17 @@ def parse_v3_locator_response(
         normalized_coord_space = "normalized"
 
     expected = (expected_action_type or "").strip()
+    raw_stripped = raw.strip()
     if expected:
         if expected == A.ACTION_DRAG:
-            start = _parse_locator_tag_point(raw, "start")
-            end = _parse_locator_tag_point(raw, "end")
+            if not re.fullmatch(
+                r"<start>\s*-?\d+\s+-?\d+\s*</start>\s*<end>\s*-?\d+\s+-?\d+\s*</end>",
+                raw_stripped,
+                flags=re.IGNORECASE | re.DOTALL,
+            ):
+                return None
+            start = _parse_locator_tag_point(raw_stripped, "start")
+            end = _parse_locator_tag_point(raw_stripped, "end")
             if start and end:
                 return A.ParsedAction(
                     action=A.ACTION_DRAG,
@@ -1496,7 +1488,13 @@ def parse_v3_locator_response(
                     coord_space=normalized_coord_space,
                 )
         else:
-            point = _parse_locator_tag_point(raw, "point")
+            if not re.fullmatch(
+                r"<point>\s*-?\d+\s+-?\d+\s*</point>",
+                raw_stripped,
+                flags=re.IGNORECASE | re.DOTALL,
+            ):
+                return None
+            point = _parse_locator_tag_point(raw_stripped, "point")
             if point:
                 return A.ParsedAction(
                     action=expected,
@@ -1567,109 +1565,6 @@ def parse_v3_rescue_response(text: str, *, coord_space: str = "normalized") -> V
         raw=text,
         coord_space=coord_space if coord_space in {"normalized", "absolute"} else "normalized",
     )
-
-
-def _v3_rescue_decision_from_main_vlm_decision(model_decision: Any) -> V3RescueDecision:
-    parsed_actions = list(getattr(model_decision, "parsed_actions", None) or [])
-    thought = str(getattr(model_decision, "thought", "") or "")
-    raw = str(getattr(model_decision, "raw_content", "") or "")
-    if not parsed_actions:
-        return V3RescueDecision(
-            verdict=V3_RESCUE_GIVE_UP,
-            reason="主 VLM Computer Use 未返回可解析动作",
-            raw=raw,
-            error="empty_action",
-            coord_space="absolute",
-        )
-    parsed = parsed_actions[0]
-    reason = parsed.content or thought or parsed.raw or ""
-    if parsed.action == A.ACTION_FINISHED:
-        verdict, wait_ms, parsed_reason = _parse_v3_rescue_finished_content(reason)
-        return V3RescueDecision(
-            verdict=verdict,
-            reason=parsed_reason or reason or verdict,
-            wait_ms=wait_ms,
-            raw=raw,
-            coord_space="absolute",
-        )
-    if parsed.action == A.ACTION_WAIT:
-        return V3RescueDecision(
-            verdict=V3_RESCUE_WAIT,
-            reason=reason or "主 VLM Computer Use 判断页面仍在加载",
-            wait_ms=max(100, min(10_000, int(parsed.seconds or 1) * 1000)),
-            raw=raw,
-            coord_space="absolute",
-        )
-    if parsed.action == A.ACTION_ASSERT_FAIL:
-        return V3RescueDecision(
-            verdict=V3_RESCUE_GIVE_UP,
-            reason=reason or "主 VLM Computer Use 判断无法安全恢复",
-            raw=raw,
-            coord_space="absolute",
-        )
-    if parsed.is_known:
-        return V3RescueDecision(
-            verdict=V3_RESCUE_REPAIR_ACTION,
-            reason=thought or f"执行局部修复动作 {parsed.action}",
-            repair_action=_v3_repair_action_from_parsed(parsed),
-            raw=raw,
-            coord_space="absolute",
-        )
-    return V3RescueDecision(
-        verdict=V3_RESCUE_GIVE_UP,
-        reason=f"主 VLM Computer Use 输出未知动作：{parsed.action}",
-        raw=raw,
-        error="unknown_action",
-        coord_space="absolute",
-    )
-
-
-def _parse_v3_rescue_finished_content(content: str) -> Tuple[str, int, str]:
-    text = str(content or "").strip()
-    upper = text.upper()
-    if upper.startswith(V3_RESCUE_WAIT):
-        rest = _split_v3_rescue_content(text, V3_RESCUE_WAIT)
-        wait_ms = 800
-        match = re.match(r"\s*(\d{2,6})\s*(?:ms|毫秒)?\s*[:：,，\-]?\s*(.*)", rest)
-        if match:
-            wait_ms = max(100, min(10_000, int(match.group(1))))
-            reason = match.group(2).strip() or "主 VLM Computer Use 判断页面仍在加载"
-        else:
-            reason = rest or "主 VLM Computer Use 判断页面仍在加载"
-        return V3_RESCUE_WAIT, wait_ms, reason
-    if upper.startswith(V3_RESCUE_CONTINUE_REPLAY) or upper.startswith("CONTINUE"):
-        return V3_RESCUE_CONTINUE_REPLAY, 0, _split_v3_rescue_content(text, V3_RESCUE_CONTINUE_REPLAY) or text
-    if upper.startswith(V3_RESCUE_GIVE_UP) or upper.startswith("ASSERT_FAIL"):
-        return V3_RESCUE_GIVE_UP, 0, _split_v3_rescue_content(text, V3_RESCUE_GIVE_UP) or text
-    return V3_RESCUE_GIVE_UP, 0, f"主 VLM Computer Use finished 未声明 V3 rescue verdict：{text[:120]}"
-
-
-def _split_v3_rescue_content(text: str, verdict: str) -> str:
-    raw = str(text or "").strip()
-    if raw.upper().startswith(verdict):
-        raw = raw[len(verdict):]
-    if raw.startswith(":") or raw.startswith("："):
-        raw = raw[1:]
-    return raw.strip()
-
-
-def _v3_repair_action_from_parsed(parsed: A.ParsedAction) -> Dict[str, Any]:
-    out: Dict[str, Any] = {"type": parsed.action}
-    if parsed.point is not None:
-        out["point"] = {"x": int(parsed.point[0]), "y": int(parsed.point[1])}
-    if parsed.start_point is not None:
-        out["start"] = {"x": int(parsed.start_point[0]), "y": int(parsed.start_point[1])}
-    if parsed.end_point is not None:
-        out["end"] = {"x": int(parsed.end_point[0]), "y": int(parsed.end_point[1])}
-    if parsed.direction:
-        out["direction"] = parsed.direction
-    if parsed.content:
-        out["content"] = parsed.content
-    if parsed.seconds is not None:
-        out["seconds"] = int(parsed.seconds)
-    if parsed.name:
-        out["name"] = parsed.name
-    return out
 
 
 def _replay_action_from_parsed(
