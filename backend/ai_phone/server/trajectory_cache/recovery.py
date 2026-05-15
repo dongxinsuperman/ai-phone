@@ -496,9 +496,15 @@ class CacheReplayRecoveryVerifier:
                 },
             },
         ]
+        # max_tokens=8192：anthropic /v1/messages 是强制硬上限，超出会被 API
+        # 截断输出。recovery 一次往往要写"附图1是 X，附图2是 Y，所以放行/修复/
+        # 失败" 完整 thought + finished(content='...')，长尾极端可达 4-5k token，
+        # 之前的 1024 会硬切掉 ')'，让 parser 看到未闭合 finished -> ASSERT_FAIL，
+        # 把模型本来正确的"放行继续"判断错杀。8192 给 thinking + 长解释充足
+        # buffer，且对所有 claude 系列（3.5 / 4 / 4.5）都是合法上限。
         payload: Dict[str, Any] = {
             "model": model,
-            "max_tokens": 1024,
+            "max_tokens": 8192,
             "system": (
                 "你是轨迹缓存回放的局部恢复 VLM。"
                 "必须使用 Thought/Action 格式输出一个局部恢复动作、"
