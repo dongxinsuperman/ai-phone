@@ -61,14 +61,23 @@ reasoning、forced verdict、FINISHED / ASSERT_FAIL 的说明文字。
 
 - 在主 system prompt 靠前位置增加“人类可读语言策略”。
 - 把 forced verdict line 的自然语言模板改成中文表达。
-- 保留 `SATISFIED / NOT SATISFIED` 或改成中文枚举都可以，但如果改中文，要确认监督逻辑和文案引用没有依赖英文枚举。
+- `[SATISFIED / NOT SATISFIED]` 可以直接改成 `[已满足 / 未满足]`：全代码搜索
+  确认这两个枚举词**只出现在 prompt 文本里**，没有任何 runner / supervisor
+  代码侧解析，纯粹是给模型自己 + 人类读日志看的判读结论。豆包 prompt
+  (`backend/ai_phone/shared/prompt.py`) 早就用的是 `[已满足 / 未满足]`，跑了
+  很久没炸，证明这个枚举词中文化零风险。
+- 协议词的冒号已支持半/全角混用：`claude_cu.py` 里 `_FINISHED_RE` /
+  `_ASSERT_FAIL_RE` / `_PLATFORM_ACTION_RE` 全部用 `[:：]` 同时匹配，
+  所以模型写 `FINISHED：已成功进入习题页` 也能被识别。Prompt 里可以明说
+  这一点，模型才敢自然地用中文冒号，而不是夹生的 `FINISHED: 已完成`。
 
-建议先保留英文枚举，降低风险：
+建议的人类可读语言策略片段：
 
 ```text
 人类可读语言策略：
 - reasoning、说明、完成原因、失败原因使用简体中文。
-- 协议关键字、tool 名称、action 名称、字段名保持英文。
+- 协议关键字、tool 名称、action 名称、字段名保持英文（关键字后的冒号
+  支持半/全角，写 `FINISHED:` 或 `FINISHED：` 都可以）。
 - 屏幕真实 UI 文案按原样引用，不要翻译。
 ```
 
@@ -101,7 +110,15 @@ reasoning、forced verdict、FINISHED / ASSERT_FAIL 的说明文字。
 - V2 / V3 recovery prompt：`backend/ai_phone/server/trajectory_cache/recovery.py`
 - ephemeral classifier / gate prompt：`backend/ai_phone/server/trajectory_cache/ephemeral.py`
 
-也不建议加“展示层翻译”。展示层翻译会把真实模型输出和日志证据切开，
+**顺带收益（值得提一句）**：V3 plan_intent cleaner 在
+`v3_service.py` 里专门维护了一条「英文 thought 噪声」正则
+（`let me analyze | current screenshot | i can see | appears to | forced verdict | ...`），
+用来识别"模型把英文 reasoning 误吐进 plan_intent"的污染。一旦海外 CU prompt
+改中文，这条正则的命中率会自然下降——首跑 thought 中文 → cache 收集到的
+原文也是中文 → cleaner 不需要二次救火。所以本改造对 V3 缓存质量是双向正向，
+不仅"日志好读"，也"缓存更稳"。
+
+也不建议加"展示层翻译"。展示层翻译会把真实模型输出和日志证据切开，
 后续排查 Computer Use 行为时反而更难追责。
 
 ## 6. 推荐 prompt 片段
@@ -115,22 +132,24 @@ Use Simplified Chinese for all human-readable reasoning, explanations,
 status summaries, FINISHED reasons, and ASSERT_FAIL reasons.
 
 Keep protocol keywords, tool names, action names, and field names exactly as
-specified in English, including `computer`, `FINISHED:`, `ASSERT_FAIL:`,
-`PLATFORM_ACTION:`, and action names.
+specified in English: `computer`, `FINISHED`, `ASSERT_FAIL`, `PLATFORM_ACTION`,
+and action names. The colon after these keywords accepts both half-width `:`
+and full-width `：` — pick whichever reads naturally in context (e.g. write
+`FINISHED：已成功进入习题页` when the reason is in Chinese).
 
 When referring to visible UI text, quote it exactly as shown on screen. Do not
 translate button names, tab names, app names, product names, or page titles.
 ```
 
-如果要把 forced verdict 模板也中文化，可以改成：
+forced verdict 模板可以直接整体中文化，与豆包 prompt 一致：
 
 ```text
-"子步骤 N '<原始片段>' -> 目标状态：<把动作转成状态>。
-当前截图：[SATISFIED / NOT SATISFIED]，依据：<具体视觉证据>。"
+"子步骤 N「<原始片段>」→ 目标状态：<把动作转成状态>。
+当前截图：[已满足 / 未满足]，依据：<具体视觉证据>。"
 ```
 
-这里先保留 `[SATISFIED / NOT SATISFIED]`，因为它是稳定的内部判定词；
-只把外层解释改成中文。
+`[已满足 / 未满足]` 不会破坏任何机器协议——这两个枚举词 runner / supervisor
+代码侧根本不解析，只给模型自己分支判断和人类读日志用，豆包 prompt 早就这么写。
 
 ## 7. 风险
 
@@ -151,9 +170,13 @@ translate button names, tab names, app names, product names, or page titles.
 
 - Claude CU 首次执行时，“思考”日志主体为中文。
 - GPT CU 首次执行时，“思考”日志主体为中文。
-- `FINISHED:` / `ASSERT_FAIL:` 仍能被 runner 正确解析。
+- `FINISHED:` / `ASSERT_FAIL:` 仍能被 runner 正确解析（半角或全角冒号都行）。
 - `PLATFORM_ACTION:` 仍能被 runner 正确解析。
 - click / type / scroll / wait 等 Computer Use 动作仍能执行。
+
+**最直观的肉眼验收**：跑一个中文 goal 的 case，看 `vlm_loop.py` 输出的
+`#N 思考 — ...` 那一行是不是中文。如果还是大段英文 reasoning，说明 prompt
+策略段位置不够靠前，或者被后续英文规则段稀释了——把策略段往最顶上挪一挪。
 
 业务验收：
 
