@@ -1,13 +1,13 @@
-"""轨迹缓存状态路标 MISS 后的 VLM 局部恢复。
+"""轨迹缓存状态路标 MISS 后的 VLM 局部恢复（"辅助 vlm"）。
 
-执行能力同源：doubao 系沿用可执行 Thought/Action vision 协议；海外
-``claude_cu`` / ``gpt_cu`` 主链路沿用主 VLM Computer Use 能力，只通过 prompt
-把职责收窄到当前 action 的局部恢复。普通 chat/messages 兼容路径保留给非 CU
-或历史配置，但不能作为海外 CU 的执行能力降级。
+调用协议设计（见 ``docs/executable-logic-contract.md §14`` 海外辅 vlm 协议
+对齐）：所有海外辅助 vlm（标签 vlm / 辅助 vlm / 定位 vlm）一律走"主 vlm
+同模型 + chat 单次协议"，**不进 Computer Use agent loop**。CU 训练目标是
+agent 持续干活；被叫一次让它给 verdict / 给单个修复动作时，经常用 thinking
++ 自然语言敷衍，既不调 tool 也不写关键字 → parsed_actions 空 → ASSERT_FAIL
+→ 整个 cache 回放卡死。
 
-当前 doubao 系复用主 VLM 的 Thought/Action DSL，不另起 JSON 协议。recovery
-VLM 的作用域不是重跑完整 case，而是在 action_i 的 handoff 不一致时做局部
-恢复：
+恢复职责（不变）：
 
 - ``CONTINUE_REPLAY``：当前差异可接受（视频/资源位/文案变化等），继续缓存回放
 - ``WAIT_MORE``：页面可能还在加载，再等一段时间后由 ReplayRunner 重比一次
@@ -20,15 +20,17 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import io
 import re
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
-from PIL import Image, ImageDraw
 
 from ai_phone.config import Settings, get_settings
+from ai_phone.server.trajectory_cache._overseas_chat import (
+    main_vlm_is_overseas_cu,
+    overseas_cu_to_chat_config,
+)
 from ai_phone.shared import actions as A
 
 
@@ -89,18 +91,13 @@ class CacheReplayRecoveryVerifier:
     # ------------------------------------------------------------------
     def is_configured(self) -> bool:
         s = self.settings
-        if self._use_main_executable_vlm():
-            return bool(
-                s.trajectory_cache_recovery_vlm_enabled
-                and s.vlm_api_url
-                and s.vlm_api_key
-                and s.vlm_model
-            )
+        backend, api_url, api_key, model, _timeout = self._resolve_chat_config()
         return bool(
             s.trajectory_cache_recovery_vlm_enabled
-            and s.trajectory_cache_recovery_vlm_api_url
-            and s.trajectory_cache_recovery_vlm_api_key
-            and s.trajectory_cache_recovery_vlm_model
+            and backend
+            and api_url
+            and api_key
+            and model
         )
 
     def configuration_problem(self) -> str:
@@ -108,27 +105,50 @@ class CacheReplayRecoveryVerifier:
         s = self.settings
         if not s.trajectory_cache_recovery_vlm_enabled:
             return "recovery_vlm 未启用（trajectory_cache_recovery_vlm_enabled=false）"
-        if self._use_main_executable_vlm():
-            missing: List[str] = []
-            if not s.vlm_api_url:
-                missing.append("vlm_api_url")
-            if not s.vlm_api_key:
-                missing.append("vlm_api_key")
-            if not s.vlm_model:
-                missing.append("vlm_model")
-            if missing:
-                return f"主 VLM Computer Use 配置缺失：{','.join(missing)}"
-            return ""
+        backend, api_url, api_key, model, _timeout = self._resolve_chat_config()
         missing: List[str] = []
-        if not s.trajectory_cache_recovery_vlm_api_url:
+        if not backend:
+            missing.append("backend")
+        if not api_url:
             missing.append("api_url")
-        if not s.trajectory_cache_recovery_vlm_api_key:
+        if not api_key:
             missing.append("api_key")
-        if not s.trajectory_cache_recovery_vlm_model:
+        if not model:
             missing.append("model")
         if missing:
-            return f"recovery_vlm 配置缺失：{','.join(missing)}"
+            source = (
+                "海外主 vlm chat 协议翻译"
+                if self._main_vlm_is_overseas_cu()
+                else "recovery_vlm 配置"
+            )
+            return f"{source}缺失：{','.join(missing)}"
         return ""
+
+    def _resolve_chat_config(self) -> Tuple[str, str, str, str, float]:
+        """决定 recovery 走哪条 chat 通道。
+
+        - 海外主 vlm（claude_cu / gpt_cu）：用主 vlm key/url/model + 翻译协议，
+          辅 vlm 跟主 vlm 用同一把 key、同一个模型，只是不开 CU agent loop。
+        - 其它情况（豆包系 / 自定义代理 / 未知）：用 trajectory_cache_recovery_vlm_*
+          独立配置，保留历史行为。
+        """
+        s = self.settings
+        timeout = float(s.trajectory_cache_recovery_vlm_timeout_sec)
+        if self._main_vlm_is_overseas_cu():
+            backend, api_url, api_key, model = overseas_cu_to_chat_config(
+                main_backend=str(s.vlm_backend or ""),
+                main_api_url=str(s.vlm_api_url or ""),
+                main_api_key=str(s.vlm_api_key or ""),
+                main_model=str(s.vlm_model or ""),
+            )
+            return (backend, api_url, api_key, model, timeout)
+        return (
+            str(s.trajectory_cache_recovery_vlm_backend or "openai_compatible"),
+            str(s.trajectory_cache_recovery_vlm_api_url or ""),
+            str(s.trajectory_cache_recovery_vlm_api_key or ""),
+            str(s.trajectory_cache_recovery_vlm_model or ""),
+            timeout,
+        )
 
     @property
     def default_wait_ms(self) -> int:
@@ -155,13 +175,16 @@ class CacheReplayRecoveryVerifier:
             return "absolute"
         return "normalized"
 
-    def _use_main_executable_vlm(self) -> bool:
-        backend = (
-            self._main_vlm_backend
-            or str(getattr(self.settings, "vlm_backend", "") or "")
-        ).strip().lower()
-        configured = str(getattr(self.settings, "vlm_backend", "") or "").strip().lower()
-        return backend in {"claude_cu", "gpt_cu"} and configured == backend
+    def _main_vlm_is_overseas_cu(self) -> bool:
+        """主 vlm 是否海外 Computer Use 链路。
+
+        True 时 recovery 不再走 CU agent 通道，而是用主 vlm 同模型 + chat
+        单次协议（见 _resolve_chat_config）。
+        """
+        return main_vlm_is_overseas_cu(
+            main_vlm_backend=self._main_vlm_backend,
+            configured_vlm_backend=str(getattr(self.settings, "vlm_backend", "") or ""),
+        )
 
     # ------------------------------------------------------------------
     # 主调用
@@ -200,13 +223,6 @@ class CacheReplayRecoveryVerifier:
             coord_space=coord_space,
         )
 
-        if self._use_main_executable_vlm():
-            return await self._decide_with_main_executable_vlm(
-                prompt=prompt,
-                landmark_bytes=landmark_bytes,
-                current_bytes=current_bytes,
-            )
-
         loop = asyncio.get_event_loop()
         started_at = loop.time()
         try:
@@ -219,25 +235,25 @@ class CacheReplayRecoveryVerifier:
                 timeout=float(self.settings.trajectory_cache_recovery_vlm_timeout_sec),
             )
         except asyncio.TimeoutError:
-            return RecoveryDecision(
-                verdict=VERDICT_ASSERT_FAIL,
+            return _recovery_call_failure_fallback(
                 reason=(
                     f"recovery_vlm 调用超时 "
                     f"({self.settings.trajectory_cache_recovery_vlm_timeout_sec:.1f}s)，"
-                    "按保守策略终止缓存回放"
+                    "按 WAIT_MORE 兜底再等一次"
                 ),
+                wait_ms=self.default_wait_ms,
                 elapsed_ms=int((loop.time() - started_at) * 1000),
                 error="timeout",
             )
         except Exception as exc:  # noqa: BLE001
-            return RecoveryDecision(
-                verdict=VERDICT_ASSERT_FAIL,
+            return _recovery_call_failure_fallback(
                 reason=(
                     f"recovery_vlm 调用失败：{type(exc).__name__}: {str(exc)[:160]}，"
-                    "按保守策略终止缓存回放"
+                    "按 WAIT_MORE 兜底再等一次"
                 ),
+                wait_ms=self.default_wait_ms,
                 elapsed_ms=int((loop.time() - started_at) * 1000),
-                error=f"{type(exc).__name__}",
+                error=type(exc).__name__,
             )
 
         decision = parse_recovery_response(
@@ -247,93 +263,6 @@ class CacheReplayRecoveryVerifier:
         )
         decision.elapsed_ms = int((loop.time() - started_at) * 1000)
         return decision
-
-    async def _decide_with_main_executable_vlm(
-        self,
-        *,
-        prompt: str,
-        landmark_bytes: bytes,
-        current_bytes: bytes,
-    ) -> RecoveryDecision:
-        """海外 CU 主链路专用：使用同源 Computer Use 能力做局部恢复。
-
-        Claude / GPT Computer Use 每轮只吃一张屏幕图。这里把“缓存 handoff
-        参考图”和“当前真实截图”拼成一张诊断图，要求模型只在当前截图区域
-        操作；返回后再把坐标投回当前截图坐标，交给 replay runner 按 absolute
-        分支缩放到设备坐标。
-        """
-        canvas = _build_labeled_image_canvas(
-            [
-                ("cached handoff reference - do not operate here", landmark_bytes),
-                ("current replay screen - operate only here", current_bytes),
-            ]
-        )
-        current_pane = canvas.panes[1]
-        system_prompt = (
-            "You are the trajectory replay recovery VLM for a real mobile device.\n"
-            "The screenshot is a diagnostic canvas with two panes. The left pane is "
-            "only a cached reference. The right pane is the current live phone screen.\n"
-            "If you need to perform a UI action, use the computer tool on the RIGHT "
-            "current-screen pane only. Never click the left reference pane.\n"
-            "If the replay can continue, do not use the computer tool; answer with "
-            "FINISHED: <reason>. If it cannot recover, answer ASSERT_FAIL: <reason>.\n\n"
-            "Important: the policy text below is shared with non-Computer-Use backends "
-            "and may mention Thought/Action text DSL. For this Computer Use call, ignore "
-            "that output-format section. Use the computer tool for repair actions, or "
-            "FINISHED / ASSERT_FAIL text for terminal decisions.\n\n"
-            + prompt
-        )
-        loop = asyncio.get_event_loop()
-        started_at = loop.time()
-        try:
-            if self._main_vlm_backend == "gpt_cu":
-                from ai_phone.shared.llm.main.gpt_cu import GPTComputerUseClient
-
-                client = GPTComputerUseClient(
-                    system_prompt=system_prompt,
-                    api_url=self.settings.vlm_api_url,
-                    api_key=self.settings.vlm_api_key,
-                    model=self.settings.vlm_model,
-                    timeout_seconds=float(self.settings.trajectory_cache_recovery_vlm_timeout_sec),
-                )
-            else:
-                from ai_phone.shared.llm.main.claude_cu import ClaudeComputerUseClient
-
-                client = ClaudeComputerUseClient(
-                    system_prompt=system_prompt,
-                    api_url=self.settings.vlm_api_url,
-                    api_key=self.settings.vlm_api_key,
-                    model=self.settings.vlm_model,
-                    timeout_seconds=float(self.settings.trajectory_cache_recovery_vlm_timeout_sec),
-                )
-            model_decision = await asyncio.wait_for(
-                client.decide(canvas.bytes),
-                timeout=float(self.settings.trajectory_cache_recovery_vlm_timeout_sec),
-            )
-        except asyncio.TimeoutError:
-            return RecoveryDecision(
-                verdict=VERDICT_ASSERT_FAIL,
-                reason="recovery_vlm 主 VLM Computer Use 调用超时，按保守策略终止缓存回放",
-                elapsed_ms=int((loop.time() - started_at) * 1000),
-                error="timeout",
-            )
-        except Exception as exc:  # noqa: BLE001
-            return RecoveryDecision(
-                verdict=VERDICT_ASSERT_FAIL,
-                reason=(
-                    f"recovery_vlm 主 VLM Computer Use 调用失败："
-                    f"{type(exc).__name__}: {str(exc)[:160]}"
-                ),
-                elapsed_ms=int((loop.time() - started_at) * 1000),
-                error=type(exc).__name__,
-            )
-
-        out = _recovery_decision_from_main_vlm_decision(
-            model_decision,
-            current_pane=current_pane,
-        )
-        out.elapsed_ms = int((loop.time() - started_at) * 1000)
-        return out
 
     # ------------------------------------------------------------------
     # VLM 协议后端
@@ -345,25 +274,37 @@ class CacheReplayRecoveryVerifier:
         landmark_bytes: bytes,
         current_bytes: bytes,
     ) -> str:
-        s = self.settings
-        backend = (s.trajectory_cache_recovery_vlm_backend or "openai_compatible").strip().lower()
+        backend, api_url, api_key, model, timeout_sec = self._resolve_chat_config()
+        backend = (backend or "openai_compatible").strip().lower()
         if backend == "openai_compatible":
             return await self._chat_completions_double_image(
                 prompt=prompt,
                 landmark_bytes=landmark_bytes,
                 current_bytes=current_bytes,
+                api_url=api_url,
+                api_key=api_key,
+                model=model,
+                timeout_sec=timeout_sec,
             )
         if backend == "doubao_responses":
             return await self._responses_double_image(
                 prompt=prompt,
                 landmark_bytes=landmark_bytes,
                 current_bytes=current_bytes,
+                api_url=api_url,
+                api_key=api_key,
+                model=model,
+                timeout_sec=timeout_sec,
             )
         if backend == "claude_messages":
             return await self._messages_double_image(
                 prompt=prompt,
                 landmark_bytes=landmark_bytes,
                 current_bytes=current_bytes,
+                api_url=api_url,
+                api_key=api_key,
+                model=model,
+                timeout_sec=timeout_sec,
             )
         raise RuntimeError(
             f"recovery_vlm 暂不支持 backend={backend}，"
@@ -379,8 +320,11 @@ class CacheReplayRecoveryVerifier:
         prompt: str,
         landmark_bytes: bytes,
         current_bytes: bytes,
+        api_url: str,
+        api_key: str,
+        model: str,
+        timeout_sec: float,
     ) -> str:
-        s = self.settings
         landmark_b64 = base64.b64encode(landmark_bytes).decode("ascii")
         current_b64 = base64.b64encode(current_bytes).decode("ascii")
         user_content: List[Dict[str, Any]] = [
@@ -395,7 +339,7 @@ class CacheReplayRecoveryVerifier:
             },
         ]
         payload: Dict[str, Any] = {
-            "model": s.trajectory_cache_recovery_vlm_model,
+            "model": model,
             "temperature": 0,
             "top_p": 0,
             "messages": [
@@ -413,20 +357,13 @@ class CacheReplayRecoveryVerifier:
         # thinking 是豆包方舟 chat API 特有字段；OpenAI 端会忽略未知字段，无副作用。
         payload["thinking"] = {"type": "enabled"}
         headers = {
-            "Authorization": f"Bearer {s.trajectory_cache_recovery_vlm_api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
-        timeout = httpx.Timeout(
-            float(s.trajectory_cache_recovery_vlm_timeout_sec),
-            connect=10.0,
-        )
+        timeout = httpx.Timeout(timeout_sec, connect=10.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(
-                s.trajectory_cache_recovery_vlm_api_url,
-                json=payload,
-                headers=headers,
-            )
+            resp = await client.post(api_url, json=payload, headers=headers)
         if resp.status_code != 200:
             raise RuntimeError(
                 f"recovery_vlm chat 失败: status={resp.status_code} "
@@ -456,8 +393,11 @@ class CacheReplayRecoveryVerifier:
         prompt: str,
         landmark_bytes: bytes,
         current_bytes: bytes,
+        api_url: str,
+        api_key: str,
+        model: str,
+        timeout_sec: float,
     ) -> str:
-        s = self.settings
         landmark_b64 = base64.b64encode(landmark_bytes).decode("ascii")
         current_b64 = base64.b64encode(current_bytes).decode("ascii")
         user_content: List[Dict[str, Any]] = [
@@ -472,7 +412,7 @@ class CacheReplayRecoveryVerifier:
             },
         ]
         payload: Dict[str, Any] = {
-            "model": s.trajectory_cache_recovery_vlm_model,
+            "model": model,
             "input": [
                 {
                     "role": "system",
@@ -489,20 +429,13 @@ class CacheReplayRecoveryVerifier:
             "thinking": {"type": "disabled"},
         }
         headers = {
-            "Authorization": f"Bearer {s.trajectory_cache_recovery_vlm_api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
 
-        timeout = httpx.Timeout(
-            float(s.trajectory_cache_recovery_vlm_timeout_sec),
-            connect=10.0,
-        )
+        timeout = httpx.Timeout(timeout_sec, connect=10.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(
-                s.trajectory_cache_recovery_vlm_api_url,
-                json=payload,
-                headers=headers,
-            )
+            resp = await client.post(api_url, json=payload, headers=headers)
         if resp.status_code != 200:
             raise RuntimeError(
                 f"recovery_vlm responses 失败: status={resp.status_code} "
@@ -522,6 +455,10 @@ class CacheReplayRecoveryVerifier:
         prompt: str,
         landmark_bytes: bytes,
         current_bytes: bytes,
+        api_url: str,
+        api_key: str,
+        model: str,
+        timeout_sec: float,
     ) -> str:
         """走 Anthropic /v1/messages 协议做双图 recovery 调用。
 
@@ -532,9 +469,12 @@ class CacheReplayRecoveryVerifier:
         3. 响应在 ``data.content`` 数组里，每块 ``{"type":"text","text":...}``
            或 ``{"type":"thinking","text":...}``；要拼所有 text 块。
 
-        recovery 通道有意不开 thinking / 不开 tools——它只需要模型按 prompt 给
-        Thought/Action 文本，越简单越稳。"""
-        s = self.settings
+        recovery 通道有意 **不开 thinking / 不开 tools**——它只需要模型按 prompt
+        给 Thought/Action 文本，越简单越稳。海外主 vlm = claude_cu 时这条路径
+        会被命中（_resolve_chat_config 翻译过来），跟主 vlm 用同一把 key 同一个
+        endpoint，但 **不打 anthropic-beta header、不挂 computer 工具**——这
+        正是把 Claude 从 CU agent 模式切回普通 chat 模式的关键。
+        """
         landmark_b64 = base64.b64encode(landmark_bytes).decode("ascii")
         current_b64 = base64.b64encode(current_bytes).decode("ascii")
         user_content: List[Dict[str, Any]] = [
@@ -557,7 +497,7 @@ class CacheReplayRecoveryVerifier:
             },
         ]
         payload: Dict[str, Any] = {
-            "model": s.trajectory_cache_recovery_vlm_model,
+            "model": model,
             "max_tokens": 1024,
             "system": (
                 "你是轨迹缓存回放的局部恢复 VLM。"
@@ -567,21 +507,14 @@ class CacheReplayRecoveryVerifier:
             "messages": [{"role": "user", "content": user_content}],
         }
         headers = {
-            "x-api-key": s.trajectory_cache_recovery_vlm_api_key,
+            "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
             "Content-Type": "application/json",
         }
 
-        timeout = httpx.Timeout(
-            float(s.trajectory_cache_recovery_vlm_timeout_sec),
-            connect=10.0,
-        )
+        timeout = httpx.Timeout(timeout_sec, connect=10.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(
-                s.trajectory_cache_recovery_vlm_api_url,
-                json=payload,
-                headers=headers,
-            )
+            resp = await client.post(api_url, json=payload, headers=headers)
         if resp.status_code != 200:
             raise RuntimeError(
                 f"recovery_vlm messages 失败: status={resp.status_code} "
@@ -814,152 +747,29 @@ def _strip_markdown_decorations(text: str) -> str:
     return out
 
 
-class CanvasResult:
-    def __init__(
-        self,
-        *,
-        bytes_: bytes,
-        panes: List[Tuple[int, int, int, int]],
-    ) -> None:
-        self.bytes = bytes_
-        self.panes = panes
-
-
-def _build_labeled_image_canvas(
-    items: List[Tuple[str, bytes]],
+def _recovery_call_failure_fallback(
     *,
-    gap: int = 16,
-    label_h: int = 34,
-) -> CanvasResult:
-    images: List[Image.Image] = []
-    for _label, data in items:
-        img = Image.open(io.BytesIO(data)).convert("RGB")
-        images.append(img)
-    total_w = sum(img.width for img in images) + gap * (len(images) - 1)
-    max_h = max((img.height for img in images), default=1)
-    canvas = Image.new("RGB", (total_w, max_h + label_h), "white")
-    draw = ImageDraw.Draw(canvas)
-    panes: List[Tuple[int, int, int, int]] = []
-    x = 0
-    for (label, _data), img in zip(items, images):
-        draw.rectangle([x, 0, x + img.width - 1, label_h - 1], fill=(238, 242, 247))
-        draw.text((x + 8, 9), label, fill=(20, 24, 31))
-        canvas.paste(img, (x, label_h))
-        panes.append((x, label_h, img.width, img.height))
-        x += img.width + gap
-    buf = io.BytesIO()
-    canvas.save(buf, format="JPEG", quality=90)
-    return CanvasResult(bytes_=buf.getvalue(), panes=panes)
-
-
-def _project_parsed_action_to_pane(
-    parsed: A.ParsedAction,
-    *,
-    pane: Tuple[int, int, int, int],
-) -> Optional[A.ParsedAction]:
-    x0, y0, w, h = pane
-
-    def project(point: Optional[List[int]]) -> Optional[List[int]]:
-        if point is None:
-            return None
-        px = int(point[0]) - x0
-        py = int(point[1]) - y0
-        if px < 0 or py < 0 or px >= w or py >= h:
-            return None
-        return [max(0, min(px, w - 1)), max(0, min(py, h - 1))]
-
-    point = project(parsed.point)
-    start = project(parsed.start_point)
-    end = project(parsed.end_point)
-    if parsed.point is not None and point is None:
-        return None
-    if parsed.start_point is not None and start is None:
-        return None
-    if parsed.end_point is not None and end is None:
-        return None
-    return replace(
-        parsed,
-        point=point,
-        start_point=start,
-        end_point=end,
-        coord_space="absolute",
-    )
-
-
-def _recovery_decision_from_main_vlm_decision(
-    model_decision: Any,
-    *,
-    current_pane: Tuple[int, int, int, int],
+    reason: str,
+    wait_ms: int,
+    elapsed_ms: int,
+    error: str,
 ) -> RecoveryDecision:
-    parsed_actions = list(getattr(model_decision, "parsed_actions", None) or [])
-    thought = str(getattr(model_decision, "thought", "") or "")
-    raw = str(getattr(model_decision, "raw_content", "") or "")
-    if not parsed_actions:
-        return RecoveryDecision(
-            verdict=VERDICT_ASSERT_FAIL,
-            reason="主 VLM Computer Use 未返回可解析动作",
-            raw=raw,
-            thought=thought,
-            error="empty_action",
-        )
-    parsed = parsed_actions[0]
-    reason = parsed.content or thought or parsed.raw or ""
-    if parsed.action == A.ACTION_FINISHED:
-        return RecoveryDecision(
-            verdict=VERDICT_CONTINUE,
-            reason=reason or "主 VLM Computer Use 判断当前差异可接受，继续回放",
-            raw=raw,
-            thought=thought,
-            action_text=parsed.raw,
-            parsed_actions=[parsed],
-        )
-    if parsed.action == A.ACTION_WAIT:
-        return RecoveryDecision(
-            verdict=VERDICT_WAIT_MORE,
-            reason=reason or "主 VLM Computer Use 判断页面仍可能在加载",
-            wait_ms=max(100, min(10_000, int(parsed.seconds or 1) * 1000)),
-            raw=raw,
-            thought=thought,
-            action_text=parsed.raw,
-            parsed_actions=[parsed],
-        )
-    if parsed.action == A.ACTION_ASSERT_FAIL:
-        return RecoveryDecision(
-            verdict=VERDICT_ASSERT_FAIL,
-            reason=reason or "主 VLM Computer Use 判断轨迹已偏航或功能不可达",
-            raw=raw,
-            thought=thought,
-            action_text=parsed.raw,
-            parsed_actions=[parsed],
-        )
-    if parsed.is_known:
-        projected = _project_parsed_action_to_pane(parsed, pane=current_pane)
-        if projected is None:
-            return RecoveryDecision(
-                verdict=VERDICT_ASSERT_FAIL,
-                reason="主 VLM Computer Use 返回的动作坐标不在当前截图区域",
-                raw=raw,
-                thought=thought,
-                action_text=parsed.raw,
-                parsed_actions=[parsed],
-                error="point_outside_current_pane",
-            )
-        return RecoveryDecision(
-            verdict=VERDICT_REPAIR_ACTION,
-            reason=thought or f"执行局部修复动作 {projected.action}",
-            raw=raw,
-            thought=thought,
-            action_text=projected.raw,
-            parsed_actions=[projected],
-        )
+    """recovery 调用 / 解析失败时的兜底裁决：先 WAIT_MORE 一次，让上层再试。
+
+    与其超时 / 解析失败立刻 ASSERT_FAIL 终止整个 cache 回放，不如默认
+    WAIT_MORE 一次——上层 ReplayRunner 会按 max_wait_more 上限累计计数，
+    第二次仍失败时自然降级到 ASSERT_FAIL，不会无限循环；同时给瞬态网络抖
+    动 / 模型偶发空响应一个自愈窗口。
+
+    海外辅 vlm 在 chat 协议下解析失败概率本身已经很低（不像旧 CU 通道那
+    样 verdict 高频拿不到）；保留这条 WAIT_MORE 兜底主要是网络层面的健壮性。
+    """
     return RecoveryDecision(
-        verdict=VERDICT_ASSERT_FAIL,
-        reason=f"主 VLM Computer Use 输出未知动作：{parsed.action}",
-        raw=raw,
-        thought=thought,
-        action_text=parsed.raw,
-        parsed_actions=parsed_actions,
-        error="unknown_action",
+        verdict=VERDICT_WAIT_MORE,
+        reason=reason,
+        wait_ms=max(100, min(10_000, int(wait_ms or 1500))),
+        elapsed_ms=elapsed_ms,
+        error=error,
     )
 
 
@@ -1134,8 +944,6 @@ __all__ = [
     "VERDICT_WAIT_MORE",
     "VERDICT_ASSERT_FAIL",
     "VERDICT_REPAIR_ACTION",
-    "_build_labeled_image_canvas",
-    "_project_parsed_action_to_pane",
     "build_recovery_prompt",
     "parse_recovery_response",
 ]

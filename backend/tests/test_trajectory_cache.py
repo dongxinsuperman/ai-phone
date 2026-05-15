@@ -4331,7 +4331,13 @@ async def test_recovery_verifier_enabled_but_missing_credentials_returns_assert_
 
 
 @pytest.mark.asyncio
-async def test_recovery_verifier_chat_failure_falls_back_to_assert_fail(monkeypatch):
+async def test_recovery_verifier_chat_failure_falls_back_to_wait_more(monkeypatch):
+    """recovery 调用异常时默认 WAIT_MORE 一次（让上层再试），而不是直接 ASSERT_FAIL。
+
+    见 _recovery_call_failure_fallback 注释：第二次仍失败时会被
+    ReplayRunner 的 max_wait_more 上限自然降级到 ASSERT_FAIL，不会无限循环；
+    给瞬态网络抖动 / 模型偶发空响应一个自愈窗口。
+    """
     settings = Settings(
         trajectory_cache_recovery_vlm_enabled=True,
         trajectory_cache_recovery_vlm_api_url="https://example.test/chat",
@@ -4358,9 +4364,10 @@ async def test_recovery_verifier_chat_failure_falls_back_to_assert_fail(monkeypa
         max_wait_ms=1500,
     )
 
-    assert decision.verdict == VERDICT_ASSERT_FAIL
+    assert decision.verdict == VERDICT_WAIT_MORE
     assert decision.error == "RuntimeError"
     assert "network unreachable" in decision.reason
+    assert decision.wait_ms > 0
 
 
 def test_recovery_extract_responses_text_reads_output_content():
@@ -4449,10 +4456,13 @@ async def test_recovery_verifier_supports_claude_messages_backend(monkeypatch):
 
     called: dict = {}
 
-    async def _fake_messages(*, prompt, landmark_bytes, current_bytes):
-        called["prompt_head"] = prompt[:60]
-        called["landmark_bytes"] = landmark_bytes
-        called["current_bytes"] = current_bytes
+    async def _fake_messages(**kwargs):
+        called["prompt_head"] = kwargs["prompt"][:60]
+        called["landmark_bytes"] = kwargs["landmark_bytes"]
+        called["current_bytes"] = kwargs["current_bytes"]
+        called["api_url"] = kwargs["api_url"]
+        called["api_key"] = kwargs["api_key"]
+        called["model"] = kwargs["model"]
         return "Thought: 重新点击当前控件。\nAction: click(point='<point>540 1024</point>')"
 
     # 同时把另外两条路径换成"被调用就 raise"，确保路由真的命中 messages
@@ -4482,6 +4492,10 @@ async def test_recovery_verifier_supports_claude_messages_backend(monkeypatch):
     # _messages_double_image 必须被调用，且双图按顺序传入
     assert called.get("landmark_bytes") == b"landmark_jpeg"
     assert called.get("current_bytes") == b"current_jpeg"
+    # 显式配置 backend=claude_messages → 用 trajectory_cache_recovery_vlm_* 自身的 url/key/model
+    assert called.get("api_url") == "https://api.anthropic.com/v1/messages"
+    assert called.get("api_key") == "sk-ant-fake"
+    assert called.get("model") == "claude-sonnet-4-5"
     # Claude 主 VLM → coord_space 应被推断成 absolute（C-3 派发逻辑）
     assert decision.verdict == VERDICT_REPAIR_ACTION
     assert decision.parsed_actions[0].coord_space == "absolute"
@@ -4489,36 +4503,19 @@ async def test_recovery_verifier_supports_claude_messages_backend(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_recovery_overseas_uses_main_computer_use_config(monkeypatch):
-    import ai_phone.shared.llm.main.claude_cu as claude_cu_module
+async def test_recovery_overseas_claude_cu_falls_back_to_chat_messages(monkeypatch):
+    """海外 claude_cu 主 vlm + recovery 未独立配置 → 走 claude_messages chat 协议。
 
-    class FakeClaudeCU:
-        seen = {}
-
-        def __init__(self, **kwargs):
-            FakeClaudeCU.seen["init"] = kwargs
-
-        async def decide(self, screenshot_bytes, *, mime="image/jpeg"):
-            FakeClaudeCU.seen["screenshot_bytes"] = screenshot_bytes
-            return SimpleNamespace(
-                thought="点击当前页按钮",
-                raw_content="raw",
-                parsed_actions=[
-                    ParsedAction(
-                        action="click",
-                        point=[130, 74],
-                        raw="computer.left_click",
-                        coord_space="absolute",
-                    )
-                ],
-            )
-
-    monkeypatch.setattr(claude_cu_module, "ClaudeComputerUseClient", FakeClaudeCU)
+    见 docs/executable-logic-contract.md §14：辅助 vlm（recovery）不再走 CU
+    agent loop，而是用主 vlm 的 model + key + url，按 chat 单次协议调
+    （anthropic /v1/messages 同 endpoint，但不打 CU beta header / 不挂 computer
+    工具）。坐标空间仍按主 vlm 习惯走 absolute。
+    """
     settings = Settings(
         _env_file=None,
         vlm_backend="claude_cu",
         vlm_api_url="https://api.anthropic.com/v1/messages",
-        vlm_api_key="main-key",
+        vlm_api_key="main-anthropic-key",
         vlm_model="claude-sonnet-4-5",
         trajectory_cache_recovery_vlm_enabled=True,
         trajectory_cache_recovery_vlm_api_url="",
@@ -4526,30 +4523,110 @@ async def test_recovery_overseas_uses_main_computer_use_config(monkeypatch):
         trajectory_cache_recovery_vlm_model="",
         trajectory_cache_recovery_vlm_timeout_sec=30,
     )
-    verifier = CacheReplayRecoveryVerifier(settings=settings, main_vlm_backend="claude_cu")
+    verifier = CacheReplayRecoveryVerifier(
+        settings=settings, main_vlm_backend="claude_cu"
+    )
+    assert verifier._main_vlm_is_overseas_cu() is True
+    backend, api_url, api_key, model, _timeout = verifier._resolve_chat_config()
+    assert backend == "claude_messages"
+    assert api_url == "https://api.anthropic.com/v1/messages"
+    assert api_key == "main-anthropic-key"
+    assert model == "claude-sonnet-4-5"
+
+    captured: dict = {}
+
+    async def _fake_messages(**kwargs):
+        captured.update(kwargs)
+        return "Thought: 点击当前页按钮。\nAction: click(point='<point>130 74</point>')"
+
+    async def _no_chat_completions(**_kwargs):  # pragma: no cover - 防御
+        raise AssertionError("claude_cu → 不应路由到 chat completions")
+
+    async def _no_responses(**_kwargs):  # pragma: no cover - 防御
+        raise AssertionError("claude_cu → 不应路由到 responses")
+
+    monkeypatch.setattr(verifier, "_messages_double_image", _fake_messages)
+    monkeypatch.setattr(
+        verifier, "_chat_completions_double_image", _no_chat_completions
+    )
+    monkeypatch.setattr(verifier, "_responses_double_image", _no_responses)
 
     decision = await verifier.verify_alignment_miss(
         goal="g",
         trajectory={"actions": []},
         action={"action_id": "a001", "type": "click"},
         landmark={"action_id": "a001"},
-        current_bytes=_test_jpeg(80, 120, (20, 20, 20)),
-        landmark_bytes=_test_jpeg(80, 120, (220, 220, 220)),
+        current_bytes=b"current_jpeg",
+        landmark_bytes=b"landmark_jpeg",
         metrics={"global_diff": 0.5, "center_mae": 0.5, "black_ratio_diff": 0.0},
         elapsed_ms=2000,
         max_wait_ms=1500,
     )
 
-    assert FakeClaudeCU.seen["init"]["api_key"] == "main-key"
+    assert captured["api_key"] == "main-anthropic-key"
+    assert captured["model"] == "claude-sonnet-4-5"
+    assert captured["api_url"] == "https://api.anthropic.com/v1/messages"
     assert decision.verdict == VERDICT_REPAIR_ACTION
     assert decision.parsed_actions[0].coord_space == "absolute"
-    # The fake click is in the second/current pane: x subtracts left pane + gap.
-    assert decision.parsed_actions[0].point == [34, 40]
+    assert decision.parsed_actions[0].point == [130, 74]
 
 
 @pytest.mark.asyncio
-async def test_recovery_verifier_unknown_backend_raises_with_three_options():
-    """未知 backend 时报错信息必须列出三家可选 backend，方便用户自查 .env。"""
+async def test_recovery_overseas_gpt_cu_translates_responses_url_to_chat(monkeypatch):
+    """海外 gpt_cu 主 vlm → recovery 用 openai_compatible，URL 后缀翻译为 chat completions。"""
+    settings = Settings(
+        _env_file=None,
+        vlm_backend="gpt_cu",
+        vlm_api_url="https://api.openai.com/v1/responses",
+        vlm_api_key="main-openai-key",
+        vlm_model="gpt-4o",
+        trajectory_cache_recovery_vlm_enabled=True,
+        trajectory_cache_recovery_vlm_api_url="",
+        trajectory_cache_recovery_vlm_api_key="",
+        trajectory_cache_recovery_vlm_model="",
+    )
+    verifier = CacheReplayRecoveryVerifier(
+        settings=settings, main_vlm_backend="gpt_cu"
+    )
+    backend, api_url, api_key, model, _timeout = verifier._resolve_chat_config()
+    assert backend == "openai_compatible"
+    assert api_url == "https://api.openai.com/v1/chat/completions"
+    assert api_key == "main-openai-key"
+    assert model == "gpt-4o"
+
+    captured: dict = {}
+
+    async def _fake_chat(**kwargs):
+        captured.update(kwargs)
+        return "Thought: 点击当前页按钮。\nAction: click(point='<point>130 74</point>')"
+
+    monkeypatch.setattr(verifier, "_chat_completions_double_image", _fake_chat)
+
+    decision = await verifier.verify_alignment_miss(
+        goal="g",
+        trajectory={"actions": []},
+        action={"action_id": "a001", "type": "click"},
+        landmark={"action_id": "a001"},
+        current_bytes=b"c",
+        landmark_bytes=b"l",
+        metrics={"global_diff": 0.5, "center_mae": 0.5, "black_ratio_diff": 0.0},
+        elapsed_ms=2000,
+        max_wait_ms=1500,
+    )
+
+    assert captured["api_url"] == "https://api.openai.com/v1/chat/completions"
+    assert captured["api_key"] == "main-openai-key"
+    assert decision.verdict == VERDICT_REPAIR_ACTION
+    # gpt 也按 absolute 像素坐标走
+    assert decision.parsed_actions[0].coord_space == "absolute"
+
+
+@pytest.mark.asyncio
+async def test_recovery_verifier_unknown_backend_falls_back_to_wait_more():
+    """未知 backend 时 _chat_double_image 抛 RuntimeError → 走 fallback WAIT_MORE。
+
+    错误信息仍要列出三家可选 backend，方便用户自查 .env。
+    """
     settings = Settings(
         trajectory_cache_recovery_vlm_enabled=True,
         trajectory_cache_recovery_vlm_backend="some_typo_backend",
@@ -4571,8 +4648,7 @@ async def test_recovery_verifier_unknown_backend_raises_with_three_options():
         max_wait_ms=1500,
     )
 
-    # 走 verify_alignment_miss 内 try/except 通道，verdict=ASSERT_FAIL
-    assert decision.verdict == VERDICT_ASSERT_FAIL
+    assert decision.verdict == VERDICT_WAIT_MORE
     assert "doubao_responses" in decision.reason
     assert "openai_compatible" in decision.reason
     assert "claude_messages" in decision.reason

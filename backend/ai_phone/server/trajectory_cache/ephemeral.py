@@ -24,6 +24,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import httpx
 
 from ai_phone.config import Settings, get_settings
+from ai_phone.server.trajectory_cache._overseas_chat import (
+    gpt_responses_url_to_chat as _gpt_responses_url_to_chat,
+    main_vlm_is_overseas_cu,
+    overseas_cu_to_chat_config as _overseas_cu_to_chat_config,
+)
 from ai_phone.server.trajectory_cache.recovery import (
     _extract_messages_text,
     _extract_responses_text,
@@ -293,16 +298,14 @@ class CacheEphemeralGateVerifier:
         """主 vlm 是否是海外 Computer Use 链路（claude_cu / gpt_cu）。
 
         True 时 ephemeral gate 不再走 CU 通道，而是用主 vlm 的 model + key +
-        url，按"chat 单次协议"调（claude_cu → claude_messages、gpt_cu →
-        openai_compatible chat completions）。这样既复用主 vlm 的视觉能力，
-        又避免 CU agent loop 让模型对"单次 verdict"任务产生 agent 反射。
+        url，按"chat 单次协议"调（见 _overseas_chat.overseas_cu_to_chat_config）。
+        这样既复用主 vlm 的视觉能力，又避免 CU agent loop 让模型对"单次
+        verdict"任务产生 agent 反射。
         """
-        backend = (
-            self._main_vlm_backend
-            or str(getattr(self.settings, "vlm_backend", "") or "")
-        ).strip().lower()
-        configured = str(getattr(self.settings, "vlm_backend", "") or "").strip().lower()
-        return backend in {"claude_cu", "gpt_cu"} and configured == backend
+        return main_vlm_is_overseas_cu(
+            main_vlm_backend=self._main_vlm_backend,
+            configured_vlm_backend=str(getattr(self.settings, "vlm_backend", "") or ""),
+        )
 
     async def decide(
         self,
@@ -404,50 +407,8 @@ def _ephemeral_call_failure_fallback(
     )
 
 
-def _overseas_cu_to_chat_config(
-    *,
-    main_backend: str,
-    main_api_url: str,
-    main_api_key: str,
-    main_model: str,
-) -> Tuple[str, str, str, str]:
-    """把海外主 vlm CU 配置翻译成同模型 + chat 单次协议配置。
-
-    见 docs/executable-logic-contract.md §14：海外辅 vlm 不再走 Computer Use
-    通道，改用主 vlm 的 model + key + url，按"chat 单次协议"调。
-
-    - claude_cu → claude_messages：anthropic /v1/messages 端点本身既能跑 CU
-      （带 beta header + computer 工具）也能跑普通 chat（不带），URL 复用即可。
-    - gpt_cu → openai_compatible：主链路用 /v1/responses，chat 协议要换成
-      /v1/chat/completions 端点。
-    """
-    backend = (main_backend or "").strip().lower()
-    if backend == "claude_cu":
-        return ("claude_messages", main_api_url, main_api_key, main_model)
-    if backend == "gpt_cu":
-        return (
-            "openai_compatible",
-            _gpt_responses_url_to_chat(main_api_url),
-            main_api_key,
-            main_model,
-        )
-    return ("openai_compatible", main_api_url, main_api_key, main_model)
-
-
-def _gpt_responses_url_to_chat(url: str) -> str:
-    """把 OpenAI Responses 端点翻译成 chat completions 端点。
-
-    主链路 gpt_cu 一般配 ``https://api.openai.com/v1/responses``，chat 通道
-    需要 ``/v1/chat/completions``。仅做后缀替换，自部署代理保持原 host/path 前缀。
-    """
-    raw = (url or "").strip()
-    if not raw:
-        return raw
-    if raw.endswith("/v1/responses"):
-        return raw[: -len("/v1/responses")] + "/v1/chat/completions"
-    if raw.endswith("/responses"):
-        return raw[: -len("/responses")] + "/chat/completions"
-    return raw
+# _overseas_cu_to_chat_config / _gpt_responses_url_to_chat 已抽到共享 helper
+# ``_overseas_chat`` 模块（recovery / v3 locator 也复用），见上方 import。
 
 
 def parse_ephemeral_classification_response(
