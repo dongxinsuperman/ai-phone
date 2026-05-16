@@ -3092,7 +3092,70 @@ async def test_replay_runner_logs_observe_delay(monkeypatch):
 
     assert result.success is True
     assert sleeps == [0.5]
-    assert any(title == "轨迹缓存观察延迟" and "500ms" in content for _level, title, content in logs)
+    # 步骤化日志改造（2026-05-16）：observe_delay 由独立 `缓存稳定` 标题实时
+    # 流出来，不再压进 `缓存步骤完成` 汇总块（见 docs/缓存回放步骤化日志改造方案.md）。
+    assert any(
+        title == "缓存稳定" and "动作执行后观察 500ms" in content
+        for _level, title, content in logs
+    )
+
+
+@pytest.mark.asyncio
+async def test_replay_runner_emits_streaming_step_log_skeleton():
+    """步骤化日志方案（2026-05-16）核心回归：V1/V2 单步必须产出
+    "缓存步骤 → 缓存稳定 → 缓存动作 → 缓存执行 → 缓存完成" 七拍中的关键端点，
+    且 `缓存完成` 必须**单行**，避免回退到 9 行汇总块。
+    详见 docs/缓存回放步骤化日志改造方案.md。
+    """
+    logs = []
+    driver = FakeDriver()
+    from ai_phone.server.trajectory_cache import ReplayRunner
+
+    async def log(level, title, content):
+        logs.append((level, title, content))
+
+    runner = ReplayRunner(
+        driver=driver,
+        trajectory={"actions": [{"index": 1, "type": "click", "point": {"x": 1, "y": 2}}]},
+        log=log,
+        observe_delay_ms=0,
+    )
+
+    async def stable():
+        return SimpleNamespace(bytes_=b"jpeg")
+
+    runner._wait_stable = stable  # type: ignore[method-assign]
+    result = await runner.run()
+    assert result.success is True
+
+    titles = [title for _level, title, _content in logs]
+    # 端点必须出现：开始 + 完成
+    assert "缓存步骤" in titles
+    assert "缓存完成" in titles
+    # 过程必须出现，且按"开始 → 稳定 → 动作 → 执行 → 完成"的相对顺序
+    expected_sequence = ["缓存步骤", "缓存稳定", "缓存动作", "缓存执行", "缓存完成"]
+    positions = []
+    cursor = 0
+    for expected in expected_sequence:
+        try:
+            idx = titles.index(expected, cursor)
+        except ValueError as exc:  # pragma: no cover - 失败诊断
+            raise AssertionError(
+                f"七拍缺失或顺序错误，title 序列={titles}，缺={expected}"
+            ) from exc
+        positions.append(idx)
+        cursor = idx + 1
+    assert positions == sorted(positions)
+
+    # `缓存完成` 必须单行，只含 elapsed + status，避免回到 9 行汇总块。
+    completion_logs = [
+        (level, title, content) for level, title, content in logs if title == "缓存完成"
+    ]
+    assert completion_logs, "未输出 `缓存完成` 端点"
+    for _level, _title, content in completion_logs:
+        assert "\n" not in content, f"`缓存完成` 必须单行，实际={content!r}"
+        assert "elapsed=" in content
+        assert "status=" in content
 
 
 @pytest.mark.asyncio

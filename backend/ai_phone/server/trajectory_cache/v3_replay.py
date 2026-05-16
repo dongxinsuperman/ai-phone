@@ -644,35 +644,41 @@ class V3ReplayRunner:
         self._last_locator_point: Optional[Tuple[int, int]] = None
         self._last_locator_target = ""
         self._reuse_next_before_frame = False
+        # 单步 status 文案，由路标 / 鉴定 / 修复等深层逻辑实时更新，最终随
+        # `缓存完成` 收尾日志一起输出。
+        # 设计变更（2026-05-16）：之前还有 _current_step_index / _total / _lines
+        # 三件套，用来把过程行 append 进 list、到 step_done 一次性吐成 9 行
+        # 汇总。结果中间空白看起来"卡了"，且汇总与 RunStep 端点粘连导致顺序
+        # 倒置。新设计：过程日志一律实时流，单步只保留 status。详见
+        # docs/缓存回放步骤化日志改造方案.md。
+        self._current_step_status: str = ""
 
     async def run(self) -> ReplayResult:
         actions = list(self.trajectory.get("actions") or [])
         executed = 0
         started_at = time.monotonic()
-        await self._log(1, "V3缓存回放", f"开始复用缓存路线：共 {len(actions)} 个缓存动作")
+        await self._log(1, "缓存回放", f"V3 开始回放：actions={len(actions)}")
         for action_pos, action in enumerate(actions):
             index = int(action.get("index") or executed + 1)
             step_started_at = time.monotonic()
             self._emit_step_start(index)
+            self._current_step_status = ""
             try:
-                await self._log(
-                    1,
-                    "V3缓存步骤",
-                    (
-                        f"#{index}/{len(actions)} 准备衔接："
-                        f"{_v3_target_text(action)}"
-                    ),
+                await self._log_v3_step_start(
+                    index=index,
+                    total=len(actions),
+                    action=action,
                 )
                 if self._reuse_next_before_frame and self._last_frame is not None:
                     before_bytes = self._last_frame
                     self._reuse_next_before_frame = False
-                    await self._log(
-                        1,
-                        "V3页面稳定检测",
-                        f"复用上一 action after 稳定帧作为 #{index} before，跳过稳定检测",
+                    await self._log_v3_stage(
+                        index,
+                        "稳定",
+                        "复用上一 action after 稳定帧作为 before，跳过执行前稳定检测",
                     )
                 else:
-                    before_bytes = await self._wait_stable()
+                    before_bytes = await self._wait_stable_for_step(index, phase="执行前")
                     if before_bytes is None:
                         before_bytes = await self._screenshot_jpeg()
                 self._final_before_bytes = before_bytes
@@ -685,21 +691,34 @@ class V3ReplayRunner:
                     next_action=actions[action_pos + 1] if action_pos + 1 < len(actions) else None,
                 )
                 if execution_action is None:
-                    await self._log(
-                        1,
-                        "V3缓存步骤",
-                        f"#{index} 当前页面已可衔接后续缓存动作，跳过本动作",
+                    if not self._current_step_status:
+                        self._set_v3_step_status(
+                            "已跳过(瞬态)"
+                            if str(action.get("role") or "") == ROLE_OPTIONAL_EPHEMERAL
+                            else "已跳过(无需操作)"
+                        )
+                    await self._log_v3_stage(
+                        index,
+                        "辅助",
+                        "当前页面已可衔接后续缓存动作，跳过本动作",
                     )
                     self._last_frame = before_bytes
                     self._reuse_next_before_frame = True
                     self._final_after_bytes = before_bytes
                     if self.capture_after_each_action:
                         self._emit_screenshot(index, "after", before_bytes)
+                    elapsed_ms = int((time.monotonic() - step_started_at) * 1000)
+                    # 顺序铁律：after 截图之后 → `缓存完成` → STEP_END
+                    await self._log_v3_step_done(
+                        index,
+                        elapsed_ms=elapsed_ms,
+                        status=self._v3_step_status(),
+                    )
                     self._emit_step_end(
                         index,
                         source_action=action,
                         execution_action=action,
-                        elapsed_ms=int((time.monotonic() - step_started_at) * 1000),
+                        elapsed_ms=elapsed_ms,
                     )
                     continue
                 if (
@@ -713,37 +732,72 @@ class V3ReplayRunner:
                     }
                     await self.dispatcher.execute(focus_action)
                     executed += 1
-                    await self._log(
-                        1,
-                        "V3执行缓存动作",
+                    await self._log_v3_stage(
+                        index,
+                        "动作",
                         f"先聚焦输入框：{_format_v3_action_log(focus_action)}",
                     )
+                    await self._log_v3_stage(
+                        index,
+                        "执行",
+                        _v3_executed_action_message(focus_action),
+                    )
+                await self._log_v3_stage(
+                    index,
+                    "动作",
+                    f"执行缓存动作：{_format_v3_action_log(execution_action)}",
+                )
                 await self.dispatcher.execute(execution_action)
                 executed += 1
-                await self._log(1, "V3执行缓存动作", _format_v3_action_log(execution_action))
-                await self._observe_after_action()
+                # 实际执行细节统一用 `缓存执行` 标题（点击/输入/滑动/等待）。
+                await self._log_v3_stage(
+                    index,
+                    "执行",
+                    _v3_executed_action_message(execution_action),
+                )
+                await self._observe_after_action(index=index)
                 if self.capture_after_each_action:
-                    after_bytes = await self._wait_stable()
+                    await self._log_v3_stage(
+                        index,
+                        "稳定",
+                        "执行后等待页面稳定并截图",
+                    )
+                    after_bytes = await self._wait_stable_for_step(index, phase="执行后")
                     if after_bytes is None:
                         after_bytes = await self._screenshot_jpeg()
                     self._final_after_bytes = after_bytes
                     self._last_frame = after_bytes
                     self._reuse_next_before_frame = True
-                    self._emit_screenshot(index, "after", after_bytes)
+                    self._emit_screenshot(index, "after", self._final_after_bytes)
+                if not self._current_step_status:
+                    self._set_v3_step_status("定位成功")
+                elapsed_ms = int((time.monotonic() - step_started_at) * 1000)
+                # 顺序铁律：after 截图之后 → `缓存完成` → STEP_END(打 #N 第 N 步完成)
+                await self._log_v3_step_done(
+                    index,
+                    elapsed_ms=elapsed_ms,
+                    status=self._v3_step_status(),
+                )
                 self._emit_step_end(
                     index,
                     source_action=action,
                     execution_action=execution_action,
-                    elapsed_ms=int((time.monotonic() - step_started_at) * 1000),
+                    elapsed_ms=elapsed_ms,
                 )
             except Exception as exc:  # noqa: BLE001
                 message = f"index={index} type={action.get('type')} error={exc}"
                 await self._log(3, "V3缓存回放失败", message)
+                elapsed_ms = int((time.monotonic() - step_started_at) * 1000)
+                await self._log_v3_step_done(
+                    index,
+                    elapsed_ms=elapsed_ms,
+                    status="失败",
+                )
                 self._emit_step_end(
                     index,
                     source_action=action,
                     execution_action=action,
-                    elapsed_ms=int((time.monotonic() - step_started_at) * 1000),
+                    elapsed_ms=elapsed_ms,
                     error=str(exc),
                 )
                 return ReplayResult(
@@ -754,7 +808,7 @@ class V3ReplayRunner:
                     error=message,
                     elapsed_ms=int((time.monotonic() - started_at) * 1000),
                 )
-        await self._log(1, "V3缓存回放", f"缓存路线执行完成：设备动作 {executed} 个")
+        await self._log(1, "缓存回放", f"V3 回放完成：设备动作={executed}")
         return ReplayResult(
             success=True,
             actions_total=len(actions),
@@ -763,6 +817,68 @@ class V3ReplayRunner:
             final_after_bytes=self._final_after_bytes,
             elapsed_ms=int((time.monotonic() - started_at) * 1000),
         )
+
+    async def _log_v3_step_start(
+        self,
+        *,
+        index: int,
+        total: int,
+        action: Dict[str, Any],
+    ) -> None:
+        # 步骤开始端点：单行 content，跟首跑 `#N ━━ 第 N 步 ━━` 视觉对齐。
+        # 详见 docs/缓存回放步骤化日志改造方案.md（七拍模型）。
+        action_id = str(action.get("action_id") or "-")
+        action_type = str(action.get("type") or "-")
+        await self._log(
+            1,
+            "缓存步骤",
+            (
+                f"━━ 开始第 {index} 步 / 共 {total} 步 ━━  "
+                f"目标={_v3_target_text(action)}  "
+                f"action_id={action_id} type={action_type}"
+            ),
+        )
+
+    async def _log_v3_step_phase(self, index: int, message: str) -> None:
+        await self._log_v3_stage(index, "辅助", message)
+
+    async def _log_v3_stage(self, index: int, title: str, message: str) -> None:
+        """实时输出一条步骤化日志（七拍模型里的一拍）。
+
+        title 是方案 §"标题清单" 里的新标题之一（不带 `缓存` 前缀），如
+        ``稳定`` / ``截图`` / ``动作`` / ``执行`` / ``结果`` / ``定位`` /
+        ``辅助`` / ``修复``。最终落库标题为 ``缓存{title}``。
+
+        本方法**不再合并**到收尾汇总（设计变更 2026-05-16）。每次调用都立刻
+        emit，跟首跑日志一样按时间从上往下流式可读。
+        """
+        await self._log(1, f"缓存{title}", message)
+
+    async def _log_v3_step_done(
+        self,
+        index: int,
+        *,
+        elapsed_ms: int,
+        status: str,
+    ) -> None:
+        """步骤收尾端点：必须单行，只含 ``elapsed`` + ``status``。
+
+        触发时机：必须在 ``_emit_screenshot("after", ...)`` 之后、
+        ``_emit_step_end()`` 之前，避免与 RunStep 端点
+        ``#N 第 N 步完成 · click`` 时间戳粘连导致顺序倒置。
+        """
+        await self._log(
+            1,
+            "缓存完成",
+            f"━━ 第 {index} 步 完成 ━━  elapsed={elapsed_ms}ms status={status}",
+        )
+
+    def _set_v3_step_status(self, status: str) -> None:
+        if status:
+            self._current_step_status = status
+
+    def _v3_step_status(self) -> str:
+        return self._current_step_status or "定位成功"
 
     async def capture_final_frame(self) -> bytes:
         if self._final_after_bytes is not None:
@@ -782,6 +898,11 @@ class V3ReplayRunner:
         next_action: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         if str(action.get("role") or "") == ROLE_OPTIONAL_EPHEMERAL:
+            await self._log_v3_stage(
+                index,
+                "辅助",
+                "这是可跳过瞬态动作，先请求标签 gate 判断",
+            )
             gate_outcome = await self._handle_optional_ephemeral(
                 action=action,
                 index=index,
@@ -789,12 +910,24 @@ class V3ReplayRunner:
                 next_action=next_action,
             )
             if gate_outcome["mode"] == "skip":
+                self._set_v3_step_status("已跳过(瞬态)")
                 return None
             if gate_outcome["mode"] == "execute_repair":
+                self._set_v3_step_status("局部修复成功")
+                await self._log_v3_stage(
+                    index,
+                    "辅助",
+                    "标签 gate 判断=EXECUTE_REPAIR，执行 gate 修复动作",
+                )
                 return gate_outcome["action"]
 
         action_type = str(action.get("type") or "")
         if action_type == A.ACTION_TYPE:
+            await self._log_v3_stage(
+                index,
+                "定位",
+                "输入类动作先重新定位输入框，再复用缓存输入内容",
+            )
             locator_action = _type_locator_action(action)
             located_action = await self._locate_with_retry_and_rescue(
                 locator_action,
@@ -808,12 +941,18 @@ class V3ReplayRunner:
             out["point"] = located_action["point"]
             return out
         if action_type in {A.ACTION_CLICK, A.ACTION_DOUBLE_TAP, A.ACTION_LONG_PRESS, A.ACTION_DRAG}:
+            await self._log_v3_stage(
+                index,
+                "定位",
+                f"重新定位目标：{_v3_target_text(action)}",
+            )
             return await self._locate_with_retry_and_rescue(
                 action,
                 screenshot_bytes,
                 previous_action=previous_action,
                 next_action=next_action,
             )
+        self._set_v3_step_status("动作完成")
         return _non_locator_action(action)
 
     async def _locate_with_retry_and_rescue(
@@ -835,6 +974,11 @@ class V3ReplayRunner:
             "V3局部辅助",
             f"未找到「{_v3_target_text(action)}」，交给辅助模型处理：{miss_reason[:120]}",
         )
+        await self._log_v3_stage(
+            int(action.get("index") or 0),
+            "辅助",
+            f"定位失败，原因={miss_reason[:120]}，交给辅助 VLM",
+        )
 
         return await self._rescue_and_retry_locator(
             action,
@@ -853,6 +997,11 @@ class V3ReplayRunner:
             "V3寻找目标",
             f"正在当前截图中寻找「{_v3_target_text(action)}」",
         )
+        await self._log_v3_stage(
+            int(action.get("index") or 0),
+            "定位",
+            f"正在当前截图中寻找：{_v3_target_text(action)}",
+        )
         located = await self.locator.locate_action(
             goal=self.goal,
             trajectory=self.trajectory,
@@ -870,6 +1019,11 @@ class V3ReplayRunner:
                 f"已找到「{plan_intent[:60] or action_type}」"
                 f" 坐标={_format_v3_action_point(located.action)}"
             ),
+        )
+        await self._log_v3_stage(
+            int(action.get("index") or 0),
+            "定位",
+            f"定位成功，坐标={_format_v3_action_point(located.action)}",
         )
         if located.reason:
             await self._log(
@@ -951,6 +1105,12 @@ class V3ReplayRunner:
             await self._record_rescue_decision(action=action, decision=decision)
 
             if decision.verdict == V3_RESCUE_CONTINUE_REPLAY:
+                self._set_v3_step_status("辅助放行")
+                await self._log_v3_stage(
+                    int(action.get("index") or 0),
+                    "辅助",
+                    "辅助 VLM 判断当前页面已可衔接后续缓存动作，跳过当前动作",
+                )
                 await self._log(
                     1,
                     "V3局部辅助",
@@ -960,11 +1120,20 @@ class V3ReplayRunner:
 
             if decision.verdict == V3_RESCUE_WAIT:
                 wait_ms = max(100, min(10_000, int(decision.wait_ms or 800)))
+                await self._log_v3_stage(
+                    int(action.get("index") or 0),
+                    "稳定",
+                    f"辅助 VLM 判断=等待页面，等待 {wait_ms}ms 后重新定位",
+                )
                 await asyncio.sleep(wait_ms / 1000)
-                latest = await self._wait_stable()
+                latest = await self._wait_stable_for_step(
+                    int(action.get("index") or 0),
+                    phase="辅助等待后",
+                )
                 if latest is None:
                     latest = await self._screenshot_jpeg()
                 try:
+                    self._set_v3_step_status("等待后定位成功")
                     return await self._locate_action(action, latest)
                 except V3LocatorMiss as retry_miss:
                     miss_reason = str(retry_miss)
@@ -974,22 +1143,36 @@ class V3ReplayRunner:
                     continue
 
             if decision.verdict in {V3_RESCUE_POPUP_CLOSE, V3_RESCUE_REPAIR_ACTION}:
+                await self._log_v3_stage(
+                    int(action.get("index") or 0),
+                    "辅助",
+                    f"辅助 VLM 判断={_v3_rescue_label(decision.verdict)}，执行局部动作",
+                )
                 repair_action = await self._repair_action_to_abs(
                     decision.repair_action or {},
                     coord_space=decision.coord_space,
                     image_size=_decode_image_size(latest),
                 )
                 await self.dispatcher.execute(repair_action)
+                await self._log_v3_stage(
+                    int(action.get("index") or 0),
+                    "修复",
+                    f"辅助修复动作已执行：{_format_v3_action_log(repair_action)}",
+                )
                 await self._log(
                     1,
                     "V3局部辅助动作",
                     _format_v3_action_log(repair_action),
                 )
-                await self._observe_after_action()
-                latest = await self._wait_stable()
+                await self._observe_after_action(index=int(action.get("index") or 0))
+                latest = await self._wait_stable_for_step(
+                    int(action.get("index") or 0),
+                    phase="辅助修复后",
+                )
                 if latest is None:
                     latest = await self._screenshot_jpeg()
                 try:
+                    self._set_v3_step_status("局部修复成功")
                     return await self._locate_action(action, latest)
                 except V3LocatorMiss as retry_miss:
                     miss_reason = str(retry_miss)
@@ -1016,6 +1199,11 @@ class V3ReplayRunner:
         verifier = self.ephemeral_gate_verifier
         if verifier is None or not verifier.is_configured():
             problem = verifier.configuration_problem() if verifier is not None else "gate 未注入"
+            await self._log_v3_stage(
+                index,
+                "辅助",
+                f"标签 gate 不可用，按保守策略执行原动作：{problem}",
+            )
             await self._log(
                 2,
                 "V3瞬态动作",
@@ -1033,6 +1221,11 @@ class V3ReplayRunner:
         popup_before = self._ephemeral_meta_image_bytes(meta, "cached_popup_before")
         cached_after = self._ephemeral_meta_image_bytes(meta, "cached_after")
         if not popup_before or not cached_after:
+            await self._log_v3_stage(
+                index,
+                "辅助",
+                "标签 gate 缺少首跑弹窗证据，按保守策略执行原动作",
+            )
             await self._log(
                 2,
                 "V3瞬态动作",
@@ -1056,6 +1249,11 @@ class V3ReplayRunner:
             action=action,
             category=category,
             decision=decision,
+        )
+        await self._log_v3_stage(
+            index,
+            "辅助",
+            f"标签 gate 判断={decision.verdict}，原因={decision.reason}",
         )
         if decision.verdict == GATE_SKIP:
             return {"mode": "skip"}
@@ -1192,24 +1390,49 @@ class V3ReplayRunner:
     async def _screenshot_jpeg(self) -> bytes:
         return await asyncio.to_thread(self.driver.screenshot_jpeg, 25, 720)
 
+    async def _wait_stable_for_step(self, index: int, *, phase: str) -> Optional[bytes]:
+        reused_before = self._last_frame is not None
+        result = await wait_page_stable_v2_compare(
+            self._screenshot_jpeg,
+            frame_a_bytes=self._last_frame,
+            log=None,
+        )
+        self._last_frame = result.bytes_
+        checks = int(getattr(result, "checks", 0) or 0)
+        elapsed_ms = int(getattr(result, "elapsed_ms", 0) or 0)
+        reused_note = "，复用上步尾帧" if reused_before else ""
+        if bool(getattr(result, "stable", True)):
+            await self._log_v3_stage(
+                index,
+                "稳定",
+                f"{phase}页面稳定：检测{checks}次，耗时={elapsed_ms / 1000:.1f}s{reused_note}",
+            )
+        else:
+            await self._log_v3_stage(
+                index,
+                "稳定",
+                f"{phase}页面未确认稳定：检测{checks}次，耗时={elapsed_ms / 1000:.1f}s{reused_note}，返回最后帧继续",
+            )
+        return result.bytes_
+
     async def _wait_stable(self) -> Optional[bytes]:
         result = await wait_page_stable_v2_compare(
             self._screenshot_jpeg,
             frame_a_bytes=self._last_frame,
-            log=(
-                None
-                if self.log is None
-                else lambda level, title, content: asyncio.create_task(
-                    self._log(level, title, content)
-                )
-            ),
+            log=None,
         )
         self._last_frame = result.bytes_
         return result.bytes_
 
-    async def _observe_after_action(self) -> None:
+    async def _observe_after_action(self, *, index: Optional[int] = None) -> None:
         delay_ms = max(0, int(get_settings().trajectory_cache_observe_delay_ms or 0))
         if delay_ms > 0:
+            if index is not None:
+                await self._log_v3_stage(
+                    index,
+                    "稳定",
+                    f"动作执行后观察 {delay_ms}ms，再进入截图/校验",
+                )
             await asyncio.sleep(delay_ms / 1000)
 
     async def _log(self, level: int, title: str, content: str) -> None:
@@ -1764,6 +1987,61 @@ def _format_v3_action_point(action: Dict[str, Any]) -> str:
         end = action.get("end") or {}
         return f"({start.get('x')},{start.get('y')})->({end.get('x')},{end.get('y')})"
     return "-"
+
+
+def _v3_action_stage_title(action: Dict[str, Any]) -> str:
+    action_type = str(action.get("type") or "")
+    if action_type in (A.ACTION_CLICK, A.ACTION_DOUBLE_TAP, A.ACTION_LONG_PRESS):
+        return "点击"
+    if action_type == A.ACTION_TYPE:
+        return "输入"
+    if action_type == A.ACTION_WAIT:
+        return "等待"
+    if action_type in (A.ACTION_SCROLL, A.ACTION_DRAG):
+        return "滑动"
+    if action_type in (
+        A.ACTION_OPEN_APP,
+        A.ACTION_CLOSE_APP,
+        A.ACTION_PRESS_HOME,
+        A.ACTION_PRESS_BACK,
+        A.ACTION_KEY_EVENT,
+    ):
+        return "应用"
+    return "动作"
+
+
+def _v3_executed_action_message(action: Dict[str, Any]) -> str:
+    action_type = str(action.get("type") or "")
+    point = action.get("point") or action.get("center")
+    if action_type in (A.ACTION_CLICK, A.ACTION_DOUBLE_TAP, A.ACTION_LONG_PRESS):
+        verb = {
+            A.ACTION_CLICK: "点击",
+            A.ACTION_DOUBLE_TAP: "双击",
+            A.ACTION_LONG_PRESS: "长按",
+        }.get(action_type, "点击")
+        return f"{verb}坐标 {point}"
+    if action_type == A.ACTION_TYPE:
+        return f"输入内容 {str(action.get('content') or '')[:80]}"
+    if action_type == A.ACTION_WAIT:
+        return f"等待 {action.get('seconds') or 1} 秒"
+    if action_type == A.ACTION_SCROLL:
+        return (
+            f"滑动 direction={action.get('direction') or 'down'} "
+            f"amount={action.get('amount') or 1}"
+        )
+    if action_type == A.ACTION_DRAG:
+        return f"拖拽 start={action.get('start')} end={action.get('end')}"
+    if action_type == A.ACTION_OPEN_APP:
+        return f"打开应用 {action.get('app_name') or action.get('package') or action.get('package_name') or action.get('bundle_id') or ''}"
+    if action_type == A.ACTION_CLOSE_APP:
+        return f"关闭应用 {action.get('app_name') or action.get('package') or action.get('package_name') or action.get('bundle_id') or ''}"
+    if action_type == A.ACTION_PRESS_HOME:
+        return "按 Home"
+    if action_type == A.ACTION_PRESS_BACK:
+        return "返回"
+    if action_type == A.ACTION_KEY_EVENT:
+        return f"按键 keycode={action.get('keycode')}"
+    return _format_v3_action_log(action)
 
 
 async def _post_chat_payload(

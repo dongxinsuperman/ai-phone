@@ -367,6 +367,16 @@ class ServerRunnerService:
         def _elapsed_ms() -> int:
             return int((time.monotonic() - replay_started_at) * 1000)
 
+        async def _log(level: int, title: str, content: str) -> None:
+            # 缓存回放日志是用户排查执行链路的主线，必须按 await 顺序落库/广播。
+            # 不能走 emitter.emit() 的后台队列，否则步骤开始/完成在 UI 上会重排。
+            event = log_event(run_id, level, title, content)
+            forward_log = getattr(emitter, "_forward_log", None)
+            if callable(forward_log):
+                await forward_log(event)
+            else:
+                emitter.emit(event)
+
         get_cache = (
             get_active_trajectory_cache_v1
             if cache_mode == "v1"
@@ -378,22 +388,16 @@ class ServerRunnerService:
             run_semantic_text=goal,
         )
         if cache is None:
-            emitter.emit(log_event(run_id, 1, "轨迹缓存", "未命中，继续走现有 VLMRunner"))
+            await _log(1, "轨迹缓存", "未命中，继续走现有 VLMRunner")
             return False
 
         trajectory = dict(cache.get("trajectory_json") or {})
         cache_key = str(cache.get("cache_key") or "")
-        emitter.emit(
-            log_event(
-                run_id,
-                1,
-                "轨迹缓存",
-                f"命中轨迹回放 cache_key={cache_key[:12]}",
-            )
+        await _log(
+            1,
+            "轨迹缓存",
+            f"命中轨迹回放 cache_key={cache_key[:12]}",
         )
-
-        async def _log(level: int, title: str, content: str) -> None:
-            emitter.emit(log_event(run_id, level, title, content))
 
         recovery_verifier: Optional[CacheReplayRecoveryVerifier] = None
         if cache_mode == "v2" and settings.trajectory_cache_recovery_vlm_enabled:
@@ -570,28 +574,31 @@ class ServerRunnerService:
         def _elapsed_ms() -> int:
             return int((time.monotonic() - replay_started_at) * 1000)
 
+        async def _log(level: int, title: str, content: str) -> None:
+            # V3 回放同样要求步骤边界严格有序，定位/辅助/完成块不能被后台日志重排。
+            event = log_event(run_id, level, title, content)
+            forward_log = getattr(emitter, "_forward_log", None)
+            if callable(forward_log):
+                await forward_log(event)
+            else:
+                emitter.emit(event)
+
         cache = await get_active_trajectory_cache_v3(
             self._session_factory,
             device_code=driver.serial,
             run_semantic_text=goal,
         )
         if cache is None:
-            emitter.emit(log_event(run_id, 1, "V3缓存回放", "未命中缓存，继续走现有 VLMRunner"))
+            await _log(1, "V3缓存回放", "未命中缓存，继续走现有 VLMRunner")
             return False
 
         trajectory = dict(cache)
         cache_key = str(cache.get("cache_key") or "")
-        emitter.emit(
-            log_event(
-                run_id,
-                1,
-                "V3缓存回放",
-                f"命中缓存：复用上次成功路线 cache_key={cache_key[:12]}",
-            )
+        await _log(
+            1,
+            "V3缓存回放",
+            f"命中缓存：复用上次成功路线 cache_key={cache_key[:12]}",
         )
-
-        async def _log(level: int, title: str, content: str) -> None:
-            emitter.emit(log_event(run_id, level, title, content))
 
         runner = V3ReplayRunner(
             driver=driver,

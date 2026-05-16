@@ -276,12 +276,22 @@ class ReplayRunner:
         # 尺寸输出 absolute 坐标，必须按 (model_image_size → device_window_size)
         # 等比反算才能落到设备真实坐标系。豆包 normalized 路径不读本字段。
         self._recovery_image_size: Optional[Tuple[int, int]] = None
+        # 单步 status 文案（如 "对齐成功" / "辅助放行" / "已跳过(瞬态)"），
+        # 由路标比对 / 辅助 VLM / 修复等深层逻辑实时更新，最终随
+        # `缓存完成` 收尾日志一起输出。
+        # 设计变更（2026-05-16）：之前还有 _current_step_index / _total /
+        # _lines 三件套，用来把过程行 append 进 `_current_step_lines`、到
+        # `_log_replay_step_done` 一次性吐成 9 行汇总。结果中间 12 秒空白
+        # 看起来"卡了"，且汇总块和旧 RunStep 端点时间戳粘连导致顺序倒置。
+        # 新设计：所有过程日志一律实时输出（七拍模型），单步只剩 status
+        # 一个状态字段就够了。详见 docs/缓存回放步骤化日志改造方案.md。
+        self._current_step_status: str = ""
 
     async def run(self) -> ReplayResult:
         actions = list(self.trajectory.get("actions") or [])
         executed = 0
         run_started_at = time.monotonic()
-        await self._log(1, "轨迹缓存回放", f"开始回放 actions={len(actions)}")
+        await self._log(1, "缓存回放", f"开始回放 actions={len(actions)}")
         for action_pos, action in enumerate(actions):
             index = int(action.get("index") or executed + 1)
             # —— 关键：cache replay 也要走 EVT_STEP_START / EVT_STEP_END 闭环，
@@ -289,8 +299,14 @@ class ReplayRunner:
             # 里没人取走，RunStep 表里一行都不会写入，UI 时间线就看不到任何
             # 步骤截图（看起来像"步=0、全程没图"，但其实截图都已经拍好了）。
             self._emit_step_start(index)
+            self._current_step_status = ""
             step_started_at = time.monotonic()
             try:
+                await self._log_replay_step_start(
+                    index=index,
+                    total=len(actions),
+                    action=action,
+                )
                 before_bytes = await self._capture_before(index)
                 self._final_before_bytes = before_bytes
                 self._emit_screenshot(index, "before", before_bytes)
@@ -298,6 +314,11 @@ class ReplayRunner:
                 alignment_action = action
                 step_action = action
                 if self._is_optional_ephemeral_action(action):
+                    await self._log_replay_stage(
+                        index,
+                        "辅助",
+                        "这是可跳过瞬态动作，先请求标签 gate 判断",
+                    )
                     gate_outcome = await self._handle_ephemeral_action(
                         action=action,
                         index=index,
@@ -309,66 +330,120 @@ class ReplayRunner:
                         ),
                     )
                     if gate_outcome["mode"] == "skip":
+                        self._set_replay_step_status("已跳过(瞬态)")
+                        await self._log_replay_stage(
+                            index,
+                            "辅助",
+                            "标签 gate 判断=SKIP，当前页面已可衔接下一步，本动作跳过",
+                        )
                         self._last_frame = before_bytes
                         self._final_after_bytes = before_bytes
-                        if self.capture_after_each_action:
-                            self._emit_screenshot(index, "after", before_bytes)
                         step_action = dict(action)
                         step_action["_ephemeral_gate_note"] = gate_outcome["note"]
+                        if self.capture_after_each_action:
+                            self._emit_screenshot(index, "after", before_bytes)
+                        elapsed_ms = int((time.monotonic() - step_started_at) * 1000)
+                        # 顺序铁律：`缓存完成` 必须在 after 截图之后、`_emit_step_end`
+                        # 之前，否则会跟 RunStep 端点时间戳粘连导致顺序倒置。
+                        await self._log_replay_step_done(
+                            index,
+                            elapsed_ms=elapsed_ms,
+                            status=self._replay_step_status(),
+                        )
                         self._emit_step_end(
                             index,
                             action=step_action,
-                            elapsed_ms=int((time.monotonic() - step_started_at) * 1000),
+                            elapsed_ms=elapsed_ms,
                         )
                         continue
                     if gate_outcome["mode"] == "accepted":
+                        self._set_replay_step_status("辅助放行")
+                        await self._log_replay_stage(
+                            index,
+                            "辅助",
+                            "标签 gate 升级后接受当前页面，继续缓存路线",
+                        )
                         accepted_bytes = gate_outcome.get("after_bytes") or before_bytes
                         self._last_frame = accepted_bytes
                         self._final_after_bytes = accepted_bytes
-                        if self.capture_after_each_action:
-                            self._emit_screenshot(index, "after", accepted_bytes)
                         step_action = dict(action)
                         step_action["_ephemeral_gate_note"] = gate_outcome["note"]
+                        if self.capture_after_each_action:
+                            self._emit_screenshot(index, "after", accepted_bytes)
+                        elapsed_ms = int((time.monotonic() - step_started_at) * 1000)
+                        await self._log_replay_step_done(
+                            index,
+                            elapsed_ms=elapsed_ms,
+                            status=self._replay_step_status(),
+                        )
                         self._emit_step_end(
                             index,
                             action=step_action,
-                            elapsed_ms=int((time.monotonic() - step_started_at) * 1000),
+                            elapsed_ms=elapsed_ms,
                         )
                         continue
                     if gate_outcome["mode"] == "execute_repair":
+                        self._set_replay_step_status("局部修复成功")
+                        await self._log_replay_stage(
+                            index,
+                            "辅助",
+                            "标签 gate 判断=EXECUTE_REPAIR，执行 gate 修复动作",
+                        )
                         execution_action = gate_outcome["action"]
                         alignment_action = action
                         step_action = dict(action)
                         step_action["_ephemeral_gate_note"] = gate_outcome["note"]
 
+                await self._log_replay_stage(
+                    index,
+                    "动作",
+                    f"执行缓存动作：{_format_action_log(execution_action).removesuffix(' 已执行')}",
+                )
                 await self.dispatcher.execute(execution_action)
                 executed += 1
-                await self._log(
-                    1,
-                    "轨迹缓存 action"
-                    if execution_action is action
-                    else "轨迹缓存瞬态修复动作",
-                    _format_action_log(execution_action),
+                # 实际执行细节（点击坐标 / 输入内容 / 滑动方向）统一用 `缓存执行`
+                # 标题，message 里写动词 + 参数（如"点击坐标 {x:584,y:1020}"）。
+                await self._log_replay_stage(
+                    index,
+                    "执行",
+                    _executed_action_message(index, execution_action),
                 )
-                await self._observe_after_action()
+                await self._observe_after_action(index=index)
                 if self.capture_after_each_action:
                     after_bytes = await self._capture_after(alignment_action)
                     self._final_after_bytes = after_bytes
-                    self._emit_screenshot(index, "after", after_bytes)
+                    self._emit_screenshot(index, "after", self._final_after_bytes)
+                if not self._current_step_status:
+                    self._set_replay_step_status(
+                        "固定动作完成" if self._is_v1_replay else "动作完成"
+                    )
+                elapsed_ms = int((time.monotonic() - step_started_at) * 1000)
+                # 顺序铁律：after 截图之后 → 缓存完成端点 → STEP_END(打 #N 第 N 步完成)
+                await self._log_replay_step_done(
+                    index,
+                    elapsed_ms=elapsed_ms,
+                    status=self._replay_step_status(),
+                )
                 self._emit_step_end(
                     index,
                     action=step_action,
-                    elapsed_ms=int((time.monotonic() - step_started_at) * 1000),
+                    elapsed_ms=elapsed_ms,
                 )
             except Exception as exc:  # noqa: BLE001
                 message = f"index={index} type={action.get('type')} error={exc}"
                 await self._log(3, "轨迹缓存回放失败", message)
                 # 失败也补一条 STEP_END，让 emitter 把已经拍好的 before 截图
                 # 落进 RunStep 表，便于排查时看到失败步骤的现场截图。
+                elapsed_ms = int((time.monotonic() - step_started_at) * 1000)
+                await self._log_replay_step_done(
+                    index,
+                    elapsed_ms=elapsed_ms,
+                    status="失败",
+                )
                 self._emit_step_end(
                     index,
                     action=action,
-                    elapsed_ms=int((time.monotonic() - step_started_at) * 1000),
+                    elapsed_ms=elapsed_ms,
                     error=str(exc),
                 )
                 return ReplayResult(
@@ -379,7 +454,7 @@ class ReplayRunner:
                     error=message,
                     elapsed_ms=int((time.monotonic() - run_started_at) * 1000),
                 )
-        await self._log(1, "轨迹缓存回放", f"动作回放完成 actions={executed}")
+        await self._log(1, "缓存回放", f"动作回放完成 actions={executed}")
         return ReplayResult(
             success=True,
             actions_total=len(actions),
@@ -387,6 +462,70 @@ class ReplayRunner:
             final_before_bytes=self._final_before_bytes,
             final_after_bytes=self._final_after_bytes,
             elapsed_ms=int((time.monotonic() - run_started_at) * 1000),
+        )
+
+    async def _log_replay_step_start(
+        self,
+        *,
+        index: int,
+        total: int,
+        action: Dict[str, Any],
+    ) -> None:
+        # 步骤开始端点：单行 content，跟首跑 `#N ━━ 第 N 步 ━━` 视觉对齐。
+        action_id = str(action.get("action_id") or "-")
+        action_type = str(action.get("type") or "-")
+        await self._log(
+            1,
+            "缓存步骤",
+            (
+                f"━━ 开始第 {index} 步 / 共 {total} 步 ━━  "
+                f"目标={_replay_target_text(action)}  "
+                f"action_id={action_id} type={action_type}"
+            ),
+        )
+
+    async def _log_replay_step_phase(self, index: int, message: str) -> None:
+        # 兜底 phase 日志（很少用，新代码尽量直接指明 title）。
+        await self._log_replay_stage(index, "辅助", message)
+
+    async def _log_replay_stage(self, index: int, title: str, message: str) -> None:
+        """实时输出一条步骤化日志（七拍模型里的一拍）。
+
+        title 是方案 §"标题清单" 里的新标题之一（不带 `缓存` 前缀），如
+        ``稳定`` / ``截图`` / ``动作`` / ``执行`` / ``结果`` / ``路标`` /
+        ``辅助`` / ``修复``。最终落库标题为 ``缓存{title}``。
+
+        注意：本方法**不再合并**到收尾汇总。每次调用都立刻 emit，跟首跑
+        日志一样按时间从上往下流式可读。
+        """
+        await self._log(1, f"缓存{title}", message)
+
+    async def _log_replay_step_done(
+        self,
+        index: int,
+        *,
+        elapsed_ms: int,
+        status: str,
+    ) -> None:
+        """步骤收尾端点：必须单行，只含 ``elapsed`` 和 ``status``。
+
+        触发时机有强约束：必须在 ``_emit_screenshot("after", ...)`` **之后**、
+        ``_emit_step_end()`` **之前**。这样 after 截图先入流，再是收尾分割线，
+        最后是旧 RunStep 端点 ``#N 第 N 步完成 · click``，三者顺序稳定。
+        """
+        await self._log(
+            1,
+            "缓存完成",
+            f"━━ 第 {index} 步 完成 ━━  elapsed={elapsed_ms}ms status={status}",
+        )
+
+    def _set_replay_step_status(self, status: str) -> None:
+        if status:
+            self._current_step_status = status
+
+    def _replay_step_status(self) -> str:
+        return self._current_step_status or (
+            "固定动作完成" if self._is_v1_replay else "动作完成"
         )
 
     async def capture_final_frame(self) -> bytes:
@@ -397,18 +536,32 @@ class ReplayRunner:
             return result.bytes_
         return await self._screenshot_jpeg()
 
+    async def _wait_stable_for_step(self, index: int, *, phase: str) -> StabilityResult:
+        reused_before = self._last_frame is not None
+        result = await self._wait_stable()
+        checks = int(getattr(result, "checks", 0) or 0)
+        elapsed_ms = int(getattr(result, "elapsed_ms", 0) or 0)
+        reused_note = "，复用上步尾帧" if reused_before else ""
+        if bool(getattr(result, "stable", True)):
+            await self._log_replay_stage(
+                index,
+                "稳定",
+                f"{phase}页面稳定：检测{checks}次，耗时={elapsed_ms / 1000:.1f}s{reused_note}",
+            )
+        else:
+            await self._log_replay_stage(
+                index,
+                "稳定",
+                f"{phase}页面未确认稳定：检测{checks}次，耗时={elapsed_ms / 1000:.1f}s{reused_note}，返回最后帧继续",
+            )
+        return result
+
     async def _wait_stable(self) -> StabilityResult:
         result = await wait_page_stable_pixel(
             self._screenshot_jpeg,
             frame_a_bytes=self._last_frame,
             use_cache_settings=True,
-            log=(
-                None
-                if self.log is None
-                else lambda level, title, content: asyncio.create_task(
-                    self._log(level, title, content)
-                )
-            ),
+            log=None,
         )
         self._last_frame = result.bytes_
         return result
@@ -419,27 +572,47 @@ class ReplayRunner:
             self._carry_before_bytes = None
             self._carry_before_index = None
             self._last_frame = bytes_
+            await self._log_replay_stage(
+                index,
+                "稳定",
+                "复用上一 action after 稳定帧作为 before，跳过执行前稳定检测",
+            )
             await self._log(
                 1,
                 "轨迹缓存状态路标",
                 f"复用上一 action 路标帧作为 #{index} before，跳过页面稳定检测",
             )
             return bytes_
-        before = await self._wait_stable()
+        before = await self._wait_stable_for_step(index, phase="执行前")
         return before.bytes_
 
     async def _capture_after(self, action: Dict[str, Any]) -> Optional[bytes]:
         aligned = await self._try_capture_aligned_after(action)
         if aligned is not None:
             return aligned
-        after = await self._wait_stable()
+        index = int(action.get("index") or 0)
+        if self.alignment_enabled:
+            await self._log_replay_stage(
+                index,
+                "路标",
+                "缓存路标未能直接产出可用 after，回落页面稳定检测并截图",
+            )
+        after = await self._wait_stable_for_step(index, phase="执行后")
+        if after.bytes_ is not None and not self._current_step_status and not self._is_v1_replay:
+            self._set_replay_step_status("页面稳定后完成")
         return after.bytes_
 
     async def _try_capture_aligned_after(self, action: Dict[str, Any]) -> Optional[bytes]:
         if not self.alignment_enabled:
             return None
         action_id = str(action.get("action_id") or "")
+        index = int(action.get("index") or 0)
         if not action_id:
+            await self._log_replay_stage(
+                index,
+                "路标",
+                "缺少 action_id，无法对比缓存路标",
+            )
             await self._log(
                 1,
                 "轨迹缓存状态路标",
@@ -448,6 +621,11 @@ class ReplayRunner:
             return None
         landmark = self._landmarks_by_action_id.get(action_id)
         if not landmark:
+            await self._log_replay_stage(
+                index,
+                "路标",
+                "没有找到本 action 的缓存路标图，回落页面稳定检测",
+            )
             await self._log(
                 1,
                 "轨迹缓存状态路标",
@@ -456,6 +634,11 @@ class ReplayRunner:
             return None
         if str(landmark.get("status") or "") != "available":
             reason = str(landmark.get("missing_reason") or "")
+            await self._log_replay_stage(
+                index,
+                "路标",
+                f"缓存路标图不可用 reason={reason or 'unknown'}，改用首次真实间隔",
+            )
             await self._log(
                 1,
                 "轨迹缓存状态路标",
@@ -464,9 +647,18 @@ class ReplayRunner:
                     "先按首次真实间隔兜底等待"
                 ),
             )
-            return await self._capture_after_historical_gap(action_id=action_id, landmark=landmark)
+            return await self._capture_after_historical_gap(
+                action_id=action_id,
+                landmark=landmark,
+                index=index,
+            )
         target_hash = _parse_phash_hex(landmark.get("image_phash"))
         if target_hash is None:
+            await self._log_replay_stage(
+                index,
+                "路标",
+                "缓存路标指纹为空，回落页面稳定检测",
+            )
             await self._log(
                 1,
                 "轨迹缓存状态路标",
@@ -475,6 +667,11 @@ class ReplayRunner:
             return None
         landmark_bytes = self._landmark_image_bytes(landmark)
         if not landmark_bytes:
+            await self._log_replay_stage(
+                index,
+                "路标",
+                "缓存路标图片不可读，回落页面稳定检测",
+            )
             await self._log(
                 1,
                 "轨迹缓存状态路标",
@@ -483,6 +680,15 @@ class ReplayRunner:
             return None
 
         gap_ms = _alignment_gap_ms(landmark)
+        await self._log_replay_stage(
+            index,
+            "路标",
+            (
+                "实时截图对比缓存路标"
+                f"（action_id={action_id}，首次真实间隔="
+                f"{gap_ms if gap_ms is not None else 'none'}ms）"
+            ),
+        )
         await self._log(
             1,
             "轨迹缓存状态路标",
@@ -510,10 +716,25 @@ class ReplayRunner:
                 result=result,
                 elapsed_ms=elapsed_ms,
                 note="截图一致，继续下一 action",
+                index=index,
             )
 
         wait_ms = max(0, int(gap_ms or 0) - int(self.observe_delay_ms or 0))
         if gap_ms is not None:
+            await self._log_replay_stage(
+                index,
+                "路标",
+                (
+                    f"缓存路标不一致，global={result['global_diff']:.4f} "
+                    f"center={result['center_mae']:.4f} black={result['black_ratio_diff']:.4f} "
+                    f"reason={result['reason']}"
+                ),
+            )
+            await self._log_replay_stage(
+                index,
+                "稳定",
+                f"缓存路标不一致，开始首次真实间隔回放：等待 {wait_ms}ms",
+            )
             await self._log(
                 1,
                 "轨迹缓存状态路标",
@@ -527,6 +748,11 @@ class ReplayRunner:
             )
             if wait_ms > 0:
                 await asyncio.sleep(wait_ms / 1000)
+            await self._log_replay_stage(
+                index,
+                "路标",
+                "首次真实间隔回放完毕，再次截图对比缓存路标",
+            )
             current = await self._screenshot_jpeg()
             result = _compare_alignment(
                 current_bytes=current,
@@ -545,8 +771,14 @@ class ReplayRunner:
                     result=result,
                     elapsed_ms=elapsed_ms,
                     note="按首次真实间隔等待后截图一致，继续下一 action",
+                    index=index,
                 )
         else:
+            await self._log_replay_stage(
+                index,
+                "辅助",
+                "缓存路标不一致，且没有首次真实间隔，直接请求辅助 VLM",
+            )
             await self._log(
                 1,
                 "轨迹缓存状态路标",
@@ -577,8 +809,21 @@ class ReplayRunner:
         result: Dict[str, Any],
         elapsed_ms: int,
         note: str,
+        index: int,
     ) -> bytes:
         self._last_frame = current
+        if "首次真实间隔" in note:
+            self._set_replay_step_status("等待后对齐成功")
+        else:
+            self._set_replay_step_status("对齐成功")
+        await self._log_replay_stage(
+            index,
+            "路标",
+            (
+                f"缓存路标比对成功，global={result['global_diff']:.4f} "
+                f"center={result['center_mae']:.4f} black={result['black_ratio_diff']:.4f}"
+            ),
+        )
         before_index = _optional_int(landmark.get("before_action_index"))
         if before_index is not None:
             self._carry_before_bytes = current
@@ -601,6 +846,7 @@ class ReplayRunner:
         *,
         action_id: str,
         landmark: Dict[str, Any],
+        index: int,
     ) -> Optional[bytes]:
         gap_ms = _alignment_gap_ms(landmark)
         if gap_ms is None:
@@ -611,6 +857,11 @@ class ReplayRunner:
             )
             return None
         remaining_ms = max(0, int(gap_ms) - int(self.observe_delay_ms or 0))
+        await self._log_replay_stage(
+            index,
+            "稳定",
+            f"缓存路标图不可用，按首次真实间隔等待 {remaining_ms}ms",
+        )
         if remaining_ms > 0:
             await self._log(
                 1,
@@ -622,7 +873,13 @@ class ReplayRunner:
             )
             await asyncio.sleep(remaining_ms / 1000)
         current = await self._screenshot_jpeg()
+        await self._log_replay_stage(
+            index,
+            "路标",
+            "首次真实间隔等待完毕，使用当前截图衔接下一步",
+        )
         self._last_frame = current
+        self._set_replay_step_status("历史间隔完成")
         before_index = _optional_int(landmark.get("before_action_index"))
         if before_index is not None:
             self._carry_before_bytes = current
@@ -686,6 +943,11 @@ class ReplayRunner:
             "轨迹缓存状态路标",
             f"等待结束后重新截图仍不一致，{miss_summary}，转入 recovery_vlm 局部恢复",
         )
+        await self._log_replay_stage(
+            int(action.get("index") or 0),
+            "辅助",
+            "缓存路标仍未对齐，请求辅助 VLM 介入",
+        )
 
         max_wait_more = max(0, verifier.max_wait_more)
         wait_more_used = 0
@@ -728,6 +990,12 @@ class ReplayRunner:
             )
 
             if decision.verdict == VERDICT_CONTINUE:
+                self._set_replay_step_status("辅助放行")
+                await self._log_replay_stage(
+                    int(action.get("index") or 0),
+                    "辅助",
+                    "辅助 VLM 放行，接受当前页面并继续缓存路线",
+                )
                 await self._record_recovery_decision(
                     decision=decision,
                     action_id=action_id,
@@ -779,6 +1047,11 @@ class ReplayRunner:
                         f"alignment_miss {miss_summary} recovery=REPAIR_EMPTY_ACTION"
                     )
                 repair_used += 1
+                await self._log_replay_stage(
+                    int(action.get("index") or 0),
+                    "辅助",
+                    "辅助 VLM 给出局部修复动作，准备执行",
+                )
                 await self._record_recovery_decision(
                     decision=decision,
                     action_id=action_id,
@@ -791,13 +1064,23 @@ class ReplayRunner:
                 )
                 repair_action = await self._replay_action_from_parsed(parsed)
                 await self.dispatcher.execute(repair_action)
+                await self._log_replay_stage(
+                    int(action.get("index") or 0),
+                    "修复",
+                    f"修复动作已执行：{_format_action_log(repair_action).removesuffix(' 已执行')}",
+                )
                 await self._log(
                     1,
                     "轨迹缓存修复动作",
                     _format_action_log(repair_action),
                 )
-                await self._observe_after_action()
+                await self._observe_after_action(index=int(action.get("index") or 0))
                 latest_bytes = await self._screenshot_jpeg()
+                await self._log_replay_stage(
+                    int(action.get("index") or 0),
+                    "路标",
+                    "局部修复动作已执行，重新对比缓存路标",
+                )
                 recheck = _compare_alignment(
                     current_bytes=latest_bytes,
                     landmark_bytes=landmark_bytes,
@@ -820,6 +1103,7 @@ class ReplayRunner:
                         ),
                     )
                     self._last_frame = latest_bytes
+                    self._set_replay_step_status("局部修复成功")
                     if action_id:
                         self._recovery_repaired_actions[action_id] = repair_used
                     before_index = _optional_int(landmark.get("before_action_index"))
@@ -858,6 +1142,11 @@ class ReplayRunner:
                 )
 
             wait_more_used += 1
+            await self._log_replay_stage(
+                int(action.get("index") or 0),
+                "辅助",
+                f"辅助 VLM 判断=WAIT_MORE，等待 {decision.wait_ms}ms 后重比",
+            )
             await self._record_recovery_decision(
                 decision=decision,
                 action_id=action_id,
@@ -869,6 +1158,11 @@ class ReplayRunner:
                 level=2,
             )
             await asyncio.sleep(decision.wait_ms / 1000)
+            await self._log_replay_stage(
+                int(action.get("index") or 0),
+                "稳定",
+                f"WAIT_MORE 等待完成：{decision.wait_ms}ms",
+            )
             last_elapsed_ms += decision.wait_ms
             latest_bytes = await self._screenshot_jpeg()
             recheck = _compare_alignment(
@@ -898,6 +1192,7 @@ class ReplayRunner:
                 if before_index is not None:
                     self._carry_before_bytes = latest_bytes
                     self._carry_before_index = before_index
+                self._set_replay_step_status("等待后对齐成功")
                 return latest_bytes
             await self._log(
                 2,
@@ -910,6 +1205,11 @@ class ReplayRunner:
                     f"black={recheck['black_ratio_diff']:.4f} "
                     f"reason={recheck['reason']}，再次交给 recovery_vlm"
                 ),
+            )
+            await self._log_replay_stage(
+                int(action.get("index") or 0),
+                "辅助",
+                "WAIT_MORE 后仍未对齐，再次请求辅助 VLM",
             )
 
     async def _replay_action_from_parsed(self, parsed: A.ParsedAction) -> Dict[str, Any]:
@@ -1278,15 +1578,16 @@ class ReplayRunner:
     async def _screenshot_jpeg(self) -> bytes:
         return await asyncio.to_thread(self.driver.screenshot_jpeg, 25, 720)
 
-    async def _observe_after_action(self) -> None:
+    async def _observe_after_action(self, *, index: Optional[int] = None) -> None:
         delay_ms = self.observe_delay_ms
         if delay_ms <= 0:
             return
-        await self._log(
-            1,
-            "轨迹缓存观察延迟",
-            f"等待 {delay_ms}ms 后再检测页面稳定",
-        )
+        if index is not None:
+            await self._log_replay_stage(
+                index,
+                "稳定",
+                f"动作执行后观察 {delay_ms}ms，再进入截图/校验",
+            )
         await asyncio.sleep(delay_ms / 1000)
 
     async def _log(self, level: int, title: str, content: str) -> None:
@@ -1344,10 +1645,9 @@ class ReplayRunner:
             or action.get("label")
             or _format_action_log(action)
         )
-        thought = (
-            str(action.get("thought") or "").strip()
-            or f"轨迹缓存回放：{intent_label}"
-        )
+        # RunStep 会作为 UI 的 "#N 第 N 步完成"事件异步出现；这里保持短句，
+        # 避免首跑长 thought 插队后冲散缓存回放的步骤化日志主线。
+        thought = f"轨迹缓存回放：{intent_label}"
         action_id = str(action.get("action_id") or "")
         repair_count = self._recovery_repaired_actions.get(action_id)
         if repair_count and not error:
@@ -1593,6 +1893,73 @@ def _format_action_log(action: Dict[str, Any]) -> str:
     if point:
         detail += f" point={point}"
     return detail + " 已执行"
+
+
+def _action_stage_title(action: Dict[str, Any]) -> str:
+    action_type = str(action.get("type") or "")
+    if action_type in (A.ACTION_CLICK, A.ACTION_DOUBLE_TAP, A.ACTION_LONG_PRESS):
+        return "点击"
+    if action_type == A.ACTION_TYPE:
+        return "输入"
+    if action_type == A.ACTION_WAIT:
+        return "等待"
+    if action_type in (A.ACTION_SCROLL, A.ACTION_DRAG):
+        return "滑动"
+    if action_type in (
+        A.ACTION_OPEN_APP,
+        A.ACTION_CLOSE_APP,
+        A.ACTION_PRESS_HOME,
+        A.ACTION_PRESS_BACK,
+        A.ACTION_KEY_EVENT,
+    ):
+        return "应用"
+    return "动作"
+
+
+def _executed_action_message(index: int, action: Dict[str, Any]) -> str:
+    action_type = str(action.get("type") or "")
+    point = action.get("point") or action.get("center")
+    if action_type in (A.ACTION_CLICK, A.ACTION_DOUBLE_TAP, A.ACTION_LONG_PRESS):
+        verb = {
+            A.ACTION_CLICK: "点击",
+            A.ACTION_DOUBLE_TAP: "双击",
+            A.ACTION_LONG_PRESS: "长按",
+        }.get(action_type, "点击")
+        return f"{verb}坐标 {point}"
+    if action_type == A.ACTION_TYPE:
+        return f"输入内容 {str(action.get('content') or '')[:80]}"
+    if action_type == A.ACTION_WAIT:
+        return f"等待 {action.get('seconds') or 1} 秒"
+    if action_type == A.ACTION_SCROLL:
+        return (
+            f"滑动 direction={action.get('direction') or 'down'} "
+            f"amount={action.get('amount') or 1}"
+        )
+    if action_type == A.ACTION_DRAG:
+        return f"拖拽 start={action.get('start')} end={action.get('end')}"
+    if action_type == A.ACTION_OPEN_APP:
+        return f"打开应用 {_app_target(action)}"
+    if action_type == A.ACTION_CLOSE_APP:
+        return f"关闭应用 {_app_target(action)}"
+    if action_type == A.ACTION_PRESS_HOME:
+        return "按 Home"
+    if action_type == A.ACTION_PRESS_BACK:
+        return "返回"
+    if action_type == A.ACTION_KEY_EVENT:
+        return f"按键 keycode={action.get('keycode')}"
+    return _format_action_log(action).removesuffix(" 已执行")
+
+
+def _replay_target_text(action: Dict[str, Any]) -> str:
+    for key in ("plan_intent", "intent", "label", "thought"):
+        value = str(action.get(key) or "").strip()
+        if value:
+            return value[:80]
+    action_type = str(action.get("type") or "动作").strip()
+    if action_type == A.ACTION_TYPE:
+        content = str(action.get("content") or action.get("text") or "").strip()
+        return f"输入{content}" if content else "输入文本"
+    return f"执行{action_type}"
 
 
 __all__ = [
