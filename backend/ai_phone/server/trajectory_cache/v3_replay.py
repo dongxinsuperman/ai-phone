@@ -55,6 +55,7 @@ from ai_phone.server.trajectory_cache.replay import (
     ReplayLogFn,
     ReplayResult,
     _compare_alignment,
+    _emit_maybe_await,
     _resolve_landmark_path,
 )
 from ai_phone.server.trajectory_cache.service import normalize_run_semantic
@@ -661,7 +662,7 @@ class V3ReplayRunner:
         for action_pos, action in enumerate(actions):
             index = int(action.get("index") or executed + 1)
             step_started_at = time.monotonic()
-            self._emit_step_start(index)
+            await self._emit_step_start(index)
             self._current_step_status = ""
             try:
                 await self._log_v3_step_start(
@@ -682,7 +683,7 @@ class V3ReplayRunner:
                     if before_bytes is None:
                         before_bytes = await self._screenshot_jpeg()
                 self._final_before_bytes = before_bytes
-                self._emit_screenshot(index, "before", before_bytes)
+                await self._emit_screenshot(index, "before", before_bytes)
                 execution_action = await self._materialize_action(
                     action,
                     before_bytes,
@@ -706,7 +707,7 @@ class V3ReplayRunner:
                     self._reuse_next_before_frame = True
                     self._final_after_bytes = before_bytes
                     if self.capture_after_each_action:
-                        self._emit_screenshot(index, "after", before_bytes)
+                        await self._emit_screenshot(index, "after", before_bytes)
                     elapsed_ms = int((time.monotonic() - step_started_at) * 1000)
                     # 顺序铁律：after 截图之后 → `缓存完成` → STEP_END
                     await self._log_v3_step_done(
@@ -714,7 +715,7 @@ class V3ReplayRunner:
                         elapsed_ms=elapsed_ms,
                         status=self._v3_step_status(),
                     )
-                    self._emit_step_end(
+                    await self._emit_step_end(
                         index,
                         source_action=action,
                         execution_action=action,
@@ -777,7 +778,7 @@ class V3ReplayRunner:
                         after_bytes = self._last_frame
                     self._final_after_bytes = after_bytes
                     self._last_frame = after_bytes
-                    self._emit_screenshot(index, "after", self._final_after_bytes)
+                    await self._emit_screenshot(index, "after", self._final_after_bytes)
                 if not self._current_step_status:
                     self._set_v3_step_status("定位成功")
                 elapsed_ms = int((time.monotonic() - step_started_at) * 1000)
@@ -787,7 +788,7 @@ class V3ReplayRunner:
                     elapsed_ms=elapsed_ms,
                     status=self._v3_step_status(),
                 )
-                self._emit_step_end(
+                await self._emit_step_end(
                     index,
                     source_action=action,
                     execution_action=execution_action,
@@ -802,7 +803,7 @@ class V3ReplayRunner:
                     elapsed_ms=elapsed_ms,
                     status="失败",
                 )
-                self._emit_step_end(
+                await self._emit_step_end(
                     index,
                     source_action=action,
                     execution_action=action,
@@ -1489,17 +1490,23 @@ class V3ReplayRunner:
         if result is not None:
             await result
 
-    def _emit_screenshot(self, step: int, phase: str, bytes_: Optional[bytes]) -> None:
+    async def _emit_screenshot(self, step: int, phase: str, bytes_: Optional[bytes]) -> None:
         if self.emit is None or self.run_id is None or not bytes_:
             return
-        self.emit(make_event(EVT_SCREENSHOT, self.run_id, step=step, phase=phase, bytes=bytes_))
+        await _emit_maybe_await(
+            self.emit(
+                make_event(EVT_SCREENSHOT, self.run_id, step=step, phase=phase, bytes=bytes_)
+            )
+        )
 
-    def _emit_step_start(self, step: int) -> None:
+    async def _emit_step_start(self, step: int) -> None:
         if self.emit is None or self.run_id is None:
             return
-        self.emit(make_event(EVT_STEP_START, self.run_id, step=step))
+        await _emit_maybe_await(
+            self.emit(make_event(EVT_STEP_START, self.run_id, step=step))
+        )
 
-    def _emit_step_end(
+    async def _emit_step_end(
         self,
         step: int,
         *,
@@ -1518,15 +1525,17 @@ class V3ReplayRunner:
         thought = f"V3轨迹缓存回放：{plan_intent}"
         if error:
             thought = f"{thought}（执行失败：{error}）"
-        self.emit(
-            make_event(
-                EVT_STEP_END,
-                self.run_id,
-                step=step,
-                thought=thought,
-                action=_format_v3_action_log(execution_action),
-                action_type=str(source_action.get("type") or execution_action.get("type") or ""),
-                elapsed_ms=elapsed_ms,
+        await _emit_maybe_await(
+            self.emit(
+                make_event(
+                    EVT_STEP_END,
+                    self.run_id,
+                    step=step,
+                    thought=thought,
+                    action=_format_v3_action_log(execution_action),
+                    action_type=str(source_action.get("type") or execution_action.get("type") or ""),
+                    elapsed_ms=elapsed_ms,
+                )
             )
         )
 

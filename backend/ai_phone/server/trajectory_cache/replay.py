@@ -45,7 +45,20 @@ from ai_phone.server.trajectory_cache.recovery import (
 from ai_phone.shared import actions as A
 
 ReplayLogFn = Callable[[int, str, str], Awaitable[None] | None]
-ReplayEmitFn = Callable[[Dict[str, Any]], None]
+ReplayEmitFn = Callable[[Dict[str, Any]], Any]
+
+
+async def _emit_maybe_await(result: Any) -> None:
+    """``self.emit`` 现在可能是同步 ``emitter.emit`` 或异步 ``emitter.aemit``。
+
+    缓存回放强烈依赖事件顺序（``EVT_STEP_END`` 必须在下一步 ``EVT_LOG``
+    之前落库，否则 ``#N 第 N 步完成 · click`` 会被甩到 ``#N+1 缓存步骤``
+    之后），所以三个 emit 包装方法都改成 async + 在这里 await——只要
+    service 那层传 ``emitter.aemit``，顺序就由 ``_serial_lock`` 保证；
+    传同步 ``emitter.emit`` 时则等价于老行为，单测不会破。
+    """
+    if asyncio.iscoroutine(result):
+        await result
 
 
 class ReplayActionError(RuntimeError):
@@ -298,7 +311,7 @@ class ReplayRunner:
             # 否则 emitter 收到的 EVT_SCREENSHOT 会一直挂在 _pending_step_urls
             # 里没人取走，RunStep 表里一行都不会写入，UI 时间线就看不到任何
             # 步骤截图（看起来像"步=0、全程没图"，但其实截图都已经拍好了）。
-            self._emit_step_start(index)
+            await self._emit_step_start(index)
             self._current_step_status = ""
             step_started_at = time.monotonic()
             try:
@@ -309,7 +322,7 @@ class ReplayRunner:
                 )
                 before_bytes = await self._capture_before(index)
                 self._final_before_bytes = before_bytes
-                self._emit_screenshot(index, "before", before_bytes)
+                await self._emit_screenshot(index, "before", before_bytes)
                 execution_action = action
                 alignment_action = action
                 step_action = action
@@ -341,7 +354,7 @@ class ReplayRunner:
                         step_action = dict(action)
                         step_action["_ephemeral_gate_note"] = gate_outcome["note"]
                         if self.capture_after_each_action:
-                            self._emit_screenshot(index, "after", before_bytes)
+                            await self._emit_screenshot(index, "after", before_bytes)
                         elapsed_ms = int((time.monotonic() - step_started_at) * 1000)
                         # 顺序铁律：`缓存完成` 必须在 after 截图之后、`_emit_step_end`
                         # 之前，否则会跟 RunStep 端点时间戳粘连导致顺序倒置。
@@ -350,7 +363,7 @@ class ReplayRunner:
                             elapsed_ms=elapsed_ms,
                             status=self._replay_step_status(),
                         )
-                        self._emit_step_end(
+                        await self._emit_step_end(
                             index,
                             action=step_action,
                             elapsed_ms=elapsed_ms,
@@ -369,14 +382,14 @@ class ReplayRunner:
                         step_action = dict(action)
                         step_action["_ephemeral_gate_note"] = gate_outcome["note"]
                         if self.capture_after_each_action:
-                            self._emit_screenshot(index, "after", accepted_bytes)
+                            await self._emit_screenshot(index, "after", accepted_bytes)
                         elapsed_ms = int((time.monotonic() - step_started_at) * 1000)
                         await self._log_replay_step_done(
                             index,
                             elapsed_ms=elapsed_ms,
                             status=self._replay_step_status(),
                         )
-                        self._emit_step_end(
+                        await self._emit_step_end(
                             index,
                             action=step_action,
                             elapsed_ms=elapsed_ms,
@@ -412,7 +425,7 @@ class ReplayRunner:
                 if self.capture_after_each_action:
                     after_bytes = await self._capture_after(alignment_action)
                     self._final_after_bytes = after_bytes
-                    self._emit_screenshot(index, "after", self._final_after_bytes)
+                    await self._emit_screenshot(index, "after", self._final_after_bytes)
                 if not self._current_step_status:
                     self._set_replay_step_status(
                         "固定动作完成" if self._is_v1_replay else "动作完成"
@@ -424,7 +437,7 @@ class ReplayRunner:
                     elapsed_ms=elapsed_ms,
                     status=self._replay_step_status(),
                 )
-                self._emit_step_end(
+                await self._emit_step_end(
                     index,
                     action=step_action,
                     elapsed_ms=elapsed_ms,
@@ -440,7 +453,7 @@ class ReplayRunner:
                     elapsed_ms=elapsed_ms,
                     status="失败",
                 )
-                self._emit_step_end(
+                await self._emit_step_end(
                     index,
                     action=action,
                     elapsed_ms=elapsed_ms,
@@ -1698,7 +1711,7 @@ class ReplayRunner:
         if result is not None:
             await result
 
-    def _emit_screenshot(
+    async def _emit_screenshot(
         self,
         step: int,
         phase: str,
@@ -1706,22 +1719,26 @@ class ReplayRunner:
     ) -> None:
         if self.emit is None or self.run_id is None or not bytes_:
             return
-        self.emit(
-            make_event(
-                EVT_SCREENSHOT,
-                self.run_id,
-                step=step,
-                phase=phase,
-                bytes=bytes_,
+        await _emit_maybe_await(
+            self.emit(
+                make_event(
+                    EVT_SCREENSHOT,
+                    self.run_id,
+                    step=step,
+                    phase=phase,
+                    bytes=bytes_,
+                )
             )
         )
 
-    def _emit_step_start(self, step: int) -> None:
+    async def _emit_step_start(self, step: int) -> None:
         if self.emit is None or self.run_id is None:
             return
-        self.emit(make_event(EVT_STEP_START, self.run_id, step=step))
+        await _emit_maybe_await(
+            self.emit(make_event(EVT_STEP_START, self.run_id, step=step))
+        )
 
-    def _emit_step_end(
+    async def _emit_step_end(
         self,
         step: int,
         *,
@@ -1762,15 +1779,17 @@ class ReplayRunner:
             thought = f"{thought}（{gate_note}）"
         if error:
             thought = f"{thought}（执行失败：{error}）"
-        self.emit(
-            make_event(
-                EVT_STEP_END,
-                self.run_id,
-                step=step,
-                thought=thought,
-                action=action_log,
-                action_type=str(action.get("type") or ""),
-                elapsed_ms=elapsed_ms,
+        await _emit_maybe_await(
+            self.emit(
+                make_event(
+                    EVT_STEP_END,
+                    self.run_id,
+                    step=step,
+                    thought=thought,
+                    action=action_log,
+                    action_type=str(action.get("type") or ""),
+                    elapsed_ms=elapsed_ms,
+                )
             )
         )
 

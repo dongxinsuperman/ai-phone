@@ -1014,6 +1014,13 @@ class FakeEmitter:
     def emit(self, evt):
         self.events.append(evt)
 
+    async def aemit(self, evt):
+        # 顺序保序版的 emit；缓存路径（V1/V2/V3）走这条接口，避免
+        # `#N 第 N 步完成 · click` 被甩到下一步 `#N+1 缓存步骤` 之后。
+        # 在 FakeEmitter 里串行 await 等价于直接 append——足够给单测验证
+        # 调用顺序就是 events 顺序。
+        self.events.append(evt)
+
     async def force_finish(self, **kwargs):
         self.finishes.append(kwargs)
 
@@ -3295,6 +3302,86 @@ async def test_v3_replay_runner_step_endpoints_carry_step_index(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_replay_runner_step_end_arrives_before_next_step_start_log():
+    """缓存路径事件顺序铁律（2026-05-16 三轮修复）：
+
+    用户反馈："`#1 第 1 步完成 · click`" 出现在 "`#2 缓存步骤`" 之后。根
+    因是 ``_emit_step_end`` 走的是同步 ``emitter.emit`` → 后台
+    ``ensure_future``，而下一步的 ``await _log(缓存步骤)`` 走的是同步
+    ``await _forward_log`` 立刻入库——两条路径竞争，``EVT_STEP_END``
+    被甩到下一步开头之后。
+
+    修复后：``_emit_step_end`` 是 ``async`` + 内部 ``await
+    _emit_maybe_await``；service 那层缓存通道传 ``emit=emitter.aemit``
+    （顺序保序版）。所以 ``EVT_STEP_END(step=N)`` 必须严格在
+    ``EVT_LOG title=缓存步骤 step=N+1`` **之前**进入事件流。
+
+    本测试用一个慢 emit（asyncio.sleep 0.01 模拟后台延迟）+ 真实
+    ReplayRunner（2 步动作），验证：``EVT_STEP_END(step=1)`` 一定在
+    所有 step=2 的 EVT_LOG 之前。
+    """
+    from ai_phone.agent.runner.events import EVT_LOG, EVT_STEP_END
+    from ai_phone.server.trajectory_cache import ReplayRunner
+
+    events: list[dict] = []
+    log_lock = asyncio.Lock()
+
+    async def emit(evt):
+        # 模拟后台 ensure_future 的"延迟"：让没拿到锁的同类事件被排到后面。
+        # 真实 emitter.aemit 内部也是用 _serial_lock 串行，这里语义对齐。
+        async with log_lock:
+            await asyncio.sleep(0.01)
+            events.append(evt)
+
+    async def log(level, title, content, step=None):
+        await emit({
+            "type": EVT_LOG, "level": level, "title": title,
+            "content": content, "step": step,
+        })
+
+    driver = FakeDriver()
+    runner = ReplayRunner(
+        driver=driver,
+        trajectory={
+            "actions": [
+                {"index": 1, "type": "click", "point": {"x": 1, "y": 2}},
+                {"index": 2, "type": "click", "point": {"x": 3, "y": 4}},
+            ]
+        },
+        run_id="seq-run",
+        log=log,
+        emit=emit,
+        observe_delay_ms=0,
+        replay_mode="v1",
+    )
+
+    async def stable():
+        return SimpleNamespace(bytes_=b"jpeg")
+
+    runner._wait_stable = stable  # type: ignore[method-assign]
+    result = await runner.run()
+    assert result.success is True
+
+    step_end_1_idx = next(
+        i for i, e in enumerate(events)
+        if e.get("type") == EVT_STEP_END and e.get("step") == 1
+    )
+    next_step_log_indices = [
+        i for i, e in enumerate(events)
+        if e.get("type") == EVT_LOG
+        and e.get("step") == 2
+        and e.get("title") == "缓存步骤"
+    ]
+    assert next_step_log_indices, "缺少 `#2 缓存步骤` 端点日志"
+    next_step_log_idx = next_step_log_indices[0]
+    assert step_end_1_idx < next_step_log_idx, (
+        f"EVT_STEP_END(step=1) 必须出现在 `#2 缓存步骤` 之前，实际 "
+        f"step_end_1_idx={step_end_1_idx} >= next_step_log_idx={next_step_log_idx}\n"
+        f"events 序列={[(i, e.get('type'), e.get('step'), e.get('title')) for i, e in enumerate(events)]}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_replay_runner_capture_final_frame_always_waits_for_stability():
     """断言入口不变量（2026-05-16）：``capture_final_frame()`` 必须先 await
     一次 ``_wait_stable()`` 再返回，**即便 ``_final_after_bytes`` 已经被主
@@ -4108,11 +4195,12 @@ async def test_server_runner_v2_recovery_and_gate_use_current_config_backend(
         waiter=DriverRpcWaiter(),
     )
 
+    emitter = FakeEmitter()
     handled = await service._maybe_run_trajectory_cache(
         run_id=run.id,
         goal="cached goal",
         driver=FakeDriver(),
-        emitter=FakeEmitter(),
+        emitter=emitter,
     )
 
     assert handled is True
@@ -4121,6 +4209,17 @@ async def test_server_runner_v2_recovery_and_gate_use_current_config_backend(
     assert FakeReplayRunner.last_init_kwargs
     assert isinstance(FakeReplayRunner.last_init_kwargs["recovery_verifier"], FakeRecovery)
     assert isinstance(FakeReplayRunner.last_init_kwargs["ephemeral_gate_verifier"], FakeGate)
+    # 顺序保序：service 必须给缓存 runner 传 emitter.aemit（async 顺序保序版）
+    # 而不是 emitter.emit（同步丢后台 → 乱序）。回归一旦把 aemit 改回 emit，
+    # 用户在生产环境就会看到 "#N 第 N 步完成 · click" 排到 "#N+1 缓存步骤"
+    # 之后那个 bug。
+    runner_emit = FakeReplayRunner.last_init_kwargs["emit"]
+    assert (
+        getattr(runner_emit, "__self__", None) is emitter
+        and getattr(runner_emit, "__func__", None) is type(emitter).aemit
+    ), (
+        f"缓存路径必须传 emitter.aemit 而不是 emitter.emit，实际={runner_emit!r}"
+    )
 
 
 @pytest.mark.asyncio
@@ -4200,6 +4299,14 @@ async def test_server_runner_v1_cache_reads_v1_table_and_disables_enhancements(
     assert FakeReplayRunner.last_init_kwargs
     assert FakeReplayRunner.last_init_kwargs["recovery_verifier"] is None
     assert FakeReplayRunner.last_init_kwargs["ephemeral_gate_verifier"] is None
+    # 同 V2：V1 也必须走 aemit，避免事件乱序回归。
+    runner_emit = FakeReplayRunner.last_init_kwargs["emit"]
+    assert (
+        getattr(runner_emit, "__self__", None) is emitter
+        and getattr(runner_emit, "__func__", None) is type(emitter).aemit
+    ), (
+        f"V1 缓存路径必须传 emitter.aemit 而不是 emitter.emit，实际={runner_emit!r}"
+    )
 
 
 @pytest.mark.asyncio
@@ -4286,6 +4393,14 @@ async def test_server_runner_v3_cache_replay_finishes_when_assertion_passes(
         "缓存稳定",
         "V3最终校验",
     ]
+    # 同 V1/V2：V3 也必须传 emitter.aemit，让 EVT_STEP_END 顺序串行。
+    runner_emit = FakeReplayRunner.last_init_kwargs["emit"]
+    assert (
+        getattr(runner_emit, "__self__", None) is emitter
+        and getattr(runner_emit, "__func__", None) is type(emitter).aemit
+    ), (
+        f"V3 缓存路径必须传 emitter.aemit 而不是 emitter.emit，实际={runner_emit!r}"
+    )
 
 
 @pytest.mark.asyncio

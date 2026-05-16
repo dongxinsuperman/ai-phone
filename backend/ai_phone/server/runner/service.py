@@ -475,12 +475,18 @@ class ServerRunnerService:
                 )
 
         runner_cls = V1ReplayRunner if cache_mode == "v1" else V2ReplayRunner
+        # 用 emitter.aemit（顺序保序版）而非 emitter.emit：缓存的
+        # `_emit_step_end` / `_emit_screenshot` 现在已经 async + await，emit
+        # callback 返回 coroutine 时会被 `_emit_maybe_await` 接住串行。否则
+        # EVT_STEP_END 入后台队列、下一步的 `await _forward_log("缓存步骤")`
+        # 同步落库，会让 `#N 第 N 步完成 · click` 被甩到 `#N+1 缓存步骤`
+        # 之后（用户在 17:51:19.908 那个 log 看到的乱序就是这个）。
         runner = runner_cls(
             driver=driver,
             trajectory=trajectory,
             run_id=run_id,
             log=_log,
-            emit=emitter.emit,
+            emit=emitter.aemit,
             capture_after_each_action=True,
             recovery_verifier=recovery_verifier,
             ephemeral_gate_verifier=ephemeral_gate_verifier,
@@ -621,12 +627,14 @@ class ServerRunnerService:
             f"命中缓存：复用上次成功路线 cache_key={cache_key[:12]}",
         )
 
+        # 同 V1/V2：缓存路径用 emitter.aemit 串行 EVT_STEP_END / EVT_SCREENSHOT，
+        # 避免 `#N 第 N 步完成 · click` 被甩到 `#N+1 缓存步骤` 之后。
         runner = V3ReplayRunner(
             driver=driver,
             trajectory=trajectory,
             run_id=run_id,
             log=_log,
-            emit=emitter.emit,
+            emit=emitter.aemit,
             capture_after_each_action=True,
             goal=goal,
             main_vlm_backend=trajectory.get("source_vlm_backend")
