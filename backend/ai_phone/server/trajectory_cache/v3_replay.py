@@ -834,16 +834,26 @@ class V3ReplayRunner:
         total: int,
         action: Dict[str, Any],
     ) -> None:
-        # 步骤开始端点：单行 content，跟首跑 `#N ━━ 第 N 步 ━━` 视觉对齐。
-        # 详见 docs/缓存回放步骤化日志改造方案.md（七拍模型）。
+        """步骤开始端点：拆成两条——一条强标题（带 step → 前端渲染 ``#N``），
+        一条目标元信息（不带 step）。
+
+        视觉对齐首跑：首跑是 ``#N ━━ 第 N 步 ━━  段=1``。V3 这边目标 +
+        action_id + type 是必要排查信息，单独拎到"缓存目标"行，扫日志时
+        眼睛能直接锚定 ``#N 缓存步骤``。详见 docs/缓存回放步骤化日志改造方案.md。
+        """
         action_id = str(action.get("action_id") or "-")
         action_type = str(action.get("type") or "-")
         await self._log(
             1,
             "缓存步骤",
+            f"━━ 第 {index} 步 / 共 {total} 步 ━━",
+            step=index,
+        )
+        await self._log(
+            1,
+            "缓存目标",
             (
-                f"━━ 开始第 {index} 步 / 共 {total} 步 ━━  "
-                f"目标={_v3_target_text(action)}  "
+                f"{_v3_target_text(action)}  ·  "
                 f"action_id={action_id} type={action_type}"
             ),
         )
@@ -875,11 +885,15 @@ class V3ReplayRunner:
         触发时机：必须在 ``_emit_screenshot("after", ...)`` 之后、
         ``_emit_step_end()`` 之前，避免与 RunStep 端点
         ``#N 第 N 步完成 · click`` 时间戳粘连导致顺序倒置。
+
+        ``step=index`` 让前端渲染成 ``#N 缓存完成 — ━━ 第 N 步 完成 ━━``，
+        视觉对齐首跑 ``#N 第 N 步完成``。
         """
         await self._log(
             1,
             "缓存完成",
             f"━━ 第 {index} 步 完成 ━━  elapsed={elapsed_ms}ms status={status}",
+            step=index,
         )
 
     def _set_v3_step_status(self, status: str) -> None:
@@ -1455,10 +1469,23 @@ class V3ReplayRunner:
                 )
             await asyncio.sleep(delay_ms / 1000)
 
-    async def _log(self, level: int, title: str, content: str) -> None:
+    async def _log(
+        self, level: int, title: str, content: str, *, step: Optional[int] = None
+    ) -> None:
+        """V3 回放统一日志出口。
+
+        ``step`` 参数语义同 ``ReplayRunner._log``——仅端点行（缓存步骤 /
+        缓存完成）传 index，service 那层会塞进 ``log_event.step``，前端拿
+        到后渲染 ``#N`` 前缀，让 V3 缓存的步骤端点视觉对齐首跑。
+
+        老 callback 仅接 3 参时退回三参签名，保证测试通用。
+        """
         if self.log is None:
             return
-        result = self.log(level, title, content)
+        try:
+            result = self.log(level, title, content, step=step)
+        except TypeError:
+            result = self.log(level, title, content)
         if result is not None:
             await result
 

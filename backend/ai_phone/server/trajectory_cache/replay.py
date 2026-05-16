@@ -471,15 +471,27 @@ class ReplayRunner:
         total: int,
         action: Dict[str, Any],
     ) -> None:
-        # 步骤开始端点：单行 content，跟首跑 `#N ━━ 第 N 步 ━━` 视觉对齐。
+        """步骤开始端点：拆成两条——一条强标题（带 step → 前端渲染 ``#N``），
+        一条目标元信息（不带 step）。
+
+        视觉对齐首跑：首跑是 ``#N ━━ 第 N 步 ━━  段=1``——标题简洁，目标
+        留给后续 ``截图 / 动作`` 行自己交代。缓存这边目标信息更密集（缓存
+        action_id / type 是必要排查信息），单独拎到"缓存目标"行，既不丢
+        信息也不让"缓存步骤"标题膨胀，扫日志时眼睛能直接锚定 ``#N 缓存步骤``。
+        """
         action_id = str(action.get("action_id") or "-")
         action_type = str(action.get("type") or "-")
         await self._log(
             1,
             "缓存步骤",
+            f"━━ 第 {index} 步 / 共 {total} 步 ━━",
+            step=index,
+        )
+        await self._log(
+            1,
+            "缓存目标",
             (
-                f"━━ 开始第 {index} 步 / 共 {total} 步 ━━  "
-                f"目标={_replay_target_text(action)}  "
+                f"{_replay_target_text(action)}  ·  "
                 f"action_id={action_id} type={action_type}"
             ),
         )
@@ -512,11 +524,15 @@ class ReplayRunner:
         触发时机有强约束：必须在 ``_emit_screenshot("after", ...)`` **之后**、
         ``_emit_step_end()`` **之前**。这样 after 截图先入流，再是收尾分割线，
         最后是旧 RunStep 端点 ``#N 第 N 步完成 · click``，三者顺序稳定。
+
+        ``step=index`` 是给前端用的：渲染成 ``#N 缓存完成 — ━━ 第 N 步 完成 ━━``，
+        让收尾端点在视觉上和首跑的 ``#N 第 N 步完成`` 完全对齐。
         """
         await self._log(
             1,
             "缓存完成",
             f"━━ 第 {index} 步 完成 ━━  elapsed={elapsed_ms}ms status={status}",
+            step=index,
         )
 
     def _set_replay_step_status(self, status: str) -> None:
@@ -1656,10 +1672,29 @@ class ReplayRunner:
             )
         await asyncio.sleep(delay_ms / 1000)
 
-    async def _log(self, level: int, title: str, content: str) -> None:
+    async def _log(
+        self, level: int, title: str, content: str, *, step: Optional[int] = None
+    ) -> None:
+        """缓存回放统一日志出口。
+
+        ``step`` 参数（2026-05-16 步骤化日志改造续）：仅"端点行"传 index，
+        ``service.py:_log`` 拿到后塞进 ``log_event`` 的 ``step`` 字段，前端
+        看到 step 就会渲染 ``#N`` 前缀，让缓存的"缓存步骤 / 缓存完成"在视
+        觉上和首跑的 ``#N ━━ 第 N 步 ━━`` / ``#N 第 N 步完成`` 完全对齐。
+
+        过程行（缓存稳定 / 缓存动作 / 缓存执行 / 缓存截图 / 缓存目标 等）
+        约定不带 step——见 docs/缓存回放步骤化日志改造方案.md。
+
+        兼容老 callback：``self.log`` 在测试里有时是只接受 3 个参数的旧
+        签名，先尝试新四参，TypeError 再退回三参，老测试和新服务一份代码
+        通用。
+        """
         if self.log is None:
             return
-        result = self.log(level, title, content)
+        try:
+            result = self.log(level, title, content, step=step)
+        except TypeError:
+            result = self.log(level, title, content)
         if result is not None:
             await result
 

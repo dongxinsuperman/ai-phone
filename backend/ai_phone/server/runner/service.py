@@ -373,10 +373,17 @@ class ServerRunnerService:
         def _elapsed_ms() -> int:
             return int((time.monotonic() - replay_started_at) * 1000)
 
-        async def _log(level: int, title: str, content: str) -> None:
+        async def _log(
+            level: int, title: str, content: str, step: Optional[int] = None
+        ) -> None:
             # 缓存回放日志是用户排查执行链路的主线，必须按 await 顺序落库/广播。
             # 不能走 emitter.emit() 的后台队列，否则步骤开始/完成在 UI 上会重排。
-            event = log_event(run_id, level, title, content)
+            #
+            # ``step`` 参数：端点行（缓存步骤 / 缓存完成）显式传入 index，
+            # 让前端拿 step 字段渲染 ``#N`` 前缀，缓存日志的步骤端点视觉对齐
+            # 首跑（同样靠 step 渲染 ``#N``）。过程行不传 step（约定见
+            # docs/缓存回放步骤化日志改造方案.md "端点 #N，过程不带 #N"）。
+            event = log_event(run_id, level, title, content, step=step)
             forward_log = getattr(emitter, "_forward_log", None)
             if callable(forward_log):
                 await forward_log(event)
@@ -584,9 +591,13 @@ class ServerRunnerService:
         def _elapsed_ms() -> int:
             return int((time.monotonic() - replay_started_at) * 1000)
 
-        async def _log(level: int, title: str, content: str) -> None:
+        async def _log(
+            level: int, title: str, content: str, step: Optional[int] = None
+        ) -> None:
             # V3 回放同样要求步骤边界严格有序，定位/辅助/完成块不能被后台日志重排。
-            event = log_event(run_id, level, title, content)
+            # ``step`` 参数语义同 V1/V2 的 _log——端点行带 step 让前端渲染 ``#N``，
+            # 过程行不带。
+            event = log_event(run_id, level, title, content, step=step)
             forward_log = getattr(emitter, "_forward_log", None)
             if callable(forward_log):
                 await forward_log(event)

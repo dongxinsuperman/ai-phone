@@ -3117,8 +3117,8 @@ async def test_v1_replay_runner_emits_streaming_step_log_skeleton():
     driver = FakeDriver()
     from ai_phone.server.trajectory_cache import ReplayRunner
 
-    async def log(level, title, content):
-        logs.append((level, title, content))
+    async def log(level, title, content, step=None):
+        logs.append({"level": level, "title": title, "content": content, "step": step})
 
     runner = ReplayRunner(
         driver=driver,
@@ -3144,10 +3144,15 @@ async def test_v1_replay_runner_emits_streaming_step_log_skeleton():
         f"V1 执行后不应再做版本1稳定检测，期望 1 次（仅执行前），实际={stable_calls}"
     )
 
-    titles = [title for _level, title, _content in logs]
+    titles = [entry["title"] for entry in logs]
     assert "缓存步骤" in titles
+    assert "缓存目标" in titles
     assert "缓存完成" in titles
-    expected_sequence = ["缓存步骤", "缓存稳定", "缓存动作", "缓存执行", "缓存完成"]
+    # 端点 + 拆分目标行后的标准七拍序列（2026-05-16 二轮改造）：
+    # 缓存步骤 → 缓存目标 → 缓存稳定 → 缓存动作 → 缓存执行 → 缓存完成。
+    expected_sequence = [
+        "缓存步骤", "缓存目标", "缓存稳定", "缓存动作", "缓存执行", "缓存完成",
+    ]
     positions = []
     cursor = 0
     for expected in expected_sequence:
@@ -3162,17 +3167,131 @@ async def test_v1_replay_runner_emits_streaming_step_log_skeleton():
     assert positions == sorted(positions)
     # `缓存稳定` 只能出现一次（执行前），不能再有第二条"执行后稳定"。
     assert titles.count("缓存稳定") == 1, (
-        f"V1 单步只能有 1 条 `缓存稳定`（执行前），实际={titles.count('缓存稳定')} | titles={titles}"
+        f"V1 单步只能有 1 条 `缓存稳定`（执行前），实际={titles.count('缓存稳定')}"
     )
 
-    completion_logs = [
-        (level, title, content) for level, title, content in logs if title == "缓存完成"
-    ]
-    assert completion_logs, "未输出 `缓存完成` 端点"
-    for _level, _title, content in completion_logs:
-        assert "\n" not in content, f"`缓存完成` 必须单行，实际={content!r}"
-        assert "elapsed=" in content
-        assert "status=" in content
+    # —— #N 前缀约定：端点行（缓存步骤 / 缓存完成）必须带 step=index，让前端
+    # 渲染 `#N` 前缀；过程行（缓存目标 / 缓存稳定 / 缓存动作 / 缓存执行）一律
+    # 不带，避免每行都挂前缀视觉噪点。详见 docs/缓存回放步骤化日志改造方案.md。
+    step_entries = [e for e in logs if e["title"] == "缓存步骤"]
+    done_entries = [e for e in logs if e["title"] == "缓存完成"]
+    target_entries = [e for e in logs if e["title"] == "缓存目标"]
+    assert step_entries and all(e["step"] == 1 for e in step_entries), (
+        f"`缓存步骤` 必须带 step=index，实际={[e['step'] for e in step_entries]}"
+    )
+    assert done_entries and all(e["step"] == 1 for e in done_entries), (
+        f"`缓存完成` 必须带 step=index，实际={[e['step'] for e in done_entries]}"
+    )
+    assert target_entries and all(e["step"] is None for e in target_entries), (
+        f"`缓存目标` 是过程行，不能带 step，实际={[e['step'] for e in target_entries]}"
+    )
+    for e in logs:
+        if e["title"] in {"缓存稳定", "缓存动作", "缓存执行"}:
+            assert e["step"] is None, (
+                f"过程行 `{e['title']}` 不能带 step，实际 step={e['step']}"
+            )
+
+    # `缓存步骤` content 必须瘦身：只剩 `━━ 第 N 步 / 共 M 步 ━━`，
+    # 不能再回退到旧版"━━ 开始第 N 步 / 共 M 步 ━━ 目标=... action_id=..."
+    # 那种多塞元信息的格式。
+    step_content = step_entries[0]["content"]
+    assert step_content == "━━ 第 1 步 / 共 1 步 ━━", (
+        f"`缓存步骤` content 应已瘦身，实际={step_content!r}"
+    )
+    # 目标 + action_id + type 必须落到独立的 `缓存目标` 行。
+    target_content = target_entries[0]["content"]
+    assert "action_id=" in target_content and "type=" in target_content, (
+        f"`缓存目标` 必须包含 action_id 和 type，实际={target_content!r}"
+    )
+
+    for entry in done_entries:
+        assert "\n" not in entry["content"], (
+            f"`缓存完成` 必须单行，实际={entry['content']!r}"
+        )
+        assert "elapsed=" in entry["content"]
+        assert "status=" in entry["content"]
+
+
+@pytest.mark.asyncio
+async def test_v3_replay_runner_step_endpoints_carry_step_index(monkeypatch):
+    """V3 步骤端点 ``#N`` 前缀回归（2026-05-16 二轮改造）：
+
+    V3 单步必须把 ``缓存步骤`` / ``缓存完成`` 这两个端点行的 ``step``
+    字段设成 ``index``——前端拿到 step 才会渲染 ``#N`` 前缀，让 V3 缓存
+    的步骤端点视觉对齐首跑的 ``#N ━━ 第 N 步 ━━`` / ``#N 第 N 步完成``。
+
+    同时锁定 ``缓存目标`` 作为过程行不带 step（避免每行都挂 #N 视觉噪点），
+    以及 ``缓存步骤`` content 已瘦身为单纯 ``━━ 第 N 步 / 共 M 步 ━━``。
+    """
+    from ai_phone.server.trajectory_cache import v3_replay as v3_replay_module
+
+    monkeypatch.setattr(
+        v3_replay_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            trajectory_cache_observe_delay_ms=0,
+            trajectory_cache_ephemeral_gate_max_calls=3,
+            trajectory_cache_v3_rescue_max_calls_per_replay=3,
+        ),
+    )
+
+    async def fake_wait_stable(screenshot, frame_a_bytes=None, **kwargs):
+        return SimpleNamespace(bytes_=b"stable-jpeg")
+
+    monkeypatch.setattr(v3_replay_module, "wait_page_stable_v2_compare", fake_wait_stable)
+    driver = FakeDriver()
+    locator = FakeV3Locator()
+    logs = []
+
+    async def log(level, title, content, step=None):
+        logs.append({"level": level, "title": title, "content": content, "step": step})
+
+    runner = V3ReplayRunner(
+        driver=driver,
+        trajectory={
+            "run_semantic_text": "点击教材同步",
+            "source_vlm_backend": "doubao_responses",
+            "actions": [
+                {
+                    "index": 1,
+                    "action_id": "a001",
+                    "type": "click",
+                    "point": {"x": 999, "y": 999},
+                    "plan_intent": "点击教材同步",
+                }
+            ],
+        },
+        locator=locator,
+        log=log,
+        capture_after_each_action=True,
+        goal="点击教材同步",
+    )
+
+    result = await runner.run()
+    assert result.success is True
+
+    step_entries = [e for e in logs if e["title"] == "缓存步骤"]
+    done_entries = [e for e in logs if e["title"] == "缓存完成"]
+    target_entries = [e for e in logs if e["title"] == "缓存目标"]
+
+    assert step_entries and all(e["step"] == 1 for e in step_entries), (
+        f"V3 `缓存步骤` 必须带 step=index，实际={[e['step'] for e in step_entries]}"
+    )
+    assert done_entries and all(e["step"] == 1 for e in done_entries), (
+        f"V3 `缓存完成` 必须带 step=index，实际={[e['step'] for e in done_entries]}"
+    )
+    assert target_entries and all(e["step"] is None for e in target_entries), (
+        f"V3 `缓存目标` 是过程行，不能带 step，实际={[e['step'] for e in target_entries]}"
+    )
+
+    step_content = step_entries[0]["content"]
+    assert step_content == "━━ 第 1 步 / 共 1 步 ━━", (
+        f"V3 `缓存步骤` content 应已瘦身，实际={step_content!r}"
+    )
+    target_content = target_entries[0]["content"]
+    assert "action_id=a001" in target_content and "type=click" in target_content, (
+        f"V3 `缓存目标` 必须包含 action_id 和 type，实际={target_content!r}"
+    )
 
 
 @pytest.mark.asyncio
