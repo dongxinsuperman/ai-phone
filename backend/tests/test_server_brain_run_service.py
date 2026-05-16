@@ -9,7 +9,6 @@ import pytest
 from sqlalchemy import select
 
 from ai_phone.agent.runner.events import (
-    EVT_LOG,
     EVT_RUN_FINISH,
     EVT_STEP_END,
     log_event,
@@ -18,7 +17,7 @@ from ai_phone.agent.runner.events import (
 from ai_phone.server import db as db_module
 from ai_phone.server.hub import Hub
 from ai_phone.server.lockstore import DeviceLockStore
-from ai_phone.server.models import Device, Run, RunCommand, RunStep, Submission, SubmissionItem
+from ai_phone.server.models import Device, Run, RunCommand, RunLog, RunStep, Submission, SubmissionItem
 from ai_phone.server.runner.dispatch import RunDispatchService
 from ai_phone.server.runner.emitter import ServerRunEmitter
 from ai_phone.server.runner.rpc import DriverRpcWaiter
@@ -85,6 +84,46 @@ class FastSuccessRunner:
         )
 
 
+class FailOnceThenSuccessRunner:
+    calls: Dict[str, int] = {}
+
+    def __init__(self, *, run_id, driver, goal, emit):  # noqa: ANN001
+        self.run_id = run_id
+        self.emit = emit
+
+    async def run(self):
+        count = self.calls.get(self.run_id, 0) + 1
+        self.calls[self.run_id] = count
+        if count == 1:
+            await _emit_compat(self.emit, log_event(self.run_id, 1, "fake runner", "fail once"))
+            await _emit_compat(
+                self.emit,
+                make_event(
+                    EVT_RUN_FINISH,
+                    self.run_id,
+                    ok=False,
+                    reason="error: transient boom",
+                    steps=1,
+                    elapsed_ms=50,
+                    token_stats={"total_tokens": 3},
+                ),
+            )
+            return
+        await _emit_compat(self.emit, log_event(self.run_id, 1, "fake runner", "retry ok"))
+        await _emit_compat(
+            self.emit,
+            make_event(
+                EVT_RUN_FINISH,
+                self.run_id,
+                ok=True,
+                reason="finished: done after retry",
+                steps=1,
+                elapsed_ms=60,
+                token_stats={"total_tokens": 5},
+            ),
+        )
+
+
 async def _emit_compat(emit, evt: Dict[str, Any]) -> None:
     """测试用 emit 兼容辅助：支持同步 ``emitter.emit`` 和异步
     ``emitter.aemit`` 两种 callback 形态，与生产代码
@@ -127,7 +166,7 @@ class MemoryPublisher(ResultPublisher):
 
 
 def test_submission_parse_accepts_top_level_and_item_cache_mode():
-    _name, _callback, drafts = parse_and_validate(
+    _name, _callback, _retry, drafts = parse_and_validate(
         {
             "submissionName": "cache-mode",
             "cacheMode": "v2",
@@ -307,6 +346,109 @@ async def test_scheduler_dispatches_to_server_brain_and_finalizes(app, session):
 
     terminal_events = [e for e in publisher.events if e.get("event") == "submission.item.terminal"]
     assert len(terminal_events) == 1
+
+
+@pytest.mark.asyncio
+async def test_scheduler_retries_failed_run_in_same_run(app, session):
+    FailOnceThenSuccessRunner.calls = {}
+    hub = Hub()
+    fake_ws = FakeWS()
+    await hub.register_agent("agent-server-brain", "agent", "test", fake_ws)
+    await hub.set_devices("agent-server-brain", {"S1"})
+    hub.set_device_readiness("S1", {"ready": True, "platform": "android"})
+
+    lock_store = DeviceLockStore()
+    waiter = DriverRpcWaiter()
+    runner = ServerRunnerService(
+        hub=hub,
+        lock_store=lock_store,
+        session_factory=db_module.get_session_factory(),
+        waiter=waiter,
+        runner_factory=FailOnceThenSuccessRunner,
+    )
+    dispatch = RunDispatchService(hub=hub, server_runner=runner)
+    publisher = MemoryPublisher()
+    scheduler = SubmissionScheduler(
+        hub=hub,
+        lock_store=lock_store,
+        session_factory=db_module.get_session_factory(),
+        publisher=publisher,
+        dispatch_service=dispatch,
+    )
+    scheduler._settings.run_retry_cooldown_sec = 0
+    scheduler._settings.run_retry_clear_cache = False
+    runner.set_on_run_done(scheduler.on_run_done)
+
+    now = datetime.now(timezone.utc)
+    sub = Submission(
+        origin="internal",
+        submission_name="retry-submission",
+        state="accepted",
+        raw_body={},
+        accepted_at=now,
+        expire_at=now + timedelta(hours=1),
+        requested_retry_max=1,
+        effective_retry_max=1,
+    )
+    item = SubmissionItem(
+        submission=sub,
+        case_id="case-retry",
+        case_name="case-retry",
+        platform="android",
+        run_content="do it",
+        state="queued",
+        requested_retry_max=1,
+        effective_retry_max=1,
+    )
+    session.add_all(
+        [
+            Device(
+                serial="S1",
+                platform="android",
+                status="online",
+                agent_id="agent-server-brain",
+            ),
+            sub,
+            item,
+        ]
+    )
+    await session.commit()
+    item_id = item.id
+
+    dispatched = await scheduler._try_dispatch("android", item_id)
+    assert dispatched is True
+
+    deadline = time.time() + 2.0
+    detail = None
+    while time.time() < deadline:
+        await asyncio.sleep(0.02)
+        async with db_module.get_session_factory()() as s:
+            refreshed = await s.get(SubmissionItem, item_id)
+            if refreshed is not None and refreshed.state == "success":
+                detail = refreshed
+                break
+
+    assert detail is not None
+    assert detail.run_id is not None
+    assert detail.attempts == 2
+    assert lock_store.peek("S1") is None
+    async with db_module.get_session_factory()() as s:
+        run = await s.get(Run, detail.run_id)
+        assert run is not None
+        assert run.status == "success"
+        assert run.attempts == 2
+        logs = (
+            await s.execute(
+                select(RunLog)
+                .where(RunLog.run_id == run.id)
+                .order_by(RunLog.id.asc())
+            )
+        ).scalars().all()
+    assert any(log.attempt == 1 and "FAILED" in log.content for log in logs)
+    assert any(log.attempt == 2 and "开始" in log.content for log in logs)
+    terminal_events = [e for e in publisher.events if e.get("event") == "submission.item.terminal"]
+    assert len(terminal_events) == 1
+    assert terminal_events[0]["attempts"] == 2
 
 
 @pytest.mark.asyncio

@@ -617,6 +617,38 @@ class Settings(BaseSettings):
             "env: AI_PHONE_SCHEDULER_TICK_SEC"
         ),
     )
+    run_retry_enabled: bool = Field(
+        default=False,
+        description=(
+            "同一 Run 内失败自动重跑总开关。默认关闭；开启后 payload.retryMax "
+            "会被 run_retry_max 截断。env: AI_PHONE_RUN_RETRY_ENABLED"
+        ),
+    )
+    run_retry_max: int = Field(
+        default=0,
+        ge=0,
+        le=10,
+        description=(
+            "单个 Run 允许的最大重跑次数，不含首跑；0 表示即使开关打开也不重跑。"
+            "env: AI_PHONE_RUN_RETRY_MAX"
+        ),
+    )
+    run_retry_clear_cache: bool = Field(
+        default=True,
+        description=(
+            "失败后进入下一次 attempt 前是否删除当前 cacheMode 对应轨迹缓存。"
+            "env: AI_PHONE_RUN_RETRY_CLEAR_CACHE"
+        ),
+    )
+    run_retry_cooldown_sec: float = Field(
+        default=2.0,
+        ge=0.0,
+        le=60.0,
+        description=(
+            "失败 attempt 和下一次 attempt 之间的冷却秒数。"
+            "env: AI_PHONE_RUN_RETRY_COOLDOWN_SEC"
+        ),
+    )
 
     # ──────────────────────────────────────────────────────────────────
     # Run 行为硬上限（业务调优项）

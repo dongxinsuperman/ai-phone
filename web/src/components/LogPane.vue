@@ -51,6 +51,9 @@ const shown = computed(() => props.entries)
         <div class="meta">
           <span class="t">{{ ts(e.timestamp || e.ts) }}</span>
           <span class="lv">{{ levelLabel[e.level || 1] }}</span>
+          <span class="attempt" v-if="Number(e.attempt || 1) > 1">
+            A{{ e.attempt }}
+          </span>
           <span class="step" v-if="e.step != null || e.step_index != null">
             #{{ e.step ?? e.step_index }}
           </span>
@@ -141,6 +144,11 @@ const shown = computed(() => props.entries)
   min-width: 4ch;
   font-weight: 600;
   color: #4fc3f7;
+}
+.row .attempt {
+  color: #c4b5fd;
+  min-width: 3ch;
+  font-weight: 600;
 }
 .row.lv-2 .lv {
   color: #f0b429;

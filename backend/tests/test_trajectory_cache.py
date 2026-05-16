@@ -23,6 +23,7 @@ from ai_phone.server.models import (
 )
 from ai_phone.server.runner.rpc import DriverRpcWaiter
 from ai_phone.server.runner.service import ServerRunnerService
+from ai_phone.server.retry import normalize_requested_retry_max, resolve_effective_retry_max
 from ai_phone.server.trajectory_cache import (
     CacheReplayAssertionVerifier,
     CacheReplayRecoveryVerifier,
@@ -72,7 +73,6 @@ from ai_phone.server.trajectory_cache.recovery import (
 )
 from ai_phone.server.trajectory_cache.v3_replay import V3LocatorMiss
 from ai_phone.server.trajectory_cache import ephemeral as ephemeral_module
-from ai_phone.shared.actions import ParsedAction
 
 
 def _test_jpeg(width: int = 80, height: int = 120, color=(30, 60, 90)) -> bytes:
@@ -107,6 +107,29 @@ def test_cache_mode_resolution_is_tolerant_and_env_gated():
         )
         == "v3"
     )
+
+
+def test_retry_max_resolution_is_env_capped_and_tolerant():
+    assert normalize_requested_retry_max(None) is None
+    assert normalize_requested_retry_max("2") == 2
+    assert normalize_requested_retry_max("bad") == 0
+    assert normalize_requested_retry_max(-1) == 0
+    assert normalize_requested_retry_max(True) == 0
+    assert resolve_effective_retry_max(
+        env_retry_enabled=False,
+        env_retry_max=3,
+        payload_retry_max=2,
+    ) == 0
+    assert resolve_effective_retry_max(
+        env_retry_enabled=True,
+        env_retry_max=0,
+        payload_retry_max=2,
+    ) == 0
+    assert resolve_effective_retry_max(
+        env_retry_enabled=True,
+        env_retry_max=1,
+        payload_retry_max=3,
+    ) == 1
 
 
 def test_parse_v3_locator_response_accepts_point_only_contract():
@@ -1379,6 +1402,65 @@ async def test_save_trajectory_cache_from_run_steps(monkeypatch, _test_engine, s
     )
     assert hit and hit["cache_key"] == cache_key
     assert miss is None
+
+
+@pytest.mark.asyncio
+async def test_save_trajectory_cache_uses_last_retry_attempt(monkeypatch, _test_engine, session):
+    from ai_phone.server.trajectory_cache import service as service_module
+
+    settings = Settings(_env_file=None, trajectory_cache_ephemeral_action_enabled=False)
+    monkeypatch.setattr(service_module, "get_settings", lambda: settings)
+    session.add(Device(serial="D1", platform="android", screen_width=1000, screen_height=2000))
+    run = Run(
+        id="run-cache-retry",
+        device_serial="D1",
+        goal="最终输入 hello",
+        status="success",
+        engine="vlm",
+        attempts=2,
+        last_attempt=2,
+    )
+    session.add(run)
+    session.add_all(
+        [
+            RunStep(
+                run_id=run.id,
+                attempt=1,
+                step=1,
+                action="click(point='<point>500 250</point>')",
+                action_type="click",
+            ),
+            RunStep(
+                run_id=run.id,
+                attempt=2,
+                step=1,
+                action="type(content='hello')",
+                action_type="type",
+            ),
+            RunStep(
+                run_id=run.id,
+                attempt=2,
+                step=2,
+                action="finished(content='done')",
+                action_type="finished",
+            ),
+        ]
+    )
+    await session.commit()
+
+    cache_key = await save_trajectory_cache_v2_after_success(
+        db_module.get_session_factory(),
+        run.id,
+    )
+
+    row = (
+        await session.execute(
+            select(VlmTrajectoryCacheV2).where(VlmTrajectoryCacheV2.cache_key == cache_key)
+        )
+    ).scalars().one()
+    actions = row.trajectory_json["actions"]
+    assert [a["type"] for a in actions] == ["type"]
+    assert actions[0]["raw"] == "type(content='hello')"
 
 
 @pytest.mark.asyncio

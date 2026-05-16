@@ -31,6 +31,7 @@ from ai_phone.server.models import (
     VlmTrajectoryCache,
     VlmTrajectoryCacheV2,
 )
+from ai_phone.server.retry import current_attempt
 from ai_phone.server.trajectory_cache.action_adapters import parse_cache_action
 from ai_phone.server.trajectory_cache.ephemeral import (
     ROLE_BUSINESS_REQUIRED,
@@ -370,20 +371,27 @@ async def _build_trajectory(
     screen_h = int(getattr(device, "screen_height", 0) or 0)
     platform = str(getattr(device, "platform", "") or "")
     resolution = f"{screen_w}x{screen_h}" if screen_w and screen_h else ""
+    last_attempt = max(1, int(getattr(run, "last_attempt", None) or getattr(run, "attempts", None) or 1))
 
     steps = (
         await session.execute(
-            select(RunStep).where(RunStep.run_id == run.id).order_by(RunStep.step, RunStep.id)
+            select(RunStep)
+            .where(RunStep.run_id == run.id, RunStep.attempt == last_attempt)
+            .order_by(RunStep.step, RunStep.id)
         )
     ).scalars().all()
     logs = (
         await session.execute(
-            select(RunLog).where(RunLog.run_id == run.id).order_by(RunLog.ts, RunLog.id)
+            select(RunLog)
+            .where(RunLog.run_id == run.id, RunLog.attempt == last_attempt)
+            .order_by(RunLog.ts, RunLog.id)
         )
     ).scalars().all()
     commands = (
         await session.execute(
-            select(RunCommand).where(RunCommand.run_id == run.id).order_by(RunCommand.id)
+            select(RunCommand)
+            .where(RunCommand.run_id == run.id, RunCommand.attempt == last_attempt)
+            .order_by(RunCommand.id)
         )
     ).scalars().all()
     intents = _split_goal_intents(run.goal)
@@ -1546,4 +1554,12 @@ async def _write_log(
     title: str,
     content: str,
 ) -> None:
-    session.add(RunLog(run_id=run_id, level=level, title=title, content=content))
+    session.add(
+        RunLog(
+            run_id=run_id,
+            attempt=current_attempt(),
+            level=level,
+            title=title,
+            content=content,
+        )
+    )

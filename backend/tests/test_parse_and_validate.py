@@ -15,7 +15,6 @@ import pytest
 
 from ai_phone.server.scheduler.service import (
     AdmissionError,
-    ItemDraft,
     parse_and_validate,
 )
 
@@ -27,7 +26,7 @@ from ai_phone.server.scheduler.service import (
 
 def test_minimal_single_platform_no_pool():
     """最小合法 body：platforms 单端、不传 deviceAliasPools。"""
-    name, callback_url, drafts = parse_and_validate({
+    name, callback_url, _retry, drafts = parse_and_validate({
         "submissionName": "smoke",
         "items": [
             {
@@ -50,7 +49,7 @@ def test_minimal_single_platform_no_pool():
 
 def test_multi_platform_fanout_no_pool():
     """一条 raw item 多端 → 拆 N 条 ItemDraft，platform 一一对应。"""
-    name, _cb, drafts = parse_and_validate({
+    name, _cb, _retry, drafts = parse_and_validate({
         "submissionName": "fanout",
         "items": [
             {
@@ -68,7 +67,7 @@ def test_multi_platform_fanout_no_pool():
 
 def test_pool_size_one_locks_single():
     """长度 1 的池：等价于"锁单台"语义。"""
-    _name, _cb, drafts = parse_and_validate({
+    _name, _cb, _retry, drafts = parse_and_validate({
         "submissionName": "lock-single",
         "items": [
             {
@@ -84,7 +83,7 @@ def test_pool_size_one_locks_single():
 
 def test_pool_size_n_subset_pool():
     """长度 N 的池：场景 5 子集池；写入 ItemDraft 时 dedup + sorted。"""
-    _name, _cb, drafts = parse_and_validate({
+    _name, _cb, _retry, drafts = parse_and_validate({
         "submissionName": "subset",
         "items": [
             {
@@ -101,7 +100,7 @@ def test_pool_size_n_subset_pool():
 
 def test_pool_partial_per_platform():
     """多端时仅指定一端的池：未指定的端走全池任挑。"""
-    _name, _cb, drafts = parse_and_validate({
+    _name, _cb, _retry, drafts = parse_and_validate({
         "submissionName": "partial",
         "items": [
             {
@@ -119,7 +118,7 @@ def test_pool_partial_per_platform():
 
 def test_pool_explicit_null_or_empty_means_full_pool():
     """deviceAliasPools[p] 显式 null / [] = 该端全池任挑（落 None）。"""
-    _name, _cb, drafts = parse_and_validate({
+    _name, _cb, _retry, drafts = parse_and_validate({
         "submissionName": "null-pool",
         "items": [
             {
@@ -135,7 +134,7 @@ def test_pool_explicit_null_or_empty_means_full_pool():
 
 
 def test_case_name_passthrough():
-    _name, _cb, drafts = parse_and_validate({
+    _name, _cb, _retry, drafts = parse_and_validate({
         "submissionName": "smoke",
         "items": [
             {
@@ -355,7 +354,7 @@ def test_pool_contains_empty_alias():
 
 def test_callback_url_happy_path():
     """合法 https URL → 正常解析。"""
-    _name, callback_url, _drafts = parse_and_validate({
+    _name, callback_url, _retry, _drafts = parse_and_validate({
         "submissionName": "x",
         "callbackUrl": "https://my-server.example.com/cb",
         "items": [{"caseId": "C-1", "runContent": "x", "platforms": ["android"]}],
@@ -365,12 +364,39 @@ def test_callback_url_happy_path():
 
 def test_callback_url_empty_string_treated_as_absent():
     """空串 / 空白 = 没传，callback_url 落 None。"""
-    _name, callback_url, _drafts = parse_and_validate({
+    _name, callback_url, _retry, _drafts = parse_and_validate({
         "submissionName": "x",
         "callbackUrl": "",
         "items": [{"caseId": "C-1", "runContent": "x", "platforms": ["android"]}],
     })
     assert callback_url is None
+
+
+# ---------------------------------------------------------------------------
+# retryMax 解析
+# ---------------------------------------------------------------------------
+
+
+def test_retry_max_top_level_parsed():
+    """retryMax 是顶层批次策略，合法整数原样返回。"""
+    _name, _cb, retry_max, drafts = parse_and_validate({
+        "submissionName": "retry",
+        "retryMax": 2,
+        "items": [{"caseId": "C-1", "runContent": "x", "platforms": ["android"]}],
+    })
+    assert retry_max == 2
+    assert len(drafts) == 1
+
+
+def test_retry_max_invalid_values_coerce_to_zero():
+    """非法 / 负数 / bool 按方案静默归 0，避免准入失败。"""
+    for value in ("abc", -1, True):
+        _name, _cb, retry_max, _drafts = parse_and_validate({
+            "submissionName": "retry",
+            "retryMax": value,
+            "items": [{"caseId": "C-1", "runContent": "x", "platforms": ["android"]}],
+        })
+        assert retry_max == 0
 
 
 def test_callback_url_must_be_http_or_https():
@@ -437,7 +463,7 @@ def test_index_propagates_to_failing_item():
 
 def test_submission_name_can_be_empty():
     """submissionName 为空时不拒，调用方按需回落 submission_id。"""
-    name, _cb, _drafts = parse_and_validate({
+    name, _cb, _retry, _drafts = parse_and_validate({
         "submissionName": "",
         "items": [{
             "caseId": "C-1",
@@ -450,7 +476,7 @@ def test_submission_name_can_be_empty():
 
 def test_extra_fields_silently_ignored():
     """无关字段不报错。"""
-    name, _cb, drafts = parse_and_validate({
+    name, _cb, _retry, drafts = parse_and_validate({
         "submissionName": "x",
         "extraTopField": "ignored",
         "items": [{

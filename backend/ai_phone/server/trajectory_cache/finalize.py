@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ai_phone.server.models import Run, RunLog, RunStep
+from ai_phone.server.retry import current_attempt
 
 _BACKGROUND_TASKS: set[asyncio.Task[Optional[str]]] = set()
 
@@ -144,6 +145,14 @@ async def _wait_for_run_steps_ready(
         async with session_factory() as session:
             run = await session.get(Run, run_id)
             expected_steps = int(getattr(run, "steps", 0) or 0) if run is not None else 0
+            last_attempt = max(
+                1,
+                int(
+                    getattr(run, "last_attempt", None)
+                    or getattr(run, "attempts", None)
+                    or 1
+                ),
+            )
             if expected_steps <= 0:
                 return
             rows = (
@@ -153,7 +162,7 @@ async def _wait_for_run_steps_ready(
                         RunStep.action,
                         RunStep.action_type,
                         RunStep.screenshot_before,
-                    ).where(RunStep.run_id == run_id)
+                    ).where(RunStep.run_id == run_id, RunStep.attempt == last_attempt)
                 )
             ).all()
             has_finished_step = any(
@@ -179,7 +188,8 @@ async def _wait_for_run_steps_ready(
             legacy_rows = (
                 await session.execute(
                     select(RunStep.step, RunStep.screenshot_before).where(
-                        RunStep.run_id == run_id
+                        RunStep.run_id == run_id,
+                        RunStep.attempt == last_attempt,
                     )
                 )
             ).all()
@@ -213,6 +223,7 @@ async def _write_background_log(
         session.add(
             RunLog(
                 run_id=run_id,
+                attempt=current_attempt(),
                 level=level,
                 title=title[:255],
                 content=content,

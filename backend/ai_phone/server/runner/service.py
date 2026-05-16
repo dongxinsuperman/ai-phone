@@ -16,6 +16,7 @@ from ai_phone.config import get_settings
 from ai_phone.server.hub import Hub
 from ai_phone.server.lockstore import DeviceLockStore
 from ai_phone.server.models import Run, RunCommand, RunLog
+from ai_phone.server.retry import attempt_context, current_attempt
 from ai_phone.shared import protocol as P
 
 from .emitter import ServerRunEmitter
@@ -71,9 +72,11 @@ class ServerRunnerService:
         goal: str,
         dispatch_source: str,
         platform: str = "android",
+        attempt: int = 1,
     ) -> bool:
         if self.is_running(run_id):
             return True
+        attempt = max(1, int(attempt or 1))
 
         loop = asyncio.get_running_loop()
 
@@ -85,6 +88,7 @@ class ServerRunnerService:
                 session.add(
                     RunCommand(
                         run_id=run_id,
+                        attempt=attempt,
                         message_id=str(payload.get("message_id") or ""),
                         method=str(payload.get("method") or ""),
                         params=dict(payload.get("params") or {}),
@@ -105,7 +109,10 @@ class ServerRunnerService:
                 from sqlalchemy import select
 
                 res = await session.execute(
-                    select(RunCommand).where(RunCommand.message_id == message_id)
+                    select(RunCommand).where(
+                        RunCommand.run_id == run_id,
+                        RunCommand.message_id == message_id,
+                    )
                 )
                 row = res.scalars().first()
                 if row is None:
@@ -153,16 +160,22 @@ class ServerRunnerService:
                 return False
             run.status = "running"
             run.started_at = run.started_at or datetime.now(timezone.utc)
+            run.finished_at = None
+            run.reason = ""
+            run.steps = 0
             run.execution_mode = "server_brain"
             run.dispatch_source = dispatch_source
             run.agent_id_at_start = agent_id
+            run.last_attempt = attempt
+            run.attempts = max(int(run.attempts or 1), attempt)
             await session.commit()
 
         await self._hub.bind_run(run_id, agent_id)
-        task = asyncio.create_task(
-            self._run_task(run_id, goal, driver, emitter),
-            name=f"server-brain-run-{run_id}",
-        )
+        with attempt_context(attempt):
+            task = asyncio.create_task(
+                self._run_task(run_id, goal, driver, emitter, attempt=attempt),
+                name=f"server-brain-run-{run_id}-attempt-{attempt}",
+            )
         self._tasks[run_id] = task
         self._emitters[run_id] = emitter
         self._run_agents[run_id] = agent_id
@@ -263,6 +276,17 @@ class ServerRunnerService:
         goal: str,
         driver: RemoteDriver,
         emitter: ServerRunEmitter,
+        attempt: int = 1,
+    ) -> None:
+        with attempt_context(attempt):
+            await self._run_task_inner(run_id, goal, driver, emitter)
+
+    async def _run_task_inner(
+        self,
+        run_id: str,
+        goal: str,
+        driver: RemoteDriver,
+        emitter: ServerRunEmitter,
     ) -> None:
         try:
             replay_done = await self._maybe_run_trajectory_cache(
@@ -291,7 +315,6 @@ class ServerRunnerService:
             await emitter.force_finish(result="cancelled", message="stopped_by_server")
             raise
         except Exception as exc:  # noqa: BLE001
-            logger.exception("ServerRunnerService run 异常 run_id={}: {}", run_id, exc)
             error_class = exc.__class__.__name__
             error_category = "network"
             message = f"server_runner_crash: {exc}"
@@ -305,6 +328,7 @@ class ServerRunnerService:
                 error_class=error_class,
                 error_category=error_category,
             )
+            logger.exception("ServerRunnerService run 异常 run_id={}: {}", run_id, exc)
         finally:
             await emitter.aclose()
             self._tasks.pop(run_id, None)
@@ -715,7 +739,15 @@ class ServerRunnerService:
         content: str,
     ) -> None:
         async with self._session_factory() as session:
-            session.add(RunLog(run_id=run_id, level=level, title=title, content=content))
+            session.add(
+                RunLog(
+                    run_id=run_id,
+                    attempt=current_attempt(),
+                    level=level,
+                    title=title,
+                    content=content,
+                )
+            )
             await session.commit()
 
     async def _force_finish_run(
@@ -734,12 +766,18 @@ class ServerRunnerService:
             task.cancel()
         emitter = self._emitters.get(run_id)
         if emitter is not None:
-            await emitter.force_finish(
-                result=result,
-                message=message,
-                error_class=error_class,
-                error_category=error_category,
-            )
+            attempt = 1
+            async with self._session_factory() as session:
+                run = await session.get(Run, run_id)
+                if run is not None:
+                    attempt = int(run.last_attempt or run.attempts or 1)
+            with attempt_context(attempt):
+                await emitter.force_finish(
+                    result=result,
+                    message=message,
+                    error_class=error_class,
+                    error_category=error_category,
+                )
         return task is not None or emitter is not None
 
 

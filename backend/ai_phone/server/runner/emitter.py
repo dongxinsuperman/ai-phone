@@ -31,6 +31,7 @@ from ai_phone.agent.runner.events import (
 from ai_phone.server.hub import Hub
 from ai_phone.server.lockstore import DeviceLockStore
 from ai_phone.server.models import Run, RunLog, RunStep
+from ai_phone.server.retry import current_attempt
 from ai_phone.server.storage import save_bytes
 from ai_phone.shared import protocol as P
 
@@ -44,6 +45,13 @@ def _event_datetime(evt: Dict[str, Any]) -> datetime:
         return datetime.fromtimestamp(value, tz=timezone.utc)
     except Exception:  # noqa: BLE001
         return datetime.now(timezone.utc)
+
+
+def _event_attempt(evt: Dict[str, Any]) -> int:
+    try:
+        return max(1, int(evt.get("attempt") or current_attempt()))
+    except Exception:  # noqa: BLE001
+        return current_attempt()
 
 
 class ServerRunEmitter:
@@ -87,6 +95,7 @@ class ServerRunEmitter:
         self.finished = False
 
     def emit(self, evt: Dict[str, Any]) -> None:
+        evt = self._stamp_attempt(evt)
         t = evt.get("type")
         try:
             if t == EVT_LOG:
@@ -126,6 +135,7 @@ class ServerRunEmitter:
 
         缓存回放不需要切到这个接口——它已经直接 ``await _forward_log``。
         """
+        evt = self._stamp_attempt(evt)
         t = evt.get("type")
         try:
             if t in (EVT_LOG, EVT_STEP_END, EVT_SCREENSHOT):
@@ -164,6 +174,7 @@ class ServerRunEmitter:
         非顺序敏感事件（``EVT_THOUGHT`` / ``EVT_ACTION`` / ``EVT_RUN_FINISH``
         等）退回 ``emit()`` 的 ensure_future 路径，性能与原行为一致。
         """
+        evt = self._stamp_attempt(evt)
         t = evt.get("type")
         if t in (EVT_LOG, EVT_STEP_END, EVT_SCREENSHOT):
             self._ensure_serial_worker()
@@ -189,6 +200,7 @@ class ServerRunEmitter:
             try:
                 if evt is None:  # sentinel：aclose 时压入，让 worker 退出
                     return
+                evt = self._stamp_attempt(evt)
                 t = evt.get("type")
                 if t == EVT_LOG:
                     await self._forward_log(evt)
@@ -232,6 +244,13 @@ class ServerRunEmitter:
             logger.warning("_drain_serial_queue 等 worker 退出失败：{}", exc)
         self._serial_worker_task = None
 
+    def _stamp_attempt(self, evt: Dict[str, Any]) -> Dict[str, Any]:
+        if evt.get("attempt") is not None:
+            return evt
+        stamped = dict(evt)
+        stamped["attempt"] = current_attempt()
+        return stamped
+
     async def aclose(self) -> None:
         await self._drain_serial_queue()
         if self._pending_tasks:
@@ -274,10 +293,12 @@ class ServerRunEmitter:
         )
 
     async def _forward_log(self, evt: Dict[str, Any]) -> None:
+        attempt = _event_attempt(evt)
         payload = {
             "type": P.MSG_LOG,
             "run_id": self.run_id,
             "serial": self.serial,
+            "attempt": attempt,
             "level": int(evt.get("level", 1)),
             "step": evt.get("step"),
             "ts": evt.get("ts"),
@@ -291,6 +312,7 @@ class ServerRunEmitter:
             session.add(
                 RunLog(
                     run_id=self.run_id,
+                    attempt=attempt,
                     step=payload["step"],
                     level=payload["level"],
                     title=str(payload["title"])[:255],
@@ -308,6 +330,7 @@ class ServerRunEmitter:
         data: bytes = evt.get("bytes") or b""
         if not data:
             return
+        attempt = _event_attempt(evt)
         step = int(evt.get("step") or 0)
         phase = str(evt.get("phase") or "before")
         try:
@@ -323,6 +346,7 @@ class ServerRunEmitter:
                 "type": P.MSG_FRAME,
                 "run_id": self.run_id,
                 "serial": self.serial,
+                "attempt": attempt,
                 "step": step,
                 "phase": phase,
                 "frame_url": saved.url,
@@ -331,6 +355,7 @@ class ServerRunEmitter:
         )
 
     async def _forward_step_end(self, evt: Dict[str, Any]) -> None:
+        attempt = _event_attempt(evt)
         step = int(evt.get("step") or 0)
         tasks = self._pending_step_uploads.pop(step, [])
         if tasks:
@@ -340,6 +365,7 @@ class ServerRunEmitter:
             "type": P.MSG_STEP_DONE,
             "run_id": self.run_id,
             "serial": self.serial,
+            "attempt": attempt,
             "step": step,
             "ts": evt.get("ts"),
             "thought": evt.get("thought", ""),
@@ -357,6 +383,7 @@ class ServerRunEmitter:
             session.add(
                 RunStep(
                     run_id=self.run_id,
+                    attempt=attempt,
                     step=step,
                     thought=str(payload["thought"])[:10_000],
                     action=str(payload["action"])[:2000],
@@ -374,6 +401,8 @@ class ServerRunEmitter:
             run = await session.get(Run, self.run_id)
             if run is not None and step > (run.steps or 0):
                 run.steps = step
+                run.last_attempt = max(int(run.last_attempt or 1), attempt)
+                run.attempts = max(int(run.attempts or 1), attempt)
             await session.commit()
         await self._hub.broadcast_to_serial(self.serial, payload)
 
@@ -481,6 +510,7 @@ class ServerRunEmitter:
             if self.finished:
                 return
             self.finished = True
+            attempt = current_attempt()
             # 收尾前先排空 emit_serial 队列：让所有"步骤 / 日志 / 截图"都
             # 落库完成，再写 Run 终态 + 广播 RUN_DONE。否则前端 / 报告接口
             # 看到 Run 已 finished，但部分 RunLog / RunStep 还在后台 worker
@@ -495,11 +525,17 @@ class ServerRunEmitter:
                 "cancelled": "stopped",
             }
             final_status = status_map.get(result, "failed")
+            retry_pending = False
+            retry_max = 0
             async with self._session_factory() as session:
                 run = await session.get(Run, self.run_id)
                 if run is not None:
                     run.status = final_status
                     run.reason = message
+                    run.last_attempt = max(int(run.last_attempt or 1), attempt)
+                    run.attempts = max(int(run.attempts or 1), attempt)
+                    retry_max = int(run.effective_retry_max or 0)
+                    retry_pending = final_status == "failed" and attempt <= retry_max
                     # 缓存通道 force_finish 显式传 steps/elapsed_ms 时按原样写；
                     # 没传（None）则保留 DB 现有值或按 wall-clock 兜底，避免把
                     # 已经落库的步数 / 耗时被覆盖成 0。
@@ -526,6 +562,7 @@ class ServerRunEmitter:
                         session.add(
                             RunLog(
                                 run_id=self.run_id,
+                                attempt=attempt,
                                 level=3,
                                 title="Run failed",
                                 content=message,
@@ -535,7 +572,12 @@ class ServerRunEmitter:
                         )
                     await session.commit()
             lock = self._lock_store.peek(self.serial)
-            if lock is not None and lock.holder == self.run_id and lock.meta.get("auto_acquired"):
+            if (
+                lock is not None
+                and lock.holder == self.run_id
+                and lock.meta.get("auto_acquired")
+                and not retry_pending
+            ):
                 try:
                     await self._lock_store.release(self.serial, lock.token)
                 except Exception as exc:  # noqa: BLE001
@@ -544,36 +586,41 @@ class ServerRunEmitter:
                 "type": P.MSG_RUN_DONE,
                 "run_id": self.run_id,
                 "serial": self.serial,
+                "attempt": attempt,
+                "retry_max": retry_max,
                 "result": result,
                 "message": message,
                 "steps": steps,
                 "elapsed_ms": elapsed_ms,
                 "token_stats": token_stats or {},
+                "retry_pending": retry_pending,
             }
-            await self._hub.unbind_run(self.run_id)
-            await self._hub.broadcast_to_serial(self.serial, payload)
+            if not retry_pending:
+                await self._hub.unbind_run(self.run_id)
+                await self._hub.broadcast_to_serial(self.serial, payload)
             if self._on_run_done is not None:
                 try:
                     await self._on_run_done(self.run_id, payload)
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("server_brain run_done 回调失败 run_id={}: {}", self.run_id, exc)
-            try:
-                from ai_phone.server.trajectory_cache.finalize import (  # noqa: PLC0415
-                    schedule_trajectory_cache_finalize,
-                )
+            if not retry_pending:
+                try:
+                    from ai_phone.server.trajectory_cache.finalize import (  # noqa: PLC0415
+                        schedule_trajectory_cache_finalize,
+                    )
 
-                schedule_trajectory_cache_finalize(
-                    self._session_factory,
-                    self.run_id,
-                    final_status,
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "轨迹缓存后台整理调度失败 run_id={} status={}: {}",
-                    self.run_id,
-                    final_status,
-                    exc,
-                )
+                    schedule_trajectory_cache_finalize(
+                        self._session_factory,
+                        self.run_id,
+                        final_status,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "轨迹缓存后台整理调度失败 run_id={} status={}: {}",
+                        self.run_id,
+                        final_status,
+                        exc,
+                    )
 
     def _enqueue(self, coro) -> asyncio.Task:
         task = asyncio.ensure_future(coro, loop=self._loop)

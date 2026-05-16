@@ -37,6 +37,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.config import get_settings
+from ai_phone.server.retry import normalize_requested_retry_max, resolve_effective_retry_max
 from ai_phone.shared import protocol as P
 
 from ..hub import Hub
@@ -68,12 +69,18 @@ class RunCreate(BaseModel):
     # `Midscene执行器接入方案.md`。批次投递（/api/submissions）不接受此字段。
     engine: Optional[str] = Field(default=None, max_length=32)
     cache_mode: Optional[Annotated[str, Field(max_length=8)]] = None
+    retry_max: Optional[Any] = None
 
     @model_validator(mode="before")
     @classmethod
     def _accept_camel_cache_mode(cls, data: Any) -> Any:
-        if isinstance(data, dict) and "cacheMode" in data and "cache_mode" not in data:
-            return {**data, "cache_mode": data.get("cacheMode")}
+        if isinstance(data, dict):
+            patched = dict(data)
+            if "cacheMode" in patched and "cache_mode" not in patched:
+                patched["cache_mode"] = patched.get("cacheMode")
+            if "retryMax" in patched and "retry_max" not in patched:
+                patched["retry_max"] = patched.get("retryMax")
+            return patched
         return data
 
     @model_validator(mode="after")
@@ -119,7 +126,7 @@ async def get_run_steps(run_id: str, session: AsyncSession = DBSession) -> List[
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
     res = await session.execute(
-        select(RunStep).where(RunStep.run_id == run_id).order_by(RunStep.step)
+        select(RunStep).where(RunStep.run_id == run_id).order_by(RunStep.attempt, RunStep.step)
     )
     return [s.to_dict() for s in res.scalars().all()]
 
@@ -249,6 +256,12 @@ async def create_run(
         env_cache_enabled=bool(settings.trajectory_cache_enabled),
         requested_cache_mode=requested_cache_mode,
     )
+    requested_retry_max = normalize_requested_retry_max(body.retry_max)
+    effective_retry_max = resolve_effective_retry_max(
+        env_retry_enabled=bool(settings.run_retry_enabled),
+        env_retry_max=int(settings.run_retry_max or 0),
+        payload_retry_max=requested_retry_max,
+    )
 
     run = Run(
         id=pre_run_id,
@@ -260,6 +273,10 @@ async def create_run(
         engine=engine,
         requested_cache_mode=requested_cache_mode,
         effective_cache_mode=effective_cache_mode,
+        requested_retry_max=requested_retry_max,
+        effective_retry_max=effective_retry_max,
+        attempts=1,
+        last_attempt=1,
     )
     session.add(run)
     await session.commit()
@@ -277,6 +294,7 @@ async def create_run(
             engine=engine,
             dispatch_source="api",
             platform=dev.platform or "android",
+            attempt=1,
         )
         dispatched = bool(result.get("dispatched"))
         execution_mode = str(result.get("execution_mode") or "agent_brain")

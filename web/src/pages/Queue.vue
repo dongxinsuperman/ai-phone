@@ -21,6 +21,7 @@ const devicesSnap = ref([])
 const loading = ref(false)
 const err = ref('')
 const lastRefreshedAt = ref(0)
+const publicConfig = ref({ run_retry_enabled: false, run_retry_max: 0 })
 
 // 示例数据模式：看不懂实时页面时一键展示"理想形态"。
 // 开启后停止轮询，按钮禁用（投递/取消都操作不了，避免误以为自己点没效果）。
@@ -70,6 +71,9 @@ async function refresh() {
 
 onMounted(() => {
   refresh()
+  api.getConfig()
+    .then((cfg) => { publicConfig.value = cfg || publicConfig.value })
+    .catch(() => {})
   timer = setInterval(refresh, 2500)
 })
 onBeforeUnmount(() => {
@@ -311,6 +315,7 @@ const drawerEntries = computed(() => {
     entries.push({
       timestamp: lg.ts,
       level: lg.level,
+      attempt: lg.attempt,
       step: lg.step,
       title: lg.title,
       content: lg.content,
@@ -322,6 +327,7 @@ const drawerEntries = computed(() => {
     entries.push({
       timestamp: s.created_at,
       level: s.unknown ? 2 : 1,
+      attempt: s.attempt,
       step: s.step,
       title: `第 ${s.step} 步 · ${s.action_type || s.action || ''}`,
       content: s.thought || s.action || '',
@@ -427,7 +433,7 @@ function parsePool(text) {
     .filter(Boolean)
   return [...new Set(arr)].sort()
 }
-const form = ref({ submissionName: '', cacheMode: 'off', items: [newFormItem()] })
+const form = ref({ submissionName: '', cacheMode: 'off', retryMax: 0, items: [newFormItem()] })
 const submitErr = ref('')
 const submitting = ref(false)
 
@@ -449,7 +455,7 @@ function togglePlatform(item, p) {
   }
 }
 function resetForm() {
-  form.value = { submissionName: '', cacheMode: 'off', items: [newFormItem()] }
+  form.value = { submissionName: '', cacheMode: 'off', retryMax: 0, items: [newFormItem()] }
   submitErr.value = ''
 }
 function openSubmitDlg() {
@@ -485,6 +491,7 @@ function buildRawItem(it) {
 const previewPayload = computed(() => ({
   submissionName: (form.value.submissionName || '').trim(),
   cacheMode: form.value.cacheMode || 'off',
+  retryMax: Number(form.value.retryMax || 0),
   items: form.value.items.map(buildRawItem),
 }))
 // 展示预览：用"按端一条"的视图，让用户一眼看出批次最终会起几条 Run
@@ -511,6 +518,14 @@ async function submitForm() {
     if (!it.caseId.trim()) return (submitErr.value = `第 ${i + 1} 条：caseId 必填`)
     if (!it.runContent.trim()) return (submitErr.value = `第 ${i + 1} 条：runContent 必填`)
     if (!it.platforms.length) return (submitErr.value = `第 ${i + 1} 条：请至少选一个平台`)
+  }
+  const retryMax = Number(form.value.retryMax || 0)
+  const retryLimit = Number(publicConfig.value.run_retry_max || 0)
+  if (!Number.isInteger(retryMax) || retryMax < 0) {
+    return (submitErr.value = 'retryMax 必须是非负整数')
+  }
+  if (retryLimit > 0 && retryMax > retryLimit) {
+    return (submitErr.value = `retryMax 不能超过后端上限 ${retryLimit}`)
   }
   const payload = previewPayload.value
   if (!Array.isArray(payload.items) || !payload.items.length) {
@@ -954,6 +969,9 @@ function loadDemoData() {
                 <span>入队 {{ fmtTime(it.enqueued_at) }}</span>
                 <span v-if="it.started_at">开始 {{ fmtTime(it.started_at) }}</span>
                 <span v-if="it.finished_at">结束 {{ fmtTime(it.finished_at) }}</span>
+                <span v-if="it.retryMax || it.effective_retry_max || it.attempts">
+                  重跑 {{ it.attempts || 0 }}/{{ (it.retryMax ?? it.effective_retry_max ?? 0) + 1 }}
+                </span>
               </div>
               <div class="ic-rc">
                 <div class="ic-rc-label">执行指令 (runContent)</div>
@@ -1001,6 +1019,9 @@ function loadDemoData() {
                 Agent <code>{{ runDrawer.run.agent_id_at_start || runDrawer.run.agent_id }}</code>
               </span>
               <span v-if="runDrawer.run.dispatch_source">入口 {{ runDrawer.run.dispatch_source }}</span>
+              <span>
+                重跑 {{ runDrawer.run.attempts || 1 }}/{{ (runDrawer.run.effective_retry_max || runDrawer.run.retryMax || 0) + 1 }}
+              </span>
               <span v-if="runDrawer.run.execution_mode === 'server_brain'">
                 RPC {{ drawerCommandSummary.total }} 条
                 <template v-if="drawerCommandSummary.avg !== null"> · 平均 {{ drawerCommandSummary.avg }}ms</template>
@@ -1083,7 +1104,7 @@ function loadDemoData() {
         <div class="modal-body">
           <div class="help small-help">
             本入口只是第 2 梯队阶段<b>临时验证用</b>，正式调用方后续用对外 HTTP API。
-            请求体（v1.9）：<code>{ submissionName, cacheMode, items: [{ caseId, runContent, platforms[], cacheMode?, deviceAliasPools? }] }</code>。
+            请求体（v1.9）：<code>{ submissionName, cacheMode, retryMax, items: [{ caseId, runContent, platforms[], cacheMode?, deviceAliasPools? }] }</code>。
             <code>deviceAliasPools[p]</code> 留空 = 该端任意 ready 设备；
             填多个用逗号分隔即子集池（场景 5：调度器派发瞬间动态选 ready 的一台）。
           </div>
@@ -1112,6 +1133,21 @@ function loadDemoData() {
                   {{ opt.label }}
                 </option>
               </select>
+            </div>
+            <div class="form-row">
+              <label>
+                retryMax (失败自动重跑次数)
+                <span class="label-hint">
+                  {{ publicConfig.run_retry_enabled ? `后端上限 ${publicConfig.run_retry_max || 0}` : '后端未启用，发送后会按 0 处理' }}
+                </span>
+              </label>
+              <input
+                v-model.number="form.retryMax"
+                type="number"
+                min="0"
+                :max="publicConfig.run_retry_max || 0"
+                :disabled="!publicConfig.run_retry_enabled || !publicConfig.run_retry_max"
+              />
             </div>
           </div>
           <div v-for="(it, i) in form.items" :key="i" class="form-item">
@@ -1200,6 +1236,7 @@ function loadDemoData() {
               批次 <b>{{ previewPayload.submissionName || '(未命名 · 后端会回落 submissionId)' }}</b>
               · 请求体 <b>{{ previewPayload.items.length }}</b> 条 · 后端展开后共
               <b>{{ previewRows.length }}</b> 条 Run
+              · retryMax <b>{{ previewPayload.retryMax || 0 }}</b>
             </div>
             <div v-if="previewRows.length" class="preview-rows">
               <div v-for="(p, i) in previewRows" :key="i" class="preview-row">

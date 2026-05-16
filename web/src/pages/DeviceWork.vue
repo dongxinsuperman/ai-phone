@@ -25,6 +25,9 @@ const submitError = ref(null)
 const selectedEngine = ref('vlm')
 const midsceneEnabled = ref(false)
 const selectedCacheMode = ref('off')
+const retryEnabled = ref(false)
+const retryMaxLimit = ref(0)
+const selectedRetryMax = ref(0)
 // 屏幕尺寸（设备端逻辑像素），用于点击坐标归一化；没拿到前按 video 元素尺寸兜底
 const devicePixel = ref({ w: 0, h: 0 })
 const tapBusy = ref(false)
@@ -501,6 +504,7 @@ function onMessage(msg) {
         title: `第 ${msg.step} 步完成${msg.action_type || msg.action ? ` · ${msg.action_type || msg.action}` : ''}`,
         content: msg.thought ? `${msg.thought}` : '',
         step: msg.step,
+        attempt: msg.attempt,
         timestamp: msg.ts || Date.now() / 1000,
       })
       break
@@ -543,6 +547,7 @@ function onMessage(msg) {
         pushLog({
           level: 1,
           step: msg.step,
+          attempt: msg.attempt,
           title: '截图',
           content: `phase=${msg.phase || 'frame'}`,
           image_url: msg.frame_url,
@@ -558,6 +563,7 @@ function onMessage(msg) {
         level: isOk ? 1 : 3,
         title: `Run 结束 → ${msg.result}`,
         content: msg.message || '',
+        attempt: msg.attempt,
         timestamp: msg.ts || Date.now() / 1000,
       })
       // 拿一次最新的 Run 记录，把 external_report_url（外接引擎，如 Midscene）刷出来
@@ -617,6 +623,7 @@ async function startRun() {
       // AI_PHONE_MIDSCENE_ENABLED=true 时被接受，下拉框也仅在那时可见
       engine: selectedEngine.value || 'vlm',
       cacheMode: selectedCacheMode.value || 'off',
+      retryMax: Number(selectedRetryMax.value || 0),
     })
     currentRunId.value = res.id
     currentRun.value = res
@@ -655,8 +662,18 @@ onMounted(async () => {
   // 拉一次后端功能开关：是否暴露 Midscene 引擎下拉框等
   // 失败不阻塞主流程；缺省按"全部关闭"渲染
   api.getConfig()
-    .then((cfg) => { midsceneEnabled.value = !!cfg?.midscene_enabled })
-    .catch(() => { midsceneEnabled.value = false })
+    .then((cfg) => {
+      midsceneEnabled.value = !!cfg?.midscene_enabled
+      retryEnabled.value = !!cfg?.run_retry_enabled
+      retryMaxLimit.value = Number(cfg?.run_retry_max || 0)
+      if (!retryEnabled.value) selectedRetryMax.value = 0
+    })
+    .catch(() => {
+      midsceneEnabled.value = false
+      retryEnabled.value = false
+      retryMaxLimit.value = 0
+      selectedRetryMax.value = 0
+    })
 
   await refreshDevice()
   // 先抢锁：409 意味着别的 tab / job 已占用，按"报错拦截"方案渲染提示页，不开 WS
@@ -929,6 +946,19 @@ watch(
               <option value="v3">v3（语义重定位）</option>
             </select>
           </div>
+          <div class="engine-row">
+            <label>失败重跑</label>
+            <input
+              v-model.number="selectedRetryMax"
+              type="number"
+              min="0"
+              :max="retryMaxLimit || 0"
+              :disabled="!!currentRunId || lock.readonly.value || !retryEnabled || !retryMaxLimit"
+            />
+            <span class="engine-hint">
+              {{ retryEnabled && retryMaxLimit ? `最多 ${retryMaxLimit} 次` : '后端未启用' }}
+            </span>
+          </div>
           <label>Goal（自然语言目标）</label>
           <textarea
             v-model="goal"
@@ -949,6 +979,7 @@ watch(
               {{ currentRunModeText }}
             </span>
             <span class="mode-pill cache">cache: {{ currentRun.cacheMode || currentRun.effective_cache_mode || 'off' }}</span>
+            <span class="mode-pill cache">retry: {{ currentRun.effective_retry_max || currentRun.retryMax || 0 }} / attempts {{ currentRun.attempts || 1 }}</span>
             <span>run_id: <code>{{ currentRun.id }}</code></span>
             <span v-if="currentRunAgent">Agent: <code>{{ currentRunAgent }}</code></span>
             <span v-if="currentRun.dispatch_source">入口: {{ currentRun.dispatch_source }}</span>
@@ -1376,7 +1407,8 @@ h2 {
   color: #374151;
   white-space: nowrap;
 }
-.engine-row select {
+.engine-row select,
+.engine-row input {
   flex: 1;
   padding: 6px 8px;
   border: 1px solid #d1d5db;
@@ -1384,9 +1416,15 @@ h2 {
   font-size: 13px;
   background: #fff;
 }
-.engine-row select:disabled {
+.engine-row select:disabled,
+.engine-row input:disabled {
   background: #f3f4f6;
   cursor: not-allowed;
+}
+.engine-hint {
+  color: #6b7280;
+  font-size: 12px;
+  white-space: nowrap;
 }
 .btn-row {
   display: flex;

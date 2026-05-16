@@ -21,7 +21,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -177,6 +176,11 @@ class Run(Base):
     effective_cache_mode: Mapped[str] = mapped_column(
         String(8), default="off", server_default="off", index=True
     )
+    requested_retry_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    effective_retry_max: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # attempts = 已经启动过的 attempt 数；last_attempt = 最近一次落库/运行 attempt。
+    attempts: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    last_attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -213,6 +217,11 @@ class Run(Base):
             "requested_cache_mode": self.requested_cache_mode or "off",
             "effective_cache_mode": self.effective_cache_mode or "off",
             "cacheMode": self.effective_cache_mode or "off",
+            "requested_retry_max": self.requested_retry_max,
+            "effective_retry_max": self.effective_retry_max or 0,
+            "retryMax": self.effective_retry_max or 0,
+            "attempts": self.attempts or 1,
+            "last_attempt": self.last_attempt or self.attempts or 1,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
@@ -227,6 +236,7 @@ class RunStep(Base):
     run_id: Mapped[str] = mapped_column(
         String(32), ForeignKey("runs.id", ondelete="CASCADE"), index=True
     )
+    attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1", index=True)
     step: Mapped[int] = mapped_column(Integer)
     thought: Mapped[str] = mapped_column(Text, default="")
     action: Mapped[str] = mapped_column(Text, default="")
@@ -251,6 +261,7 @@ class RunStep(Base):
     def to_dict(self) -> Dict[str, Any]:
         return {
             "run_id": self.run_id,
+            "attempt": self.attempt or 1,
             "step": self.step,
             "thought": self.thought,
             "action": self.action,
@@ -274,6 +285,7 @@ class RunLog(Base):
     run_id: Mapped[str] = mapped_column(
         String(32), ForeignKey("runs.id", ondelete="CASCADE"), index=True
     )
+    attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1", index=True)
     step: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     level: Mapped[int] = mapped_column(Integer, default=1)  # 1=info,2=warn,3=error
     title: Mapped[str] = mapped_column(String(255), default="")
@@ -293,6 +305,7 @@ class RunLog(Base):
     def to_dict(self) -> Dict[str, Any]:
         return {
             "run_id": self.run_id,
+            "attempt": self.attempt or 1,
             "step": self.step,
             "level": self.level,
             "title": self.title,
@@ -332,6 +345,7 @@ class RunCommand(Base):
     run_id: Mapped[str] = mapped_column(
         String(32), ForeignKey("runs.id", ondelete="CASCADE"), index=True
     )
+    attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1", index=True)
     # run_steps.step 的可选反链；附属命令（截图等）可能没有 step
     step: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # driver_command.message_id；兼作 trace_id，与 run_logs.trace_id 同空间
@@ -363,6 +377,7 @@ class RunCommand(Base):
         return {
             "id": self.id,
             "run_id": self.run_id,
+            "attempt": self.attempt or 1,
             "step": self.step,
             "message_id": self.message_id,
             "method": self.method,
@@ -597,6 +612,8 @@ class Submission(Base):
     # v1.8 webhook：投递时可选传 callbackUrl。整批收口时异步 POST 一份
     # submission.terminal payload；发一次失败就吞，不影响主流程。
     callback_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    requested_retry_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    effective_retry_max: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     items: Mapped[list["SubmissionItem"]] = relationship(
         back_populates="submission", cascade="all, delete-orphan", lazy="noload"
@@ -617,6 +634,8 @@ class Submission(Base):
             "origin": self.origin,
             "submission_name": self.submission_name or self.id,
             "state": self.state,
+            "requested_retry_max": self.requested_retry_max,
+            "effective_retry_max": self.effective_retry_max or 0,
             "accepted_at": self.accepted_at.isoformat() if self.accepted_at else None,
             "expire_at": self.expire_at.isoformat() if self.expire_at else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
@@ -665,6 +684,9 @@ class SubmissionItem(Base):
     # 写入时以 list[str] 形式（按 sorted+dedup 之后的顺序），DB 用 JSON 列承载
     device_alias_pool: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     cache_mode: Mapped[str] = mapped_column(String(8), default="off", server_default="off")
+    requested_retry_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    effective_retry_max: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     # queued / running / success / failed / cancelled
     state: Mapped[str] = mapped_column(String(16), default="queued", index=True)
@@ -702,6 +724,10 @@ class SubmissionItem(Base):
             "run_content": self.run_content,
             "device_alias_pool": list(self.device_alias_pool or []) or None,
             "cacheMode": self.cache_mode or "off",
+            "requested_retry_max": self.requested_retry_max,
+            "effective_retry_max": self.effective_retry_max or 0,
+            "retryMax": self.effective_retry_max or 0,
+            "attempts": self.attempts or 0,
             "state": self.state,
             "status_reason": self.status_reason or None,
             "run_id": self.run_id,

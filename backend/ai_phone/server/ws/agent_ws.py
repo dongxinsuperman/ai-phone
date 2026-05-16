@@ -23,6 +23,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.config import get_settings
+from ai_phone.server.retry import current_attempt
 from ai_phone.shared import protocol as P
 
 from ..lockstore import DeviceLockStore
@@ -53,6 +54,13 @@ def _message_datetime(msg: Dict[str, Any]) -> datetime:
         return datetime.fromtimestamp(value, tz=timezone.utc)
     except Exception:  # noqa: BLE001
         return datetime.now(timezone.utc)
+
+
+def _message_attempt(msg: Dict[str, Any]) -> int:
+    try:
+        return max(1, int(msg.get("attempt") or current_attempt()))
+    except Exception:  # noqa: BLE001
+        return current_attempt()
 
 
 @router.websocket("/ws/agent")
@@ -450,11 +458,13 @@ async def _persist_log(msg: Dict[str, Any]) -> None:
     run_id = msg.get("run_id")
     if not run_id:
         return
+    attempt = _message_attempt(msg)
 
     async def op(session: AsyncSession) -> None:
         session.add(
             RunLog(
                 run_id=str(run_id),
+                attempt=attempt,
                 step=msg.get("step") or msg.get("step_index"),
                 level=int(msg.get("level") or 1),
                 title=str(msg.get("title") or "")[:255],
@@ -475,11 +485,13 @@ async def _persist_step(msg: Dict[str, Any]) -> None:
     step = msg.get("step") or msg.get("step_index")
     if not run_id or step is None:
         return
+    attempt = _message_attempt(msg)
 
     async def op(session: AsyncSession) -> None:
         session.add(
             RunStep(
                 run_id=str(run_id),
+                attempt=attempt,
                 step=int(step),
                 thought=str(msg.get("thought") or "")[:10_000],
                 action=str(msg.get("action") or "")[:2000],
@@ -498,6 +510,8 @@ async def _persist_step(msg: Dict[str, Any]) -> None:
         run = await session.get(Run, str(run_id))
         if run is not None and int(step) > (run.steps or 0):
             run.steps = int(step)
+            run.last_attempt = max(int(run.last_attempt or 1), attempt)
+            run.attempts = max(int(run.attempts or 1), attempt)
             if run.status == "pending":
                 run.status = "running"
                 run.started_at = run.started_at or datetime.now(timezone.utc)
@@ -513,6 +527,7 @@ async def _persist_driver_result_error(msg: Dict[str, Any]) -> None:
     error = msg.get("error") or {}
     message_id = str(msg.get("message_id") or "")
     method = str(msg.get("method") or "unknown")
+    attempt = _message_attempt(msg)
 
     async def op(session: AsyncSession) -> None:
         run = await session.get(Run, run_id)
@@ -521,6 +536,7 @@ async def _persist_driver_result_error(msg: Dict[str, Any]) -> None:
         session.add(
             RunLog(
                 run_id=run_id,
+                attempt=attempt,
                 level=3,
                 title=f"driver_command failed: {method}"[:255],
                 content=str(error.get("message") or ""),
@@ -548,6 +564,7 @@ async def _finalize_run(run_id: str, msg: Dict[str, Any]) -> None:
     reason = str(msg.get("message") or "")
     # external_report_url 仅外接引擎（如 Midscene）会带；vlm runner 永远不带，保持 None
     external_report_url = msg.get("external_report_url")
+    attempt = _message_attempt(msg)
 
     async def op(session: AsyncSession) -> None:
         run = await session.get(Run, run_id)
@@ -555,6 +572,8 @@ async def _finalize_run(run_id: str, msg: Dict[str, Any]) -> None:
             return
         run.status = final_status
         run.reason = reason
+        run.last_attempt = max(int(run.last_attempt or 1), attempt)
+        run.attempts = max(int(run.attempts or 1), attempt)
         run.steps = int(msg.get("steps") or run.steps or 0)
         run.elapsed_ms = int(msg.get("elapsed_ms") or run.elapsed_ms or 0)
         run.token_summary = msg.get("token_stats") or run.token_summary or {}
