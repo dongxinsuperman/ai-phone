@@ -3176,6 +3176,83 @@ async def test_v1_replay_runner_emits_streaming_step_log_skeleton():
 
 
 @pytest.mark.asyncio
+async def test_replay_runner_capture_final_frame_always_waits_for_stability():
+    """断言入口不变量（2026-05-16）：``capture_final_frame()`` 必须先 await
+    一次 ``_wait_stable()`` 再返回，**即便 ``_final_after_bytes`` 已经被主
+    循环填好**。
+
+    背景：V1/V2 主循环里 ``_final_after_bytes`` 是"500ms 观察后随手拍的"
+    （V1）或"路标对比命中帧"（V2 主路径）。中间步骤这种动画态没事——下一
+    步执行前还会再做稳定/路标对比；但**最后一步**没有下一步，after 帧直
+    接喂给断言系统。如果短路返回，最后一击触发跳转时断言会拿到空白图导
+    致误判 FAIL。
+
+    本测试钉住"capture_final_frame 必须触发稳定"——回归一旦把短路改回来
+    立刻报错。
+    """
+    from ai_phone.server.trajectory_cache import ReplayRunner
+
+    driver = FakeDriver()
+    runner = ReplayRunner(
+        driver=driver,
+        trajectory={"actions": [{"index": 1, "type": "click", "point": {"x": 1, "y": 2}}]},
+        log=None,
+        observe_delay_ms=0,
+    )
+    stable_calls = 0
+
+    async def stable():
+        nonlocal stable_calls
+        stable_calls += 1
+        return SimpleNamespace(bytes_=b"stable-final")
+
+    runner._wait_stable = stable  # type: ignore[method-assign]
+    runner._final_after_bytes = b"maybe-mid-transition-after-frame"
+
+    frame = await runner.capture_final_frame()
+
+    assert stable_calls == 1, "capture_final_frame() 必须触发一次稳定检测"
+    assert frame == b"stable-final", (
+        "capture_final_frame() 应当返回稳定后的最新帧，不能短路返回 _final_after_bytes"
+    )
+
+
+@pytest.mark.asyncio
+async def test_v3_replay_runner_capture_final_frame_always_waits_for_stability(monkeypatch):
+    """断言入口不变量（2026-05-16）：V3 ``capture_final_frame()`` 同 V1/V2，
+    必须先 await 一次版本3稳定检测（``_wait_stable``）再返回，即便
+    ``_final_after_bytes`` 已经填好。
+
+    V3 单步循环里 V3 执行后改成"500ms 观察 + 截图证明"，没有版本3稳定——
+    最后一步的 after 帧可能正好是跳转动画态。如果 capture_final_frame 短
+    路返回它，断言会拿到空白图。详见 docs/缓存回放步骤化日志改造方案.md。
+    """
+    from ai_phone.server.trajectory_cache import V3ReplayRunner
+
+    driver = FakeDriver()
+    runner = V3ReplayRunner(
+        driver=driver,
+        trajectory={"actions": []},
+    )
+    stable_calls = 0
+
+    async def stable():
+        nonlocal stable_calls
+        stable_calls += 1
+        return b"stable-final-v3"
+
+    runner._wait_stable = stable  # type: ignore[method-assign]
+    runner._final_after_bytes = b"maybe-mid-transition-after-frame"
+
+    frame = await runner.capture_final_frame()
+
+    assert stable_calls == 1, "V3 capture_final_frame() 必须触发一次版本3稳定检测"
+    assert frame == b"stable-final-v3", (
+        "V3 capture_final_frame() 应当返回稳定后的最新帧，不能短路返回 _final_after_bytes"
+    )
+
+
+@pytest.mark.asyncio
 async def test_v2_replay_runner_does_not_run_stability_before_action():
     """步骤化日志方案（2026-05-16）—— V2 节奏锁定：
 
@@ -3796,9 +3873,13 @@ async def test_server_runner_cache_replay_finishes_when_assertion_passes(
     assert finish["steps"] == 1
     # FakeCacheVerifier 没真正调 LLM，counter 全 0，token_stats 应为空 dict。
     assert finish["token_stats"] == {}
+    # 「缓存稳定 — 断言入口：等待最后一帧稳定…」是 capture_final_frame() 前
+    # 主动埋的提示日志，让用户看清那几秒等待是在做"最后一帧稳定"，避免
+    # 误以为系统卡死。详见 docs/缓存回放步骤化日志改造方案.md。
     assert [event.get("title") for event in emitter.events] == [
         "轨迹缓存",
         "fake replay",
+        "缓存稳定",
         "轨迹缓存断言",
     ]
 
@@ -4078,9 +4159,12 @@ async def test_server_runner_v3_cache_replay_finishes_when_assertion_passes(
     assert len(emitter.finishes) == 1
     assert emitter.finishes[0]["result"] == "pass"
     assert emitter.finishes[0]["message"] == "trajectory_cache_v3_pass: fake assertion"
+    # 「缓存稳定 — 断言入口…」是 capture_final_frame() 前主动埋的提示日志，
+    # V1/V2 / V3 三条断言入口都有，含义一致：让用户看清最后一帧稳定等待。
     assert [event.get("title") for event in emitter.events] == [
         "V3缓存回放",
         "fake replay",
+        "缓存稳定",
         "V3最终校验",
     ]
 

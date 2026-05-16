@@ -273,11 +273,17 @@ class ServerRunnerService:
             )
             if replay_done:
                 return
+            # 首跑用 emitter.aemit（顺序保序版）而非 emitter.emit：
+            # emit 把 EVT_LOG/EVT_STEP_END/EVT_SCREENSHOT 丢进后台 ensure_future，
+            # 调度无序会让"#1 第 1 步完成"被甩到"#2 ━━ 第 2 步 ━━"之后；
+            # aemit 用 _serial_lock 串行 await，保证调用顺序就是 DB/WS 写入顺序。
+            # VLMRunner._emit_event 已经 `await _maybe_await(result)`，
+            # callback 返回 coroutine 即可被 await 透明衔接。
             runner = self._runner_factory(
                 run_id=run_id,
                 driver=driver,
                 goal=goal,
-                emit=emitter.emit,
+                emit=emitter.aemit,
             )
             await runner.run()
         except asyncio.CancelledError:
@@ -502,6 +508,10 @@ class ServerRunnerService:
             )
             return True
 
+        # 断言入口：runner.capture_final_frame() 会强制等到最后一帧稳定
+        # 再返回，避免最后一击触发跳转、断言拿到动画态空白图导致误判。
+        # 详见 docs/缓存回放步骤化日志改造方案.md。
+        await _log(1, "缓存稳定", "断言入口：等待最后一帧稳定后再交给断言系统…")
         final_frame = await runner.capture_final_frame()
         assertion = await CacheReplayAssertionVerifier(
             settings=settings,
@@ -631,6 +641,9 @@ class ServerRunnerService:
             )
             return True
 
+        # 断言入口：同 V1/V2，强制等到最后一帧稳定再交给断言（V3 用版本3
+        # 稳定）。详见 docs/缓存回放步骤化日志改造方案.md。
+        await _log(1, "缓存稳定", "断言入口：等待最后一帧稳定后再交给断言系统…")
         final_frame = await runner.capture_final_frame()
         assertion = await CacheReplayAssertionVerifier(
             settings=settings,

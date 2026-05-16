@@ -890,11 +890,22 @@ class V3ReplayRunner:
         return self._current_step_status or "定位成功"
 
     async def capture_final_frame(self) -> bytes:
-        if self._final_after_bytes is not None:
-            return self._final_after_bytes
+        """断言入口：保证下游拿到的最后一帧是稳定的。
+
+        语义与 ``ReplayRunner.capture_final_frame`` 一致：单步循环里
+        ``_final_after_bytes`` 是"500ms 观察后随手拍的一帧"（V3 执行后
+        不做稳定）。中间步骤无所谓，下一步执行前会重做版本3稳定；但
+        **最后一步**没有"下一步"，after 直接喂给断言。这里必须再确保
+        一次版本3稳定，否则断言可能拿到动画态帧导致误判 FAIL。
+
+        ``_wait_stable()`` 内部会用 ``self._last_frame`` 作 frame_a，
+        已经稳定时开销极小。详见 docs/缓存回放步骤化日志改造方案.md。
+        """
         frame = await self._wait_stable()
         if frame is not None:
             return frame
+        if self._final_after_bytes is not None:
+            return self._final_after_bytes
         return await self._screenshot_jpeg()
 
     async def _materialize_action(

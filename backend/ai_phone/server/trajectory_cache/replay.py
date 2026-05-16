@@ -529,11 +529,29 @@ class ReplayRunner:
         )
 
     async def capture_final_frame(self) -> bytes:
-        if self._final_after_bytes is not None:
-            return self._final_after_bytes
+        """断言入口：保证下游拿到的最后一帧是稳定的。
+
+        单步循环里 ``_final_after_bytes`` 是"500ms 观察后随手拍的一帧"
+        （V1）/ "版本2路标对比命中帧"（V2 主路径）/ "版本1兜底稳定帧"
+        （V2 fallback）。中间步骤这种动画态没事——下一步执行前会重做
+        稳定 / 路标对比；但**最后一步**没有"下一步"，after 帧直接喂给
+        断言系统。如果还在动画过渡（典型：最后一击是触发跳转的按钮，
+        点完后页面正在切换到新页），断言会拿到空白图导致误判 FAIL。
+
+        修复：断言入口前补一次版本1稳定。``_wait_stable()`` 会用
+        ``self._last_frame`` 作 frame_a（= 主循环里设置的
+        ``_final_after_bytes``），等同于"从 after 帧出发 poll 到稳定"——
+        已经稳定时开销极小（一次截图+一次比对立即返回）。
+
+        历史上这里曾经短路 ``if self._final_after_bytes is not None:
+        return self._final_after_bytes``，导致最后一步动画态帧被直接喂
+        给断言。详见 docs/缓存回放步骤化日志改造方案.md。
+        """
         result = await self._wait_stable()
         if result.bytes_ is not None:
             return result.bytes_
+        if self._final_after_bytes is not None:
+            return self._final_after_bytes
         return await self._screenshot_jpeg()
 
     async def _wait_stable_for_step(self, index: int, *, phase: str) -> StabilityResult:

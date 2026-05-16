@@ -72,6 +72,11 @@ class ServerRunEmitter:
         self._pending_step_uploads: Dict[int, list[asyncio.Task]] = {}
         self._last_token_stats: Dict[str, Any] = {}
         self._finish_lock = asyncio.Lock()
+        # _serial_lock 给 aemit 用：让"顺序敏感"事件（日志、step end、截图保存）
+        # 按调用顺序串行 await，避免 asyncio.ensure_future 后台并发导致
+        # DB / WS 写入顺序错乱（典型现象：「#1 第 1 步完成」被甩到
+        # 「━━ 第 2 步 ━━」之后，时间戳还相同）。
+        self._serial_lock = asyncio.Lock()
         self.finished = False
 
     def emit(self, evt: Dict[str, Any]) -> None:
@@ -97,6 +102,43 @@ class ServerRunEmitter:
                 logger.debug("ServerRunEmitter 忽略未知事件 type={}", t)
         except Exception as exc:  # noqa: BLE001
             logger.exception("ServerRunEmitter.emit 异常：{}", exc)
+
+    async def aemit(self, evt: Dict[str, Any]) -> None:
+        """``emit`` 的顺序保序版：调用方一旦 ``await aemit(A)``，再 ``await
+        aemit(B)``，DB 与 WS 的写入顺序就一定是 A → B。
+
+        对顺序敏感的三类事件（``EVT_LOG`` / ``EVT_STEP_END`` /
+        ``EVT_SCREENSHOT``）拿同一把 ``_serial_lock`` 串行 await；其他事件
+        转发给原 ``emit()``（保持后台 enqueue 性能）。
+
+        为什么需要这个：``emit()`` 把上述三类事件全都 ``ensure_future`` 进
+        后台跑，三个 task 调度无序——典型现象：``#1 截图 after`` / ``#1 第 1
+        步完成`` / ``━━ 第 2 步 ━━`` 三条 log 时间戳几乎相同，但实际写入
+        顺序错乱（"第 1 步完成"会出现在"第 2 步"之后）。首跑 VLMRunner 走
+        ``emit=emitter.aemit`` 即可彻底解决。
+
+        缓存回放不需要切到这个接口——它已经直接 ``await _forward_log``。
+        """
+        t = evt.get("type")
+        try:
+            if t in (EVT_LOG, EVT_STEP_END, EVT_SCREENSHOT):
+                async with self._serial_lock:
+                    if t == EVT_LOG:
+                        await self._forward_log(evt)
+                    elif t == EVT_STEP_END:
+                        await self._forward_step_end(evt)
+                    elif t == EVT_SCREENSHOT:
+                        # 注意：原 emit() 路径会把这个 task 挂到
+                        # _pending_step_uploads[step]，让 _forward_step_end
+                        # 在 commit 前 await 等截图 URL 入库。aemit 路径
+                        # 直接 await _save_screenshot，URL 同步入库，
+                        # _pending_step_uploads 自然为空——_forward_step_end
+                        # await 空列表无副作用，逻辑等价。
+                        await self._save_screenshot(evt)
+            else:
+                self.emit(evt)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("ServerRunEmitter.aemit 异常：{}", exc)
 
     async def aclose(self) -> None:
         if self._pending_tasks:

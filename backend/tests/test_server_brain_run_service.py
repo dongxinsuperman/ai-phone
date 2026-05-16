@@ -8,7 +8,13 @@ from typing import Any, Dict, List
 import pytest
 from sqlalchemy import select
 
-from ai_phone.agent.runner.events import EVT_RUN_FINISH, EVT_STEP_END, make_event, log_event
+from ai_phone.agent.runner.events import (
+    EVT_LOG,
+    EVT_RUN_FINISH,
+    EVT_STEP_END,
+    log_event,
+    make_event,
+)
 from ai_phone.server import db as db_module
 from ai_phone.server.hub import Hub
 from ai_phone.server.lockstore import DeviceLockStore
@@ -62,8 +68,11 @@ class FastSuccessRunner:
         self.emit = emit
 
     async def run(self):
-        self.emit(log_event(self.run_id, 1, "fake runner", "server brain ok"))
-        self.emit(
+        # 服务层把 ``emit`` 切到 ``emitter.aemit`` 之后，emit 返回的是
+        # coroutine，必须 await——和真实 VLMRunner._emit_event 行为一致。
+        await _emit_compat(self.emit, log_event(self.run_id, 1, "fake runner", "server brain ok"))
+        await _emit_compat(
+            self.emit,
             make_event(
                 EVT_RUN_FINISH,
                 self.run_id,
@@ -72,8 +81,19 @@ class FastSuccessRunner:
                 steps=1,
                 elapsed_ms=123,
                 token_stats={"total_tokens": 7},
-            )
+            ),
         )
+
+
+async def _emit_compat(emit, evt: Dict[str, Any]) -> None:
+    """测试用 emit 兼容辅助：支持同步 ``emitter.emit`` 和异步
+    ``emitter.aemit`` 两种 callback 形态，与生产代码
+    ``VLMRunner._emit_event`` 的 ``_maybe_await`` 语义对齐。"""
+    if emit is None:
+        return
+    result = emit(evt)
+    if asyncio.iscoroutine(result):
+        await result
 
 
 class HangingRunner:
@@ -83,7 +103,7 @@ class HangingRunner:
         self._event = asyncio.Event()
 
     async def run(self):
-        self.emit(log_event(self.run_id, 1, "hanging runner", "started"))
+        await _emit_compat(self.emit, log_event(self.run_id, 1, "hanging runner", "started"))
         await self._event.wait()
 
 
@@ -718,3 +738,134 @@ async def test_malformed_driver_result_marks_command_failed(app, session):
         assert rows[0].ok is False
         assert rows[0].error_class == "MalformedResult"
         assert rows[0].error_category == "network"
+
+
+@pytest.mark.asyncio
+async def test_emitter_aemit_serializes_log_writes_in_call_order(app, session):
+    """``aemit`` 必须保证：调用方按顺序 ``await aemit(A)`` → ``await aemit(B)``
+    时，DB / WS 写入顺序就是 A → B，哪怕 broadcast 自带 yield 让出 event loop。
+
+    回归用：曾经 VLMRunner 走 ``emit=emitter.emit`` 时，三类顺序敏感事件
+    （EVT_LOG / EVT_STEP_END / EVT_SCREENSHOT）都被 ``ensure_future`` 丢
+    后台并发跑，导致「#1 第 1 步完成」会出现在「#2 ━━ 第 2 步 ━━」之后、
+    时间戳还相同。修复用 ``_serial_lock`` 串行；本测试钉住这把锁的行为。
+    """
+    from ai_phone.server.models import RunLog
+
+    run = Run(
+        id="aemit-order-run",
+        device_serial="S1",
+        agent_id="agent-server-brain",
+        goal="g",
+        status="running",
+        execution_mode="server_brain",
+    )
+    session.add(run)
+    await session.commit()
+
+    emitter = ServerRunEmitter(
+        run_id="aemit-order-run",
+        serial="S1",
+        hub=SlowBroadcastHub(),
+        lock_store=DeviceLockStore(),
+        session_factory=db_module.get_session_factory(),
+    )
+
+    # 并发触发：把 N 个 aemit 包成 task 一次性丢出去，最大化乱序压力。
+    # 没有 _serial_lock 时，broadcast 自带 sleep 会让 task 调度乱序，
+    # DB commit 顺序就跟 ``asyncio.create_task`` 调度顺序无关；
+    # 有锁时即使 task 并发抢调度，DB 写入仍按 ``create_task`` 顺序串行。
+    titles = [f"step-{i:02d}" for i in range(8)]
+    tasks = [
+        asyncio.create_task(
+            emitter.aemit(log_event("aemit-order-run", 1, title, "x"))
+        )
+        for title in titles
+    ]
+    await asyncio.gather(*tasks)
+
+    async with db_module.get_session_factory()() as s:
+        rows = (
+            await s.execute(
+                select(RunLog)
+                .where(RunLog.run_id == "aemit-order-run")
+                .order_by(RunLog.id.asc())
+            )
+        ).scalars().all()
+        assert [row.title for row in rows] == titles
+
+
+@pytest.mark.asyncio
+async def test_emitter_aemit_step_end_waits_for_prior_log(app, session):
+    """``aemit`` 必须保证：``EVT_LOG`` → ``EVT_STEP_END`` 串行——即便
+    broadcast 慢，``EVT_STEP_END`` 的 ``RunStep`` 入库时机也不会越过前一条
+    ``EVT_LOG``。回归"#1 第 1 步完成"被甩到"#2 ━━ 第 2 步 ━━"之后那个 bug。
+    """
+    from ai_phone.server.models import RunLog
+
+    run = Run(
+        id="aemit-mixed-run",
+        device_serial="S1",
+        agent_id="agent-server-brain",
+        goal="g",
+        status="running",
+        execution_mode="server_brain",
+    )
+    session.add(run)
+    await session.commit()
+
+    emitter = ServerRunEmitter(
+        run_id="aemit-mixed-run",
+        serial="S1",
+        hub=SlowBroadcastHub(),
+        lock_store=DeviceLockStore(),
+        session_factory=db_module.get_session_factory(),
+    )
+
+    # 并发触发：把三个 aemit 包成 task 一次性丢出去，最大化乱序压力。
+    # 没有 _serial_lock 时这三个 task 的 broadcast/commit 顺序由 asyncio
+    # 调度决定，不保证调用顺序；有锁时即使并发也按调用顺序串行。
+    tasks = [
+        asyncio.create_task(
+            emitter.aemit(log_event("aemit-mixed-run", 1, "before-step-end", "a"))
+        ),
+        asyncio.create_task(
+            emitter.aemit(
+                make_event(
+                    EVT_STEP_END,
+                    "aemit-mixed-run",
+                    step=1,
+                    thought="t",
+                    action="click(point='<point>1 1</point>')",
+                    action_type="click",
+                    elapsed_ms=1,
+                )
+            )
+        ),
+        asyncio.create_task(
+            emitter.aemit(log_event("aemit-mixed-run", 1, "after-step-end", "b"))
+        ),
+    ]
+    await asyncio.gather(*tasks)
+
+    async with db_module.get_session_factory()() as s:
+        logs = (
+            await s.execute(
+                select(RunLog)
+                .where(RunLog.run_id == "aemit-mixed-run")
+                .order_by(RunLog.id.asc())
+            )
+        ).scalars().all()
+        steps = (
+            await s.execute(
+                select(RunStep)
+                .where(RunStep.run_id == "aemit-mixed-run")
+                .order_by(RunStep.id.asc())
+            )
+        ).scalars().all()
+        # 同表 id 反映 commit 顺序：before-step-end 必须先入库，after-step-end
+        # 必须后入库；中间夹一个 RunStep。如果 EVT_LOG 和 EVT_STEP_END 走的不是
+        # 同一把锁，after-step-end 会先 commit（broadcast 比 step_end 短），顺序
+        # 就乱了。这条断言钉住"同锁"语义。
+        assert [r.title for r in logs] == ["before-step-end", "after-step-end"]
+        assert len(steps) == 1
