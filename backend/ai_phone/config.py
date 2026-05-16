@@ -161,6 +161,15 @@ class Settings(BaseSettings):
             "env: AI_PHONE_VLM_BACKEND"
         ),
     )
+    # 海外 Computer Use prompt 默认保持英文，避免开源用户拿到中文化默认体验；
+    # 私有中文调试时可打开，让 Claude/GPT CU 的 reasoning / 完成说明尽量输出中文。
+    vlm_cu_zh_prompt_enabled: bool = Field(
+        default=False,
+        description=(
+            "Claude/GPT Computer Use 主 VLM 是否启用中文可读日志 prompt。默认关闭，"
+            "保持海外开源默认英文体验。env: AI_PHONE_VLM_CU_ZH_PROMPT_ENABLED"
+        ),
+    )
     # 主 VLM 思考链预算（tokens），仅在 backend 支持 thinking 时生效：
     # - doubao_responses: 不读本字段（豆包 vision 不开 thinking，关闭节省 token）
     # - claude_cu: payload.thinking.budget_tokens；0 表示关闭 thinking

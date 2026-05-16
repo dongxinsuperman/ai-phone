@@ -21,12 +21,11 @@ Runner 与外界的唯一耦合是两个回调：
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 import time
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from loguru import logger
 
@@ -648,6 +647,9 @@ class VLMRunner:
         # 配置单例：断言系统、瞬态 UI 门控等都要从 Settings 读 VLM 端点 / env 开关。
         # 抽到 self 是为了让单测能通过 monkeypatch 替换；运行期等价于 get_settings()。
         self._settings = get_settings()
+        self._vlm_cu_zh_prompt_enabled: bool = bool(
+            getattr(self._settings, "vlm_cu_zh_prompt_enabled", False)
+        )
 
         # 主 VLM 客户端：通过 ``create_main_vlm`` 工厂按 ``settings.vlm_backend`` 分派
         # （doubao_responses / claude_cu / gpt_cu）。测试时可以传 ``vlm_client``
@@ -657,7 +659,9 @@ class VLMRunner:
         # preview 模板——三家协议输出形态完全不同，共用一份模板会让 Claude/
         # GPT 退化成"忠实输出豆包文本 DSL"，runner 的 tool_use 解析全部 miss。
         system_prompt = build_system_prompt_for_backend(
-            self.goal, backend=self._settings.vlm_backend
+            self.goal,
+            backend=self._settings.vlm_backend,
+            zh_readable=self._vlm_cu_zh_prompt_enabled,
         )
         self.counter = TokenCounter()
         self.vlm = vlm_client or create_main_vlm(
@@ -867,6 +871,7 @@ class VLMRunner:
                     self.goal,
                     substeps_text=substeps_text,
                     backend=self._settings.vlm_backend,
+                    zh_readable=self._vlm_cu_zh_prompt_enabled,
                 )
                 await self._log(
                     1,
