@@ -44,6 +44,7 @@ from ai_phone.server.trajectory_cache import (
     build_cache_assertion_prompt,
     build_cache_key,
     build_v3_locator_prompt,
+    build_v3_plan_cleaner_prompt,
     build_v3_cache_payload,
     build_recovery_prompt,
     delete_trajectory_cache_v1_for_run,
@@ -129,6 +130,42 @@ def test_parse_v3_locator_response_accepts_point_only_contract():
     )
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "<point>500 250</point>",       # 半角空格分隔（基线）
+        "<point>500,250</point>",       # 仅半角逗号
+        "<point>500, 250</point>",      # 半角逗号+空格（Claude / GPT 常见）
+        "<point>500 , 250</point>",     # 空格+逗号+空格
+        "<point>500，250</point>",      # 全角逗号（中文上下文偶发）
+        "<point>500， 250</point>",     # 全角逗号+空格
+    ],
+)
+def test_parse_v3_locator_response_accepts_comma_and_full_width_separators(raw):
+    parsed = parse_v3_locator_response(
+        raw,
+        coord_space="normalized",
+        expected_action_type="click",
+    )
+
+    assert parsed is not None
+    assert parsed.action == "click"
+    assert parsed.point == [500, 250]
+
+
+def test_parse_v3_locator_response_accepts_drag_with_comma_separators():
+    parsed = parse_v3_locator_response(
+        "<start>100, 200</start><end>300，400</end>",
+        coord_space="normalized",
+        expected_action_type="drag",
+    )
+
+    assert parsed is not None
+    assert parsed.action == "drag"
+    assert parsed.start_point == [100, 200]
+    assert parsed.end_point == [300, 400]
+
+
 def test_build_v3_locator_prompt_is_minimal_and_action_specific():
     prompt = build_v3_locator_prompt(
         goal="不要进入 prompt",
@@ -158,6 +195,68 @@ def test_build_v3_locator_prompt_is_minimal_and_action_specific():
     assert "缓存动作类型：drag" in drag_prompt
     assert "<start>x1 y1</start>" in drag_prompt
     assert "<end>x2 y2</end>" in drag_prompt
+
+
+def test_build_v3_plan_cleaner_prompt_classifies_text_stability_in_three_tiers():
+    """plan cleaner prompt 必须按「文案稳定性 × goal 粒度」三档判断是否保留 thought 文案。
+
+    这样才能既避免把"屏幕动态条目"硬记成具体文字（下次屏幕变就命中不了），
+    又不至于把"应用自带稳定 UI 锚点"也一刀泛化掉（导致海外 VLM 定位失语境）。
+    """
+
+    prompt = build_v3_plan_cleaner_prompt(
+        action={"type": "click", "thought": "占位 thought"},
+        goal="占位 goal",
+    )
+
+    assert "维度 A" in prompt and "维度 B" in prompt
+    assert "B1" in prompt and "B2" in prompt and "B3" in prompt
+
+
+def test_build_v3_plan_cleaner_prompt_keeps_stable_ui_anchor_categories():
+    prompt = build_v3_plan_cleaner_prompt(
+        action={"type": "click", "thought": "占位 thought"},
+        goal="占位 goal",
+    )
+
+    assert "稳定 UI 锚点" in prompt
+    assert "导航栏" in prompt
+    assert "placeholder" in prompt
+    assert "保留" in prompt and "thought" in prompt
+
+
+def test_build_v3_plan_cleaner_prompt_generalizes_dynamic_screen_content():
+    prompt = build_v3_plan_cleaner_prompt(
+        action={"type": "click", "thought": "占位 thought"},
+        goal="占位 goal",
+    )
+
+    assert "动态屏幕内容" in prompt
+    assert "列表条目" in prompt or "卡片标题" in prompt
+    assert "用户生成内容" in prompt
+    assert "换设备" in prompt or "换日期" in prompt
+    assert "保守泛化" in prompt
+
+
+def test_build_v3_plan_cleaner_prompt_stays_business_neutral():
+    """规则正文不应带任何业务专有名词，避免污染通用性。"""
+
+    prompt = build_v3_plan_cleaner_prompt(
+        action={"type": "click", "thought": "占位 thought"},
+        goal="占位 goal",
+    )
+
+    forbidden_business_terms = [
+        "Futures",
+        "BAND",
+        "BTC",
+        "USDT",
+        "Search for Pairs",
+        "有理数",
+        "习题",
+    ]
+    for term in forbidden_business_terms:
+        assert term not in prompt, f"plan cleaner prompt 不应出现业务专有名词：{term}"
 
 
 def test_parse_v3_rescue_response_accepts_popup_close_json():
@@ -1565,7 +1664,9 @@ async def test_v3_plan_intent_cleaner_uses_model_contract(monkeypatch):
     assert "thought" in prompt
     assert "弹出了护眼提醒" in prompt
     assert "plan_intent 必须以中文动词开头" in prompt
-    assert "用户原意决定泛化粒度" in prompt
+    assert "文案稳定性 × goal 粒度" in prompt
+    assert "稳定 UI 锚点" in prompt
+    assert "动态屏幕内容" in prompt
     assert "状态 / 反思 / 完成时态描述" in prompt
 
     assert "上一 action" not in prompt

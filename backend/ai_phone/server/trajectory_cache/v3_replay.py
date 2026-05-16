@@ -1756,7 +1756,7 @@ def parse_v3_locator_response(
     if expected:
         if expected == A.ACTION_DRAG:
             if not re.fullmatch(
-                r"<start>\s*-?\d+\s+-?\d+\s*</start>\s*<end>\s*-?\d+\s+-?\d+\s*</end>",
+                r"<start>\s*-?\d+[\s,，]+-?\d+\s*</start>\s*<end>\s*-?\d+[\s,，]+-?\d+\s*</end>",
                 raw_stripped,
                 flags=re.IGNORECASE | re.DOTALL,
             ):
@@ -1773,7 +1773,7 @@ def parse_v3_locator_response(
                 )
         else:
             if not re.fullmatch(
-                r"<point>\s*-?\d+\s+-?\d+\s*</point>",
+                r"<point>\s*-?\d+[\s,，]+-?\d+\s*</point>",
                 raw_stripped,
                 flags=re.IGNORECASE | re.DOTALL,
             ):
@@ -1792,7 +1792,7 @@ def parse_v3_locator_response(
 
 def _parse_locator_tag_point(text: str, tag: str) -> Optional[Tuple[int, int]]:
     match = re.search(
-        rf"<{re.escape(tag)}>\s*(-?\d+)\s+(-?\d+)\s*</{re.escape(tag)}>",
+        rf"<{re.escape(tag)}>\s*(-?\d+)[\s,，]+(-?\d+)\s*</{re.escape(tag)}>",
         text or "",
         flags=re.IGNORECASE,
     )

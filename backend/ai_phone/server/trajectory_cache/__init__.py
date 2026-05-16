@@ -81,6 +81,7 @@ from .v3_replay import (
 from .v3_service import (
     V3_CACHE_SCHEMA_VERSION,
     build_v3_cache_payload,
+    build_v3_plan_cleaner_prompt,
     delete_trajectory_cache_v3_for_run,
     get_active_trajectory_cache_v3,
     mark_trajectory_cache_v3_suspect,
@@ -133,6 +134,7 @@ __all__ = [
     "build_ephemeral_gate_prompt",
     "build_recovery_prompt",
     "build_v3_locator_prompt",
+    "build_v3_plan_cleaner_prompt",
     "build_v3_rescue_prompt",
     "build_v3_cache_payload",
     "delete_trajectory_cache_v1_for_run",
