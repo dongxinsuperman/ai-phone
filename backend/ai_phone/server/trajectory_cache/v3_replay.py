@@ -757,17 +757,26 @@ class V3ReplayRunner:
                 )
                 await self._observe_after_action(index=index)
                 if self.capture_after_each_action:
-                    await self._log_v3_stage(
-                        index,
-                        "稳定",
-                        "执行后等待页面稳定并截图",
-                    )
-                    after_bytes = await self._wait_stable_for_step(index, phase="执行后")
-                    if after_bytes is None:
+                    # —— V3 设计：执行后只拍一张作为"动作完成证明"，不做版本3
+                    # 稳定检测。严格对齐首跑节奏。下一步执行前会重新走版本3
+                    # 稳定，避免 locator 拿到动画态帧导致定位偏。
+                    #
+                    # 注意：line 706 的 `_reuse_next_before_frame=True`（动作被
+                    # 跳过的场景）保留——那种情况 after == before，本就没产生
+                    # 页面变化，carry 等同复用稳定帧；这里"真实执行后"的
+                    # carry 故意不再设置，详见
+                    # docs/缓存回放步骤化日志改造方案.md。
+                    try:
                         after_bytes = await self._screenshot_jpeg()
+                    except Exception as exc:  # noqa: BLE001
+                        await self._log_v3_stage(
+                            index,
+                            "截图",
+                            f"执行后截图失败：{exc}，回退最后一帧",
+                        )
+                        after_bytes = self._last_frame
                     self._final_after_bytes = after_bytes
                     self._last_frame = after_bytes
-                    self._reuse_next_before_frame = True
                     self._emit_screenshot(index, "after", self._final_after_bytes)
                 if not self._current_step_status:
                     self._set_v3_step_status("定位成功")

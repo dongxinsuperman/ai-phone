@@ -2106,7 +2106,10 @@ async def test_v3_replay_runner_relocates_click_by_plan_intent(monkeypatch):
     assert result.success is True
     assert result.actions_executed == 1
     assert ("click", 111, 222) in driver.calls
-    assert len(stable_calls) == 2
+    # 步骤化日志改造（2026-05-16）：V3 执行后不再做版本3稳定检测（对齐首跑节奏，
+    # 只 500ms 观察 + 截图证明）。单步只触发 1 次执行前版本3稳定。详见
+    # docs/缓存回放步骤化日志改造方案.md。
+    assert len(stable_calls) == 1
     assert locator.calls[0]["action"]["plan_intent"] == "点击教材同步"
     assert any(title == "V3寻找目标" and "点击教材同步" in content for _level, title, content in logs)
 
@@ -3101,10 +3104,13 @@ async def test_replay_runner_logs_observe_delay(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_replay_runner_emits_streaming_step_log_skeleton():
-    """步骤化日志方案（2026-05-16）核心回归：V1/V2 单步必须产出
-    "缓存步骤 → 缓存稳定 → 缓存动作 → 缓存执行 → 缓存完成" 七拍中的关键端点，
-    且 `缓存完成` 必须**单行**，避免回退到 9 行汇总块。
+async def test_v1_replay_runner_emits_streaming_step_log_skeleton():
+    """步骤化日志方案（2026-05-16）核心回归 —— V1 节奏：单步必须按
+    "缓存步骤 → 缓存稳定(执行前) → 缓存动作 → 缓存执行 → 缓存完成" 顺序产出
+    流式日志，且 `缓存完成` 必须**单行**，避免回退到 9 行汇总块。
+
+    同时锁定"V1 执行后**不**再做版本1稳定检测"：本测试用 monkey 替换的
+    `_wait_stable` 计数器在 V1 单步里**只能被调一次**（执行前那次）。
     详见 docs/缓存回放步骤化日志改造方案.md。
     """
     logs = []
@@ -3119,20 +3125,28 @@ async def test_replay_runner_emits_streaming_step_log_skeleton():
         trajectory={"actions": [{"index": 1, "type": "click", "point": {"x": 1, "y": 2}}]},
         log=log,
         observe_delay_ms=0,
+        replay_mode="v1",
     )
 
+    stable_calls = 0
+
     async def stable():
+        nonlocal stable_calls
+        stable_calls += 1
         return SimpleNamespace(bytes_=b"jpeg")
 
     runner._wait_stable = stable  # type: ignore[method-assign]
     result = await runner.run()
     assert result.success is True
 
+    # V1 改造后：执行前 1 次稳定，执行后改成 `_screenshot_jpeg()` 抓一张 —— 0 次。
+    assert stable_calls == 1, (
+        f"V1 执行后不应再做版本1稳定检测，期望 1 次（仅执行前），实际={stable_calls}"
+    )
+
     titles = [title for _level, title, _content in logs]
-    # 端点必须出现：开始 + 完成
     assert "缓存步骤" in titles
     assert "缓存完成" in titles
-    # 过程必须出现，且按"开始 → 稳定 → 动作 → 执行 → 完成"的相对顺序
     expected_sequence = ["缓存步骤", "缓存稳定", "缓存动作", "缓存执行", "缓存完成"]
     positions = []
     cursor = 0
@@ -3146,8 +3160,11 @@ async def test_replay_runner_emits_streaming_step_log_skeleton():
         positions.append(idx)
         cursor = idx + 1
     assert positions == sorted(positions)
+    # `缓存稳定` 只能出现一次（执行前），不能再有第二条"执行后稳定"。
+    assert titles.count("缓存稳定") == 1, (
+        f"V1 单步只能有 1 条 `缓存稳定`（执行前），实际={titles.count('缓存稳定')} | titles={titles}"
+    )
 
-    # `缓存完成` 必须单行，只含 elapsed + status，避免回到 9 行汇总块。
     completion_logs = [
         (level, title, content) for level, title, content in logs if title == "缓存完成"
     ]
@@ -3156,6 +3173,77 @@ async def test_replay_runner_emits_streaming_step_log_skeleton():
         assert "\n" not in content, f"`缓存完成` 必须单行，实际={content!r}"
         assert "elapsed=" in content
         assert "status=" in content
+
+
+@pytest.mark.asyncio
+async def test_v2_replay_runner_does_not_run_stability_before_action():
+    """步骤化日志方案（2026-05-16）—— V2 节奏锁定：
+
+    V2 设计是"先动作后对比"——执行前**不做任何稳定检测**，执行后用
+    版本2路标对比作为稳定/正确性的双判定。本测试通过 monkey 替换的
+    `_wait_stable` 计数器锁死："V2 整段一次稳定都不该被触发"。
+    """
+    logs = []
+    driver = FakeDriver()
+    from ai_phone.server.trajectory_cache import ReplayRunner
+    from ai_phone.server.trajectory_cache import replay as replay_module
+
+    async def log(level, title, content):
+        logs.append((level, title, content))
+
+    # 强制版本2路标对比直接命中（避免 fallback 走到 `_wait_stable`）。
+    pytest_monkey = pytest.MonkeyPatch()
+    try:
+        pytest_monkey.setattr(
+            replay_module,
+            "_compare_alignment",
+            lambda **_kwargs: {
+                "match": True,
+                "global_diff": 0.0,
+                "center_mae": 0.0,
+                "black_ratio_diff": 0.0,
+                "reason": "match",
+            },
+        )
+
+        runner = ReplayRunner(
+            driver=driver,
+            trajectory={
+                "actions": [
+                    {"index": 1, "action_id": "a001", "type": "click", "point": {"x": 1, "y": 2}},
+                ],
+                "state_landmarks": [
+                    {
+                        "action_id": "a001",
+                        "before_action_index": None,
+                        "status": "available",
+                        "image_phash": "01",
+                    },
+                ],
+            },
+            log=log,
+            capture_after_each_action=True,
+            observe_delay_ms=0,
+            replay_mode="v2",
+        )
+        runner.alignment_enabled = True
+        runner._landmark_image_bytes = lambda _landmark: b"ref"  # type: ignore[method-assign]
+
+        stable_calls = 0
+
+        async def stable():
+            nonlocal stable_calls
+            stable_calls += 1
+            return SimpleNamespace(bytes_=b"jpeg")
+
+        runner._wait_stable = stable  # type: ignore[method-assign]
+        result = await runner.run()
+        assert result.success is True
+        assert stable_calls == 0, (
+            f"V2 执行前/执行后都不该走版本1稳定，实际触发={stable_calls} 次"
+        )
+    finally:
+        pytest_monkey.undo()
 
 
 @pytest.mark.asyncio
@@ -3331,7 +3419,10 @@ async def test_replay_runner_alignment_match_skips_stability(monkeypatch):
     result = await runner.run()
 
     assert result.success is True
-    assert stable_calls == 1
+    # 步骤化日志改造（2026-05-16）：V2 设计原则是"先动作后对比"，执行前
+    # 不再做版本1稳定检测。两步都通过版本2路标对比 + carry 路径，整段回放
+    # 一次稳定检测都不应触发。详见 docs/缓存回放步骤化日志改造方案.md。
+    assert stable_calls == 0
     assert sleeps == [0.5, 0.5]
     assert any("对齐成功 action_id=a001" in content for _level, title, content in logs if title == "轨迹缓存状态路标")
     assert any("复用上一 action 路标帧作为 #2 before" in content for _level, title, content in logs if title == "轨迹缓存状态路标")
@@ -3386,7 +3477,13 @@ async def test_replay_runner_unavailable_landmark_uses_historical_action_gap(mon
     result = await runner.run()
 
     assert result.success is True
-    assert stable_calls == 2
+    # 步骤化日志改造（2026-05-16）：V2 执行前不再做版本1稳定。本例：
+    #   - 第 1 步 a001 landmark unavailable → historical_gap 兜底（不调稳定）
+    #     + carry 给 #2 当 before
+    #   - 第 2 步 a002 没有 landmark → V2 fallback _wait_stable_for_step("执行后")
+    #     调一次稳定（这是用户拍板**保留**的 fallback，几乎不触发）
+    # 所以期望 stable_calls == 1（fallback 那次）。
+    assert stable_calls == 1
     assert sleeps == [0.5, 1.3, 0.5]
     assert any(
         "目标图不可用" in content and "按首次真实间隔兜底等待" in content
@@ -3455,7 +3552,9 @@ async def test_replay_runner_alignment_also_handles_wait_action(monkeypatch):
     result = await runner.run()
 
     assert result.success is True
-    assert stable_calls == 1
+    # 步骤化日志改造（2026-05-16）：V2 执行前不再做稳定检测；版本2路标对比
+    # 成功后 carry 给（虚拟的）下一步。本测试只有 1 步，整段一次稳定都不触发。
+    assert stable_calls == 0
     assert sleeps == [3, 0.5]
 
 
@@ -3523,7 +3622,9 @@ async def test_replay_runner_alignment_miss_uses_historical_gap_then_stops_repla
 
     assert result.success is False
     assert result.error and "alignment_miss action_id=a001" in result.error
-    assert stable_calls == 1
+    # 步骤化日志改造（2026-05-16）：V2 执行前不再做版本1稳定检测；本例
+    # 路标对比失败后停在 alignment_miss，整段不应触发任何稳定检测。
+    assert stable_calls == 0
     assert sleeps == [0.5, 0.1]
     assert any("执行后截图比对 action_id=a001" in content and "首次真实间隔=600ms" in content for _level, title, content in logs if title == "轨迹缓存状态路标")
     assert any("截图不一致 action_id=a001" in content and "按首次真实间隔再等待 100ms" in content for _level, title, content in logs if title == "轨迹缓存状态路标")

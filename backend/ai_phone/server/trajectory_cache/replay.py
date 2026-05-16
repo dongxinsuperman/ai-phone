@@ -567,6 +567,8 @@ class ReplayRunner:
         return result
 
     async def _capture_before(self, index: int) -> Optional[bytes]:
+        # 优先级 1：carry 帧——V2 上一步路标对比成功传过来的"版本2命中帧"。
+        # 质量最高（已被版本2确认等于首跑当时的 after），直接复用。
         if self._carry_before_index == index and self._carry_before_bytes is not None:
             bytes_ = self._carry_before_bytes
             self._carry_before_bytes = None
@@ -583,22 +585,68 @@ class ReplayRunner:
                 f"复用上一 action 路标帧作为 #{index} before，跳过页面稳定检测",
             )
             return bytes_
-        before = await self._wait_stable_for_step(index, phase="执行前")
-        return before.bytes_
+
+        # 优先级 2：V1——执行前用版本1像素哈希稳定，对齐首跑节奏。
+        if self._is_v1_replay:
+            before = await self._wait_stable_for_step(index, phase="执行前")
+            return before.bytes_
+
+        # 优先级 3：V2 设计——"先动作后对比"，执行前**不做任何稳定检测**。
+        # 拿到任意一张 before 帧即可（正确性由 _capture_after 里的版本2路标
+        # 对比兜底）。优先复用最近一帧省一次截图；没有就现拍。
+        # 详见 docs/缓存回放步骤化日志改造方案.md。
+        if self._last_frame is not None:
+            await self._log_replay_stage(
+                index,
+                "截图",
+                "V2 执行前不做稳定检测（先动作后对比），复用上步尾帧作 before",
+            )
+            return self._last_frame
+        try:
+            bytes_ = await self._screenshot_jpeg()
+        except Exception as exc:  # noqa: BLE001
+            await self._log_replay_stage(
+                index, "截图", f"执行前截图失败：{exc}"
+            )
+            return None
+        self._last_frame = bytes_
+        await self._log_replay_stage(
+            index,
+            "截图",
+            "V2 执行前不做稳定检测（先动作后对比），实时截图作 before",
+        )
+        return bytes_
 
     async def _capture_after(self, action: Dict[str, Any]) -> Optional[bytes]:
         aligned = await self._try_capture_aligned_after(action)
         if aligned is not None:
             return aligned
         index = int(action.get("index") or 0)
-        if self.alignment_enabled:
-            await self._log_replay_stage(
-                index,
-                "路标",
-                "缓存路标未能直接产出可用 after，回落页面稳定检测并截图",
-            )
+        if not self.alignment_enabled:
+            # —— V1 设计：执行后只拍一张作为"动作完成证明"，不做任何稳定检测。
+            #
+            # 严格对齐首跑节奏（vlm_loop.py 的 `tail_bytes = _screenshot_jpeg()`）。
+            # 历史上这里曾经多调一次 `_wait_stable_for_step("执行后")`，让单步
+            # 平白多出 3-5s 等待，跟首跑节奏不一致。改造原则见
+            # docs/缓存回放步骤化日志改造方案.md。
+            try:
+                bytes_ = await self._screenshot_jpeg()
+            except Exception as exc:  # noqa: BLE001
+                await self._log_replay_stage(
+                    index, "截图", f"执行后截图失败：{exc}，回退最后一帧"
+                )
+                return self._last_frame
+            self._last_frame = bytes_
+            return bytes_
+        # —— V2 fallback：路标资源不可用时退回版本1稳定。
+        # 真实运行几乎不触发（要求缓存图全套缺失），保留作最后兜底。
+        await self._log_replay_stage(
+            index,
+            "路标",
+            "缓存路标未能直接产出可用 after，回落页面稳定检测并截图",
+        )
         after = await self._wait_stable_for_step(index, phase="执行后")
-        if after.bytes_ is not None and not self._current_step_status and not self._is_v1_replay:
+        if after.bytes_ is not None and not self._current_step_status:
             self._set_replay_step_status("页面稳定后完成")
         return after.bytes_
 
