@@ -108,10 +108,11 @@ const mirrorError = computed(() => (
   mirrorMode.value === 'jpeg' ? jpegMirror.error.value : mirror.error.value
 ))
 
-// 镜像容器：用于旋转时同步翻转外框宽高，避免横屏画面被塞进竖框
+// 镜像容器：用户仍可右下角手动横向/纵向拉伸；设备横竖屏变化只改变内部画面
+// object-fit，不再自动改外框宽高，避免日志侧被旋转事件无意挤压。
 const mirrorWrap = ref(null)
-// 右栏高度：用 ResizeObserver 跟随 mirror-wrap 实时高度。CSS Grid 的 auto
-// 行高会被 LogPane 的 max-content 撑爆，必须用 JS 强制顶住
+// 右栏高度跟随用户手动调整后的镜像框高度；横竖屏变化不再改镜像框，所以不会
+// 因旋转触发日志区抖动。
 const rightColHeight = ref(null)
 const rightColStyle = computed(() => (
   rightColHeight.value ? { height: `${rightColHeight.value}px` } : {}
@@ -146,36 +147,16 @@ function _onVideoSizeChange() {
   frameSize.value = { w, h }
   const isLandscape = w > h
   if (lastIsLandscape === null) {
-    // 第一次拿到视频尺寸：仅记录方向，竖屏保留 CSS 默认竖框不动容器。
-    // 但如果**首帧就是横屏**（典型：用户打开工作台时 iPhone 正在横屏玩游戏 /
-    // 看视频），必须主动翻一次 wrap，否则横屏画面被塞进竖框里只占一半。
-    // 副作用（wrap 宽高变成 inline 像素脱离 calc）在这个场景下可以接受：
-    // 既然画面就是横的，用户期望的就是横框，丢失响应式 resize 也没啥不对。
+    // 第一次拿到视频尺寸只记录方向。外框尺寸由用户拖拽决定，横屏/竖屏画面
+    // 都在当前左侧容器里 object-fit: contain，避免设备旋转时推挤右侧日志。
     lastIsLandscape = isLandscape
-    if (isLandscape) {
-      _swapWrapWH()
-    }
     return
   }
   if (isLandscape !== lastIsLandscape) {
     lastIsLandscape = isLandscape
-    _swapWrapWH()
     // 旋转后设备 logical (w, h) 会互换，立刻拉一次最新设备信息，避免
     // 接下来这几秒 devicePixel 还是旧方向、手动 tap 坐标算错
     refreshDevice()
-  }
-}
-function _swapWrapWH() {
-  // 把 mirror-wrap 当前的 width 和 height 互换；保留用户拖拽出的"对角线大小"，
-  // 只是把方向翻转。后续 resize:both 仍然能用
-  const wrap = mirrorWrap.value
-  if (!wrap) return
-  const cs = window.getComputedStyle(wrap)
-  const w = parseFloat(cs.width)
-  const h = parseFloat(cs.height)
-  if (w > 0 && h > 0) {
-    wrap.style.width = `${Math.round(h)}px`
-    wrap.style.height = `${Math.round(w)}px`
   }
 }
 
@@ -699,11 +680,12 @@ onMounted(async () => {
     }
     return
   }
-  // 监听视频/图像帧尺寸变化（设备旋转 / 第一帧到达）：自动翻转外框 W×H
+  // 监听视频/图像帧尺寸变化（设备旋转 / 第一帧到达）：只更新画面方向与
+  // 坐标映射，不再自动改镜像外框尺寸，避免右侧日志被横竖屏变化带着抖。
   // <video>: loadedmetadata + resize（videoWidth/Height 变就 fire）
   // <img>:   load（每次 src 切换都 fire，JPEG passthrough 每帧都会触发）
   //          load 频率虽然高，但 _onVideoSizeChange 内部做了 lastIsLandscape
-  //          去重，只在方向变化时才真正翻框，代价极低
+  //          去重，只在方向变化时刷新设备尺寸，代价极低
   if (videoEl.value) {
     videoEl.value.addEventListener('loadedmetadata', _onVideoSizeChange)
     videoEl.value.addEventListener('resize', _onVideoSizeChange)
@@ -711,14 +693,14 @@ onMounted(async () => {
   if (imgEl.value) {
     imgEl.value.addEventListener('load', _onVideoSizeChange)
   }
-  // 实时把 mirror-wrap 的高度同步给 .right，让日志面板与镜像顶部底部对齐
+  // 高度只跟随用户手动调整的镜像框；设备旋转不再自动改 mirror-wrap 宽高，
+  // 所以不会因为横竖屏变化牵动右侧日志。
   if (mirrorWrap.value && typeof ResizeObserver !== 'undefined') {
     _wrapResizeObserver = new ResizeObserver(() => {
       const el = mirrorWrap.value
       if (el) rightColHeight.value = el.clientHeight
     })
     _wrapResizeObserver.observe(mirrorWrap.value)
-    // 立刻同步一次，避免首屏日志先撑大再回弹
     rightColHeight.value = mirrorWrap.value.clientHeight
   }
   sub = openDeviceStream(serial.value, {
@@ -1122,11 +1104,9 @@ h2 {
 
 .layout {
   display: grid;
-  /* 左列宽度跟随 .mirror-wrap（用户拖拽可调），右列吃剩余空间 */
+  /* 左列宽度跟随用户手动 resize 的 .mirror-wrap；横竖屏变化不会自动改列宽。 */
   grid-template-columns: auto minmax(320px, 1fr);
   gap: 16px;
-  /* align-items 默认 stretch：右栏自动跟随左栏（mirror-wrap）的高度，
-     这样日志面板 + Goal 面板的总高就和预览区平齐，不再多出一段 */
 }
 @media (max-width: 1080px) {
   .layout {
@@ -1138,6 +1118,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 .mirror-wrap {
   display: flex;
@@ -1146,7 +1127,7 @@ h2 {
   border: 1px solid #2a2f38;
   overflow: hidden;
   background: #0d1117;
-  /* 用户可任意拖拽右下角调整预览区大小；min/max 给一个合理范围 */
+  /* 用户可手动横向/纵向拉伸；设备旋转只改变内部画面比例，不再自动翻外框。 */
   resize: both;
   width: 420px;
   height: calc(100vh - 160px);
