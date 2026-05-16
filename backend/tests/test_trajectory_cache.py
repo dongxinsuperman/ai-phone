@@ -1010,9 +1010,16 @@ class FakeEmitter:
     def __init__(self):
         self.finishes = []
         self.events = []
+        # 分别记录"调用源"，让单测能钉死"哪些日志走 emit_serial、哪些走 emit"。
+        # 比如缓存断言 PASS 这条必须走 emit_serial，否则 force_finish 的
+        # _drain_serial_queue 排不到它，会出现"Run finished 但断言日志缺失"
+        # 的窗口；区分两个 list 后，回归测试可以一眼断言归属。
+        self.emit_calls = []
+        self.emit_serial_calls = []
 
     def emit(self, evt):
         self.events.append(evt)
+        self.emit_calls.append(evt)
 
     async def aemit(self, evt):
         # 顺序保序版的 emit；保留是为了覆盖 emitter.aemit 自身的单测
@@ -1025,6 +1032,7 @@ class FakeEmitter:
         # 用 list.append 直接追加；调用顺序 = events 顺序，与生产代码"后台
         # worker FIFO 处理"得到的最终顺序等价，足够单测验证保序。
         self.events.append(evt)
+        self.emit_serial_calls.append(evt)
 
     async def force_finish(self, **kwargs):
         self.finishes.append(kwargs)
@@ -4093,6 +4101,23 @@ async def test_server_runner_cache_replay_finishes_when_assertion_passes(
         "缓存稳定",
         "轨迹缓存断言",
     ]
+    # Codex 审查 [P2] 钉锁：缓存断言日志必须走 emit_serial 通道，否则
+    # force_finish → _drain_serial_queue 只盘点 emit_serial 队列，
+    # "轨迹缓存断言 PASS" 会滞留 emit() 的 _pending_tasks，瞬时查询
+    # 会出现"Run 已 finished 但断言日志缺失"的窗口。一旦回归把那行
+    # 改回 emitter.emit(log_event(...))，本断言立刻失败。
+    assert any(
+        e.get("title") == "轨迹缓存断言" for e in emitter.emit_serial_calls
+    ), (
+        "缓存断言日志必须经 emit_serial 通道发出，"
+        f"实际 emit_serial_calls={[e.get('title') for e in emitter.emit_serial_calls]}"
+    )
+    assert not any(
+        e.get("title") == "轨迹缓存断言" for e in emitter.emit_calls
+    ), (
+        "缓存断言日志不允许走 emit() 老路径（绕过 _drain_serial_queue 排空），"
+        f"实际 emit_calls={[e.get('title') for e in emitter.emit_calls]}"
+    )
 
 
 @pytest.mark.asyncio
@@ -4313,6 +4338,19 @@ async def test_server_runner_v1_cache_reads_v1_table_and_disables_enhancements(
     ), (
         f"V1 缓存路径必须传 emitter.emit_serial（同步入队保序版），实际={runner_emit!r}"
     )
+    # Codex 审查 [P2] 钉锁：V1 断言日志同样必须走 emit_serial。
+    assert any(
+        e.get("title") == "轨迹缓存断言" for e in emitter.emit_serial_calls
+    ), (
+        "V1 缓存断言日志必须经 emit_serial 通道，"
+        f"实际 emit_serial_calls={[e.get('title') for e in emitter.emit_serial_calls]}"
+    )
+    assert not any(
+        e.get("title") == "轨迹缓存断言" for e in emitter.emit_calls
+    ), (
+        "V1 缓存断言日志不允许走 emit() 老路径，"
+        f"实际 emit_calls={[e.get('title') for e in emitter.emit_calls]}"
+    )
 
 
 @pytest.mark.asyncio
@@ -4407,6 +4445,21 @@ async def test_server_runner_v3_cache_replay_finishes_when_assertion_passes(
         and getattr(runner_emit, "__func__", None) is type(emitter).emit_serial
     ), (
         f"V3 缓存路径必须传 emitter.emit_serial（同步入队保序版），实际={runner_emit!r}"
+    )
+    # Codex 审查 [P2] 钉锁：V3 最终校验日志同样必须走 emit_serial，否则
+    # force_finish → _drain_serial_queue 排不到它，"V3最终校验 PASS"
+    # 会卡在 _pending_tasks，报告查询时缺最关键判定。
+    assert any(
+        e.get("title") == "V3最终校验" for e in emitter.emit_serial_calls
+    ), (
+        "V3 最终校验日志必须经 emit_serial 通道，"
+        f"实际 emit_serial_calls={[e.get('title') for e in emitter.emit_serial_calls]}"
+    )
+    assert not any(
+        e.get("title") == "V3最终校验" for e in emitter.emit_calls
+    ), (
+        "V3 最终校验日志不允许走 emit() 老路径，"
+        f"实际 emit_calls={[e.get('title') for e in emitter.emit_calls]}"
     )
 
 

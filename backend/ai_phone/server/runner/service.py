@@ -533,13 +533,15 @@ class ServerRunnerService:
             trajectory=trajectory,
             prev_before_bytes=replay_result.final_before_bytes,
         )
-        emitter.emit(
-            log_event(
-                run_id,
-                1 if assertion.verdict == "PASS" else 3,
-                "轨迹缓存断言",
-                f"{assertion.verdict}: {assertion.reason}",
-            )
+        # 缓存断言日志必须走 emit_serial 通道（同 _log）：force_finish →
+        # _finalize_run → _drain_serial_queue 只会等 emit_serial 队列排空，
+        # 不等 emit() 的后台 _pending_tasks。如果断言日志走 emit()，可能
+        # 出现"Run 已 finished 但'轨迹缓存断言 PASS' 还没落库"的窗口，
+        # 报告/前端瞬时查询会缺最关键的那条判定。
+        await _log(
+            1 if assertion.verdict == "PASS" else 3,
+            "轨迹缓存断言",
+            f"{assertion.verdict}: {assertion.reason}",
         )
         # 关掉断言后才知道整段缓存通道总耗时；优先用 ReplayRunner 内部计时，
         # 兜底再用 service 这一层的 wall-clock，保证至少有一个非零值。
@@ -668,13 +670,13 @@ class ServerRunnerService:
             trajectory=trajectory,
             prev_before_bytes=replay_result.final_before_bytes,
         )
-        emitter.emit(
-            log_event(
-                run_id,
-                1 if assertion.verdict == "PASS" else 3,
-                "V3最终校验",
-                f"{assertion.verdict}: {assertion.reason}",
-            )
+        # 同 V1/V2：V3 最终校验日志也必须走 emit_serial（_log 通道），
+        # 否则 force_finish 排空只盘点 emit_serial 队列，断言判定日志会
+        # 滞留 _pending_tasks，报告查询时缺这条最关键的判定。
+        await _log(
+            1 if assertion.verdict == "PASS" else 3,
+            "V3最终校验",
+            f"{assertion.verdict}: {assertion.reason}",
         )
         finish_kwargs: Dict[str, Any] = {
             "elapsed_ms": _elapsed_ms(),
