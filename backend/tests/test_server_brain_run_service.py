@@ -869,3 +869,209 @@ async def test_emitter_aemit_step_end_waits_for_prior_log(app, session):
         # 就乱了。这条断言钉住"同锁"语义。
         assert [r.title for r in logs] == ["before-step-end", "after-step-end"]
         assert len(steps) == 1
+
+
+@pytest.mark.asyncio
+async def test_emitter_emit_serial_returns_immediately_without_blocking_caller(
+    app, session
+):
+    """``emit_serial`` 必须保证：调用方主流程瞬时返回（put_nowait），DB
+    commit + WS 广播在后台 worker 异步完成。
+
+    回归用：曾经 ``_log`` 直接 ``await emitter._forward_log``，每条日志
+    同步阻塞主流程几十~几百毫秒；缓存回放打 7 拍×N 步累计每步多 5–9 秒
+    （V2 缓存回放每步从 ~3s 拖成 ~12s 那个性能 bug）。修复后调用方调
+    ``emit_serial`` 立刻返回，N 条日志的连续调用应在 ~ms 级完成。
+    """
+    from ai_phone.server.models import RunLog
+
+    run = Run(
+        id="emit-serial-fast-run",
+        device_serial="S1",
+        agent_id="agent-server-brain",
+        goal="g",
+        status="running",
+        execution_mode="server_brain",
+    )
+    session.add(run)
+    await session.commit()
+
+    emitter = ServerRunEmitter(
+        run_id="emit-serial-fast-run",
+        serial="S1",
+        hub=SlowBroadcastHub(),  # broadcast 自带 30ms 延迟
+        lock_store=DeviceLockStore(),
+        session_factory=db_module.get_session_factory(),
+    )
+
+    # 假设走 await aemit：8 条 × (DB commit + 30ms broadcast) > 240ms。
+    # emit_serial 是同步入队，即便 broadcast 慢也不阻塞调用方，应该 < 100ms。
+    titles = [f"step-{i:02d}" for i in range(8)]
+    started = time.monotonic()
+    for title in titles:
+        emitter.emit_serial(log_event("emit-serial-fast-run", 1, title, "x"))
+    elapsed_ms = (time.monotonic() - started) * 1000
+    assert elapsed_ms < 50, (
+        f"emit_serial 调用方主流程必须零阻塞，实际 8 次连续调用耗时={elapsed_ms:.1f}ms"
+    )
+
+    # 后台 worker 处理完后日志全部落库（顺序由下一条测试钉死，这里只验完整性）。
+    await emitter._drain_serial_queue()
+    async with db_module.get_session_factory()() as s:
+        rows = (
+            await s.execute(
+                select(RunLog)
+                .where(RunLog.run_id == "emit-serial-fast-run")
+                .order_by(RunLog.id.asc())
+            )
+        ).scalars().all()
+        assert [r.title for r in rows] == titles
+
+
+@pytest.mark.asyncio
+async def test_emitter_emit_serial_processes_events_in_call_order(app, session):
+    """``emit_serial`` 必须保证：调用顺序 = 后台 worker 处理顺序 = DB
+    commit 顺序，混合 EVT_LOG / EVT_STEP_END 也成立。
+
+    顺序保序是改造后唯一保留的硬约束："`#N 第 N 步完成 · click`" 不能被
+    甩到 "`#N+1 缓存步骤`" 之后；首跑 / 缓存通道都依赖这条不变量。
+    """
+    from ai_phone.server.models import RunLog
+
+    run = Run(
+        id="emit-serial-order-run",
+        device_serial="S1",
+        agent_id="agent-server-brain",
+        goal="g",
+        status="running",
+        execution_mode="server_brain",
+    )
+    session.add(run)
+    await session.commit()
+
+    emitter = ServerRunEmitter(
+        run_id="emit-serial-order-run",
+        serial="S1",
+        hub=SlowBroadcastHub(),
+        lock_store=DeviceLockStore(),
+        session_factory=db_module.get_session_factory(),
+    )
+
+    # 仿真"两步缓存回放"：日志 → STEP_END(1) → 下一步日志 → STEP_END(2)。
+    # 没有保序时，broadcast 慢会让 STEP_END 的 commit 晚于 after-step 的日志。
+    emitter.emit_serial(log_event("emit-serial-order-run", 1, "step-1-log-a", "a"))
+    emitter.emit_serial(
+        make_event(
+            EVT_STEP_END,
+            "emit-serial-order-run",
+            step=1,
+            thought="t1",
+            action="click",
+            action_type="click",
+            elapsed_ms=1,
+        )
+    )
+    emitter.emit_serial(log_event("emit-serial-order-run", 1, "step-2-log-b", "b"))
+    emitter.emit_serial(
+        make_event(
+            EVT_STEP_END,
+            "emit-serial-order-run",
+            step=2,
+            thought="t2",
+            action="click",
+            action_type="click",
+            elapsed_ms=1,
+        )
+    )
+    emitter.emit_serial(log_event("emit-serial-order-run", 1, "step-2-log-c", "c"))
+
+    await emitter._drain_serial_queue()
+    async with db_module.get_session_factory()() as s:
+        logs = (
+            await s.execute(
+                select(RunLog)
+                .where(RunLog.run_id == "emit-serial-order-run")
+                .order_by(RunLog.id.asc())
+            )
+        ).scalars().all()
+        steps = (
+            await s.execute(
+                select(RunStep)
+                .where(RunStep.run_id == "emit-serial-order-run")
+                .order_by(RunStep.id.asc())
+            )
+        ).scalars().all()
+        # 保序硬约束：step-1-log-a / step-2-log-b / step-2-log-c 三条 RunLog
+        # 的 id 必然递增（id 反映 commit 顺序）；STEP_END 入 RunStep 表，但
+        # 时序上 step-1 的 STEP_END commit 必然在 step-2-log-b 之前。
+        assert [r.title for r in logs] == [
+            "step-1-log-a",
+            "step-2-log-b",
+            "step-2-log-c",
+        ]
+        assert [s_.step for s_ in steps] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_emitter_finalize_run_drains_emit_serial_queue_before_run_done(
+    app, session
+):
+    """``_finalize_run``（被 ``force_finish`` / ``_forward_run_finish`` 调用）
+    必须先 ``_drain_serial_queue()`` 再写 Run 终态 + 广播 RUN_DONE。
+
+    否则会出现："Run.status = success" 已写完但 RunLog/RunStep 还在
+    后台 worker 队列里没 commit，前端报告查接口会看到「任务已结束但
+    缺最后几条日志」的窗口。这是改造的核心承诺之一：不要求实时性，
+    但 Run 结束时所有日志都要齐全。
+    """
+    from ai_phone.server.models import RunLog
+
+    run = Run(
+        id="emit-serial-drain-run",
+        device_serial="S1",
+        agent_id="agent-server-brain",
+        goal="g",
+        status="running",
+        execution_mode="server_brain",
+    )
+    session.add(run)
+    await session.commit()
+
+    emitter = ServerRunEmitter(
+        run_id="emit-serial-drain-run",
+        serial="S1",
+        hub=SlowBroadcastHub(),  # broadcast 慢，让队列里有"未处理"事件压力
+        lock_store=DeviceLockStore(),
+        session_factory=db_module.get_session_factory(),
+    )
+
+    titles = [f"final-step-{i:02d}" for i in range(5)]
+    for title in titles:
+        emitter.emit_serial(log_event("emit-serial-drain-run", 1, title, "x"))
+
+    # force_finish → _log_token_summary（也走 emit_serial）→ _finalize_run
+    # → _drain_serial_queue → 写 Run 终态。drain 必须排空到 Token 统计 那条。
+    await emitter.force_finish(
+        result="finished",
+        message="ok",
+        elapsed_ms=100,
+        steps=5,
+        token_stats={"total_tokens": 7, "prompt_tokens": 5, "completion_tokens": 2, "call_count": 1},
+    )
+
+    async with db_module.get_session_factory()() as s:
+        run_after = (
+            await s.execute(select(Run).where(Run.id == "emit-serial-drain-run"))
+        ).scalar_one()
+        rows = (
+            await s.execute(
+                select(RunLog)
+                .where(RunLog.run_id == "emit-serial-drain-run")
+                .order_by(RunLog.id.asc())
+            )
+        ).scalars().all()
+        # Run 已 finished 时，emit_serial 投入的 5 条 step 日志 + force_finish
+        # 内部 _log_token_summary 投入的 1 条"Token 统计"必须全部在 DB 里。
+        # 顺序：5 条 step 在前，Token 统计在 _finalize_run 收尾时入队所以在最后。
+        assert run_after.status == "success"
+        assert [r.title for r in rows] == titles + ["Token 统计"]

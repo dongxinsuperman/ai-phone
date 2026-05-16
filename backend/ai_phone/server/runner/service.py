@@ -273,17 +273,18 @@ class ServerRunnerService:
             )
             if replay_done:
                 return
-            # 首跑用 emitter.aemit（顺序保序版）而非 emitter.emit：
-            # emit 把 EVT_LOG/EVT_STEP_END/EVT_SCREENSHOT 丢进后台 ensure_future，
-            # 调度无序会让"#1 第 1 步完成"被甩到"#2 ━━ 第 2 步 ━━"之后；
-            # aemit 用 _serial_lock 串行 await，保证调用顺序就是 DB/WS 写入顺序。
-            # VLMRunner._emit_event 已经 `await _maybe_await(result)`，
-            # callback 返回 coroutine 即可被 await 透明衔接。
+            # 首跑用 emitter.emit_serial（同步入队 + 后台单 worker 串行）：
+            # 替代之前的 emitter.aemit。aemit 把 await DB commit + WS 广播
+            # 留在主流程上，每步多打几条日志就拖慢主流程节拍；emit_serial
+            # 调用方瞬间返回（put_nowait），后台 worker 按 FIFO 串行处理，
+            # DB / WS 顺序仍然就是调用顺序，"#1 第 1 步完成"也不会被甩到
+            # "#2 ━━ 第 2 步 ━━"之后。VLMRunner._emit_event 收到同步函数
+            # 返回的 None，await _maybe_await(None) 直接跳过 → 主流程零阻塞。
             runner = self._runner_factory(
                 run_id=run_id,
                 driver=driver,
                 goal=goal,
-                emit=emitter.aemit,
+                emit=emitter.emit_serial,
             )
             await runner.run()
         except asyncio.CancelledError:
@@ -376,19 +377,17 @@ class ServerRunnerService:
         async def _log(
             level: int, title: str, content: str, step: Optional[int] = None
         ) -> None:
-            # 缓存回放日志是用户排查执行链路的主线，必须按 await 顺序落库/广播。
-            # 不能走 emitter.emit() 的后台队列，否则步骤开始/完成在 UI 上会重排。
+            # 缓存回放日志走 emit_serial：调用方主流程零阻塞（put_nowait
+            # 立刻返回），后台单 worker 按 FIFO 串行 await DB commit + WS
+            # 广播。日志在 UI 上的展示顺序与调用顺序一致，但不再占用回放
+            # 主线时间——回放节拍仅由 driver 与比对算法决定。
             #
             # ``step`` 参数：端点行（缓存步骤 / 缓存完成）显式传入 index，
             # 让前端拿 step 字段渲染 ``#N`` 前缀，缓存日志的步骤端点视觉对齐
             # 首跑（同样靠 step 渲染 ``#N``）。过程行不传 step（约定见
             # docs/缓存回放步骤化日志改造方案.md "端点 #N，过程不带 #N"）。
             event = log_event(run_id, level, title, content, step=step)
-            forward_log = getattr(emitter, "_forward_log", None)
-            if callable(forward_log):
-                await forward_log(event)
-            else:
-                emitter.emit(event)
+            emitter.emit_serial(event)
 
         get_cache = (
             get_active_trajectory_cache_v1
@@ -475,18 +474,17 @@ class ServerRunnerService:
                 )
 
         runner_cls = V1ReplayRunner if cache_mode == "v1" else V2ReplayRunner
-        # 用 emitter.aemit（顺序保序版）而非 emitter.emit：缓存的
-        # `_emit_step_end` / `_emit_screenshot` 现在已经 async + await，emit
-        # callback 返回 coroutine 时会被 `_emit_maybe_await` 接住串行。否则
-        # EVT_STEP_END 入后台队列、下一步的 `await _forward_log("缓存步骤")`
-        # 同步落库，会让 `#N 第 N 步完成 · click` 被甩到 `#N+1 缓存步骤`
-        # 之后（用户在 17:51:19.908 那个 log 看到的乱序就是这个）。
+        # 用 emitter.emit_serial（同步入队 + 后台串行 worker）替代 aemit：
+        # `_emit_step_end` / `_emit_screenshot` 内部 `_emit_maybe_await` 收到
+        # 同步函数返回的 None 直接跳过，主流程零阻塞；DB / WS 顺序由后台
+        # worker FIFO 保证，"#N 第 N 步完成" 仍不会被甩到 "#N+1 缓存步骤"
+        # 之后（顺序铁律以入队顺序为准，与同步 await 等价）。
         runner = runner_cls(
             driver=driver,
             trajectory=trajectory,
             run_id=run_id,
             log=_log,
-            emit=emitter.aemit,
+            emit=emitter.emit_serial,
             capture_after_each_action=True,
             recovery_verifier=recovery_verifier,
             ephemeral_gate_verifier=ephemeral_gate_verifier,
@@ -600,15 +598,11 @@ class ServerRunnerService:
         async def _log(
             level: int, title: str, content: str, step: Optional[int] = None
         ) -> None:
-            # V3 回放同样要求步骤边界严格有序，定位/辅助/完成块不能被后台日志重排。
-            # ``step`` 参数语义同 V1/V2 的 _log——端点行带 step 让前端渲染 ``#N``，
-            # 过程行不带。
+            # V3 回放日志同样走 emit_serial：主流程零阻塞，后台单 worker
+            # FIFO 保序。语义同 V1/V2 _log——端点行带 step 让前端渲染 #N，
+            # 过程行不带（约定见 docs/缓存回放步骤化日志改造方案.md）。
             event = log_event(run_id, level, title, content, step=step)
-            forward_log = getattr(emitter, "_forward_log", None)
-            if callable(forward_log):
-                await forward_log(event)
-            else:
-                emitter.emit(event)
+            emitter.emit_serial(event)
 
         cache = await get_active_trajectory_cache_v3(
             self._session_factory,
@@ -627,14 +621,15 @@ class ServerRunnerService:
             f"命中缓存：复用上次成功路线 cache_key={cache_key[:12]}",
         )
 
-        # 同 V1/V2：缓存路径用 emitter.aemit 串行 EVT_STEP_END / EVT_SCREENSHOT，
-        # 避免 `#N 第 N 步完成 · click` 被甩到 `#N+1 缓存步骤` 之后。
+        # 同 V1/V2：缓存路径用 emitter.emit_serial（同步入队 + 后台串行
+        # worker），主流程零阻塞、顺序由 worker FIFO 保证；不再走 aemit
+        # 的"主流程同步 await DB + WS"。
         runner = V3ReplayRunner(
             driver=driver,
             trajectory=trajectory,
             run_id=run_id,
             log=_log,
-            emit=emitter.aemit,
+            emit=emitter.emit_serial,
             capture_after_each_action=True,
             goal=goal,
             main_vlm_backend=trajectory.get("source_vlm_backend")

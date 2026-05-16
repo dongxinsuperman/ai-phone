@@ -1015,10 +1015,15 @@ class FakeEmitter:
         self.events.append(evt)
 
     async def aemit(self, evt):
-        # 顺序保序版的 emit；缓存路径（V1/V2/V3）走这条接口，避免
-        # `#N 第 N 步完成 · click` 被甩到下一步 `#N+1 缓存步骤` 之后。
-        # 在 FakeEmitter 里串行 await 等价于直接 append——足够给单测验证
-        # 调用顺序就是 events 顺序。
+        # 顺序保序版的 emit；保留是为了覆盖 emitter.aemit 自身的单测
+        # （test_emitter_aemit_serializes_log_writes_in_call_order 等），
+        # 缓存 / 首跑主路径已切到 emit_serial。
+        self.events.append(evt)
+
+    def emit_serial(self, evt):
+        # 模拟 ServerRunEmitter.emit_serial：调用方同步入队，FakeEmitter
+        # 用 list.append 直接追加；调用顺序 = events 顺序，与生产代码"后台
+        # worker FIFO 处理"得到的最终顺序等价，足够单测验证保序。
         self.events.append(evt)
 
     async def force_finish(self, **kwargs):
@@ -4209,16 +4214,17 @@ async def test_server_runner_v2_recovery_and_gate_use_current_config_backend(
     assert FakeReplayRunner.last_init_kwargs
     assert isinstance(FakeReplayRunner.last_init_kwargs["recovery_verifier"], FakeRecovery)
     assert isinstance(FakeReplayRunner.last_init_kwargs["ephemeral_gate_verifier"], FakeGate)
-    # 顺序保序：service 必须给缓存 runner 传 emitter.aemit（async 顺序保序版）
-    # 而不是 emitter.emit（同步丢后台 → 乱序）。回归一旦把 aemit 改回 emit，
-    # 用户在生产环境就会看到 "#N 第 N 步完成 · click" 排到 "#N+1 缓存步骤"
-    # 之后那个 bug。
+    # 顺序保序：service 必须给缓存 runner 传 emitter.emit_serial（同步入队 +
+    # 后台单 worker FIFO 串行落库），而不是 emitter.emit（独立 task 丢后台
+    # → 乱序）或 emitter.aemit（主流程同步 await DB+WS → 拖慢回放节拍）。
+    # 回归一旦把 emit_serial 改回 emit，"#N 第 N 步完成 · click" 又会排到
+    # "#N+1 缓存步骤"之后；改回 aemit 则回到 V2 每步 12s 那个性能 bug。
     runner_emit = FakeReplayRunner.last_init_kwargs["emit"]
     assert (
         getattr(runner_emit, "__self__", None) is emitter
-        and getattr(runner_emit, "__func__", None) is type(emitter).aemit
+        and getattr(runner_emit, "__func__", None) is type(emitter).emit_serial
     ), (
-        f"缓存路径必须传 emitter.aemit 而不是 emitter.emit，实际={runner_emit!r}"
+        f"缓存路径必须传 emitter.emit_serial（同步入队保序版），实际={runner_emit!r}"
     )
 
 
@@ -4299,13 +4305,13 @@ async def test_server_runner_v1_cache_reads_v1_table_and_disables_enhancements(
     assert FakeReplayRunner.last_init_kwargs
     assert FakeReplayRunner.last_init_kwargs["recovery_verifier"] is None
     assert FakeReplayRunner.last_init_kwargs["ephemeral_gate_verifier"] is None
-    # 同 V2：V1 也必须走 aemit，避免事件乱序回归。
+    # 同 V2：V1 也必须走 emit_serial，主流程零阻塞 + 后台 worker 保序。
     runner_emit = FakeReplayRunner.last_init_kwargs["emit"]
     assert (
         getattr(runner_emit, "__self__", None) is emitter
-        and getattr(runner_emit, "__func__", None) is type(emitter).aemit
+        and getattr(runner_emit, "__func__", None) is type(emitter).emit_serial
     ), (
-        f"V1 缓存路径必须传 emitter.aemit 而不是 emitter.emit，实际={runner_emit!r}"
+        f"V1 缓存路径必须传 emitter.emit_serial（同步入队保序版），实际={runner_emit!r}"
     )
 
 
@@ -4393,13 +4399,14 @@ async def test_server_runner_v3_cache_replay_finishes_when_assertion_passes(
         "缓存稳定",
         "V3最终校验",
     ]
-    # 同 V1/V2：V3 也必须传 emitter.aemit，让 EVT_STEP_END 顺序串行。
+    # 同 V1/V2：V3 也必须传 emitter.emit_serial，主流程零阻塞 + EVT_STEP_END
+    # 顺序由后台 worker FIFO 保证。
     runner_emit = FakeReplayRunner.last_init_kwargs["emit"]
     assert (
         getattr(runner_emit, "__self__", None) is emitter
-        and getattr(runner_emit, "__func__", None) is type(emitter).aemit
+        and getattr(runner_emit, "__func__", None) is type(emitter).emit_serial
     ), (
-        f"V3 缓存路径必须传 emitter.aemit 而不是 emitter.emit，实际={runner_emit!r}"
+        f"V3 缓存路径必须传 emitter.emit_serial（同步入队保序版），实际={runner_emit!r}"
     )
 
 

@@ -49,13 +49,15 @@ ReplayEmitFn = Callable[[Dict[str, Any]], Any]
 
 
 async def _emit_maybe_await(result: Any) -> None:
-    """``self.emit`` 现在可能是同步 ``emitter.emit`` 或异步 ``emitter.aemit``。
+    """``self.emit`` 可能是同步函数（``emitter.emit`` / ``emitter.emit_serial``）
+    或异步函数（``emitter.aemit``）。三种形态都要被透明衔接。
 
-    缓存回放强烈依赖事件顺序（``EVT_STEP_END`` 必须在下一步 ``EVT_LOG``
-    之前落库，否则 ``#N 第 N 步完成 · click`` 会被甩到 ``#N+1 缓存步骤``
-    之后），所以三个 emit 包装方法都改成 async + 在这里 await——只要
-    service 那层传 ``emitter.aemit``，顺序就由 ``_serial_lock`` 保证；
-    传同步 ``emitter.emit`` 时则等价于老行为，单测不会破。
+    缓存回放依赖事件顺序（``EVT_STEP_END`` 必须在下一步 ``EVT_LOG`` 之前
+    落库，否则 ``#N 第 N 步完成 · click`` 会被甩到 ``#N+1 缓存步骤`` 之后）。
+    生产现在传的是 ``emitter.emit_serial``：调用方瞬间返回（put_nowait），
+    DB / WS 顺序由后台单 worker FIFO 保证；这里 await 一个 None 直接跳过，
+    主流程零阻塞。``emitter.aemit`` 的旧调用点保留兼容（返回 coroutine 时
+    仍走 await），单测和向后兼容都不会破。
     """
     if asyncio.iscoroutine(result):
         await result

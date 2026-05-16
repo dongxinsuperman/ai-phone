@@ -77,6 +77,13 @@ class ServerRunEmitter:
         # DB / WS 写入顺序错乱（典型现象：「#1 第 1 步完成」被甩到
         # 「━━ 第 2 步 ━━」之后，时间戳还相同）。
         self._serial_lock = asyncio.Lock()
+        # _serial_queue + _serial_worker_task 给 emit_serial 用：调用方"同步
+        # 入队"立刻返回，后台单 worker 协程按 FIFO 串行 await 处理 DB / WS。
+        # 入队顺序 = worker 处理顺序 = DB commit 顺序 = WS 广播顺序，所以
+        # "#1 第 1 步完成" 仍不会被甩到 "#2 ━━ 第 2 步 ━━" 之后；同时主
+        # 流程零阻塞，回放/首跑节拍只受 driver 与 VLM 真实耗时影响。
+        self._serial_queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
+        self._serial_worker_task: Optional[asyncio.Task] = None
         self.finished = False
 
     def emit(self, evt: Dict[str, Any]) -> None:
@@ -140,7 +147,93 @@ class ServerRunEmitter:
         except Exception as exc:  # noqa: BLE001
             logger.exception("ServerRunEmitter.aemit 异常：{}", exc)
 
+    def emit_serial(self, evt: Dict[str, Any]) -> None:
+        """``emit`` 的"同步入队 + 后台保序串行"版：调用方瞬间返回，后台单
+        worker 按入队顺序 await 落库 / 广播。
+
+        与 ``emit()`` 区别：``emit()`` 把每条事件 ``ensure_future`` 成独立
+        task，三 task 调度无序导致 UI 顺序乱。
+        与 ``aemit()`` 区别：``aemit()`` 让调用方在主流程 ``await
+        _serial_lock`` 内同步等 DB commit + WS 广播；首跑 / 回放打日志
+        密度大时会拖慢主流程节拍（V2 缓存回放每步从 ~3s 拖成 ~12s 即此）。
+
+        ``emit_serial`` 把"同步等"的 await 从主流程挪到后台 worker：调用方
+        ``put_nowait`` 立刻返回（≈0 ms），DB / WS 顺序仍由单 worker FIFO
+        保证。是首跑 + 缓存回放主流程的统一发射通道。
+
+        非顺序敏感事件（``EVT_THOUGHT`` / ``EVT_ACTION`` / ``EVT_RUN_FINISH``
+        等）退回 ``emit()`` 的 ensure_future 路径，性能与原行为一致。
+        """
+        t = evt.get("type")
+        if t in (EVT_LOG, EVT_STEP_END, EVT_SCREENSHOT):
+            self._ensure_serial_worker()
+            try:
+                self._serial_queue.put_nowait(evt)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("ServerRunEmitter.emit_serial put_nowait 失败：{}", exc)
+        else:
+            self.emit(evt)
+
+    def _ensure_serial_worker(self) -> None:
+        """lazy 启动 worker：测试和生产都不用提前 start，emit_serial 第一次
+        调用时按需起一个；如果 worker 已经因为异常退出过，自动重启一个新的。
+        """
+        if self._serial_worker_task is None or self._serial_worker_task.done():
+            self._serial_worker_task = asyncio.ensure_future(
+                self._run_serial_worker(), loop=self._loop
+            )
+
+    async def _run_serial_worker(self) -> None:
+        while True:
+            evt = await self._serial_queue.get()
+            try:
+                if evt is None:  # sentinel：aclose 时压入，让 worker 退出
+                    return
+                t = evt.get("type")
+                if t == EVT_LOG:
+                    await self._forward_log(evt)
+                elif t == EVT_STEP_END:
+                    await self._forward_step_end(evt)
+                elif t == EVT_SCREENSHOT:
+                    await self._save_screenshot(evt)
+                else:
+                    logger.debug(
+                        "_run_serial_worker 收到非顺序敏感事件 type={}，回退 emit()",
+                        t,
+                    )
+                    self.emit(evt)
+            except Exception as exc:  # noqa: BLE001
+                # 单条失败不能让队列卡死或 worker 退出——日志/截图丢一条比
+                # 整个 Run 后续日志全部丢失要可接受得多。
+                logger.exception(
+                    "_run_serial_worker 处理事件失败 type={}: {}",
+                    evt.get("type") if evt else None,
+                    exc,
+                )
+            finally:
+                self._serial_queue.task_done()
+
+    async def _drain_serial_queue(self) -> None:
+        """收尾时排空 emit_serial 队列：保证 Run 结束前所有 RunLog / RunStep
+        / 截图都已落库 + 广播。被 force_finish / aclose 调用。
+        """
+        if self._serial_worker_task is None:
+            return
+        if self._serial_worker_task.done():
+            return
+        try:
+            await self._serial_queue.join()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("_drain_serial_queue 等队列排空失败：{}", exc)
+        self._serial_queue.put_nowait(None)
+        try:
+            await self._serial_worker_task
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("_drain_serial_queue 等 worker 退出失败：{}", exc)
+        self._serial_worker_task = None
+
     async def aclose(self) -> None:
+        await self._drain_serial_queue()
         if self._pending_tasks:
             await asyncio.gather(*list(self._pending_tasks), return_exceptions=True)
 
@@ -341,14 +434,17 @@ class ServerRunEmitter:
             )
         if note:
             token_content = f"{token_content} ({note})"
-        self._enqueue(
-            self._forward_log(
-                {
-                    "level": 1,
-                    "title": "Token 统计",
-                    "content": token_content,
-                }
-            )
+        # Token 统计走 emit_serial 而不是老的 _enqueue：所有顺序敏感日志
+        # 必须经同一条保序通道，否则 _finalize_run 里的 _drain_serial_queue
+        # 排不到这条 token 日志，会出现"step 日志全在 DB 里、token 统计还
+        # 卡在后台 task"的窗口。EVT_LOG 是 emit_serial 的顺序敏感事件类型。
+        self.emit_serial(
+            {
+                "type": EVT_LOG,
+                "level": 1,
+                "title": "Token 统计",
+                "content": token_content,
+            }
         )
 
     async def _forward_run_finish(self, evt: Dict[str, Any]) -> None:
@@ -385,6 +481,11 @@ class ServerRunEmitter:
             if self.finished:
                 return
             self.finished = True
+            # 收尾前先排空 emit_serial 队列：让所有"步骤 / 日志 / 截图"都
+            # 落库完成，再写 Run 终态 + 广播 RUN_DONE。否则前端 / 报告接口
+            # 看到 Run 已 finished，但部分 RunLog / RunStep 还在后台 worker
+            # 队列里没写进 DB，会出现"任务结束了但缺日志"的窗口。
+            await self._drain_serial_queue()
             status_map = {
                 "finished": "success",
                 "pass": "success",
