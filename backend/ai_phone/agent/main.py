@@ -20,7 +20,7 @@ import socket
 import threading
 import time
 import traceback
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, get_args
+from typing import Any, Dict, List, Optional, Set, Tuple, get_args
 
 # 模块顶层的 MIRROR_* 常量从 os.environ 读，需要先把 backend/.env 加载进来。
 # pydantic Settings 自己解析 .env 不会注入到 os.environ，所以这里显式 load_dotenv。
@@ -443,6 +443,10 @@ async def _handle_start_run(
     run_id = str(msg.get("run_id") or "").strip()
     serial = str(msg.get("device_serial") or "").strip()
     goal = str(msg.get("goal") or "").strip()
+    try:
+        attempt = max(1, int(msg.get("attempt") or 1))
+    except Exception:  # noqa: BLE001
+        attempt = 1
     # 引擎选择：缺省 'vlm'（与历史行为完全等价）。'midscene' 等外接引擎走不同路径，
     # 比如不开 ai-phone driver、不走 vlm_loop。详见 `Midscene执行器接入方案.md`。
     engine = str(msg.get("engine") or "vlm").strip().lower() or "vlm"
@@ -456,6 +460,7 @@ async def _handle_start_run(
                 "type": P.MSG_RUN_DONE,
                 "run_id": run_id,
                 "serial": serial,
+                "attempt": attempt,
                 "result": "error",
                 "message": "device busy on another run",
                 "steps": 0,
@@ -470,6 +475,7 @@ async def _handle_start_run(
         serial=serial,
         ws_send=client.send,
         server_http_base=client.server_http_base or get_settings().server_http_base,
+        attempt=attempt,
     )
 
     async def _run_task() -> None:
@@ -487,6 +493,7 @@ async def _handle_start_run(
                         "type": P.MSG_RUN_DONE,
                         "run_id": run_id,
                         "serial": serial,
+                        "attempt": attempt,
                         "result": "error",
                         "message": f"open_driver_failed: {exc}",
                         "steps": 0,
@@ -514,6 +521,7 @@ async def _handle_start_run(
                     "type": P.MSG_RUN_DONE,
                     "run_id": run_id,
                     "serial": serial,
+                    "attempt": attempt,
                     "result": "error",
                     "message": f"init_runner_failed: {exc}",
                     "steps": 0,
@@ -533,6 +541,7 @@ async def _handle_start_run(
                     "type": P.MSG_RUN_DONE,
                     "run_id": run_id,
                     "serial": serial,
+                    "attempt": attempt,
                     "result": "cancelled",
                     "message": "stopped_by_server",
                     "steps": 0,
@@ -548,6 +557,7 @@ async def _handle_start_run(
                     "type": P.MSG_RUN_DONE,
                     "run_id": run_id,
                     "serial": serial,
+                    "attempt": attempt,
                     "result": "error",
                     "message": f"runner_crash: {exc}",
                     "steps": 0,

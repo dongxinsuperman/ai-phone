@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
+from typing import Any, Dict, List, Literal, NotRequired, Optional, TypedDict, Union
 
 # ---------------------------------------------------------------------------
 # 消息类型枚举（字符串字面量）
@@ -94,6 +94,7 @@ LogLevel = Literal[1, 2, 3]  # 对齐 Sonic：1=info, 2=warn, 3=error
 class LogMsg(TypedDict, total=False):
     type: Literal["log"]
     run_id: Optional[str]
+    attempt: int
     level: LogLevel
     title: str
     content: str
@@ -104,6 +105,7 @@ class LogMsg(TypedDict, total=False):
 class StepDoneMsg(TypedDict, total=False):
     type: Literal["step_done"]
     run_id: str
+    attempt: int
     step_index: int
     thought: str
     action: str
@@ -117,6 +119,7 @@ class StepDoneMsg(TypedDict, total=False):
 class FrameMsg(TypedDict, total=False):
     type: Literal["frame"]
     serial: str
+    attempt: int
     # 两种传法：直接 base64 或先上传后带 url，二选一
     frame_base64: Optional[str]
     frame_url: Optional[str]
@@ -161,6 +164,7 @@ RunEngine = Literal["vlm", "midscene"]
 class RunDoneMsg(TypedDict, total=False):
     type: Literal["run_done"]
     run_id: str
+    attempt: int
     result: RunResult
     message: str
     steps: int
@@ -366,6 +370,7 @@ class StartRunMsg(TypedDict):
     run_id: str
     device_serial: str
     goal: str
+    attempt: NotRequired[int]
 
 
 class StopRunMsg(TypedDict):

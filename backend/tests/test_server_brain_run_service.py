@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 import pytest
 from sqlalchemy import select
 
+from ai_phone.config import get_settings
 from ai_phone.agent.runner.events import (
     EVT_RUN_FINISH,
     EVT_STEP_END,
@@ -449,6 +450,88 @@ async def test_scheduler_retries_failed_run_in_same_run(app, session):
     terminal_events = [e for e in publisher.events if e.get("event") == "submission.item.terminal"]
     assert len(terminal_events) == 1
     assert terminal_events[0]["attempts"] == 2
+
+
+@pytest.mark.asyncio
+async def test_api_retry_cancel_during_cooldown_blocks_next_attempt(app, client, session, monkeypatch):
+    FailOnceThenSuccessRunner.calls = {}
+    settings = get_settings()
+    monkeypatch.setattr(settings, "run_retry_enabled", True)
+    monkeypatch.setattr(settings, "run_retry_max", 1)
+    monkeypatch.setattr(settings, "run_retry_cooldown_sec", 0.5)
+    monkeypatch.setattr(settings, "run_retry_clear_cache", False)
+
+    hub = Hub()
+    fake_ws = FakeWS()
+    await hub.register_agent("agent-server-brain", "agent", "test", fake_ws)
+    await hub.set_devices("agent-server-brain", {"S1"})
+    app.state.hub = hub
+
+    lock_store = app.state.lock_store
+    waiter = DriverRpcWaiter()
+    runner = ServerRunnerService(
+        hub=hub,
+        lock_store=lock_store,
+        session_factory=db_module.get_session_factory(),
+        waiter=waiter,
+        runner_factory=FailOnceThenSuccessRunner,
+    )
+    dispatch = RunDispatchService(hub=hub, server_runner=runner)
+    scheduler = SubmissionScheduler(
+        hub=hub,
+        lock_store=lock_store,
+        session_factory=db_module.get_session_factory(),
+        publisher=MemoryPublisher(),
+        dispatch_service=dispatch,
+    )
+    runner.set_on_run_done(scheduler.on_run_done)
+    app.state.server_runner_service = runner
+    app.state.run_dispatch_service = dispatch
+
+    session.add(
+        Device(
+            serial="S1",
+            platform="android",
+            status="online",
+            agent_id="agent-server-brain",
+        )
+    )
+    await session.commit()
+
+    resp = await client.post(
+        "/api/runs",
+        json={"device_serial": "S1", "goal": "do it", "retryMax": 1},
+    )
+    assert resp.status_code == 201, resp.text
+    run_id = resp.json()["id"]
+
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        await asyncio.sleep(0.02)
+        async with db_module.get_session_factory()() as s:
+            run = await s.get(Run, run_id)
+            if (
+                run is not None
+                and run.status == "failed"
+                and FailOnceThenSuccessRunner.calls.get(run_id) == 1
+            ):
+                break
+    assert FailOnceThenSuccessRunner.calls.get(run_id) == 1
+
+    stop = await client.post(f"/api/runs/{run_id}/stop")
+    assert stop.status_code == 200
+    assert stop.json()["status"] == "stopped"
+
+    await asyncio.sleep(0.7)
+
+    async with db_module.get_session_factory()() as s:
+        run = await s.get(Run, run_id)
+        assert run is not None
+        assert run.status == "stopped"
+        assert run.reason == "stopped_by_user"
+        assert run.attempts == 1
+    assert FailOnceThenSuccessRunner.calls.get(run_id) == 1
+    assert lock_store.peek("S1") is None
 
 
 @pytest.mark.asyncio

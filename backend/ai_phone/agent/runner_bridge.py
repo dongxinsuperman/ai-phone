@@ -44,11 +44,13 @@ class RunnerBridge:
         serial: str,
         ws_send: SendFn,
         server_http_base: str,
+        attempt: int = 1,
         loop: Optional[asyncio.AbstractEventLoop] = None,
         http_timeout: float = 15.0,
     ):
         self.run_id = run_id
         self.serial = serial
+        self.attempt = max(1, int(attempt or 1))
         self._send = ws_send
         self._http = httpx.AsyncClient(base_url=server_http_base, timeout=http_timeout)
         self._loop = loop or asyncio.get_event_loop()
@@ -145,6 +147,7 @@ class RunnerBridge:
                             "type": P.MSG_LOG,
                             "run_id": self.run_id,
                             "serial": self.serial,
+                            "attempt": self.attempt,
                             "level": 1,
                             "title": "Token 统计",
                             "content": token_content,
@@ -170,6 +173,7 @@ class RunnerBridge:
                 "type": P.MSG_LOG,
                 "run_id": self.run_id,
                 "serial": self.serial,
+                "attempt": self.attempt,
                 "level": int(evt.get("level", 1)),
                 "step": evt.get("step"),
                 "title": evt.get("title", ""),
@@ -203,6 +207,7 @@ class RunnerBridge:
                 "type": P.MSG_FRAME,
                 "run_id": self.run_id,
                 "serial": self.serial,
+                "attempt": self.attempt,
                 "step": step,
                 "phase": phase,
                 "frame_url": url,
@@ -227,6 +232,7 @@ class RunnerBridge:
                 "type": P.MSG_STEP_DONE,
                 "run_id": self.run_id,
                 "serial": self.serial,
+                "attempt": self.attempt,
                 "step": step,
                 "thought": evt.get("thought", ""),
                 "action": evt.get("action", ""),
@@ -254,6 +260,7 @@ class RunnerBridge:
             "type": P.MSG_RUN_DONE,
             "run_id": self.run_id,
             "serial": self.serial,
+            "attempt": self.attempt,
             "result": result,
             "message": message,
             "steps": int(evt.get("steps") or 0),

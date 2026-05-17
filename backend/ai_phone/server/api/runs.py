@@ -326,7 +326,9 @@ async def stop_run(
     run = await session.get(Run, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
-    if run.status in ("success", "failed"):
+    if run.status == "success":
+        return run.to_dict()
+    if run.status == "failed" and not _run_retry_pending(run):
         return run.to_dict()
     # agent_brain 的 stop 是软停：先发 stop_run，等 Agent 回 MSG_RUN_DONE 后
     # 才算真正完成。历史上可能出现 status=stopped 但 finished_at 为空、且 Hub
@@ -347,7 +349,7 @@ async def stop_run(
             await hub.send_to_agent(run.agent_id, payload)
 
     run.status = "stopped"
-    run.reason = run.reason or "stopped_by_user"
+    run.reason = "stopped_by_user"
     await session.commit()
     # 新锁模型：外部传入的锁不归属 run，由发起方（浏览器 tab / 调度端）自己管释放。
     # 但 POST /api/runs 自己代抢的 job 锁需要在 stop 时释放，否则设备会卡到 TTL 过期。
@@ -360,6 +362,20 @@ async def stop_run(
     payload = run.to_dict()
     payload["error_summary"] = await _build_error_summary(run, session)
     return payload
+
+
+def _run_retry_pending(run: Run) -> bool:
+    """Return whether a failed API run may still launch a retry attempt."""
+
+    try:
+        attempt = max(1, int(run.last_attempt or run.attempts or 1))
+    except Exception:  # noqa: BLE001
+        attempt = 1
+    try:
+        retry_max = max(0, int(run.effective_retry_max or 0))
+    except Exception:  # noqa: BLE001
+        retry_max = 0
+    return run.status == "failed" and retry_max > 0 and attempt <= retry_max
 
 
 def _dispatch_service(request: Request, hub: Hub) -> RunDispatchService:
