@@ -638,6 +638,9 @@ class V3ReplayRunner:
         self._final_before_bytes: Optional[bytes] = None
         self._final_after_bytes: Optional[bytes] = None
         settings = get_settings()
+        # 缓存 settings 供 _screenshot_jpeg 等运行期方法读 vlm_backend；其他派
+        # 生字段已就地解到具体属性上，本字段只承担"运行期读 backend"职责。
+        self._settings = settings
         self._ephemeral_gate_calls_used = 0
         self._ephemeral_gate_max_calls = int(settings.trajectory_cache_ephemeral_gate_max_calls or 0)
         self._v3_rescue_calls_used = 0
@@ -1423,7 +1426,27 @@ class V3ReplayRunner:
         )
 
     async def _screenshot_jpeg(self) -> bytes:
-        return await asyncio.to_thread(self.driver.screenshot_jpeg, 25, 720)
+        # V3 缓存回放路径下的辅助 VLM（plan_locator / rescue_vlm /
+        # ephemeral_gate / assertion_vlm）会拿这张截图去定位 / 决策；必须与
+        # 首跑主 VLM 在同一 backend 下使用相同的截图压缩参数，否则
+        # claude_cu / gpt_cu 这类对压缩高度敏感的模型会因低画质识别错位置，
+        # 给出看似合理但落空的坐标。
+        # - claude_cu / gpt_cu：用满 Claude Sonnet/Opus/Haiku 4.6 系硬上限
+        #   max_long_edge=1568（>1568 会被 API 静默降采样，识别精度反掉）；
+        #   quality=90 远高于 Anthropic 推荐下限 70。Opus 4.7 的 2576 上限
+        #   和 OpenAI computer-use-preview 的 2048 上限对 1568 都安全不浪费。
+        # - 其他（豆包系等）：max_side=None 保持设备原始分辨率，quality=95
+        #   接近无损，对齐老 sonic 脚本"原图直接喂模型"的零压缩语义。
+        # 选参与 agent/runner/vlm_loop.py、replay.py 保持同口径，但每处独立
+        # 内联——后续若按 backend 单独调参，互不牵扯。
+        backend = (self._settings.vlm_backend or "").strip().lower()
+        if backend in ("claude_cu", "gpt_cu"):
+            quality, max_long_edge = 90, 1568
+        else:
+            quality, max_long_edge = 95, None
+        return await asyncio.to_thread(
+            self.driver.screenshot_jpeg, quality, max_long_edge
+        )
 
     async def _wait_stable_for_step(self, index: int, *, phase: str) -> Optional[bytes]:
         reused_before = self._last_frame is not None

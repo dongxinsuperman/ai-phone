@@ -5542,12 +5542,14 @@ def test_decode_image_size_handles_jpeg_and_garbage():
 
 @pytest.mark.asyncio
 async def test_replay_runner_recovery_repair_action_absolute_rescales_to_device(monkeypatch):
-    """Bug 修复回归：claude_cu / gpt_cu 路径下，模型看到的"附图 2"是 720 max-edge
-    JPEG（来自 driver.screenshot_jpeg(25, 720)）。模型按这个尺寸输出 absolute
-    坐标 e.g. (320, 480)，**必须**按 (model_image_size 720x360 → device 1000x2000)
-    等比缩回设备坐标 (444, 2666→1999clamp)，不能直接 clamp。
+    """Bug 修复回归：claude_cu / gpt_cu 路径下，模型看到的"附图 2"是按
+    backend 协议参数压缩后的 JPEG（_screenshot_jpeg 内决定具体 quality /
+    max_long_edge），模型按这个尺寸输出 absolute 坐标，**必须**按
+    (model_image_size → device_window_size) 等比缩回设备坐标，不能直接 clamp。
 
-    场景：模型送图 720x360（横屏 720 max-edge），device 1000x2000，模型回 (320, 100)：
+    本测试不验证压缩参数本身，只验证"模型坐标 → 设备坐标"的等比缩放语义，
+    所以为构造方便用 720x360 当作模型送图尺寸（与生产 1568 上限解耦）：
+    device 1000x2000，模型回 (320, 100)：
       - 旧实现：直接 clamp → (320, 100) ← 错位（落在屏幕中上区）
       - 新实现：等比 → (320*1000/720=444, 100*2000/360=555) ← 正确落点
     """
@@ -6124,3 +6126,77 @@ async def test_replay_runner_recovery_call_limit_marks_case_unhealthy(monkeypatc
         title == "轨迹缓存 VLM 兜底" and "case/cache 不健康" in content
         for _level, title, content in logs
     )
+
+
+# ---------------------------------------------------------------------------
+# 辅助 VLM 截图压缩参数：必须与首跑主 VLM 同 backend 同口径，
+# 否则 claude_cu / gpt_cu 这类对画质敏感的 Computer Use 模型会因低画质识别失准
+# 给出看似合理但落空的坐标。三处入口（agent/runner/vlm_loop.py、replay.py、
+# v3_replay.py）按"高冗余低耦合"独立内联，下面四个测试每条线路分别钉死参数。
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_v1v2_replay_screenshot_uses_doubao_full_resolution_params(monkeypatch):
+    from ai_phone.server.trajectory_cache import replay as replay_module
+
+    settings = Settings(_env_file=None, vlm_backend="doubao_responses")
+    monkeypatch.setattr(replay_module, "get_settings", lambda: settings)
+
+    driver = FakeDriver()
+    runner = replay_module.V2ReplayRunner(
+        driver=driver,
+        trajectory={"actions": []},
+    )
+    await runner._screenshot_jpeg()
+
+    screenshot_calls = [c for c in driver.calls if c[0] == "screenshot_jpeg"]
+    assert screenshot_calls == [("screenshot_jpeg", 95, None)]
+
+
+@pytest.mark.asyncio
+async def test_v1v2_replay_screenshot_uses_claude_cu_high_quality_params(monkeypatch):
+    from ai_phone.server.trajectory_cache import replay as replay_module
+
+    settings = Settings(_env_file=None, vlm_backend="claude_cu")
+    monkeypatch.setattr(replay_module, "get_settings", lambda: settings)
+
+    driver = FakeDriver()
+    runner = replay_module.V2ReplayRunner(
+        driver=driver,
+        trajectory={"actions": []},
+    )
+    await runner._screenshot_jpeg()
+
+    screenshot_calls = [c for c in driver.calls if c[0] == "screenshot_jpeg"]
+    assert screenshot_calls == [("screenshot_jpeg", 90, 1568)]
+
+
+@pytest.mark.asyncio
+async def test_v3_replay_screenshot_uses_doubao_full_resolution_params(monkeypatch):
+    from ai_phone.server.trajectory_cache import v3_replay as v3_replay_module
+
+    settings = Settings(_env_file=None, vlm_backend="doubao_responses")
+    monkeypatch.setattr(v3_replay_module, "get_settings", lambda: settings)
+
+    driver = FakeDriver()
+    runner = V3ReplayRunner(driver=driver, trajectory={"actions": []})
+    await runner._screenshot_jpeg()
+
+    screenshot_calls = [c for c in driver.calls if c[0] == "screenshot_jpeg"]
+    assert screenshot_calls == [("screenshot_jpeg", 95, None)]
+
+
+@pytest.mark.asyncio
+async def test_v3_replay_screenshot_uses_claude_cu_high_quality_params(monkeypatch):
+    from ai_phone.server.trajectory_cache import v3_replay as v3_replay_module
+
+    settings = Settings(_env_file=None, vlm_backend="claude_cu")
+    monkeypatch.setattr(v3_replay_module, "get_settings", lambda: settings)
+
+    driver = FakeDriver()
+    runner = V3ReplayRunner(driver=driver, trajectory={"actions": []})
+    await runner._screenshot_jpeg()
+
+    screenshot_calls = [c for c in driver.calls if c[0] == "screenshot_jpeg"]
+    assert screenshot_calls == [("screenshot_jpeg", 90, 1568)]

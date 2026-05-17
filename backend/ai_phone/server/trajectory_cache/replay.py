@@ -38,7 +38,6 @@ from ai_phone.server.trajectory_cache.recovery import (
     VERDICT_ASSERT_FAIL,
     VERDICT_CONTINUE,
     VERDICT_REPAIR_ACTION,
-    VERDICT_WAIT_MORE,
     CacheReplayRecoveryVerifier,
     RecoveryDecision,
 )
@@ -206,6 +205,9 @@ class ReplayRunner:
             else str(trajectory.get("run_semantic_text") or "")
         )
         settings = get_settings()
+        # 缓存 settings 供 _screenshot_jpeg 等运行期方法读 vlm_backend；其他派
+        # 生字段已就地解到具体属性上，本字段只承担"运行期读 backend"职责。
+        self._settings = settings
         self.observe_delay_ms = (
             max(0, int(observe_delay_ms))
             if observe_delay_ms is not None
@@ -286,10 +288,10 @@ class ReplayRunner:
         # 不参与执行决策，避免用户误以为修复成功后又重复回放了同一步。
         self._recovery_repaired_actions: Dict[str, int] = {}
         # claude_cu / gpt_cu recovery 路径专用：模型看到的截图实际像素尺寸
-        # （= self._screenshot_jpeg() 返回的 JPEG 解码后的 width/height，被
-        # driver.screenshot_jpeg(25, 720) 压缩到 720 max-edge）。模型按这个
-        # 尺寸输出 absolute 坐标，必须按 (model_image_size → device_window_size)
-        # 等比反算才能落到设备真实坐标系。豆包 normalized 路径不读本字段。
+        # （= self._screenshot_jpeg() 返回的 JPEG 解码后的 width/height）。
+        # 模型按这个尺寸输出 absolute 坐标，必须按 (model_image_size →
+        # device_window_size) 等比反算才能落到设备真实坐标系。具体压缩参数
+        # 见 _screenshot_jpeg；豆包 normalized 路径不读本字段。
         self._recovery_image_size: Optional[Tuple[int, int]] = None
         # 单步 status 文案（如 "对齐成功" / "辅助放行" / "已跳过(瞬态)"），
         # 由路标比对 / 辅助 VLM / 修复等深层逻辑实时更新，最终随
@@ -1069,10 +1071,10 @@ class ReplayRunner:
                 )
             self._recovery_calls_used += 1
             # 关键：claude_cu / gpt_cu 路径下，模型按"附图 2"实际像素估
-            # absolute 坐标。附图 2 是 _screenshot_jpeg() 出的 720 max-edge
-            # JPEG，跟设备 window_size 不一致，必须把它实际尺寸记下来，让
-            # _parsed_point_to_abs(absolute) 按比例缩回设备坐标。豆包
-            # normalized 路径解析时不读本字段，只缓存不影响。
+            # absolute 坐标。附图 2 是 _screenshot_jpeg() 出的 JPEG，按当前
+            # backend 的截图协议参数压缩，跟设备 window_size 不一致，必须把
+            # 它实际尺寸记下来，让 _parsed_point_to_abs(absolute) 按比例缩
+            # 回设备坐标。豆包 normalized 路径解析时不读本字段，只缓存不影响。
             self._recovery_image_size = _decode_image_size(latest_bytes)
             decision = await verifier.verify_alignment_miss(
                 goal=self.goal,
@@ -1601,10 +1603,10 @@ class ReplayRunner:
         w, h = await asyncio.to_thread(self.driver.window_size)
         if coord_space == "absolute":
             # claude_cu / gpt_cu 路径：模型坐标是相对【附图 2】实际像素。
-            # 附图 2 = _screenshot_jpeg(25, 720) 出的 720 max-edge JPEG，跟设备
-            # 真实 (w, h) 不一致。如果调用方在 verify 前正确设置了
-            # _recovery_image_size，就按比例反算到设备坐标；否则退化为旧版
-            # "直接 clamp"行为（兜底）。
+            # 附图 2 = _screenshot_jpeg() 出的 JPEG，按当前 backend 的截图
+            # 协议参数压缩，跟设备真实 (w, h) 不一致。如果调用方在 verify
+            # 前正确设置了 _recovery_image_size，就按比例反算到设备坐标；
+            # 否则退化为旧版"直接 clamp"行为（兜底）。
             px, py = int(point[0]), int(point[1])
             img_size = self._recovery_image_size
             if img_size is not None and img_size[0] > 0 and img_size[1] > 0:
@@ -1673,7 +1675,26 @@ class ReplayRunner:
         )
 
     async def _screenshot_jpeg(self) -> bytes:
-        return await asyncio.to_thread(self.driver.screenshot_jpeg, 25, 720)
+        # V1 / V2 缓存回放路径下的辅助 VLM（recovery_vlm / ephemeral_gate /
+        # assertion_vlm）会拿这张截图去定位 / 决策；必须与首跑主 VLM 在同一
+        # backend 下使用相同的截图压缩参数，否则 claude_cu / gpt_cu 这类对
+        # 压缩高度敏感的模型会因低画质识别错位置，给出看似合理但落空的坐标。
+        # - claude_cu / gpt_cu：用满 Claude Sonnet/Opus/Haiku 4.6 系硬上限
+        #   max_long_edge=1568（>1568 会被 API 静默降采样，识别精度反掉）；
+        #   quality=90 远高于 Anthropic 推荐下限 70。Opus 4.7 的 2576 上限
+        #   和 OpenAI computer-use-preview 的 2048 上限对 1568 都安全不浪费。
+        # - 其他（豆包系等）：max_side=None 保持设备原始分辨率，quality=95
+        #   接近无损，对齐老 sonic 脚本"原图直接喂模型"的零压缩语义。
+        # 选参与 agent/runner/vlm_loop.py、v3_replay.py 保持同口径，但每处独立
+        # 内联——后续若按 backend 单独调参，互不牵扯。
+        backend = (self._settings.vlm_backend or "").strip().lower()
+        if backend in ("claude_cu", "gpt_cu"):
+            quality, max_long_edge = 90, 1568
+        else:
+            quality, max_long_edge = 95, None
+        return await asyncio.to_thread(
+            self.driver.screenshot_jpeg, quality, max_long_edge
+        )
 
     async def _observe_after_action(self, *, index: Optional[int] = None) -> None:
         delay_ms = self.observe_delay_ms
@@ -1848,9 +1869,10 @@ def _decode_image_size(image_bytes: Optional[bytes]) -> Optional[Tuple[int, int]
     """从 JPEG/PNG 字节流读出 (width, height)。
 
     主要供 recovery_vlm absolute 坐标反算使用：模型看到的截图是
-    ``driver.screenshot_jpeg(25, 720)`` 出来的 720 max-edge JPEG，模型按这个
-    尺寸估 absolute 像素，而下游 dispatcher 走的是设备真实坐标系，必须按
-    (model_image_size → device_window_size) 等比缩回去。
+    ``driver.screenshot_jpeg(...)`` 出来的 JPEG（具体压缩参数随 vlm_backend
+    分家，见 ``_screenshot_jpeg``），模型按这个尺寸估 absolute 像素，而下
+    游 dispatcher 走的是设备真实坐标系，必须按 (model_image_size →
+    device_window_size) 等比缩回去。
 
     解码失败时返回 ``None``，调用方应退化为"原值 clamp"，避免比例错把好坐标
     扭曲。

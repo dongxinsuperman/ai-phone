@@ -678,7 +678,7 @@ class VLMRunner:
         self._last_tail_bytes: Optional[bytes] = None
         # 最近一次喂给 ``vlm.decide`` 的截图分辨率 (width, height)。仅在
         # ``coord_space="absolute"`` 路径（Claude / GPT CU）反算坐标时使用——
-        # CU 系截图会被 ``max_long_edge=1344`` 缩放，模型给的像素是相对这张
+        # CU 系截图会被 ``max_long_edge=1568`` 缩放，模型给的像素是相对这张
         # 缩图，需要按设备/截图比例缩回设备坐标。豆包路径不读本字段。
         self._last_vlm_screenshot_size: Optional[Tuple[int, int]] = None
         # 上一个 step 主 VLM 决策时看到的 before 帧。在 finished 走断言系统时，
@@ -2717,18 +2717,21 @@ class VLMRunner:
     # 截图 / 坐标辅助
     # ------------------------------------------------------------------
     async def _screenshot_jpeg(self) -> bytes:
-        # 截图参数按主 VLM 协议分家，**豆包路径保持 (25, None) 行为不变**：
-        # - doubao_responses（默认）：模型对 JPEG 压缩伪影不敏感，低画质 +
-        #   设备原始分辨率即可；保留历史参数避免老 case 行为漂移。
-        # - claude_cu / gpt_cu：Anthropic / OpenAI Computer Use 官方推荐截
-        #   图长边 ≤1344px、quality ≥70。低画质会让小文字 / 细线条图标糊
-        #   到识别不出来，原图分辨率会让 token 翻倍但信噪比反而更差，实
-        #   测此组合对 CU 系元素定位精度提升明显。
+        # 截图参数按主 VLM 协议分家，**首跑必须与回放（replay.py /
+        # v3_replay.py 的 _screenshot_jpeg）保持同口径**，否则模型在缓存
+        # 路径上看到的图与首跑那张差一档画质 / 分辨率，识别会漂。
+        # - doubao_responses（默认）：max_side=None 保持设备原始分辨率，
+        #   quality=95 接近无损，对齐老 sonic 脚本"原图直接喂模型"的零
+        #   压缩语义；豆包对压缩伪影不敏感但用户明确要求最高质量优先。
+        # - claude_cu / gpt_cu：用满 Claude Sonnet/Opus/Haiku 4.6 系硬上
+        #   限 max_long_edge=1568（>1568 会被 API 静默降采样反损精度）；
+        #   quality=90 远高于 Anthropic 推荐下限 70。Opus 4.7 上限 2576、
+        #   OpenAI computer-use-preview 上限 2048，对 1568 都安全不浪费。
         backend = (self._settings.vlm_backend or "").lower()
         if backend in ("claude_cu", "gpt_cu"):
-            quality, max_long_edge = 75, 1344
+            quality, max_long_edge = 90, 1568
         else:
-            quality, max_long_edge = 25, None
+            quality, max_long_edge = 95, None
         return await asyncio.to_thread(
             self.driver.screenshot_jpeg, quality, max_long_edge
         )
@@ -2745,7 +2748,7 @@ class VLMRunner:
           老行为，豆包不受影响**。
         - ``"absolute"``（Claude / GPT Computer Use）：模型给的是相对喂给
           它那张截图的绝对像素。需要按 ``(设备 / 截图)`` 比例缩放回设备
-          像素——CU 系会通过 ``max_long_edge=1344`` 缩图，截图分辨率不等
+          像素——CU 系会通过 ``max_long_edge=1568`` 缩图，截图分辨率不等
           于设备分辨率，直接把像素当设备坐标会偏。截图尺寸取自最近一次
           ``vlm.decide`` 喂入帧（见 ``_last_vlm_screenshot_size``）。
         """
