@@ -47,26 +47,36 @@ const runDrawer = ref({
 
 // ---------- 拉取 ----------
 let timer = null
+let refreshInFlight = false
+let refreshAgain = false
 
 async function refresh() {
   if (demoMode.value) return
-  loading.value = true
-  err.value = ''
-  try {
-    const [subs, snap, devs] = await Promise.all([
-      internal.listSubmissions({ limit: 50 }),
-      internal.schedulerSnapshot(),
-      api.listDevices().catch(() => []),
-    ])
-    submissions.value = subs
-    snapshot.value = snap || { queues: {}, running: {} }
-    devicesSnap.value = Array.isArray(devs) ? devs : []
-    lastRefreshedAt.value = Date.now()
-  } catch (e) {
-    err.value = e.detail ? JSON.stringify(e.detail) : e.message
-  } finally {
-    loading.value = false
+  if (refreshInFlight) {
+    refreshAgain = true
+    return
   }
+  refreshInFlight = true
+  loading.value = true
+  do {
+    refreshAgain = false
+    err.value = ''
+    try {
+      const [subs, snap, devs] = await Promise.all([
+        internal.listSubmissions({ limit: 50 }),
+        internal.schedulerSnapshot(),
+        api.listDevices().catch(() => []),
+      ])
+      submissions.value = subs
+      snapshot.value = snap || { queues: {}, running: {} }
+      devicesSnap.value = Array.isArray(devs) ? devs : []
+      lastRefreshedAt.value = Date.now()
+    } catch (e) {
+      err.value = e.detail ? JSON.stringify(e.detail) : e.message
+    }
+  } while (refreshAgain && !demoMode.value)
+  refreshInFlight = false
+  loading.value = false
 }
 
 onMounted(() => {

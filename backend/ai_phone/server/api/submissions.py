@@ -139,15 +139,21 @@ async def list_submissions(
         stmt = stmt.where(Submission.state == state)
     res = await session.execute(stmt)
     subs = list(res.scalars().all())
+    sub_ids = [sub.id for sub in subs]
+
+    items_by_sub: Dict[str, List[Dict[str, Any]]] = {sub_id: [] for sub_id in sub_ids}
+    if sub_ids:
+        items_res = await session.execute(
+            select(SubmissionItem)
+            .where(SubmissionItem.submission_id.in_(sub_ids))
+            .order_by(SubmissionItem.submission_id.asc(), SubmissionItem.enqueued_at.asc())
+        )
+        for it in items_res.scalars().all():
+            items_by_sub.setdefault(it.submission_id, []).append(it.to_dict())
 
     out: List[Dict[str, Any]] = []
     for sub in subs:
-        items_res = await session.execute(
-            select(SubmissionItem)
-            .where(SubmissionItem.submission_id == sub.id)
-            .order_by(SubmissionItem.enqueued_at.asc())
-        )
-        items = [it.to_dict() for it in items_res.scalars().all()]
+        items = items_by_sub.get(sub.id, [])
         row = sub.to_dict()
         row["items"] = items
         row["counts"] = _state_counts(items)
