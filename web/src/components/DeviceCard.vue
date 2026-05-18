@@ -13,8 +13,9 @@ const readiness = computed(() => props.device.extra?.readiness || null)
 
 const statusMeta = computed(() => {
   const s = props.device.effective_status || props.device.status || 'unknown'
-  // busy / offline / unauthorized 这些"强状态"优先，readiness 只在 online + 非 busy 时覆盖
-  if (s === 'online' && readiness.value && readiness.value.ready === false) {
+  // busy / offline / unauthorized 这些"强状态"优先，readiness 只在 online + 非 busy 时覆盖。
+  // readiness 尚未上报时也不能显示为"空闲"，调度侧同样不会选择它。
+  if (s === 'online' && readiness.value?.ready !== true) {
     return { label: '未就绪', cls: 'warn' }
   }
   switch (s) {
@@ -36,7 +37,14 @@ const statusMeta = computed(() => {
 // not_ready_reason → 中文 + 可操作的 hint。
 // 和 statusMeta 协同：readiness.ready=false 时才展示这一块。
 const readinessMeta = computed(() => {
+  const s = props.device.effective_status || props.device.status
   const r = readiness.value
+  if (s === 'online' && !r) {
+    return {
+      label: '等待探活',
+      hint: '设备已上线，正在等待 readiness 探活盖章，暂不会被调度派单',
+    }
+  }
   if (!r || r.ready !== false) return null
   const reasonMap = {
     screen_locked: {

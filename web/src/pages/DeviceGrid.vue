@@ -49,13 +49,13 @@ const enrichedDevices = computed(() => (
   })
 ))
 
-// "未就绪" = online 但 readiness.ready === false。作为 online 的子集单独筛。
+// "空闲可派单"必须和 scheduler 一致：online 且 readiness.ready === true。
+// readiness 尚未上报时属于"未盖章"，不能显示成绿色空闲，避免插线瞬间误导。
 function isNotReady(d) {
-  return d.effective_status === 'online' && d.extra?.readiness?.ready === false
+  return d.effective_status === 'online' && d.extra?.readiness?.ready !== true
 }
 function isReadyIdle(d) {
-  // 真正"空闲可派单"= online 且 readiness.ready !== false（未设或为 true）
-  return d.effective_status === 'online' && !isNotReady(d)
+  return d.effective_status === 'online' && d.extra?.readiness?.ready === true
 }
 
 const filtered = computed(() => {

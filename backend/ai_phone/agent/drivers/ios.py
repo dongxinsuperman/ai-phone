@@ -33,7 +33,7 @@ from loguru import logger
 
 from ...config import get_settings
 from .base import BaseDriver, DeviceInfo
-from .ios_wda_launcher import IosWdaXcodeLauncher, _probe_wda_http
+from .ios_wda_launcher import IosWdaXcodeLauncher, _developer_app_trust_hint, _probe_wda_http
 from .wda_client import WdaClient, WdaError
 
 
@@ -1128,8 +1128,12 @@ def list_ios_devices(include_offline: bool = False) -> List[DeviceInfo]:
         if not udid:
             continue
         try:
-            # pmd3 9.x: create_using_usbmux 是 async；4.x 是 sync
-            ld = _maybe_sync(create_using_usbmux(serial=udid))
+            # pmd3 9.x: create_using_usbmux 是 async；4.x 是 sync。
+            # 设备总览的后台 rescan 必须是只读探测，不能触发 iOS pairing 流程；
+            # 否则 pair record 写入异常（如 SavePairRecordFailed）时，agent 会每轮
+            # 扫描都把“信任此电脑”弹窗重新打出来。真正需要用户交互的配对留给
+            # open_ios_driver / Xcode 等显式启动链路处理。
+            ld = _maybe_sync(create_using_usbmux(serial=udid, autopair=False))
         except Exception as exc:  # noqa: BLE001
             # iOS 18/26 起，锁屏状态下连 StartSession 也会返回 PasswordProtected，
             # 即使 pair record 里有 EscrowBag。这是 iOS 本身的限制，不是配对问题。
@@ -1285,8 +1289,9 @@ def _check_developer_mode(lockdown) -> bool:  # noqa: ANN001
         # pmd3 9.x：要先 connect；4.x 是同步且 connect 在 ctor 里
         try:
             _maybe_sync(svc.connect())
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Developer Mode 状态探测连接失败：{}", exc)
+            return True
         try:
             return bool(_maybe_sync(svc.query_developer_mode_status()))
         finally:
@@ -1448,7 +1453,9 @@ def open_ios_driver(
                 on_status(
                     "error",
                     "WDA 启动失败",
-                    f"WDA 在 {timeout}s 内未就绪：{exc}。\n请检查 iPhone 是否解锁、证书是否过期、USB 线是否正常，然后重试。",
+                    f"WDA 在 {timeout}s 内未就绪：{exc}。\n"
+                    "请检查 iPhone 是否解锁、是否已信任此 Mac、开发者模式是否开启、USB 线是否正常。\n"
+                    + _developer_app_trust_hint(),
                     0,
                 )
             except Exception:  # noqa: BLE001

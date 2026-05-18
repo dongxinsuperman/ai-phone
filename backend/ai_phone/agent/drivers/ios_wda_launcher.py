@@ -127,6 +127,14 @@ def _port_bind_available(port: int) -> bool:
     return True
 
 
+def _developer_app_trust_hint() -> str:
+    return (
+        "首次安装或证书更新后，iPhone 可能不会弹出提示；请手动到 "
+        "设置 → 通用 → VPN与设备管理（或“设备管理”）→ 开发者 App，"
+        "信任当前 Apple Development 证书。"
+    )
+
+
 def _find_xcodebuild() -> Optional[str]:
     """查找 ``xcodebuild``。优先 ``xcode-select -p`` 指向的 Xcode；
     兜底走 ``shutil.which``（可能是 CLT 的，功能不全但存在）。"""
@@ -349,7 +357,8 @@ class IosWdaXcodeLauncher:
         self._emit(
             "compiling",
             "WDA 编译中",
-            "首次冷启动约 1-3 分钟。请**保持 iPhone 解锁状态**直到屏幕出现 Automation Running。",
+            "首次冷启动约 1-3 分钟。请**保持 iPhone 解锁状态**直到屏幕出现 Automation Running。\n"
+            + _developer_app_trust_hint(),
         )
         return "spawn"
 
@@ -522,6 +531,8 @@ class IosWdaXcodeLauncher:
             "bundle_dup": False,
             "privacy": False,
             "xctest_103": False,
+            "no_destination": False,
+            "developer_trust": False,
             "test_started": False,
         }
         try:
@@ -539,6 +550,17 @@ class IosWdaXcodeLauncher:
                     hints["privacy"] = True
                 if "error code: 103" in low or "xctesterrordomain" in low:
                     hints["xctest_103"] = True
+                if (
+                    "unable to find a device matching the provided destination specifier" in low
+                    or "no available devices matched the request" in low
+                ):
+                    hints["no_destination"] = True
+                if (
+                    "untrusted developer" in low
+                    or "not trusted" in low
+                    or ("developer app" in low and "trust" in low)
+                ):
+                    hints["developer_trust"] = True
                 if "test suite" in low and "started" in low:
                     if not hints["test_started"]:
                         # 第一次 Test Suite started = WDA runner 已经在真机启动，
@@ -640,15 +662,29 @@ class IosWdaXcodeLauncher:
                     "XCTest Error 103：一般是 Xcode 版本比 iOS 老。确保已切换到完整 Xcode"
                     "（`sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`）并升级到能匹配 iOS 版本的 Xcode"
                 )
+            if hints["no_destination"]:
+                tips.append(
+                    "Xcode 找不到这台 iPhone 作为测试目标：请确认 iPhone 已解锁、已信任此 Mac、"
+                    "开发者模式已开启，并在 Xcode → Window → Devices and Simulators 里能看到该设备可用；"
+                    "然后拔插 USB 或重启 Agent 后重试"
+                )
+            if hints["developer_trust"]:
+                tips.append(_developer_app_trust_hint())
             if not tips:
                 tips.append(
                     "请手动跑一次 `xcodebuild test -project WebDriverAgent.xcodeproj"
                     f" -scheme {self.scheme} -destination 'id={self.udid}'"
                     " -allowProvisioningUpdates` 看完整报错"
                 )
+                tips.append(_developer_app_trust_hint())
             logger.warning(
                 "udid={} xcodebuild test 异常退出 rc={}\n  → {}",
                 self.udid, rc, "\n  → ".join(tips),
+            )
+            self._emit(
+                "error",
+                "WDA 启动失败",
+                "xcodebuild test 异常退出。\n" + "\n".join(f"- {tip}" for tip in tips),
             )
 
     # ------------------------------------------------------------------

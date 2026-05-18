@@ -412,6 +412,7 @@ _preload_lock = threading.Lock()
 # 真未授权 / 未信任 的设备每 5s 起一次 xcodebuild。
 _preload_fail_ts: Dict[str, float] = {}
 _PRELOAD_RETRY_COOLDOWN_SEC = 45.0
+_stable_preload_skip_logged = False
 
 # §7.5.1.2 拔插会话语义：每次 rescan 用上一次的 iOS udid 集合对比当前集合，
 # 不在新集合里的 udid 视为"USB 拔出"，喂给 ios_wda_lifecycle policy 清掉 spawn
@@ -517,11 +518,14 @@ def _maybe_preload_ios(infos: List[Any]) -> None:
     """
     policy = get_ios_wda_lifecycle_policy()
     if not policy.allow_preload():
+        global _stable_preload_skip_logged
         # 静默 no-op：stable 下 rescan 每次都过这里，info 级会被刷屏；debug 留一条便于追踪
-        logger.debug(
-            "iOS WDA 生命周期 mode={}，跳过 preload（部署期不主动拉 WDA）",
-            policy.mode.value,
-        )
+        if not _stable_preload_skip_logged:
+            _stable_preload_skip_logged = True
+            logger.debug(
+                "iOS WDA 生命周期 mode={}，跳过 preload（部署期不主动拉 WDA）",
+                policy.mode.value,
+            )
         return
     settings = get_settings()
     if not settings.ios_wda_preload:

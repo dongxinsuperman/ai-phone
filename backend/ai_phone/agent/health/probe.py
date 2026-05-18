@@ -186,7 +186,7 @@ class IosProbe(BaseProbe):
 
         cli = _WDA_CLIENT_MAP.get(self.serial)
         if cli is None:
-            return _fail("wda_not_ready", "WDA 还没起，插上设备后会自动预热")
+            return _fail("wda_not_ready", self._wda_not_ready_hint())
 
         base_url = getattr(cli, "base_url", None) or ""
         if not base_url:
@@ -218,6 +218,23 @@ class IosProbe(BaseProbe):
             return _fail("screen_locked", "iPhone 锁屏中，请解锁")
 
         return _ok()
+
+    @staticmethod
+    def _wda_not_ready_hint() -> str:
+        try:
+            from ai_phone.agent.drivers.ios_wda_lifecycle import (  # noqa: PLC0415
+                get_ios_wda_lifecycle_policy,
+            )
+
+            policy = get_ios_wda_lifecycle_policy()
+        except Exception:  # noqa: BLE001
+            return "WDA 还没起，插上设备后会自动预热"
+
+        if policy.is_stable:
+            if policy.allow_initial_spawn_in_stable:
+                return "WDA 还没起；stable 模式不会插线预热，请进入工作台或跑任务触发本次 USB 会话首次启动"
+            return "WDA 还没起；stable attach-only 模式要求先手动启动 WDA"
+        return "WDA 还没起，插上设备后会自动预热"
 
 
 # ---------------------------------------------------------------------------
