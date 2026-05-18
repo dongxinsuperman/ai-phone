@@ -289,6 +289,26 @@ class ServerRunnerService:
         emitter: ServerRunEmitter,
     ) -> None:
         try:
+            settings = get_settings()
+            should_prepare = (
+                (driver.platform == "android" and settings.android_wake_before_run)
+                or (driver.platform == "harmony" and settings.harmony_wake_before_run)
+            )
+            if should_prepare:
+                if driver.platform == "harmony":
+                    message = "Run 前唤醒 HarmonyOS：power-shell wakeup + 上滑"
+                else:
+                    message = "Run 前唤醒 Android：KEYCODE_WAKEUP + dismiss-keyguard"
+                emitter.emit_serial(
+                    log_event(
+                        run_id,
+                        1,
+                        "设备电源",
+                        message,
+                    )
+                )
+                await asyncio.to_thread(driver.prepare_for_run)
+
             replay_done = await self._maybe_run_trajectory_cache(
                 run_id=run_id,
                 goal=goal,

@@ -22,6 +22,9 @@ class FakeDriver:
     def __init__(self) -> None:
         self.calls: List[Any] = []
 
+    def prepare_for_run(self):
+        self.calls.append(("prepare_for_run",))
+
     def window_size(self):
         return (1080, 2400)
 
@@ -72,6 +75,71 @@ async def test_handle_driver_command_window_size(monkeypatch):
     assert msg["method"] == "window_size"
     assert msg["ok"] is True
     assert msg["result"] == [1080, 2400]
+
+
+@pytest.mark.asyncio
+async def test_handle_driver_command_prepare_for_run(monkeypatch):
+    driver = FakeDriver()
+    monkeypatch.setattr(agent_main, "_get_or_open_driver", lambda serial: driver)
+    client = FakeClient()
+
+    await agent_main._handle_driver_command(
+        client,
+        {
+            "type": "driver_command",
+            "message_id": "m0",
+            "run_id": "r1",
+            "serial": "S1",
+            "method": "prepare_for_run",
+            "params": {},
+            "deadline_ms": 3000,
+        },
+    )
+
+    assert client.sent[0]["ok"] is True
+    assert driver.calls == [("prepare_for_run",)]
+
+
+@pytest.mark.asyncio
+async def test_handle_driver_command_harmony_prepare_runs_before_open(monkeypatch):
+    calls: List[str] = []
+    agent_main._serial_platform["H1"] = "harmony"
+    monkeypatch.setattr(
+        agent_main,
+        "get_settings",
+        lambda: type(
+            "Settings",
+            (),
+            {"harmony_wake_before_run": True},
+        )(),
+    )
+    monkeypatch.setattr(
+        agent_main,
+        "_prepare_harmony_before_open",
+        lambda serial: calls.append(serial),
+    )
+    monkeypatch.setattr(
+        agent_main,
+        "_get_or_open_driver",
+        lambda serial: (_ for _ in ()).throw(AssertionError("should not open driver")),
+    )
+    client = FakeClient()
+
+    await agent_main._handle_driver_command(
+        client,
+        {
+            "type": "driver_command",
+            "message_id": "m0h",
+            "run_id": "r1",
+            "serial": "H1",
+            "method": "prepare_for_run",
+            "params": {},
+            "deadline_ms": 3000,
+        },
+    )
+
+    assert client.sent[0]["ok"] is True
+    assert calls == ["H1"]
 
 
 @pytest.mark.asyncio

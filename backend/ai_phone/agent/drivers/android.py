@@ -25,6 +25,8 @@ from PIL import Image
 from adbutils import AdbDevice, adb
 from loguru import logger
 
+from ai_phone.config import get_settings
+
 from .base import BaseDriver, DeviceInfo
 
 # ADBKeyBoard（https://github.com/senzhk/ADBKeyBoard）是安卓生态里给自动化注入
@@ -47,6 +49,11 @@ _PKG_PREFIX_RE = re.compile(r"^package:(.+)$")
 # 模块级 set 可见性：agent 进程内唯一；重启 agent 会重新打——对 ROM 有时
 # 把 screen_off_timeout 改回来的特性反而有兜底作用。
 _STAY_AWAKE_DONE: set = set()
+
+
+def _wake_swipe_allowed(serial: str, allowlist: str) -> bool:
+    parts = [p for p in re.split(r"[\s,]+", str(allowlist or "").strip()) if p]
+    return str(serial or "").strip() in set(parts)
 
 
 class AndroidDriver(BaseDriver):
@@ -87,6 +94,60 @@ class AndroidDriver(BaseDriver):
     # ------------------------------------------------------------------
     # 息屏策略
     # ------------------------------------------------------------------
+    def prepare_for_run(self) -> None:
+        """按需在 Run 前唤醒 Android 屏幕。
+
+        调用方由 env 决定是否执行本钩子；钩子本身只做 wake + dismiss-keyguard，
+        不修改系统自动息屏设置，也不在 Run 后主动熄屏。
+        """
+        try:
+            # KEYCODE_WAKEUP = 224：只唤醒，不像 KEYCODE_POWER 那样盲目切换状态。
+            self._device.keyevent(224)
+            logger.info("设备 {} Run 前唤醒：KEYCODE_WAKEUP", self.serial)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("设备 {} Run 前唤醒失败：{}", self.serial, exc)
+
+        try:
+            self._device.shell("wm dismiss-keyguard")
+            logger.info("设备 {} Run 前尝试收起 keyguard", self.serial)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("设备 {} dismiss-keyguard 失败：{}", self.serial, exc)
+
+        settings = get_settings()
+        settle_s = max(0, int(settings.android_wake_before_run_settle_ms)) / 1000.0
+        if settle_s > 0:
+            time.sleep(settle_s)
+        if bool(getattr(settings, "android_wake_swipe_enabled", False)) and _wake_swipe_allowed(
+            self.serial,
+            getattr(settings, "wake_swipe_device_allowlist", ""),
+        ):
+            self._swipe_after_wake()
+            swipe_settle_s = max(
+                0,
+                int(getattr(settings, "android_wake_swipe_settle_ms", 500)),
+            ) / 1000.0
+            if swipe_settle_s > 0:
+                time.sleep(swipe_settle_s)
+
+    def _swipe_after_wake(self) -> None:
+        """唤醒后固定上滑一次，兜底锁屏壁纸/屏保态。"""
+        try:
+            width, height = self.window_size()
+            x = round(width * 0.5)
+            from_y = round(height * 0.82)
+            to_y = round(height * 0.35)
+            self._device.swipe(x, from_y, x, to_y, duration=0.35)
+            logger.info(
+                "设备 {} Run 前唤醒后上滑：({}, {}) -> ({}, {})",
+                self.serial,
+                x,
+                from_y,
+                x,
+                to_y,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("设备 {} Run 前唤醒后上滑失败：{}", self.serial, exc)
+
     def _setup_stay_awake(self) -> None:
         """把设备的自动息屏关掉，让排队期/长任务里设备不会自己锁屏。
 
@@ -628,7 +689,10 @@ def list_android_devices(include_offline: bool = False) -> List[DeviceInfo]:
             try:
                 # 扫描路径也会打一次息屏设置——靠 _STAY_AWAKE_DONE 做 serial 粒度
                 # 幂等，只有插上第一次才真跑 shell，后续 rescan 命中缓存直接跳过
-                driver = AndroidDriver(adb.device(serial=d.serial))
+                driver = AndroidDriver(
+                    adb.device(serial=d.serial),
+                    setup_power=bool(get_settings().android_setup_stay_awake),
+                )
                 infos.append(driver.device_info())
             except Exception as exc:  # noqa: BLE001
                 logger.warning("读取设备 {} 信息失败: {}", d.serial, exc)
@@ -646,4 +710,7 @@ def list_android_devices(include_offline: bool = False) -> List[DeviceInfo]:
 
 def open_android_driver(serial: str) -> AndroidDriver:
     """按 serial 打开一个 AndroidDriver；找不到或未授权会抛异常。"""
-    return AndroidDriver(adb.device(serial=serial))
+    return AndroidDriver(
+        adb.device(serial=serial),
+        setup_power=bool(get_settings().android_setup_stay_awake),
+    )

@@ -20,6 +20,8 @@ from typing import Optional
 
 from loguru import logger
 
+from ai_phone.config import get_settings
+
 
 # ---------------------------------------------------------------------------
 # 结果 dataclass
@@ -126,6 +128,12 @@ class AndroidProbe(BaseProbe):
         except Exception as exc:  # noqa: BLE001
             return _fail("driver_probe_failed", f"dumpsys power 失败：{exc}")
         if "state=OFF" in power_out or "state=DOZE" in power_out:
+            if get_settings().android_screen_off_dispatchable:
+                logger.debug(
+                    "[readiness:android:{}] screen off but dispatchable by env",
+                    self.serial,
+                )
+                return _ok()
             return _fail("screen_locked", "屏幕熄屏")
 
         # 3) 锁屏状态。mDreamingLockscreen 在 Android 10+ 一直可用；Android 14+
@@ -259,6 +267,12 @@ class HarmonyProbe(BaseProbe):
         except Exception as exc:  # noqa: BLE001
             return _fail("driver_probe_failed", f"hidumper 失败：{exc}")
         if out and _harmony_screen_is_off(out):
+            if get_settings().harmony_screen_off_dispatchable:
+                logger.debug(
+                    "[readiness:harmony:{}] screen off but dispatchable by env",
+                    self.serial,
+                )
+                return _ok()
             return _fail("screen_locked", "鸿蒙设备屏幕息屏中，请点亮并保持亮屏")
 
         return _ok()

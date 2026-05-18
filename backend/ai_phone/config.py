@@ -57,6 +57,128 @@ class Settings(BaseSettings):
         default=None,
         description="Agent 展示名，未设则取 hostname",
     )
+    android_setup_stay_awake: bool = Field(
+        default=True,
+        description=(
+            "Android driver 打开/扫描设备时是否沿用旧策略：设置超长 screen_off_timeout "
+            "+ svc power stayon true。默认 True 保持历史行为；想让设备空闲自然息屏时设 False。"
+            "env: AI_PHONE_ANDROID_SETUP_STAY_AWAKE"
+        ),
+    )
+    android_wake_before_run: bool = Field(
+        default=False,
+        description=(
+            "Android VLM Run 开始前是否主动唤醒屏幕并尝试收起无安全认证的 keyguard。"
+            "默认 False 保持历史行为；关闭 stay_awake 后建议设 True。"
+            "env: AI_PHONE_ANDROID_WAKE_BEFORE_RUN"
+        ),
+    )
+    android_screen_off_dispatchable: bool = Field(
+        default=False,
+        description=(
+            "Android readiness 遇到屏幕息屏/DOZE 时是否仍允许派发。默认 False 保持历史"
+            "行为；开启后由 Run 前 wake + 上滑负责把设备拉回可操作态。"
+            "env: AI_PHONE_ANDROID_SCREEN_OFF_DISPATCHABLE"
+        ),
+    )
+    android_wake_before_run_settle_ms: int = Field(
+        default=500,
+        ge=0,
+        le=5000,
+        description=(
+            "Android Run 前唤醒后的短等待毫秒数，用于等待屏幕点亮和首帧刷新。"
+            "仅 AI_PHONE_ANDROID_WAKE_BEFORE_RUN=true 时生效。"
+            "env: AI_PHONE_ANDROID_WAKE_BEFORE_RUN_SETTLE_MS"
+        ),
+    )
+    android_wake_swipe_enabled: bool = Field(
+        default=False,
+        description=(
+            "Android Run 前唤醒后是否固定上滑一次，兜底锁屏壁纸/屏保态。默认 False "
+            "避免影响历史场景；仅 AI_PHONE_ANDROID_WAKE_BEFORE_RUN=true 时生效。"
+            "env: AI_PHONE_ANDROID_WAKE_SWIPE_ENABLED"
+        ),
+    )
+    android_wake_swipe_settle_ms: int = Field(
+        default=500,
+        ge=0,
+        le=5000,
+        description=(
+            "Android Run 前唤醒上滑后的短等待毫秒数。仅 wake_swipe_enabled=true 时生效。"
+            "env: AI_PHONE_ANDROID_WAKE_SWIPE_SETTLE_MS"
+        ),
+    )
+    wake_swipe_device_allowlist: str = Field(
+        default="",
+        description=(
+            "Run 前 wake 后允许自动上滑的设备 serial 白名单，逗号/空格分隔，跨 "
+            "Android/HarmonyOS 统一使用。为空表示没有设备自动上滑。"
+            "env: AI_PHONE_WAKE_SWIPE_DEVICE_ALLOWLIST"
+        ),
+    )
+    android_wake_on_enter: bool = Field(
+        default=False,
+        description=(
+            "Android 进入工作台/启动镜像前是否主动唤醒。默认 False 保持历史行为；"
+            "开启后复用 Android Run 前 wake 逻辑。env: AI_PHONE_ANDROID_WAKE_ON_ENTER"
+        ),
+    )
+
+    harmony_setup_stay_awake: bool = Field(
+        default=True,
+        description=(
+            "HarmonyOS driver 打开/扫描设备时是否沿用旧策略：power-shell timeout 长亮续约。"
+            "默认 True 保持历史行为；想让设备空闲自然息屏时设 False。"
+            "env: AI_PHONE_HARMONY_SETUP_STAY_AWAKE"
+        ),
+    )
+    harmony_screen_off_dispatchable: bool = Field(
+        default=False,
+        description=(
+            "HarmonyOS readiness 遇到息屏时是否仍允许派发。默认 False 保持当前"
+            "screen_locked 行为；开启后由 Run preflight 负责 wake + 上滑。"
+            "env: AI_PHONE_HARMONY_SCREEN_OFF_DISPATCHABLE"
+        ),
+    )
+    harmony_wake_before_run: bool = Field(
+        default=False,
+        description=(
+            "HarmonyOS VLM Run 开始前是否用纯 hdc 主动唤醒并进入可操作态。默认 False "
+            "保持历史行为。env: AI_PHONE_HARMONY_WAKE_BEFORE_RUN"
+        ),
+    )
+    harmony_wake_swipe_enabled: bool = Field(
+        default=True,
+        description=(
+            "HarmonyOS Run 前唤醒后是否上滑进入桌面/可操作态。默认 True 但只有 "
+            "AI_PHONE_HARMONY_WAKE_BEFORE_RUN=true 时生效。env: AI_PHONE_HARMONY_WAKE_SWIPE_ENABLED"
+        ),
+    )
+    harmony_wake_settle_ms: int = Field(
+        default=500,
+        ge=0,
+        le=5000,
+        description=(
+            "HarmonyOS power-shell wakeup 后等待屏幕亮起的毫秒数。"
+            "env: AI_PHONE_HARMONY_WAKE_SETTLE_MS"
+        ),
+    )
+    harmony_wake_swipe_settle_ms: int = Field(
+        default=500,
+        ge=0,
+        le=5000,
+        description=(
+            "HarmonyOS 唤醒后上滑完成的短等待毫秒数。"
+            "env: AI_PHONE_HARMONY_WAKE_SWIPE_SETTLE_MS"
+        ),
+    )
+    harmony_wake_on_enter: bool = Field(
+        default=False,
+        description=(
+            "HarmonyOS 进入工作台/启动镜像前是否用纯 hdc 唤醒并上滑。默认 False 保持"
+            "历史行为；黑屏可派发策略下建议开启。env: AI_PHONE_HARMONY_WAKE_ON_ENTER"
+        ),
+    )
 
     # --- 共享鉴权 ---
     agent_token: str = Field(default="dev", description="Agent <-> Server 鉴权 token")

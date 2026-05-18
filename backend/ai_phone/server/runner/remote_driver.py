@@ -66,6 +66,7 @@ from .rpc import (
 # 见 protocol.py 的 driver_command.deadline_ms 注释。
 # ---------------------------------------------------------------------------
 DEFAULT_DEADLINE_MS: Dict[str, int] = {
+    "prepare_for_run": 8_000,
     "screenshot_png": 10_000,
     "screenshot_jpeg": 10_000,
     "click": 5_000,
@@ -337,6 +338,9 @@ class RemoteDriver(BaseDriver):
     # ------------------------------------------------------------------
     # BaseDriver 实现
     # ------------------------------------------------------------------
+    def prepare_for_run(self) -> None:
+        self._call("prepare_for_run")
+
     # —— 屏幕信息 —— #
     def window_size(self) -> Tuple[int, int]:
         return self._call("window_size")

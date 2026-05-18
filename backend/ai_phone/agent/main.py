@@ -49,6 +49,7 @@ from ai_phone.agent.mirror import (
     extract_sps_nal as _extract_sps_nal,
 )
 from ai_phone.agent.runner import build_runner
+from ai_phone.agent.runner.events import log_event
 from ai_phone.agent.runner_bridge import RunnerBridge
 from ai_phone.agent.scrcpy_client import (
     EVENT_DISCONNECT as _SCRCPY_EVENT_DISCONNECT,
@@ -118,6 +119,7 @@ _driver_cache: Dict[str, BaseDriver] = {}
 # serial → platform 映射。设备发现时填，open_driver / mirror 创建时按它路由。
 # 没记录的 serial 默认按 Android 处理（adbutils），保留旧行为兼容。
 _serial_platform: Dict[str, str] = {}
+_serial_screen_size: Dict[str, Tuple[int, int]] = {}
 
 
 def _record_serial_platform(infos: List[Any]) -> None:
@@ -133,6 +135,13 @@ def _record_serial_platform(infos: List[Any]) -> None:
             continue
         if serial and platform:
             _serial_platform[str(serial)] = str(platform)
+            try:
+                width = int(getattr(info, "screen_width", None) or info["screen_width"])
+                height = int(getattr(info, "screen_height", None) or info["screen_height"])
+            except Exception:  # noqa: BLE001
+                width = height = 0
+            if width > 0 and height > 0:
+                _serial_screen_size[str(serial)] = (width, height)
 
 
 def _get_or_open_driver(
@@ -161,6 +170,38 @@ def _get_or_open_driver(
     drv = _open_driver_by_platform(serial, platform, **kwargs)
     _driver_cache[serial] = drv
     return drv
+
+
+def _prepare_harmony_before_open(serial: str) -> None:
+    """HarmonyOS Run 前纯 hdc 唤醒，必须能在 hmdriver2 初始化前执行。"""
+    from ai_phone.agent.drivers.harmony import prepare_harmony_for_run  # noqa: PLC0415
+
+    prepare_harmony_for_run(
+        serial,
+        screen_size=_serial_screen_size.get(serial),
+    )
+
+
+def _wake_harmony_on_enter(serial: str) -> None:
+    """进入工作台/启动镜像前只点亮 HarmonyOS，手动上滑交给用户。"""
+    from ai_phone.agent.drivers.harmony import prepare_harmony_for_run  # noqa: PLC0415
+
+    prepare_harmony_for_run(
+        serial,
+        screen_size=_serial_screen_size.get(serial),
+        force=True,
+        swipe=False,
+    )
+
+
+def _run_preopen_prepare_for_run(serial: str) -> bool:
+    """返回是否已经在打开 driver 前完成 prepare_for_run。"""
+    platform_name = _serial_platform.get(serial, "android")
+    settings = get_settings()
+    if platform_name == "harmony" and settings.harmony_wake_before_run:
+        _prepare_harmony_before_open(serial)
+        return True
+    return False
 
 
 def _check_ios_driver_health(serial: str) -> Tuple[bool, str]:
@@ -722,6 +763,39 @@ async def _handle_start_run(
         # 也避免在不需要时把 iOS WDA / scrcpy 这类副作用带起来。
         driver = None
         if engine == "vlm":
+            prepared_before_open = False
+            settings = get_settings()
+            platform_name = _serial_platform.get(serial, "android")
+            if platform_name == "harmony" and settings.harmony_wake_before_run:
+                bridge.emit(
+                    log_event(
+                        run_id,
+                        1,
+                        "设备电源",
+                        "Run 前唤醒 HarmonyOS：power-shell wakeup + 上滑",
+                    )
+                )
+                try:
+                    await asyncio.to_thread(_prepare_harmony_before_open, serial)
+                    prepared_before_open = True
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Run 前唤醒 HarmonyOS 失败 serial={}", serial)
+                    await client.send(
+                        {
+                            "type": P.MSG_RUN_DONE,
+                            "run_id": run_id,
+                            "serial": serial,
+                            "attempt": attempt,
+                            "result": "error",
+                            "message": f"prepare_for_run_failed: {exc}",
+                            "steps": 0,
+                            "elapsed_ms": 0,
+                            "token_stats": {},
+                        }
+                    )
+                    await bridge.aclose()
+                    supervisor.pop(run_id)
+                    return
             try:
                 driver = await asyncio.to_thread(_get_or_open_driver, serial)
             except Exception as exc:  # noqa: BLE001
@@ -742,6 +816,35 @@ async def _handle_start_run(
                 await bridge.aclose()
                 supervisor.pop(run_id)
                 return
+            if (
+                driver is not None
+                and getattr(driver, "platform", "") == "android"
+                and settings.android_wake_before_run
+            ):
+                bridge.emit(
+                    log_event(
+                        run_id,
+                        1,
+                        "设备电源",
+                        "Run 前唤醒 Android：KEYCODE_WAKEUP + dismiss-keyguard",
+                    )
+                )
+                await asyncio.to_thread(driver.prepare_for_run)
+            elif (
+                driver is not None
+                and getattr(driver, "platform", "") == "harmony"
+                and settings.harmony_wake_before_run
+                and not prepared_before_open
+            ):
+                bridge.emit(
+                    log_event(
+                        run_id,
+                        1,
+                        "设备电源",
+                        "Run 前唤醒 HarmonyOS：power-shell wakeup + 上滑",
+                    )
+                )
+                await asyncio.to_thread(driver.prepare_for_run)
 
         try:
             runner = build_runner(
@@ -856,6 +959,9 @@ async def _handle_input(
         logger.warning("input 参数不全 | serial={} kind={}", serial, kind)
         return
     try:
+        platform_name = _serial_platform.get(serial, "android")
+        if platform_name == "harmony" and get_settings().harmony_wake_on_enter:
+            await asyncio.to_thread(_wake_harmony_on_enter, serial)
         driver = await asyncio.to_thread(_get_or_open_driver, serial)
     except Exception as exc:  # noqa: BLE001
         logger.warning("input 无法打开设备 {}: {}", serial, exc)
@@ -1000,6 +1106,9 @@ async def _handle_driver_command(client: AgentWSClient, msg: Dict[str, Any]) -> 
         return
 
     try:
+        if method == "prepare_for_run" and _run_preopen_prepare_for_run(serial):
+            await _send_result(ok=True, result=None)
+            return
         driver = await asyncio.to_thread(_get_or_open_driver, serial)
         fn = getattr(driver, method)
         raw_result = await asyncio.to_thread(
@@ -1736,6 +1845,12 @@ class _HarmonyMirrorSession:
             self._stopped = True
             return
 
+        try:
+            if get_settings().harmony_wake_on_enter:
+                _wake_harmony_on_enter(self.serial)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("harmony mirror 启动前 wake 失败 serial={}: {}", self.serial, exc)
+
         # 和 iOS 一样，先确保 driver 就绪——streamer 会复用同一个 hmdriver2.Driver
         # singleton，避免双方抢 hdc 端口转发。driver 创建失败（设备未授权 / uitest
         # 起不来）直接放弃镜像，让浏览器看到 device_status=error 而不是黑屏卡死。
@@ -1872,6 +1987,16 @@ class _MirrorSupervisor:
             return
         existing = self._sessions.get(serial)
         if existing is not None and not getattr(existing, "_stopped", False):
+            platform = _serial_platform.get(serial, "android")
+            if platform == "harmony" and get_settings().harmony_wake_on_enter:
+                try:
+                    _wake_harmony_on_enter(serial)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "harmony mirror 复用前 wake 失败 serial={}: {}",
+                        serial,
+                        exc,
+                    )
             # 幂等：会话还在跑，但要把缓存的 init segment 重广播一次。
             existing.replay_init()
             return

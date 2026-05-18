@@ -283,6 +283,8 @@ class DeviceReadinessMsg(TypedDict, total=False):
 
 # 仅允许 BaseDriver 上已声明的方法名。新增 BaseDriver 方法时同步本表。
 DriverMethod = Literal[
+    # Run 前准备
+    "prepare_for_run",
     # 屏幕信息
     "window_size",
     "rotation",

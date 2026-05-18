@@ -3,11 +3,13 @@ Sonic AndroidTouchHandler / AndroidDeviceBridgeTool 对齐，不依赖真实设�
 from __future__ import annotations
 
 import io
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 from PIL import Image
 
+from ai_phone.agent.drivers import android as android_mod
 from ai_phone.agent.drivers.android import AndroidDriver
 from ai_phone.agent.drivers.base import DeviceInfo
 
@@ -97,6 +99,102 @@ def test_press_home_and_back_use_keyevent():
     driver.press_back()
     fake.keyevent.assert_any_call(3)
     fake.keyevent.assert_any_call(4)
+
+
+def test_prepare_for_run_wakes_and_dismisses_keyguard(monkeypatch):
+    fake = MagicMock()
+    fake.serial = "EMU-WAKE"
+    driver = AndroidDriver(fake, setup_power=False)
+    monkeypatch.setattr(
+        android_mod,
+        "get_settings",
+        lambda: SimpleNamespace(
+            android_wake_before_run_settle_ms=0,
+        ),
+    )
+
+    driver.prepare_for_run()
+
+    fake.keyevent.assert_called_once_with(224)
+    fake.shell.assert_called_once_with("wm dismiss-keyguard")
+
+
+def test_prepare_for_run_swallows_wake_errors(monkeypatch):
+    fake = MagicMock()
+    fake.serial = "EMU-WAKE-ERR"
+    fake.keyevent.side_effect = RuntimeError("adb offline")
+    driver = AndroidDriver(fake, setup_power=False)
+    monkeypatch.setattr(
+        android_mod,
+        "get_settings",
+        lambda: SimpleNamespace(android_wake_before_run_settle_ms=0),
+    )
+
+    driver.prepare_for_run()
+
+    fake.keyevent.assert_called_once_with(224)
+    fake.shell.assert_called_once_with("wm dismiss-keyguard")
+
+
+def test_prepare_for_run_can_swipe_after_wake(monkeypatch):
+    fake = MagicMock()
+    fake.serial = "EMU-WAKE-SWIPE"
+    fake.window_size.return_value = MagicMock(width=1080, height=2400)
+    driver = AndroidDriver(fake, setup_power=False)
+    monkeypatch.setattr(
+        android_mod,
+        "get_settings",
+        lambda: SimpleNamespace(
+            android_wake_before_run_settle_ms=0,
+            android_wake_swipe_enabled=True,
+            android_wake_swipe_settle_ms=0,
+            wake_swipe_device_allowlist="EMU-WAKE-SWIPE",
+        ),
+    )
+
+    driver.prepare_for_run()
+
+    fake.keyevent.assert_called_once_with(224)
+    fake.shell.assert_called_once_with("wm dismiss-keyguard")
+    fake.swipe.assert_called_once_with(540, 1968, 540, 840, duration=0.35)
+
+
+def test_prepare_for_run_skips_swipe_when_not_allowlisted(monkeypatch):
+    fake = MagicMock()
+    fake.serial = "EMU-NO-SWIPE"
+    driver = AndroidDriver(fake, setup_power=False)
+    monkeypatch.setattr(
+        android_mod,
+        "get_settings",
+        lambda: SimpleNamespace(
+            android_wake_before_run_settle_ms=0,
+            android_wake_swipe_enabled=True,
+            android_wake_swipe_settle_ms=0,
+            wake_swipe_device_allowlist="OTHER",
+        ),
+    )
+
+    driver.prepare_for_run()
+
+    fake.keyevent.assert_called_once_with(224)
+    fake.shell.assert_called_once_with("wm dismiss-keyguard")
+    fake.swipe.assert_not_called()
+
+
+def test_open_android_driver_respects_setup_stay_awake_env(monkeypatch):
+    fake = MagicMock()
+    fake.serial = "EMU-POWER-OFF"
+    monkeypatch.setattr(android_mod.adb, "device", lambda serial: fake)
+    monkeypatch.setattr(
+        android_mod,
+        "get_settings",
+        lambda: SimpleNamespace(android_setup_stay_awake=False),
+    )
+
+    driver = android_mod.open_android_driver("EMU-POWER-OFF")
+
+    assert isinstance(driver, AndroidDriver)
+    fake.shell.assert_not_called()
 
 
 def test_terminate_app_uses_am_force_stop():
