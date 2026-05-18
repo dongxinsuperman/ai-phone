@@ -38,6 +38,10 @@ from ai_phone.agent.drivers import (
     open_driver as _open_driver_by_platform,
 )
 from ai_phone.agent.drivers.base import BaseDriver
+from ai_phone.agent.drivers.ios_wda_lifecycle import (
+    StableWdaUnavailable,
+    get_ios_wda_lifecycle_policy,
+)
 from ai_phone.agent.mirror import (
     FMp4Streamer,
     extract_codec_string_from_moov,
@@ -159,6 +163,89 @@ def _get_or_open_driver(
     return drv
 
 
+def _check_ios_driver_health(serial: str) -> Tuple[bool, str]:
+    """纯只读探活：判断缓存里 iOS driver 对应的 WDA 是否还活着。
+
+    返回 ``(healthy, reason)``：
+      * ``healthy=True``：要么缓存里就没这把 driver，要么 ``/status`` 通。
+      * ``healthy=False``：driver 在 cache、但 WDA 不可达；``reason`` 解释原因。
+
+    本函数**不做任何处置**——不 close、不摘 cache、不 spawn——只回答"健康不健
+    康"。如何处置交给 ``_handle_ios_driver_unhealthy``，由 policy 决定是 auto
+    的"close + 重建"还是 stable 的"留着 + 报错"。这样一来，stable 下"WDA /status
+    抖动一下就被打断"的扰动彻底消失。详见 §7.3 / §7.0.1 #2。
+
+    stable 模式下额外做有限重试：单次 /status 失败不立刻判 unhealthy，按
+    300ms → 800ms 节拍补两次 probe，避免一次网络抖动直接报死。
+    """
+    drv = _driver_cache.get(serial)
+    if drv is None or getattr(drv, "platform", None) != "ios":
+        return True, "no_cache"
+    try:
+        from .drivers.ios import _WDA_CLIENT_MAP  # noqa: PLC0415
+    except Exception as exc:  # noqa: BLE001
+        return False, f"WDA client 全局 map 不可用：{exc}"
+    cli = _WDA_CLIENT_MAP.get(serial)
+    if cli is None:
+        return False, "WdaClient 未登记在全局 map"
+
+    policy = get_ios_wda_lifecycle_policy()
+    # auto 路径维持单次 probe 语义，与本拆分引入前完全等价。
+    # stable 路径做有限重试（§7.3）：300ms → 800ms，三次都失败才算 unhealthy。
+    probe_intervals = (0.3, 0.8) if policy.is_stable else ()
+    last_reason = ""
+    for attempt in range(1 + len(probe_intervals)):
+        try:
+            st = cli.status() or {}
+            if not st:
+                last_reason = "WDA /status 返回空"
+            else:
+                return True, ""
+        except Exception as exc:  # noqa: BLE001
+            last_reason = f"WDA /status 异常：{exc}"
+        if attempt < len(probe_intervals):
+            time.sleep(probe_intervals[attempt])
+    return False, last_reason or "WDA /status 不可达"
+
+
+def _handle_ios_driver_unhealthy(serial: str, reason: str) -> bool:
+    """处置探活已经判定为 unhealthy 的 iOS driver。
+
+    auto: 老的 close + 摘 cache 语义——下一次 ``_get_or_open_driver`` 会重新
+          拉起 xcodebuild + 建 session，调试期热拔插自愈不下降。
+    stable: 不 close、不摘 cache、不重建，仅 warn 一行；返回 False 让调用方
+          抛 ``StableWdaUnavailable`` 或显式 device_status 通知浏览器，告诉
+          用户走"拔 USB → 人工准备 → 重插"那一套。
+
+    返回值与历史 ``_invalidate_dead_ios_driver`` 对齐：True=真的清理了缓存
+    （调用方知道下次是冷启动），False=未清理（stable 下不主动 close）。
+    """
+    policy = get_ios_wda_lifecycle_policy()
+    drv = _driver_cache.get(serial)
+    if drv is None or getattr(drv, "platform", None) != "ios":
+        return False
+
+    if not policy.allow_driver_invalidation_close():
+        logger.warning(
+            "iOS driver 缓存疑似失效 serial={} reason={} — lifecycle={} 跳过 close+重建，"
+            "{}",
+            serial, reason, policy.mode.value,
+            policy.stable_unavailable_message(reason),
+        )
+        return False
+
+    logger.warning(
+        "iOS driver 缓存已失效 serial={} reason={} — 丢弃并在下次 open 时重建",
+        serial, reason,
+    )
+    try:
+        drv.close()
+    except Exception:  # noqa: BLE001
+        pass
+    _driver_cache.pop(serial, None)
+    return True
+
+
 def _invalidate_dead_ios_driver(serial: str) -> bool:
     """热拔插自愈：若缓存里的 iOS driver 对应的 WDA 已经不可达，
     就把它关掉 + 从 ``_driver_cache`` 摘掉，让下一次 ``_get_or_open_driver``
@@ -169,31 +256,20 @@ def _invalidate_dead_ios_driver(serial: str) -> bool:
 
     返回 True 表示真的清理了缓存（调用方知道接下来是一次"冷启动"），False
     表示缓存健康或本来就没有缓存。
+
+    **薄壳保留**（§7.0.1 #2 / §7.3）：本函数内部委托给"检测 + 处置"两段。
+    auto 路径行为与拆分前完全一致；stable 路径下处置端会变为"不 close、不
+    摘 cache，返回 False"——但 stable 下：
+      * ``_maybe_preload_ios`` 已被 ``allow_preload()=False`` 短路，
+        ``_preload_ios_worker`` 整体不会被进入，该调用路径天然消失；
+      * ``_handle_start_mirror`` 必须自行 catch ``StableWdaUnavailable`` 或
+        检查返回 False 后显式生成 device_status 推到浏览器，否则 dead driver
+        会留在 cache 里继续被复用，比 auto 还糟（详见 §7.0.1 #2 说明）。
     """
-    drv = _driver_cache.get(serial)
-    if drv is None or getattr(drv, "platform", None) != "ios":
+    healthy, reason = _check_ios_driver_health(serial)
+    if healthy:
         return False
-    try:
-        from .drivers.ios import _WDA_CLIENT_MAP  # noqa: PLC0415
-        cli = _WDA_CLIENT_MAP.get(serial)
-        if cli is None:
-            raise RuntimeError("WdaClient 未登记在全局 map")
-        # /status 不需要 session，通不通最能反映 WDA 进程本身是否还活
-        st = cli.status() or {}
-        if not st:
-            raise RuntimeError("WDA /status 返回空")
-        return False
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "iOS driver 缓存已失效 serial={} reason={} — 丢弃并在下次 open 时重建",
-            serial, exc,
-        )
-        try:
-            drv.close()
-        except Exception:  # noqa: BLE001
-            pass
-        _driver_cache.pop(serial, None)
-        return True
+    return _handle_ios_driver_unhealthy(serial, reason)
 
 
 def _make_device_status_reporter(
@@ -296,6 +372,17 @@ _preload_lock = threading.Lock()
 _preload_fail_ts: Dict[str, float] = {}
 _PRELOAD_RETRY_COOLDOWN_SEC = 45.0
 
+# §7.5.1.2 拔插会话语义：每次 rescan 用上一次的 iOS udid 集合对比当前集合，
+# 不在新集合里的 udid 视为"USB 拔出"，喂给 ios_wda_lifecycle policy 清掉 spawn
+# 标记，让下一次插入又算作一次新的"插入会话"。
+#
+# 判定离线必须用"udid 完全从 usbmux 列表消失"这一信号——不要用
+# ``status != "online"`` 过滤（unauthorized / passcode_locked 仍属于"在场但需
+# 人工解锁"，清状态会让用户解锁后又被允许 spawn 一次，不符合"我没拔啊"的预期）。
+# auto 下 policy 内部不维护 _spawned_serials，本钩子等同 no-op，但**钩子本身永
+# 远跑**，确保两种模式走相同的代码路径（§7.0.1 #4）。
+_last_seen_ios_serials: Set[str] = set()
+
 
 def _try_wake_ios(serial: str) -> None:
     """尝试把 iPhone 屏幕点亮。WDA 已就绪才有效。
@@ -381,7 +468,20 @@ def _maybe_preload_ios(infos: List[Any]) -> None:
       的死循环。正解是**只要 usbmux 还能看到这个 udid**（说明 USB 物理通路没问题），
       就派一次 preload 去拉 WDA——xcodebuild 走的是 instruments，不依赖 lockdown。
       失败则走 cooldown。
+
+    stable 模式（``AI_PHONE_IOS_WDA_LIFECYCLE_MODE=stable``）会在顶部短路：
+    部署期不允许 agent 主动拉 WDA，避免设备空闲时突然出现"WDA 编译中"。
+    详见 docs-internal/iOS_WDA_生命周期策略方案_2026-05-11.md §7.4。
+    auto 模式下 ``allow_preload()`` 恒为 True，与本短路引入前完全等价。
     """
+    policy = get_ios_wda_lifecycle_policy()
+    if not policy.allow_preload():
+        # 静默 no-op：stable 下 rescan 每次都过这里，info 级会被刷屏；debug 留一条便于追踪
+        logger.debug(
+            "iOS WDA 生命周期 mode={}，跳过 preload（部署期不主动拉 WDA）",
+            policy.mode.value,
+        )
+        return
     settings = get_settings()
     if not settings.ios_wda_preload:
         return
@@ -428,11 +528,149 @@ def _maybe_preload_ios(infos: List[Any]) -> None:
             logger.info("iOS 预热线程已派发 serial={}（AI_PHONE_IOS_WDA_PRELOAD=true）", s)
 
 
+# 上一份"被认定可信"的 iOS DeviceInfo 列表快照。
+#
+# 修 Codex 三审 P2：仅靠 _emit_ios_disconnect_events 在 scan_ok=False 时跳过
+# 还不够——下游 ws_client._rescan_loop 看到 _device_provider() 返回的 serial
+# 集合少了 iOS，就会触发 MSG_HELLO；server 端 _upsert_devices 直接 DELETE 不
+# 在场的设备，导致浏览器卡片闪烁、Hub/DB 短暂认为 iPhone 拔了。
+#
+# 修复策略：在 _device_provider 内做一层"iOS 快照保鲜"——
+#   * was_last_ios_scan_ok() == True ：把本次 iOS 部分写入快照（覆盖式更新）
+#   * was_last_ios_scan_ok() == False：把本次 iOS 部分撤掉，用快照补回去
+# Android / Harmony 部分完全不动；它们各自扫描有独立逻辑，跟 usbmuxd 抖动
+# 无关。修补后的 infos 再喂下游 _record_serial_platform /
+# _emit_ios_disconnect_events / _maybe_preload_ios，保证"agent 内部状态"与
+# "上报给 server 的真相"完全一致。
+_last_good_ios_snapshot: List[Any] = []
+
+
 def _device_provider() -> List[Dict[str, Any]]:
     infos = list_all_devices()
+    infos = _apply_ios_snapshot_freshness(infos)
     _record_serial_platform(infos)
+    _emit_ios_disconnect_events(infos)
     _maybe_preload_ios(infos)
     return [d.to_dict() for d in infos]
+
+
+def _apply_ios_snapshot_freshness(infos: List[Any]) -> List[Any]:
+    """根据 ``was_last_ios_scan_ok()`` 决定保留还是替换本次的 iOS 部分。
+
+    详见 ``_last_good_ios_snapshot`` 文档头。这是一道"对外可见的真相"保鲜
+    层——如果当前 iOS 扫描结果可信，就更新快照、原样返回；如果不可信
+    （usbmuxd 抖动 / 空列表 streak 未到阈值 / pmd3 未装），就把本次 iOS 段
+    替换成上一份可信快照，保证 ws_client 上报给 server 的 serial 集合不
+    抖动。
+    """
+    global _last_good_ios_snapshot
+    try:
+        from .drivers.ios import was_last_ios_scan_ok  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        # iOS 模块整体不可用（pmd3 未装）→ 没有 iOS 设备需要保鲜，原样返回
+        return infos
+
+    non_ios = [i for i in infos if getattr(i, "platform", None) != "ios"]
+    cur_ios = [i for i in infos if getattr(i, "platform", None) == "ios"]
+    if was_last_ios_scan_ok():
+        # 可信扫描：覆盖式更新快照。即使本次 cur_ios=[]（真的没插 iOS 设备
+        # 或者已经被 streak 状态机确认为真拔出）也要更新——快照本身就要
+        # 反映"上一份可信扫描"的真实内容。
+        _last_good_ios_snapshot = list(cur_ios)
+        return infos
+    # 不可信扫描：撤掉本次 iOS 段（通常是个空列表，但即使有部分残留也以快照
+    # 为准，避免"半新半旧"造成的混合态），用快照补回去
+    if cur_ios:
+        logger.debug(
+            "iOS 扫描不可信但本次仍带 {} 个 iOS 项，按快照覆盖以保持一致性",
+            len(cur_ios),
+        )
+    logger.debug(
+        "iOS 扫描不可信，沿用上一份可信快照（{} 个 iOS 设备）维持 rehello 稳定",
+        len(_last_good_ios_snapshot),
+    )
+    return non_ios + list(_last_good_ios_snapshot)
+
+
+def _reset_ios_snapshot_for_tests() -> None:
+    """测试钩子：清空 iOS 快照状态。仅供单测使用。"""
+    global _last_good_ios_snapshot
+    _last_good_ios_snapshot = []
+
+
+def _emit_ios_disconnect_events(infos: List[Any]) -> None:
+    """对比上一次 rescan 看到的 iOS udid 集合，把消失的喂给 lifecycle policy。
+
+    详见 docs-internal/iOS_WDA_生命周期策略方案_2026-05-11.md §6.1 / §7.5.1.2。
+
+    auto 模式下 policy 内部不维护 ``_spawned_serials``，``on_device_disconnected``
+    直接 return，整段是 no-op；但**这段代码本身永远跑**，不带 mode 判断，让两
+    种模式走相同的代码路径，避免后续 stable 路径出现"只在 stable 跑的状态机
+    缺少更新"这类 bug（§7.0.1 #4）。
+
+    **抖动保护**（修 P1 / Codex 审查）：本函数只有在 ``list_ios_devices`` 报告
+    "本轮 USB 扫描可信"时才更新拔插会话状态。macOS 上 usbmuxd 偶发抖动会让
+    ``usbmux.list_devices()`` 抛异常 / 返回空列表，几百毫秒后又恢复——如果直接
+    用 ``current_ios_serials`` 跟 ``_last_seen_ios_serials`` 做差集，会把"全部
+    在线 iOS"误判成"全部拔出"，下一次成功扫描时又被视为"新插入"，让 stable
+    模式偷偷允许 agent 再 spawn 一次 WDA，打破方案 §6.1 "拔插=唯一重置入口"
+    的核心承诺。
+    """
+    global _last_seen_ios_serials
+
+    # 不可信扫描（usbmux 抖动 / pmd3 未装）→ 完全跳过本轮 disconnect 判定，
+    # 也**不更新** _last_seen_ios_serials。下一轮扫描成功时再用上一次可信
+    # 快照做差集，能避免抖动期被误判为拔线。
+    try:
+        from .drivers.ios import was_last_ios_scan_ok  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        # iOS 模块整体不可用（环境没装 pmd3）—— 没有 iOS 设备需要跟踪，安全 no-op
+        return
+    if not was_last_ios_scan_ok():
+        logger.debug(
+            "iOS USB 扫描结果不可信（usbmuxd 抖动或 iOS 平台禁用），"
+            "本轮跳过拔插事件判定，保留上次快照（已记录 {} 个 udid）",
+            len(_last_seen_ios_serials),
+        )
+        return
+
+    current_ios_serials: Set[str] = set()
+    for info in infos:
+        try:
+            plat = getattr(info, "platform", None)
+            serial = getattr(info, "serial", None)
+        except Exception:  # noqa: BLE001
+            continue
+        # 注意：**只看 udid 是否在 usbmux 列表里**，不参考 status。
+        # unauthorized / passcode_locked 仍属于"在场但需人工解锁"，不应触发
+        # disconnect——否则用户解锁后会被状态机误以为"新一次插入"又允许 spawn。
+        if plat == "ios" and serial:
+            current_ios_serials.add(str(serial))
+
+    gone = _last_seen_ios_serials - current_ios_serials
+    if gone:
+        policy = get_ios_wda_lifecycle_policy()
+        for serial in gone:
+            try:
+                policy.on_device_disconnected(serial)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "policy.on_device_disconnected 异常 serial={}: {}", serial, exc
+                )
+            # auto 下 policy 不维护集合，info 日志会刷屏；只在 stable 下打 info。
+            # auto 下打 debug 留个观测点。
+            if policy.is_stable:
+                logger.info(
+                    "iOS WDA 生命周期 — mode=stable，udid={} 已离线，"
+                    "清空 stable spawn 标记（下次插入视为新一次插入会话）",
+                    serial,
+                )
+            else:
+                logger.debug(
+                    "iOS rescan: udid={} 已离线（auto 模式无 spawn 标记需清）",
+                    serial,
+                )
+    _last_seen_ios_serials = current_ios_serials
 
 
 async def _handle_start_run(
@@ -1227,10 +1465,59 @@ class _IosMirrorSession:
             # ready / error）通过 WS 推给浏览器，让用户不用看 agent 终端。
             status_reporter = _make_device_status_reporter(self._ws, self._loop, self.serial)
             # 拔线重插场景：缓存里的 driver 对应的 WDA 很可能已经跟着设备死了，
-            # 先做一次健康检查，不通就丢弃缓存，避免后面 mjpeg 全 502
-            _invalidate_dead_ios_driver(self.serial)
+            # 先做一次健康检查，不通就丢弃缓存，避免后面 mjpeg 全 502。
+            #
+            # stable 模式（§7.0.1 #2 / §7.3）：_handle_ios_driver_unhealthy 不会
+            # close + 摘 cache，dead driver 会继续留在 _driver_cache 里，下一行
+            # _get_or_open_driver 直接复用导致全 502。因此这里显式两段：
+            #   * auto 下 _check_ios_driver_health 单次 probe，unhealthy → 处置
+            #     端 close + 摘 cache，与本拆分前完全等价。
+            #   * stable 下 _check_ios_driver_health 做 3 次有限重试，仍 unhealthy
+            #     就拒绝起 mirror、发 device_status(stage=error) 告诉用户拔插重做
+            #     人工准备，绝不复用 dead driver。
+            healthy, health_reason = _check_ios_driver_health(self.serial)
+            if not healthy:
+                policy = get_ios_wda_lifecycle_policy()
+                if policy.allow_driver_invalidation_close():
+                    _handle_ios_driver_unhealthy(self.serial, health_reason)
+                else:
+                    logger.warning(
+                        "iOS mirror 启动 serial={} 检测到 WDA 不可达（{}）但 lifecycle={}，"
+                        "拒绝起 mirror，请拔出 USB 重新插入设备",
+                        self.serial, health_reason, policy.mode.value,
+                    )
+                    try:
+                        # stage 用 error（DeviceStage Literal 内已定义、前端有
+                        # 红色卡片样式）。runtime_drop 是 launcher 内部约定，
+                        # 协议层从未声明、前端没匹配，stable failure 走 error
+                        # 才能保证浏览器真正显示出"未自动重启，请人工拔插"。
+                        status_reporter(
+                            "error",
+                            "WDA 不可达，未自动重启",
+                            policy.stable_unavailable_message(health_reason),
+                            0,
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self._stopped = True
+                    return
             try:
                 _get_or_open_driver(self.serial, on_status=status_reporter)
+            except StableWdaUnavailable as exc:
+                # stable + 本次插入会话已 spawn 过 + attach 又失败的情形：
+                # open_ios_driver 抛 StableWdaUnavailable，这里转成 device_status
+                # 让浏览器明确显示"未自动重启，请人工拔插"。
+                logger.warning(
+                    "iOS mjpeg mirror 启动 serial={} 被 stable policy 拒绝：{}",
+                    self.serial, exc,
+                )
+                try:
+                    # 同上：stage 用 error，确保前端能显示这条 stable failure
+                    status_reporter("error", "WDA 不可达，未自动重启", str(exc), 0)
+                except Exception:  # noqa: BLE001
+                    pass
+                self._stopped = True
+                return
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "iOS mjpeg mirror 启动前 open_driver 失败 serial={}: {} "

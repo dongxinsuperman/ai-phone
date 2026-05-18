@@ -484,6 +484,43 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # iOS WDA 生命周期策略（auto / stable）
+    # ------------------------------------------------------------------
+    # 详见 docs-internal/iOS_WDA_生命周期策略方案_2026-05-11.md。
+    #
+    # auto   = 调试期（默认）。允许插线预热、preflight_deadlock / runtime_drop
+    #          自动 respawn、/status 不通时关 driver 重建——与本字段引入前的
+    #          行为完全等价，调试期热拔插自愈能力不下降。
+    # stable = 部署期。人工准备一次后 agent 只 attach/reuse，不主动重启 WDA；
+    #          WDA 失效后抛 StableWdaUnavailable 让上层报错等人工处理。
+    #
+    # 注意：本字段仅控制 iOS WDA 生命周期，不影响 Android / HarmonyOS，也不
+    # 影响 iOS 已有 tap / swipe / type / screenshot / mirror action。
+    ios_wda_lifecycle_mode: str = Field(
+        default="auto",
+        description=(
+            "iOS WDA 生命周期策略：auto=调试期自动恢复（默认），"
+            "stable=部署期稳定复用。env: AI_PHONE_IOS_WDA_LIFECYCLE_MODE"
+        ),
+    )
+
+    # stable 模式下是否允许「每次 USB 插入会话内首次自动 spawn WDA」。
+    # True（默认，§7.5.1 B 子方案）：每次 USB 物理插入后允许 agent spawn 一次
+    #   WDA；之后禁止 respawn；拔出 USB → policy 清状态 → 重新插入又允许一次。
+    #   覆盖"人工准备一次 / 长期复用 / 拔插作为唯一重置入口"的 95% 部署诉求。
+    # False（§7.5.1 A 子方案）：严格 attach-only，即使首次插入也要求外部已起
+    #   WDA（Xcode / 手工 xcodebuild / 独立守护进程）；仅在外部统一管 WDA 的
+    #   严苛部署机房启用。
+    # 注意：本字段只在 ios_wda_lifecycle_mode=stable 下生效；auto 模式忽略。
+    ios_wda_stable_allow_initial_spawn: bool = Field(
+        default=True,
+        description=(
+            "stable 模式下是否允许每次 USB 插入会话内首次自动 spawn WDA。"
+            "env: AI_PHONE_IOS_WDA_STABLE_ALLOW_INITIAL_SPAWN"
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # HarmonyOS 镜像参数（M4）
     # ------------------------------------------------------------------
     # 两个后端可切（env ``AI_PHONE_HARMONY_MIRROR_BACKEND``）：

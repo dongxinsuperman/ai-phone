@@ -26,7 +26,7 @@ import inspect
 import io
 import socket
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from PIL import Image
 from loguru import logger
@@ -963,15 +963,140 @@ class IosDriver(BaseDriver):
 # ---------------------------------------------------------------------------
 # 设备发现 + 上线
 # ---------------------------------------------------------------------------
+# 最近一次 list_ios_devices 是否拿到了"可信的 USB 扫描结果"。
+#
+# 背景：macOS 上 usbmuxd 偶尔会抖一下，常见两种症状：
+#   1. ``usbmux.list_devices()`` 抛异常 / 超时
+#   2. **更隐蔽**：调用成功、返回 ``[]`` 空列表（socket 正常，只是 usbmuxd
+#      内部状态短暂不返回设备），常见持续几百毫秒到几秒
+# 在 stable 模式下，agent 是根据"udid 是否还在扫描结果里"来判断"USB 是否
+# 拔出"的；如果一次扫描抖动被当成"全部拔出"，会误清 spawn 状态机里的"已
+# spawn 标记"，下一次成功扫描时所有 udid 又被视为"新插入" → agent 又允许
+# spawn 一次 WDA，打破方案 §6.1 "只有物理拔插才能让 agent 重新触碰
+# WDA/XCTest"的核心承诺。
+#
+# 因此对外提供一个布尔信号 ``was_last_ios_scan_ok()``，**只有"扫描结果是
+# 可信的关于 USB 上有/没有 iOS 设备的判定"**才是 True。可信的两种情形：
+#   * 本轮看到 ≥1 个 udid（无歧义，肯定可信）
+#   * 本轮空列表 + 上一轮也是空（持续空稳定）
+#   * 本轮空列表 + 上轮有 udid + **连续 _EMPTY_STREAK_THRESHOLD 次确认**
+#     才认定"真拔出"——单次空被视为抖动，外层不更新拔插会话状态
+# 任何 ``list_devices()`` 抛异常、pmd3 ImportError 都直接标 False。
+#
+# 注意：ImportError（pmd3 没装）也算"不可信"，但因为 iOS 平台禁用是稳态、
+# 列表恒为空、``_last_seen_ios_serials`` 也恒为空，实际不会触发误清；标 False
+# 只是为了语义干净。
+_IOS_SCAN_LAST_OK: bool = False
+_IOS_SCAN_LOCK = threading.Lock()
+
+# 上一轮"被认定可信"的扫描看到的 udid 集合。用于判断"本轮空列表是持续空
+# 还是从有到无"。注意它与 ``main.py`` 的 ``_last_seen_ios_serials`` 不同：
+# 后者是"上次 _emit_ios_disconnect_events 看到的可信 udid"，前者是本模块
+# 内部的扫描状态机变量。两者分别维护，互不耦合。
+_IOS_LAST_GOOD_SCAN_UDIDS: Set[str] = set()
+# 连续空扫描次数计数。只在"上轮有 udid + 本轮空"的转换里递增；任意一次
+# 非空扫描都清零。达到阈值后才把空列表当作"真拔出"。
+_IOS_SCAN_EMPTY_STREAK: int = 0
+# 需要连续多少次空才认定真拔出。2 次即可——rescan 间隔约几秒，真拔出延迟
+# 一轮被识别完全可以接受；usbmuxd 抖动很少连续两轮都恰好空。
+_EMPTY_STREAK_THRESHOLD = 2
+
+
+def was_last_ios_scan_ok() -> bool:
+    """返回最近一次 ``list_ios_devices`` 是否拿到可信扫描结果。
+
+    用法见 ``_IOS_SCAN_LAST_OK`` 文档。**仅用于"是否可以根据扫描结果更新
+    USB 插拔会话状态"这一判断**，不要拿它做别的策略。
+    """
+    with _IOS_SCAN_LOCK:
+        return _IOS_SCAN_LAST_OK
+
+
+def _set_ios_scan_ok(ok: bool) -> None:
+    global _IOS_SCAN_LAST_OK
+    with _IOS_SCAN_LOCK:
+        _IOS_SCAN_LAST_OK = bool(ok)
+
+
+def _update_ios_scan_streak(raw_udids: Set[str]) -> None:
+    """根据本轮原始 udid 集合更新空扫描计数 + scan_ok 信号。
+
+    决策表（详见 ``_IOS_SCAN_LAST_OK`` 文档头）：
+
+    ============= =================  =====================================
+    上轮有 udid   本轮 raw_udids     scan_ok / 状态变迁
+    ============= =================  =====================================
+    -             非空               True，清空 streak，更新 last_good
+    False         空                 True（持续空稳定），streak 保持 0
+    True          空（streak<阈值-1） False（疑似抖动，外层跳过 disconnect）
+    True          空（streak≥阈值-1） True（确认真拔出），清 last_good
+    ============= =================  =====================================
+    """
+    global _IOS_LAST_GOOD_SCAN_UDIDS, _IOS_SCAN_EMPTY_STREAK, _IOS_SCAN_LAST_OK
+    with _IOS_SCAN_LOCK:
+        if raw_udids:
+            _IOS_SCAN_EMPTY_STREAK = 0
+            _IOS_LAST_GOOD_SCAN_UDIDS = set(raw_udids)
+            _IOS_SCAN_LAST_OK = True
+            return
+        if not _IOS_LAST_GOOD_SCAN_UDIDS:
+            # 上轮也空 → 持续空稳定状态，可信
+            _IOS_SCAN_EMPTY_STREAK = 0
+            _IOS_SCAN_LAST_OK = True
+            return
+        # 上轮有 udid，本轮空 → 进入"疑似抖动 / 待确认拔出"窗口
+        _IOS_SCAN_EMPTY_STREAK += 1
+        if _IOS_SCAN_EMPTY_STREAK >= _EMPTY_STREAK_THRESHOLD:
+            # 连续 N 次空，认定真拔出
+            confirmed_count = len(_IOS_LAST_GOOD_SCAN_UDIDS)
+            _IOS_LAST_GOOD_SCAN_UDIDS = set()
+            _IOS_SCAN_EMPTY_STREAK = 0
+            _IOS_SCAN_LAST_OK = True
+            logger.info(
+                "iOS USB 扫描连续 {} 次返回空 → 认定 {} 个 udid 真拔出，"
+                "将由 disconnect 钩子清空对应 stable spawn 标记",
+                _EMPTY_STREAK_THRESHOLD, confirmed_count,
+            )
+            return
+        # 第一次空：疑似 usbmuxd 抖动，标不可信，让外层完全跳过
+        # 本轮 disconnect 判定（不更新 _last_seen_ios_serials）
+        _IOS_SCAN_LAST_OK = False
+        logger.debug(
+            "iOS USB 扫描返回空但上轮有 {} 个 udid，疑似 usbmuxd 抖动，"
+            "本轮标不可信（streak={}/{}）；下一轮再确认",
+            len(_IOS_LAST_GOOD_SCAN_UDIDS),
+            _IOS_SCAN_EMPTY_STREAK,
+            _EMPTY_STREAK_THRESHOLD,
+        )
+
+
+def _reset_ios_scan_state_for_tests() -> None:
+    """测试钩子：清空扫描状态机的所有变量。仅供单测使用。"""
+    global _IOS_LAST_GOOD_SCAN_UDIDS, _IOS_SCAN_EMPTY_STREAK, _IOS_SCAN_LAST_OK
+    with _IOS_SCAN_LOCK:
+        _IOS_LAST_GOOD_SCAN_UDIDS = set()
+        _IOS_SCAN_EMPTY_STREAK = 0
+        _IOS_SCAN_LAST_OK = False
+
+
 def list_ios_devices(include_offline: bool = False) -> List[DeviceInfo]:
     """扫描 USB 上的 iOS 设备，返回 ``DeviceInfo`` 列表。
 
     不实际打开 WDA / 端口转发，只读 lockdown 里的元信息。WDA 那一步在
     ``open_ios_driver`` 时才做，避免每次设备扫描都启动 WDA。
+
+    本函数同时维护模块级的 ``_IOS_SCAN_LAST_OK`` 信号——见
+    ``was_last_ios_scan_ok`` 文档；stable 模式下的 USB 拔插会话状态机依赖
+    它防止 usbmux 抖动（包括"成功返回空列表"这种隐蔽抖动）被误判为"全部
+    拔出"。
     """
     try:
         usbmux, create_using_usbmux, _, _ = _import_pmd3()
     except ImportError as exc:
+        # pmd3 没装 = iOS 平台禁用稳态。标 False 让上层 disconnect 钩子也不
+        # 误以为这是"一次成功的空扫描"；实际 _last_seen_ios_serials 也恒为空，
+        # 没什么状态可清，但语义保持一致更省心。
+        _set_ios_scan_ok(False)
         logger.debug("跳过 iOS 设备扫描：{}", exc)
         return []
 
@@ -980,8 +1105,23 @@ def list_ios_devices(include_offline: bool = False) -> List[DeviceInfo]:
         # pmd3 9.x: list_devices 是 async；老版是 sync。统一过 _maybe_sync
         devices = _maybe_sync(usbmux.list_devices()) or []
     except Exception as exc:  # noqa: BLE001
+        # usbmux 抛异常：标 False 后**立刻 return**，让上层完全跳过本轮的
+        # disconnect 钩子，绝不更新 _last_seen_ios_serials。下一轮 rescan
+        # 成功后再恢复正常。
+        _set_ios_scan_ok(False)
         logger.warning("usbmux list_devices 失败：{}", exc)
         return []
+
+    # 关键修复（Codex P1 二次审查）：成功调用 + 空列表的隐蔽抖动也得防。
+    # 把"原始 udid 集合"先抽出来喂给扫描状态机，由后者决定本轮是否可信。
+    # 注意：这里只看 raw_udids 而不是后面的 infos——infos 还会因为 lockdown
+    # 抽风而退化成 offline/unauthorized，跟"USB 上是否物理在场"是两回事。
+    raw_udids: Set[str] = set()
+    for dev in devices:
+        udid = getattr(dev, "serial", None) or getattr(dev, "udid", None)
+        if udid:
+            raw_udids.add(str(udid))
+    _update_ios_scan_streak(raw_udids)
 
     for dev in devices:
         udid = getattr(dev, "serial", None) or getattr(dev, "udid", None)
@@ -1247,6 +1387,17 @@ def open_ios_driver(
                 f"iOS 端口转发启动失败 udid={udid} local={local_port}: {exc}"
             ) from exc
 
+    # iOS WDA 生命周期策略：launcher 本身不感知 auto/stable，只读布尔。
+    # auto 下 allow_runtime_drop_respawn/allow_preflight_deadlock_respawn 都为 True，
+    # 行为与本字段引入前完全等价；stable 下两个开关都为 False，preflight 死锁只
+    # 刷 need_unlock 提示、runtime_drop 只发 device_status 让浏览器报错等人工。
+    # 详见 docs-internal/iOS_WDA_生命周期策略方案_2026-05-11.md §7.0.1 / §7.2。
+    from .ios_wda_lifecycle import (  # noqa: PLC0415
+        StableWdaUnavailable,
+        get_ios_wda_lifecycle_policy,
+    )
+
+    policy = get_ios_wda_lifecycle_policy()
     launcher = IosWdaXcodeLauncher(
         udid=udid,
         project_dir=settings.wda_project_dir,
@@ -1255,15 +1406,42 @@ def open_ios_driver(
         on_status=on_status,
         bundle_id=settings.wda_bundle_id,
         team_id=settings.wda_team_id,
+        allow_runtime_drop_respawn=policy.allow_runtime_drop_respawn(),
+        allow_preflight_deadlock_respawn=policy.allow_preflight_deadlock_respawn(),
     )
-    mode = launcher.start()
-    logger.info("udid={} WDA launcher 模式={} local_port={}", udid, mode, local_port)
+    # §7.5.1 spawn 状态机：auto 永远允许；stable 下本次"USB 插入会话"内最多一次
+    # （或严格 attach-only 子方案下永远不允许）。launcher 只读布尔，决策在 policy。
+    spawn_allowed = policy.allow_spawn(udid, reason="open_driver")
+    mode = launcher.start(allow_spawn=spawn_allowed)
+    logger.info(
+        "udid={} WDA launcher 模式={} local_port={} lifecycle={} spawn_allowed={}",
+        udid, mode, local_port, policy.mode.value, spawn_allowed,
+    )
+    # stable + 本次会话已 spawn 过 + 当前 attach 又失败 → 真挂，让上层显式上报浏览器，
+    # 而不是在 wait_ready 卡 timeout 后吐一坨 launcher disabled 文案。
+    if (
+        policy.is_stable
+        and mode == "disabled"
+        and not spawn_allowed
+    ):
+        if forwarder is not None:
+            forwarder.stop()
+        launcher.stop()
+        raise StableWdaUnavailable(policy.stable_unavailable_message(
+            "本次 USB 插入会话内 WDA 已失效；请拔出 USB 并重新插入设备走一遍人工准备"
+        ))
 
     wda = WdaClient(f"http://127.0.0.1:{local_port}")
     try:
         wda.wait_ready(timeout=timeout)
         # 关掉 launcher 里的锁屏 watcher（如果起过），避免 WDA 已就绪后还刷提示
         launcher.mark_ready()
+        # §7.5.1 spawn 状态机：只在"真正走了 spawn 分支 + WDA ready"两件事都满足时
+        # 才记 record_spawned。spawn 失败（rc!=0 / wait_ready 超时）不记，
+        # 让用户根据错误提示走完人工准备后下次 open 还能 spawn。auto 下本调用
+        # 是 no-op（policy 内部不维护集合）。
+        if mode == "spawn":
+            policy.record_spawned(udid)
     except Exception as exc:  # noqa: BLE001
         if callable(on_status):
             try:
