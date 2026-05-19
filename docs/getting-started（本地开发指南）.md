@@ -2,6 +2,7 @@
 
 > 起一份完整链路：Server + Agent + 前端三个进程 + 一台真机即可。
 > 新 Mac 从 0 到 1 完成部署，请优先看 [`deployment-from-zero（从0到1部署指南）.md`](./deployment-from-zero（从0到1部署指南）.md)。
+> 如果这台 Mac 只作为 Agent 接手机，请看 [`agent-deployment（Agent接入部署指南）.md`](./agent-deployment（Agent接入部署指南）.md)。
 > iOS / HarmonyOS 额外配置见 [`ios-setup（iOS接入指南）.md`](./ios-setup（iOS接入指南）.md) 和 [`harmony-setup（HarmonyOS接入指南）.md`](./harmony-setup（HarmonyOS接入指南）.md)。
 > 部署推荐默认值见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md)：iOS stable 线路优先，Android / HarmonyOS 黑屏待机线路优先。
 
@@ -146,6 +147,7 @@ psql "$AI_PHONE_DB_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 - [external-api（对外调用清单）](./external-api（对外调用清单）.md)
 - [architecture（架构设计）](./architecture（架构设计）.md)
 - [deployment-from-zero（从0到1部署指南）](./deployment-from-zero（从0到1部署指南）.md)
+- [agent-deployment（Agent接入部署指南）](./agent-deployment（Agent接入部署指南）.md)
 - [server-brain（Server大脑架构说明）](./server-brain（Server大脑架构说明）.md)
 - [executable-logic-contract（可执行链路契约）](./executable-logic-contract（可执行链路契约）.md)
 - [trajectory-cache-usage（轨迹缓存使用文档）](./trajectory-cache-usage（轨迹缓存使用文档）.md)

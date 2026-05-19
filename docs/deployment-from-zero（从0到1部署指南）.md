@@ -2,6 +2,7 @@
 
 > 目标：一台全新的 Mac，从 `git clone` 开始，部署到 Android / iOS / HarmonyOS 三端真机都能进入设备池、打开工作台、执行自然语言任务。
 > 本文按“AI 可读执行清单”写：可以直接让 Cursor / Codex / 其他本机助手打开本文件，按步骤检查和补齐环境。
+> 如果这台 Mac 只作为 Agent 接手机、不部署 Server / Web / DB，请改看 [agent-deployment（Agent接入部署指南）](./agent-deployment（Agent接入部署指南）.md)。
 
 ---
 
@@ -483,6 +484,7 @@ hdc list targets -v
 ## 十二、相关文档
 
 - [getting-started（本地开发指南）](./getting-started（本地开发指南）.md)
+- [agent-deployment（Agent接入部署指南）](./agent-deployment（Agent接入部署指南）.md)
 - [ios-setup（iOS接入指南）](./ios-setup（iOS接入指南）.md)
 - [harmony-setup（HarmonyOS接入指南）](./harmony-setup（HarmonyOS接入指南）.md)
 - [recommended-env（推荐部署Env清单）](./recommended-env（推荐部署Env清单）.md)
