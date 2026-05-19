@@ -2,6 +2,7 @@
 
 > 起一份完整链路：Server + Agent + 前端三个进程 + 一台真机即可。
 > iOS / HarmonyOS 额外配置见 [`ios-setup.md`](./ios-setup.md) 和 [`harmony-setup.md`](./harmony-setup.md)。
+> 部署推荐默认值见 [`recommended-env.md`](./recommended-env.md)：iOS stable 线路优先，Android / HarmonyOS 黑屏待机线路优先。
 
 ---
 
@@ -40,6 +41,8 @@ cp .env.example .env
 | `AI_PHONE_MIRROR_*` | Android 画质 / 延迟参数（详见 `.env.example` §8） |
 | `AI_PHONE_VLM_SESSION_RESET_PROMPT_THRESHOLD` | Doubao Responses 超阈值自动切段（默认 30000，≤0 关闭） |
 | `AI_PHONE_WDA_PROJECT_DIR` | iOS 接入入口，留空走"手动 Xcode + iproxy"过渡态 |
+| `AI_PHONE_IOS_WDA_LIFECYCLE_MODE` | iOS WDA 生命周期；部署推荐 `stable`，详见 [`recommended-env.md`](./recommended-env.md) |
+| `AI_PHONE_ANDROID_*WAKE*` / `AI_PHONE_HARMONY_*WAKE*` | Android / HarmonyOS 黑屏待机与 Run 前唤醒策略，详见 [`recommended-env.md`](./recommended-env.md) |
 
 `.env.example` 顶部按 §1–§20 分组，每组都有详细中文注释。
 
@@ -93,7 +96,7 @@ npm run dev   # http://127.0.0.1:5180
 
 ## 六、Schema 重建（仅在升级 v1.7 时需要）
 
-v1.7 对 submission 协议做了破坏性统一（`device_alias` → `device_alias_pool`，详见 [对外调用清单.md §变更记录](../对外调用清单.md#变更记录)）。**因平台尚未对外发布、零外部用户**，老库直接清空重建即可：
+v1.7 对 submission 协议做了破坏性统一（顶层 wrapper、`platforms`、`deviceAliasPools`，详见 [external-api（对外调用清单）](./external-api（对外调用清单）.md)）。**因平台尚未对外发布、零外部用户**，老库直接清空重建即可：
 
 ```bash
 # 方式 1：只删 submission 相关表
@@ -112,7 +115,7 @@ psql "$AI_PHONE_DB_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 ## 七、常见问题 FAQ
 
 **Q：画面有黑边怎么办？**
-正常。`<video>` 用 `object-fit: contain` 按比例缩放，旋转后容器会自动 W/H 互换。手动操作的坐标映射会自动剥离黑边（详见 [`架构设计.md`](../架构设计.md) §10.7）。
+正常。`<video>` 用 `object-fit: contain` 按比例缩放，旋转后容器会自动 W/H 互换。手动操作的坐标映射会自动剥离黑边（详见 [`architecture（架构设计）.md`](./architecture（架构设计）.md)）。
 
 **Q：画面延迟想再低一点？**
 改 `backend/.env`：`AI_PHONE_MIRROR_FRAG_MS=33` + `AI_PHONE_MIRROR_GOP_SEC=0`，agent 重启生效。代价是 CPU 略高、WS 帧率密集（30 msg/s）。
@@ -139,12 +142,14 @@ psql "$AI_PHONE_DB_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 
 ## 八、相关链接
 
-- [对外调用 API 契约（投递 / 查询 / 取消 / Kafka / Webhook）](../对外调用清单.md)
-- [架构设计](../架构设计.md)
+- [external-api（对外调用清单）](./external-api（对外调用清单）.md)
+- [architecture（架构设计）](./architecture（架构设计）.md)
 - [Server 大脑架构说明（next/server-brain）](./server-brain.md)
 - [主 VLM / 回放可执行链路契约](./executable-logic-contract.md)
 - [轨迹缓存 V1 / V2 方案契约](./trajectory-cache-v1-v2.md)
 - [轨迹缓存 V3 方案契约](./trajectory-cache-v3.md)
-- [使用功能介绍（产品手册）](../使用功能介绍.md)
-- [辅助系统核心逻辑及效果（含 26 项阈值调参）](../ai-phone的辅助系统核心逻辑及效果.md)
+- [features（使用功能介绍）](./features（使用功能介绍）.md)
+- [assistant-systems（辅助系统核心逻辑及效果）](./assistant-systems（辅助系统核心逻辑及效果）.md)
+- [推荐部署 Env 清单](./recommended-env.md)
+- [internal-doc-audit-2026-05-19（内外文档同步审计）](./internal-doc-audit-2026-05-19（内外文档同步审计）.md)
 - [Midscene 执行器挂载方案](../Midscene执行器接入方案.md)

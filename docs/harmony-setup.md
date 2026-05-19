@@ -1,7 +1,7 @@
 # HarmonyOS 接入指南
 
 > 走 `hdc` + `hmdriver2`（社区版鸿蒙 UI 自动化），镜像走 hypium Captures MJPEG（hmdriver2 内部 RecordClient 同款协议）。
-> 与 iOS / Android 同级，调用方 API 完全一致，只需切换 `platform: harmony`。
+> 与 iOS / Android 同级，调用方 API 完全一致，只需在投递里写 `platforms: ["harmony"]`。
 
 ---
 
@@ -61,7 +61,7 @@ export PATH="$HOME/Library/Huawei/Sdk/openharmony/<版本>/toolchains:$PATH"
 
 ## 五、稳定性工程（HarmonyOS 三级自愈）
 
-agent 内部已经实现三级自愈，业务无感（详见 [`架构设计.md`](../架构设计.md) §10 鸿蒙篇）：
+agent 内部已经实现三级自愈，业务无感（详见 [`architecture（架构设计）.md`](./architecture（架构设计）.md)）：
 
 - **L1 socket 重连**：uitest socket 短断后自动重连
 - **L2 重建 Driver**：连续断流 → 销毁旧 driver、重新 attach
@@ -71,9 +71,29 @@ agent 内部已经实现三级自愈，业务无感（详见 [`架构设计.md`]
 
 ---
 
-## 六、防自动息屏
+## 六、黑屏待机与 Run 前唤醒
 
-agent 自动通过 `power-shell timeout -o` 设置不息屏，**以 10 分钟为周期续约**（实测单次 override 在 18 小时长跑后会被系统抹掉）。rescan 步频自然驱动，无新增协程。
+当前部署推荐不是长期常亮，而是让设备空闲自然息屏，真正执行前用纯 `hdc` 唤醒：
+
+```env
+AI_PHONE_HARMONY_SETUP_STAY_AWAKE=false
+AI_PHONE_HARMONY_SCREEN_OFF_DISPATCHABLE=true
+AI_PHONE_HARMONY_WAKE_BEFORE_RUN=true
+AI_PHONE_HARMONY_WAKE_SWIPE_ENABLED=true
+AI_PHONE_HARMONY_WAKE_SETTLE_MS=500
+AI_PHONE_HARMONY_WAKE_SWIPE_SETTLE_MS=500
+AI_PHONE_HARMONY_WAKE_ON_ENTER=true
+```
+
+含义：
+
+- `SETUP_STAY_AWAKE=false`：不再用 `power-shell timeout -o` 做长期常亮续约。
+- `SCREEN_OFF_DISPATCHABLE=true`：黑屏但可唤醒的设备仍可进队列派发。
+- `WAKE_BEFORE_RUN=true`：hmdriver2 初始化、首张截图、缓存回放前先走纯 `hdc shell power-shell wakeup`。
+- `WAKE_ON_ENTER=true`：手动进入工作台、启动镜像、手动 input 前也先点亮屏幕；只 wake，不自动上滑。
+- `WAKE_SWIPE_ENABLED=true` 只是能力开关；真正自动上滑还必须命中 `AI_PHONE_WAKE_SWIPE_DEVICE_ALLOWLIST`。
+
+如果设备存在安全密码 / 生物识别锁，wake + 上滑只能到锁屏认证页，不能绕过系统安全锁。
 
 ---
 
@@ -88,4 +108,5 @@ agent 自动通过 `power-shell timeout -o` 设置不息屏，**以 10 分钟为
 
 - [本地开发指南](./getting-started.md)
 - [iOS 接入指南](./ios-setup.md)
-- [架构设计 §10 HarmonyOS 镜像架构](../架构设计.md)
+- [architecture（架构设计）](./architecture（架构设计）.md)
+- [推荐部署 Env 清单](./recommended-env.md)

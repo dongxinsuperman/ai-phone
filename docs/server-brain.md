@@ -32,36 +32,43 @@ Server 是大脑，Agent 是手脚
 
 ---
 
-## 二、对外 API 是否变化
+## 二、对外 API 入口
 
-对外调用方无感知。
+当前对外主入口是 `/api/submissions`，不是旧的 `/api/runs`。
 
-创建任务仍然走原来的接口：
+批次投递：
 
 ```http
-POST /api/runs
+POST /api/submissions
 ```
 
-调用方继续传原来的字段，例如：
+调用方传 wrapper 对象，例如：
 
 ```json
 {
-  "device_serial": "6ad9243",
-  "goal": "点击全部功能",
-  "engine": "vlm"
+  "submissionName": "smoke-2026-05-19",
+  "items": [
+    {
+      "caseId": "demo_001",
+      "caseName": "进入关于本机",
+      "runContent": "打开设置并进入关于本机",
+      "platforms": ["android", "ios"],
+      "deviceAliasPools": {"ios": ["iPhone-1"]}
+    }
+  ]
 }
 ```
 
-调用方不需要知道这次 Run 是由 Server 决策，还是由 Agent 决策。执行架构是平台内部实现细节。
+调用方不需要知道这次 Run 是由 Server 决策，还是由 Agent 决策。执行架构是平台内部实现细节。完整字段见 [`external-api（对外调用清单）.md`](./external-api（对外调用清单）.md)。
 
 当前分支的默认规则：
 
 | engine | 执行位置 | 说明 |
 |---|---|---|
 | `vlm` | Server 大脑 | Server 调 VLM，Agent 执行动作 |
-| `midscene` | Agent 大脑 | 外接 Midscene 仍留在 Agent 端 |
+| `midscene` | Agent 大脑 | 仅保留在 deprecated `/api/runs` 手工调试路径，批次投递不接受 engine 字段 |
 
-因此，如果外部系统原来只调用 `POST /api/runs`，通常不需要改调用代码。
+`/api/runs` 当前已标 deprecated：GET 仍用于前端日志抽屉和排障，POST 只保留短期手工调试。新接入方不要再把它作为业务投递入口。
 
 ---
 
@@ -84,6 +91,7 @@ AI_PHONE_VLM_API_KEY=...
 ```
 
 生产环境建议把 `AI_PHONE_AGENT_TOKEN` 换成更长的随机字符串。
+设备稳定推荐默认见 [`recommended-env.md`](./recommended-env.md)：iOS stable 线路优先，Android / HarmonyOS 黑屏待机线路优先。
 
 Server 启动示例：
 
@@ -257,7 +265,7 @@ curl http://<server-host>:8000/api/runs/<run_id>/commands
 - Run 运行中拔手机
 - Run 运行中停止
 - 多 item / 多平台批量派发
-- iOS 在 Server 大脑模式下的完整链路
+- iOS 在 Server 大脑模式下的设备动作链路；本机仍需要 WDA / Xcode / tunneld 等环境准备
 
 ---
 
@@ -309,20 +317,20 @@ Server 大脑只上移 VLM 决策，不会替代：
 
 ## 八、与 main 分支的关系
 
-`main` 分支是当前稳定开源入口。
+`main` 分支是 Agent 大脑架构的旧稳定入口，自 2026-05 起按归档冻结处理。
 
-`next/server-brain` 是新架构实验分支，用来验证：
+`next/server-brain` 是当前长期主力分支，用来承载：
 
 ```text
-Server 负责 VLM 决策
+Server 负责 VLM 决策 / 辅助系统 / 轨迹缓存
 Agent 负责真机动作
-调用方 API 保持不变
+调用方使用 /api/submissions 批次契约
 ```
 
 两条分支建议保持隔离：
 
-- `main`：稳定、易理解、适合首次开源用户
-- `next/server-brain`：实验架构、快速迭代、验证多 Agent 和 Server 大脑
+- `main`：旧架构归档，只接受 P0 bugfix
+- `next/server-brain`：当前主力架构，继续演进多 Agent、队列和稳定性
 
 当 `next/server-brain` 足够稳定后，可以再决定是否发布新的 tag 或新版本说明。
 
