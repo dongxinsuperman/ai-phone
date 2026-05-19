@@ -8,44 +8,9 @@
 
 ---
 
-## 分支说明
-
-本分支 `next/server-brain` 为项目**长期主力分支**，也是当前推荐的官方维护入口。它采用 **Server 大脑，Agent 手脚** 的新架构：VLM 决策 / 轨迹缓存 / 断言 / 命令证据链集中在 Server，Agent 只执行设备动作，适合多办公区、多 Agent、统一模型密钥、统一调度报告、权限 / 审计 / K8s 化等生产化场景。
-
-> 老的 `main` 分支为 **Agent 大脑架构** 的 v0.1.x 历史分支，自 2026-05 起已 **归档冻结**，不再作为推荐入口展示或维护；新功能（轨迹缓存 V2/V3、Run 自动重跑、统一密钥/审计等）一律在本分支演进。两条分支不再做整体 merge —— 已是架构层面的不同选型。
-
-> **轨迹缓存说明**：本分支已具备 VLM 成功轨迹缓存 / 回放能力，支持 `off` / `v1` / `v2` / `v3` 四种投递模式。轨迹回放对 case 的起跑状态、账号状态、设备状态、业务页面稳定性要求很高，建议只在业务起跑状态高度可控、重复执行稳定后按场景打开。用法见 [trajectory-cache-usage（轨迹缓存使用文档）](./docs/trajectory-cache-usage（轨迹缓存使用文档）.md)。
-
-本分支的部署和差异说明见 [server-brain（Server大脑架构说明）](./docs/server-brain（Server大脑架构说明）.md)。
-
----
+## 看一眼实际样子
 
 ![iOS / HarmonyOS / Android 三端等价接入，业务化别名一栏管理](./assets/screenshots/devices-overview.png)
-
----
-
-## 为什么选 ai-phone
-
-| 能力维度 | ai-phone 提供的 |
-|---|---|
-| **三端真机原生** | iOS（WDA / mjpeg passthrough）/ Android（adb + scrcpy）/ HarmonyOS（hdc + hypium）三端等价。鸿蒙作为一等公民与 iOS / Android 同等支持，在开源生态里少见 |
-| **调度队列 + 多设备并发** | `POST /api/submissions` 投递批次 → 实时按 `device_alias_pool` 分发到设备池 → Submission / Item TTL 兜底超时 → Kafka / Webhook 双通道终态广播 → HTML 报告自动落盘。设备占用锁 + readiness gate 防止派单到僵尸设备 |
-| **自然语言驱动** | `runContent: "打开设置并进入关于本机"` 直接喂给 VLM，不写 selector / xpath / 步骤脚本 |
-| **纯视觉决策** | 每步只看截图，不依赖 DOM / 控件树 / 无障碍服务，跨 App 跨平台不挑食 |
-| **辅助系统护城河** | 卡死检测（本地 pHash 算法层、不烧 token）+ 异常介入审判（独立轻量模型，反复同坐标 / 同屏 / 震荡滑动自动召唤）+ 双图断言系统（before / after + 全步骤上下文对照终局裁决）+ 通道判定（结构化 / 自由对话自动分流）—— "VLM 是否真生效"不再是黑盒 |
-| **三家协议自由组合** | 主 VLM 走 Doubao / Claude / GPT 三选一，辅助系统也可异家组合（如"主 Claude + 辅 Doubao 省成本"），全部走 env 切换、零代码改动 |
-| **执行器可插拔** | 默认内置自研 VLM 决策循环；前端"引擎"下拉框允许挂载第三方执行器作为额外选项，调度 / 报告 / 设备池 / 终态广播仍然走中台统一链路 |
-| **快速部署** | 一台 Mac + Postgres + 一根数据线即可起完整链路；生产部署模板在 Roadmap 中持续补齐 |
-
-**典型用户**：
-
-- 中小型公司 QA 团队 —— 真机上做 AI 化的兼容性 / 回归 / 冒烟测试
-- 业务回归大盘想从"脚本维护"切到"自然语言投递"
-- 海外团队需要切 Claude / GPT 跑英文 App（改两个 env 即用）
-
----
-
-## 看一眼实际样子
 
 按"调度 → 调试 → 决策护城河 → 产出 → 观测"5 个节点串起来看：
 
@@ -70,6 +35,39 @@
 **5. 运维大盘** —— 吞吐 / 设备健康 / Token 用量 / 稳定性四象限一页呈现；AI 分析卡片基于当日数据生成 4 段中文总结，跟随 `ASSISTANT_BACKEND` 在豆包 / Claude / GPT 间自由切换：
 
 ![运维大盘 · 吞吐 / 设备 / Token / 稳定性四象限 + AI 摘要](./assets/screenshots/analytics-overview.png)
+
+---
+
+## 为什么选 ai-phone
+
+| 能力维度 | ai-phone 提供的 |
+|---|---|
+| **三端真机原生** | iOS（WDA / mjpeg passthrough）/ Android（adb + scrcpy）/ HarmonyOS（hdc + hypium）三端等价。鸿蒙作为一等公民与 iOS / Android 同等支持，在开源生态里少见 |
+| **调度队列 + 多设备并发** | `POST /api/submissions` 投递批次 → 实时按 `device_alias_pool` 分发到设备池 → Submission / Item TTL 兜底超时 → Kafka / Webhook 双通道终态广播 → HTML 报告自动落盘。设备占用锁 + readiness gate 防止派单到僵尸设备 |
+| **自然语言驱动** | `runContent: "打开设置并进入关于本机"` 直接喂给 VLM，不写 selector / xpath / 步骤脚本 |
+| **纯视觉决策** | 每步只看截图，不依赖 DOM / 控件树 / 无障碍服务，跨 App 跨平台不挑食 |
+| **辅助系统护城河** | 卡死检测（本地 pHash 算法层、不烧 token）+ 异常介入审判（独立轻量模型，反复同坐标 / 同屏 / 震荡滑动自动召唤）+ 双图断言系统（before / after + 全步骤上下文对照终局裁决）+ 通道判定（结构化 / 自由对话自动分流）—— "VLM 是否真生效"不再是黑盒 |
+| **三家协议自由组合** | 主 VLM 走 Doubao / Claude / GPT 三选一，辅助系统也可异家组合（如"主 Claude + 辅 Doubao 省成本"），全部走 env 切换、零代码改动 |
+| **执行器可插拔** | 默认内置自研 VLM 决策循环；前端"引擎"下拉框允许挂载第三方执行器作为额外选项，调度 / 报告 / 设备池 / 终态广播仍然走中台统一链路 |
+| **快速部署** | 一台 Mac + Postgres + 一根数据线即可起完整链路；生产部署模板在 Roadmap 中持续补齐 |
+
+**典型用户**：
+
+- 中小型公司 QA 团队 —— 真机上做 AI 化的兼容性 / 回归 / 冒烟测试
+- 业务回归大盘想从"脚本维护"切到"自然语言投递"
+- 海外团队需要切 Claude / GPT 跑英文 App（改两个 env 即用）
+
+---
+
+## 分支说明
+
+本分支 `next/server-brain` 为项目**长期主力分支**，也是当前推荐的官方维护入口。它采用 **Server 大脑，Agent 手脚** 的新架构：VLM 决策 / 轨迹缓存 / 断言 / 命令证据链集中在 Server，Agent 只执行设备动作，适合多办公区、多 Agent、统一模型密钥、统一调度报告、权限 / 审计 / K8s 化等生产化场景。
+
+> 老的 `main` 分支为 **Agent 大脑架构** 的 v0.1.x 历史分支，自 2026-05 起已 **归档冻结**，不再作为推荐入口展示或维护；新功能（轨迹缓存 V2/V3、Run 自动重跑、统一密钥/审计等）一律在本分支演进。两条分支不再做整体 merge —— 已是架构层面的不同选型。
+
+> **轨迹缓存说明**：本分支已具备 VLM 成功轨迹缓存 / 回放能力，支持 `off` / `v1` / `v2` / `v3` 四种投递模式。轨迹回放对 case 的起跑状态、账号状态、设备状态、业务页面稳定性要求很高，建议只在业务起跑状态高度可控、重复执行稳定后按场景打开。用法见 [trajectory-cache-usage（轨迹缓存使用文档）](./docs/trajectory-cache-usage（轨迹缓存使用文档）.md)。
+
+本分支的部署和差异说明见 [server-brain（Server大脑架构说明）](./docs/server-brain（Server大脑架构说明）.md)。
 
 ---
 
