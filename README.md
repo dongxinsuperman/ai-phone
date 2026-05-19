@@ -4,7 +4,7 @@
 
 **面向中小型公司的三端真机 AI 自动化中台** —— iOS / Android / HarmonyOS 同级原生支持，自然语言驱动的纯视觉决策，开箱即用的调度队列与多设备并发，执行器可插拔，一台 Mac 即可起完整链路。新 Mac 从 0 到 1 的完整部署见 [deployment-from-zero（从0到1部署指南）](./docs/deployment-from-zero（从0到1部署指南）.md)。
 
-> **产品形态**：ai-phone 不是一个执行器 SDK，而是把"投递批次 → 设备池调度 → 自然语言执行 → 终态广播 + HTML 报告 + 大盘统计"做成 QA 团队 / 业务回归大盘开箱即用的中台能力。**执行器是其中一个可替换组件**：默认内置自研的 VLM 纯视觉决策循环（带卡死检测 / 审判 / 断言等辅助系统），也可挂载第三方执行器作为额外引擎选项。
+> **产品形态**：ai-phone 不是一个执行器 SDK，而是把"投递批次 → 设备池调度 → 自然语言执行 → 终态广播 + HTML 报告 + 大盘统计"做成 QA 团队 / 业务回归大盘开箱即用的中台能力。**执行器是其中一个可替换组件**：默认内置自研的 VLM 纯视觉决策循环，并在外层包了页面稳定、卡死检测、审判、断言、状态路标、瞬态 UI 处理等执行安全层；也可挂载第三方执行器作为额外引擎选项。
 
 ---
 
@@ -22,11 +22,11 @@
 
 ![Android 设备工作台 · 实时画面 + Goal 输入 + 步骤日志面板](./assets/screenshots/device-workbench-android.png)
 
-**3. 辅助系统护城河** —— 同坐标 `(~500, 500)` 累计点击 3 次自动召唤审判系统（**WARN #15 审判·召唤**），独立轻量模型审视后决定继续推进还是 KILL，VLM 决策不再是黑盒（这是 ai-phone 与 Midscene 等 Plan-Loop 框架的根本差异）：
+**3. 辅助系统护城河** —— ai-phone 不是把截图直接交给 VLM 赌下一步，而是在执行外层加了一套可监督的安全层：页面稳定后再决策，本地 pHash 捕捉同坐标 / 同屏 / 滑动震荡，异常自动召唤审判系统，终局用 before / after 双图断言。轨迹缓存回放还会用 V2 状态路标对齐页面、V3 意图回放重新定位控件，并把非业务瞬态弹窗标记为 optional gate，避免"首跑关弹窗"污染后续复跑。
 
 ![审判系统 · 同坐标震荡触发召唤，独立模型实时审视后放行](./assets/screenshots/assist-judge-system.png)
 
-> 完整辅助能力（页面稳定 / 审判 / 断言 / 卡死检测 / 通道判定）见 [辅助系统核心逻辑及效果](./docs/assistant-systems（辅助系统核心逻辑及效果）.md)。
+> 完整辅助能力（页面稳定 / 通道判定 / 卡死检测 / 审判 / 断言 / 状态路标 / 瞬态弹窗 gate）见 [辅助系统核心逻辑及效果](./docs/assistant-systems（辅助系统核心逻辑及效果）.md)。
 
 **4. 自包含 HTML 报告** —— 单 case 与三端汇总两级，每步操作前 / 操作后双图对照 + Token 统计 + VLM 思考全留痕，零外部依赖、匿名可访问，便于外部平台直接嵌入：
 
@@ -46,7 +46,8 @@
 | **调度队列 + 多设备并发** | `POST /api/submissions` 投递批次 → 实时按 `device_alias_pool` 分发到设备池 → Submission / Item TTL 兜底超时 → Kafka / Webhook 双通道终态广播 → HTML 报告自动落盘。设备占用锁 + readiness gate 防止派单到僵尸设备 |
 | **自然语言驱动** | `runContent: "打开设置并进入关于本机"` 直接喂给 VLM，不写 selector / xpath / 步骤脚本 |
 | **纯视觉决策** | 每步只看截图，不依赖 DOM / 控件树 / 无障碍服务，跨 App 跨平台不挑食 |
-| **辅助系统护城河** | 卡死检测（本地 pHash 算法层、不烧 token）+ 异常介入审判（独立轻量模型，反复同坐标 / 同屏 / 震荡滑动自动召唤）+ 双图断言系统（before / after + 全步骤上下文对照终局裁决）+ 通道判定（结构化 / 自由对话自动分流）—— "VLM 是否真生效"不再是黑盒 |
+| **辅助系统护城河** | 页面稳定后再决策；本地 pHash 卡死检测不烧 token；同坐标 / 同屏 / 震荡滑动自动召唤独立审判；before / after + 全步骤上下文做终局断言；结构化 / 自由对话自动分流 —— "VLM 是否真生效"不再是黑盒 |
+| **可监督轨迹缓存** | V1 固定动作回放、V2 状态路标对齐、V3 意图回放重定位；缓存复跑后仍走最终断言，失败会清理或标记可疑缓存；非业务瞬态弹窗可标记为 optional gate，当前没有同类弹窗时跳过，有同类弹窗时按需执行或修复 |
 | **三家协议自由组合** | 主 VLM 走 Doubao / Claude / GPT 三选一，辅助系统也可异家组合（如"主 Claude + 辅 Doubao 省成本"），全部走 env 切换、零代码改动 |
 | **执行器可插拔** | 默认内置自研 VLM 决策循环；前端"引擎"下拉框允许挂载第三方执行器作为额外选项，调度 / 报告 / 设备池 / 终态广播仍然走中台统一链路 |
 | **快速部署** | 一台 Mac + Postgres + 一根数据线即可起完整链路；生产部署模板在 Roadmap 中持续补齐 |
@@ -128,7 +129,7 @@ curl -X POST http://localhost:8000/api/submissions \
 | 调度队列 + 设备池（Submission / Item TTL / 别名 / 锁 / readiness gate） | ✅ 完整 |
 | 终态广播（Kafka / Webhook / stdout 三选一） | ✅ 完整 |
 | 自包含 HTML 报告 + 运维大盘 | ✅ 完整 |
-| VLM 决策循环 + 辅助系统（卡死 / 审判 / 断言 / 通道判定） | ✅ 完整 |
+| VLM 决策循环 + 执行安全层（页面稳定 / 卡死 / 审判 / 断言 / 状态路标 / 瞬态 UI gate） | ✅ 完整 |
 | 多协议适配（Doubao / Claude / GPT 自由组合） | ✅ 完整 |
 | 执行器可插拔（内置 VLM + Midscene 桥接） | ✅ 完整 |
 
@@ -163,11 +164,11 @@ ai-phone 采用 **GNU GPLv3** 开源。Copyright (C) 2026 Dongxin and ai-phone c
 | [deployment-from-zero（从0到1部署指南）](./docs/deployment-from-zero（从0到1部署指南）.md) | 部署者 / AI 助手 | 新 Mac 从 clone 到 Android / iOS / HarmonyOS 三端可执行的完整步骤、终端清单、自检和故障处理 |
 | [agent-deployment（Agent接入部署指南）](./docs/agent-deployment（Agent接入部署指南）.md) | 接机同事 / Agent 部署者 | 只部署 Agent 机器时需要的依赖、Server 连接、三端手机准备、启动命令和验收标准 |
 | [getting-started（本地开发指南）](./docs/getting-started（本地开发指南）.md) | 本地开发者 | 起后端 / 起 agent / 起前端、env 配置详解、FAQ |
-| [trajectory-cache-usage（轨迹缓存使用文档）](./docs/trajectory-cache-usage（轨迹缓存使用文档）.md) | 调用方 / 部署者 | `cacheMode=off/v1/v2/v3` 使用方式、风险边界、推荐组合 |
+| [trajectory-cache-usage（轨迹缓存使用文档）](./docs/trajectory-cache-usage（轨迹缓存使用文档）.md) | 调用方 / 部署者 | `cacheMode=off/v1/v2/v3` 使用方式、状态路标、风险边界、推荐组合 |
 | [ios-setup（iOS接入指南）](./docs/ios-setup（iOS接入指南）.md) | iOS 接入者 | WDA / pmd3 / Xcode 自动续签 / tunneld 完整流程 |
 | [harmony-setup（HarmonyOS接入指南）](./docs/harmony-setup（HarmonyOS接入指南）.md) | 鸿蒙接入者 | hdc / hmdriver2 / hypium 镜像后端切换 |
 | [recommended-env（推荐部署Env清单）](./docs/recommended-env（推荐部署Env清单）.md) | 部署者 | iOS stable、Android/Harmony 黑屏待机推荐默认 |
-| [assistant-systems（辅助系统核心逻辑及效果）](./docs/assistant-systems（辅助系统核心逻辑及效果）.md) | 算法调优者 | 页面稳定 / 审判 / 断言 / 卡死检测的效果与调参 |
+| [assistant-systems（辅助系统核心逻辑及效果）](./docs/assistant-systems（辅助系统核心逻辑及效果）.md) | 算法调优者 | 执行安全层：页面稳定、通道判定、卡死检测、审判、断言、状态路标、瞬态 UI gate |
 | [Midscene 执行器接入方案](./Midscene执行器接入方案.md) | 执行器扩展者 | 第三方执行器挂载方案 |
 | [安全说明](./SECURITY.md) | 部署者 / 集成者 | 鉴权边界、默认 token、网络隔离和漏洞报告方式 |
 | [贡献指南](./CONTRIBUTING.md) | 贡献者 | 本地开发、测试命令、PR 约定 |
