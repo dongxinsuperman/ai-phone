@@ -5,7 +5,7 @@
 - VLM loop：`backend/ai_phone/agent/runner/vlm_loop.py`
 - 页面稳定检测：`backend/ai_phone/agent/runner/stability.py`
 - 辅助模型适配：`backend/ai_phone/shared/llm/assistants/*`
-- 可执行链路契约：`docs/executable-logic-contract.md`
+- 可执行链路契约：`docs/executable-logic-contract（可执行链路契约）.md`
 
 ## 1. 定位
 
@@ -114,7 +114,7 @@ AI_PHONE_ASSISTANT_MODEL=...
 
 ## 8. 可执行链路边界
 
-会产出手机动作、会影响轨迹缓存回放、会改变 Run 终态的逻辑，必须遵守 [`executable-logic-contract.md`](./executable-logic-contract.md)。普通辅助聊天可以走 `AI_PHONE_ASSISTANT_BACKEND`；但 gate / recovery / replay 中会产出动作的部分，不能随意降级成非结构化聊天。
+会产出手机动作、会影响轨迹缓存回放、会改变 Run 终态的逻辑，必须遵守 [`executable-logic-contract（可执行链路契约）.md`](./executable-logic-contract（可执行链路契约）.md)。普通辅助聊天可以走 `AI_PHONE_ASSISTANT_BACKEND`；但 gate / recovery / replay 中会产出动作的部分，不能随意降级成非结构化聊天。
 
 ## 9. 调参建议
 

@@ -1,7 +1,7 @@
 # 轨迹缓存 V1 / V2 方案契约
 
 本文档描述 V1 / V2 轨迹缓存的业务语义和执行边界。所有会导致手机真实动作
-的逻辑，必须同时遵守 [`executable-logic-contract.md`](./executable-logic-contract.md)。
+的逻辑，必须同时遵守 [`executable-logic-contract（可执行链路契约）.md`](./executable-logic-contract（可执行链路契约）.md)。
 
 ## 1. 版本边界
 

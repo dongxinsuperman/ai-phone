@@ -1,8 +1,8 @@
 # 本地开发指南（Mac）
 
 > 起一份完整链路：Server + Agent + 前端三个进程 + 一台真机即可。
-> iOS / HarmonyOS 额外配置见 [`ios-setup.md`](./ios-setup.md) 和 [`harmony-setup.md`](./harmony-setup.md)。
-> 部署推荐默认值见 [`recommended-env.md`](./recommended-env.md)：iOS stable 线路优先，Android / HarmonyOS 黑屏待机线路优先。
+> iOS / HarmonyOS 额外配置见 [`ios-setup（iOS接入指南）.md`](./ios-setup（iOS接入指南）.md) 和 [`harmony-setup（HarmonyOS接入指南）.md`](./harmony-setup（HarmonyOS接入指南）.md)。
+> 部署推荐默认值见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md)：iOS stable 线路优先，Android / HarmonyOS 黑屏待机线路优先。
 
 ---
 
@@ -37,12 +37,12 @@ cp .env.example .env
 | 变量 | 用途 |
 |---|---|
 | `AI_PHONE_VLM_BACKEND` | 切换主 VLM 协议：`doubao_responses`（默认）/ `claude_cu` / `gpt_cu` |
-| `AI_PHONE_ASSISTANT_BACKEND` | 切换非执行型辅助系统协议：`doubao_chat` / `claude` / `openai`。注意：轨迹缓存回放中会产出手机动作的 gate / recovery 不属于普通辅助聊天链路，必须遵守 [可执行链路契约](./executable-logic-contract.md)。 |
+| `AI_PHONE_ASSISTANT_BACKEND` | 切换非执行型辅助系统协议：`doubao_chat` / `claude` / `openai`。注意：轨迹缓存回放中会产出手机动作的 gate / recovery 不属于普通辅助聊天链路，必须遵守 [可执行链路契约](./executable-logic-contract（可执行链路契约）.md)。 |
 | `AI_PHONE_MIRROR_*` | Android 画质 / 延迟参数（详见 `.env.example` §8） |
 | `AI_PHONE_VLM_SESSION_RESET_PROMPT_THRESHOLD` | Doubao Responses 超阈值自动切段（默认 30000，≤0 关闭） |
 | `AI_PHONE_WDA_PROJECT_DIR` | iOS 接入入口，留空走"手动 Xcode + iproxy"过渡态 |
-| `AI_PHONE_IOS_WDA_LIFECYCLE_MODE` | iOS WDA 生命周期；部署推荐 `stable`，详见 [`recommended-env.md`](./recommended-env.md) |
-| `AI_PHONE_ANDROID_*WAKE*` / `AI_PHONE_HARMONY_*WAKE*` | Android / HarmonyOS 黑屏待机与 Run 前唤醒策略，详见 [`recommended-env.md`](./recommended-env.md) |
+| `AI_PHONE_IOS_WDA_LIFECYCLE_MODE` | iOS WDA 生命周期；部署推荐 `stable`，详见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md) |
+| `AI_PHONE_ANDROID_*WAKE*` / `AI_PHONE_HARMONY_*WAKE*` | Android / HarmonyOS 黑屏待机与 Run 前唤醒策略，详见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md) |
 
 `.env.example` 顶部按 §1–§20 分组，每组都有详细中文注释。
 
@@ -144,12 +144,12 @@ psql "$AI_PHONE_DB_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 
 - [external-api（对外调用清单）](./external-api（对外调用清单）.md)
 - [architecture（架构设计）](./architecture（架构设计）.md)
-- [Server 大脑架构说明（next/server-brain）](./server-brain.md)
-- [主 VLM / 回放可执行链路契约](./executable-logic-contract.md)
-- [轨迹缓存 V1 / V2 方案契约](./trajectory-cache-v1-v2.md)
-- [轨迹缓存 V3 方案契约](./trajectory-cache-v3.md)
+- [server-brain（Server大脑架构说明）](./server-brain（Server大脑架构说明）.md)
+- [executable-logic-contract（可执行链路契约）](./executable-logic-contract（可执行链路契约）.md)
+- [trajectory-cache-v1-v2（轨迹缓存V1V2方案契约）](./trajectory-cache-v1-v2（轨迹缓存V1V2方案契约）.md)
+- [trajectory-cache-v3（轨迹缓存V3方案契约）](./trajectory-cache-v3（轨迹缓存V3方案契约）.md)
 - [features（使用功能介绍）](./features（使用功能介绍）.md)
 - [assistant-systems（辅助系统核心逻辑及效果）](./assistant-systems（辅助系统核心逻辑及效果）.md)
-- [推荐部署 Env 清单](./recommended-env.md)
+- [recommended-env（推荐部署Env清单）](./recommended-env（推荐部署Env清单）.md)
 - [internal-doc-audit-2026-05-19（内外文档同步审计）](./internal-doc-audit-2026-05-19（内外文档同步审计）.md)
 - [Midscene 执行器挂载方案](../Midscene执行器接入方案.md)

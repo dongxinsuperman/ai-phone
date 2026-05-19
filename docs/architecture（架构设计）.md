@@ -126,7 +126,7 @@ GET /api/internal/server-brain/state
 | iOS | WebDriverAgent + pymobiledevice3 | WDA MJPEG passthrough，DVT 截图兜底 | 推荐 stable WDA 生命周期，减少 Xcode / pairing 扰动 |
 | HarmonyOS | hdc + hmdriver2 | hypium Captures MJPEG | 推荐空闲息屏，Run 前纯 hdc wake |
 
-推荐部署 env 见 [`recommended-env.md`](./recommended-env.md)。注意：代码里的 `Settings` 默认值保留历史兼容，真正交付默认以 `.env.example` 和推荐清单为准。
+推荐部署 env 见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md)。注意：代码里的 `Settings` 默认值保留历史兼容，真正交付默认以 `.env.example` 和推荐清单为准。
 
 ## 7. iOS stable 线路
 
@@ -172,7 +172,7 @@ Android / HarmonyOS 推荐从“插线常亮”改成“空闲自然息屏，执
 - V2：状态路标、handoff、恢复 VLM。
 - V3：保存 source actions，但复跑优先用 plan intent + 在线识别，不盲信旧坐标。
 
-辅助系统详细说明见 [`assistant-systems（辅助系统核心逻辑及效果）.md`](./assistant-systems（辅助系统核心逻辑及效果）.md)，可执行链路约束见 [`executable-logic-contract.md`](./executable-logic-contract.md)。
+辅助系统详细说明见 [`assistant-systems（辅助系统核心逻辑及效果）.md`](./assistant-systems（辅助系统核心逻辑及效果）.md)，可执行链路约束见 [`executable-logic-contract（可执行链路契约）.md`](./executable-logic-contract（可执行链路契约）.md)。
 
 ## 10. 报告与观测
 

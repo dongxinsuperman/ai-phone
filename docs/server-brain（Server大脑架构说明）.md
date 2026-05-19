@@ -91,7 +91,7 @@ AI_PHONE_VLM_API_KEY=...
 ```
 
 生产环境建议把 `AI_PHONE_AGENT_TOKEN` 换成更长的随机字符串。
-设备稳定推荐默认见 [`recommended-env.md`](./recommended-env.md)：iOS stable 线路优先，Android / HarmonyOS 黑屏待机线路优先。
+设备稳定推荐默认见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md)：iOS stable 线路优先，Android / HarmonyOS 黑屏待机线路优先。
 
 Server 启动示例：
 
