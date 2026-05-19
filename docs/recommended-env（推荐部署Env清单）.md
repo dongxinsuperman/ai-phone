@@ -68,6 +68,6 @@ AI_PHONE_HARMONY_WAKE_ON_ENTER=true
 
 ## 相关文档
 
-- [deployment-mac（三端新机部署指南）](./deployment-mac（三端新机部署指南）.md)
+- [deployment-from-zero（从0到1部署指南）](./deployment-from-zero（从0到1部署指南）.md)
 - [ios-setup（iOS接入指南）](./ios-setup（iOS接入指南）.md)
 - [harmony-setup（HarmonyOS接入指南）](./harmony-setup（HarmonyOS接入指南）.md)

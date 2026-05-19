@@ -1,4 +1,4 @@
-# Mac 三端新机部署指南
+# 从 0 到 1 部署指南
 
 > 目标：一台全新的 Mac，从 `git clone` 开始，部署到 Android / iOS / HarmonyOS 三端真机都能进入设备池、打开工作台、执行自然语言任务。
 > 本文按“AI 可读执行清单”写：可以直接让 Cursor / Codex / 其他本机助手打开本文件，按步骤检查和补齐环境。
@@ -32,7 +32,7 @@ sudo -E /path/to/ai-phone/backend/.venv/bin/python -m pymobiledevice3 mounter au
 如果让 AI 助手在新 Mac 上按本文部署，请先给它这段任务：
 
 ```text
-请阅读 docs/deployment-mac（三端新机部署指南）.md，并在这台 Mac 上完成 ai-phone 三端部署。
+请阅读 docs/deployment-from-zero（从0到1部署指南）.md，并在这台 Mac 上完成 ai-phone 从 0 到 1 部署。
 可以执行命令安装依赖、创建 venv、安装 npm 依赖、生成 .env、启动服务并做自检。
 遇到 Apple ID 登录、iPhone 信任电脑、输入设备密码、信任开发者 App、Android/Harmony USB 授权弹窗时暂停，让我在手机或 Xcode 上人工确认。
 不要把 backend/.env、日志、截图、内部笔记目录或本地运行产物提交到 git。
