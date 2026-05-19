@@ -5,6 +5,9 @@ dependencies used by ai-phone. Each component remains under its own license.
 When updating a vendored component or binary, update this file and keep the
 upstream license text where required.
 
+The ai-phone project code is licensed under GNU GPLv3. Bundled and optional
+third-party components remain under their respective upstream licenses.
+
 ## Bundled Components
 
 ### WebDriverAgent
@@ -25,11 +28,20 @@ upstream license text where required.
 
 - Path: `backend/assets/ADBKeyBoard.apk`
 - Upstream: https://github.com/senzhk/ADBKeyBoard
+- Upstream binary: https://github.com/senzhk/ADBKeyBoard/raw/master/ADBKeyboard.apk
 - Purpose: Android Unicode text input through an input method broadcast
 - License: GNU GPLv2
+- License file: `third_party/licenses/GPL-2.0.txt`
+- SHA-256:
+  `e698adea5633135a067b038f9a0cf41baa4de09888713a81593fb2b9682cdc59`
+- Modification status: unmodified upstream binary. This repository's bundled
+  APK has been verified byte-for-byte identical to the upstream binary URL
+  listed above.
+- Corresponding source code: https://github.com/senzhk/ADBKeyBoard
 - Note: The APK is bundled as an independent third-party component. When
   redistributing this repository or a package containing this APK, comply with
-  the upstream GPLv2 terms and keep a clear notice of its origin and license.
+  the upstream GPLv2 terms, keep a clear notice of its origin and license, and
+  preserve access to the corresponding source code.
 
 ## Optional Dependencies
 
