@@ -201,7 +201,7 @@ class IosWdaXcodeLauncher:
         #     退出后是否自动 respawn；
         #   - preflight_deadlock：iPhone 锁屏 ≥ _LOCKED_RESPAWN_SEC 时是否自动
         #     kill + spawn 一次（软拔插）。
-        # 详见 docs-internal/iOS_WDA_生命周期策略方案_2026-05-11.md §7.2 / §7.0.1#1。
+        # 详见 docs/ios-setup（iOS接入指南）.md。
         allow_runtime_drop_respawn: bool = True,
         allow_preflight_deadlock_respawn: bool = True,
     ) -> None:

@@ -82,7 +82,7 @@ Content-Type: application/json
 |---|---|---|
 | `submissionName` | 否 | 批次展示名；缺省回落到 `submissionId` |
 | `callbackUrl` | 否 | 批次全部收口后 POST 一次 `submission.terminal`；只支持 `http://` / `https://` |
-| `cacheMode` | 否 | 批次默认轨迹缓存模式；单 item 可覆盖 |
+| `cacheMode` | 否 | 批次默认轨迹缓存模式，取值 `off` / `v1` / `v2` / `v3`；单 item 可覆盖。使用边界见 [trajectory-cache-usage（轨迹缓存使用文档）](./trajectory-cache-usage（轨迹缓存使用文档）.md) |
 | `retryMax` | 否 | 本批重跑上限；还会受服务端 `AI_PHONE_RUN_RETRY_*` 限制 |
 | `items` | 是 | 非空数组 |
 | `caseId` | 是 | 调用方业务主键；同一批次内 `caseId + platform` 唯一 |

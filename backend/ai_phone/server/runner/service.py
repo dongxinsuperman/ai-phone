@@ -429,7 +429,7 @@ class ServerRunnerService:
             # ``step`` 参数：端点行（缓存步骤 / 缓存完成）显式传入 index，
             # 让前端拿 step 字段渲染 ``#N`` 前缀，缓存日志的步骤端点视觉对齐
             # 首跑（同样靠 step 渲染 ``#N``）。过程行不传 step（约定见
-            # docs/缓存回放步骤化日志改造方案.md "端点 #N，过程不带 #N"）。
+            # 内部缓存回放步骤化日志约定 "端点 #N，过程不带 #N"）。
             event = log_event(run_id, level, title, content, step=step)
             emitter.emit_serial(event)
 
@@ -565,7 +565,7 @@ class ServerRunnerService:
 
         # 断言入口：runner.capture_final_frame() 会强制等到最后一帧稳定
         # 再返回，避免最后一击触发跳转、断言拿到动画态空白图导致误判。
-        # 详见 docs/缓存回放步骤化日志改造方案.md。
+        # 详见 内部缓存回放步骤化日志约定。
         await _log(1, "缓存稳定", "断言入口：等待最后一帧稳定后再交给断言系统…")
         final_frame = await runner.capture_final_frame()
         assertion = await CacheReplayAssertionVerifier(
@@ -646,7 +646,7 @@ class ServerRunnerService:
         ) -> None:
             # V3 回放日志同样走 emit_serial：主流程零阻塞，后台单 worker
             # FIFO 保序。语义同 V1/V2 _log——端点行带 step 让前端渲染 #N，
-            # 过程行不带（约定见 docs/缓存回放步骤化日志改造方案.md）。
+            # 过程行不带（约定见 内部缓存回放步骤化日志约定）。
             event = log_event(run_id, level, title, content, step=step)
             emitter.emit_serial(event)
 
@@ -702,7 +702,7 @@ class ServerRunnerService:
             return True
 
         # 断言入口：同 V1/V2，强制等到最后一帧稳定再交给断言（V3 用版本3
-        # 稳定）。详见 docs/缓存回放步骤化日志改造方案.md。
+        # 稳定）。详见 内部缓存回放步骤化日志约定。
         await _log(1, "缓存稳定", "断言入口：等待最后一帧稳定后再交给断言系统…")
         final_frame = await runner.capture_final_frame()
         assertion = await CacheReplayAssertionVerifier(

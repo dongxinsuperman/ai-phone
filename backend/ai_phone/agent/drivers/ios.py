@@ -1396,7 +1396,7 @@ def open_ios_driver(
     # auto 下 allow_runtime_drop_respawn/allow_preflight_deadlock_respawn 都为 True，
     # 行为与本字段引入前完全等价；stable 下两个开关都为 False，preflight 死锁只
     # 刷 need_unlock 提示、runtime_drop 只发 device_status 让浏览器报错等人工。
-    # 详见 docs-internal/iOS_WDA_生命周期策略方案_2026-05-11.md §7.0.1 / §7.2。
+    # 详见 docs/ios-setup（iOS接入指南）.md。
     from .ios_wda_lifecycle import (  # noqa: PLC0415
         StableWdaUnavailable,
         get_ios_wda_lifecycle_policy,

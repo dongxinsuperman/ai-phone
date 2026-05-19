@@ -513,7 +513,7 @@ def _maybe_preload_ios(infos: List[Any]) -> None:
 
     stable 模式（``AI_PHONE_IOS_WDA_LIFECYCLE_MODE=stable``）会在顶部短路：
     部署期不允许 agent 主动拉 WDA，避免设备空闲时突然出现"WDA 编译中"。
-    详见 docs-internal/iOS_WDA_生命周期策略方案_2026-05-11.md §7.4。
+    详见 docs/ios-setup（iOS接入指南）.md。
     auto 模式下 ``allow_preload()`` 恒为 True，与本短路引入前完全等价。
     """
     policy = get_ios_wda_lifecycle_policy()
@@ -646,7 +646,7 @@ def _reset_ios_snapshot_for_tests() -> None:
 def _emit_ios_disconnect_events(infos: List[Any]) -> None:
     """对比上一次 rescan 看到的 iOS udid 集合，把消失的喂给 lifecycle policy。
 
-    详见 docs-internal/iOS_WDA_生命周期策略方案_2026-05-11.md §6.1 / §7.5.1.2。
+    详见 docs/ios-setup（iOS接入指南）.md。
 
     auto 模式下 policy 内部不维护 ``_spawned_serials``，``on_device_disconnected``
     直接 return，整段是 no-op；但**这段代码本身永远跑**，不带 mode 判断，让两

@@ -2311,7 +2311,7 @@ async def test_v3_replay_runner_relocates_click_by_plan_intent(monkeypatch):
     assert ("click", 111, 222) in driver.calls
     # 步骤化日志改造（2026-05-16）：V3 执行后不再做版本3稳定检测（对齐首跑节奏，
     # 只 500ms 观察 + 截图证明）。单步只触发 1 次执行前版本3稳定。详见
-    # docs/缓存回放步骤化日志改造方案.md。
+    # 内部缓存回放步骤化日志约定。
     assert len(stable_calls) == 1
     assert locator.calls[0]["action"]["plan_intent"] == "点击教材同步"
     assert any(title == "V3寻找目标" and "点击教材同步" in content for _level, title, content in logs)
@@ -3299,7 +3299,7 @@ async def test_replay_runner_logs_observe_delay(monkeypatch):
     assert result.success is True
     assert sleeps == [0.5]
     # 步骤化日志改造（2026-05-16）：observe_delay 由独立 `缓存稳定` 标题实时
-    # 流出来，不再压进 `缓存步骤完成` 汇总块（见 docs/缓存回放步骤化日志改造方案.md）。
+    # 流出来，不再压进 `缓存步骤完成` 汇总块（见 内部缓存回放步骤化日志约定）。
     assert any(
         title == "缓存稳定" and "动作执行后观察 500ms" in content
         for _level, title, content in logs
@@ -3314,7 +3314,7 @@ async def test_v1_replay_runner_emits_streaming_step_log_skeleton():
 
     同时锁定"V1 执行后**不**再做版本1稳定检测"：本测试用 monkey 替换的
     `_wait_stable` 计数器在 V1 单步里**只能被调一次**（执行前那次）。
-    详见 docs/缓存回放步骤化日志改造方案.md。
+    详见 内部缓存回放步骤化日志约定。
     """
     logs = []
     driver = FakeDriver()
@@ -3375,7 +3375,7 @@ async def test_v1_replay_runner_emits_streaming_step_log_skeleton():
 
     # —— #N 前缀约定：端点行（缓存步骤 / 缓存完成）必须带 step=index，让前端
     # 渲染 `#N` 前缀；过程行（缓存目标 / 缓存稳定 / 缓存动作 / 缓存执行）一律
-    # 不带，避免每行都挂前缀视觉噪点。详见 docs/缓存回放步骤化日志改造方案.md。
+    # 不带，避免每行都挂前缀视觉噪点。详见 内部缓存回放步骤化日志约定。
     step_entries = [e for e in logs if e["title"] == "缓存步骤"]
     done_entries = [e for e in logs if e["title"] == "缓存完成"]
     target_entries = [e for e in logs if e["title"] == "缓存目标"]
@@ -3627,7 +3627,7 @@ async def test_v3_replay_runner_capture_final_frame_always_waits_for_stability(m
 
     V3 单步循环里 V3 执行后改成"500ms 观察 + 截图证明"，没有版本3稳定——
     最后一步的 after 帧可能正好是跳转动画态。如果 capture_final_frame 短
-    路返回它，断言会拿到空白图。详见 docs/缓存回放步骤化日志改造方案.md。
+    路返回它，断言会拿到空白图。详见 内部缓存回放步骤化日志约定。
     """
     from ai_phone.server.trajectory_cache import V3ReplayRunner
 
@@ -3900,7 +3900,7 @@ async def test_replay_runner_alignment_match_skips_stability(monkeypatch):
     assert result.success is True
     # 步骤化日志改造（2026-05-16）：V2 设计原则是"先动作后对比"，执行前
     # 不再做版本1稳定检测。两步都通过版本2路标对比 + carry 路径，整段回放
-    # 一次稳定检测都不应触发。详见 docs/缓存回放步骤化日志改造方案.md。
+    # 一次稳定检测都不应触发。详见 内部缓存回放步骤化日志约定。
     assert stable_calls == 0
     assert sleeps == [0.5, 0.5]
     assert any("对齐成功 action_id=a001" in content for _level, title, content in logs if title == "轨迹缓存状态路标")
@@ -4277,7 +4277,7 @@ async def test_server_runner_cache_replay_finishes_when_assertion_passes(
     assert finish["token_stats"] == {}
     # 「缓存稳定 — 断言入口：等待最后一帧稳定…」是 capture_final_frame() 前
     # 主动埋的提示日志，让用户看清那几秒等待是在做"最后一帧稳定"，避免
-    # 误以为系统卡死。详见 docs/缓存回放步骤化日志改造方案.md。
+    # 误以为系统卡死。详见 内部缓存回放步骤化日志约定。
     assert [event.get("title") for event in emitter.events] == [
         "轨迹缓存",
         "fake replay",

@@ -608,7 +608,7 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # iOS WDA 生命周期策略（auto / stable）
     # ------------------------------------------------------------------
-    # 详见 docs-internal/iOS_WDA_生命周期策略方案_2026-05-11.md。
+    # 详见 docs/ios-setup（iOS接入指南）.md。
     #
     # auto   = 调试期（默认）。允许插线预热、preflight_deadlock / runtime_drop
     #          自动 respawn、/status 不通时关 driver 重建——与本字段引入前的

@@ -301,7 +301,7 @@ class ReplayRunner:
         # `_log_replay_step_done` 一次性吐成 9 行汇总。结果中间 12 秒空白
         # 看起来"卡了"，且汇总块和旧 RunStep 端点时间戳粘连导致顺序倒置。
         # 新设计：所有过程日志一律实时输出（七拍模型），单步只剩 status
-        # 一个状态字段就够了。详见 docs/缓存回放步骤化日志改造方案.md。
+        # 一个状态字段就够了。详见 内部缓存回放步骤化日志约定。
         self._current_step_status: str = ""
 
     async def run(self) -> ReplayResult:
@@ -578,7 +578,7 @@ class ReplayRunner:
 
         历史上这里曾经短路 ``if self._final_after_bytes is not None:
         return self._final_after_bytes``，导致最后一步动画态帧被直接喂
-        给断言。详见 docs/缓存回放步骤化日志改造方案.md。
+        给断言。详见 内部缓存回放步骤化日志约定。
         """
         result = await self._wait_stable()
         if result.bytes_ is not None:
@@ -645,7 +645,7 @@ class ReplayRunner:
         # 优先级 3：V2 设计——"先动作后对比"，执行前**不做任何稳定检测**。
         # 拿到任意一张 before 帧即可（正确性由 _capture_after 里的版本2路标
         # 对比兜底）。优先复用最近一帧省一次截图；没有就现拍。
-        # 详见 docs/缓存回放步骤化日志改造方案.md。
+        # 详见 内部缓存回放步骤化日志约定。
         if self._last_frame is not None:
             await self._log_replay_stage(
                 index,
@@ -679,7 +679,7 @@ class ReplayRunner:
             # 严格对齐首跑节奏（vlm_loop.py 的 `tail_bytes = _screenshot_jpeg()`）。
             # 历史上这里曾经多调一次 `_wait_stable_for_step("执行后")`，让单步
             # 平白多出 3-5s 等待，跟首跑节奏不一致。改造原则见
-            # docs/缓存回放步骤化日志改造方案.md。
+            # 内部缓存回放步骤化日志约定。
             try:
                 bytes_ = await self._screenshot_jpeg()
             except Exception as exc:  # noqa: BLE001
@@ -1719,7 +1719,7 @@ class ReplayRunner:
         觉上和首跑的 ``#N ━━ 第 N 步 ━━`` / ``#N 第 N 步完成`` 完全对齐。
 
         过程行（缓存稳定 / 缓存动作 / 缓存执行 / 缓存截图 / 缓存目标 等）
-        约定不带 step——见 docs/缓存回放步骤化日志改造方案.md。
+        约定不带 step——见 内部缓存回放步骤化日志约定。
 
         兼容老 callback：``self.log`` 在测试里有时是只接受 3 个参数的旧
         签名，先尝试新四参，TypeError 再退回三参，老测试和新服务一份代码

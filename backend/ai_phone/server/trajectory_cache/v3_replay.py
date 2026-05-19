@@ -654,7 +654,7 @@ class V3ReplayRunner:
         # 三件套，用来把过程行 append 进 list、到 step_done 一次性吐成 9 行
         # 汇总。结果中间空白看起来"卡了"，且汇总与 RunStep 端点粘连导致顺序
         # 倒置。新设计：过程日志一律实时流，单步只保留 status。详见
-        # docs/缓存回放步骤化日志改造方案.md。
+        # 内部缓存回放步骤化日志约定。
         self._current_step_status: str = ""
 
     async def run(self) -> ReplayResult:
@@ -769,7 +769,7 @@ class V3ReplayRunner:
                     # 跳过的场景）保留——那种情况 after == before，本就没产生
                     # 页面变化，carry 等同复用稳定帧；这里"真实执行后"的
                     # carry 故意不再设置，详见
-                    # docs/缓存回放步骤化日志改造方案.md。
+                    # 内部缓存回放步骤化日志约定。
                     try:
                         after_bytes = await self._screenshot_jpeg()
                     except Exception as exc:  # noqa: BLE001
@@ -843,7 +843,7 @@ class V3ReplayRunner:
 
         视觉对齐首跑：首跑是 ``#N ━━ 第 N 步 ━━  段=1``。V3 这边目标 +
         action_id + type 是必要排查信息，单独拎到"缓存目标"行，扫日志时
-        眼睛能直接锚定 ``#N 缓存步骤``。详见 docs/缓存回放步骤化日志改造方案.md。
+        眼睛能直接锚定 ``#N 缓存步骤``。详见 内部缓存回放步骤化日志约定。
         """
         action_id = str(action.get("action_id") or "-")
         action_type = str(action.get("type") or "-")
@@ -917,7 +917,7 @@ class V3ReplayRunner:
         一次版本3稳定，否则断言可能拿到动画态帧导致误判 FAIL。
 
         ``_wait_stable()`` 内部会用 ``self._last_frame`` 作 frame_a，
-        已经稳定时开销极小。详见 docs/缓存回放步骤化日志改造方案.md。
+        已经稳定时开销极小。详见 内部缓存回放步骤化日志约定。
         """
         frame = await self._wait_stable()
         if frame is not None:

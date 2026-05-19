@@ -46,7 +46,7 @@ class _State:
     ``ready`` 是最近一次 **广播出去** 的状态。**默认 False**——新建状态视作
     "尚未被 probe 盖章"，必须等首轮 probe 成功才能翻 True。这条改动堵的是
     "设备 online + probe 未完 → 调度器派单到未准备好设备" 的历史窗口（详见
-    docs-internal/iOS_WDA_生命周期策略方案_2026-05-11.md §12.1）。
+    docs/ios-setup（iOS接入指南）.md）。
 
     ``ever_ready`` 标记本设备**历史上是否曾经被 probe 证明为 ready**。
     它决定 ``_tick_once`` 失败分支走哪条路径：
