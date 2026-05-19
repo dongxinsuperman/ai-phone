@@ -49,6 +49,8 @@ AI_PHONE_AGENT_NAME=<这台Mac在设备页展示的名称>
 
 Server 机器有自己的 `backend/.env`，负责数据库、模型、Web、调度、报告等平台配置。每台 Agent Mac 也有自己的 `backend/.env`，只负责本机如何连接 Server，以及本机插的三端手机如何被驱动。
 
+如果公司仓库已经提交了 `backend/.env`，它只能当作“初始样板”。每个人拉取代码后都必须检查并改成本机值，不能直接沿用其他 Agent Mac 的 iOS WDA 路径、Bundle ID、Team ID、Agent 名称或本机设备策略。
+
 因此不同 Agent 可以有不同 iOS 设置，例如：
 
 ```env
@@ -230,7 +232,7 @@ pwd
 复制模板：
 
 ```bash
-cp .env.example .env
+test -f .env && echo "已有 .env，请直接编辑本机配置" || cp .env.example .env
 ```
 
 打开 `backend/.env`，Agent 侧重点填写以下字段：
@@ -254,22 +256,25 @@ AI_PHONE_SERVER_WS_URL=ws://<server-host>:8000/ws/agent
 
 Agent 侧不需要向管理员索取数据库、模型、Kafka 等 Server 专用配置。只要不在这台机器启动 Server，模板里的 `AI_PHONE_DB_URL`、`AI_PHONE_VLM_API_KEY`、`AI_PHONE_ASSISTANT_API_KEY`、`AI_PHONE_KAFKA_BROKERS` 不会影响 Agent 连接公司 Server。
 
+Agent 部署者至少要逐项确认：
+
+| 类型 | 必须按本机改吗 | 字段 |
+| --- | --- | --- |
+| Server 连接 | 是 | `AI_PHONE_SERVER_HTTP_BASE`、`AI_PHONE_SERVER_WS_URL`、`AI_PHONE_AGENT_TOKEN` |
+| Agent 标识 | 是 | `AI_PHONE_AGENT_NAME` |
+| iOS WDA | 接 iPhone 时必须改 | `AI_PHONE_WDA_PROJECT_DIR`、`AI_PHONE_WDA_BUNDLE_ID`、`AI_PHONE_WDA_TEAM_ID`、`AI_PHONE_WDA_SCHEME` |
+| 点亮后上滑白名单 | 仅设备需要时填写 | `AI_PHONE_WAKE_SWIPE_DEVICE_ALLOWLIST` |
+| Server 专用配置 | Agent 侧通常不用改 | 数据库、模型 Key、Kafka、Webhook、Web 配置 |
+
 ---
 
-## 八、推荐设备稳定配置
+## 八、本机设备差异配置
 
-继续编辑 `backend/.env`，保留或补充下面的推荐值。
+继续编辑 `backend/.env`。iOS stable 线路、Android / HarmonyOS 黑屏待机线路已经按平台推荐值配置，Agent 部署者通常不要调整这些开关；只需要处理本机差异。
 
-### 8.1 iOS stable 线路
+### 8.1 iOS WDA 工程和签名
 
-```env
-AI_PHONE_IOS_WDA_PRELOAD=false
-AI_PHONE_IOS_WAKE_ON_ENTER=true
-AI_PHONE_IOS_WDA_LIFECYCLE_MODE=stable
-AI_PHONE_IOS_WDA_STABLE_ALLOW_INITIAL_SPAWN=true
-```
-
-如果这台 Agent 接 iPhone，还需要填 WDA 工程和签名：
+如果这台 Agent 接 iPhone，填写本机 WDA 工程和签名：
 
 ```env
 AI_PHONE_WDA_PROJECT_DIR=/绝对路径/ai-phone/third_party/WebDriverAgent
@@ -290,30 +295,28 @@ pwd
 <pwd输出>/third_party/WebDriverAgent
 ```
 
-### 8.2 Android 黑屏待机线路
+如果这台 Agent 不接 iPhone，这几个 WDA 字段可以保持模板默认值或留空。
+
+### 8.2 点亮后上滑白名单
+
+Android / HarmonyOS 默认会在 Run 前尝试把黑屏设备唤醒。如果某台设备点亮后仍停在锁屏壁纸、屏保页或需要上滑才进入可操作态，并且已经人工关闭 PIN / 图案 / 密码等安全锁，再把它加入白名单：
 
 ```env
-AI_PHONE_ANDROID_SETUP_STAY_AWAKE=false
-AI_PHONE_ANDROID_SCREEN_OFF_DISPATCHABLE=true
-AI_PHONE_ANDROID_WAKE_BEFORE_RUN=true
-AI_PHONE_ANDROID_WAKE_BEFORE_RUN_SETTLE_MS=500
-AI_PHONE_ANDROID_WAKE_SWIPE_ENABLED=true
-AI_PHONE_ANDROID_WAKE_SWIPE_SETTLE_MS=500
-AI_PHONE_WAKE_SWIPE_DEVICE_ALLOWLIST=
-AI_PHONE_ANDROID_WAKE_ON_ENTER=false
+AI_PHONE_WAKE_SWIPE_DEVICE_ALLOWLIST=<设备serial1>,<设备serial2>
 ```
 
-### 8.3 HarmonyOS 黑屏待机线路
+多个设备用英文逗号分隔；留空表示不对任何设备自动上滑。
 
-```env
-AI_PHONE_HARMONY_MIRROR_BACKEND=hypium
-AI_PHONE_HARMONY_SETUP_STAY_AWAKE=false
-AI_PHONE_HARMONY_SCREEN_OFF_DISPATCHABLE=true
-AI_PHONE_HARMONY_WAKE_BEFORE_RUN=true
-AI_PHONE_HARMONY_WAKE_SWIPE_ENABLED=true
-AI_PHONE_HARMONY_WAKE_SETTLE_MS=500
-AI_PHONE_HARMONY_WAKE_SWIPE_SETTLE_MS=500
-AI_PHONE_HARMONY_WAKE_ON_ENTER=true
+Android serial 查看：
+
+```bash
+adb devices
+```
+
+HarmonyOS serial 查看：
+
+```bash
+hdc list targets -v
 ```
 
 无人值守设备建议人工关闭 PIN / 图案 / 密码等安全锁。Agent 只能唤醒屏幕或收起无安全认证的锁屏，不能绕过系统安全认证。
