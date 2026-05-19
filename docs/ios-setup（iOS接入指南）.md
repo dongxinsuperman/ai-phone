@@ -135,6 +135,7 @@ iOS 镜像三选一（env：`AI_PHONE_IOS_MIRROR_BACKEND`）：
 ## 九、相关链接
 
 - [本地开发指南](./getting-started（本地开发指南）.md)
+- [三端新机部署指南](./deployment-mac（三端新机部署指南）.md)
 - [architecture（架构设计）](./architecture（架构设计）.md)
 - [推荐部署 Env 清单](./recommended-env（推荐部署Env清单）.md)
 - [HarmonyOS 接入指南](./harmony-setup（HarmonyOS接入指南）.md)

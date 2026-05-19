@@ -65,3 +65,9 @@ AI_PHONE_HARMONY_WAKE_ON_ENTER=true
 - `AI_PHONE_HARMONY_WAKE_BEFORE_RUN=true` 在 hmdriver2 初始化、首张截图、缓存回放前先走纯 hdc wake。
 - `AI_PHONE_HARMONY_WAKE_SWIPE_ENABLED=true` 同样只是能力开关；实际自动上滑仍由 `AI_PHONE_WAKE_SWIPE_DEVICE_ALLOWLIST` 控制。
 - `AI_PHONE_HARMONY_WAKE_ON_ENTER=true` 让手动进入工作台/启动镜像/手动点击前也先点亮屏幕，只 wake，不自动上滑。
+
+## 相关文档
+
+- [deployment-mac（三端新机部署指南）](./deployment-mac（三端新机部署指南）.md)
+- [ios-setup（iOS接入指南）](./ios-setup（iOS接入指南）.md)
+- [harmony-setup（HarmonyOS接入指南）](./harmony-setup（HarmonyOS接入指南）.md)
