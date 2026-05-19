@@ -138,7 +138,7 @@ curl -X POST http://localhost:8000/api/submissions \
 - 历史回放页 / Case 加载对话框：API 就位，前端待补
 - 日志服务系统：统一收集、检索、保留策略
 - 生产部署模板：Docker Compose / K8s / Nginx / Ingress 示例
-- Webhook 签名：面向公网集成的 HMAC 校验示例
+- Webhook 安全增强：当前已支持 `callbackUrl` 终态回调，后续补公网集成的 HMAC 签名 / 验签示例
 
 ---
 
