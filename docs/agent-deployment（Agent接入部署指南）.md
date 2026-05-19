@@ -238,9 +238,6 @@ test -f .env && echo "已有 .env，请直接编辑本机配置" || cp .env.exam
 打开 `backend/.env`，Agent 侧重点填写以下字段：
 
 ```env
-AI_PHONE_ENV=prod
-AI_PHONE_LOG_LEVEL=INFO
-
 AI_PHONE_SERVER_HTTP_BASE=https://<公司Server地址>
 AI_PHONE_SERVER_WS_URL=wss://<公司Server地址>/ws/agent
 AI_PHONE_AGENT_TOKEN=<管理员提供的Agent token>
