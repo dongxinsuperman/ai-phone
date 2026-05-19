@@ -27,6 +27,8 @@ ai-phone/
 
 每台 Mac Agent 部署时执行一次：
 
+> 安全依赖已要求 Node >=20.19；如果只使用 ai-phone 默认 VLM 主链路，不需要安装本 bridge。
+
 ```bash
 cd midscene-bridge
 npm install

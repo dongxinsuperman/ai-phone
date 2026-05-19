@@ -11,7 +11,7 @@
 ## 一、前置依赖
 
 - macOS，**Python 3.11**（`brew install python@3.11`，**不要用系统自带的 3.9**：pmd3 9.x / aiokafka 0.11+ / ruff py311 都要求 3.11+）
-- Node 18+
+- Node 18+（仅启用 `midscene-bridge` 外接执行器时需要 Node >=20.19）
 - `brew install android-platform-tools ffmpeg`
   - **`ffmpeg` 是镜像必需依赖**（agent 内部子进程调用）
 - PostgreSQL：本机 Homebrew Postgres 或远程实例皆可，连接串走 `AI_PHONE_DB_URL`

@@ -26,7 +26,7 @@ dependencies = [
     "websockets>=13,<14",            # 14+ 改了 connect() 返回类型，老 async for ws 用法不兼容
     # Utilities
     "python-dotenv>=1.0",
-    "Pillow>=10.3,<12",
+    "Pillow>=12.2,<13",
     "loguru>=0.7",
     # Android driver
     "adbutils>=2.6",
