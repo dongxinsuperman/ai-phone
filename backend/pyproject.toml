@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77.0.3", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,6 +8,7 @@ version = "0.0.1"
 description = "Lightweight VLM-driven mobile automation platform (Server + Agent)"
 requires-python = ">=3.11,<3.13"
 authors = [{ name = "ai-phone" }]
+license = "GPL-3.0-only"
 dependencies = [
     # Server (FastAPI 生态)
     "fastapi>=0.110,<0.116",

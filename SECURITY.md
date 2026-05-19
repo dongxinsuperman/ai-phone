@@ -5,9 +5,9 @@ server, agent, database, reports, and device network as trusted infrastructure.
 
 ## Supported Versions
 
-Security fixes are handled on the latest `main` branch until the project starts
-publishing versioned releases. After tagged releases are introduced, this section
-will list the supported release line explicitly.
+Security fixes are handled on the latest official default branch until the
+project starts publishing versioned releases. After tagged releases are
+introduced, this section will list the supported release line explicitly.
 
 ## Deployment Guidance
 

@@ -2,6 +2,7 @@
   "name": "midscene-bridge",
   "version": "0.1.0",
   "private": true,
+  "license": "GPL-3.0-only",
   "description": "Midscene 执行器适配层 — 寄居在 ai-phone 项目下的独立 Node 工程；ai-phone 主仓只负责 spawn 此进程并解析 stdout JSON。",
   "main": "dist/run.js",
   "type": "commonjs",
