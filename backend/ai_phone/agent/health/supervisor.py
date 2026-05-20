@@ -36,8 +36,8 @@ DeviceKey = Tuple[str, str]
 DeviceLister = Callable[[], Iterable[Tuple[str, str]]]
 
 # 注入的"发消息"回调 —— 接收一个 dict（已按 MSG_DEVICE_READINESS schema 组装好）。
-# async：内部走 ws_client.send。
-MessageSender = Callable[[Dict], Awaitable[None]]
+# async：内部走 ws_client.send，返回本次是否真正写入 WS。
+MessageSender = Callable[[Dict], Awaitable[bool]]
 
 
 class _State:
@@ -281,7 +281,15 @@ class ReadinessSupervisor:
             "ts": time.time(),
         }
         try:
-            await self._send(msg)
+            sent = await self._send(msg)
+            if not sent:
+                logger.debug(
+                    "[readiness] device_readiness 未发送成功 key={} ready={} reason={}",
+                    key,
+                    state.ready,
+                    state.reason,
+                )
+                return
             self._last_sent[key] = cur
             if state.ready:
                 logger.info(

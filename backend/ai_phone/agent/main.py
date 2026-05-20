@@ -2164,7 +2164,7 @@ def run(
         return list(_serial_platform.items())
 
     async def _readiness_send(msg):
-        await client.send(msg)
+        return await client.send(msg)
 
     readiness = ReadinessSupervisor(
         device_lister=_readiness_device_lister,
