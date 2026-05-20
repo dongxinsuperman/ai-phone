@@ -119,6 +119,14 @@ curl -X POST http://localhost:8000/api/submissions \
 
 完整字段、错误码、Kafka / Webhook 回调格式见 [对外调用清单](./docs/external-api（对外调用清单）.md)。
 
+### 让 case 跑得更稳
+
+AI PHONE 可以直接执行一句自然语言目标；但如果你要做业务回归、兼容性测试或批量投递，`runContent` 建议写成 **AI 可消费测试用例**：`测试标题 / 前置条件 / 操作步骤 / 预期结果` 四字段自洽，步骤单线，预期只保留一个核心断言。
+
+简短理解：case 不是写给人类 QA 补全上下文的提纲，而是写给 AI 执行器跑到底的脚本。
+
+写法指南见 [AI 可消费测试用例指南](./docs/ai-consumable-test-cases（AI可消费测试用例指南）.md)，完整方法论与 baseline skill 见 [ai-executable-case-pattern](https://github.com/dongxinsuperman/ai-executable-case-pattern)。
+
 ---
 
 ## 当前状态
@@ -160,6 +168,7 @@ ai-phone 采用 **GNU GPLv3** 开源。Copyright (C) 2026 Dongxin and ai-phone c
 |---|---|---|
 | [features（使用功能介绍）](./docs/features（使用功能介绍）.md) | 调用方 / 业务同学 | 产品手册：设备、队列、工作台、报告、大盘、稳定策略 |
 | [external-api（对外调用清单）](./docs/external-api（对外调用清单）.md) | 调用方 / CI 集成 | 当前 API 契约：投递 / 查询 / 取消 / Kafka / Webhook 完整字段 |
+| [ai-consumable-test-cases（AI可消费测试用例指南）](./docs/ai-consumable-test-cases（AI可消费测试用例指南）.md) | 调用方 / QA / AI 助手 | 如何把 `runContent` 写成更适合 AI PHONE 执行的四字段 case |
 | [architecture（架构设计）](./docs/architecture（架构设计）.md) | 二次开发者 | 当前架构：Server 大脑、Agent 手脚、调度、三端链路、数据模型 |
 | [deployment-from-zero（从0到1部署指南）](./docs/deployment-from-zero（从0到1部署指南）.md) | 部署者 / AI 助手 | 新 Mac 从 clone 到 Android / iOS / HarmonyOS 三端可执行的完整步骤、终端清单、自检和故障处理 |
 | [agent-deployment（Agent接入部署指南）](./docs/agent-deployment（Agent接入部署指南）.md) | 接机同事 / Agent 部署者 | 只部署 Agent 机器时需要的依赖、Server 连接、三端手机准备、启动命令和验收标准 |

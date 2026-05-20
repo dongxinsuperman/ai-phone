@@ -87,7 +87,7 @@ Content-Type: application/json
 | `items` | 是 | 非空数组 |
 | `caseId` | 是 | 调用方业务主键；同一批次内 `caseId + platform` 唯一 |
 | `caseName` | 否 | 展示名；缺省回落到 `caseId` |
-| `runContent` | 是 | 自然语言执行目标 |
+| `runContent` | 是 | 自然语言执行目标；复杂业务回归建议写成四字段 AI 可消费 case，见 [AI 可消费测试用例指南](./ai-consumable-test-cases（AI可消费测试用例指南）.md) |
 | `platforms` | 是 | 非空数组，取值 `android` / `ios` / `harmony`，不可重复 |
 | `deviceAliasPools` | 否 | `{platform: [alias]}`；缺省、`null`、`[]` 都表示该端全池任挑 |
 
