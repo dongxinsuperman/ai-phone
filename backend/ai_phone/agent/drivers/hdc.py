@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -116,6 +117,65 @@ class HdcTarget:
 
     serial: str
     status: str  # "Connected" | "Offline" | "Unauthorized" | ...
+
+
+_HDC_TARGET_STATUSES = {"connected", "offline", "unauthorized"}
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_HDC_NOISE_SERIALS = {
+    "connect",
+    "daemon",
+    "error",
+    "fail",
+    "failed",
+    "hdc",
+    "server",
+    "ver:",
+}
+_HDC_SERIAL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
+
+
+def _clean_hdc_line(line: str) -> str:
+    """去掉 hdc / hmdriver2 偶尔混入 stdout 的 ANSI 控制码。"""
+    return _ANSI_ESCAPE_RE.sub("", line or "").strip()
+
+
+def _is_hdc_noise_line(line: str) -> bool:
+    """判断 ``hdc list targets`` stdout 里的非设备行。
+
+    某些 hdc 版本/环境在 stdout 里混入 ``[Empty]\r\thdc``、彩色 warning、
+    ``Connect server failed`` 等文本，并且退出码仍为 0。这里必须先挡住这些
+    行，避免把第一列当成 HarmonyOS serial 上报给 Server。
+    """
+    lower = line.lower()
+    if not lower:
+        return True
+    if "[empty]" in lower or lower == "empty":
+        return True
+    if "connect server failed" in lower:
+        return True
+    if "not started" in lower:
+        return True
+    if lower.startswith(("[w]", "[e]", "[i]", "[debug]")):
+        return True
+    if lower.startswith("[") and not lower.startswith("[empty]"):
+        return True
+    if lower.startswith(("error:", "fail", "failed")):
+        return True
+    return False
+
+
+def _is_valid_hdc_serial(serial: str) -> bool:
+    """保守校验 hdc target serial。
+
+    真实 USB serial / 网络 target 通常只含字母数字和 ``._:-``；日志首词、
+    ANSI 残片、孤立 ``hdc`` 等都不应进入设备列表。
+    """
+    s = (serial or "").strip()
+    if not s:
+        return False
+    if s.lower() in _HDC_NOISE_SERIALS:
+        return False
+    return _HDC_SERIAL_RE.fullmatch(s) is not None
 
 
 def hdc_available() -> bool:
@@ -225,10 +285,12 @@ def hdc_list_targets() -> List[HdcTarget]:
             ABC12345    USB    Connected    hwmate60    HarmonyOS
 
     目前 ai-phone 只关心 ``serial`` 和 ``status``；两列都用空格 / Tab 分隔，
-    split() 自然兼容。不带 ``-v`` 的朴素行按 Connected 处理（反正进了
-    list targets 就是已连接）。
+    split() 自然兼容。不带 ``-v`` 的朴素单列行按 Connected 处理（反正进了
+    list targets 就是已连接）。多列输出必须带明确状态，避免把 hdc 日志文本
+    当成设备。
 
-    ``[Empty]`` / ``hdc server is not started`` 等空列表场景返空。
+    ``[Empty]`` / ``hdc server is not started`` / ``Connect server failed`` /
+    hmdriver2 warning 等空列表或日志场景返空。
     """
     try:
         raw = hdc_run("list", "targets", "-v", timeout=5.0)
@@ -244,22 +306,25 @@ def hdc_list_targets() -> List[HdcTarget]:
 
     targets: List[HdcTarget] = []
     for line in raw.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        lower = line.lower()
-        if "empty" in lower or "not started" in lower or "[empty]" in lower:
+        line = _clean_hdc_line(line)
+        if _is_hdc_noise_line(line):
             continue
         parts = line.split()
         if not parts:
             continue
         serial = parts[0]
-        # 第 3 列通常是状态（Connected / Offline / Unauthorized）；找不到就当 Connected
-        status = "Connected"
+        if not _is_valid_hdc_serial(serial):
+            continue
+        # 第 3 列通常是状态（Connected / Offline / Unauthorized）。
+        # 单列老格式按 Connected；多列无状态更像日志/异常输出，直接忽略。
+        status: Optional[str] = "Connected" if len(parts) == 1 else None
         for tok in parts[1:]:
-            if tok.lower() in ("connected", "offline", "unauthorized"):
+            if tok.lower() in _HDC_TARGET_STATUSES:
                 status = tok
                 break
+        if status is None:
+            logger.debug("忽略无法识别为 hdc target 的输出行: {}", line[:160])
+            continue
         targets.append(HdcTarget(serial=serial, status=status))
     return targets
 
