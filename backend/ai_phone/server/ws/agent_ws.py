@@ -617,6 +617,10 @@ async def _on_disconnect(
         except Exception as exc:  # noqa: BLE001
             logger.warning("Agent {} 断开时终结 server_brain run 失败：{}", agent_id, exc)
     conn = await hub.unregister_agent(agent_id)
+    if conn is not None:
+        hub.clear_device_extra(set(conn.serials))
+    elif serials:
+        hub.clear_device_extra(set(serials))
     await _offline_devices(agent_id, serials or (conn.serials if conn else set()))
     # 新锁模型下锁不归 Agent 所有，Agent 断线不动锁。
     # 浏览器仍持锁；设备状态变 offline 让前端自然展示，恢复后无缝继续。

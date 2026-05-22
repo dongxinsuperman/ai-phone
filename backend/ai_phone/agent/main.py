@@ -287,6 +287,35 @@ def _handle_ios_driver_unhealthy(serial: str, reason: str) -> bool:
     return True
 
 
+def _drop_ios_driver_cache_after_usb_disconnect(serial: str) -> None:
+    """Forget cached iOS driver state after a trusted USB disconnect.
+
+    Stable lifecycle intentionally keeps the driver cache when WDA drops while
+    the device is still present: that is the "do not auto-restart" guard. A real
+    USB removal is different. It defines a new insertion session, so any cached
+    WDA client/forwarder/xcodebuild handle belongs to the old session and must
+    not block the next workbench entry from spawning WDA again.
+    """
+    drv = _driver_cache.pop(serial, None)
+    if drv is not None:
+        try:
+            drv.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("iOS USB 断开后关闭旧 driver 异常 serial={}: {}", serial, exc)
+        logger.info("iOS USB 断开，已丢弃旧 driver/WDA 缓存 serial={}", serial)
+        return
+
+    # Defensive cleanup for partially-opened paths where WdaClient was registered
+    # but the driver never made it into _driver_cache.
+    try:
+        from .drivers.ios import _PORT_ALLOC_LOCK, _WDA_CLIENT_MAP  # noqa: PLC0415
+
+        with _PORT_ALLOC_LOCK:
+            _WDA_CLIENT_MAP.pop(serial, None)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("iOS USB 断开后清理 WDA client map 异常 serial={}: {}", serial, exc)
+
+
 def _invalidate_dead_ios_driver(serial: str) -> bool:
     """热拔插自愈：若缓存里的 iOS driver 对应的 WDA 已经不可达，
     就把它关掉 + 从 ``_driver_cache`` 摘掉，让下一次 ``_get_or_open_driver``
@@ -339,8 +368,58 @@ def _make_device_status_reporter(
             asyncio.run_coroutine_threadsafe(ws_client.send(msg), loop)
         except Exception as exc:  # noqa: BLE001
             logger.debug("device_status 上报失败 serial={}: {}", serial, exc)
+        if stage == "ready":
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    _send_ios_readiness_probe_once(ws_client, serial),
+                    loop,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("device_readiness ready 补发调度失败 serial={}: {}", serial, exc)
 
     return _reporter
+
+
+async def _send_ios_readiness_probe_once(ws_client: "AgentWSClient", serial: str) -> None:
+    """After WDA reports ready, immediately publish the iOS readiness verdict.
+
+    The periodic readiness supervisor also probes this, but it de-dupes state
+    transitions and may race with WS reconnects. A one-shot probe on WDA-ready
+    keeps the home page and scheduler aligned with the workbench path without
+    changing the readiness criteria.
+    """
+    if _serial_platform.get(serial) != "ios":
+        return
+    try:
+        from .health.probe import IosProbe  # noqa: PLC0415
+
+        outcome = await IosProbe(
+            serial,
+            timeout_sec=float(get_settings().readiness_probe_timeout_sec),
+        ).probe()
+        sent = await ws_client.send(
+            {
+                "type": P.MSG_DEVICE_READINESS,
+                "serial": serial,
+                "platform": "ios",
+                "ready": bool(outcome.ready),
+                "not_ready_reason": outcome.not_ready_reason,
+                "hint": outcome.hint,
+                "fail_streak": 0 if outcome.ready else 1,
+                "ts": time.time(),
+            }
+        )
+        if not sent:
+            logger.debug("iOS WDA ready 后补发 readiness 未发送成功 serial={}", serial)
+            return
+        logger.info(
+            "iOS WDA ready 后补发 readiness serial={} ready={} reason={}",
+            serial,
+            outcome.ready,
+            outcome.not_ready_reason,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("iOS WDA ready 后补发 readiness 失败 serial={}: {}", serial, exc)
 
 
 class _RunSupervisor:
@@ -702,12 +781,13 @@ def _emit_ios_disconnect_events(infos: List[Any]) -> None:
                 logger.debug(
                     "policy.on_device_disconnected 异常 serial={}: {}", serial, exc
                 )
+            _drop_ios_driver_cache_after_usb_disconnect(serial)
             # auto 下 policy 不维护集合，info 日志会刷屏；只在 stable 下打 info。
             # auto 下打 debug 留个观测点。
             if policy.is_stable:
                 logger.info(
                     "iOS WDA 生命周期 — mode=stable，udid={} 已离线，"
-                    "清空 stable spawn 标记（下次插入视为新一次插入会话）",
+                    "清空 stable spawn 标记和旧 driver 缓存（下次插入视为新一次插入会话）",
                     serial,
                 )
             else:
@@ -2170,6 +2250,11 @@ def run(
         device_lister=_readiness_device_lister,
         send_message=_readiness_send,
     )
+
+    async def _readiness_on_connect(_client: AgentWSClient) -> None:
+        readiness.mark_all_dirty()
+
+    client.on_connect(_readiness_on_connect)
 
     async def _bootstrap() -> None:
         global _event_loop_ref

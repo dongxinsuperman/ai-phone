@@ -113,6 +113,16 @@ class ReadinessSupervisor:
             self._task.cancel()
         self._task = None
 
+    def mark_all_dirty(self) -> None:
+        """Force the next tick to resend readiness for known devices.
+
+        Server-side readiness is an in-memory snapshot tied to the current WS
+        connection. If the Agent reconnects while the local probe state did not
+        change, the normal de-dupe path would otherwise skip the resend and the
+        UI/scheduler could keep a stale not_ready value.
+        """
+        self._last_sent.clear()
+
     # ---------------- main loop ----------------
     async def _run(self) -> None:
         settings = get_settings()

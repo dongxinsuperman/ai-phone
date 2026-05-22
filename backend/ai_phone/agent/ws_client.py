@@ -25,6 +25,7 @@ from websockets.exceptions import ConnectionClosed
 from ai_phone.shared import protocol as P
 
 Handler = Callable[["AgentWSClient", Dict[str, Any]], Awaitable[None]]
+ConnectHandler = Callable[["AgentWSClient"], Awaitable[None]]
 DeviceProvider = Callable[[], List[Dict[str, Any]]]  # 无参，返回 device dict 列表
 
 _BACKOFF_STEPS = (1.0, 2.0, 5.0, 10.0, 15.0)
@@ -43,6 +44,7 @@ class AgentWSClient:
     # 由 Agent 主程序注入
     device_provider: Optional[DeviceProvider] = None
     handlers: Dict[str, Handler] = field(default_factory=dict)
+    connect_handlers: List[ConnectHandler] = field(default_factory=list)
 
     # 心跳 / 重扫描间隔
     ping_interval: float = 15.0
@@ -68,6 +70,9 @@ class AgentWSClient:
 
     def on(self, msg_type: str, handler: Handler) -> None:
         self.handlers[msg_type] = handler
+
+    def on_connect(self, handler: ConnectHandler) -> None:
+        self.connect_handlers.append(handler)
 
     async def send(self, payload: Dict[str, Any]) -> bool:
         ws = self._ws
@@ -105,6 +110,11 @@ class AgentWSClient:
                     self._connected.set()
                     attempt = 0
                     await self._on_connected()
+                    for handler in list(self.connect_handlers):
+                        try:
+                            await handler(self)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning("connect handler 异常：{}", exc)
                     await self._session_loop()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("WS 会话结束/失败：{}", exc)
