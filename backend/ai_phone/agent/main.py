@@ -116,6 +116,99 @@ MIRROR_GOP_SEC = _env_int("AI_PHONE_MIRROR_GOP_SEC", 1)
 # 避免反复构造连接，也让 ADBKeyBoard / WDA session 等缓存状态在 Run 内 / 间复用。
 _driver_cache: Dict[str, BaseDriver] = {}
 
+
+class _LatestMirrorPayloadSender:
+    """Lossy latest-only sender for high-volume mirror frames.
+
+    Reliable control/readiness/log messages still use the normal WS sender. This
+    helper is only for independent mirror_jpeg frames where stale payloads are
+    worse than dropped payloads.
+    """
+
+    def __init__(
+        self,
+        serial: str,
+        ws_client: "AgentWSClient",
+        loop: asyncio.AbstractEventLoop,
+        label: str,
+    ) -> None:
+        self._serial = serial
+        self._ws = ws_client
+        self._loop = loop
+        self._label = label
+        self._lock = threading.Lock()
+        self._sending = False
+        self._closed = False
+        self._pending: Optional[Dict[str, Any]] = None
+
+    def close(self) -> None:
+        with self._lock:
+            self._closed = True
+            self._pending = None
+
+    def send_latest(self, payload: Dict[str, Any]) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            if self._sending:
+                self._pending = payload
+                return
+            self._sending = True
+
+        coro = self._drain(payload)
+        try:
+            fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
+            fut.add_done_callback(self._on_done)
+        except Exception as exc:  # noqa: BLE001
+            coro.close()
+            with self._lock:
+                self._sending = False
+            logger.debug(
+                "调度 {} mirror_jpeg latest sender 失败 serial={}: {}",
+                self._label, self._serial, exc,
+            )
+
+    async def _drain(self, first_payload: Dict[str, Any]) -> None:
+        payload: Optional[Dict[str, Any]] = first_payload
+        normal_exit = False
+        try:
+            while payload is not None:
+                sent = await self._ws.send(payload)
+                if not sent:
+                    with self._lock:
+                        self._pending = None
+                        self._sending = False
+                    normal_exit = True
+                    return
+
+                with self._lock:
+                    if self._closed:
+                        self._pending = None
+                        self._sending = False
+                        normal_exit = True
+                        return
+                    payload = self._pending
+                    self._pending = None
+                    if payload is None:
+                        self._sending = False
+                        normal_exit = True
+                        return
+        finally:
+            if not normal_exit:
+                with self._lock:
+                    self._pending = None
+                    self._sending = False
+
+    def _on_done(self, fut) -> None:  # type: ignore[no-untyped-def]
+        try:
+            fut.result()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "{} mirror_jpeg latest sender 结束异常 serial={}: {}",
+                self._label, self._serial, exc,
+            )
+
+
 # serial → platform 映射。设备发现时填，open_driver / mirror 创建时按它路由。
 # 没记录的 serial 默认按 Android 处理（adbutils），保留旧行为兼容。
 _serial_platform: Dict[str, str] = {}
@@ -1630,6 +1723,7 @@ class _IosMirrorSession:
         self._streamer = None  # type: ignore[assignment]
         self._mirror_resolution: Optional[Tuple[int, int]] = None
         self._last_init_payload: Optional[Dict[str, Any]] = None
+        self._jpeg_sender = _LatestMirrorPayloadSender(self.serial, self._ws, self._loop, "iOS")
 
     def start(self) -> None:
         # iOS mirror 后端按 settings.ios_mirror_backend 三选一：
@@ -1766,6 +1860,7 @@ class _IosMirrorSession:
         if self._stopped:
             return
         self._stopped = True
+        self._jpeg_sender.close()
         if self._streamer is not None:
             try:
                 self._streamer.stop()
@@ -1861,7 +1956,7 @@ class _IosMirrorSession:
             "height": int(h),
             "ts": time.time(),
         }
-        self._dispatch(payload)
+        self._jpeg_sender.send_latest(payload)
         if self._segment_count == 1 or self._segment_count % 60 == 0:
             logger.info(
                 "iOS mjpeg passthrough 累计 serial={} count={} "
@@ -1916,6 +2011,7 @@ class _HarmonyMirrorSession:
 
         self._streamer = None  # type: ignore[assignment]
         self._mirror_resolution: Optional[Tuple[int, int]] = None
+        self._jpeg_sender = _LatestMirrorPayloadSender(self.serial, self._ws, self._loop, "harmony")
 
     def start(self) -> None:
         try:
@@ -1971,6 +2067,7 @@ class _HarmonyMirrorSession:
         if self._stopped:
             return
         self._stopped = True
+        self._jpeg_sender.close()
         if self._streamer is not None:
             try:
                 self._streamer.stop()
@@ -2019,7 +2116,7 @@ class _HarmonyMirrorSession:
             "height": int(h),
             "ts": time.time(),
         }
-        self._dispatch(payload)
+        self._jpeg_sender.send_latest(payload)
         if self._frame_count == 1 or self._frame_count % 60 == 0:
             logger.info(
                 "harmony mjpeg 累计 serial={} count={} 最近一帧 {}×{} bytes={}",
