@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import select
 
+from ai_phone.agent.runner.stability import StabilityResult
 from ai_phone.config import Settings
 from ai_phone.server import db as db_module
 from ai_phone.server.hub import Hub
@@ -1096,6 +1097,25 @@ class FakeDriver:
 
     def scroll(self, direction, center=None, amount=1):
         self.calls.append(("scroll", direction, center, amount))
+
+
+class CacheStableDriver(FakeDriver):
+    def __init__(self):
+        super().__init__()
+        self.stable_bytes = _test_jpeg(color=(8, 120, 200))
+        self.stable_calls = []
+
+    def wait_stable_screenshot_jpeg(self, quality=25, max_side=None, **kwargs):
+        self.stable_calls.append(
+            {"quality": quality, "max_side": max_side, **kwargs}
+        )
+        return StabilityResult(
+            self.stable_bytes,
+            True,
+            1234,
+            2,
+            logs=[{"level": 1, "title": "截图已稳定", "content": "ok"}],
+        )
 
 
 class FakeAssistant:
@@ -6173,6 +6193,75 @@ async def test_v1v2_replay_screenshot_uses_claude_cu_high_quality_params(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_v1_replay_wait_stable_uses_agent_side_command(monkeypatch):
+    from ai_phone.server.trajectory_cache import replay as replay_module
+
+    settings = Settings(
+        _env_file=None,
+        vlm_backend="doubao_responses",
+        trajectory_cache_page_stable_enabled=True,
+        trajectory_cache_page_stable_timeout_s=6.0,
+        trajectory_cache_page_stable_poll_s=0.5,
+        trajectory_cache_page_stable_threshold=0.03,
+    )
+    monkeypatch.setattr(replay_module, "get_settings", lambda: settings)
+
+    driver = CacheStableDriver()
+    runner = replay_module.V1ReplayRunner(
+        driver=driver,
+        trajectory={"actions": []},
+    )
+    result = await runner._wait_stable()
+
+    assert result.bytes_ == driver.stable_bytes
+    assert runner._last_frame == driver.stable_bytes
+    assert not [c for c in driver.calls if c[0] == "screenshot_jpeg"]
+    assert driver.stable_calls == [
+        {
+            "quality": 95,
+            "max_side": None,
+            "enabled": True,
+            "total_timeout_s": 6.0,
+            "poll_interval_s": 0.5,
+            "threshold": 0.03,
+            "strategy": "cache_phash",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_v2_replay_wait_stable_keeps_server_side_path(monkeypatch):
+    from ai_phone.server.trajectory_cache import replay as replay_module
+
+    settings = Settings(
+        _env_file=None,
+        vlm_backend="doubao_responses",
+        trajectory_cache_page_stable_enabled=False,
+    )
+    monkeypatch.setattr(replay_module, "get_settings", lambda: settings)
+
+    async def fake_wait_stable(screenshot, frame_a_bytes=None, **kwargs):
+        assert kwargs["use_cache_settings"] is True
+        data = await screenshot()
+        return StabilityResult(data, True, 111, 1)
+
+    monkeypatch.setattr(replay_module, "wait_page_stable_pixel", fake_wait_stable)
+
+    driver = CacheStableDriver()
+    runner = replay_module.V2ReplayRunner(
+        driver=driver,
+        trajectory={"actions": []},
+    )
+    result = await runner._wait_stable()
+
+    assert result.bytes_ == b"jpeg"
+    assert driver.stable_calls == []
+    assert [c for c in driver.calls if c[0] == "screenshot_jpeg"] == [
+        ("screenshot_jpeg", 95, None)
+    ]
+
+
+@pytest.mark.asyncio
 async def test_v3_replay_screenshot_uses_doubao_full_resolution_params(monkeypatch):
     from ai_phone.server.trajectory_cache import v3_replay as v3_replay_module
 
@@ -6200,3 +6289,41 @@ async def test_v3_replay_screenshot_uses_claude_cu_high_quality_params(monkeypat
 
     screenshot_calls = [c for c in driver.calls if c[0] == "screenshot_jpeg"]
     assert screenshot_calls == [("screenshot_jpeg", 90, 1568)]
+
+
+@pytest.mark.asyncio
+async def test_v3_replay_wait_stable_uses_agent_side_command(monkeypatch):
+    from ai_phone.server.trajectory_cache import v3_replay as v3_replay_module
+
+    settings = Settings(
+        _env_file=None,
+        vlm_backend="claude_cu",
+        trajectory_cache_page_stable_enabled=True,
+        trajectory_cache_page_stable_timeout_s=7.0,
+        trajectory_cache_page_stable_poll_s=0.6,
+        trajectory_cache_v3_stable_threshold=0.02,
+        trajectory_cache_v3_stable_roi_threshold=0.12,
+        trajectory_cache_v3_stable_black_ratio_threshold=0.08,
+    )
+    monkeypatch.setattr(v3_replay_module, "get_settings", lambda: settings)
+
+    driver = CacheStableDriver()
+    runner = V3ReplayRunner(driver=driver, trajectory={"actions": []})
+    result = await runner._wait_stable()
+
+    assert result == driver.stable_bytes
+    assert runner._last_frame == driver.stable_bytes
+    assert not [c for c in driver.calls if c[0] == "screenshot_jpeg"]
+    assert driver.stable_calls == [
+        {
+            "quality": 90,
+            "max_side": 1568,
+            "enabled": True,
+            "total_timeout_s": 7.0,
+            "poll_interval_s": 0.6,
+            "threshold": 0.02,
+            "roi_threshold": 0.12,
+            "black_threshold": 0.08,
+            "strategy": "v3_compare",
+        }
+    ]

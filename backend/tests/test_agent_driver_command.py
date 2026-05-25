@@ -7,6 +7,7 @@ import pytest
 
 from ai_phone.agent import main as agent_main
 from ai_phone.agent.drivers.base import DeviceInfo
+from ai_phone.agent.runner.stability import StabilityResult
 
 
 class FakeClient:
@@ -165,6 +166,109 @@ async def test_handle_driver_command_serializes_bytes(monkeypatch):
     assert result["mime"] == "image/jpeg"
     assert base64.b64decode(result["data"]) == b"\xff\xd8fake-jpeg"
     assert driver.calls == [("screenshot_jpeg", 40, 800)]
+
+
+@pytest.mark.asyncio
+async def test_handle_driver_command_wait_stable_screenshot_jpeg(monkeypatch):
+    driver = FakeDriver()
+    monkeypatch.setattr(agent_main, "_get_or_open_driver", lambda serial: driver)
+    agent_main._clear_stable_frame_cache("", "")
+
+    async def fake_wait_stable(screenshot, frame_a_bytes=None, **kwargs):
+        assert frame_a_bytes is None
+        assert kwargs["total_timeout_s"] == 6.0
+        assert kwargs["poll_interval_s"] == 0.5
+        assert kwargs["threshold"] == 0.03
+        assert kwargs["enabled"] is True
+        data = await screenshot()
+        assert data == b"\xff\xd8fake-jpeg"
+        return StabilityResult(
+            b"\xff\xd8stable",
+            True,
+            1234,
+            2,
+        )
+
+    monkeypatch.setattr(agent_main, "wait_page_stable_pixel", fake_wait_stable)
+    client = FakeClient()
+
+    await agent_main._handle_driver_command(
+        client,
+        {
+            "type": "driver_command",
+            "message_id": "m-stable",
+            "run_id": "r-stable",
+            "serial": "S1",
+            "method": "wait_stable_screenshot_jpeg",
+            "params": {
+                "quality": 40,
+                "max_side": 800,
+                "enabled": True,
+                "total_timeout_s": 6.0,
+                "poll_interval_s": 0.5,
+                "threshold": 0.03,
+                "strategy": "cache_phash",
+            },
+        },
+    )
+
+    msg = client.sent[0]
+    assert msg["ok"] is True
+    result = msg["result"]
+    assert result["stable"] is True
+    assert result["elapsed_ms"] == 1234
+    assert result["checks"] == 2
+    assert result["strategy"] == "cache_phash"
+    assert result["reused_frame"] is False
+    assert base64.b64decode(result["image"]["data"]) == b"\xff\xd8stable"
+    assert driver.calls == [("screenshot_jpeg", 40, 800)]
+
+
+@pytest.mark.asyncio
+async def test_handle_driver_command_wait_stable_screenshot_jpeg_v3(monkeypatch):
+    driver = FakeDriver()
+    monkeypatch.setattr(agent_main, "_get_or_open_driver", lambda serial: driver)
+    agent_main._clear_stable_frame_cache("", "")
+
+    async def fake_wait_stable(screenshot, frame_a_bytes=None, **kwargs):
+        assert frame_a_bytes is None
+        assert kwargs["phash_threshold"] == 0.02
+        assert kwargs["roi_threshold"] == 0.12
+        assert kwargs["black_threshold"] == 0.08
+        assert kwargs["enabled"] is True
+        await screenshot()
+        return StabilityResult(b"\xff\xd8v3", True, 2222, 3)
+
+    monkeypatch.setattr(agent_main, "wait_page_stable_v2_compare", fake_wait_stable)
+    client = FakeClient()
+
+    await agent_main._handle_driver_command(
+        client,
+        {
+            "type": "driver_command",
+            "message_id": "m-stable-v3",
+            "run_id": "r-stable-v3",
+            "serial": "S1",
+            "method": "wait_stable_screenshot_jpeg",
+            "params": {
+                "quality": 90,
+                "max_side": 1568,
+                "enabled": True,
+                "total_timeout_s": 7.0,
+                "poll_interval_s": 0.6,
+                "threshold": 0.02,
+                "roi_threshold": 0.12,
+                "black_threshold": 0.08,
+                "strategy": "v3_compare",
+            },
+        },
+    )
+
+    result = client.sent[0]["result"]
+    assert result["strategy"] == "v3_compare"
+    assert result["checks"] == 3
+    assert base64.b64decode(result["image"]["data"]) == b"\xff\xd8v3"
+    assert driver.calls == [("screenshot_jpeg", 90, 1568)]
 
 
 @pytest.mark.asyncio

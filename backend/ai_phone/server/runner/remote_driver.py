@@ -48,6 +48,7 @@ from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from ai_phone.agent.drivers.base import BaseDriver, DeviceInfo
+from ai_phone.agent.runner.stability import StabilityResult
 from ai_phone.shared.protocol import (
     MSG_DRIVER_COMMAND,
     DriverCommandMsg,
@@ -69,6 +70,7 @@ DEFAULT_DEADLINE_MS: Dict[str, int] = {
     "prepare_for_run": 8_000,
     "screenshot_png": 10_000,
     "screenshot_jpeg": 10_000,
+    "wait_stable_screenshot_jpeg": 20_000,
     "click": 5_000,
     "double_click": 5_000,
     "long_press": 8_000,
@@ -312,6 +314,41 @@ class RemoteDriver(BaseDriver):
                     message_id=driver_result.get("message_id", ""),
                 ) from exc
 
+        # 1.5) Agent 近端稳定检测：{"image": <base64 jpeg>, "checks": ...}
+        if method == "wait_stable_screenshot_jpeg":
+            if not isinstance(result, dict):
+                raise RemoteDriverNetworkError(
+                    f"{method} 返回结构异常：{result!r}",
+                    error_class="MalformedResult",
+                    message_id=driver_result.get("message_id", ""),
+                )
+            image = result.get("image")
+            image_bytes: Optional[bytes] = None
+            if image is not None:
+                if not isinstance(image, dict) or "data" not in image:
+                    raise RemoteDriverNetworkError(
+                        f"{method}.image 返回结构异常：{image!r}",
+                        error_class="MalformedResult",
+                        message_id=driver_result.get("message_id", ""),
+                    )
+                try:
+                    image_bytes = base64.b64decode(image["data"])
+                except Exception as exc:
+                    raise RemoteDriverNetworkError(
+                        f"{method} image base64 解码失败：{exc}",
+                        error_class="MalformedResult",
+                        message_id=driver_result.get("message_id", ""),
+                    ) from exc
+            logs = result.get("logs")
+            return StabilityResult(
+                image_bytes,
+                bool(result.get("stable")),
+                int(result.get("elapsed_ms") or 0),
+                int(result.get("checks") or 0),
+                logs=list(logs) if isinstance(logs, list) else [],
+                reused_frame=bool(result.get("reused_frame")),
+            )
+
         # 2) window_size：[w, h] → (w, h)
         if method == "window_size":
             if not isinstance(result, (list, tuple)) or len(result) != 2:
@@ -358,6 +395,35 @@ class RemoteDriver(BaseDriver):
         return self._call(
             "screenshot_jpeg",
             {"quality": int(quality), "max_side": max_side},
+        )
+
+    def wait_stable_screenshot_jpeg(
+        self,
+        quality: int = 25,
+        max_side: Optional[int] = None,
+        *,
+        enabled: Optional[bool] = None,
+        total_timeout_s: Optional[float] = None,
+        poll_interval_s: Optional[float] = None,
+        threshold: Optional[float] = None,
+        roi_threshold: Optional[float] = None,
+        black_threshold: Optional[float] = None,
+        strategy: str = "vlm_phash",
+    ) -> StabilityResult:
+        return self._call(
+            "wait_stable_screenshot_jpeg",
+            {
+                "quality": int(quality),
+                "max_side": max_side,
+                "enabled": enabled,
+                "total_timeout_s": total_timeout_s,
+                "poll_interval_s": poll_interval_s,
+                "threshold": threshold,
+                "roi_threshold": roi_threshold,
+                "black_threshold": black_threshold,
+                "strategy": strategy,
+            },
+            deadline_ms=DEFAULT_DEADLINE_MS["wait_stable_screenshot_jpeg"],
         )
 
     # —— 触控 —— #

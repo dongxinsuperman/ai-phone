@@ -26,9 +26,12 @@ from PIL import Image
 from ai_phone.agent.drivers.base import BaseDriver, DeviceInfo
 from ai_phone.agent.runner.vlm_loop import (
     CLICK_STUCK_THRESHOLD,
+    CONSECUTIVE_SCREENSHOT_FAIL_LIMIT,
     UNKNOWN_ACTION_STREAK_LIMIT,
     VLMRunner,
 )
+from ai_phone.agent.runner.stability import StabilityResult
+from ai_phone.server.runner.rpc import RemoteDriverNetworkError
 from ai_phone.shared.vlm import Decision
 
 
@@ -127,6 +130,54 @@ class FakeDriver(BaseDriver):
             serial=self.serial, platform=self.platform,
             screen_width=self._w, screen_height=self._h,
         )
+
+
+class AgentStableDriver(FakeDriver):
+    def __init__(self):
+        super().__init__()
+        self.stable_bytes = _jpeg_bytes((30, 180, 90), seed=7)
+        self.stable_calls: List[Dict[str, Any]] = []
+
+    def wait_stable_screenshot_jpeg(self, quality=25, max_side=None, **kwargs):
+        self.stable_calls.append(
+            {"quality": quality, "max_side": max_side, **kwargs}
+        )
+        return StabilityResult(
+            self.stable_bytes,
+            True,
+            456,
+            2,
+            logs=[
+                {
+                    "level": 1,
+                    "title": "页面稳定检测",
+                    "content": "Agent侧执行",
+                    "ts": 1700000000000,
+                }
+            ],
+        )
+
+    def screenshot_jpeg(self, quality: int = 25, max_side=None) -> bytes:
+        self._record("screenshot_jpeg", quality, max_side)
+        return super().screenshot_jpeg(quality, max_side)
+
+
+class AgentStableRpcFailDriver(FakeDriver):
+    def __init__(self):
+        super().__init__()
+        self.stable_calls = 0
+
+    def wait_stable_screenshot_jpeg(self, quality=25, max_side=None, **kwargs):
+        self.stable_calls += 1
+        raise RemoteDriverNetworkError(
+            "RPC 等待超时 method=wait_stable_screenshot_jpeg",
+            error_class="RpcTimeout",
+            message_id="m-stable-timeout",
+        )
+
+    def screenshot_jpeg(self, quality: int = 25, max_side=None) -> bytes:
+        self._record("screenshot_jpeg", quality, max_side)
+        return super().screenshot_jpeg(quality, max_side)
 
 
 @dataclass
@@ -228,6 +279,74 @@ async def test_finished_action_returns_ok():
     assert terminal_step["step"] == 1
     assert terminal_step["action_type"] == "finished"
     assert {"type": "run_finish", "ok": True}.items() <= events[-1].items()
+
+
+@pytest.mark.asyncio
+async def test_vlm_runner_uses_agent_side_stable_screenshot_when_available():
+    driver = AgentStableDriver()
+    vlm = ScriptedVLMClient(
+        [ScriptedStep("任务完成", "finished(content='done')")]
+    )
+    events, emit = _collect_events()
+    runner = VLMRunner(
+        run_id="R1",
+        driver=driver,
+        goal="打开应用",
+        emit=emit,
+        vlm_client=vlm,
+    )
+
+    result = await runner.run()
+
+    assert result.ok is True
+    assert vlm.received_screenshots == [driver.stable_bytes]
+    assert driver.stable_calls == [
+        {
+            "quality": 95,
+            "max_side": None,
+            "total_timeout_s": pytest.approx(runner._settings.vlm_page_stable_timeout_s),
+            "poll_interval_s": pytest.approx(runner._settings.vlm_page_stable_poll_s),
+            "threshold": pytest.approx(runner._settings.vlm_page_stable_threshold),
+            "strategy": "vlm_phash",
+        }
+    ]
+    assert not [call for call in driver.calls if call[0] == "screenshot_jpeg"]
+    assert any(
+        e.get("type") == "log"
+        and e.get("title") == "页面稳定检测"
+        and e.get("content") == "Agent侧执行"
+        for e in events
+    )
+
+
+@pytest.mark.asyncio
+async def test_vlm_runner_stable_rpc_error_counts_as_screenshot_failure():
+    driver = AgentStableRpcFailDriver()
+    vlm = ScriptedVLMClient(
+        [ScriptedStep("不应该被调用", "finished(content='unexpected')")]
+    )
+    events, emit = _collect_events()
+    runner = VLMRunner(
+        run_id="R1",
+        driver=driver,
+        goal="打开应用",
+        emit=emit,
+        vlm_client=vlm,
+    )
+
+    result = await runner.run()
+
+    assert result.ok is False
+    assert result.reason == "screenshot_failed"
+    assert driver.stable_calls == CONSECUTIVE_SCREENSHOT_FAIL_LIMIT
+    assert vlm.received_screenshots == []
+    assert not [call for call in driver.calls if call[0] == "screenshot_jpeg"]
+    assert any(
+        e.get("type") == "log"
+        and e.get("title") == "页面稳定检测 RPC 失败"
+        and "RpcTimeout" in e.get("content", "")
+        for e in events
+    )
 
 
 @pytest.mark.asyncio

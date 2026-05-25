@@ -13,7 +13,7 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from PIL import Image
@@ -25,9 +25,9 @@ from ai_phone.agent.runner.events import (
     EVT_STEP_START,
     make_event,
 )
-from ai_phone.agent.runner.phash import compute_phash
-from ai_phone.agent.runner.stability import StabilityResult
+from ai_phone.agent.runner.stability import StabilityResult, wait_page_stable_v2_compare
 from ai_phone.config import Settings, get_settings
+from ai_phone.server.runner.rpc import RemoteDriverError
 from ai_phone.server.trajectory_cache._overseas_chat import (
     main_vlm_is_overseas_cu,
     overseas_cu_to_chat_config,
@@ -54,7 +54,6 @@ from ai_phone.server.trajectory_cache.replay import (
     ReplayEmitFn,
     ReplayLogFn,
     ReplayResult,
-    _compare_alignment,
     _emit_maybe_await,
     _resolve_landmark_path,
 )
@@ -1426,6 +1425,12 @@ class V3ReplayRunner:
         )
 
     async def _screenshot_jpeg(self) -> bytes:
+        quality, max_long_edge = self._screenshot_jpeg_params()
+        return await asyncio.to_thread(
+            self.driver.screenshot_jpeg, quality, max_long_edge
+        )
+
+    def _screenshot_jpeg_params(self) -> Tuple[int, Optional[int]]:
         # V3 缓存回放路径下的辅助 VLM（plan_locator / rescue_vlm /
         # ephemeral_gate / assertion_vlm）会拿这张截图去定位 / 决策；必须与
         # 首跑主 VLM 在同一 backend 下使用相同的截图压缩参数，否则
@@ -1441,20 +1446,12 @@ class V3ReplayRunner:
         # 内联——后续若按 backend 单独调参，互不牵扯。
         backend = (self._settings.vlm_backend or "").strip().lower()
         if backend in ("claude_cu", "gpt_cu"):
-            quality, max_long_edge = 90, 1568
-        else:
-            quality, max_long_edge = 95, None
-        return await asyncio.to_thread(
-            self.driver.screenshot_jpeg, quality, max_long_edge
-        )
+            return 90, 1568
+        return 95, None
 
     async def _wait_stable_for_step(self, index: int, *, phase: str) -> Optional[bytes]:
         reused_before = self._last_frame is not None
-        result = await wait_page_stable_v2_compare(
-            self._screenshot_jpeg,
-            frame_a_bytes=self._last_frame,
-            log=None,
-        )
+        result = await self._wait_stable_result()
         self._last_frame = result.bytes_
         checks = int(getattr(result, "checks", 0) or 0)
         elapsed_ms = int(getattr(result, "elapsed_ms", 0) or 0)
@@ -1474,13 +1471,48 @@ class V3ReplayRunner:
         return result.bytes_
 
     async def _wait_stable(self) -> Optional[bytes]:
-        result = await wait_page_stable_v2_compare(
+        result = await self._wait_stable_result()
+        self._last_frame = result.bytes_
+        return result.bytes_
+
+    async def _wait_stable_result(self) -> StabilityResult:
+        remote_wait = getattr(self.driver, "wait_stable_screenshot_jpeg", None)
+        if callable(remote_wait):
+            quality, max_long_edge = self._screenshot_jpeg_params()
+            try:
+                return await asyncio.to_thread(
+                    remote_wait,
+                    quality,
+                    max_long_edge,
+                    enabled=bool(self._settings.trajectory_cache_page_stable_enabled),
+                    total_timeout_s=float(
+                        self._settings.trajectory_cache_page_stable_timeout_s
+                    ),
+                    poll_interval_s=float(
+                        self._settings.trajectory_cache_page_stable_poll_s
+                    ),
+                    threshold=float(self._settings.trajectory_cache_v3_stable_threshold),
+                    roi_threshold=float(
+                        self._settings.trajectory_cache_v3_stable_roi_threshold
+                    ),
+                    black_threshold=float(
+                        self._settings.trajectory_cache_v3_stable_black_ratio_threshold
+                    ),
+                    strategy="v3_compare",
+                )
+            except RemoteDriverError as exc:
+                await self._log(
+                    3,
+                    "V3页面稳定检测 RPC 失败",
+                    f"{exc.error_class}: {exc.message}",
+                )
+                return StabilityResult(None, False, 0, 0)
+
+        return await wait_page_stable_v2_compare(
             self._screenshot_jpeg,
             frame_a_bytes=self._last_frame,
             log=None,
         )
-        self._last_frame = result.bytes_
-        return result.bytes_
 
     async def _observe_after_action(self, *, index: Optional[int] = None) -> None:
         delay_ms = max(0, int(get_settings().trajectory_cache_observe_delay_ms or 0))
@@ -1561,124 +1593,6 @@ class V3ReplayRunner:
                 )
             )
         )
-
-
-ScreenshotFn = Callable[[], Awaitable[bytes]]
-LogFn = Callable[[int, str, str], None]
-
-
-async def wait_page_stable_v2_compare(
-    screenshot: ScreenshotFn,
-    frame_a_bytes: Optional[bytes] = None,
-    *,
-    log: Optional[LogFn] = None,
-) -> StabilityResult:
-    """V3 回放专用稳定检测：流程沿用两帧轮询，比较方式使用 V2 alignment 指标。
-
-    这不是 V2 路标对齐；这里没有缓存图。它只是把"上一帧 vs 当前帧"的差异
-    判断从单一 pHash 换成 V2 的 global/center/black/orientation 组合判定。
-    """
-
-    started = time.monotonic()
-    settings = get_settings()
-    enabled = bool(settings.trajectory_cache_page_stable_enabled)
-    total_timeout_s = float(settings.trajectory_cache_page_stable_timeout_s)
-    poll_interval_s = max(0.1, float(settings.trajectory_cache_page_stable_poll_s))
-    phash_threshold = float(settings.trajectory_cache_v3_stable_threshold)
-    roi_threshold = float(settings.trajectory_cache_v3_stable_roi_threshold)
-    black_threshold = float(settings.trajectory_cache_v3_stable_black_ratio_threshold)
-
-    def _log(level: int, title: str, content: str) -> None:
-        if log is not None:
-            log(level, title, content)
-
-    def _elapsed_ms() -> int:
-        return int((time.monotonic() - started) * 1000)
-
-    if not enabled:
-        _log(
-            1,
-            "V3页面稳定检测",
-            "未开启，直接截图放行"
-            + (" | 忽略复用尾帧" if frame_a_bytes is not None else ""),
-        )
-        try:
-            current_bytes = await screenshot()
-            return StabilityResult(current_bytes, False, _elapsed_ms(), 0)
-        except Exception as exc:  # noqa: BLE001
-            _log(3, "截图异常", f"错误: {exc} | 返回复用尾帧")
-            return StabilityResult(frame_a_bytes, False, _elapsed_ms(), 0)
-
-    _log(
-        1,
-        "V3页面稳定检测",
-        (
-            "策略=V2图像对比 | "
-            f"总超时={total_timeout_s}s | 轮询={poll_interval_s}s | "
-            f"global阈值={phash_threshold} | center阈值={roi_threshold} | "
-            f"black阈值={black_threshold}"
-            + (" | 复用上步尾帧" if frame_a_bytes is not None else "")
-        ),
-    )
-
-    last_bytes = frame_a_bytes
-    if last_bytes is None:
-        try:
-            last_bytes = await screenshot()
-        except Exception as exc:  # noqa: BLE001
-            _log(3, "基准截图失败", f"错误: {exc}")
-            return StabilityResult(None, False, _elapsed_ms(), 0)
-
-    checks = 0
-    while (time.monotonic() - started) < total_timeout_s:
-        await asyncio.sleep(poll_interval_s)
-        try:
-            current_bytes = await screenshot()
-        except Exception as exc:  # noqa: BLE001
-            _log(3, "截图异常", f"错误: {exc} | 返回最后帧")
-            return StabilityResult(last_bytes, False, _elapsed_ms(), checks)
-
-        checks += 1
-        target_hash = compute_phash(last_bytes)
-        result = _compare_alignment(
-            current_bytes=current_bytes,
-            landmark_bytes=last_bytes,
-            target_hash=target_hash,  # type: ignore[arg-type]
-            phash_threshold=phash_threshold,
-            roi_threshold=roi_threshold,
-            black_ratio_threshold=black_threshold,
-        )
-        if bool(result.get("match")):
-            _log(
-                1,
-                "V3截图已稳定",
-                (
-                    f"global={result['global_diff']:.4f} "
-                    f"center={result['center_mae']:.4f} "
-                    f"black={result['black_ratio_diff']:.4f} | "
-                    f"检测{checks}次 | 耗时{_elapsed_ms() / 1000:.1f}s"
-                ),
-            )
-            return StabilityResult(current_bytes, True, _elapsed_ms(), checks)
-
-        _log(
-            1,
-            "V3页面变化中",
-            (
-                f"global={result['global_diff']:.4f} "
-                f"center={result['center_mae']:.4f} "
-                f"black={result['black_ratio_diff']:.4f} "
-                f"reason={result['reason']} | 第{checks}次 | 继续等待"
-            ),
-        )
-        last_bytes = current_bytes
-
-    _log(
-        2,
-        "V3检测超时",
-        f"已检测{_elapsed_ms() / 1000:.1f}s（{checks}次），返回最后帧继续执行",
-    )
-    return StabilityResult(last_bytes, False, _elapsed_ms(), checks)
 
 
 def build_v3_locator_prompt(

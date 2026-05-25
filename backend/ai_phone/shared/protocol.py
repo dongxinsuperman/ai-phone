@@ -274,6 +274,7 @@ class DeviceReadinessMsg(TypedDict, total=False):
 #   ``center`` 用 [cx, cy] 数组，Agent 侧反序列化时再 tuple 化。
 # - result：
 #   · 字节型返回（screenshot_png / screenshot_jpeg）→ {"encoding":"base64","mime":...,"data":...}
+#   · 近端稳定检测（wait_stable_screenshot_jpeg）→ {"image": <base64 jpeg>, "checks": ...}
 #   · 简单标量 / 结构 → 直接 JSON value（如 window_size 返回 [w, h]，rotation 返回 int）
 #   · 无返回（click / type_text 等）→ result 为 None / 缺省
 # - deadline_ms：Server 给的软超时；Agent 不强制 kill，但超出后 Server 已不再
@@ -291,6 +292,8 @@ DriverMethod = Literal[
     # 截图
     "screenshot_png",
     "screenshot_jpeg",
+    # Agent 近端稳定检测（vlm_phash / cache_phash / v3_compare），减少多图 RPC 往返。
+    "wait_stable_screenshot_jpeg",
     # 触控
     "click",
     "double_click",

@@ -43,6 +43,7 @@ from ai_phone.shared.llm.prompts import (
     build_unknown_action_hint,
 )
 from ai_phone.shared.vlm import TokenCounter
+from ai_phone.server.runner.rpc import RemoteDriverError
 
 from .events import (
     EVT_ACTION,
@@ -58,7 +59,7 @@ from .events import (
     make_event,
 )
 from .phash import compute_phash, hamming_distance
-from .stability import wait_page_stable_pixel
+from .stability import StabilityResult, wait_page_stable_pixel
 from .transient_ui import (
     TransientUISnapshot,
     build_takeover_hint,
@@ -994,13 +995,7 @@ class VLMRunner:
                     step=step,
                 )
             else:
-                stable = await wait_page_stable_pixel(
-                    self._screenshot_jpeg,
-                    self._last_tail_bytes,
-                    log=lambda lvl, title, content, _s=step: asyncio.create_task(
-                        self._log(lvl, title, content, step=_s)
-                    ),
-                )
+                stable = await self._wait_page_stable_for_vlm(step)
                 if stable.bytes_ is None:
                     self._consecutive_screenshot_fails += 1
                     await self._log(
@@ -2716,6 +2711,12 @@ class VLMRunner:
     # ------------------------------------------------------------------
     # 截图 / 坐标辅助
     # ------------------------------------------------------------------
+    def _screenshot_jpeg_params(self) -> Tuple[int, Optional[int]]:
+        backend = (self._settings.vlm_backend or "").lower()
+        if backend in ("claude_cu", "gpt_cu"):
+            return 90, 1568
+        return 95, None
+
     async def _screenshot_jpeg(self) -> bytes:
         # 截图参数按主 VLM 协议分家，**首跑必须与回放（replay.py /
         # v3_replay.py 的 _screenshot_jpeg）保持同口径**，否则模型在缓存
@@ -2727,13 +2728,52 @@ class VLMRunner:
         #   限 max_long_edge=1568（>1568 会被 API 静默降采样反损精度）；
         #   quality=90 远高于 Anthropic 推荐下限 70。Opus 4.7 上限 2576、
         #   OpenAI computer-use-preview 上限 2048，对 1568 都安全不浪费。
-        backend = (self._settings.vlm_backend or "").lower()
-        if backend in ("claude_cu", "gpt_cu"):
-            quality, max_long_edge = 90, 1568
-        else:
-            quality, max_long_edge = 95, None
+        quality, max_long_edge = self._screenshot_jpeg_params()
         return await asyncio.to_thread(
             self.driver.screenshot_jpeg, quality, max_long_edge
+        )
+
+    async def _wait_page_stable_for_vlm(self, step: int) -> StabilityResult:
+        remote_wait = getattr(self.driver, "wait_stable_screenshot_jpeg", None)
+        if callable(remote_wait):
+            quality, max_long_edge = self._screenshot_jpeg_params()
+            try:
+                stable = await asyncio.to_thread(
+                    remote_wait,
+                    quality,
+                    max_long_edge,
+                    total_timeout_s=float(self._settings.vlm_page_stable_timeout_s),
+                    poll_interval_s=float(self._settings.vlm_page_stable_poll_s),
+                    threshold=float(self._settings.vlm_page_stable_threshold),
+                    strategy="vlm_phash",
+                )
+            except RemoteDriverError as exc:
+                await self._log(
+                    3,
+                    "页面稳定检测 RPC 失败",
+                    f"{exc.error_class}: {exc.message}",
+                    step=step,
+                )
+                return StabilityResult(None, False, 0, 0)
+            logs = getattr(stable, "logs", []) or []
+            for row in logs:
+                if not isinstance(row, dict):
+                    continue
+                await self._log(
+                    int(row.get("level") or 1),
+                    str(row.get("title") or ""),
+                    str(row.get("content") or ""),
+                    step=step,
+                    ts=int(row.get("ts") or 0) or None,
+                )
+            return stable
+
+        return await wait_page_stable_pixel(
+            self._screenshot_jpeg,
+            self._last_tail_bytes,
+            log=lambda lvl, title, content, _s=step: asyncio.create_task(
+                self._log(lvl, title, content, step=_s)
+            ),
         )
 
     async def _vlm_point_to_abs(
@@ -2789,9 +2829,17 @@ class VLMRunner:
         )
 
     async def _log(
-        self, level: int, title: str, content: str, *, step: Optional[int] = None
+        self,
+        level: int,
+        title: str,
+        content: str,
+        *,
+        step: Optional[int] = None,
+        ts: Optional[int] = None,
     ) -> None:
         evt = log_event(self.run_id, level, title, content, step=step or self._current_step or None)
+        if ts is not None:
+            evt["ts"] = int(ts)
         await self._emit_event(evt)
         logmsg = f"[{self.run_id}][step={evt.get('step')}] {title} | {content}"
         if level >= 3:

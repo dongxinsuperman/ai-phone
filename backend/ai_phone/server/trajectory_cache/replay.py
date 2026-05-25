@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
 
-from PIL import Image, ImageChops, ImageStat
+from PIL import Image
 
 from ai_phone.agent.drivers.base import BaseDriver
 from ai_phone.agent.runner.events import (
@@ -21,9 +21,14 @@ from ai_phone.agent.runner.events import (
     EVT_STEP_START,
     make_event,
 )
-from ai_phone.agent.runner.phash import compute_phash, diff_rate
-from ai_phone.agent.runner.stability import StabilityResult, wait_page_stable_pixel
+from ai_phone.agent.runner.phash import compute_phash
+from ai_phone.agent.runner.stability import (
+    StabilityResult,
+    compare_alignment as _compare_alignment,
+    wait_page_stable_pixel,
+)
 from ai_phone.config import get_settings
+from ai_phone.server.runner.rpc import RemoteDriverError
 from ai_phone.server.trajectory_cache.ephemeral import (
     GATE_ASSERT_FAIL,
     GATE_ESCALATE,
@@ -608,6 +613,36 @@ class ReplayRunner:
         return result
 
     async def _wait_stable(self) -> StabilityResult:
+        remote_wait = getattr(self.driver, "wait_stable_screenshot_jpeg", None)
+        if self._is_v1_replay and callable(remote_wait):
+            quality, max_long_edge = self._screenshot_jpeg_params()
+            try:
+                result = await asyncio.to_thread(
+                    remote_wait,
+                    quality,
+                    max_long_edge,
+                    enabled=bool(self._settings.trajectory_cache_page_stable_enabled),
+                    total_timeout_s=float(
+                        self._settings.trajectory_cache_page_stable_timeout_s
+                    ),
+                    poll_interval_s=float(
+                        self._settings.trajectory_cache_page_stable_poll_s
+                    ),
+                    threshold=float(
+                        self._settings.trajectory_cache_page_stable_threshold
+                    ),
+                    strategy="cache_phash",
+                )
+            except RemoteDriverError as exc:
+                await self._log(
+                    3,
+                    "缓存页面稳定检测 RPC 失败",
+                    f"{exc.error_class}: {exc.message}",
+                )
+                return StabilityResult(None, False, 0, 0)
+            self._last_frame = result.bytes_
+            return result
+
         result = await wait_page_stable_pixel(
             self._screenshot_jpeg,
             frame_a_bytes=self._last_frame,
@@ -1675,6 +1710,12 @@ class ReplayRunner:
         )
 
     async def _screenshot_jpeg(self) -> bytes:
+        quality, max_long_edge = self._screenshot_jpeg_params()
+        return await asyncio.to_thread(
+            self.driver.screenshot_jpeg, quality, max_long_edge
+        )
+
+    def _screenshot_jpeg_params(self) -> Tuple[int, Optional[int]]:
         # V1 / V2 缓存回放路径下的辅助 VLM（recovery_vlm / ephemeral_gate /
         # assertion_vlm）会拿这张截图去定位 / 决策；必须与首跑主 VLM 在同一
         # backend 下使用相同的截图压缩参数，否则 claude_cu / gpt_cu 这类对
@@ -1689,12 +1730,8 @@ class ReplayRunner:
         # 内联——后续若按 backend 单独调参，互不牵扯。
         backend = (self._settings.vlm_backend or "").strip().lower()
         if backend in ("claude_cu", "gpt_cu"):
-            quality, max_long_edge = 90, 1568
-        else:
-            quality, max_long_edge = 95, None
-        return await asyncio.to_thread(
-            self.driver.screenshot_jpeg, quality, max_long_edge
-        )
+            return 90, 1568
+        return 95, None
 
     async def _observe_after_action(self, *, index: Optional[int] = None) -> None:
         delay_ms = self.observe_delay_ms
@@ -1897,92 +1934,6 @@ def _resolve_landmark_path(landmark: Dict[str, Any]) -> Optional[Path]:
         rel = image_url[len("/files/") :].lstrip("/")
         return Path(get_settings().storage_dir).expanduser().resolve() / rel
     return None
-
-
-def _compare_alignment(
-    *,
-    current_bytes: bytes,
-    landmark_bytes: bytes,
-    target_hash: int,
-    phash_threshold: float,
-    roi_threshold: float,
-    black_ratio_threshold: float,
-) -> Dict[str, Any]:
-    current_hash = compute_phash(current_bytes)
-    global_diff = diff_rate(current_hash, target_hash)
-    metrics = _image_alignment_metrics(current_bytes, landmark_bytes)
-    center_mae = metrics.get("center_mae", 1.0)
-    black_ratio_diff = metrics.get("black_ratio_diff", 1.0)
-    orientation_match = bool(metrics.get("orientation_match"))
-    reasons = []
-    if global_diff > phash_threshold:
-        reasons.append(f"global>{phash_threshold:.4f}")
-    if center_mae > roi_threshold:
-        reasons.append(f"center>{roi_threshold:.4f}")
-    if black_ratio_diff > black_ratio_threshold:
-        reasons.append(f"black>{black_ratio_threshold:.4f}")
-    if not orientation_match:
-        reasons.append("orientation_mismatch")
-    return {
-        "match": not reasons,
-        "global_diff": global_diff,
-        "center_mae": center_mae,
-        "black_ratio_diff": black_ratio_diff,
-        "orientation_match": orientation_match,
-        "reason": ",".join(reasons) or "match",
-    }
-
-
-def _image_alignment_metrics(current_bytes: bytes, landmark_bytes: bytes) -> Dict[str, Any]:
-    try:
-        current = Image.open(io.BytesIO(current_bytes)).convert("RGB")
-        landmark = Image.open(io.BytesIO(landmark_bytes)).convert("RGB")
-    except Exception:  # noqa: BLE001
-        return {
-            "center_mae": 1.0,
-            "black_ratio_diff": 1.0,
-            "orientation_match": False,
-        }
-    cw, ch = current.size
-    lw, lh = landmark.size
-    current_landscape = cw >= ch
-    landmark_landscape = lw >= lh
-    orientation_match = current_landscape == landmark_landscape
-    center_mae = _center_roi_mae(current, landmark)
-    black_ratio_diff = abs(_black_ratio(current) - _black_ratio(landmark))
-    return {
-        "center_mae": center_mae,
-        "black_ratio_diff": black_ratio_diff,
-        "orientation_match": orientation_match,
-    }
-
-
-def _center_roi_mae(current: Image.Image, landmark: Image.Image) -> float:
-    current_roi = _center_crop(current).resize((160, 90))
-    landmark_roi = _center_crop(landmark).resize((160, 90))
-    diff = ImageChops.difference(current_roi, landmark_roi)
-    stat = ImageStat.Stat(diff)
-    return sum(stat.mean) / (3 * 255)
-
-
-def _center_crop(image: Image.Image) -> Image.Image:
-    w, h = image.size
-    return image.crop(
-        (
-            int(w * 0.15),
-            int(h * 0.15),
-            int(w * 0.85),
-            int(h * 0.85),
-        )
-    )
-
-
-def _black_ratio(image: Image.Image) -> float:
-    gray = image.convert("L").resize((64, 64))
-    pixels = list(gray.getdata())
-    if not pixels:
-        return 1.0
-    return sum(1 for pixel in pixels if pixel < 24) / len(pixels)
 
 
 def _optional_int(value: Any) -> Optional[int]:

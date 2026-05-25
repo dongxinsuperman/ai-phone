@@ -50,6 +50,10 @@ from ai_phone.agent.mirror import (
 )
 from ai_phone.agent.runner import build_runner
 from ai_phone.agent.runner.events import log_event
+from ai_phone.agent.runner.stability import (
+    wait_page_stable_pixel,
+    wait_page_stable_v2_compare,
+)
 from ai_phone.agent.runner_bridge import RunnerBridge
 from ai_phone.agent.scrcpy_client import (
     EVENT_DISCONNECT as _SCRCPY_EVENT_DISCONNECT,
@@ -115,6 +119,9 @@ MIRROR_GOP_SEC = _env_int("AI_PHONE_MIRROR_GOP_SEC", 1)
 # 进程内驱动缓存：同一设备的 VLM Run 和手动 input 共享一个 driver 实例，
 # 避免反复构造连接，也让 ADBKeyBoard / WDA session 等缓存状态在 Run 内 / 间复用。
 _driver_cache: Dict[str, BaseDriver] = {}
+_stable_frame_cache: Dict[Tuple[str, str, str], Tuple[bytes, float]] = {}
+_STABLE_FRAME_CACHE_TTL_S = 30 * 60
+_STABLE_FRAME_CACHE_MAX = 20
 
 
 class _LatestMirrorPayloadSender:
@@ -263,6 +270,60 @@ def _get_or_open_driver(
     drv = _open_driver_by_platform(serial, platform, **kwargs)
     _driver_cache[serial] = drv
     return drv
+
+
+def _stable_cache_key(
+    run_id: str, serial: str, strategy: str = "vlm_phash"
+) -> Tuple[str, str, str]:
+    return (str(run_id or ""), str(serial or ""), str(strategy or "vlm_phash"))
+
+
+def _prune_stable_frame_cache(now: Optional[float] = None) -> None:
+    now = time.monotonic() if now is None else now
+    expired = [
+        key for key, (_, ts) in _stable_frame_cache.items()
+        if now - ts > _STABLE_FRAME_CACHE_TTL_S
+    ]
+    for key in expired:
+        _stable_frame_cache.pop(key, None)
+    if len(_stable_frame_cache) <= _STABLE_FRAME_CACHE_MAX:
+        return
+    ordered = sorted(_stable_frame_cache.items(), key=lambda item: item[1][1])
+    overflow = max(0, len(_stable_frame_cache) - _STABLE_FRAME_CACHE_MAX)
+    for key, _ in ordered[:overflow]:
+        _stable_frame_cache.pop(key, None)
+
+
+def _clear_stable_frame_cache(run_id: str, serial: str) -> None:
+    if not run_id and not serial:
+        _stable_frame_cache.clear()
+        return
+    for key in list(_stable_frame_cache):
+        key_run_id, key_serial, _ = key
+        if (not run_id or key_run_id == run_id) and (
+            not serial or key_serial == serial
+        ):
+            _stable_frame_cache.pop(key, None)
+
+
+def _remember_stable_frame(
+    run_id: str, serial: str, data: bytes, *, strategy: str = "vlm_phash"
+) -> None:
+    if not run_id or not serial or not data:
+        return
+    _prune_stable_frame_cache()
+    _stable_frame_cache[_stable_cache_key(run_id, serial, strategy)] = (
+        data,
+        time.monotonic(),
+    )
+
+
+def _get_stable_frame(
+    run_id: str, serial: str, *, strategy: str = "vlm_phash"
+) -> Optional[bytes]:
+    _prune_stable_frame_cache()
+    entry = _stable_frame_cache.get(_stable_cache_key(run_id, serial, strategy))
+    return entry[0] if entry else None
 
 
 def _prepare_harmony_before_open(serial: str) -> None:
@@ -1283,14 +1344,27 @@ async def _handle_driver_command(client: AgentWSClient, msg: Dict[str, Any]) -> 
         return
 
     try:
+        if method == "prepare_for_run":
+            _clear_stable_frame_cache(run_id, serial)
         if method == "prepare_for_run" and _run_preopen_prepare_for_run(serial):
             await _send_result(ok=True, result=None)
             return
         driver = await asyncio.to_thread(_get_or_open_driver, serial)
+        if method == "wait_stable_screenshot_jpeg":
+            raw_result = await _handle_wait_stable_screenshot_jpeg(
+                driver=driver,
+                run_id=run_id,
+                serial=serial,
+                params=params,
+            )
+            await _send_result(ok=True, result=raw_result)
+            return
         fn = getattr(driver, method)
         raw_result = await asyncio.to_thread(
             fn, **_normalize_driver_params(method, params)
         )
+        if method == "screenshot_jpeg" and isinstance(raw_result, bytes):
+            _remember_stable_frame(run_id, serial, raw_result)
         await _send_result(ok=True, result=_serialize_driver_result(method, raw_result))
     except Exception as exc:  # noqa: BLE001
         logger.exception(
@@ -1301,6 +1375,99 @@ async def _handle_driver_command(client: AgentWSClient, msg: Dict[str, Any]) -> 
             method,
         )
         await _send_result(ok=False, error=_driver_error_payload(exc))
+
+
+async def _handle_wait_stable_screenshot_jpeg(
+    *,
+    driver: BaseDriver,
+    run_id: str,
+    serial: str,
+    params: Dict[str, Any],
+) -> Dict[str, Any]:
+    strategy = str(params.get("strategy") or "vlm_phash").strip().lower()
+    if strategy not in {"vlm_phash", "cache_phash", "v3_compare"}:
+        raise ValueError(f"unsupported wait_stable_screenshot_jpeg strategy: {strategy}")
+
+    quality = int(params.get("quality") or 25)
+    max_side_raw = params.get("max_side")
+    max_side = int(max_side_raw) if max_side_raw is not None else None
+    total_timeout_s = params.get("total_timeout_s")
+    poll_interval_s = params.get("poll_interval_s")
+    threshold = params.get("threshold")
+    enabled = params.get("enabled")
+    frame_a = _get_stable_frame(run_id, serial, strategy=strategy)
+    logs: List[Dict[str, Any]] = []
+
+    async def _screenshot() -> bytes:
+        return await asyncio.to_thread(driver.screenshot_jpeg, quality, max_side)
+
+    def _capture_log(level: int, title: str, content: str) -> None:
+        logs.append(
+            {
+                "level": int(level),
+                "title": str(title),
+                "content": str(content),
+                "ts": int(time.time() * 1000),
+            }
+        )
+
+    if strategy == "v3_compare":
+        result = await wait_page_stable_v2_compare(
+            _screenshot,
+            frame_a,
+            enabled=bool(enabled) if enabled is not None else None,
+            total_timeout_s=(
+                float(total_timeout_s) if total_timeout_s is not None else None
+            ),
+            poll_interval_s=(
+                float(poll_interval_s) if poll_interval_s is not None else None
+            ),
+            phash_threshold=float(threshold) if threshold is not None else None,
+            roi_threshold=(
+                float(params["roi_threshold"])
+                if params.get("roi_threshold") is not None
+                else None
+            ),
+            black_threshold=(
+                float(params["black_threshold"])
+                if params.get("black_threshold") is not None
+                else None
+            ),
+            log=_capture_log,
+        )
+    else:
+        result = await wait_page_stable_pixel(
+            _screenshot,
+            frame_a,
+            enabled=bool(enabled) if enabled is not None else None,
+            total_timeout_s=(
+                float(total_timeout_s) if total_timeout_s is not None else None
+            ),
+            poll_interval_s=(
+                float(poll_interval_s) if poll_interval_s is not None else None
+            ),
+            threshold=float(threshold) if threshold is not None else None,
+            log=_capture_log,
+        )
+    if result.bytes_:
+        _remember_stable_frame(run_id, serial, result.bytes_, strategy=strategy)
+
+    image = None
+    if result.bytes_:
+        image = {
+            "encoding": "base64",
+            "mime": "image/jpeg",
+            "data": base64.b64encode(result.bytes_).decode("ascii"),
+        }
+    return {
+        "image": image,
+        "stable": bool(result.stable),
+        "elapsed_ms": int(result.elapsed_ms or 0),
+        "checks": int(result.checks or 0),
+        "reused_frame": frame_a is not None,
+        "logs": logs,
+        "strategy": strategy,
+    }
 
 
 def _normalize_driver_params(method: str, params: Dict[str, Any]) -> Dict[str, Any]:

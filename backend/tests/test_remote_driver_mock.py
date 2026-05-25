@@ -201,6 +201,63 @@ def test_screenshot_jpeg_round_trip(server_loop, waiter):
     assert isinstance(cmd["message_id"], str) and len(cmd["message_id"]) >= 8
 
 
+def test_wait_stable_screenshot_jpeg_round_trip(server_loop, waiter):
+    raw_bytes = b"\xff\xd8stable_jpeg_bytes"
+
+    def _replier(cmd: Dict[str, Any]) -> Dict[str, Any]:
+        return _ok_reply(
+            cmd,
+            {
+                "image": {
+                    "encoding": "base64",
+                    "mime": "image/jpeg",
+                    "data": base64.b64encode(raw_bytes).decode(),
+                },
+                "stable": True,
+                "elapsed_ms": 3210,
+                "checks": 3,
+                "reused_frame": True,
+                "logs": [{"level": 1, "title": "截图已稳定", "content": "ok"}],
+            },
+        )
+
+    agent = FakeAgent(server_loop, waiter, replier=_replier)
+    driver = _build_driver(server_loop, waiter, agent)
+
+    out = driver.wait_stable_screenshot_jpeg(
+        quality=90,
+        max_side=1568,
+        enabled=True,
+        total_timeout_s=7.0,
+        poll_interval_s=0.6,
+        threshold=0.02,
+        roi_threshold=0.12,
+        black_threshold=0.08,
+        strategy="v3_compare",
+    )
+
+    assert out.bytes_ == raw_bytes
+    assert out.stable is True
+    assert out.elapsed_ms == 3210
+    assert out.checks == 3
+    assert out.reused_frame is True
+    assert out.logs == [{"level": 1, "title": "截图已稳定", "content": "ok"}]
+    cmd = agent.received[0]
+    assert cmd["method"] == "wait_stable_screenshot_jpeg"
+    assert cmd["params"] == {
+        "quality": 90,
+        "max_side": 1568,
+        "enabled": True,
+        "total_timeout_s": 7.0,
+        "poll_interval_s": 0.6,
+        "threshold": 0.02,
+        "roi_threshold": 0.12,
+        "black_threshold": 0.08,
+        "strategy": "v3_compare",
+    }
+    assert cmd["deadline_ms"] == 20_000
+
+
 def test_window_size_list_to_tuple(server_loop, waiter):
     agent = FakeAgent(
         server_loop, waiter, replier=lambda cmd: _ok_reply(cmd, [1080, 2400])
