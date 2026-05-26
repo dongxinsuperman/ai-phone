@@ -235,6 +235,25 @@ class IosWdaXcodeLauncher:
         self._stage_start_ts: float = time.monotonic()  # 当前 stage 起点，用于 elapsed_ms
 
     # ------------------------------------------------------------------
+    def _runner_bundle_id(self) -> Optional[str]:
+        """Return the XCTest runner bundle id that Xcode should launch."""
+        if not self.bundle_id:
+            return None
+        if self.bundle_id.endswith(".xctrunner"):
+            return self.bundle_id
+        return f"{self.bundle_id}.xctrunner"
+
+    # ------------------------------------------------------------------
+    def _xcodebuild_env(self) -> Optional[Dict[str, str]]:
+        """Build an env override that prevents stale WDA runner ids leaking in."""
+        runner_bundle_id = self._runner_bundle_id()
+        if not runner_bundle_id:
+            return None
+        env = os.environ.copy()
+        env["WDA_PRODUCT_BUNDLE_IDENTIFIER"] = runner_bundle_id
+        return env
+
+    # ------------------------------------------------------------------
     def _emit(self, stage: str, title: str, hint: str = "") -> None:
         """调用上层 on_status 回调；任何异常都吞掉，绝不影响主路径。"""
         now = time.monotonic()
@@ -370,14 +389,21 @@ class IosWdaXcodeLauncher:
         xcodebuild，相当于 Agent 替你做了一次"USB 热拔插"）。
         """
         cmd = self._build_cmd()
+        env = self._xcodebuild_env()
         logger.info(
             "udid={} 启动 xcodebuild test：\n  cwd={}\n  cmd={}",
             self.udid, self.project_dir, " ".join(cmd),
         )
+        if env and env.get("WDA_PRODUCT_BUNDLE_IDENTIFIER"):
+            logger.info(
+                "udid={} WDA runner bundle id override: {}",
+                self.udid, env["WDA_PRODUCT_BUNDLE_IDENTIFIER"],
+            )
         try:
             proc = subprocess.Popen(
                 cmd,
                 cwd=str(self.project_dir),
+                env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 bufsize=1,
@@ -497,6 +523,8 @@ class IosWdaXcodeLauncher:
           * ``PRODUCT_BUNDLE_IDENTIFIER`` / ``DEVELOPMENT_TEAM``：可选 build settings
             override，让 .pbxproj 在 git 上保持"通用模板"，每台 Mac 用 .env 注入
             自己的 Bundle Id / Team Id（背景见模块顶部 docstring）
+          * ``WDA_PRODUCT_BUNDLE_IDENTIFIER``：显式告诉 XCTest runner 当前应启动的
+            bundle id，避免 Xcode 复用旧缓存时继续找上一轮的 ``*.xctrunner``
         """
         xb = _find_xcodebuild() or "xcodebuild"
         cmd = [
@@ -510,6 +538,9 @@ class IosWdaXcodeLauncher:
         # build settings override：放在 -args 之后是 xcodebuild 标准用法（key=value 形式）
         if self.bundle_id:
             cmd.append(f"PRODUCT_BUNDLE_IDENTIFIER={self.bundle_id}")
+        runner_bundle_id = self._runner_bundle_id()
+        if runner_bundle_id:
+            cmd.append(f"WDA_PRODUCT_BUNDLE_IDENTIFIER={runner_bundle_id}")
         if self.team_id:
             cmd.append(f"DEVELOPMENT_TEAM={self.team_id}")
         return cmd
