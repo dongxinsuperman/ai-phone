@@ -241,7 +241,12 @@ _IOS_DOWNSAMPLED_PRODUCT_TYPES: Set[str] = {
 def _record_serial_platform(infos: List[Any]) -> None:
     """把 device_provider 拿到的设备列表里的 serial → platform 记进缓存，
     给后续 ``_get_or_open_driver`` / mirror 路由复用。
+
+    ``infos`` 已经过 iOS snapshot freshness 处理，是 Agent 对外上报给 Server 的
+    最终快照；这里同步按它清理旧 serial，避免 readiness supervisor 继续探测
+    已经不在本轮快照里的设备。
     """
+    current_serials: Set[str] = set()
     for info in infos:
         # info 既可能是 DeviceInfo dataclass 也可能是 dict（device_provider 转过）
         try:
@@ -250,20 +255,27 @@ def _record_serial_platform(infos: List[Any]) -> None:
         except Exception:  # noqa: BLE001
             continue
         if serial and platform:
-            _serial_platform[str(serial)] = str(platform)
+            serial_s = str(serial)
+            current_serials.add(serial_s)
+            _serial_platform[serial_s] = str(platform)
             try:
                 product_type = getattr(info, "model", None) or info["model"]
             except Exception:  # noqa: BLE001
                 product_type = ""
             if product_type:
-                _serial_product_type[str(serial)] = str(product_type)
+                _serial_product_type[serial_s] = str(product_type)
             try:
                 width = int(getattr(info, "screen_width", None) or info["screen_width"])
                 height = int(getattr(info, "screen_height", None) or info["screen_height"])
             except Exception:  # noqa: BLE001
                 width = height = 0
             if width > 0 and height > 0:
-                _serial_screen_size[str(serial)] = (width, height)
+                _serial_screen_size[serial_s] = (width, height)
+    stale_serials = set(_serial_platform) - current_serials
+    for serial in stale_serials:
+        _serial_platform.pop(serial, None)
+        _serial_screen_size.pop(serial, None)
+        _serial_product_type.pop(serial, None)
 
 
 def _get_or_open_driver(

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import platform
 import socket
 import time
@@ -49,6 +50,10 @@ class AgentWSClient:
     # 心跳 / 重扫描间隔
     ping_interval: float = 15.0
     rescan_interval: float = 5.0
+    # serial 集合不变时，也周期性重发一次完整设备快照，刷新 Server DB 里的
+    # Device.last_seen_at / 基础元数据。否则首页会只看到旧 DB 行，而 Agent
+    # 心跳仍然很新，形成"能进入工作台但设备总览像假死"的分裂状态。
+    device_snapshot_refresh_sec: float = 30.0
 
     # 内部
     _ws: Any = None
@@ -137,7 +142,11 @@ class AgentWSClient:
     async def _on_connected(self) -> None:
         devices = self.device_provider() if self.device_provider else []
         self._last_serials = {d.get("serial") for d in devices if d.get("serial")}
-        await self.send(
+        await self._send_hello(devices)
+        logger.info("hello sent | devices={}", sorted(self._last_serials))
+
+    async def _send_hello(self, devices: List[Dict[str, Any]]) -> bool:
+        return await self.send(
             {
                 "type": P.MSG_HELLO,
                 "agent_id": self.agent_id,
@@ -146,7 +155,6 @@ class AgentWSClient:
                 "devices": devices,
             }
         )
-        logger.info("hello sent | devices={}", sorted(self._last_serials))
 
     async def _session_loop(self) -> None:
         """会话期：并发跑 recv / 心跳 / 设备重扫描。"""
@@ -200,6 +208,9 @@ class AgentWSClient:
             return
         logger.info("rescan_loop 启动，间隔 {:.1f}s", self.rescan_interval)
         tick = 0
+        refresh_ticks = _ticks_for_interval(
+            self.rescan_interval, self.device_snapshot_refresh_sec
+        )
         while True:
             await asyncio.sleep(self.rescan_interval)
             tick += 1
@@ -219,22 +230,25 @@ class AgentWSClient:
                 logger.info("设备集合变化 {} → {} (tick={})",
                             sorted(self._last_serials), sorted(cur), tick)
                 self._last_serials = cur
-                await self.send(
-                    {
-                        "type": P.MSG_HELLO,
-                        "agent_id": self.agent_id,
-                        "agent_name": self.agent_name,
-                        "host_os": self.host_os,
-                        "devices": devices,
-                    }
+                await self._send_hello(devices)
+            elif tick % refresh_ticks == 0:
+                sent = await self._send_hello(devices)
+                logger.debug(
+                    "rescan_loop keepalive sent={} tick={} serials={}",
+                    sent, tick, sorted(cur),
                 )
-            elif tick % 6 == 0:
-                # 每 30s 打一次脉搏日志，便于排查 rescan 是否还在跑
-                logger.debug("rescan_loop alive tick={} serials={}",
-                             tick, sorted(cur))
 
 
 # --------------------------------------------------------------------- helpers
+
+def _ticks_for_interval(scan_interval: float, refresh_interval: float) -> int:
+    try:
+        scan = max(0.1, float(scan_interval))
+        refresh = max(scan, float(refresh_interval))
+    except Exception:  # noqa: BLE001
+        return 1
+    return max(1, int(math.ceil(refresh / scan)))
+
 
 def normalize_server_address(raw: str) -> tuple[str, str]:
     """把用户输入的 Server 地址归一成 Agent 需要的 WS URL + HTTP base。

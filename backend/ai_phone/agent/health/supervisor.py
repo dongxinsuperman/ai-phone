@@ -5,8 +5,9 @@
 - 内部一个 asyncio task 每 ``readiness_poll_sec`` 秒跑一轮，按当前已知的
   (serial, platform) 列表并发调用各自的 probe；
 - 维护 "连续失败计数 + 最近上报状态" 两份内存；连续失败到阈值才真正降级；
-- 状态**发生变化**（ready↔not_ready 或 reason 变了）时才 send 一条
-  :data:`MSG_DEVICE_READINESS`；稳态期静默，避免刷 WS。
+- 状态**发生变化**（ready↔not_ready 或 reason 变了）时立即 send 一条
+  :data:`MSG_DEVICE_READINESS`；稳态期每 30s 重发一次，避免 Server Hub
+  长期保留旧的 not_ready / ready 快照。
 
 外部依赖（全是只读 callable，不持有 Driver / Mirror 对象引用）：
 - ``device_lister()`` —— 返回当前设备快照，形如 [(serial, platform), ...]
@@ -76,14 +77,18 @@ class ReadinessSupervisor:
         *,
         device_lister: DeviceLister,
         send_message: MessageSender,
+        resend_interval_sec: float = 30.0,
     ) -> None:
         self._device_lister = device_lister
         self._send = send_message
+        self._resend_interval_sec = max(1.0, float(resend_interval_sec))
         self._task: Optional[asyncio.Task] = None
         self._stop = asyncio.Event()
         self._states: Dict[DeviceKey, _State] = {}
-        # 记录上次已发送 readiness 的 (ready, reason) 元组，变化才发；初值 None 会强制第一次 send。
+        # 记录上次已发送 readiness 的 (ready, reason) 元组；变化立即发，未变也按
+        # _resend_interval_sec keepalive，防止 Server 端 Hub 快照陈旧。
         self._last_sent: Dict[DeviceKey, Tuple[bool, Optional[str]]] = {}
+        self._last_sent_at: Dict[DeviceKey, float] = {}
 
     # ---------------- lifecycle ----------------
     def start(self, loop: Optional[asyncio.AbstractEventLoop] = None) -> None:
@@ -122,6 +127,7 @@ class ReadinessSupervisor:
         UI/scheduler could keep a stale not_ready value.
         """
         self._last_sent.clear()
+        self._last_sent_at.clear()
 
     # ---------------- main loop ----------------
     async def _run(self) -> None:
@@ -168,6 +174,7 @@ class ReadinessSupervisor:
             if k not in current_keys:
                 self._states.pop(k, None)
                 self._last_sent.pop(k, None)
+                self._last_sent_at.pop(k, None)
 
         # 1.5) iOS USB 扫描不可信短路（配合 _apply_ios_snapshot_freshness）
         #
@@ -276,7 +283,13 @@ class ReadinessSupervisor:
     async def _maybe_send(self, key: DeviceKey, state: _State) -> None:
         prev = self._last_sent.get(key)
         cur = (state.ready, state.reason)
-        if prev == cur:
+        now_monotonic = time.monotonic()
+        changed = prev != cur
+        if (
+            not changed
+            and now_monotonic - self._last_sent_at.get(key, 0.0)
+            < self._resend_interval_sec
+        ):
             return
 
         serial, platform = key
@@ -301,7 +314,13 @@ class ReadinessSupervisor:
                 )
                 return
             self._last_sent[key] = cur
-            if state.ready:
+            self._last_sent_at[key] = now_monotonic
+            if not changed:
+                logger.debug(
+                    "[readiness] {}:{} keepalive ready={} reason={} fail_streak={}",
+                    platform, serial, state.ready, state.reason, state.consecutive_fail,
+                )
+            elif state.ready:
                 logger.info(
                     "[readiness] {}:{} 恢复 ready",
                     platform, serial,

@@ -387,16 +387,29 @@ async def _upsert_devices(
                 continue
             present_serials.add(serial)
             existing = await session.get(Device, serial)
+            is_new = existing is None
             if existing is None:
                 existing = Device(serial=serial)
                 session.add(existing)
             existing.agent_id = agent_id
-            existing.platform = str(d.get("platform") or "android")
-            existing.brand = str(d.get("brand") or d.get("name") or "")
-            existing.model = str(d.get("model") or "")
-            existing.os_version = str(d.get("os_version") or "")
-            existing.screen_width = int(d.get("screen_width") or 0)
-            existing.screen_height = int(d.get("screen_height") or 0)
+            platform = _text_or_empty(d.get("platform"))
+            if platform or is_new:
+                existing.platform = platform or "android"
+            brand = _text_or_empty(d.get("brand") or d.get("name"))
+            if brand or is_new:
+                existing.brand = brand
+            model = _text_or_empty(d.get("model"))
+            if model or is_new:
+                existing.model = model
+            os_version = _text_or_empty(d.get("os_version"))
+            if os_version or is_new:
+                existing.os_version = os_version
+            screen_width = _positive_int(d.get("screen_width"))
+            if screen_width > 0 or is_new:
+                existing.screen_width = screen_width
+            screen_height = _positive_int(d.get("screen_height"))
+            if screen_height > 0 or is_new:
+                existing.screen_height = screen_height
             existing.status = str(d.get("status") or "online")
             existing.last_seen_at = now
             if hub is not None:
@@ -422,6 +435,18 @@ async def _upsert_devices(
         await session.commit()
 
     await _with_session(op)
+
+
+def _text_or_empty(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _positive_int(value: Any) -> int:
+    try:
+        parsed = int(value or 0)
+    except Exception:  # noqa: BLE001
+        return 0
+    return parsed if parsed > 0 else 0
 
 
 async def _update_device_status(serial: str, new_status: str, agent_id: str) -> None:

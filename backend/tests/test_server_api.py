@@ -8,8 +8,10 @@ from datetime import datetime, timezone
 
 import pytest
 
+from ai_phone.server.db import get_session_factory
 from ai_phone.server.models import Device, Run, RunCommand, RunLog
 from ai_phone.server.hub import Hub
+from ai_phone.server.ws.agent_ws import _upsert_devices
 
 
 class _FakeWs:
@@ -86,6 +88,59 @@ async def test_list_agents(client, app):
     assert body[0]["serials"] == ["S1", "S2"]
     assert body[0]["connected_at"]
     assert body[0]["last_seen_at"]
+
+
+@pytest.mark.asyncio
+async def test_upsert_devices_preserves_metadata_when_keepalive_snapshot_is_sparse(
+    client, session
+):
+    assert client is not None
+    session.add(
+        Device(
+            serial="S1",
+            agent_id="agent-local",
+            platform="android",
+            brand="Redmi",
+            model="23113RKC6C",
+            os_version="15",
+            screen_width=1080,
+            screen_height=2400,
+            status="online",
+            last_seen_at=datetime(2026, 5, 26, 8, 6, 45, tzinfo=timezone.utc),
+        )
+    )
+    await session.commit()
+
+    await _upsert_devices(
+        "agent-local",
+        [
+            {
+                "serial": "S1",
+                "platform": "android",
+                "brand": "",
+                "model": "",
+                "os_version": "",
+                "screen_width": 0,
+                "screen_height": 0,
+                "status": "online",
+            }
+        ],
+        Hub(),
+    )
+
+    async with get_session_factory()() as verify:
+        dev = await verify.get(Device, "S1")
+        assert dev is not None
+        assert dev.brand == "Redmi"
+        assert dev.model == "23113RKC6C"
+        assert dev.os_version == "15"
+        assert dev.screen_width == 1080
+        assert dev.screen_height == 2400
+        assert dev.last_seen_at is not None
+        last_seen = dev.last_seen_at
+        if last_seen.tzinfo is None:
+            last_seen = last_seen.replace(tzinfo=timezone.utc)
+        assert last_seen > datetime(2026, 5, 26, 8, 6, 45, tzinfo=timezone.utc)
 
 
 # --------------------------------------------------------------------- locking
