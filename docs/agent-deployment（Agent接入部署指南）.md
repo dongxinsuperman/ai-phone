@@ -43,6 +43,14 @@ AI_PHONE_AGENT_NAME=<这台Mac在设备页展示的名称>
 - `AI_PHONE_AGENT_TOKEN` 必须与 Server 侧配置一致，否则 Agent 会被拒绝。
 - `AI_PHONE_AGENT_NAME` 建议写清楚归属和地点，例如 `qa-mac-mini-01`、`ios-lab-dongxin`。
 
+如果这台 Agent 要接 iPhone，还需要确认本机走哪条 WDA 签名路线：
+
+| 路线 | 用途 | 需要的信息 |
+| --- | --- | --- |
+| 个人临时路线 | 本机开发、临时验证、验证热拔插设备规则 | Personal Team ID、WDA Bundle ID |
+| 团队自动签名路线（推荐） | 公司稳定 Agent、多设备池 | Organization / Company Team ID、WDA Bundle ID、用于登录 Xcode 的 Apple ID 已加入团队且具备自动签名权限 |
+| 团队手动签名路线（兜底） | 团队限制自动签名权限 | Organization / Company Team ID、WDA Bundle ID、Apple Development `.p12`（含私钥）、WDA 对应的 iOS App Development profile（目标 iPhone UDID 已包含） |
+
 ## 三、Agent env 的归属
 
 `backend/.env` 是**当前这台机器、当前这个进程**读取的本地配置，不是全公司共享的一份配置。
@@ -294,6 +302,23 @@ pwd
 
 如果这台 Agent 不接 iPhone，这几个 WDA 字段可以保持模板默认值或留空。
 
+签名路线建议：
+
+| 路线 | env 示例 | 说明 |
+| --- | --- | --- |
+| 个人临时路线 | `AI_PHONE_WDA_TEAM_ID=<Personal Team ID>`<br>`AI_PHONE_WDA_BUNDLE_ID=com.<you>.wda` | 用于快速验证本机 iOS agent、热拔插和 WDA 生命周期；免费 Apple ID 通常 7 天过期，不建议长期设备池 |
+| 团队自动签名路线（推荐） | `AI_PHONE_WDA_TEAM_ID=<Organization Team ID>`<br>`AI_PHONE_WDA_BUNDLE_ID=com.<team>.wda` | Xcode 登录已加入团队的 Apple ID，勾选 `Automatically manage signing`，让 Xcode 自动准备 Apple Development 证书、私钥和 profile |
+| 团队手动签名路线（兜底） | 同团队自动签名路线 | 仅当自动签名失败或团队限制权限时使用；导入团队管理员提供的 Apple Development `.p12`（必须含私钥）和 WDA 对应的 iOS App Development profile，目标 iPhone UDID 必须已包含在该 profile 中 |
+
+注意：
+
+- agent 自动启动 WDA 时，以本机 `backend/.env` 注入的 `AI_PHONE_WDA_TEAM_ID` 和 `AI_PHONE_WDA_BUNDLE_ID` 为准。
+- Xcode 手动运行 WDA 时，以 Xcode 当前选择的 Team 和 Bundle Identifier 为准。
+- 每台接 iPhone 的 Agent Mac 都要具备自己的 WDA 签名能力；Web 用户不需要安装 agent 或证书，真正执行动作的是连接这台 iPhone 的 Agent Mac。
+- `Distribution` 证书、App Store profile、业务 App 的 AdHoc profile 通常不是 WDA 主链路需要的材料。
+
+更完整的 iOS 签名说明见 [iOS 接入指南](./ios-setup（iOS接入指南）.md)。
+
 ### 8.2 点亮后上滑白名单
 
 Android / HarmonyOS 默认会在 Run 前尝试把黑屏设备唤醒。如果某台设备点亮后仍停在锁屏壁纸、屏保页或需要上滑才进入可操作态，并且已经人工关闭 PIN / 图案 / 密码等安全锁，再把它加入白名单：
@@ -350,7 +375,7 @@ adb devices
 
 1. 数据线连接 iPhone。
 2. 弹“信任此电脑”时点“信任”，如果继续要求输入设备密码，必须完成密码确认。
-3. `设置 -> 隐私与安全 -> 开发者模式` 打开，按系统要求重启。
+3. iOS 16+：`设置 -> 隐私与安全 -> 开发者模式` 打开，按系统要求重启。iOS 15 不需要开发者模式。
 4. 第一次 WDA 跑起来后，如果出现“不受信任开发者”，进入 `设置 -> 通用 -> VPN 与设备管理` 信任对应 Apple ID 的开发者 App。
 
 Mac 检查：

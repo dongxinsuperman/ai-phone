@@ -238,12 +238,24 @@ iOS 链路由 `pymobiledevice3` + WebDriverAgent 组成。WDA 工程已随仓库
 
 1. 数据线连接 iPhone。
 2. iPhone 弹“信任此电脑”时点“信任”，如果继续要求输入设备密码，必须完成密码确认。
-3. `设置 -> 隐私与安全 -> 开发者模式` 打开，按系统要求重启。
+3. iOS 16+：`设置 -> 隐私与安全 -> 开发者模式` 打开，按系统要求重启。iOS 15 不需要开发者模式。
 4. 第一次 WDA 跑起来后，如果出现“不受信任开发者”，进入 `设置 -> 通用 -> VPN 与设备管理` 信任对应 Apple ID 的开发者 App。
 
 只点“信任”但不输入设备密码，可能让旧的 WDA 会话短时间还能用，但新的 lockdown pairing 没真正完成；新 Mac 部署时不要跳过密码确认。
 
-### 7.2 写入 WDA 签名 env
+### 7.2 选择 WDA 签名路线
+
+WDA 真机能力要求连接 iPhone 的这台 Mac 最终具备签名能力。推荐按用途选择：
+
+| 路线 | 适用场景 | 要点 |
+|---|---|---|
+| 个人临时路线 | 本机开发、临时验证、验证热拔插设备规则和 agent 链路 | Personal Team / 免费 Apple ID 可用，但签名通常 7 天过期，不适合长期多设备池 |
+| 团队自动签名路线（推荐） | 公司稳定 Agent、多 Mac、多 iPhone 设备池 | Xcode 登录已加入团队的 Apple ID，账号具备证书、Bundle ID、设备、profile 权限；Xcode 自动准备签名材料 |
+| 团队手动签名路线（兜底） | 团队限制自动签名权限 | 管理员提供 Apple Development `.p12`（含私钥）和 WDA Bundle ID 对应的 iOS App Development profile，目标 iPhone UDID 必须已包含在该 profile 中 |
+
+更完整的解释见 [iOS 接入指南](./ios-setup（iOS接入指南）.md)。
+
+### 7.3 写入 WDA 签名 env
 
 在 `backend/.env` 填：
 
@@ -254,9 +266,11 @@ AI_PHONE_WDA_BUNDLE_ID=com.<你的唯一前缀>.aiphone.wda
 AI_PHONE_WDA_TEAM_ID=<你的Apple Team ID>
 ```
 
-`AI_PHONE_WDA_BUNDLE_ID` 必须唯一，避免免费 Apple ID 的 Bundle ID 配额和冲突。`AI_PHONE_WDA_TEAM_ID` 是 10 位大写 Team ID，可在 Apple Developer 账号页或 Xcode 账号信息里查。
+个人临时路线写 Personal Team ID；团队路线写 Organization / Company Team ID。`AI_PHONE_WDA_TEAM_ID` 可在 Apple Developer 账号页、页面右上角团队信息或 Xcode 账号信息里查。
 
-### 7.3 第一次编译 WDA
+`AI_PHONE_WDA_BUNDLE_ID` 是 WDA 的 App ID。临时验证可以使用已验证可用的 Bundle ID；长期公司设备池建议使用团队专用 Bundle ID，减少个人/团队签名互相覆盖和 profile 混用。
+
+### 7.4 第一次编译 WDA
 
 可靠路径是 Xcode 手工跑一次：
 
@@ -267,13 +281,15 @@ open "$HOME/code/ai-phone/third_party/WebDriverAgent/WebDriverAgent.xcodeproj"
 在 Xcode 里：
 
 1. 选择连接的 iPhone 真机。
-2. `TARGETS -> WebDriverAgentRunner -> Signing & Capabilities` 选择自己的 Team。
-3. 如有 Info.plist 隐私字段提示，补齐 `NSLocation*UsageDescription` 等非空说明。
-4. `Product -> Test` 或 `Cmd+U`。
+2. `TARGETS -> WebDriverAgentRunner -> Signing & Capabilities` 勾选 `Automatically manage signing`。
+3. 选择本次要用的 Team：个人临时路线选 Personal Team，团队稳定路线选 Organization / Company Team。
+4. 确认 Bundle Identifier 与 `.env` 的 `AI_PHONE_WDA_BUNDLE_ID` 一致。
+5. 如有 Info.plist 隐私字段提示，补齐 `NSLocation*UsageDescription` 等非空说明。
+6. `Product -> Test` 或 `Cmd+U`。
 
 成功时 iPhone 屏幕会显示 `Automation Running`。之后如果弹“不受信任开发者”，按 7.1 第 4 步信任开发者 App。
 
-### 7.4 iOS 17+ / 26 必开的终端
+### 7.5 iOS 17+ / 26 必开的终端
 
 Terminal A，Mac 每次重启后都要开，窗口保持常驻：
 
@@ -294,7 +310,7 @@ sudo -E .venv/bin/python -m pymobiledevice3 mounter auto-mount --udid <UDID>
 
 `<UDID>` 用 `pymobiledevice3 usbmux list` 输出里的设备 UDID。DDI mount 成功后 Terminal E 可以退出，Terminal A 的 tunneld 不要关。
 
-### 7.5 stable 线路的行为
+### 7.6 stable 线路的行为
 
 推荐 `.env`：
 
