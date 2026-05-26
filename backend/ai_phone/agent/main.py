@@ -220,6 +220,22 @@ class _LatestMirrorPayloadSender:
 # 没记录的 serial 默认按 Android 处理（adbutils），保留旧行为兼容。
 _serial_platform: Dict[str, str] = {}
 _serial_screen_size: Dict[str, Tuple[int, int]] = {}
+_serial_product_type: Dict[str, str] = {}
+
+
+# iOS 会先以 UIKit scale 渲染、再缩放到物理屏幕的机型。
+# 典型表现：WDA/window 截图坐标是 1242x2208 或 1125x2436，
+# 但 web 镜像/设备物理屏是 1080x1920 或 1080x2340。
+_IOS_DOWNSAMPLED_PRODUCT_TYPES: Set[str] = {
+    "iPhone7,1",   # iPhone 6 Plus
+    "iPhone8,2",   # iPhone 6s Plus
+    "iPhone9,2",   # iPhone 7 Plus
+    "iPhone9,4",   # iPhone 7 Plus
+    "iPhone10,2",  # iPhone 8 Plus
+    "iPhone10,5",  # iPhone 8 Plus
+    "iPhone13,1",  # iPhone 12 mini
+    "iPhone14,4",  # iPhone 13 mini
+}
 
 
 def _record_serial_platform(infos: List[Any]) -> None:
@@ -235,6 +251,12 @@ def _record_serial_platform(infos: List[Any]) -> None:
             continue
         if serial and platform:
             _serial_platform[str(serial)] = str(platform)
+            try:
+                product_type = getattr(info, "model", None) or info["model"]
+            except Exception:  # noqa: BLE001
+                product_type = ""
+            if product_type:
+                _serial_product_type[str(serial)] = str(product_type)
             try:
                 width = int(getattr(info, "screen_width", None) or info["screen_width"])
                 height = int(getattr(info, "screen_height", None) or info["screen_height"])
@@ -1224,6 +1246,15 @@ async def _handle_input(
     )
 
     try:
+        if (
+            platform_name == "ios"
+            and kind in ("tap", "swipe", "long_press")
+            and session is not None
+            and session.is_alive
+            and session.control is None
+        ):
+            params = _remap_ios_downsampled_manual_input(driver, session, kind, params)
+
         if use_scrcpy:
             # scrcpy fast-path：直接走控制 socket，几乎零延迟
             await _dispatch_input_via_scrcpy(driver, session, kind, params)
@@ -1285,6 +1316,82 @@ async def _handle_input(
             logger.warning("input 未知 kind={} serial={}", kind, serial)
     except Exception as exc:  # noqa: BLE001
         logger.exception("input 执行失败 serial={} kind={}: {}", serial, kind, exc)
+
+
+def _ios_downsample_product_type(serial: str, driver: BaseDriver) -> str:
+    product_type = _serial_product_type.get(serial, "")
+    if product_type:
+        return product_type
+    try:
+        info = driver.device_info()
+        product_type = str(getattr(info, "model", "") or "")
+    except Exception:  # noqa: BLE001
+        product_type = ""
+    if product_type:
+        _serial_product_type[serial] = product_type
+    return product_type
+
+
+def _remap_ios_downsampled_manual_input(
+    driver: BaseDriver,
+    session: Any,
+    kind: str,
+    params: Dict[str, Any],
+) -> Dict[str, Any]:
+    """把 downsample iPhone 的 web 手动坐标换算到 WDA 坐标系。"""
+    serial = str(getattr(session, "serial", "") or "")
+    product_type = _ios_downsample_product_type(serial, driver)
+    if product_type not in _IOS_DOWNSAMPLED_PRODUCT_TYPES:
+        return params
+
+    source = _serial_screen_size.get(serial) or getattr(session, "resolution", None)
+    if not source or not source[0] or not source[1]:
+        return params
+    try:
+        sw, sh = int(source[0]), int(source[1])
+        dw, dh = session.get_device_size(driver)
+        dw, dh = int(dw), int(dh)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "ios.input.remap 跳过 serial={} product_type={} params={} err={}",
+            serial, product_type, params, exc,
+        )
+        return params
+    if sw <= 0 or sh <= 0 or dw <= 0 or dh <= 0 or (sw == dw and sh == dh):
+        return params
+
+    # 前端 displaySize 会按当前画面横竖屏交换 W/H；这里也按 driver 方向对齐。
+    if (sw > sh) != (dw > dh):
+        sw, sh = sh, sw
+    sx = dw / sw
+    sy = dh / sh
+
+    def _map(x: Any, y: Any) -> Tuple[int, int]:
+        mx = max(0, min(dw - 1, round(int(x) * sx)))
+        my = max(0, min(dh - 1, round(int(y) * sy)))
+        return mx, my
+
+    out = dict(params)
+    try:
+        if kind in ("tap", "long_press"):
+            out["x"], out["y"] = _map(out.get("x", 0), out.get("y", 0))
+        elif kind == "swipe":
+            out["x1"], out["y1"] = _map(out.get("x1", 0), out.get("y1", 0))
+            out["x2"], out["y2"] = _map(out.get("x2", 0), out.get("y2", 0))
+        else:
+            return params
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "ios.input.remap 失败 serial={} product_type={} kind={} params={} err={}",
+            serial, product_type, kind, params, exc,
+        )
+        return params
+
+    logger.info(
+        "ios.input.remap | serial={} product_type={} kind={} source={}x{} driver={}x{} in={} out={}",
+        serial, product_type, kind, sw, sh, dw, dh, params, out,
+    )
+    return out
 
 
 async def _handle_driver_command(client: AgentWSClient, msg: Dict[str, Any]) -> None:
