@@ -265,7 +265,7 @@ curl http://<server-host>:8000/api/runs/<run_id>/commands
 - Run 运行中拔手机
 - Run 运行中停止
 - 多 item / 多平台批量派发
-- iOS 在 Server 大脑模式下的设备动作链路；本机仍需要 WDA / Xcode / tunneld 等环境准备
+- iOS 在 Server 大脑模式下的设备动作链路；本机仍需要 WDA / Xcode 环境准备，iOS 17+ / RSD / DVT 场景再按需常驻 tunneld
 
 ---
 

@@ -8,23 +8,23 @@
 
 ## 一、部署完成后的形态
 
-一台 Mac 上通常常驻 3 到 4 个终端：
+一台 Mac 上通常常驻 3 个主进程；接 iOS 17+ 或使用 DVT / RSD 设备服务时，再按需加 tunneld：
 
 | 终端 | 进程 | 是否必需 | 作用 |
 |---|---|---|---|
-| A | `sudo ... pymobiledevice3 remote tunneld` | 只有 iOS 必需 | iOS 17+ / 26 的 DVT 截图与设备服务通道 |
-| B | `uvicorn ai_phone.server.app:app ...` | 必需 | Server：队列、调度、报告、Web API |
-| C | `python -m ai_phone agent` | 必需 | Agent：扫描 USB 真机、执行动作、推镜像 |
-| D | `npm run dev` | 必需 | Web 前端：设备总览、工作台、队列、大盘 |
+| A | `python -m ai_phone server --host 0.0.0.0 --port 8000` | 必需 | Server：队列、调度、报告、Web API |
+| B | `python -m ai_phone agent` | 必需 | Agent：扫描 USB 真机、执行动作、推镜像 |
+| C | `npm run dev` | 必需 | Web 前端：设备总览、工作台、队列、大盘 |
+| D | `sudo ... pymobiledevice3 remote tunneld` | iOS 按需 | iOS 17+ / 26 的 RSD、DVT 兜底和部分设备服务通道 |
 
-iOS 还多一个“一次性/按需”命令：
+iOS 17+ / DVT 兜底场景还多一个“一次性/按需”命令：
 
 ```bash
-# 每次 iPhone 重启、升级系统、换新 iPhone 后，再执行一次 DDI 挂载
+# 每次 iPhone 重启、升级系统、换新 iPhone 后，如需 DVT / RSD，再执行一次 DDI 挂载
 sudo -E /path/to/ai-phone/backend/.venv/bin/python -m pymobiledevice3 mounter auto-mount --udid <UDID>
 ```
 
-`remote tunneld` 是常驻窗口，Mac 重启后重新开；`mounter auto-mount` 是 iPhone 重启后补一次，执行完可以退出。
+`remote tunneld` 不是 iOS 15 / 16 的基础必开项；iOS 17+ / 26 遇到 RSD / DVT / 应用列表设备服务需求时保持常驻。`mounter auto-mount` 是 iPhone 重启后补一次，执行完可以退出。
 
 ---
 
@@ -289,9 +289,9 @@ open "$HOME/code/ai-phone/third_party/WebDriverAgent/WebDriverAgent.xcodeproj"
 
 成功时 iPhone 屏幕会显示 `Automation Running`。之后如果弹“不受信任开发者”，按 7.1 第 4 步信任开发者 App。
 
-### 7.5 iOS 17+ / 26 必开的终端
+### 7.5 iOS 17+ / 26 按需常驻 tunneld
 
-Terminal A，Mac 每次重启后都要开，窗口保持常驻：
+Terminal D，只有接 iOS 17+ / 26 且需要 RSD / DVT / 部分设备服务时才开；Mac 重启后如仍需要则重新开启，窗口保持常驻：
 
 ```bash
 cd "$HOME/code/ai-phone/backend"
@@ -308,7 +308,7 @@ pymobiledevice3 usbmux list
 sudo -E .venv/bin/python -m pymobiledevice3 mounter auto-mount --udid <UDID>
 ```
 
-`<UDID>` 用 `pymobiledevice3 usbmux list` 输出里的设备 UDID。DDI mount 成功后 Terminal E 可以退出，Terminal A 的 tunneld 不要关。
+`<UDID>` 用 `pymobiledevice3 usbmux list` 输出里的设备 UDID。DDI mount 成功后 Terminal E 可以退出；如果本机需要 RSD / DVT 通道，Terminal D 的 tunneld 不要关。
 
 ### 7.6 stable 线路的行为
 
@@ -383,7 +383,7 @@ AI_PHONE_HARMONY_WAKE_ON_ENTER=true
 
 ### 9.1 iOS tunneld
 
-只有接 iOS 时需要；Mac 每次重启后开一次，保持不关闭。
+只有接 iOS 17+ / 26 且需要 RSD / DVT / 部分设备服务时需要；Mac 每次重启后如仍需要则开一次，保持不关闭。iOS 15 / 16 基础控制通常不需要。
 
 ```bash
 cd "$HOME/code/ai-phone/backend"
@@ -489,7 +489,8 @@ hdc list targets -v
 | VLM 任务 401 | `AI_PHONE_VLM_API_KEY` 是否填入；协议、URL、模型是否匹配 |
 | Android `unauthorized` | 手机 USB 调试弹窗是否确认；重新拔插；撤销 USB 调试授权后重连 |
 | Android / HarmonyOS 黑屏但设备可调度 | 这是推荐黑屏待机线路；Run 前会 wake。若设备有密码，自动化不能越过认证 |
-| iOS 看得到设备但 WDA 未就绪 | 是否开着 `remote tunneld`；是否 DDI mount；Xcode 是否完整；WDA 签名 env 是否正确 |
+| iOS 看得到设备但 WDA 未就绪 | Xcode 是否完整；WDA 签名 env 是否正确；开发者 App 是否已信任；iOS 17+ / DVT 兜底场景再检查 `remote tunneld` 和 DDI mount |
+| iOS 控制台能点，Run 的 `open_app` 报列应用失败 | `open_app` 需要额外查询应用列表；确认 Agent 已更新到分段查询 `User/System` 的版本，设备已解锁并信任电脑；iOS 17+ 再检查 tunneld / RSD |
 | iOS 反复弹“信任此电脑” | 检查是否有多个 tunneld、Xcode、外部 `pymobiledevice3` 或第三方工具在 autopair；完成“信任 + 输入密码” |
 | iOS `Automation Running` 后屏幕变暗/黑 | 这通常是 iOS Automation 的显示特性，不等于锁屏；有操作会再次点亮 |
 | iOS 重启后截图失败 | 重新执行 `mounter auto-mount --udid <UDID>` |

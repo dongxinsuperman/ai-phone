@@ -129,6 +129,11 @@ GET /api/internal/server-brain/state
 
 推荐部署 env 见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md)。注意：代码里的 `Settings` 默认值保留历史兼容，真正交付默认以 `.env.example` 和推荐清单为准。
 
+iOS 需要区分两条链路：
+
+- WDA 控制链路：截图、镜像、点击、滑动、输入、已知 bundle id 启动 App。
+- `pymobiledevice3` 设备服务链路：设备发现、应用列表、安装、DVT 兜底。自然语言 `open_app(app_name="...")` 需要先查应用列表再匹配 bundle id；当前实现分开查询 `User` / `System`，不再依赖 `Any` 一条路。
+
 ## 7. iOS stable 线路
 
 iOS WDA 生命周期由 `AI_PHONE_IOS_WDA_LIFECYCLE_MODE` 控制：

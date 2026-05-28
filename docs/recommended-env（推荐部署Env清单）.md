@@ -28,6 +28,7 @@ AI_PHONE_IOS_WDA_STABLE_ALLOW_INITIAL_SPAWN=true
 - `AI_PHONE_IOS_WAKE_ON_ENTER=true` 只负责 WDA 可用后点亮屏幕，不绕过设备密码。
 - `AI_PHONE_IOS_SCREEN_OFF_DISPATCHABLE=true` 允许 iPhone 息屏/锁屏时继续被派发。
 - `AI_PHONE_IOS_WAKE_BEFORE_RUN=true` 在 Run 前主动调用 `wda.unlock`，把无安全认证锁屏拉回可操作态。
+- iOS 的 `open_app("某个 App")` 除了 WDA 控制链路，还需要 `pymobiledevice3 installation_proxy` 查询应用列表。当前版本分开查询 `User` 和 `System`，不再把 `ApplicationType=Any` 作为唯一入口；如果仍看到 `type=Any` 报错，说明 Agent 版本落后。
 
 ## Android 黑屏线路
 
