@@ -215,6 +215,12 @@ class IosProbe(BaseProbe):
         except Exception as exc:  # noqa: BLE001
             return _fail("driver_probe_failed", f"/wda/locked 解析失败：{exc}")
         if locked_val:
+            if get_settings().ios_screen_off_dispatchable:
+                logger.debug(
+                    "[readiness:ios:{}] locked/screen off but dispatchable by env",
+                    self.serial,
+                )
+                return _ok()
             return _fail("screen_locked", "iPhone 锁屏中，请解锁")
 
         return _ok()

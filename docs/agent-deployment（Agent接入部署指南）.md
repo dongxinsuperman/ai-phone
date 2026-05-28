@@ -268,14 +268,14 @@ Agent 部署者至少要逐项确认：
 | Server 连接 | 是 | `AI_PHONE_SERVER_HTTP_BASE`、`AI_PHONE_SERVER_WS_URL`、`AI_PHONE_AGENT_TOKEN` |
 | Agent 标识 | 是 | `AI_PHONE_AGENT_NAME` |
 | iOS WDA | 接 iPhone 时必须改 | `AI_PHONE_WDA_PROJECT_DIR`、`AI_PHONE_WDA_BUNDLE_ID`、`AI_PHONE_WDA_TEAM_ID`、`AI_PHONE_WDA_SCHEME` |
-| 点亮后上滑白名单 | 仅设备需要时填写 | `AI_PHONE_WAKE_SWIPE_DEVICE_ALLOWLIST` |
+| HarmonyOS wake 后上滑 | 不在 Agent 本地改 | Server Web「设备配置」页 |
 | Server 专用配置 | Agent 侧通常不用改 | 数据库、模型 Key、Kafka、Webhook、Web 配置 |
 
 ---
 
 ## 八、本机设备差异配置
 
-继续编辑 `backend/.env`。iOS stable 线路、Android / HarmonyOS 黑屏待机线路已经按平台推荐值配置，Agent 部署者通常不要调整这些开关；只需要处理本机差异。
+继续编辑 `backend/.env`。iOS stable + 黑屏待机线路、Android / HarmonyOS 黑屏待机线路已经按平台推荐值配置，Agent 部署者通常不要调整这些开关；只需要处理本机差异。
 
 ### 8.1 iOS WDA 工程和签名
 
@@ -319,21 +319,11 @@ pwd
 
 更完整的 iOS 签名说明见 [iOS 接入指南](./ios-setup（iOS接入指南）.md)。
 
-### 8.2 点亮后上滑白名单
+### 8.2 HarmonyOS wake 后上滑设备配置
 
-Android / HarmonyOS 默认会在 Run 前尝试把黑屏设备唤醒。如果某台设备点亮后仍停在锁屏壁纸、屏保页或需要上滑才进入可操作态，并且已经人工关闭 PIN / 图案 / 密码等安全锁，再把它加入白名单：
+Android 不再维护设备级上滑配置：Run 前只执行 `KEYCODE_WAKEUP` 并尝试 `wm dismiss-keyguard` 收起无安全认证的 keyguard。
 
-```env
-AI_PHONE_WAKE_SWIPE_DEVICE_ALLOWLIST=<设备serial1>,<设备serial2>
-```
-
-多个设备用英文逗号分隔；留空表示不对任何设备自动上滑。
-
-Android serial 查看：
-
-```bash
-adb devices
-```
+HarmonyOS 如果点亮后仍停在锁屏壁纸、屏保页或需要上滑才进入可操作态，并且已经人工关闭 PIN / 图案 / 密码等安全锁，由管理员在 Server Web「设备配置」页按设备开启 `wake 后上滑`。这份配置写入 Server 数据库，所有连接该 Server 的 Agent 共用；Agent 本地不再维护白名单 env。
 
 HarmonyOS serial 查看：
 

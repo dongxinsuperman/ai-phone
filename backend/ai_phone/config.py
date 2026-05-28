@@ -77,7 +77,7 @@ class Settings(BaseSettings):
         default=False,
         description=(
             "Android readiness 遇到屏幕息屏/DOZE 时是否仍允许派发。默认 False 保持历史"
-            "行为；开启后由 Run 前 wake + 上滑负责把设备拉回可操作态。"
+            "行为；开启后由 Run 前 wake + dismiss-keyguard 负责把设备拉回可操作态。"
             "env: AI_PHONE_ANDROID_SCREEN_OFF_DISPATCHABLE"
         ),
     )
@@ -89,31 +89,6 @@ class Settings(BaseSettings):
             "Android Run 前唤醒后的短等待毫秒数，用于等待屏幕点亮和首帧刷新。"
             "仅 AI_PHONE_ANDROID_WAKE_BEFORE_RUN=true 时生效。"
             "env: AI_PHONE_ANDROID_WAKE_BEFORE_RUN_SETTLE_MS"
-        ),
-    )
-    android_wake_swipe_enabled: bool = Field(
-        default=False,
-        description=(
-            "Android Run 前唤醒后是否固定上滑一次，兜底锁屏壁纸/屏保态。默认 False "
-            "避免影响历史场景；仅 AI_PHONE_ANDROID_WAKE_BEFORE_RUN=true 时生效。"
-            "env: AI_PHONE_ANDROID_WAKE_SWIPE_ENABLED"
-        ),
-    )
-    android_wake_swipe_settle_ms: int = Field(
-        default=500,
-        ge=0,
-        le=5000,
-        description=(
-            "Android Run 前唤醒上滑后的短等待毫秒数。仅 wake_swipe_enabled=true 时生效。"
-            "env: AI_PHONE_ANDROID_WAKE_SWIPE_SETTLE_MS"
-        ),
-    )
-    wake_swipe_device_allowlist: str = Field(
-        default="",
-        description=(
-            "Run 前 wake 后允许自动上滑的设备 serial 白名单，逗号/空格分隔，跨 "
-            "Android/HarmonyOS 统一使用。为空表示没有设备自动上滑。"
-            "env: AI_PHONE_WAKE_SWIPE_DEVICE_ALLOWLIST"
         ),
     )
     android_wake_on_enter: bool = Field(
@@ -136,22 +111,24 @@ class Settings(BaseSettings):
         default=False,
         description=(
             "HarmonyOS readiness 遇到息屏时是否仍允许派发。默认 False 保持当前"
-            "screen_locked 行为；开启后由 Run preflight 负责 wake + 上滑。"
+            "screen_locked 行为；开启后由 Run preflight 负责 wake，必要设备再按 Server 策略上滑。"
             "env: AI_PHONE_HARMONY_SCREEN_OFF_DISPATCHABLE"
         ),
     )
     harmony_wake_before_run: bool = Field(
         default=False,
         description=(
-            "HarmonyOS VLM Run 开始前是否用纯 hdc 主动唤醒并进入可操作态。默认 False "
+            "HarmonyOS VLM Run 开始前是否用纯 hdc 主动唤醒屏幕。默认 False "
             "保持历史行为。env: AI_PHONE_HARMONY_WAKE_BEFORE_RUN"
         ),
     )
+
     harmony_wake_swipe_enabled: bool = Field(
         default=True,
         description=(
-            "HarmonyOS Run 前唤醒后是否上滑进入桌面/可操作态。默认 True 但只有 "
-            "AI_PHONE_HARMONY_WAKE_BEFORE_RUN=true 时生效。env: AI_PHONE_HARMONY_WAKE_SWIPE_ENABLED"
+            "HarmonyOS Run 前唤醒后是否允许按 Server 下发策略上滑进入桌面/可操作态。"
+            "默认 True 但只有 AI_PHONE_HARMONY_WAKE_BEFORE_RUN=true 时生效。"
+            "env: AI_PHONE_HARMONY_WAKE_SWIPE_ENABLED"
         ),
     )
     harmony_wake_settle_ms: int = Field(
@@ -175,7 +152,7 @@ class Settings(BaseSettings):
     harmony_wake_on_enter: bool = Field(
         default=False,
         description=(
-            "HarmonyOS 进入工作台/启动镜像前是否用纯 hdc 唤醒并上滑。默认 False 保持"
+            "HarmonyOS 进入工作台/启动镜像前是否用纯 hdc 唤醒。默认 False 保持"
             "历史行为；黑屏可派发策略下建议开启。env: AI_PHONE_HARMONY_WAKE_ON_ENTER"
         ),
     )
@@ -603,6 +580,31 @@ class Settings(BaseSettings):
     ios_wake_on_enter: bool = Field(
         default=True,
         description="WDA 就绪后自动点亮屏幕（Face ID 机型防息屏）",
+    )
+    ios_screen_off_dispatchable: bool = Field(
+        default=False,
+        description=(
+            "iOS readiness 遇到 /wda/locked=true 时是否仍允许派发。默认 False 保持"
+            "历史行为；开启后由 Run 前 wda.unlock 负责把屏幕拉起来。"
+            "env: AI_PHONE_IOS_SCREEN_OFF_DISPATCHABLE"
+        ),
+    )
+    ios_wake_before_run: bool = Field(
+        default=False,
+        description=(
+            "iOS VLM Run 开始前是否主动调 wda.unlock 唤醒屏幕。默认 False 保持历史"
+            "行为；与 ios_screen_off_dispatchable 配套开启。"
+            "env: AI_PHONE_IOS_WAKE_BEFORE_RUN"
+        ),
+    )
+    ios_wake_before_run_settle_ms: int = Field(
+        default=500,
+        ge=0,
+        le=5000,
+        description=(
+            "iOS Run 前唤醒后的短等待毫秒数。仅 ios_wake_before_run=true 时生效。"
+            "env: AI_PHONE_IOS_WAKE_BEFORE_RUN_SETTLE_MS"
+        ),
     )
 
     # ------------------------------------------------------------------

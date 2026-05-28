@@ -115,6 +115,7 @@ GET /api/internal/server-brain/state
 | `submissions` | 外部 / 内部批次容器 |
 | `submission_items` | 一个 case + platform 的执行单元 |
 | `vlm_trajectory_cache*` | 轨迹缓存 V1 / V2 / V3 |
+| `device_wake_policies` | HarmonyOS Run 前 wake 后是否兜底上滑的设备策略 |
 
 项目仍以 SQLAlchemy `create_all()` 为本地开发默认建表方式；已有库补字段时使用 `backend/migrations/*.sql`。
 
@@ -143,17 +144,18 @@ iOS WDA 生命周期由 `AI_PHONE_IOS_WDA_LIFECYCLE_MODE` 控制：
 - stable 下 `_maybe_preload_ios` 只打一条 debug 后静默 no-op。
 - `AI_PHONE_IOS_WDA_STABLE_ALLOW_INITIAL_SPAWN=true` 表示拔插 USB 后新会话允许首次启动 WDA；启动后不主动 respawn。
 - `AI_PHONE_IOS_WAKE_ON_ENTER=true` 只负责 WDA 可用后点亮屏幕，不绕过设备密码。
+- `AI_PHONE_IOS_SCREEN_OFF_DISPATCHABLE=true` + `AI_PHONE_IOS_WAKE_BEFORE_RUN=true` 表示息屏/锁屏 iPhone 可派发，Run 前通过 `wda.unlock` 拉回可操作态。
 
 信任链路的边界：点“信任”后仍可能要求输入设备密码；如果不完成密码确认，已有 WDA 会话可能还能继续，但新的 lockdown pairing 仍不完整，后续仍可能再次弹窗。
 
 ## 8. 黑屏待机线路
 
-Android / HarmonyOS 推荐从“插线常亮”改成“空闲自然息屏，执行前唤醒”：
+iOS / Android / HarmonyOS 推荐从“插线常亮”改成“空闲自然息屏，执行前唤醒”：
 
 - `*_SETUP_STAY_AWAKE=false`：不再长期续约屏幕常亮。
 - `*_SCREEN_OFF_DISPATCHABLE=true`：黑屏但可唤醒视为可派发。
 - `*_WAKE_BEFORE_RUN=true`：Run preflight 先 wake，再进入截图 / driver 初始化。
-- `AI_PHONE_WAKE_SWIPE_DEVICE_ALLOWLIST`：只有命中 serial 的设备才会 wake 后自动上滑，避免误滚动业务页面。
+- iOS 固定走 `wda.unlock`；Android 固定走 `KEYCODE_WAKEUP + wm dismiss-keyguard`；HarmonyOS 是否 wake 后兜底上滑由 Server DB / Web「设备配置」页按 serial 维护。
 
 安全锁不能被绕过。设备存在 PIN / 图案 / 密码时，系统会停在认证页，需要人工关闭安全锁或为测试设备配置可自动进入的状态。
 

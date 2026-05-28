@@ -91,7 +91,7 @@ AI_PHONE_HARMONY_WAKE_ON_ENTER=true
 - `SCREEN_OFF_DISPATCHABLE=true`：黑屏但可唤醒的设备仍可进队列派发。
 - `WAKE_BEFORE_RUN=true`：hmdriver2 初始化、首张截图、缓存回放前先走纯 `hdc shell power-shell wakeup`。
 - `WAKE_ON_ENTER=true`：手动进入工作台、启动镜像、手动 input 前也先点亮屏幕；只 wake，不自动上滑。
-- `WAKE_SWIPE_ENABLED=true` 只是能力开关；真正自动上滑还必须命中 `AI_PHONE_WAKE_SWIPE_DEVICE_ALLOWLIST`。
+- `WAKE_SWIPE_ENABLED=true` 只是能力总开关；真正哪些 HarmonyOS 设备自动上滑，由 Server DB / Web「设备配置」页按 serial 维护。
 
 如果设备存在安全密码 / 生物识别锁，wake + 上滑只能到锁屏认证页，不能绕过系统安全锁。
 

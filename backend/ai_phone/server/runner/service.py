@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from ai_phone.agent.runner.events import log_event
 from ai_phone.agent.runner.vlm_loop import VLMRunner
 from ai_phone.config import get_settings
+from ai_phone.server.device_config.resolver import resolve_wake_decision
 from ai_phone.server.hub import Hub
 from ai_phone.server.lockstore import DeviceLockStore
 from ai_phone.server.models import Run, RunCommand, RunLog
@@ -293,10 +294,23 @@ class ServerRunnerService:
             should_prepare = (
                 (driver.platform == "android" and settings.android_wake_before_run)
                 or (driver.platform == "harmony" and settings.harmony_wake_before_run)
+                or (driver.platform == "ios" and getattr(settings, "ios_wake_before_run", False))
             )
             if should_prepare:
+                wake_policy = {}
                 if driver.platform == "harmony":
-                    message = "Run 前唤醒 HarmonyOS：power-shell wakeup + 上滑"
+                    async with self._session_factory() as session:
+                        wake_policy = await resolve_wake_decision(
+                            session,
+                            driver.serial,
+                            driver.platform,
+                        )
+                if driver.platform == "harmony":
+                    message = "Run 前唤醒 HarmonyOS：power-shell wakeup"
+                    if wake_policy.get("wake_swipe"):
+                        message += " + 兜底上滑"
+                elif driver.platform == "ios":
+                    message = "Run 前唤醒 iOS：wda.unlock"
                 else:
                     message = "Run 前唤醒 Android：KEYCODE_WAKEUP + dismiss-keyguard"
                 emitter.emit_serial(
@@ -307,7 +321,10 @@ class ServerRunnerService:
                         message,
                     )
                 )
-                await asyncio.to_thread(driver.prepare_for_run)
+                await asyncio.to_thread(
+                    driver.prepare_for_run,
+                    **({"wake_policy": wake_policy} if wake_policy else {}),
+                )
 
             replay_done = await self._maybe_run_trajectory_cache(
                 run_id=run_id,

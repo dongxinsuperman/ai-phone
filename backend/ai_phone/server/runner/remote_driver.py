@@ -375,8 +375,11 @@ class RemoteDriver(BaseDriver):
     # ------------------------------------------------------------------
     # BaseDriver 实现
     # ------------------------------------------------------------------
-    def prepare_for_run(self) -> None:
-        self._call("prepare_for_run")
+    def prepare_for_run(self, *, wake_policy: Optional[Dict[str, bool]] = None) -> None:
+        params: Dict[str, Any] = {}
+        if wake_policy:
+            params["wake_policy"] = dict(wake_policy)
+        self._call("prepare_for_run", params=params or None)
 
     # —— 屏幕信息 —— #
     def window_size(self) -> Tuple[int, int]:

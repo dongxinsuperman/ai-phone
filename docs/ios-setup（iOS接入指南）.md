@@ -39,11 +39,14 @@ pip install -e ".[ios]"   # pymobiledevice3 9.x（iOS 17+/26 必需）
 ```env
 AI_PHONE_IOS_WDA_PRELOAD=false
 AI_PHONE_IOS_WAKE_ON_ENTER=true
+AI_PHONE_IOS_SCREEN_OFF_DISPATCHABLE=true
+AI_PHONE_IOS_WAKE_BEFORE_RUN=true
+AI_PHONE_IOS_WAKE_BEFORE_RUN_SETTLE_MS=500
 AI_PHONE_IOS_WDA_LIFECYCLE_MODE=stable
 AI_PHONE_IOS_WDA_STABLE_ALLOW_INITIAL_SPAWN=true
 ```
 
-`stable` 的含义：插线扫描不主动 preload；已有 WDA 优先 attach/reuse；每次 USB 物理插入会话内最多允许首次自动 spawn 一次，之后 WDA 若掉线则等待人工处理或重新拔插开始新会话。
+`stable` 的含义：插线扫描不主动 preload；已有 WDA 优先 attach/reuse；每次 USB 物理插入会话内最多允许首次自动 spawn 一次，之后 WDA 若掉线则等待人工处理或重新拔插开始新会话。iOS 黑屏待机线路由 `AI_PHONE_IOS_SCREEN_OFF_DISPATCHABLE=true` + `AI_PHONE_IOS_WAKE_BEFORE_RUN=true` 开启，Run 前通过 `wda.unlock` 点亮/解开无安全认证锁屏。
 
 ---
 

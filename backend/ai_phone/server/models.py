@@ -102,6 +102,31 @@ class DeviceAlias(Base):
         }
 
 
+class DeviceWakePolicy(Base):
+    """设备 wake 策略表：仅承载 HarmonyOS Run 前是否兜底上滑。"""
+
+    __tablename__ = "device_wake_policies"
+
+    serial: Mapped[str] = mapped_column(String(128), primary_key=True)
+    platform: Mapped[str] = mapped_column(String(16), index=True)
+    wake_swipe: Mapped[bool] = mapped_column(default=False)
+    remark: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "serial": self.serial,
+            "platform": self.platform,
+            "wake_swipe": bool(self.wake_swipe),
+            "remark": self.remark or "",
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class Case(Base):
     __tablename__ = "cases"
 

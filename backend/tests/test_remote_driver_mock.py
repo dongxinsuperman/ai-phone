@@ -201,6 +201,19 @@ def test_screenshot_jpeg_round_trip(server_loop, waiter):
     assert isinstance(cmd["message_id"], str) and len(cmd["message_id"]) >= 8
 
 
+def test_prepare_for_run_sends_wake_policy(server_loop, waiter):
+    agent = FakeAgent(server_loop, waiter, replier=lambda cmd: _ok_reply(cmd, None))
+    driver = _build_driver(server_loop, waiter, agent)
+
+    driver.prepare_for_run(wake_policy={"wake_swipe": True})
+
+    assert len(agent.received) == 1
+    cmd = agent.received[0]
+    assert cmd["type"] == MSG_DRIVER_COMMAND
+    assert cmd["method"] == "prepare_for_run"
+    assert cmd["params"] == {"wake_policy": {"wake_swipe": True}}
+
+
 def test_wait_stable_screenshot_jpeg_round_trip(server_loop, waiter):
     raw_bytes = b"\xff\xd8stable_jpeg_bytes"
 

@@ -125,6 +125,23 @@ export const api = {
     request('GET', `/api/app-install/tasks/${encodeURIComponent(taskId)}`),
   retryAppInstallUnsuccessful: (taskId) =>
     request('POST', `/api/app-install/tasks/${encodeURIComponent(taskId)}/retry-unsuccessful`),
+
+  deviceWakePolicies: {
+    list: (platform = '') => {
+      const qs = platform ? `?platform=${encodeURIComponent(platform)}` : ''
+      return request('GET', `/api/device-wake-policies${qs}`)
+    },
+    upsert: ({ serial, platform, wake_swipe = false, remark = '' }) =>
+      request('POST', '/api/device-wake-policies', {
+        body: { serial, platform, wake_swipe, remark },
+      }),
+    patch: (serial, payload) =>
+      request('PATCH', `/api/device-wake-policies/${encodeURIComponent(serial)}`, {
+        body: payload,
+      }),
+    remove: (serial) =>
+      request('DELETE', `/api/device-wake-policies/${encodeURIComponent(serial)}`),
+  },
 }
 
 // ---------- /api/internal/* —— 第 2 梯队用 ----------

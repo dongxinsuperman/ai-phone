@@ -286,6 +286,8 @@ class DeviceReadinessMsg(TypedDict, total=False):
 #   一律 ok=false / error.category='device' / error_class='UnknownDriverMethod'。
 # - params 是 BaseDriver 方法的参数 dict；JSON 不能传 tuple，``scroll`` 的
 #   ``center`` 用 [cx, cy] 数组，Agent 侧反序列化时再 tuple 化。
+#   ``prepare_for_run`` 可选带 ``wake_policy={"wake_swipe": true}``，仅
+#   HarmonyOS 分支消费；Android 固定走 wake + dismiss-keyguard，iOS 走 WDA unlock。
 # - result：
 #   · 字节型返回（screenshot_png / screenshot_jpeg）→ {"encoding":"base64","mime":...,"data":...}
 #   · 近端稳定检测（wait_stable_screenshot_jpeg）→ {"image": <base64 jpeg>, "checks": ...}
@@ -350,6 +352,10 @@ class DriverErrorPayload(TypedDict, total=False):
     traceback: str  # 关键栈片段（最后 N 行即可，不要整栈）
 
 
+class WakePolicyPayload(TypedDict, total=False):
+    wake_swipe: bool
+
+
 class DriverCommandMsg(TypedDict, total=False):
     """Server → Agent：远端 BaseDriver 方法调用。"""
 
@@ -384,12 +390,14 @@ class DriverResultMsg(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 # Server → Agent
 # ---------------------------------------------------------------------------
-class StartRunMsg(TypedDict):
+class StartRunMsg(TypedDict, total=False):
     type: Literal["start_run"]
     run_id: str
     device_serial: str
     goal: str
     attempt: NotRequired[int]
+    engine: NotRequired[str]
+    wake_policy: NotRequired[WakePolicyPayload]
 
 
 class StopRunMsg(TypedDict):

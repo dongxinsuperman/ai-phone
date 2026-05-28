@@ -79,6 +79,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.run_dispatch_service = RunDispatchService(
         hub=app.state.hub,
         server_runner=app.state.server_runner_service,
+        session_factory=get_session_factory(),
     )
 
     # v1 第 2 梯队：启动 SubmissionScheduler。调度器事件驱动 + 2s 兜底 tick；

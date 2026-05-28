@@ -361,13 +361,18 @@ def _get_stable_frame(
     return entry[0] if entry else None
 
 
-def _prepare_harmony_before_open(serial: str) -> None:
+def _prepare_harmony_before_open(
+    serial: str,
+    *,
+    wake_policy: Optional[Dict[str, bool]] = None,
+) -> None:
     """HarmonyOS Run 前纯 hdc 唤醒，必须能在 hmdriver2 初始化前执行。"""
     from ai_phone.agent.drivers.harmony import prepare_harmony_for_run  # noqa: PLC0415
 
     prepare_harmony_for_run(
         serial,
         screen_size=_serial_screen_size.get(serial),
+        swipe=bool((wake_policy or {}).get("wake_swipe")),
     )
 
 
@@ -383,12 +388,16 @@ def _wake_harmony_on_enter(serial: str) -> None:
     )
 
 
-def _run_preopen_prepare_for_run(serial: str) -> bool:
+def _run_preopen_prepare_for_run(
+    serial: str,
+    *,
+    wake_policy: Optional[Dict[str, bool]] = None,
+) -> bool:
     """返回是否已经在打开 driver 前完成 prepare_for_run。"""
     platform_name = _serial_platform.get(serial, "android")
     settings = get_settings()
     if platform_name == "harmony" and settings.harmony_wake_before_run:
-        _prepare_harmony_before_open(serial)
+        _prepare_harmony_before_open(serial, wake_policy=wake_policy)
         return True
     return False
 
@@ -1002,6 +1011,10 @@ async def _handle_start_run(
     # 引擎选择：缺省 'vlm'（与历史行为完全等价）。'midscene' 等外接引擎走不同路径，
     # 比如不开 ai-phone driver、不走 vlm_loop。详见 `Midscene执行器接入方案.md`。
     engine = str(msg.get("engine") or "vlm").strip().lower() or "vlm"
+    raw_wake_policy = msg.get("wake_policy")
+    wake_policy: Dict[str, bool] = (
+        dict(raw_wake_policy) if isinstance(raw_wake_policy, dict) else {}
+    )
     if not (run_id and serial and goal):
         logger.warning("start_run 参数不全 | run_id={} serial={} goal_len={}", run_id, serial, len(goal))
         return
@@ -1045,11 +1058,16 @@ async def _handle_start_run(
                         run_id,
                         1,
                         "设备电源",
-                        "Run 前唤醒 HarmonyOS：power-shell wakeup + 上滑",
+                        "Run 前唤醒 HarmonyOS：power-shell wakeup"
+                        + (" + 兜底上滑" if wake_policy.get("wake_swipe") else ""),
                     )
                 )
                 try:
-                    await asyncio.to_thread(_prepare_harmony_before_open, serial)
+                    await asyncio.to_thread(
+                        _prepare_harmony_before_open,
+                        serial,
+                        wake_policy=wake_policy,
+                    )
                     prepared_before_open = True
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("Run 前唤醒 HarmonyOS 失败 serial={}", serial)
@@ -1114,7 +1132,22 @@ async def _handle_start_run(
                         run_id,
                         1,
                         "设备电源",
-                        "Run 前唤醒 HarmonyOS：power-shell wakeup + 上滑",
+                        "Run 前唤醒 HarmonyOS：power-shell wakeup"
+                        + (" + 兜底上滑" if wake_policy.get("wake_swipe") else ""),
+                    )
+                )
+                await asyncio.to_thread(driver.prepare_for_run, wake_policy=wake_policy)
+            elif (
+                driver is not None
+                and getattr(driver, "platform", "") == "ios"
+                and getattr(settings, "ios_wake_before_run", False)
+            ):
+                bridge.emit(
+                    log_event(
+                        run_id,
+                        1,
+                        "设备电源",
+                        "Run 前唤醒 iOS：wda.unlock",
                     )
                 )
                 await asyncio.to_thread(driver.prepare_for_run)
@@ -1466,7 +1499,15 @@ async def _handle_driver_command(client: AgentWSClient, msg: Dict[str, Any]) -> 
     try:
         if method == "prepare_for_run":
             _clear_stable_frame_cache(run_id, serial)
-        if method == "prepare_for_run" and _run_preopen_prepare_for_run(serial):
+        wake_policy = (
+            dict(params.get("wake_policy"))
+            if method == "prepare_for_run" and isinstance(params.get("wake_policy"), dict)
+            else {}
+        )
+        if method == "prepare_for_run" and _run_preopen_prepare_for_run(
+            serial,
+            wake_policy=wake_policy,
+        ):
             await _send_result(ok=True, result=None)
             return
         driver = await asyncio.to_thread(_get_or_open_driver, serial)
@@ -1480,8 +1521,14 @@ async def _handle_driver_command(client: AgentWSClient, msg: Dict[str, Any]) -> 
             await _send_result(ok=True, result=raw_result)
             return
         fn = getattr(driver, method)
+        fn_kwargs = _normalize_driver_params(method, params)
+        if method == "prepare_for_run":
+            if getattr(driver, "platform", "") == "harmony":
+                fn_kwargs = {"wake_policy": wake_policy}
+            else:
+                fn_kwargs = {}
         raw_result = await asyncio.to_thread(
-            fn, **_normalize_driver_params(method, params)
+            fn, **fn_kwargs
         )
         if method == "screenshot_jpeg" and isinstance(raw_result, bytes):
             _remember_stable_frame(run_id, serial, raw_result)

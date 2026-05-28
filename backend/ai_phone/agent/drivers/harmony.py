@@ -26,11 +26,10 @@ from __future__ import annotations
 import io
 import json
 import os
-import re
 import tempfile
 import threading
 import time
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image
 from loguru import logger
@@ -190,9 +189,12 @@ class HarmonyDriver(BaseDriver):
     # ------------------------------------------------------------------
     # 息屏策略
     # ------------------------------------------------------------------
-    def prepare_for_run(self) -> None:
+    def prepare_for_run(self, *, wake_policy: Optional[Dict[str, bool]] = None) -> None:
         """Run 前用纯 hdc 唤醒 HarmonyOS 并进入可操作态。"""
-        prepare_harmony_for_run(self.serial)
+        prepare_harmony_for_run(
+            self.serial,
+            swipe=bool((wake_policy or {}).get("wake_swipe")),
+        )
 
     def _setup_stay_awake(self, *, first: bool) -> None:
         """把 HarmonyOS 的自动息屏关掉。
@@ -846,6 +848,9 @@ def prepare_harmony_for_run(
     if not force and not settings.harmony_wake_before_run:
         return
 
+    do_swipe = bool(settings.harmony_wake_swipe_enabled) and bool(swipe)
+    was_lit = _harmony_screen_is_lit(serial) if do_swipe else None
+
     try:
         out = hdc_shell(
             serial,
@@ -864,12 +869,10 @@ def prepare_harmony_for_run(
     if settle_s > 0:
         time.sleep(settle_s)
 
-    do_swipe = settings.harmony_wake_swipe_enabled if swipe is None else bool(swipe)
-    do_swipe = do_swipe and _wake_swipe_allowed(
-        serial,
-        getattr(settings, "wake_swipe_device_allowlist", ""),
-    )
     if not do_swipe:
+        return
+    if was_lit is True:
+        logger.info("设备 {} HarmonyOS Run 前已亮屏，跳过兜底上滑", serial)
         return
 
     width, height = _normalize_preflight_screen_size(screen_size)
@@ -919,9 +922,48 @@ def _normalize_preflight_screen_size(
     return 1080, 2400
 
 
-def _wake_swipe_allowed(serial: str, allowlist: str) -> bool:
-    parts = [p for p in re.split(r"[\s,]+", str(allowlist or "").strip()) if p]
-    return str(serial or "").strip() in set(parts)
+def _harmony_screen_is_lit(serial: str) -> Optional[bool]:
+    try:
+        out = hdc_shell(
+            serial,
+            "hidumper -s PowerManagerService -a -s",
+            timeout=3.0,
+            check=False,
+        ) or ""
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("设备 {} HarmonyOS wake 前读取屏幕状态失败：{}", serial, exc)
+        return None
+    if _harmony_screen_is_off(out):
+        return False
+    if _harmony_screen_is_on(out):
+        return True
+    return None
+
+
+def _harmony_screen_is_off(hidumper_out: str) -> bool:
+    text = hidumper_out or ""
+    for needle in (
+        "Current State: INACTIVE",
+        "Current State: SLEEP",
+        "Current State: Standby",
+        "Screen On: false",
+        "screenOn: false",
+    ):
+        if needle in text:
+            return True
+    return False
+
+
+def _harmony_screen_is_on(hidumper_out: str) -> bool:
+    text = hidumper_out or ""
+    for needle in (
+        "Current State: AWAKE",
+        "Screen On: true",
+        "screenOn: true",
+    ):
+        if needle in text:
+            return True
+    return False
 
 
 # ----------------------------------------------------------------------

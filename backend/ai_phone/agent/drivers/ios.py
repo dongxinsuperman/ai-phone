@@ -26,6 +26,7 @@ import inspect
 import io
 import socket
 import threading
+import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from PIL import Image
@@ -401,6 +402,24 @@ class IosDriver(BaseDriver):
 
         # WDA 报告的 point 坐标系 → 物理像素需要乘 scale；缓存一次
         self._scale: Optional[float] = None
+
+    # ------------------------------------------------------------------
+    # Run 前准备
+    # ------------------------------------------------------------------
+    def prepare_for_run(self) -> None:
+        """Run 前只调用 WDA unlock；不复用带 press_home fallback 的旧唤醒路径。"""
+        try:
+            self._wda.unlock()
+            logger.info("iOS Run 前唤醒：wda.unlock serial={}", self.serial)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("iOS prepare_for_run unlock 失败 serial={}: {}", self.serial, exc)
+
+        settle_s = max(
+            0,
+            int(getattr(get_settings(), "ios_wake_before_run_settle_ms", 500)),
+        ) / 1000.0
+        if settle_s > 0:
+            time.sleep(settle_s)
 
     # ------------------------------------------------------------------
     # 屏幕信息

@@ -136,51 +136,6 @@ def test_prepare_for_run_swallows_wake_errors(monkeypatch):
     fake.shell.assert_called_once_with("wm dismiss-keyguard")
 
 
-def test_prepare_for_run_can_swipe_after_wake(monkeypatch):
-    fake = MagicMock()
-    fake.serial = "EMU-WAKE-SWIPE"
-    fake.window_size.return_value = MagicMock(width=1080, height=2400)
-    driver = AndroidDriver(fake, setup_power=False)
-    monkeypatch.setattr(
-        android_mod,
-        "get_settings",
-        lambda: SimpleNamespace(
-            android_wake_before_run_settle_ms=0,
-            android_wake_swipe_enabled=True,
-            android_wake_swipe_settle_ms=0,
-            wake_swipe_device_allowlist="EMU-WAKE-SWIPE",
-        ),
-    )
-
-    driver.prepare_for_run()
-
-    fake.keyevent.assert_called_once_with(224)
-    fake.shell.assert_called_once_with("wm dismiss-keyguard")
-    fake.swipe.assert_called_once_with(540, 1968, 540, 840, duration=0.35)
-
-
-def test_prepare_for_run_skips_swipe_when_not_allowlisted(monkeypatch):
-    fake = MagicMock()
-    fake.serial = "EMU-NO-SWIPE"
-    driver = AndroidDriver(fake, setup_power=False)
-    monkeypatch.setattr(
-        android_mod,
-        "get_settings",
-        lambda: SimpleNamespace(
-            android_wake_before_run_settle_ms=0,
-            android_wake_swipe_enabled=True,
-            android_wake_swipe_settle_ms=0,
-            wake_swipe_device_allowlist="OTHER",
-        ),
-    )
-
-    driver.prepare_for_run()
-
-    fake.keyevent.assert_called_once_with(224)
-    fake.shell.assert_called_once_with("wm dismiss-keyguard")
-    fake.swipe.assert_not_called()
-
-
 def test_open_android_driver_respects_setup_stay_awake_env(monkeypatch):
     fake = MagicMock()
     fake.serial = "EMU-POWER-OFF"

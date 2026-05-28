@@ -51,11 +51,6 @@ _PKG_PREFIX_RE = re.compile(r"^package:(.+)$")
 _STAY_AWAKE_DONE: set = set()
 
 
-def _wake_swipe_allowed(serial: str, allowlist: str) -> bool:
-    parts = [p for p in re.split(r"[\s,]+", str(allowlist or "").strip()) if p]
-    return str(serial or "").strip() in set(parts)
-
-
 class AndroidDriver(BaseDriver):
     platform = "android"
 
@@ -97,8 +92,8 @@ class AndroidDriver(BaseDriver):
     def prepare_for_run(self) -> None:
         """按需在 Run 前唤醒 Android 屏幕。
 
-        调用方由 env 决定是否执行本钩子；钩子本身只做 wake + dismiss-keyguard，
-        不修改系统自动息屏设置，也不在 Run 后主动熄屏。
+        调用方由 env 决定是否执行本钩子；钩子只做 wake + dismiss-keyguard，
+        不再承载设备级上滑策略，也不在 Run 后主动熄屏。
         """
         try:
             # KEYCODE_WAKEUP = 224：只唤醒，不像 KEYCODE_POWER 那样盲目切换状态。
@@ -117,36 +112,6 @@ class AndroidDriver(BaseDriver):
         settle_s = max(0, int(settings.android_wake_before_run_settle_ms)) / 1000.0
         if settle_s > 0:
             time.sleep(settle_s)
-        if bool(getattr(settings, "android_wake_swipe_enabled", False)) and _wake_swipe_allowed(
-            self.serial,
-            getattr(settings, "wake_swipe_device_allowlist", ""),
-        ):
-            self._swipe_after_wake()
-            swipe_settle_s = max(
-                0,
-                int(getattr(settings, "android_wake_swipe_settle_ms", 500)),
-            ) / 1000.0
-            if swipe_settle_s > 0:
-                time.sleep(swipe_settle_s)
-
-    def _swipe_after_wake(self) -> None:
-        """唤醒后固定上滑一次，兜底锁屏壁纸/屏保态。"""
-        try:
-            width, height = self.window_size()
-            x = round(width * 0.5)
-            from_y = round(height * 0.82)
-            to_y = round(height * 0.35)
-            self._device.swipe(x, from_y, x, to_y, duration=0.35)
-            logger.info(
-                "设备 {} Run 前唤醒后上滑：({}, {}) -> ({}, {})",
-                self.serial,
-                x,
-                from_y,
-                x,
-                to_y,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("设备 {} Run 前唤醒后上滑失败：{}", self.serial, exc)
 
     def _setup_stay_awake(self) -> None:
         """把设备的自动息屏关掉，让排队期/长任务里设备不会自己锁屏。

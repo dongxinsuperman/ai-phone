@@ -20,11 +20,13 @@ class FakeClient:
 
 
 class FakeDriver:
+    platform = "android"
+
     def __init__(self) -> None:
         self.calls: List[Any] = []
 
-    def prepare_for_run(self):
-        self.calls.append(("prepare_for_run",))
+    def prepare_for_run(self, **kwargs):
+        self.calls.append(("prepare_for_run", kwargs))
 
     def window_size(self):
         return (1080, 2400)
@@ -98,7 +100,30 @@ async def test_handle_driver_command_prepare_for_run(monkeypatch):
     )
 
     assert client.sent[0]["ok"] is True
-    assert driver.calls == [("prepare_for_run",)]
+    assert driver.calls == [("prepare_for_run", {})]
+
+
+@pytest.mark.asyncio
+async def test_handle_driver_command_android_prepare_ignores_wake_policy(monkeypatch):
+    driver = FakeDriver()
+    monkeypatch.setattr(agent_main, "_get_or_open_driver", lambda serial: driver)
+    client = FakeClient()
+
+    await agent_main._handle_driver_command(
+        client,
+        {
+            "type": "driver_command",
+            "message_id": "m0p",
+            "run_id": "r1",
+            "serial": "S1",
+            "method": "prepare_for_run",
+            "params": {"wake_policy": {"wake_swipe": True}},
+            "deadline_ms": 3000,
+        },
+    )
+
+    assert client.sent[0]["ok"] is True
+    assert driver.calls == [("prepare_for_run", {})]
 
 
 @pytest.mark.asyncio
@@ -117,7 +142,7 @@ async def test_handle_driver_command_harmony_prepare_runs_before_open(monkeypatc
     monkeypatch.setattr(
         agent_main,
         "_prepare_harmony_before_open",
-        lambda serial: calls.append(serial),
+        lambda serial, **kwargs: calls.append((serial, kwargs)),
     )
     monkeypatch.setattr(
         agent_main,
@@ -134,13 +159,13 @@ async def test_handle_driver_command_harmony_prepare_runs_before_open(monkeypatc
             "run_id": "r1",
             "serial": "H1",
             "method": "prepare_for_run",
-            "params": {},
+            "params": {"wake_policy": {"wake_swipe": True}},
             "deadline_ms": 3000,
         },
     )
 
     assert client.sent[0]["ok"] is True
-    assert calls == ["H1"]
+    assert calls == [("H1", {"wake_policy": {"wake_swipe": True}})]
 
 
 @pytest.mark.asyncio

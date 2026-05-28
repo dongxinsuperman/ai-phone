@@ -14,6 +14,7 @@ from . import (
     submissions,
 )
 from ..app_install import router as app_install_router
+from ..device_config import router as device_config_router
 from ..submissions.public_routes import router as public_submissions_router
 
 
@@ -28,5 +29,6 @@ def include_routers(app: FastAPI) -> None:
     app.include_router(device_aliases.router)     # /api/internal/device-aliases（Bearer）
     app.include_router(analytics.router)          # /api/internal/analytics（Bearer）
     app.include_router(server_brain.router)       # /api/internal/server-brain（Bearer，next 分支专属）
+    app.include_router(device_config_router)      # /api/device-wake-policies（设备 wake 策略）
     app.include_router(app_install_router)        # /api/app-install（应用包上传与分发安装）
     app.include_router(public_submissions_router)  # /api/submissions（匿名，对外）
