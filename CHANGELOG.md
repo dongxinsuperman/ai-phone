@@ -4,6 +4,11 @@
 
 ## 2026-05-28
 
+### 依赖安全告警
+
+- 修复 GitHub Dependabot 告警 `GHSA-q8mj-m7cp-5q26`：`midscene-bridge` 通过 npm `overrides` 将间接依赖 `qs` 固定到 `6.15.2`。
+- 影响范围仅限可选 Midscene Bridge 子工程，不影响默认 VLM 主链路。
+
 ### iOS open_app 应用列表链路
 
 - `open_app(app_name="某个 App")` 会先查询 iPhone 应用列表，再把自然语言 App 名匹配为 bundle id。
