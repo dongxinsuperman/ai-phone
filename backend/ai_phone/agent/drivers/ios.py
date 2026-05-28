@@ -41,6 +41,18 @@ from .wda_client import WdaClient, WdaError
 # WDA 在 iOS 内部监听的端口
 _WDA_DEVICE_PORT = 8100
 
+_IOS_SYSTEM_APP_BUNDLE_FALLBACKS: Tuple[str, ...] = (
+    "com.apple.Preferences",
+    "com.apple.mobilesafari",
+    "com.apple.mobileslideshow",
+    "com.apple.AppStore",
+    "com.apple.camera",
+    "com.apple.mobiletimer",
+    "com.apple.mobilecal",
+    "com.apple.mobilemail",
+    "com.apple.MobileSMS",
+)
+
 
 # ---------------------------------------------------------------------------
 # pymobiledevice3 lazy import 工具
@@ -698,9 +710,35 @@ class IosDriver(BaseDriver):
         return self._list_apps(application_type="User")
 
     def list_all_packages(self) -> List[str]:
-        # application_type="Any" 会把 User + System + Internal 一起返回，含
-        # "设置 / 相册 / Safari / App Store" 等系统 bundle，便于 open_app 命中
-        return self._list_apps(application_type="Any")
+        # 不再依赖 application_type="Any" 作为唯一入口：部分低版本 iOS 设备上
+        # Any 会把 installation_proxy 管道打断。Run 语义只需要"用户应用 +
+        # 常见系统应用"，所以分开取 User/System，并允许单侧失败。
+        packages: List[str] = []
+        errors: List[str] = []
+        succeeded = False
+        for application_type in ("User", "System"):
+            try:
+                part = self._list_apps(application_type=application_type)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{application_type}: {type(exc).__name__}: {exc}")
+                logger.warning(
+                    "iOS list_all_packages 分段失败 udid={} type={}: {}",
+                    self.serial,
+                    application_type,
+                    exc,
+                )
+                continue
+            succeeded = True
+            packages.extend(part)
+
+        if succeeded:
+            packages.extend(_IOS_SYSTEM_APP_BUNDLE_FALLBACKS)
+            return [p for p in dict.fromkeys(packages) if p]
+
+        detail = "; ".join(errors) if errors else "no result"
+        raise RuntimeError(
+            f"iOS 列应用失败 udid={self.serial} type=User/System: {detail}"
+        )
 
     def _list_apps(self, *, application_type: str) -> List[str]:
         """iOS 取已装应用 bundle_id 列表。
