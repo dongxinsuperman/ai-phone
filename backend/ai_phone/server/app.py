@@ -20,6 +20,7 @@ from ai_phone.config import get_settings
 from sqlalchemy import delete
 
 from .api import include_routers
+from .app_install import AppInstallTimeoutScanner
 from .db import dispose_engine, get_session_factory, init_db, init_engine
 from .hub import Hub
 from .lockstore import DeviceLockStore
@@ -103,10 +104,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.publisher = publisher
     set_scheduler(scheduler)
 
+    app_install_scanner = AppInstallTimeoutScanner(get_session_factory())
+    await app_install_scanner.start()
+    app.state.app_install_scanner = app_install_scanner
+
     logger.info("ai-phone server 启动完毕 | env={}", settings.env)
     try:
         yield
     finally:
+        try:
+            await app_install_scanner.stop()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("关停 app install scanner 异常（忽略）：{}", exc)
         try:
             await scheduler.stop()
         except Exception as exc:  # noqa: BLE001

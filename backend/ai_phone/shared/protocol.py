@@ -42,6 +42,8 @@ MSG_PONG = "pong"
 # 主动上报给 Server，Server 转发给订阅该设备的 Browser，让用户不用看终端就
 # 知道下一步需要做什么（解锁 iPhone / 等待编译 / ...）。
 MSG_DEVICE_STATUS = "device_status"
+# 应用分发安装结果。Agent 只回命令执行结果，不做二次包名校验。
+MSG_APP_INSTALL_RESULT = "app_install_result"
 
 # Server → Agent
 MSG_START_RUN = "start_run"
@@ -50,6 +52,8 @@ MSG_INPUT = "input"
 MSG_START_MIRROR = "start_mirror"
 MSG_STOP_MIRROR = "stop_mirror"
 MSG_PING = "ping"
+# Server 通知 Agent 对本机管辖设备执行应用安装。Agent 必须后台执行，不能阻塞 WS 收包。
+MSG_APP_INSTALL_START = "app_install_start"
 # Server 大脑架构（next/server-brain）：Server 调远端 BaseDriver 方法的 RPC。
 # 一次 driver_command 对应一次 driver_result（按 message_id 匹配）。
 # 老架构（agent_brain）下不会出现这条消息；保留 start_run / stop_run 给老链路用。
@@ -59,7 +63,7 @@ MSG_DRIVER_COMMAND = "driver_command"
 # ---------------------------------------------------------------------------
 # 设备描述
 # ---------------------------------------------------------------------------
-Platform = Literal["android", "ios"]
+Platform = Literal["android", "ios", "harmony"]
 DeviceStatus = Literal["idle", "busy", "offline"]
 
 
@@ -204,6 +208,16 @@ class DeviceStatusMsg(TypedDict, total=False):
     hint: str  # 面向用户的操作提示（多行用 \n）
     elapsed_ms: int  # 当前 stage 已累计耗时
     ts: float
+
+
+class AppInstallResultMsg(TypedDict, total=False):
+    type: Literal["app_install_result"]
+    task_id: str
+    item_id: str
+    serial: str
+    success: bool
+    reason: str
+    message: str
 
 
 # Readiness Gate（v1 第 1 梯队）：把"online 却不能跑"的情况显式抽出来。
@@ -408,6 +422,17 @@ class PingMsg(TypedDict):
     ts: float
 
 
+class AppInstallStartMsg(TypedDict, total=False):
+    type: Literal["app_install_start"]
+    task_id: str
+    item_id: str
+    serial: str
+    platform: str
+    package_url: str
+    filename: str
+    timeout_sec: int
+
+
 # ---------------------------------------------------------------------------
 # 联合类型（文档性质，不用于强校验）
 # ---------------------------------------------------------------------------
@@ -423,6 +448,7 @@ AgentToServer = Union[
     RunDoneMsg,
     PongMsg,
     DeviceStatusMsg,
+    AppInstallResultMsg,
     DeviceReadinessMsg,
     DriverResultMsg,  # next/server-brain 新增
 ]
@@ -434,5 +460,6 @@ ServerToAgent = Union[
     StartMirrorMsg,
     StopMirrorMsg,
     PingMsg,
+    AppInstallStartMsg,
     DriverCommandMsg,  # next/server-brain 新增
 ]

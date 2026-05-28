@@ -739,6 +739,100 @@ class SubmissionItem(Base):
         }
 
 
+class AppPackage(Base):
+    """应用分发上传包。
+
+    只保存 Server 落盘所需的最小信息；created_at 用于区分同名重复上传包。
+    """
+
+    __tablename__ = "app_packages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_short_id)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    platform: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    storage_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+    tasks: Mapped[list["AppInstallTask"]] = relationship(
+        back_populates="package", cascade="all, delete-orphan", lazy="noload"
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "filename": self.filename,
+            "platform": self.platform,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class AppInstallTask(Base):
+    """一次应用批量安装任务。"""
+
+    __tablename__ = "app_install_tasks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_short_id)
+    package_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("app_packages.id", ondelete="CASCADE"), index=True
+    )
+    state: Mapped[str] = mapped_column(String(16), default="running", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    package: Mapped[AppPackage] = relationship(back_populates="tasks")
+    items: Mapped[list["AppInstallTaskItem"]] = relationship(
+        back_populates="task", cascade="all, delete-orphan", lazy="noload"
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "package_id": self.package_id,
+            "state": self.state,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+        }
+
+
+class AppInstallTaskItem(Base):
+    """应用安装任务中的单设备结果。"""
+
+    __tablename__ = "app_install_task_items"
+    __table_args__ = (
+        Index("ix_app_install_items_task_state", "task_id", "state"),
+        Index("ix_app_install_items_serial_state", "serial", "state"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_short_id)
+    task_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("app_install_tasks.id", ondelete="CASCADE"), index=True
+    )
+    serial: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    platform: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    state: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    reason: Mapped[str] = mapped_column(String(64), default="")
+    message: Mapped[str] = mapped_column(Text, default="")
+    timeout_sec: Mapped[int] = mapped_column(Integer, default=600)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    task: Mapped[AppInstallTask] = relationship(back_populates="items")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "task_id": self.task_id,
+            "serial": self.serial,
+            "platform": self.platform,
+            "state": self.state,
+            "reason": self.reason or None,
+            "message": self.message or "",
+            "timeout_sec": self.timeout_sec,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+        }
+
+
 __all__ = [
     "Device",
     "DeviceAlias",
@@ -752,4 +846,7 @@ __all__ = [
     "VlmTrajectoryCacheV3",
     "Submission",
     "SubmissionItem",
+    "AppPackage",
+    "AppInstallTask",
+    "AppInstallTaskItem",
 ]

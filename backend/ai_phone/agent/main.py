@@ -33,6 +33,7 @@ except Exception:  # noqa: BLE001
 
 from loguru import logger
 
+from ai_phone.agent.app_install import handle_app_install_start
 from ai_phone.agent.drivers import (
     list_all_devices,
     open_driver as _open_driver_by_platform,
@@ -2611,6 +2612,7 @@ def run(
     client.on(P.MSG_DRIVER_COMMAND, _driver_command_handler)
     client.on(P.MSG_START_MIRROR, _start_mirror_handler)
     client.on(P.MSG_STOP_MIRROR, _stop_mirror_handler)
+    client.on(P.MSG_APP_INSTALL_START, handle_app_install_start)
 
     # 暴露给 _maybe_preload_ios 使用：必须在 ws loop 起来前绑定 ref；
     # event loop 则在 run_forever 里取（在此之前还没创建）

@@ -23,6 +23,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.config import get_settings
+from ai_phone.server.app_install.service import handle_result as handle_app_install_result
 from ai_phone.server.retry import current_attempt
 from ai_phone.shared import protocol as P
 
@@ -191,6 +192,13 @@ async def _dispatch(
                 msg.get("message_id"),
                 msg.get("ok"),
             )
+        return
+
+    if t == P.MSG_APP_INSTALL_RESULT:
+        async def op(session: AsyncSession) -> None:
+            await handle_app_install_result(session, msg)
+
+        await _with_session(op)
         return
 
     # 以下都可能带 run_id / serial / step
