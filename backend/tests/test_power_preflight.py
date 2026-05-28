@@ -117,6 +117,113 @@ def test_android_screen_off_can_be_dispatchable_by_env(monkeypatch):
     assert outcome.ready is True
 
 
+def test_android_non_secure_keyguard_can_be_dispatchable_before_run(monkeypatch):
+    class FakeDevice:
+        def shell(self, cmd: str) -> str:
+            if cmd == "echo ok":
+                return "ok"
+            if "dumpsys power" in cmd:
+                return "mWakefulness=Dozing\nDisplay Power: com.android.server.power.PowerManagerService\n"
+            if cmd.startswith("dumpsys window policy"):
+                return "showing=true\nsecure=false\nscreenState=SCREEN_STATE_ON\n"
+            if cmd.startswith("dumpsys window"):
+                return "mShowingDream=false mDreamingLockscreen=true\n"
+            if cmd.startswith("dumpsys trust"):
+                return "deviceLocked=0, strongAuthRequired=0x0\n"
+            raise AssertionError(f"unexpected command: {cmd}")
+
+    class FakeAdb:
+        def device(self, serial: str):
+            assert serial == "A1"
+            return FakeDevice()
+
+    monkeypatch.setattr(
+        probe_mod,
+        "get_settings",
+        lambda: SimpleNamespace(
+            android_screen_off_dispatchable=True,
+            android_wake_before_run=True,
+        ),
+    )
+    monkeypatch.setattr("adbutils.adb", FakeAdb())
+
+    outcome = probe_mod.AndroidProbe("A1")._probe_sync()
+
+    assert outcome.ready is True
+
+
+def test_android_secure_keyguard_stays_not_ready(monkeypatch):
+    class FakeDevice:
+        def shell(self, cmd: str) -> str:
+            if cmd == "echo ok":
+                return "ok"
+            if "dumpsys power" in cmd:
+                return "mWakefulness=Awake\nDisplay Power: state=ON\n"
+            if cmd.startswith("dumpsys window policy"):
+                return "showing=true\nsecure=true\nscreenState=SCREEN_STATE_ON\n"
+            if cmd.startswith("dumpsys window"):
+                return "mShowingDream=false mDreamingLockscreen=true\n"
+            if cmd.startswith("dumpsys trust"):
+                return "deviceLocked=1, strongAuthRequired=0x10\n"
+            raise AssertionError(f"unexpected command: {cmd}")
+
+    class FakeAdb:
+        def device(self, serial: str):
+            assert serial == "A1"
+            return FakeDevice()
+
+    monkeypatch.setattr(
+        probe_mod,
+        "get_settings",
+        lambda: SimpleNamespace(
+            android_screen_off_dispatchable=True,
+            android_wake_before_run=True,
+        ),
+    )
+    monkeypatch.setattr("adbutils.adb", FakeAdb())
+
+    outcome = probe_mod.AndroidProbe("A1")._probe_sync()
+
+    assert outcome.ready is False
+    assert outcome.not_ready_reason == "screen_locked"
+
+
+def test_android_non_secure_keyguard_requires_wake_before_run(monkeypatch):
+    class FakeDevice:
+        def shell(self, cmd: str) -> str:
+            if cmd == "echo ok":
+                return "ok"
+            if "dumpsys power" in cmd:
+                return "mWakefulness=Awake\nDisplay Power: state=ON\n"
+            if cmd.startswith("dumpsys window policy"):
+                return "showing=true\nsecure=false\nscreenState=SCREEN_STATE_ON\n"
+            if cmd.startswith("dumpsys window"):
+                return "mShowingDream=false mDreamingLockscreen=true\n"
+            if cmd.startswith("dumpsys trust"):
+                return "deviceLocked=0, strongAuthRequired=0x0\n"
+            raise AssertionError(f"unexpected command: {cmd}")
+
+    class FakeAdb:
+        def device(self, serial: str):
+            assert serial == "A1"
+            return FakeDevice()
+
+    monkeypatch.setattr(
+        probe_mod,
+        "get_settings",
+        lambda: SimpleNamespace(
+            android_screen_off_dispatchable=True,
+            android_wake_before_run=False,
+        ),
+    )
+    monkeypatch.setattr("adbutils.adb", FakeAdb())
+
+    outcome = probe_mod.AndroidProbe("A1")._probe_sync()
+
+    assert outcome.ready is False
+    assert outcome.not_ready_reason == "screen_locked"
+
+
 def test_harmony_screen_off_can_be_dispatchable_by_env(monkeypatch):
     def fake_hdc_run(*args, **_kwargs):
         assert args == ("list", "targets")

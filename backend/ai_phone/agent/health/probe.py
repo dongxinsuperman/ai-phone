@@ -145,11 +145,61 @@ class AndroidProbe(BaseProbe):
             )
         except Exception as exc:  # noqa: BLE001
             return _fail("driver_probe_failed", f"dumpsys window 失败：{exc}")
-        # 有任一锁屏标志为 true 就认为锁着
-        if "mDreamingLockscreen=true" in win_out or "mShowingLockscreen=true" in win_out:
+        # 有任一锁屏标志为 true 时，还要区分"普通锁屏外壳"和"安全认证锁"。
+        # Samsung / One UI AOD 会返回 mDreamingLockscreen=true，但 secure=false 且
+        # deviceLocked=0；这种能被 Run 前 KEYCODE_WAKEUP + dismiss-keyguard 收掉。
+        if _android_keyguard_showing(win_out):
+            settings = get_settings()
+            if (
+                settings.android_screen_off_dispatchable
+                and settings.android_wake_before_run
+                and _android_keyguard_can_be_dismissed(device)
+            ):
+                logger.debug(
+                    "[readiness:android:{}] non-secure keyguard but dispatchable by env",
+                    self.serial,
+                )
+                return _ok()
             return _fail("screen_locked", "锁屏中，请解锁 Android")
 
         return _ok()
+
+
+def _android_keyguard_showing(win_out: str) -> bool:
+    return (
+        "mDreamingLockscreen=true" in win_out
+        or "mShowingLockscreen=true" in win_out
+        or "showing=true" in win_out
+    )
+
+
+def _android_keyguard_can_be_dismissed(device) -> bool:
+    """Return True only for non-secure keyguard layers.
+
+    This is intentionally conservative: if the secure/deviceLocked signals cannot
+    be read, readiness stays not-ready and asks the user to unlock manually.
+    """
+
+    try:
+        policy_out = device.shell(
+            "dumpsys window policy | grep -E 'showing=|secure=|screenState=|interactiveState='"
+        )
+        trust_out = device.shell(
+            "dumpsys trust | grep -E 'deviceLocked|strongAuthRequired|trusted|trustManaged'"
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[readiness:android] keyguard security probe failed: {}", exc)
+        return False
+
+    if "secure=true" in policy_out:
+        return False
+    if "deviceLocked=1" in trust_out or "deviceLocked=true" in trust_out:
+        return False
+    if "strongAuthRequired=0x0" not in trust_out:
+        return False
+    return "secure=false" in policy_out and (
+        "deviceLocked=0" in trust_out or "deviceLocked=false" in trust_out
+    )
 
 
 # ---------------------------------------------------------------------------
