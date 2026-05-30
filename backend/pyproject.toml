@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77.0.3", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,6 +8,7 @@ version = "0.0.1"
 description = "Lightweight VLM-driven mobile automation platform (Server + Agent)"
 requires-python = ">=3.11,<3.13"
 authors = [{ name = "ai-phone" }]
+license = "GPL-3.0-only"
 dependencies = [
     # Server (FastAPI 生态)
     "fastapi>=0.110,<0.116",
@@ -25,7 +26,7 @@ dependencies = [
     "websockets>=13,<14",            # 14+ 改了 connect() 返回类型，老 async for ws 用法不兼容
     # Utilities
     "python-dotenv>=1.0",
-    "Pillow>=10.3,<12",
+    "Pillow>=12.2,<13",
     "loguru>=0.7",
     # Android driver
     "adbutils>=2.6",
@@ -42,6 +43,7 @@ dependencies = [
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",
+    "pytest-timeout>=2.3",
     "ruff>=0.5",
     "types-Pillow",
     "aiosqlite>=0.20",          # 单测专用；运行时还是 asyncpg + PG
@@ -76,3 +78,5 @@ line-length = 110
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+timeout = 300
+timeout_method = "thread"

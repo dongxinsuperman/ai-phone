@@ -29,10 +29,12 @@ import os
 import tempfile
 import threading
 import time
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image
 from loguru import logger
+
+from ai_phone.config import get_settings
 
 from .base import BaseDriver, DeviceInfo
 from .hdc import (
@@ -187,6 +189,13 @@ class HarmonyDriver(BaseDriver):
     # ------------------------------------------------------------------
     # 息屏策略
     # ------------------------------------------------------------------
+    def prepare_for_run(self, *, wake_policy: Optional[Dict[str, bool]] = None) -> None:
+        """Run 前用纯 hdc 唤醒 HarmonyOS 并进入可操作态。"""
+        prepare_harmony_for_run(
+            self.serial,
+            swipe=bool((wake_policy or {}).get("wake_swipe")),
+        )
+
     def _setup_stay_awake(self, *, first: bool) -> None:
         """把 HarmonyOS 的自动息屏关掉。
 
@@ -427,13 +436,29 @@ class HarmonyDriver(BaseDriver):
         - L1 失败 → L2 重建 Driver 并重试
         - L2 失败 → L3 杀 daemon + 重建 并重试
         - L3 仍失败 → 把最后这次异常原样抛给调用方，supervisor 据此下线设备
-        其它异常（业务异常等）不属于 socket 级错误，不做兜底，直接抛。
+
+        **L0+ 非 socket 异常的轻量重试**（hypium daemon 抖动兜底）：
+        L0 抛非 socket 异常时（如 ``display_rotation get failed`` /
+        ``display_size get failed``，常见于 hypium daemon 在 hdc shell 多端
+        并发下的瞬态卡顿），等 50ms 重试一次再决定是否抛回——这类异常 90%
+        是一过性的，但又不属于 socket 级故障（不该走 L1/L2/L3 重连重建，那
+        会拖几秒），轻量重试是性价比最高的修法。仍失败才把原异常抛给调用
+        方，避免吞掉真正的业务错误。
         """
         # L0：首次尝试。不拿锁，乐观路径零开销
         try:
             return fn(*args, **kwargs)
         except self._SOCKET_DEAD_ERRORS as exc_l0:
             first_exc: BaseException = exc_l0
+        except Exception as exc_l0_business:  # noqa: BLE001
+            # hypium daemon 偶发的非 socket 异常（如 display_rotation/size get
+            # failed）：50ms 退避重试 1 次，仍异常照原样抛出（保持业务语义）
+            logger.debug(
+                "harmony serial={} L0 非 socket 异常 ({}: {})，50ms 后重试 1 次",
+                self.serial, exc_l0_business.__class__.__name__, exc_l0_business,
+            )
+            time.sleep(0.05)
+            return fn(*args, **kwargs)
 
         # 进入自愈：串行化
         with self._heal_lock:
@@ -807,6 +832,140 @@ class HarmonyDriver(BaseDriver):
         self._invalidate_hmdriver_singleton(self.serial)
 
 
+def prepare_harmony_for_run(
+    serial: str,
+    *,
+    screen_size: Optional[Tuple[int, int]] = None,
+    force: bool = False,
+    swipe: Optional[bool] = None,
+) -> None:
+    """不依赖 hmdriver2 的 HarmonyOS Run 前唤醒。
+
+    这条路径故意只走 hdc：黑屏态下 hmdriver2/uitest socket 可能还没恢复，
+    而 Server 大脑的 prepare_for_run 又必须发生在首次截图和缓存回放前。
+    """
+    settings = get_settings()
+    if not force and not settings.harmony_wake_before_run:
+        return
+
+    do_swipe = bool(settings.harmony_wake_swipe_enabled) and bool(swipe)
+    was_lit = _harmony_screen_is_lit(serial) if do_swipe else None
+
+    try:
+        out = hdc_shell(
+            serial,
+            "power-shell wakeup",
+            timeout=5.0,
+            check=False,
+        )
+        if out:
+            logger.debug("设备 {} HarmonyOS wakeup 输出：{}", serial, out[:160])
+        logger.info("设备 {} Run 前唤醒 HarmonyOS：power-shell wakeup", serial)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("设备 {} Run 前唤醒 HarmonyOS 失败：{}", serial, exc)
+        raise
+
+    settle_s = max(0, int(settings.harmony_wake_settle_ms)) / 1000.0
+    if settle_s > 0:
+        time.sleep(settle_s)
+
+    if not do_swipe:
+        return
+    if was_lit is True:
+        logger.info("设备 {} HarmonyOS Run 前已亮屏，跳过兜底上滑", serial)
+        return
+
+    width, height = _normalize_preflight_screen_size(screen_size)
+    x = round(width * 0.5)
+    from_y = round(height * 0.82)
+    to_y = round(height * 0.35)
+    velocity = 1500
+    try:
+        out = hdc_shell(
+            serial,
+            f"uitest uiInput swipe {x} {from_y} {x} {to_y} {velocity}",
+            timeout=5.0,
+            check=False,
+        )
+        if out:
+            logger.debug("设备 {} HarmonyOS wake 上滑输出：{}", serial, out[:160])
+        logger.info(
+            "设备 {} HarmonyOS wake 后上滑进入可操作态：({}, {}) -> ({}, {})",
+            serial,
+            x,
+            from_y,
+            x,
+            to_y,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("设备 {} HarmonyOS wake 后上滑失败：{}", serial, exc)
+        raise
+
+    swipe_settle_s = max(0, int(settings.harmony_wake_swipe_settle_ms)) / 1000.0
+    if swipe_settle_s > 0:
+        time.sleep(swipe_settle_s)
+
+
+def _normalize_preflight_screen_size(
+    screen_size: Optional[Tuple[int, int]],
+) -> Tuple[int, int]:
+    if screen_size is not None:
+        try:
+            width = int(screen_size[0])
+            height = int(screen_size[1])
+            if width > 0 and height > 0:
+                return width, height
+        except Exception:  # noqa: BLE001
+            pass
+    # 只在拿不到设备注册尺寸时兜底；当前主力鸿蒙机为 1080x2504，1080x2400 的
+    # 比例上滑仍能从锁屏壁纸回到可操作态。
+    return 1080, 2400
+
+
+def _harmony_screen_is_lit(serial: str) -> Optional[bool]:
+    try:
+        out = hdc_shell(
+            serial,
+            "hidumper -s PowerManagerService -a -s",
+            timeout=3.0,
+            check=False,
+        ) or ""
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("设备 {} HarmonyOS wake 前读取屏幕状态失败：{}", serial, exc)
+        return None
+    if _harmony_screen_is_off(out):
+        return False
+    if _harmony_screen_is_on(out):
+        return True
+    return None
+
+
+def _harmony_screen_is_off(hidumper_out: str) -> bool:
+    text = hidumper_out or ""
+    for needle in (
+        "Current State: INACTIVE",
+        "Current State: SLEEP",
+        "Current State: Standby",
+        "Screen On: false",
+        "screenOn: false",
+    ):
+        if needle in text:
+            return True
+    return False
+
+
+def _harmony_screen_is_on(hidumper_out: str) -> bool:
+    text = hidumper_out or ""
+    for needle in (
+        "Current State: AWAKE",
+        "Screen On: true",
+        "screenOn: true",
+    ):
+        if needle in text:
+            return True
+    return False
+
+
 # ----------------------------------------------------------------------
 # 设备发现
 # ----------------------------------------------------------------------
@@ -849,7 +1008,10 @@ def list_harmony_devices(include_offline: bool = False) -> List[DeviceInfo]:
         try:
             # 扫描路径也会打一次息屏设置——靠 _STAY_AWAKE_DONE 做 serial 粒度
             # 幂等，只有插上第一次才真跑 hdc shell，后续 rescan 命中缓存直接跳过
-            drv = HarmonyDriver(t.serial)
+            drv = HarmonyDriver(
+                t.serial,
+                setup_power=bool(get_settings().harmony_setup_stay_awake),
+            )
             infos.append(drv.device_info())
         except Exception as exc:  # noqa: BLE001
             logger.warning(
@@ -935,11 +1097,15 @@ def open_harmony_driver(serial: str, **_kwargs: Any) -> HarmonyDriver:
     ``**_kwargs`` 当前没用，只是和 iOS 的签名对齐（``on_status`` 未来可用于
     上报 hmdriver2 首次连接进度 / hypium-agent.hap 下发进度到 web 提示条）。
     """
-    return HarmonyDriver(serial)
+    return HarmonyDriver(
+        serial,
+        setup_power=bool(get_settings().harmony_setup_stay_awake),
+    )
 
 
 __all__ = [
     "HarmonyDriver",
+    "prepare_harmony_for_run",
     "list_harmony_devices",
     "open_harmony_driver",
 ]

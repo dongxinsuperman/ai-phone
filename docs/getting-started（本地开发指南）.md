@@ -1,14 +1,17 @@
 # 本地开发指南（Mac）
 
 > 起一份完整链路：Server + Agent + 前端三个进程 + 一台真机即可。
-> iOS / HarmonyOS 额外配置见 [`ios-setup.md`](./ios-setup.md) 和 [`harmony-setup.md`](./harmony-setup.md)。
+> 新 Mac 从 0 到 1 完成部署，请优先看 [`deployment-from-zero（从0到1部署指南）.md`](./deployment-from-zero（从0到1部署指南）.md)。
+> 如果这台 Mac 只作为 Agent 接手机，请看 [`agent-deployment（Agent接入部署指南）.md`](./agent-deployment（Agent接入部署指南）.md)。
+> iOS / HarmonyOS 额外配置见 [`ios-setup（iOS接入指南）.md`](./ios-setup（iOS接入指南）.md) 和 [`harmony-setup（HarmonyOS接入指南）.md`](./harmony-setup（HarmonyOS接入指南）.md)。
+> 部署推荐默认值见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md)：iOS stable 线路优先，Android / HarmonyOS 黑屏待机线路优先。
 
 ---
 
 ## 一、前置依赖
 
 - macOS，**Python 3.11**（`brew install python@3.11`，**不要用系统自带的 3.9**：pmd3 9.x / aiokafka 0.11+ / ruff py311 都要求 3.11+）
-- Node 18+
+- Node 18+（仅启用 `midscene-bridge` 外接执行器时需要 Node >=20.19）
 - `brew install android-platform-tools ffmpeg`
   - **`ffmpeg` 是镜像必需依赖**（agent 内部子进程调用）
 - PostgreSQL：本机 Homebrew Postgres 或远程实例皆可，连接串走 `AI_PHONE_DB_URL`
@@ -36,10 +39,12 @@ cp .env.example .env
 | 变量 | 用途 |
 |---|---|
 | `AI_PHONE_VLM_BACKEND` | 切换主 VLM 协议：`doubao_responses`（默认）/ `claude_cu` / `gpt_cu` |
-| `AI_PHONE_ASSISTANT_BACKEND` | 切换辅助系统协议：`doubao_chat` / `claude` / `openai`（与主 VLM 解耦，可异家组合） |
+| `AI_PHONE_ASSISTANT_BACKEND` | 切换非执行型辅助系统协议：`doubao_chat` / `claude` / `openai`。注意：轨迹缓存回放中会产出手机动作的 gate / recovery 不属于普通辅助聊天链路，必须遵守 [可执行链路契约](./executable-logic-contract（可执行链路契约）.md)。 |
 | `AI_PHONE_MIRROR_*` | Android 画质 / 延迟参数（详见 `.env.example` §8） |
 | `AI_PHONE_VLM_SESSION_RESET_PROMPT_THRESHOLD` | Doubao Responses 超阈值自动切段（默认 30000，≤0 关闭） |
 | `AI_PHONE_WDA_PROJECT_DIR` | iOS 接入入口，留空走"手动 Xcode + iproxy"过渡态 |
+| `AI_PHONE_IOS_WDA_LIFECYCLE_MODE` | iOS WDA 生命周期；部署推荐 `stable`，详见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md) |
+| `AI_PHONE_ANDROID_*WAKE*` / `AI_PHONE_HARMONY_*WAKE*` | Android / HarmonyOS 黑屏待机与 Run 前唤醒策略，详见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md) |
 
 `.env.example` 顶部按 §1–§20 分组，每组都有详细中文注释。
 
@@ -67,7 +72,15 @@ cd backend && source .venv/bin/activate
 python -m ai_phone agent
 ```
 
-参数全走 `.env`，不需要再传命令行。Agent 启动后自动 `adb devices` 扫描 → WS 注册到 Server。首次跑 VLM `type` 时会自动 push + install ADBKeyBoard。
+本机开发时参数全走 `.env`，不需要再传命令行。Agent 启动后自动 `adb devices` 扫描 → WS 注册到 Server。首次跑 VLM `type` 时会自动 push + install ADBKeyBoard。
+
+远端办公区电脑只接 Agent、不跑 Server 时，直接把 Server 地址和 token 带上即可：
+
+```bash
+python -m ai_phone agent --server http://<server-host>:8000 --token <AI_PHONE_AGENT_TOKEN>
+```
+
+`--server` 可以填普通 HTTP(S) 地址，Agent 会自动推导 `ws(s)://.../ws/agent` 和 HTTP 上传地址；也兼容直接填写 `ws://.../ws/agent`。
 
 ---
 
@@ -85,7 +98,7 @@ npm run dev   # http://127.0.0.1:5180
 
 ## 六、Schema 重建（仅在升级 v1.7 时需要）
 
-v1.7 对 submission 协议做了破坏性统一（`device_alias` → `device_alias_pool`，详见 [对外调用清单.md §变更记录](../对外调用清单.md#变更记录)）。**因平台尚未对外发布、零外部用户**，老库直接清空重建即可：
+v1.7 对 submission 协议做了破坏性统一（顶层 wrapper、`platforms`、`deviceAliasPools`，详见 [external-api（对外调用清单）](./external-api（对外调用清单）.md)）。**因平台尚未对外发布、零外部用户**，老库直接清空重建即可：
 
 ```bash
 # 方式 1：只删 submission 相关表
@@ -104,7 +117,7 @@ psql "$AI_PHONE_DB_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 ## 七、常见问题 FAQ
 
 **Q：画面有黑边怎么办？**
-正常。`<video>` 用 `object-fit: contain` 按比例缩放，旋转后容器会自动 W/H 互换。手动操作的坐标映射会自动剥离黑边（详见 [`架构设计.md`](../架构设计.md) §10.7）。
+正常。`<video>` 用 `object-fit: contain` 按比例缩放，旋转后容器会自动 W/H 互换。手动操作的坐标映射会自动剥离黑边（详见 [`architecture（架构设计）.md`](./architecture（架构设计）.md)）。
 
 **Q：画面延迟想再低一点？**
 改 `backend/.env`：`AI_PHONE_MIRROR_FRAG_MS=33` + `AI_PHONE_MIRROR_GOP_SEC=0`，agent 重启生效。代价是 CPU 略高、WS 帧率密集（30 msg/s）。
@@ -131,8 +144,14 @@ psql "$AI_PHONE_DB_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 
 ## 八、相关链接
 
-- [对外调用 API 契约（投递 / 查询 / 取消 / Kafka / Webhook）](../对外调用清单.md)
-- [架构设计](../架构设计.md)
-- [使用功能介绍（产品手册）](../使用功能介绍.md)
-- [辅助系统核心逻辑及效果（含 26 项阈值调参）](../ai-phone的辅助系统核心逻辑及效果.md)
+- [external-api（对外调用清单）](./external-api（对外调用清单）.md)
+- [architecture（架构设计）](./architecture（架构设计）.md)
+- [deployment-from-zero（从0到1部署指南）](./deployment-from-zero（从0到1部署指南）.md)
+- [agent-deployment（Agent接入部署指南）](./agent-deployment（Agent接入部署指南）.md)
+- [server-brain（Server大脑架构说明）](./server-brain（Server大脑架构说明）.md)
+- [executable-logic-contract（可执行链路契约）](./executable-logic-contract（可执行链路契约）.md)
+- [trajectory-cache-usage（轨迹缓存使用文档）](./trajectory-cache-usage（轨迹缓存使用文档）.md)
+- [features（使用功能介绍）](./features（使用功能介绍）.md)
+- [assistant-systems（辅助系统核心逻辑及效果）](./assistant-systems（辅助系统核心逻辑及效果）.md)
+- [recommended-env（推荐部署Env清单）](./recommended-env（推荐部署Env清单）.md)
 - [Midscene 执行器挂载方案](../Midscene执行器接入方案.md)

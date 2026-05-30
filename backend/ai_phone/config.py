@@ -57,6 +57,105 @@ class Settings(BaseSettings):
         default=None,
         description="Agent 展示名，未设则取 hostname",
     )
+    android_setup_stay_awake: bool = Field(
+        default=True,
+        description=(
+            "Android driver 打开/扫描设备时是否沿用旧策略：设置超长 screen_off_timeout "
+            "+ svc power stayon true。默认 True 保持历史行为；想让设备空闲自然息屏时设 False。"
+            "env: AI_PHONE_ANDROID_SETUP_STAY_AWAKE"
+        ),
+    )
+    android_wake_before_run: bool = Field(
+        default=False,
+        description=(
+            "Android VLM Run 开始前是否主动唤醒屏幕并尝试收起无安全认证的 keyguard。"
+            "默认 False 保持历史行为；关闭 stay_awake 后建议设 True。"
+            "env: AI_PHONE_ANDROID_WAKE_BEFORE_RUN"
+        ),
+    )
+    android_screen_off_dispatchable: bool = Field(
+        default=False,
+        description=(
+            "Android readiness 遇到屏幕息屏/DOZE 时是否仍允许派发。默认 False 保持历史"
+            "行为；开启后由 Run 前 wake + dismiss-keyguard 负责把设备拉回可操作态。"
+            "env: AI_PHONE_ANDROID_SCREEN_OFF_DISPATCHABLE"
+        ),
+    )
+    android_wake_before_run_settle_ms: int = Field(
+        default=500,
+        ge=0,
+        le=5000,
+        description=(
+            "Android Run 前唤醒后的短等待毫秒数，用于等待屏幕点亮和首帧刷新。"
+            "仅 AI_PHONE_ANDROID_WAKE_BEFORE_RUN=true 时生效。"
+            "env: AI_PHONE_ANDROID_WAKE_BEFORE_RUN_SETTLE_MS"
+        ),
+    )
+    android_wake_on_enter: bool = Field(
+        default=False,
+        description=(
+            "Android 进入工作台/启动镜像前是否主动唤醒。默认 False 保持历史行为；"
+            "开启后复用 Android Run 前 wake 逻辑。env: AI_PHONE_ANDROID_WAKE_ON_ENTER"
+        ),
+    )
+
+    harmony_setup_stay_awake: bool = Field(
+        default=True,
+        description=(
+            "HarmonyOS driver 打开/扫描设备时是否沿用旧策略：power-shell timeout 长亮续约。"
+            "默认 True 保持历史行为；想让设备空闲自然息屏时设 False。"
+            "env: AI_PHONE_HARMONY_SETUP_STAY_AWAKE"
+        ),
+    )
+    harmony_screen_off_dispatchable: bool = Field(
+        default=False,
+        description=(
+            "HarmonyOS readiness 遇到息屏时是否仍允许派发。默认 False 保持当前"
+            "screen_locked 行为；开启后由 Run preflight 负责 wake，必要设备再按 Server 策略上滑。"
+            "env: AI_PHONE_HARMONY_SCREEN_OFF_DISPATCHABLE"
+        ),
+    )
+    harmony_wake_before_run: bool = Field(
+        default=False,
+        description=(
+            "HarmonyOS VLM Run 开始前是否用纯 hdc 主动唤醒屏幕。默认 False "
+            "保持历史行为。env: AI_PHONE_HARMONY_WAKE_BEFORE_RUN"
+        ),
+    )
+
+    harmony_wake_swipe_enabled: bool = Field(
+        default=True,
+        description=(
+            "HarmonyOS Run 前唤醒后是否允许按 Server 下发策略上滑进入桌面/可操作态。"
+            "默认 True 但只有 AI_PHONE_HARMONY_WAKE_BEFORE_RUN=true 时生效。"
+            "env: AI_PHONE_HARMONY_WAKE_SWIPE_ENABLED"
+        ),
+    )
+    harmony_wake_settle_ms: int = Field(
+        default=500,
+        ge=0,
+        le=5000,
+        description=(
+            "HarmonyOS power-shell wakeup 后等待屏幕亮起的毫秒数。"
+            "env: AI_PHONE_HARMONY_WAKE_SETTLE_MS"
+        ),
+    )
+    harmony_wake_swipe_settle_ms: int = Field(
+        default=500,
+        ge=0,
+        le=5000,
+        description=(
+            "HarmonyOS 唤醒后上滑完成的短等待毫秒数。"
+            "env: AI_PHONE_HARMONY_WAKE_SWIPE_SETTLE_MS"
+        ),
+    )
+    harmony_wake_on_enter: bool = Field(
+        default=False,
+        description=(
+            "HarmonyOS 进入工作台/启动镜像前是否用纯 hdc 唤醒。默认 False 保持"
+            "历史行为；黑屏可派发策略下建议开启。env: AI_PHONE_HARMONY_WAKE_ON_ENTER"
+        ),
+    )
 
     # --- 共享鉴权 ---
     agent_token: str = Field(default="dev", description="Agent <-> Server 鉴权 token")
@@ -161,6 +260,15 @@ class Settings(BaseSettings):
             "env: AI_PHONE_VLM_BACKEND"
         ),
     )
+    # 海外 Computer Use prompt 默认保持英文，避免开源用户拿到中文化默认体验；
+    # 私有中文调试时可打开，让 Claude/GPT CU 的 reasoning / 完成说明尽量输出中文。
+    vlm_cu_zh_prompt_enabled: bool = Field(
+        default=False,
+        description=(
+            "Claude/GPT Computer Use 主 VLM 是否启用中文可读日志 prompt。默认关闭，"
+            "保持海外开源默认英文体验。env: AI_PHONE_VLM_CU_ZH_PROMPT_ENABLED"
+        ),
+    )
     # 主 VLM 思考链预算（tokens），仅在 backend 支持 thinking 时生效：
     # - doubao_responses: 不读本字段（豆包 vision 不开 thinking，关闭节省 token）
     # - claude_cu: payload.thinking.budget_tokens；0 表示关闭 thinking
@@ -205,14 +313,22 @@ class Settings(BaseSettings):
         ),
     )
     # --- VLM 轨迹缓存回放 ---
-    # 默认关闭：成功/失败终态仍可维护缓存数据；真正命中后旁路 replay 需要
+    # 默认关闭：保存/删除轨迹可以先沉淀数据；真正命中后旁路 replay 需要
     # 等断言、报告和实机烟测稳定后再打开，避免影响现有 VLM 首跑主流程。
     vlm_trajectory_cache_replay_enabled: bool = Field(
         default=False,
         description=(
-            "是否启用 VLM 成功轨迹缓存回放。默认关闭；开启后 agent 路径会先按 "
-            "device_code + run 语义强匹配查缓存，命中则走独立 replay 通道。"
+            "是否启用 VLM 成功轨迹缓存回放。默认关闭；开启后 server_brain/vlm "
+            "会先按 device_code + run 语义强匹配查缓存，命中则走独立 replay 通道。"
             "env: AI_PHONE_VLM_TRAJECTORY_CACHE_REPLAY_ENABLED"
+        ),
+    )
+    trajectory_cache_enabled: bool = Field(
+        default=False,
+        description=(
+            "统一轨迹缓存能力总开关。true 时 Run payload 可通过 cacheMode 选择 "
+            "off/v1/v2/v3；false 时任何 cacheMode 都静默对齐为 off。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ENABLED"
         ),
     )
     # Anthropic prompt caching 开关：
@@ -306,6 +422,7 @@ class Settings(BaseSettings):
             "env: AI_PHONE_ASSISTANT_BACKEND"
         ),
     )
+
     # --- VLM Agent · 瞬态 UI 检测（动态判断系统） ---
     # 视频播放工具栏 / Toast / 半透明菜单这类"自动隐藏"的瞬态控件，单帧策略下
     # VLM 看到 → 推理 → 执行的 6s+ 链路一定追不上。系统层 snapshot-replay 机制
@@ -464,6 +581,68 @@ class Settings(BaseSettings):
         default=True,
         description="WDA 就绪后自动点亮屏幕（Face ID 机型防息屏）",
     )
+    ios_screen_off_dispatchable: bool = Field(
+        default=False,
+        description=(
+            "iOS readiness 遇到 /wda/locked=true 时是否仍允许派发。默认 False 保持"
+            "历史行为；开启后由 Run 前 wda.unlock 负责把屏幕拉起来。"
+            "env: AI_PHONE_IOS_SCREEN_OFF_DISPATCHABLE"
+        ),
+    )
+    ios_wake_before_run: bool = Field(
+        default=False,
+        description=(
+            "iOS VLM Run 开始前是否主动调 wda.unlock 唤醒屏幕。默认 False 保持历史"
+            "行为；与 ios_screen_off_dispatchable 配套开启。"
+            "env: AI_PHONE_IOS_WAKE_BEFORE_RUN"
+        ),
+    )
+    ios_wake_before_run_settle_ms: int = Field(
+        default=500,
+        ge=0,
+        le=5000,
+        description=(
+            "iOS Run 前唤醒后的短等待毫秒数。仅 ios_wake_before_run=true 时生效。"
+            "env: AI_PHONE_IOS_WAKE_BEFORE_RUN_SETTLE_MS"
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # iOS WDA 生命周期策略（auto / stable）
+    # ------------------------------------------------------------------
+    # 详见 docs/ios-setup（iOS接入指南）.md。
+    #
+    # auto   = 调试期（默认）。允许插线预热、preflight_deadlock / runtime_drop
+    #          自动 respawn、/status 不通时关 driver 重建——与本字段引入前的
+    #          行为完全等价，调试期热拔插自愈能力不下降。
+    # stable = 部署期。人工准备一次后 agent 只 attach/reuse，不主动重启 WDA；
+    #          WDA 失效后抛 StableWdaUnavailable 让上层报错等人工处理。
+    #
+    # 注意：本字段仅控制 iOS WDA 生命周期，不影响 Android / HarmonyOS，也不
+    # 影响 iOS 已有 tap / swipe / type / screenshot / mirror action。
+    ios_wda_lifecycle_mode: str = Field(
+        default="auto",
+        description=(
+            "iOS WDA 生命周期策略：auto=调试期自动恢复（默认），"
+            "stable=部署期稳定复用。env: AI_PHONE_IOS_WDA_LIFECYCLE_MODE"
+        ),
+    )
+
+    # stable 模式下是否允许「每次 USB 插入会话内首次自动 spawn WDA」。
+    # True（默认，§7.5.1 B 子方案）：每次 USB 物理插入后允许 agent spawn 一次
+    #   WDA；之后禁止 respawn；拔出 USB → policy 清状态 → 重新插入又允许一次。
+    #   覆盖"人工准备一次 / 长期复用 / 拔插作为唯一重置入口"的 95% 部署诉求。
+    # False（§7.5.1 A 子方案）：严格 attach-only，即使首次插入也要求外部已起
+    #   WDA（Xcode / 手工 xcodebuild / 独立守护进程）；仅在外部统一管 WDA 的
+    #   严苛部署机房启用。
+    # 注意：本字段只在 ios_wda_lifecycle_mode=stable 下生效；auto 模式忽略。
+    ios_wda_stable_allow_initial_spawn: bool = Field(
+        default=True,
+        description=(
+            "stable 模式下是否允许每次 USB 插入会话内首次自动 spawn WDA。"
+            "env: AI_PHONE_IOS_WDA_STABLE_ALLOW_INITIAL_SPAWN"
+        ),
+    )
 
     # ------------------------------------------------------------------
     # HarmonyOS 镜像参数（M4）
@@ -502,6 +681,36 @@ class Settings(BaseSettings):
     harmony_mirror_long_edge: int = Field(
         default=720,
         description="鸿蒙镜像最长边降采样阈值（0 = 不缩放；仅 screenshot 后端）",
+    )
+
+    # --- Android scrcpy 镜像（MSE 直传：scrcpy → fmp4 → 浏览器 <video>）---
+    # 历史上这几项走 os.environ 直读（agent/main.py 模块级常量），未纳入 Settings，
+    # 导致 Server 无法统一控制。Distributed Agent Brain 收归 Settings，纳入下发。
+    mirror_max_width: int = Field(
+        default=1280,
+        description=(
+            "scrcpy server 缩放后的长边像素。720 模糊，1280 锐利，1920 接近原生。"
+            "env: AI_PHONE_MIRROR_MAX_WIDTH"
+        ),
+    )
+    mirror_max_fps: int = Field(
+        default=30,
+        description="Android scrcpy H.264 帧率上限。env: AI_PHONE_MIRROR_MAX_FPS",
+    )
+    mirror_bitrate: int = Field(
+        default=6_000_000,
+        description="Android scrcpy H.264 编码码率（bit/s）。env: AI_PHONE_MIRROR_BITRATE",
+    )
+    mirror_frag_ms: int = Field(
+        default=50,
+        description=(
+            "fmp4 媒体分片时长（毫秒），端到端延迟关键项；不要小于 16。"
+            "env: AI_PHONE_MIRROR_FRAG_MS"
+        ),
+    )
+    mirror_gop_sec: int = Field(
+        default=1,
+        description="Android scrcpy IDR 关键帧间隔（秒）。env: AI_PHONE_MIRROR_GOP_SEC",
     )
 
     # --- Readiness Gate（v1 第 1 梯队） ---
@@ -599,6 +808,38 @@ class Settings(BaseSettings):
             "env: AI_PHONE_SCHEDULER_TICK_SEC"
         ),
     )
+    run_retry_enabled: bool = Field(
+        default=False,
+        description=(
+            "同一 Run 内失败自动重跑总开关。默认关闭；开启后 payload.retryMax "
+            "会被 run_retry_max 截断。env: AI_PHONE_RUN_RETRY_ENABLED"
+        ),
+    )
+    run_retry_max: int = Field(
+        default=0,
+        ge=0,
+        le=10,
+        description=(
+            "单个 Run 允许的最大重跑次数，不含首跑；0 表示即使开关打开也不重跑。"
+            "env: AI_PHONE_RUN_RETRY_MAX"
+        ),
+    )
+    run_retry_clear_cache: bool = Field(
+        default=True,
+        description=(
+            "失败后进入下一次 attempt 前是否删除当前 cacheMode 对应轨迹缓存。"
+            "env: AI_PHONE_RUN_RETRY_CLEAR_CACHE"
+        ),
+    )
+    run_retry_cooldown_sec: float = Field(
+        default=2.0,
+        ge=0.0,
+        le=60.0,
+        description=(
+            "失败 attempt 和下一次 attempt 之间的冷却秒数。"
+            "env: AI_PHONE_RUN_RETRY_COOLDOWN_SEC"
+        ),
+    )
 
     # ──────────────────────────────────────────────────────────────────
     # Run 行为硬上限（业务调优项）
@@ -689,6 +930,467 @@ class Settings(BaseSettings):
             "env: AI_PHONE_TRAJECTORY_CACHE_PAGE_STABLE_THRESHOLD"
         ),
     )
+    trajectory_cache_observe_delay_ms: int = Field(
+        default=500,
+        ge=0,
+        le=10_000,
+        description=(
+            "轨迹缓存回放 action 执行后、下一次页面稳定检测前的基础观察延迟（毫秒）。"
+            "用于避开点击反馈/动画早期帧；0=关闭。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_OBSERVE_DELAY_MS"
+        ),
+    )
+    trajectory_cache_alignment_enabled: bool = Field(
+        default=False,
+        description=(
+            "轨迹缓存回放整页状态路标对齐开关。False=保持 v1 稳定检测回放。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_ENABLED"
+        ),
+    )
+    trajectory_cache_alignment_threshold: float = Field(
+        default=0.03,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "轨迹缓存状态路标 pHash diff 阈值，越小越严格。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_THRESHOLD"
+        ),
+    )
+    trajectory_cache_alignment_roi_threshold: float = Field(
+        default=0.25,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "轨迹缓存状态路标中心 ROI 像素差阈值，越小越严格。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_ROI_THRESHOLD"
+        ),
+    )
+    trajectory_cache_alignment_black_ratio_threshold: float = Field(
+        default=0.15,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "轨迹缓存状态路标黑屏比例差异阈值，越小越严格。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_BLACK_RATIO_THRESHOLD"
+        ),
+    )
+    trajectory_cache_alignment_retry_interval_ms: int = Field(
+        default=300,
+        ge=50,
+        le=10_000,
+        description=(
+            "轨迹缓存状态路标 MISS 后的重试间隔（毫秒）。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_RETRY_INTERVAL_MS"
+        ),
+    )
+    trajectory_cache_alignment_min_wait_ms: int = Field(
+        default=1000,
+        ge=0,
+        le=60_000,
+        description=(
+            "轨迹缓存状态路标 MISS 后最小等待窗口（毫秒）。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_MIN_WAIT_MS"
+        ),
+    )
+    trajectory_cache_alignment_max_wait_ratio: float = Field(
+        default=1.3,
+        ge=0.1,
+        le=10.0,
+        description=(
+            "轨迹缓存状态路标等待窗口相对首跑 gap_to_next_action_ms 的放大系数。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_MAX_WAIT_RATIO"
+        ),
+    )
+    # ------------------------------------------------------------------
+    # v2 缓存回放 · recovery_vlm 三态裁决专线
+    # ------------------------------------------------------------------
+    # 通道独立：与辅助系统 / 断言系统 / 主 VLM 完全分离，所有字段都不 fallback。
+    # 典型用法是把 backend/url/key/model 填成与主 VLM 同款；也可以单独换成
+    # chat completions 端点做实验。
+    trajectory_cache_recovery_vlm_enabled: bool = Field(
+        default=False,
+        description=(
+            "v2 缓存回放 alignment_miss 后的 VLM 三态裁决专线开关。"
+            "False=维持当前行为（alignment 等待窗口耗尽直接 assert_fail）。"
+            "True 时还需配齐 backend / api_url / api_key / model 才会真正生效，"
+            "任何一项缺失都会按 ASSERT_FAIL 兜底。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_ENABLED"
+        ),
+    )
+    trajectory_cache_recovery_vlm_backend: str = Field(
+        default="doubao_responses",
+        description=(
+            "recovery_vlm 后端协议。支持 'doubao_responses'（可直接复用主 VLM responses "
+            "配置）/ 'openai_compatible'（豆包/OpenAI 兼容 chat completions）/ "
+            "'claude_messages'。当主 VLM 为 claude_cu/gpt_cu 时，V2 recovery "
+            "会优先复用主 VLM Computer Use 配置，本字段仅作为非 CU/历史兼容路径。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_BACKEND"
+        ),
+    )
+    trajectory_cache_recovery_vlm_api_url: str = Field(
+        default="",
+        description=(
+            "recovery_vlm 接口地址。doubao_responses 可填方舟 /responses；openai_compatible "
+            "可填 chat completions。留空 = 通道未配置。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_API_URL"
+        ),
+    )
+    trajectory_cache_recovery_vlm_api_key: str = Field(
+        default="",
+        description=(
+            "recovery_vlm api key。留空 = 通道未配置。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_API_KEY"
+        ),
+    )
+    trajectory_cache_recovery_vlm_model: str = Field(
+        default="",
+        description=(
+            "recovery_vlm 模型 ID。建议与主 vlm_model 同款，协议由 backend 决定。"
+            "留空 = 通道未配置。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_MODEL"
+        ),
+    )
+    trajectory_cache_recovery_vlm_timeout_sec: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=300.0,
+        description=(
+            "recovery_vlm 单次调用超时（秒）。超时按 ASSERT_FAIL 兜底，不阻塞 Run 收尾。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_TIMEOUT_SEC"
+        ),
+    )
+    trajectory_cache_recovery_vlm_wait_more_ms: int = Field(
+        default=1500,
+        ge=100,
+        le=10_000,
+        description=(
+            "recovery_vlm 判 WAIT_MORE 时默认等待时长（毫秒）。"
+            "VLM 响应里的数字若在 100-10_000 范围内会覆盖该默认值。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_WAIT_MORE_MS"
+        ),
+    )
+    trajectory_cache_recovery_vlm_max_wait_more: int = Field(
+        default=1,
+        ge=0,
+        le=5,
+        description=(
+            "recovery_vlm 在单个 alignment 周期内最多接受多少次 WAIT_MORE。"
+            "0=不允许 WAIT_MORE，超过即降级 ASSERT_FAIL。第一版默认 1，最保守。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_MAX_WAIT_MORE"
+        ),
+    )
+    trajectory_cache_recovery_vlm_max_repair_actions: int = Field(
+        default=5,
+        ge=0,
+        le=20,
+        description=(
+            "recovery_vlm 在单个 alignment 周期内最多执行多少个局部修复 action。"
+            "0=不允许修复动作，只允许 finished/wait/assert_fail。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_MAX_REPAIR_ACTIONS"
+        ),
+    )
+    trajectory_cache_recovery_vlm_max_calls_per_replay: int = Field(
+        default=5,
+        ge=0,
+        le=50,
+        description=(
+            "单条缓存回放最多允许召唤 recovery_vlm 多少次。"
+            "超过说明该 case/cache 健康度不足，直接失败，避免整条 run 被反复救场拖慢。"
+            "0=不允许调用 recovery_vlm。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_MAX_CALLS_PER_REPLAY"
+        ),
+    )
+    # ------------------------------------------------------------------
+    # v3 语义轨迹回放 · 坐标定位 / 救场专线
+    # ------------------------------------------------------------------
+    trajectory_cache_v3_coord_enabled: bool = Field(
+        default=True,
+        description=(
+            "V3 plan_intent 坐标定位专线开关。默认开启。定位层只做单图短 prompt "
+            "坐标询问；当主 VLM 为 claude_cu/gpt_cu 时默认复用主 VLM Computer "
+            "Use 能力配置，但使用一次性短会话，不携带主 Run 上下文。其它路径默认"
+            "复用 recovery_vlm，或通过 V3_COORD_USE_RECOVERY_VLM_CONFIG=false "
+            "单独配置历史兼容定位模型。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_ENABLED"
+        ),
+    )
+    trajectory_cache_v3_coord_use_recovery_vlm_config: bool = Field(
+        default=True,
+        description=(
+            "V3 coord 是否复用 recovery_vlm 的 backend/url/key/model。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_USE_RECOVERY_VLM_CONFIG"
+        ),
+    )
+    trajectory_cache_v3_coord_backend: str = Field(
+        default="doubao_responses",
+        description=(
+            "V3 coord 非 CU/历史兼容后端协议。claude_cu/gpt_cu 主链路不会读取此字段；"
+            "仅在非 CU 路径且 V3_COORD_USE_RECOVERY_VLM_CONFIG=false 时使用。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_BACKEND"
+        ),
+    )
+    trajectory_cache_v3_coord_api_url: str = Field(
+        default="",
+        description=(
+            "V3 coord 非 CU/历史兼容接口地址。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_API_URL"
+        ),
+    )
+    trajectory_cache_v3_coord_api_key: str = Field(
+        default="",
+        description=(
+            "V3 coord 非 CU/历史兼容 API key。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_API_KEY"
+        ),
+    )
+    trajectory_cache_v3_coord_model: str = Field(
+        default="",
+        description=(
+            "V3 coord 非 CU/历史兼容模型 ID。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_MODEL"
+        ),
+    )
+    trajectory_cache_v3_coord_timeout_sec: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=300.0,
+        description=(
+            "V3 coord 单次调用超时（秒）。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_TIMEOUT_SEC"
+        ),
+    )
+    trajectory_cache_v3_coord_claude_thinking_budget: int = Field(
+        default=0,
+        ge=0,
+        le=64000,
+        description=(
+            "V3 coord 使用 claude_cu 主链路定位时的 thinking token 预算。"
+            "默认 0=关闭 thinking，只做短 prompt 坐标定位。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_CLAUDE_THINKING_BUDGET"
+        ),
+    )
+    trajectory_cache_v3_coord_gpt_reasoning_effort: str = Field(
+        default="low",
+        description=(
+            "V3 coord 使用 gpt_cu 主链路定位时的 reasoning effort：low/medium/high。"
+            "默认 low，只做短 prompt 坐标定位。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_COORD_GPT_REASONING_EFFORT"
+        ),
+    )
+    trajectory_cache_v3_stable_threshold: float = Field(
+        default=0.08,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "V3 回放专用稳定检测 global pHash diff 阈值。独立于 V2 alignment。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_STABLE_THRESHOLD"
+        ),
+    )
+    trajectory_cache_v3_stable_roi_threshold: float = Field(
+        default=0.30,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "V3 回放专用稳定检测中心 ROI 像素差阈值。独立于 V2 alignment。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_STABLE_ROI_THRESHOLD"
+        ),
+    )
+    trajectory_cache_v3_stable_black_ratio_threshold: float = Field(
+        default=0.15,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "V3 回放专用稳定检测黑屏比例差异阈值。独立于 V2 alignment。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_STABLE_BLACK_RATIO_THRESHOLD"
+        ),
+    )
+    trajectory_cache_v3_rescue_enabled: bool = Field(
+        default=True,
+        description=(
+            "V3 coord 未定位后的救场 VLM 开关。当主 VLM 为 claude_cu/gpt_cu 时优先"
+            "复用主 VLM Computer Use 配置；其它路径默认复用 recovery_vlm 连接配置。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_ENABLED"
+        ),
+    )
+    trajectory_cache_v3_rescue_use_recovery_vlm_config: bool = Field(
+        default=True,
+        description=(
+            "V3 rescue 是否复用 recovery_vlm 的 backend/url/key/model。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_USE_RECOVERY_VLM_CONFIG"
+        ),
+    )
+    trajectory_cache_v3_rescue_backend: str = Field(
+        default="doubao_responses",
+        description=(
+            "V3 rescue 独立后端协议。仅在 V3_RESCUE_USE_RECOVERY_VLM_CONFIG=false 时使用。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_BACKEND"
+        ),
+    )
+    trajectory_cache_v3_rescue_api_url: str = Field(
+        default="",
+        description=(
+            "V3 rescue 独立接口地址。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_API_URL"
+        ),
+    )
+    trajectory_cache_v3_rescue_api_key: str = Field(
+        default="",
+        description=(
+            "V3 rescue 独立 API key。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_API_KEY"
+        ),
+    )
+    trajectory_cache_v3_rescue_model: str = Field(
+        default="",
+        description=(
+            "V3 rescue 独立模型 ID。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_MODEL"
+        ),
+    )
+    trajectory_cache_v3_rescue_timeout_sec: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=300.0,
+        description=(
+            "V3 rescue 单次调用超时（秒）。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_TIMEOUT_SEC"
+        ),
+    )
+    trajectory_cache_v3_rescue_max_calls_per_replay: int = Field(
+        default=3,
+        ge=0,
+        le=20,
+        description=(
+            "单条 V3 回放最多允许调用 rescue VLM 多少次。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_MAX_CALLS_PER_REPLAY"
+        ),
+    )
+    # ------------------------------------------------------------------
+    # v2 缓存回放 · 瞬态弹窗动作标记与按需回放
+    # ------------------------------------------------------------------
+    trajectory_cache_ephemeral_action_enabled: bool = Field(
+        default=False,
+        description=(
+            "轨迹缓存 optional_ephemeral 动作总开关。False=不标记、不 gate，"
+            "完全保持旧 V2 回放。env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_ACTION_ENABLED"
+        ),
+    )
+    trajectory_cache_ephemeral_classify_enabled: bool = Field(
+        default=True,
+        description=(
+            "成功轨迹保存阶段是否启用瞬态 action classifier。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFY_ENABLED"
+        ),
+    )
+    trajectory_cache_ephemeral_classifier_backend: str = Field(
+        default="openai_compatible",
+        description=(
+            "瞬态 action classifier 后端协议：doubao_responses / openai_compatible / "
+            "claude_messages。classifier url/key/model 留空时会复用 ASSISTANT_* 并按 "
+            "assistant_backend 自动映射。env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_BACKEND"
+        ),
+    )
+    trajectory_cache_ephemeral_classifier_api_url: str = Field(
+        default="",
+        description=(
+            "瞬态 action classifier 接口地址。留空=复用 assistant_api_url。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_API_URL"
+        ),
+    )
+    trajectory_cache_ephemeral_classifier_api_key: str = Field(
+        default="",
+        description=(
+            "瞬态 action classifier API key。留空=复用 assistant_api_key / vlm_api_key。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_API_KEY"
+        ),
+    )
+    trajectory_cache_ephemeral_classifier_model: str = Field(
+        default="",
+        description=(
+            "瞬态 action classifier 模型 ID。留空=复用 assistant_model。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_MODEL"
+        ),
+    )
+    trajectory_cache_ephemeral_classifier_timeout_sec: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=300.0,
+        description=(
+            "瞬态 action classifier 单次调用超时（秒）。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_TIMEOUT_SEC"
+        ),
+    )
+    trajectory_cache_ephemeral_classify_min_confidence: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "classifier 判 optional_ephemeral 的最低置信度；低于阈值一律 business_required。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFY_MIN_CONFIDENCE"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_enabled: bool = Field(
+        default=True,
+        description=(
+            "回放遇到 optional_ephemeral action 时是否启用 gate。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_ENABLED"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_use_recovery_vlm_config: bool = Field(
+        default=True,
+        description=(
+            "ephemeral gate 是否复用 recovery_vlm 的 backend/url/key/model 连接配置。"
+            "只复用连接，不复用 prompt。当主 VLM 为 claude_cu/gpt_cu 时，V2 gate "
+            "会优先复用主 VLM Computer Use 配置，本字段仅作为非 CU/历史兼容路径。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_USE_RECOVERY_VLM_CONFIG"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_backend: str = Field(
+        default="openai_compatible",
+        description=(
+            "ephemeral gate 独立后端协议。仅在 GATE_USE_RECOVERY_VLM_CONFIG=false 时使用。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_BACKEND"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_api_url: str = Field(
+        default="",
+        description=(
+            "ephemeral gate 独立接口地址。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_API_URL"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_api_key: str = Field(
+        default="",
+        description=(
+            "ephemeral gate 独立 API key。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_API_KEY"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_model: str = Field(
+        default="",
+        description=(
+            "ephemeral gate 独立模型 ID。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_MODEL"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_timeout_sec: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=300.0,
+        description=(
+            "ephemeral gate 独立通道单次调用超时（秒）。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_TIMEOUT_SEC"
+        ),
+    )
+    trajectory_cache_ephemeral_gate_max_calls: int = Field(
+        default=3,
+        ge=0,
+        le=50,
+        description=(
+            "单条缓存回放最多允许调用 ephemeral gate 多少次。"
+            "env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_GATE_MAX_CALLS"
+        ),
+    )
     # 审判系统单次调用超时；超时按 ALLOW 处理（不阻塞 Run 收尾）。
     audit_timeout_sec: float = Field(
         default=30.0,
@@ -764,11 +1466,14 @@ class Settings(BaseSettings):
     # "卡死提示"或直接终止 Run。阈值偏小 → 误 kill 多发；偏大 → 真死循环
     # 拖太久。开源用户根据自家 app 的"合法重试节奏"调整。
     click_stuck_threshold: int = Field(
-        default=4,
+        default=2,
         ge=2,
         le=20,
         description=(
             "同坐标连续点击触发卡死提示的次数。点过 N 次同位置仍无屏变化 → 注入提示。"
+            "历史默认 4 在「VLM 第 1-3 次反复点已满足按钮」期间无任何干预，配合"
+            "强制判读句协议（shared/prompt.py substeps_block）从 4 → 2，第 2 次"
+            "同位置就立即注入「目标可能已满足」提示，作为强制判读句的兜底。"
             "调大可减少误 kill（合法连点场景，如刷新按钮/抽奖）。"
             "env: AI_PHONE_CLICK_STUCK_THRESHOLD"
         ),
@@ -821,12 +1526,13 @@ class Settings(BaseSettings):
         ),
     )
     audit_click_bucket_trigger: int = Field(
-        default=3,
+        default=10,
         ge=2,
         le=20,
         description=(
             "同坐标桶累计 click ≥ N 次召唤审判。"
             "调大允许更多合法重试；调小快速发现反复点同一处模式。"
+            "历史默认 3 在长 case / 多视觉证据复点场景偏严，调到 10。"
             "env: AI_PHONE_AUDIT_CLICK_BUCKET_TRIGGER"
         ),
     )
@@ -841,16 +1547,17 @@ class Settings(BaseSettings):
         ),
     )
     audit_screen_revisit_trigger: int = Field(
-        default=3,
+        default=10,
         ge=2,
         le=20,
         description=(
             "同屏访问累计 ≥ N 次召唤审判。Tab 切换 / 抽屉开合等合法多次访问可调大。"
+            "历史默认 3 在'同一页面找多个视觉证据'场景偏严，调到 10。"
             "env: AI_PHONE_AUDIT_SCREEN_REVISIT_TRIGGER"
         ),
     )
     audit_scroll_flip_window: int = Field(
-        default=6,
+        default=10,
         ge=2,
         le=30,
         description=(
@@ -859,11 +1566,12 @@ class Settings(BaseSettings):
         ),
     )
     audit_scroll_flip_trigger: int = Field(
-        default=2,
+        default=6,
         ge=1,
         le=10,
         description=(
             "窗口内方向翻转 ≥ N 次召唤审判（震荡 / 东找西找）。"
+            "长列表上下找东西天然有方向变化，历史默认 2 偏严，调到 6。"
             "env: AI_PHONE_AUDIT_SCROLL_FLIP_TRIGGER"
         ),
     )
@@ -878,11 +1586,12 @@ class Settings(BaseSettings):
         ),
     )
     audit_scroll_noprogress_trigger: int = Field(
-        default=3,
+        default=10,
         ge=2,
         le=20,
         description=(
             "同方向连续无效滑动 ≥ N 次召唤审判（已到列表底/无更多内容场景）。"
+            "长页面翻 6-7 次找内容是正常行为，历史默认 3 偏严，调到 10。"
             "env: AI_PHONE_AUDIT_SCROLL_NOPROGRESS_TRIGGER"
         ),
     )
@@ -928,7 +1637,181 @@ class Settings(BaseSettings):
     )
 
 
+# ===========================================================================
+# 配置三分区（Distributed Agent Brain）
+# ===========================================================================
+# 单仓库、server/agent 同一份代码、不同命令启动 —— Settings 仍是单类，但用下面
+# 三个清单把"谁该读、谁控制"的边界显式钉死，避免平铺大类带来的职责模糊。
+#
+#   - AGENT_LOCAL_FIELDS : Agent 本机物理必需（Server 替不了），不下发；Agent 读
+#                          本机 env。改这些在 Agent 机器本地生效。
+#   - SERVER_ONLY_FIELDS : Server 基础设施 / 敏感 / 调度 / 通用，**绝不下发**给
+#                          Agent（含 db_url、kafka 密码、内部 token 等）。
+#   - 下发集（可下发）    : = 全部字段 − AGENT_LOCAL − SERVER_ONLY。Server 控制、
+#                          下发给 Agent 覆盖。新增执行类字段自动纳入下发。
+#
+# 单机部署（server+agent 同一 .env）下三分区无感知差异；多机部署下 Agent 机器只需
+# 配 AGENT_LOCAL 那几个，其余执行配置由 Server 下发覆盖。
+
+# Agent 本机物理必需（代码证据：连接四元组 + iOS WDA 本机签名/路径/端口）
+AGENT_LOCAL_FIELDS: frozenset[str] = frozenset({
+    # 连接 / 身份（Agent 启动连 Server 前就要用）
+    "server_ws_url",
+    "server_http_base",
+    "agent_token",
+    "agent_name",
+    # iOS WDA 本机签名 / 工程 / 端口（每台 Mac 客观不同，Server 无法统一）
+    "wda_project_dir",
+    "wda_scheme",
+    "wda_bundle_id",
+    "wda_team_id",
+    "wda_local_port",
+    "wda_mjpeg_device_port",
+    # 本机文件系统路径
+    "storage_dir",
+    "midscene_bridge_dir",
+    "midscene_node_bin",
+})
+
+# Server 专属 / 敏感 / 调度 / 通用：绝不下发给 Agent
+SERVER_ONLY_FIELDS: frozenset[str] = frozenset({
+    # 通用（server / agent 各读各的本机，不下发）
+    "env",
+    "log_level",
+    # Server 基础设施
+    "db_url",
+    "server_host",
+    "server_port",
+    "cors_origins",
+    # 广播 / 消息队列（含敏感密码）
+    "broadcast_backend",
+    "kafka_brokers",
+    "kafka_topic",
+    "kafka_sasl_username",
+    "kafka_sasl_password",
+    # 对外 / 内部 token（敏感）
+    "submission_internal_token",
+    "submission_external_retention_days",
+    # 大盘 analytics（Server 端）
+    "analytics_timezone",
+    "analytics_ai_max_age_days",
+    "analytics_show_token",
+    "analytics_show_stability",
+    # 调度（Server 进程用，Agent 不读）
+    "submission_ttl_sec",
+    "item_ttl_sec",
+    "scheduler_tick_sec",
+    "run_retry_enabled",
+    "run_retry_max",
+    "run_retry_clear_cache",
+    "run_retry_cooldown_sec",
+})
+
+
+def downlink_field_names() -> frozenset[str]:
+    """可下发字段集 = 全部 Settings 字段 − 本机保留 − Server 专属。"""
+    all_fields = set(Settings.model_fields.keys())
+    return frozenset(all_fields - AGENT_LOCAL_FIELDS - SERVER_ONLY_FIELDS)
+
+
+# 主 VLM 连接三件套：Agent 跑首跑 / 回放的底线。Server 没配（空串）时不下发 / 不覆盖，
+# 留 Agent 本机 .env 兜底（可信环境）。其余字段（含 assistant / 缓存旁路 key）一律 Server
+# 集中控制：空串照常下发覆盖——assistant_api_key="" 等是"留空回退 vlm_api_key / 走主辅
+# 配置"的业务语义（见字段注释 + ``assistant_api_key or vlm_api_key``），不能当"没配"而
+# 保留 Agent 本机旧 key，否则削弱 Server 集中控制。
+_LOCAL_FALLBACK_FIELDS: frozenset[str] = frozenset(
+    {"vlm_api_key", "vlm_api_url", "vlm_model"}
+)
+
+
+def build_downlink_config(settings: "Settings | None" = None) -> dict:
+    """Server 端：从 Settings 抽出"可下发执行配置"快照（纯 JSON 可序列化）。
+
+    供 agent_ws 在 Agent 连接后下发。只含下发集字段，绝不含 AGENT_LOCAL /
+    SERVER_ONLY（即不含 db_url、kafka 密码、内部 token、Agent 本机签名等）。
+    """
+    cfg = settings or get_settings()
+    out: dict = {}
+    for name in downlink_field_names():
+        value = getattr(cfg, name, None)
+        # Path 等非 JSON 原生类型转成字符串，保证可序列化
+        if isinstance(value, Path):
+            value = str(value)
+        # None 不下发（Optional 字段未设）。主 VLM 三件套空串也不下发——留 Agent 本机
+        # 兜底；其余字段（assistant / 旁路 key 等）空串照常下发，让 Server "清空=回退主
+        # 配置"的集中控制生效（不被 Agent 本机旧值截胡）。
+        if value is None:
+            continue
+        if value == "" and name in _LOCAL_FALLBACK_FIELDS:
+            continue
+        out[name] = value
+    return out
+
+
+# 运行时配置覆盖：Agent 收到 Server 下发的配置后设置，使全进程 get_settings()
+# 返回"被 Server 下发值覆盖过"的 Settings。Server 端不设置，始终走本机。
+_runtime_override: "Settings | None" = None
+
+
 @lru_cache(maxsize=1)
-def get_settings() -> Settings:
-    """获取进程级单例配置。"""
+def _base_settings() -> Settings:
+    """本机 .env 解析出的基线 Settings（进程级单例）。"""
     return Settings()
+
+
+def get_settings() -> Settings:
+    """获取进程级配置。
+
+    若 Agent 通过 :func:`set_runtime_override` 设过 Server 下发的配置，则返回覆盖
+    后的版本；否则返回本机 .env 基线。Server 端从不 override，始终读本机。
+    """
+    if _runtime_override is not None:
+        return _runtime_override
+    return _base_settings()
+
+
+# 兼容历史调用 ``get_settings.cache_clear()``（测试 / 热重载用）。
+get_settings.cache_clear = _base_settings.cache_clear  # type: ignore[attr-defined]
+
+
+def set_runtime_override(config: dict | None) -> Settings:
+    """Agent 端：用 Server 下发的执行配置覆盖本机 Settings（配置集中分发）。
+
+    只接受下发集字段（AGENT_LOCAL / SERVER_ONLY 即便混进来也被丢弃，双保险确保
+    Agent 的连接 / 签名 / 本机路径永不被 Server 覆盖）。返回覆盖后的 Settings。
+    config 为空时清除覆盖、回退本机基线。配置全局一份，非 per-run 快照。
+    """
+    global _runtime_override
+    snapshot = config
+    if not snapshot:
+        _runtime_override = None
+        return get_settings()
+    allowed_names = downlink_field_names()
+    # 字段级兜底（双保险）：None 一律不覆盖；主 VLM 三件套空串不覆盖（留 Agent 本机兜底）；
+    # 其余字段空串照常覆盖——assistant / 旁路 key 的空串是"回退 vlm_api_key / 走主辅配置"
+    # 的业务语义，Server 下发空串即"集中清空回退"，不能当"没配"而保留 Agent 本机旧 key。
+    update: dict = {}
+    for k, v in snapshot.items():
+        if k not in allowed_names or v is None:
+            continue
+        if v == "" and k in _LOCAL_FALLBACK_FIELDS:
+            continue
+        update[k] = v
+    _runtime_override = _base_settings().model_copy(update=update)
+    return _runtime_override
+
+
+def clear_runtime_override() -> None:
+    """清除运行时覆盖，回退本机基线（测试 / Agent 断连复位用）。"""
+    global _runtime_override
+    _runtime_override = None
+
+
+def has_runtime_override() -> bool:
+    """是否已应用 Server 下发的配置覆盖。
+
+    vlm_loop 用它决定要不要把 import 期固化的模块级阈值常量刷新成下发值：
+    仅生产 Agent（收到下发）刷新；测试环境（无 override）保持模块常量原值 /
+    monkeypatch 值，不受影响。
+    """
+    return _runtime_override is not None

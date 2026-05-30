@@ -26,9 +26,11 @@ from PIL import Image
 from ai_phone.agent.drivers.base import BaseDriver, DeviceInfo
 from ai_phone.agent.runner.vlm_loop import (
     CLICK_STUCK_THRESHOLD,
+    CONSECUTIVE_SCREENSHOT_FAIL_LIMIT,
     UNKNOWN_ACTION_STREAK_LIMIT,
     VLMRunner,
 )
+from ai_phone.agent.runner.stability import StabilityResult
 from ai_phone.shared.vlm import Decision
 
 
@@ -223,6 +225,10 @@ async def test_finished_action_returns_ok():
     assert "finished" in result.reason
     types = [e["type"] for e in events]
     assert "run_start" in types and "run_finish" in types
+    assert "step_end" in types
+    terminal_step = next(e for e in events if e["type"] == "step_end")
+    assert terminal_step["step"] == 1
+    assert terminal_step["action_type"] == "finished"
     assert {"type": "run_finish", "ok": True}.items() <= events[-1].items()
 
 
@@ -289,7 +295,8 @@ async def test_unparseable_action_falls_back_to_assert_fail_not_finished():
     """
     driver = FakeDriver()
     vlm = ScriptedVLMClient([
-        ScriptedStep("乱码动作", "completely garbage no parens"),
+        ScriptedStep("第一次乱码动作", "completely garbage no parens"),
+        ScriptedStep("第二次仍然乱码动作", "still garbage no parens"),
     ])
     _events, emit = _collect_events()
     runner = VLMRunner(
@@ -299,6 +306,28 @@ async def test_unparseable_action_falls_back_to_assert_fail_not_finished():
     assert result.ok is False, f"期望失败退出，实际 reason={result.reason}"
     assert "assert_fail" in result.reason
     assert "无法解析" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_parser_fallback_retries_once_before_assert_fail():
+    """系统解析器兜底的 assert_fail 属于格式抖动，先给 VLM 一次自修机会。"""
+    driver = FakeDriver()
+    vlm = ScriptedVLMClient([
+        ScriptedStep(
+            "第一轮格式坏了",
+            "assert_fail(content='无法解析决策输出: Thought: 需要点击 Action: click(...)')",
+        ),
+        ScriptedStep("重试后点中间", "click(point='<point>500 500</point>')"),
+        ScriptedStep("收工", "finished(content='done')"),
+    ])
+    _events, emit = _collect_events()
+    runner = VLMRunner(
+        run_id="R-parse-retry", driver=driver, goal="点中间", emit=emit, vlm_client=vlm
+    )
+    result = await runner.run()
+    assert result.ok is True, result.reason
+    assert ("click", (540, 960)) in driver.calls
+    assert any("上一轮输出无法被系统解析" in hint for hint in vlm.pending_hints)
 
 
 @pytest.mark.asyncio
@@ -447,26 +476,34 @@ def _set_audit_thresholds(monkeypatch, *, keep: Optional[str] = None) -> None:
     keep ∈ {"click", "scroll_osc", "scroll_no_progress", "screen", "periodic", None}。
     None 表示全部默认，不动。
 
+    被 keep 选中的通道会被**显式**设到一个测试可达的低阈值（3 或 2），不再
+    依赖 settings 的运行时默认；这样后续 ops 调整 settings.default 时不会
+    波及单测。其它通道一律抬到 999。
+
     注意：默认会同步把"周期巡检"间隔抬到测试碰不到，避免 step % 5 == 0 时
     多打一次 audit 让 detector 测试的 audit_log 计数错乱。要测周期巡检本身的
     测试，传 ``keep="periodic"``。
     """
-    if keep != "click":
-        monkeypatch.setattr(
-            "ai_phone.agent.runner.vlm_loop.STRUCT_CLICK_BUCKET_TRIGGER", 999
-        )
-    if keep != "scroll_osc":
-        monkeypatch.setattr(
-            "ai_phone.agent.runner.vlm_loop.STRUCT_SCROLL_FLIP_TRIGGER", 999
-        )
-    if keep != "scroll_no_progress":
-        monkeypatch.setattr(
-            "ai_phone.agent.runner.vlm_loop.STRUCT_SCROLL_NOPROGRESS_TRIGGER", 999
-        )
-    if keep != "screen":
-        monkeypatch.setattr(
-            "ai_phone.agent.runner.vlm_loop.STRUCT_SCREEN_REVISIT_TRIGGER", 999
-        )
+    monkeypatch.setattr(
+        "ai_phone.agent.runner.vlm_loop.STRUCT_CLICK_BUCKET_TRIGGER",
+        3 if keep == "click" else 999,
+    )
+    monkeypatch.setattr(
+        "ai_phone.agent.runner.vlm_loop.STRUCT_SCROLL_FLIP_WINDOW",
+        6 if keep == "scroll_osc" else 6,
+    )
+    monkeypatch.setattr(
+        "ai_phone.agent.runner.vlm_loop.STRUCT_SCROLL_FLIP_TRIGGER",
+        2 if keep == "scroll_osc" else 999,
+    )
+    monkeypatch.setattr(
+        "ai_phone.agent.runner.vlm_loop.STRUCT_SCROLL_NOPROGRESS_TRIGGER",
+        3 if keep == "scroll_no_progress" else 999,
+    )
+    monkeypatch.setattr(
+        "ai_phone.agent.runner.vlm_loop.STRUCT_SCREEN_REVISIT_TRIGGER",
+        3 if keep == "screen" else 999,
+    )
     if keep != "periodic":
         monkeypatch.setattr(
             "ai_phone.agent.runner.vlm_loop.STRUCT_AUDIT_PERIODIC_INTERVAL", 10**9
@@ -974,7 +1011,7 @@ async def test_chain_with_disallowed_action_falls_back_to_first():
 async def test_chain_clicks_both_count_in_stuck_detection():
     """链内每个 click 都进卡死检测，避免 VLM 用'链式 2 击同坐标'绕过同位置上限。"""
     driver = FakeDriver()
-    # 2 步链 × 2 = 4 次同坐标 click，正好达到 CLICK_STUCK_THRESHOLD
+    # 2 步链 × 2 = 4 次同坐标 click，远超 CLICK_STUCK_THRESHOLD（默认 2）
     vlm = ChainScriptedVLMClient([
         ScriptedStep(
             "链 1",

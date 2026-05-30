@@ -34,8 +34,12 @@ async function request(method, path, { body, headers } = {}) {
     headers: { ...(headers || {}) },
   }
   if (body !== undefined) {
-    init.headers['Content-Type'] = 'application/json'
-    init.body = JSON.stringify(body)
+    if (typeof FormData !== 'undefined' && body instanceof FormData) {
+      init.body = body
+    } else {
+      init.headers['Content-Type'] = 'application/json'
+      init.body = JSON.stringify(body)
+    }
   }
   const resp = await fetch(path, init)
   const text = await resp.text()
@@ -62,6 +66,7 @@ export const api = {
 
   // 设备
   listDevices: () => request('GET', '/api/devices'),
+  listAgents: () => request('GET', '/api/agents'),
   getDevice: (serial) => request('GET', `/api/devices/${encodeURIComponent(serial)}`),
   acquireLock: (serial, holder, holderType = 'manual') =>
     request('POST', `/api/devices/${encodeURIComponent(serial)}/lock`, {
@@ -92,6 +97,7 @@ export const api = {
   getRun: (id) => request('GET', `/api/runs/${id}`),
   getRunSteps: (id) => request('GET', `/api/runs/${id}/steps`),
   getRunLogs: (id) => request('GET', `/api/runs/${id}/logs`),
+  getRunCommands: (id) => request('GET', `/api/runs/${id}/commands`),
   createRun: (payload) => request('POST', '/api/runs', { body: payload }),
   stopRun: (id) => request('POST', `/api/runs/${id}/stop`),
 
@@ -103,6 +109,39 @@ export const api = {
     request('POST', `/api/devices/${encodeURIComponent(serial)}/input`, {
       body: payload,
     }),
+
+  // 应用分发
+  listAppPackages: () => request('GET', '/api/app-install/packages'),
+  uploadAppPackage: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request('POST', '/api/app-install/packages', { body: fd })
+  },
+  listAppInstallEligibleDevices: (packageId) =>
+    request('GET', `/api/app-install/packages/${encodeURIComponent(packageId)}/eligible-devices`),
+  createAppInstallTask: (payload) =>
+    request('POST', '/api/app-install/tasks', { body: payload }),
+  getAppInstallTask: (taskId) =>
+    request('GET', `/api/app-install/tasks/${encodeURIComponent(taskId)}`),
+  retryAppInstallUnsuccessful: (taskId) =>
+    request('POST', `/api/app-install/tasks/${encodeURIComponent(taskId)}/retry-unsuccessful`),
+
+  deviceWakePolicies: {
+    list: (platform = '') => {
+      const qs = platform ? `?platform=${encodeURIComponent(platform)}` : ''
+      return request('GET', `/api/device-wake-policies${qs}`)
+    },
+    upsert: ({ serial, platform, wake_swipe = false, remark = '' }) =>
+      request('POST', '/api/device-wake-policies', {
+        body: { serial, platform, wake_swipe, remark },
+      }),
+    patch: (serial, payload) =>
+      request('PATCH', `/api/device-wake-policies/${encodeURIComponent(serial)}`, {
+        body: payload,
+      }),
+    remove: (serial) =>
+      request('DELETE', `/api/device-wake-policies/${encodeURIComponent(serial)}`),
+  },
 }
 
 // ---------- /api/internal/* —— 第 2 梯队用 ----------

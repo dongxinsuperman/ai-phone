@@ -21,6 +21,7 @@ const devicesSnap = ref([])
 const loading = ref(false)
 const err = ref('')
 const lastRefreshedAt = ref(0)
+const publicConfig = ref({ run_retry_enabled: false, run_retry_max: 0 })
 
 // 示例数据模式：看不懂实时页面时一键展示"理想形态"。
 // 开启后停止轮询，按钮禁用（投递/取消都操作不了，避免误以为自己点没效果）。
@@ -33,34 +34,56 @@ const tokenInput = ref(getInternalToken())
 const selectedSubId = ref(null)
 
 // 只读的 run 抽屉（看步骤 + 日志，不碰设备锁）
-const runDrawer = ref({ open: false, runId: '', run: null, steps: [], logs: [], loading: false, err: '' })
+const runDrawer = ref({
+  open: false,
+  runId: '',
+  run: null,
+  steps: [],
+  logs: [],
+  commands: [],
+  loading: false,
+  err: '',
+})
 
 // ---------- 拉取 ----------
 let timer = null
+let refreshInFlight = false
+let refreshAgain = false
 
 async function refresh() {
   if (demoMode.value) return
-  loading.value = true
-  err.value = ''
-  try {
-    const [subs, snap, devs] = await Promise.all([
-      internal.listSubmissions({ limit: 50 }),
-      internal.schedulerSnapshot(),
-      api.listDevices().catch(() => []),
-    ])
-    submissions.value = subs
-    snapshot.value = snap || { queues: {}, running: {} }
-    devicesSnap.value = Array.isArray(devs) ? devs : []
-    lastRefreshedAt.value = Date.now()
-  } catch (e) {
-    err.value = e.detail ? JSON.stringify(e.detail) : e.message
-  } finally {
-    loading.value = false
+  if (refreshInFlight) {
+    refreshAgain = true
+    return
   }
+  refreshInFlight = true
+  loading.value = true
+  do {
+    refreshAgain = false
+    err.value = ''
+    try {
+      const [subs, snap, devs] = await Promise.all([
+        internal.listSubmissions({ limit: 50 }),
+        internal.schedulerSnapshot(),
+        api.listDevices().catch(() => []),
+      ])
+      submissions.value = subs
+      snapshot.value = snap || { queues: {}, running: {} }
+      devicesSnap.value = Array.isArray(devs) ? devs : []
+      lastRefreshedAt.value = Date.now()
+    } catch (e) {
+      err.value = e.detail ? JSON.stringify(e.detail) : e.message
+    }
+  } while (refreshAgain && !demoMode.value)
+  refreshInFlight = false
+  loading.value = false
 }
 
 onMounted(() => {
   refresh()
+  api.getConfig()
+    .then((cfg) => { publicConfig.value = cfg || publicConfig.value })
+    .catch(() => {})
   timer = setInterval(refresh, 2500)
 })
 onBeforeUnmount(() => {
@@ -236,7 +259,16 @@ function platformColorClass(p) {
 // ---------- 只读 Run 抽屉（不触发锁）----------
 let runDrawerTimer = null
 async function openRunDrawer(runId) {
-  runDrawer.value = { open: true, runId, run: null, steps: [], logs: [], loading: true, err: '' }
+  runDrawer.value = {
+    open: true,
+    runId,
+    run: null,
+    steps: [],
+    logs: [],
+    commands: [],
+    loading: true,
+    err: '',
+  }
   await fetchRunDrawerOnce()
   if (runDrawerTimer) clearInterval(runDrawerTimer)
   runDrawerTimer = setInterval(() => {
@@ -255,14 +287,16 @@ async function fetchRunDrawerOnce() {
   const rid = runDrawer.value.runId
   if (!rid) return
   try {
-    const [run, steps, logsResp] = await Promise.all([
+    const [run, steps, logsResp, commands] = await Promise.all([
       api.getRun(rid),
       api.getRunSteps(rid),
       api.getRunLogs(rid),
+      api.getRunCommands(rid),
     ])
     runDrawer.value.run = run
     runDrawer.value.steps = steps
     runDrawer.value.logs = (logsResp && logsResp.items) || []
+    runDrawer.value.commands = Array.isArray(commands) ? commands : []
     runDrawer.value.loading = false
     runDrawer.value.err = ''
     // 终态自动停轮询
@@ -291,6 +325,7 @@ const drawerEntries = computed(() => {
     entries.push({
       timestamp: lg.ts,
       level: lg.level,
+      attempt: lg.attempt,
       step: lg.step,
       title: lg.title,
       content: lg.content,
@@ -302,6 +337,7 @@ const drawerEntries = computed(() => {
     entries.push({
       timestamp: s.created_at,
       level: s.unknown ? 2 : 1,
+      attempt: s.attempt,
       step: s.step,
       title: `第 ${s.step} 步 · ${s.action_type || s.action || ''}`,
       content: s.thought || s.action || '',
@@ -331,6 +367,47 @@ const drawerReportUrl = computed(() => {
   return (it && it.report_url) ? it.report_url : ''
 })
 
+function executionModeText(mode) {
+  return mode === 'server_brain' ? 'Server 大脑' : 'Agent 大脑'
+}
+
+function normalizeErrorSummary(summary) {
+  if (!summary) return null
+  const category = summary.category || 'unknown'
+  const meta = {
+    model: { label: '模型错误', cls: 'model' },
+    device: { label: '设备错误', cls: 'device' },
+    network: { label: '网络 / RPC', cls: 'network' },
+    agent_offline: { label: 'Agent 离线', cls: 'offline' },
+    stopped: { label: '已停止', cls: 'stopped' },
+    unknown: { label: '未知错误', cls: 'unknown' },
+  }[category] || { label: category, cls: 'unknown' }
+  return {
+    ...summary,
+    label: meta.label,
+    cls: meta.cls,
+    message: summary.message || summary.title || '',
+  }
+}
+
+const drawerErrorSummary = computed(() => (
+  normalizeErrorSummary(runDrawer.value.run?.error_summary)
+))
+
+const drawerCommandSummary = computed(() => {
+  const commands = runDrawer.value.commands || []
+  const total = commands.length
+  const failed = commands.filter(c => c && c.ok === false).length
+  const pending = commands.filter(c => c && c.ok == null).length
+  const avgItems = commands
+    .map(c => Number(c?.rpc_elapsed_ms))
+    .filter(n => Number.isFinite(n) && n >= 0)
+  const avg = avgItems.length
+    ? Math.round(avgItems.reduce((a, b) => a + b, 0) / avgItems.length)
+    : null
+  return { total, failed, pending, avg }
+})
+
 // ---------- 手工投递表单 ----------
 // v1.7 唯一受理形态：wrapper {submissionName, items} +
 //   每条 raw item: { caseId, caseName?, runContent, platforms[], deviceAliasPools? }
@@ -339,12 +416,20 @@ const drawerReportUrl = computed(() => {
 //   - 长度 1（["A1"]） = 锁单台
 //   - 长度 N（["A1","B1"]）= 子集池，调度器派发瞬间动态选 ready 的一台
 // 前端按"每端一个文本框"输入（逗号分隔多个别名），切端时旧值就地保留。
+const CACHE_MODE_OPTIONS = [
+  { value: 'off', label: 'off（不使用缓存）' },
+  { value: 'v1', label: 'v1（旧轨迹缓存）' },
+  { value: 'v2', label: 'v2（路标回放）' },
+  { value: 'v3', label: 'v3（语义重定位）' },
+]
+
 function newFormItem() {
   return {
     caseId: '',
     caseName: '',
     platforms: ['android'],
     runContent: '',
+    cacheMode: '',
     // 每端一段池文本（逗号分隔多个别名，留空 = 该端全池任挑）
     aliasPoolText: { android: '', ios: '', harmony: '' },
   }
@@ -358,7 +443,7 @@ function parsePool(text) {
     .filter(Boolean)
   return [...new Set(arr)].sort()
 }
-const form = ref({ submissionName: '', items: [newFormItem()] })
+const form = ref({ submissionName: '', cacheMode: 'off', retryMax: 0, items: [newFormItem()] })
 const submitErr = ref('')
 const submitting = ref(false)
 
@@ -380,7 +465,7 @@ function togglePlatform(item, p) {
   }
 }
 function resetForm() {
-  form.value = { submissionName: '', items: [newFormItem()] }
+  form.value = { submissionName: '', cacheMode: 'off', retryMax: 0, items: [newFormItem()] }
   submitErr.value = ''
 }
 function openSubmitDlg() {
@@ -402,6 +487,7 @@ function buildRawItem(it) {
     platforms: [...it.platforms],
   }
   if (caseName) obj.caseName = caseName
+  if (it.cacheMode) obj.cacheMode = it.cacheMode
   // 只把"当前仍被勾选、且非空池"的端发出去，防止用户切换端后残留脏数据
   const pools = {}
   for (const p of it.platforms) {
@@ -414,6 +500,8 @@ function buildRawItem(it) {
 // 发送 payload：每条 form-item → 一条 raw item（不在前端预展开，后端会做）
 const previewPayload = computed(() => ({
   submissionName: (form.value.submissionName || '').trim(),
+  cacheMode: form.value.cacheMode || 'off',
+  retryMax: Number(form.value.retryMax || 0),
   items: form.value.items.map(buildRawItem),
 }))
 // 展示预览：用"按端一条"的视图，让用户一眼看出批次最终会起几条 Run
@@ -426,6 +514,7 @@ const previewRows = computed(() => {
         caseName: (it.caseName || '').trim(),
         platform: p,
         pool: parsePool(it.aliasPoolText?.[p]),
+        cacheMode: it.cacheMode || form.value.cacheMode || 'off',
       })
     }
   }
@@ -439,6 +528,14 @@ async function submitForm() {
     if (!it.caseId.trim()) return (submitErr.value = `第 ${i + 1} 条：caseId 必填`)
     if (!it.runContent.trim()) return (submitErr.value = `第 ${i + 1} 条：runContent 必填`)
     if (!it.platforms.length) return (submitErr.value = `第 ${i + 1} 条：请至少选一个平台`)
+  }
+  const retryMax = Number(form.value.retryMax || 0)
+  const retryLimit = Number(publicConfig.value.run_retry_max || 0)
+  if (!Number.isInteger(retryMax) || retryMax < 0) {
+    return (submitErr.value = 'retryMax 必须是非负整数')
+  }
+  if (retryLimit > 0 && retryMax > retryLimit) {
+    return (submitErr.value = `retryMax 不能超过后端上限 ${retryLimit}`)
   }
   const payload = previewPayload.value
   if (!Array.isArray(payload.items) || !payload.items.length) {
@@ -882,6 +979,9 @@ function loadDemoData() {
                 <span>入队 {{ fmtTime(it.enqueued_at) }}</span>
                 <span v-if="it.started_at">开始 {{ fmtTime(it.started_at) }}</span>
                 <span v-if="it.finished_at">结束 {{ fmtTime(it.finished_at) }}</span>
+                <span v-if="it.retryMax || it.effective_retry_max || it.attempts">
+                  重跑 {{ it.attempts || 0 }}/{{ (it.retryMax ?? it.effective_retry_max ?? 0) + 1 }}
+                </span>
               </div>
               <div class="ic-rc">
                 <div class="ic-rc-label">执行指令 (runContent)</div>
@@ -918,6 +1018,32 @@ function loadDemoData() {
                 · elapsed {{ runDrawer.run.elapsed_ms }}ms
               </span>
             </div>
+            <div v-if="runDrawer.run" class="drawer-run-mode">
+              <span
+                class="mode-pill"
+                :class="runDrawer.run.execution_mode === 'server_brain' ? 'server' : 'agent'"
+              >
+                {{ executionModeText(runDrawer.run.execution_mode) }}
+              </span>
+              <span v-if="runDrawer.run.agent_id_at_start || runDrawer.run.agent_id">
+                Agent <code>{{ runDrawer.run.agent_id_at_start || runDrawer.run.agent_id }}</code>
+              </span>
+              <span v-if="runDrawer.run.dispatch_source">入口 {{ runDrawer.run.dispatch_source }}</span>
+              <span>
+                重跑 {{ runDrawer.run.attempts || 1 }}/{{ (runDrawer.run.effective_retry_max || runDrawer.run.retryMax || 0) + 1 }}
+              </span>
+              <span v-if="runDrawer.run.execution_mode === 'server_brain'">
+                RPC {{ drawerCommandSummary.total }} 条
+                <template v-if="drawerCommandSummary.avg !== null"> · 平均 {{ drawerCommandSummary.avg }}ms</template>
+                <template v-if="drawerCommandSummary.failed"> · 失败 {{ drawerCommandSummary.failed }}</template>
+                <template v-if="drawerCommandSummary.pending"> · 未回包 {{ drawerCommandSummary.pending }}</template>
+              </span>
+            </div>
+            <div v-if="drawerErrorSummary" class="drawer-error-summary" :class="drawerErrorSummary.cls">
+              <span class="err-label">{{ drawerErrorSummary.label }}</span>
+              <span v-if="drawerErrorSummary.error_class" class="err-class">{{ drawerErrorSummary.error_class }}</span>
+              <span class="err-message">{{ drawerErrorSummary.message }}</span>
+            </div>
           </div>
           <div class="drawer-actions">
             <a
@@ -946,6 +1072,33 @@ function loadDemoData() {
               </div>
               <LogPane :entries="drawerEntries" max-height="60vh" />
             </div>
+            <div
+              v-if="runDrawer.run && runDrawer.run.execution_mode === 'server_brain'"
+              class="drawer-section"
+            >
+              <div class="drawer-section-title">
+                Driver RPC 命令 · 共 {{ runDrawer.commands.length }} 条
+                <span class="drawer-section-hint">
+                  只有 Server 大脑链路会写入这张命令时间线。
+                </span>
+              </div>
+              <div v-if="!runDrawer.commands.length" class="empty small">暂无 RPC 命令记录</div>
+              <div v-else class="command-list">
+                <div v-for="cmd in runDrawer.commands" :key="cmd.id || cmd.message_id" class="command-row">
+                  <span class="cmd-method">{{ cmd.method }}</span>
+                  <span
+                    class="cmd-status"
+                    :class="cmd.ok === false ? 'bad' : (cmd.ok === true ? 'ok' : 'pending')"
+                  >
+                    {{ cmd.ok === false ? '失败' : (cmd.ok === true ? '成功' : '等待') }}
+                  </span>
+                  <span v-if="cmd.step != null">step {{ cmd.step }}</span>
+                  <span v-if="cmd.rpc_elapsed_ms != null">{{ cmd.rpc_elapsed_ms }}ms</span>
+                  <span v-if="cmd.error_category" class="cmd-error">{{ cmd.error_category }}</span>
+                  <code>{{ cmd.message_id }}</code>
+                </div>
+              </div>
+            </div>
           </template>
         </div>
       </div>
@@ -961,7 +1114,7 @@ function loadDemoData() {
         <div class="modal-body">
           <div class="help small-help">
             本入口只是第 2 梯队阶段<b>临时验证用</b>，正式调用方后续用对外 HTTP API。
-            请求体（v1.7 唯一形态）：<code>{ submissionName, items: [{ caseId, runContent, platforms[], deviceAliasPools? }] }</code>。
+            请求体（v1.9）：<code>{ submissionName, cacheMode, retryMax, items: [{ caseId, runContent, platforms[], cacheMode?, deviceAliasPools? }] }</code>。
             <code>deviceAliasPools[p]</code> 留空 = 该端任意 ready 设备；
             填多个用逗号分隔即子集池（场景 5：调度器派发瞬间动态选 ready 的一台）。
           </div>
@@ -974,6 +1127,36 @@ function loadDemoData() {
               <input
                 v-model="form.submissionName"
                 placeholder="例如：回归冒烟-2026-04-18 · 主流程"
+              />
+            </div>
+            <div class="form-row">
+              <label>
+                cacheMode (批次默认)
+                <span class="label-hint">每条 item 可单独覆盖；V3 会语义重定位后回放</span>
+              </label>
+              <select v-model="form.cacheMode">
+                <option
+                  v-for="opt in CACHE_MODE_OPTIONS"
+                  :key="opt.value"
+                  :value="opt.value"
+                >
+                  {{ opt.label }}
+                </option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label>
+                retryMax (失败自动重跑次数)
+                <span class="label-hint">
+                  {{ publicConfig.run_retry_enabled ? `后端上限 ${publicConfig.run_retry_max || 0}` : '后端未启用，发送后会按 0 处理' }}
+                </span>
+              </label>
+              <input
+                v-model.number="form.retryMax"
+                type="number"
+                min="0"
+                :max="publicConfig.run_retry_max || 0"
+                :disabled="!publicConfig.run_retry_enabled || !publicConfig.run_retry_max"
               />
             </div>
           </div>
@@ -1009,6 +1192,22 @@ function loadDemoData() {
                   {{ PLATFORM_LABEL[p] }}
                 </label>
               </div>
+            </div>
+            <div class="form-row">
+              <label>
+                cacheMode (本条覆盖，可选)
+                <span class="label-hint">留空则使用批次默认 {{ form.cacheMode || 'off' }}</span>
+              </label>
+              <select v-model="it.cacheMode">
+                <option value="">跟随批次默认</option>
+                <option
+                  v-for="opt in CACHE_MODE_OPTIONS"
+                  :key="opt.value"
+                  :value="opt.value"
+                >
+                  {{ opt.label }}
+                </option>
+              </select>
             </div>
             <!-- v1.7 唯一受理：每端一段池文本，逗号分隔多个别名 -->
             <div class="form-row">
@@ -1047,6 +1246,7 @@ function loadDemoData() {
               批次 <b>{{ previewPayload.submissionName || '(未命名 · 后端会回落 submissionId)' }}</b>
               · 请求体 <b>{{ previewPayload.items.length }}</b> 条 · 后端展开后共
               <b>{{ previewRows.length }}</b> 条 Run
+              · retryMax <b>{{ previewPayload.retryMax || 0 }}</b>
             </div>
             <div v-if="previewRows.length" class="preview-rows">
               <div v-for="(p, i) in previewRows" :key="i" class="preview-row">
@@ -1055,6 +1255,7 @@ function loadDemoData() {
                 }}</span>
                 <span v-if="p.caseName" class="pr-name">{{ p.caseName }}</span>
                 <code>{{ p.caseId || '(未填)' }}</code>
+                <span class="pr-cache">cache={{ p.cacheMode }}</span>
                 <span
                   v-if="p.pool.length"
                   class="pr-alias"
@@ -1629,6 +1830,84 @@ function loadDemoData() {
   color: #6b7280;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+.drawer-run-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 6px;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.drawer-run-mode code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.mode-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid #d1d5db;
+  color: #374151;
+  background: #f9fafb;
+}
+.mode-pill.server {
+  color: #065f46;
+  background: #d1fae5;
+  border-color: #a7f3d0;
+}
+.mode-pill.agent {
+  color: #374151;
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+.drawer-error-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #374151;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.drawer-error-summary.model,
+.drawer-error-summary.network,
+.drawer-error-summary.unknown {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+.drawer-error-summary.device,
+.drawer-error-summary.offline {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.drawer-error-summary.stopped {
+  color: #374151;
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+.err-label {
+  font-weight: 800;
+}
+.err-class {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 0.85;
+}
+.err-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .drawer-body {
   flex: 1;
   padding: 12px 16px;
@@ -1650,6 +1929,76 @@ function loadDemoData() {
   font-size: 11px;
   color: #6b7280;
   font-weight: 400;
+}
+.command-list {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+.command-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.3fr) 54px 62px 72px 86px minmax(160px, 1.6fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-top: 1px solid #f3f4f6;
+  color: #4b5563;
+  font-size: 12px;
+}
+.command-row:first-child {
+  border-top: 0;
+}
+.command-row code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #6b7280;
+}
+.cmd-method {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  color: #111827;
+}
+.cmd-status {
+  justify-self: start;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #f3f4f6;
+  color: #4b5563;
+}
+.cmd-status.ok {
+  background: #d1fae5;
+  color: #065f46;
+}
+.cmd-status.bad {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.cmd-status.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+.cmd-error {
+  color: #991b1b;
+}
+
+@media (max-width: 760px) {
+  .command-row {
+    grid-template-columns: minmax(110px, 1fr) 52px 58px 64px;
+  }
+  .command-row .cmd-error,
+  .command-row code {
+    display: none;
+  }
 }
 
 /* --- 对话框 --- */
@@ -1794,6 +2143,15 @@ function loadDemoData() {
   color: #374151;
 }
 .preview-row .pr-alias { color: #1565c0; font-size: 11px; }
+.preview-row .pr-cache {
+  color: #1d4ed8;
+  background: #dbeafe;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
 .help { font-size: 12px; color: #374151; line-height: 1.5; }
 .help code { background: #f3f4f6; padding: 1px 4px; border-radius: 3px; }
 .modal.small input {

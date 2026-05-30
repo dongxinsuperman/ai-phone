@@ -41,6 +41,7 @@ def build_system_prompt_for_backend(
     *,
     substeps_text: str | None = None,
     backend: str | None = None,
+    zh_readable: bool = False,
 ) -> str:
     """按 ``vlm_backend`` 分派到对应家的 system prompt 模板。
 
@@ -52,9 +53,17 @@ def build_system_prompt_for_backend(
     """
     b = (backend or "doubao_responses").strip().lower()
     if b == "claude_cu":
-        return _build_system_prompt_claude_cu(goal, substeps_text=substeps_text)
+        return _build_system_prompt_claude_cu(
+            goal,
+            substeps_text=substeps_text,
+            zh_readable=zh_readable,
+        )
     if b == "gpt_cu":
-        return _build_system_prompt_gpt_cu(goal, substeps_text=substeps_text)
+        return _build_system_prompt_gpt_cu(
+            goal,
+            substeps_text=substeps_text,
+            zh_readable=zh_readable,
+        )
     return _build_system_prompt_doubao(goal, substeps_text=substeps_text)
 
 

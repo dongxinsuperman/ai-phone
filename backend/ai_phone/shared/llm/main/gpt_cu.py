@@ -37,6 +37,7 @@ preview`` 模型唯一支持的端点（OpenAI docs 明确说明）。
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import re
@@ -49,6 +50,15 @@ from loguru import logger
 from ai_phone.config import get_settings
 from ai_phone.shared.actions import ParsedAction, X11_TO_ANDROID_KEYCODE
 from ai_phone.shared.llm.base import Decision, TokenCounter
+
+
+# 网络/超时类异常 → 自动重试 1 次（与 VLMClient / ClaudeCUClient 保持一致）。
+# ``TransportError`` 是基类，覆盖 ``NetworkError`` / ``RemoteProtocolError``
+# / ``ReadError`` / ``WriteError``。
+_GPT_RETRIABLE_NET_ERRORS: Tuple[type, ...] = (
+    httpx.TimeoutException,
+    httpx.TransportError,
+)
 
 __all__ = ["GPTComputerUseClient"]
 
@@ -91,6 +101,7 @@ class GPTComputerUseClient:
         api_key: Optional[str] = None,
         model: Optional[str] = None,
         timeout_seconds: float = 180.0,
+        reasoning_effort: Optional[str] = None,
     ) -> None:
         settings = get_settings()
         self.api_url = (api_url or settings.vlm_api_url or "").strip()
@@ -124,7 +135,7 @@ class GPTComputerUseClient:
 
         # 推理强度（low/medium/high），从 settings 读，默认 medium。
         # computer-use-preview 自带推理，必须有非零 effort，不能关。
-        effort = (settings.vlm_main_reasoning_effort or "medium").strip().lower()
+        effort = (reasoning_effort or settings.vlm_main_reasoning_effort or "medium").strip().lower()
         if effort not in ("low", "medium", "high"):
             logger.warning(
                 "vlm_main_reasoning_effort 取值非法 ({}), 回退 medium", effort
@@ -159,6 +170,71 @@ class GPTComputerUseClient:
             self.pending_hints.append(resume_hint)
         self.counter.last_prompt_tokens = 0
         return old_id
+
+    # ------------------------------------------------------------------
+    # HTTP 工具
+    # ------------------------------------------------------------------
+    async def _post_with_retry(
+        self,
+        payload: Dict[str, Any],
+        headers: Dict[str, str],
+        *,
+        timeout_seconds: float,
+    ) -> Dict[str, Any]:
+        """对 OpenAI Responses API 做 1 次重试的 POST 包装。
+
+        重试条件（仅这两类，业务异常立刻抛）：
+        - httpx 网络/超时类：``TimeoutException`` / ``TransportError``
+        - HTTP 5xx / 429（限流）
+
+        4xx（除 429）= payload 本身错（鉴权 / schema / model 不存在等）→ 重试
+        无意义；立刻抛带 body。``timeout_seconds`` 由调用方根据"分段后首轮要
+        翻倍"等场景化决策传入。
+        """
+        attempts_max = 2
+        retry_backoff_sec = 0.5
+        last_exc: Optional[BaseException] = None
+        for attempt_idx in range(attempts_max):
+            try:
+                async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                    resp = await client.post(
+                        self.api_url, json=payload, headers=headers
+                    )
+            except _GPT_RETRIABLE_NET_ERRORS as net_exc:
+                last_exc = net_exc
+                if attempt_idx + 1 >= attempts_max:
+                    raise
+                logger.warning(
+                    "GPT 决策网络异常 ({}: {})，{:.1f}s 后重试 1 次 | 段={} 首轮={} timeout={}s",
+                    net_exc.__class__.__name__, net_exc, retry_backoff_sec,
+                    self.segment_count, self.previous_response_id is None,
+                    timeout_seconds,
+                )
+                await asyncio.sleep(retry_backoff_sec)
+                continue
+
+            if resp.status_code == 200:
+                return resp.json()
+
+            if (resp.status_code == 429 or 500 <= resp.status_code < 600) \
+                    and attempt_idx + 1 < attempts_max:
+                logger.warning(
+                    "OpenAI Responses API status={} body={}，{:.1f}s 后重试 1 次 | 段={} 首轮={}",
+                    resp.status_code, resp.text[:200], retry_backoff_sec,
+                    self.segment_count, self.previous_response_id is None,
+                )
+                await asyncio.sleep(retry_backoff_sec)
+                continue
+
+            raise RuntimeError(
+                f"OpenAI Responses API 失败: status={resp.status_code} "
+                f"body={resp.text[:500]}"
+            )
+
+        raise RuntimeError(
+            f"GPT 决策异常: 重试 {attempts_max} 次仍失败"
+            + (f"，最近一次：{last_exc.__class__.__name__}: {last_exc}" if last_exc else "")
+        )
 
     # ------------------------------------------------------------------
     # 主决策
@@ -245,22 +321,31 @@ class GPTComputerUseClient:
             "Content-Type": "application/json",
         }
 
+        # 单次 timeout：分段重置后首轮（segment > 1 且 previous_response_id 已
+        # 归零）服务端无法命中显式缓存，整个 instructions 前缀 + 续接 hint 都
+        # 要重新推理，单次耗时显著拉长。给 timeout 翻倍兜底，避免 ReadTimeout
+        # 把这个本来能正常响应的请求误杀。与 VLMClient 同款策略。
+        is_first_turn_local = self.previous_response_id is None
+        turn_timeout = float(self.timeout)
+        if is_first_turn_local and self.segment_count > 1:
+            turn_timeout = max(turn_timeout, float(self.timeout) * 2)
+
         t0 = time.monotonic()
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.post(self.api_url, json=payload, headers=headers)
-            if resp.status_code != 200:
-                raise RuntimeError(
-                    f"OpenAI Responses API 失败: status={resp.status_code} "
-                    f"body={resp.text[:500]}"
-                )
-            data = resp.json()
+            data = await self._post_with_retry(
+                payload, headers, timeout_seconds=turn_timeout
+            )
             elapsed_ms = int((time.monotonic() - t0) * 1000)
         except Exception as exc:
             if pending_backup:
                 self.pending_hints[:0] = pending_backup
             logger.exception("GPT 决策异常")
-            raise RuntimeError(f"GPT 决策异常: {exc}") from exc
+            # 带上 exc 类名：httpx.ReadTimeout / httpx.ConnectError 等网络
+            # 异常的 str(exc) 在新版 httpx 里是空字符串，没 class 名根本看不
+            # 出错因。与 VLMClient / ClaudeCUClient 保持一致。
+            raise RuntimeError(
+                f"GPT 决策异常: {exc.__class__.__name__}: {exc}"
+            ) from exc
 
         # ③ 解析 response.output blocks
         thought, computer_calls, platform_actions, finish_action = (

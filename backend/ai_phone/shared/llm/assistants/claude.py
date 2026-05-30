@@ -76,9 +76,14 @@ class ClaudeAssistant:
                 "AI_PHONE_ASSISTANT_API_KEY / AI_PHONE_ASSISTANT_MODEL"
             )
 
+        # max_tokens=8192：anthropic /v1/messages 是硬上限不是目标值。
+        # 辅助系统的 chat_text 会承担通道判定 / 审判 / 子步骤拆解三种场景，
+        # 审判模式开 thinking 时 thought 长尾可达数千 token，4096 偶发被截
+        # 后整个 JSON / DSL 输出不闭合，被解析层判错。统一拉到 8192，
+        # 与 trajectory_cache 几个辅助 vlm 站点对齐。
         payload: Dict[str, Any] = {
             "model": model,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "messages": messages,
         }
         if system:
@@ -164,6 +169,12 @@ class ClaudeAssistant:
             "2. Find the best-matching package from the list\n"
             "3. Output ONLY the full package name (no explanation, no extra text)\n"
             "4. If no match, output \"NONE\"\n\n"
+            "Business note: if the user description contains 「洋葱」 (e.g. 「洋葱学园」, "
+            "「洋葱数学」), pay special attention to packages whose name contains "
+            "\"yangcong\", \"guanghe\", or \"ycmath\". On iOS the apps from this "
+            "vendor use multiple naming conventions (public builds often use "
+            "yangcong345, enterprise/test builds often use guanghe or ycmath); "
+            "do NOT skip a candidate just because it lacks the literal \"yangcong\".\n\n"
             "Output format: package name only"
         )
         target = await self._post(
@@ -276,9 +287,12 @@ class ClaudeAssistant:
                 "AI_PHONE_ASSISTANT_API_KEY / AI_PHONE_ASSISTANT_MODEL"
             )
 
+        # max_tokens=8192：finished 终局裁决要带图比对动作前后两帧并写完整
+        # 理由（断言通过 / 不通过 / 需要重试），与 chat_text 同样存在长尾
+        # 截断风险。anthropic /v1/messages 是硬上限不是目标值，调高只防截断。
         payload: Dict[str, Any] = {
             "model": model,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "temperature": temperature,
             "system": system,
             "messages": [{"role": "user", "content": user}],

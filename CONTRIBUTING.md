@@ -44,14 +44,18 @@ cd web && npm run build
 cd midscene-bridge && npm run build
 ```
 
-The GitHub Actions workflow runs the same baseline checks for pull requests.
+GitHub Actions may be run manually when maintainer quota and timing allow. Do
+not assume that every pull request will receive automatic CI.
 
 ## Pull Request Guidelines
 
-This repository is maintained as an upstream reference implementation. Pull
-requests are welcome as bug reports, design references, or candidate patches, but
-they are not guaranteed to be merged. The maintainer may reimplement, adapt, or
-decline a contribution to keep the main branch stable and maintainable.
+This repository is maintained as an upstream reference implementation. Official
+branches are maintained by the original author. Issues and Discussions are the
+preferred collaboration path for problems, scenarios, and design tradeoffs.
+Pull requests are welcome as bug reports, design references, or candidate
+patches, but they are not guaranteed to be reviewed, responded to, accepted, or
+merged. The maintainer may reimplement, adapt, or decline a contribution to keep
+the official branch stable and maintainable.
 
 - Keep changes focused on one behavior or one document area.
 - Include tests for backend scheduling, locking, API, runner, or protocol
@@ -63,6 +67,16 @@ decline a contribution to keep the main branch stable and maintainable.
 - Explain device/platform assumptions for iOS, Android, or HarmonyOS changes.
 - Avoid logging tokens, provider API keys, device identifiers from private
   fleets, or report URLs that contain sensitive data.
+
+## Forks and Third-Party Versions
+
+Forks and long-lived downstream branches are welcome. Modified or redistributed
+versions must continue to comply with GNU GPLv3 and preserve the original
+license, source attribution, and third-party notices.
+
+Third-party versions must not present themselves as the official ai-phone
+release or imply maintenance, publication, or endorsement by the original
+maintainer.
 
 ## Issue Reports
 

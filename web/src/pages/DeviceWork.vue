@@ -24,11 +24,45 @@ const submitError = ref(null)
 // 详见仓库根 Midscene执行器接入方案.md
 const selectedEngine = ref('vlm')
 const midsceneEnabled = ref(false)
+const selectedCacheMode = ref('off')
+const retryEnabled = ref(false)
+const retryMaxLimit = ref(0)
+const selectedRetryMax = ref(0)
 // 屏幕尺寸（设备端逻辑像素），用于点击坐标归一化；没拿到前按 video 元素尺寸兜底
 const devicePixel = ref({ w: 0, h: 0 })
 const tapBusy = ref(false)
 // 进入页面抢锁的结果：null=还没试/成功进入，非 null 就是被占用时要展示给用户的信息
 const blocked = ref(null)
+
+function executionModeText(mode) {
+  return mode === 'server_brain' ? 'Server 大脑' : 'Agent 大脑'
+}
+const currentRunModeText = computed(() => (
+  currentRun.value ? executionModeText(currentRun.value.execution_mode) : ''
+))
+const currentRunAgent = computed(() => (
+  currentRun.value?.agent_id_at_start || currentRun.value?.agent_id || ''
+))
+const currentRunError = computed(() => normalizeErrorSummary(currentRun.value?.error_summary))
+
+function normalizeErrorSummary(summary) {
+  if (!summary) return null
+  const category = summary.category || 'unknown'
+  const meta = {
+    model: { label: '模型错误', cls: 'model' },
+    device: { label: '设备错误', cls: 'device' },
+    network: { label: '网络 / RPC', cls: 'network' },
+    agent_offline: { label: 'Agent 离线', cls: 'offline' },
+    stopped: { label: '已停止', cls: 'stopped' },
+    unknown: { label: '未知错误', cls: 'unknown' },
+  }[category] || { label: category, cls: 'unknown' }
+  return {
+    ...summary,
+    label: meta.label,
+    cls: meta.cls,
+    message: summary.message || summary.title || '',
+  }
+}
 
 // 两套镜像后端并存，收到第一条消息时定下 mirrorMode 再也不切：
 // - 'mse'  →  useMseMirror（<video> + H.264 + MSE）。Android scrcpy / iOS wda_mjpeg /
@@ -77,10 +111,11 @@ const mirrorError = computed(() => (
   mirrorMode.value === 'jpeg' ? jpegMirror.error.value : mirror.error.value
 ))
 
-// 镜像容器：用于旋转时同步翻转外框宽高，避免横屏画面被塞进竖框
+// 镜像容器：用户仍可右下角手动横向/纵向拉伸；设备横竖屏变化只改变内部画面
+// object-fit，不再自动改外框宽高，避免日志侧被旋转事件无意挤压。
 const mirrorWrap = ref(null)
-// 右栏高度：用 ResizeObserver 跟随 mirror-wrap 实时高度。CSS Grid 的 auto
-// 行高会被 LogPane 的 max-content 撑爆，必须用 JS 强制顶住
+// 右栏高度跟随用户手动调整后的镜像框高度；横竖屏变化不再改镜像框，所以不会
+// 因旋转触发日志区抖动。
 const rightColHeight = ref(null)
 const rightColStyle = computed(() => (
   rightColHeight.value ? { height: `${rightColHeight.value}px` } : {}
@@ -115,36 +150,16 @@ function _onVideoSizeChange() {
   frameSize.value = { w, h }
   const isLandscape = w > h
   if (lastIsLandscape === null) {
-    // 第一次拿到视频尺寸：仅记录方向，竖屏保留 CSS 默认竖框不动容器。
-    // 但如果**首帧就是横屏**（典型：用户打开工作台时 iPhone 正在横屏玩游戏 /
-    // 看视频），必须主动翻一次 wrap，否则横屏画面被塞进竖框里只占一半。
-    // 副作用（wrap 宽高变成 inline 像素脱离 calc）在这个场景下可以接受：
-    // 既然画面就是横的，用户期望的就是横框，丢失响应式 resize 也没啥不对。
+    // 第一次拿到视频尺寸只记录方向。外框尺寸由用户拖拽决定，横屏/竖屏画面
+    // 都在当前左侧容器里 object-fit: contain，避免设备旋转时推挤右侧日志。
     lastIsLandscape = isLandscape
-    if (isLandscape) {
-      _swapWrapWH()
-    }
     return
   }
   if (isLandscape !== lastIsLandscape) {
     lastIsLandscape = isLandscape
-    _swapWrapWH()
     // 旋转后设备 logical (w, h) 会互换，立刻拉一次最新设备信息，避免
     // 接下来这几秒 devicePixel 还是旧方向、手动 tap 坐标算错
     refreshDevice()
-  }
-}
-function _swapWrapWH() {
-  // 把 mirror-wrap 当前的 width 和 height 互换；保留用户拖拽出的"对角线大小"，
-  // 只是把方向翻转。后续 resize:both 仍然能用
-  const wrap = mirrorWrap.value
-  if (!wrap) return
-  const cs = window.getComputedStyle(wrap)
-  const w = parseFloat(cs.width)
-  const h = parseFloat(cs.height)
-  if (w > 0 && h > 0) {
-    wrap.style.width = `${Math.round(h)}px`
-    wrap.style.height = `${Math.round(w)}px`
   }
 }
 
@@ -450,11 +465,25 @@ function onMirrorDragStart(ev) {
 
 // MSE 段计数器：仅用于 console 节流诊断，不参与渲染（不需要 ref）
 let _segCount = 0
+let _logSeq = 0
+
+function logTsMs(value) {
+  if (!value) return Date.now()
+  if (typeof value === 'number') return value > 1e12 ? value : value * 1000
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : Date.now()
+}
 
 function pushLog(entry) {
+  const timestamp = entry.timestamp || entry.ts || Date.now() / 1000
   logs.value.push({
     ...entry,
-    timestamp: entry.timestamp || entry.ts || Date.now() / 1000,
+    timestamp,
+    __seq: _logSeq++,
+  })
+  logs.value.sort((a, b) => {
+    const d = logTsMs(a.timestamp || a.ts) - logTsMs(b.timestamp || b.ts)
+    return d || ((a.__seq || 0) - (b.__seq || 0))
   })
   if (logs.value.length > 2000) {
     logs.value.splice(0, logs.value.length - 2000)
@@ -468,16 +497,15 @@ function onMessage(msg) {
       pushLog(msg)
       break
     case 'step_done':
-      // 步骤截图只进日志面板（缩略图 + 全屏预览），不再覆盖到 mirror 上：
-      // mirror 始终显示 <video> 实时流；步骤截图属于"事后存档"，覆盖反而打断观感
+      // step_done 是步骤文字汇总；截图已经由 frame 事件单独展示，避免同一张
+      // after 图在实时日志里重复出现。
       pushLog({
         level: msg.unknown ? 2 : 1,
-        title: `第 ${msg.step} 步 ${msg.action_type || msg.action || ''}`,
+        title: `第 ${msg.step} 步完成${msg.action_type || msg.action ? ` · ${msg.action_type || msg.action}` : ''}`,
         content: msg.thought ? `${msg.thought}` : '',
         step: msg.step,
-        timestamp: Date.now() / 1000,
-        image_url: msg.after_url || msg.before_url || null,
-        image_label: msg.after_url ? 'after' : msg.before_url ? 'before' : null,
+        attempt: msg.attempt,
+        timestamp: msg.ts || Date.now() / 1000,
       })
       break
     case 'video_init':
@@ -519,11 +547,12 @@ function onMessage(msg) {
         pushLog({
           level: 1,
           step: msg.step,
+          attempt: msg.attempt,
           title: '截图',
           content: `phase=${msg.phase || 'frame'}`,
           image_url: msg.frame_url,
           image_label: msg.phase || 'frame',
-          timestamp: Date.now() / 1000,
+          timestamp: msg.ts || Date.now() / 1000,
         })
       }
       break
@@ -534,7 +563,8 @@ function onMessage(msg) {
         level: isOk ? 1 : 3,
         title: `Run 结束 → ${msg.result}`,
         content: msg.message || '',
-        timestamp: Date.now() / 1000,
+        attempt: msg.attempt,
+        timestamp: msg.ts || Date.now() / 1000,
       })
       // 拿一次最新的 Run 记录，把 external_report_url（外接引擎，如 Midscene）刷出来
       // 让"打开外部报告"按钮生效
@@ -555,7 +585,7 @@ function onMessage(msg) {
         level: 1,
         title: '设备状态',
         content: `status=${msg.status}`,
-        timestamp: Date.now() / 1000,
+        timestamp: msg.ts || Date.now() / 1000,
       })
       break
     case 'device_status':
@@ -567,7 +597,7 @@ function onMessage(msg) {
           level: 3,
           title: msg.title || 'WDA 启动失败',
           content: msg.hint || '',
-          timestamp: Date.now() / 1000,
+          timestamp: msg.ts || Date.now() / 1000,
         })
       }
       break
@@ -592,13 +622,17 @@ async function startRun() {
       // engine：缺省 'vlm'（与历史行为完全等价）；'midscene' 仅在后端
       // AI_PHONE_MIDSCENE_ENABLED=true 时被接受，下拉框也仅在那时可见
       engine: selectedEngine.value || 'vlm',
+      cacheMode: selectedCacheMode.value || 'off',
+      retryMax: Number(selectedRetryMax.value || 0),
     })
     currentRunId.value = res.id
     currentRun.value = res
     pushLog({
       level: 1,
       title: `创建 Run ${res.id.slice(0, 8)}`,
-      content: res.dispatched ? '已派发到 Agent' : '尚无 Agent 在线，未派发',
+      content: res.dispatched
+        ? `已派发 · ${executionModeText(res.execution_mode)}`
+        : '尚无 Agent 在线，未派发',
       timestamp: Date.now() / 1000,
     })
   } catch (e) {
@@ -628,8 +662,18 @@ onMounted(async () => {
   // 拉一次后端功能开关：是否暴露 Midscene 引擎下拉框等
   // 失败不阻塞主流程；缺省按"全部关闭"渲染
   api.getConfig()
-    .then((cfg) => { midsceneEnabled.value = !!cfg?.midscene_enabled })
-    .catch(() => { midsceneEnabled.value = false })
+    .then((cfg) => {
+      midsceneEnabled.value = !!cfg?.midscene_enabled
+      retryEnabled.value = !!cfg?.run_retry_enabled
+      retryMaxLimit.value = Number(cfg?.run_retry_max || 0)
+      if (!retryEnabled.value) selectedRetryMax.value = 0
+    })
+    .catch(() => {
+      midsceneEnabled.value = false
+      retryEnabled.value = false
+      retryMaxLimit.value = 0
+      selectedRetryMax.value = 0
+    })
 
   await refreshDevice()
   // 先抢锁：409 意味着别的 tab / job 已占用，按"报错拦截"方案渲染提示页，不开 WS
@@ -653,11 +697,12 @@ onMounted(async () => {
     }
     return
   }
-  // 监听视频/图像帧尺寸变化（设备旋转 / 第一帧到达）：自动翻转外框 W×H
+  // 监听视频/图像帧尺寸变化（设备旋转 / 第一帧到达）：只更新画面方向与
+  // 坐标映射，不再自动改镜像外框尺寸，避免右侧日志被横竖屏变化带着抖。
   // <video>: loadedmetadata + resize（videoWidth/Height 变就 fire）
   // <img>:   load（每次 src 切换都 fire，JPEG passthrough 每帧都会触发）
   //          load 频率虽然高，但 _onVideoSizeChange 内部做了 lastIsLandscape
-  //          去重，只在方向变化时才真正翻框，代价极低
+  //          去重，只在方向变化时刷新设备尺寸，代价极低
   if (videoEl.value) {
     videoEl.value.addEventListener('loadedmetadata', _onVideoSizeChange)
     videoEl.value.addEventListener('resize', _onVideoSizeChange)
@@ -665,14 +710,14 @@ onMounted(async () => {
   if (imgEl.value) {
     imgEl.value.addEventListener('load', _onVideoSizeChange)
   }
-  // 实时把 mirror-wrap 的高度同步给 .right，让日志面板与镜像顶部底部对齐
+  // 高度只跟随用户手动调整的镜像框；设备旋转不再自动改 mirror-wrap 宽高，
+  // 所以不会因为横竖屏变化牵动右侧日志。
   if (mirrorWrap.value && typeof ResizeObserver !== 'undefined') {
     _wrapResizeObserver = new ResizeObserver(() => {
       const el = mirrorWrap.value
       if (el) rightColHeight.value = el.clientHeight
     })
     _wrapResizeObserver.observe(mirrorWrap.value)
-    // 立刻同步一次，避免首屏日志先撑大再回弹
     rightColHeight.value = mirrorWrap.value.clientHeight
   }
   sub = openDeviceStream(serial.value, {
@@ -889,6 +934,31 @@ watch(
               <option value="midscene">midscene（外接寄居）</option>
             </select>
           </div>
+          <div class="engine-row">
+            <label>轨迹缓存</label>
+            <select
+              v-model="selectedCacheMode"
+              :disabled="!!currentRunId || lock.readonly.value"
+            >
+              <option value="off">off（不使用缓存）</option>
+              <option value="v1">v1（旧轨迹缓存）</option>
+              <option value="v2">v2（路标回放）</option>
+              <option value="v3">v3（语义重定位）</option>
+            </select>
+          </div>
+          <div class="engine-row">
+            <label>失败重跑</label>
+            <input
+              v-model.number="selectedRetryMax"
+              type="number"
+              min="0"
+              :max="retryMaxLimit || 0"
+              :disabled="!!currentRunId || lock.readonly.value || !retryEnabled || !retryMaxLimit"
+            />
+            <span class="engine-hint">
+              {{ retryEnabled && retryMaxLimit ? `最多 ${retryMaxLimit} 次` : '后端未启用' }}
+            </span>
+          </div>
           <label>Goal（自然语言目标）</label>
           <textarea
             v-model="goal"
@@ -904,7 +974,21 @@ watch(
             <button class="ghost" @click="clearLogs">清空日志</button>
           </div>
           <p v-if="submitError" class="err">{{ submitError }}</p>
-          <p v-if="currentRunId" class="info">run_id: {{ currentRunId }}</p>
+          <div v-if="currentRun" class="run-meta">
+            <span class="mode-pill" :class="currentRun.execution_mode === 'server_brain' ? 'server' : 'agent'">
+              {{ currentRunModeText }}
+            </span>
+            <span class="mode-pill cache">cache: {{ currentRun.cacheMode || currentRun.effective_cache_mode || 'off' }}</span>
+            <span class="mode-pill cache">retry: {{ currentRun.effective_retry_max || currentRun.retryMax || 0 }} / attempts {{ currentRun.attempts || 1 }}</span>
+            <span>run_id: <code>{{ currentRun.id }}</code></span>
+            <span v-if="currentRunAgent">Agent: <code>{{ currentRunAgent }}</code></span>
+            <span v-if="currentRun.dispatch_source">入口: {{ currentRun.dispatch_source }}</span>
+          </div>
+          <div v-if="currentRunError" class="error-summary" :class="currentRunError.cls">
+            <span class="error-label">{{ currentRunError.label }}</span>
+            <span v-if="currentRunError.error_class" class="error-class">{{ currentRunError.error_class }}</span>
+            <span class="error-message">{{ currentRunError.message }}</span>
+          </div>
           <!-- 外接引擎（如 Midscene）跑完后展示报告链接；vlm 路径永远不带这个字段 -->
           <p v-if="!currentRunId && currentRun && currentRun.external_report_url" class="info">
             <a :href="currentRun.external_report_url" target="_blank" rel="noopener">
@@ -1051,11 +1135,9 @@ h2 {
 
 .layout {
   display: grid;
-  /* 左列宽度跟随 .mirror-wrap（用户拖拽可调），右列吃剩余空间 */
+  /* 左列宽度跟随用户手动 resize 的 .mirror-wrap；横竖屏变化不会自动改列宽。 */
   grid-template-columns: auto minmax(320px, 1fr);
   gap: 16px;
-  /* align-items 默认 stretch：右栏自动跟随左栏（mirror-wrap）的高度，
-     这样日志面板 + Goal 面板的总高就和预览区平齐，不再多出一段 */
 }
 @media (max-width: 1080px) {
   .layout {
@@ -1067,6 +1149,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 .mirror-wrap {
   display: flex;
@@ -1075,7 +1158,7 @@ h2 {
   border: 1px solid #2a2f38;
   overflow: hidden;
   background: #0d1117;
-  /* 用户可任意拖拽右下角调整预览区大小；min/max 给一个合理范围 */
+  /* 用户可手动横向/纵向拉伸；设备旋转只改变内部画面比例，不再自动翻外框。 */
   resize: both;
   width: 420px;
   height: calc(100vh - 160px);
@@ -1324,7 +1407,8 @@ h2 {
   color: #374151;
   white-space: nowrap;
 }
-.engine-row select {
+.engine-row select,
+.engine-row input {
   flex: 1;
   padding: 6px 8px;
   border: 1px solid #d1d5db;
@@ -1332,9 +1416,15 @@ h2 {
   font-size: 13px;
   background: #fff;
 }
-.engine-row select:disabled {
+.engine-row select:disabled,
+.engine-row input:disabled {
   background: #f3f4f6;
   cursor: not-allowed;
+}
+.engine-hint {
+  color: #6b7280;
+  font-size: 12px;
+  white-space: nowrap;
 }
 .btn-row {
   display: flex;
@@ -1384,5 +1474,87 @@ h2 {
   color: #6b7280;
   font-size: 12px;
   font-family: ui-monospace, SF Mono, Menlo, monospace;
+}
+.run-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 2px;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.run-meta code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.mode-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid #d1d5db;
+  color: #374151;
+  background: #f9fafb;
+}
+.mode-pill.server {
+  color: #065f46;
+  background: #d1fae5;
+  border-color: #a7f3d0;
+}
+.mode-pill.agent {
+  color: #374151;
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+.mode-pill.cache {
+  color: #1e40af;
+  background: #dbeafe;
+  border-color: #bfdbfe;
+}
+.error-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #374151;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.error-summary.model,
+.error-summary.network,
+.error-summary.unknown {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+.error-summary.device,
+.error-summary.offline {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.error-summary.stopped {
+  color: #374151;
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+.error-label {
+  font-weight: 800;
+}
+.error-class {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 0.85;
+}
+.error-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 </style>

@@ -32,6 +32,7 @@ and-tools/tool-use/computer-use-tool）。
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import copy
 import json
@@ -45,6 +46,15 @@ from loguru import logger
 from ai_phone.config import get_settings
 from ai_phone.shared.actions import ParsedAction, X11_TO_ANDROID_KEYCODE
 from ai_phone.shared.llm.base import Decision, TokenCounter
+
+
+# 网络/超时类异常 → 自动重试 1 次（与 VLMClient / GPTCUClient 保持一致）。
+# ``TransportError`` 是基类，覆盖 ``NetworkError`` / ``RemoteProtocolError``
+# / ``ReadError`` / ``WriteError``。
+_CLAUDE_RETRIABLE_NET_ERRORS: Tuple[type, ...] = (
+    httpx.TimeoutException,
+    httpx.TransportError,
+)
 
 __all__ = ["ClaudeComputerUseClient"]
 
@@ -101,6 +111,7 @@ class ClaudeComputerUseClient:
         timeout_seconds: float = 120.0,
         # 留给单测注入的 hook，生产路径不传
         history_window_steps: Optional[int] = None,
+        thinking_budget: Optional[int] = None,
     ) -> None:
         settings = get_settings()
         self.api_url = (api_url or settings.vlm_api_url or "").strip()
@@ -136,7 +147,10 @@ class ClaudeComputerUseClient:
         )
 
         # 思考预算（tokens），0 / 负数 → 关闭 thinking
-        self._thinking_budget = max(0, int(settings.vlm_main_thinking_budget))
+        self._thinking_budget = max(
+            0,
+            int(settings.vlm_main_thinking_budget if thinking_budget is None else thinking_budget),
+        )
 
         # Anthropic prompt caching 开关。开启时 system / tools / 历史前缀打
         # cache_control 标记，Anthropic 端按 5min TTL 缓存复用——cache hit
@@ -173,6 +187,80 @@ class ClaudeComputerUseClient:
         if resume_hint:
             self.pending_hints.append(resume_hint)
         return f"cleared-{old_count}-msgs" if old_count else None
+
+    # ------------------------------------------------------------------
+    # HTTP 工具
+    # ------------------------------------------------------------------
+    async def _post_with_retry(
+        self,
+        payload: Dict[str, Any],
+        headers: Dict[str, str],
+        *,
+        request_messages: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """对 Anthropic Messages API 做 1 次重试的 POST 包装。
+
+        重试条件（仅这两类，业务异常立刻抛）：
+        - httpx 网络/超时类：``TimeoutException`` / ``TransportError``
+        - HTTP 5xx / 429（限流）
+
+        4xx（除 429）= payload 本身错（schema / tool_use 链断裂等）→ 重试
+        无意义；仍按既有逻辑 dump assistant 块摘要后抛。
+        """
+        attempts_max = 2
+        retry_backoff_sec = 0.5
+        last_exc: Optional[BaseException] = None
+        for attempt_idx in range(attempts_max):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    resp = await client.post(
+                        self.api_url, json=payload, headers=headers
+                    )
+            except _CLAUDE_RETRIABLE_NET_ERRORS as net_exc:
+                last_exc = net_exc
+                if attempt_idx + 1 >= attempts_max:
+                    raise
+                logger.warning(
+                    "Claude 决策网络异常 ({}: {})，{:.1f}s 后重试 1 次",
+                    net_exc.__class__.__name__, net_exc, retry_backoff_sec,
+                )
+                await asyncio.sleep(retry_backoff_sec)
+                continue
+
+            if resp.status_code == 200:
+                return resp.json()
+
+            if (resp.status_code == 429 or 500 <= resp.status_code < 600) \
+                    and attempt_idx + 1 < attempts_max:
+                logger.warning(
+                    "Claude Messages API status={} body={}，{:.1f}s 后重试 1 次",
+                    resp.status_code, resp.text[:200], retry_backoff_sec,
+                )
+                await asyncio.sleep(retry_backoff_sec)
+                continue
+
+            # 4xx 客户端错误（含 422 schema 校验）：dump 本次请求 messages 里
+            # 所有 assistant 块的关键字段摘要，便于快速判断是 tool_use ↔
+            # tool_result 失配、还是 thinking 缺 signature、还是其它新增校验。
+            # 5xx 服务端错误不 dump（与我们 payload 无关）。
+            if 400 <= resp.status_code < 500:
+                block_summary = _summarize_assistant_blocks(request_messages)
+                logger.error(
+                    "Claude Messages 4xx | status={} | body={} | "
+                    "assistant_blocks={}",
+                    resp.status_code,
+                    resp.text[:500],
+                    block_summary,
+                )
+            raise RuntimeError(
+                f"Claude Messages API 失败: status={resp.status_code} "
+                f"body={resp.text[:500]}"
+            )
+
+        raise RuntimeError(
+            f"Claude 决策异常: 重试 {attempts_max} 次仍失败"
+            + (f"，最近一次：{last_exc.__class__.__name__}: {last_exc}" if last_exc else "")
+        )
 
     # ------------------------------------------------------------------
     # 主决策
@@ -276,9 +364,15 @@ class ClaudeComputerUseClient:
         else:
             system_field = self.system_prompt
 
+        # max_tokens=8192：主 VLM 走 Computer Use agent loop，每轮要在同一个
+        # response 里写完 thought + tool_use（claude 4.x 还可能挂 thinking 块）。
+        # 4096 在长 thought / extended thinking 场景偶发把 tool_use 截掉一半，
+        # 整步动作丢失（比 finished 截断后果更严重，是直接卡死 agent loop）。
+        # 8192 是 claude 3.5 / 4 / 4.5 全系合法上限，调高不会让模型主动多写，
+        # 只是把"输出预算"这个硬约束抬到长尾之外，与辅助 vlm 各站点对齐。
         payload: Dict[str, Any] = {
             "model": self.model,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "system": system_field,
             "messages": request_messages,
             "tools": [computer_tool],
@@ -304,34 +398,21 @@ class ClaudeComputerUseClient:
 
         t0 = time.monotonic()
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.post(self.api_url, json=payload, headers=headers)
-            if resp.status_code != 200:
-                # 4xx 客户端错误（含 422 schema 校验）：dump 本次请求 messages
-                # 里所有 assistant 块的关键字段摘要，便于快速判断是 tool_use ↔
-                # tool_result 失配、还是 thinking 缺 signature、还是其它新增
-                # 校验。5xx 服务端错误不 dump（与我们 payload 无关）。
-                if 400 <= resp.status_code < 500:
-                    block_summary = _summarize_assistant_blocks(request_messages)
-                    logger.error(
-                        "Claude Messages 4xx | status={} | body={} | "
-                        "assistant_blocks={}",
-                        resp.status_code,
-                        resp.text[:500],
-                        block_summary,
-                    )
-                raise RuntimeError(
-                    f"Claude Messages API 失败: status={resp.status_code} "
-                    f"body={resp.text[:500]}"
-                )
-            data = resp.json()
+            data = await self._post_with_retry(
+                payload, headers, request_messages=request_messages
+            )
             elapsed_ms = int((time.monotonic() - t0) * 1000)
         except Exception as exc:
             # 请求失败：把 hints 退回队头，避免丢提示
             if pending_backup:
                 self.pending_hints[:0] = pending_backup
             logger.exception("Claude 决策异常")
-            raise RuntimeError(f"Claude 决策异常: {exc}") from exc
+            # 带上 exc 类名：httpx.ReadTimeout / httpx.ConnectError 等网络
+            # 异常的 str(exc) 在新版 httpx 里是空字符串，没 class 名根本看不
+            # 出错因。与 VLMClient / GPTCUClient 保持一致。
+            raise RuntimeError(
+                f"Claude 决策异常: {exc.__class__.__name__}: {exc}"
+            ) from exc
 
         # ④ 解析 response.content blocks
         thought, tool_uses, platform_actions, finish_action = _parse_claude_response(

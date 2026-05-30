@@ -11,10 +11,13 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
 
 import httpx
 from loguru import logger
+
+if TYPE_CHECKING:
+    from ai_phone.agent.reliable_reporter import ReliableReporter
 
 from ai_phone.agent.runner.events import (
     EVT_ACTION,
@@ -44,11 +47,14 @@ class RunnerBridge:
         serial: str,
         ws_send: SendFn,
         server_http_base: str,
+        attempt: int = 1,
         loop: Optional[asyncio.AbstractEventLoop] = None,
         http_timeout: float = 15.0,
+        reporter: Optional["ReliableReporter"] = None,
     ):
         self.run_id = run_id
         self.serial = serial
+        self.attempt = max(1, int(attempt or 1))
         self._send = ws_send
         self._http = httpx.AsyncClient(base_url=server_http_base, timeout=http_timeout)
         self._loop = loop or asyncio.get_event_loop()
@@ -65,9 +71,19 @@ class RunnerBridge:
         # RUN_FINISH（历史就踩过这个坑，Run.token_summary 一直是 {}），
         # bridge 这层还能补回去。
         self._last_token_stats: Dict[str, Any] = {}
+        # ---- M3 可靠上报 ----
+        # "可靠"由进程级 ReliableReporter（统一收发室）统一负责：本 bridge 只把上报
+        # 交给它入队，串行发送 / 断线留存 / 重连补发 / 跨 run 存活都在那层 —— 因此
+        # 即便本 run 结束、bridge 销毁，未发出的终态仍留在队列里等补发，不会丢。
+        # reporter 为 None 时退化为"直接发"（best-effort），仅用于不关心可靠性的
+        # 单元测试；生产路径一律由 main.py 注入全局 reporter。
+        self._reporter = reporter
 
     async def aclose(self) -> None:
-        # 等所有未完成的上传结束再关 client
+        # 等所有未完成的截图上传结束再关 http client。
+        # 注意：上报队列归进程级 reporter 所有，**不在这里 flush / 销毁** —— 这正是
+        # "run 在断网期间结束、终态也不丢"的关键：bridge 关了，未发出的消息仍由
+        # reporter 持有、等重连补发。
         if self._pending_uploads:
             await asyncio.gather(*self._pending_uploads, return_exceptions=True)
         await self._http.aclose()
@@ -116,7 +132,6 @@ class RunnerBridge:
                         "cache_read_tokens",
                         "cache_write_tokens",
                         "cache_accounting",
-                        "vlm_backend",
                         "by_scene",
                     )
                     if evt.get(k) is not None
@@ -141,14 +156,16 @@ class RunnerBridge:
                         f"total={evt.get('total_tokens')}"
                     )
                 self._enqueue(
-                    self._send(
+                    self._reliable_send(
                         {
                             "type": P.MSG_LOG,
                             "run_id": self.run_id,
                             "serial": self.serial,
+                            "attempt": self.attempt,
                             "level": 1,
                             "title": "Token 统计",
                             "content": token_content,
+                            "ts": evt.get("ts"),
                         }
                     )
                 )
@@ -166,15 +183,19 @@ class RunnerBridge:
     # 具体转发
     # ------------------------------------------------------------------
     async def _forward_log(self, evt: Dict[str, Any]) -> None:
-        await self._send(
+        await self._reliable_send(
             {
                 "type": P.MSG_LOG,
                 "run_id": self.run_id,
                 "serial": self.serial,
+                "attempt": self.attempt,
                 "level": int(evt.get("level", 1)),
                 "step": evt.get("step"),
                 "title": evt.get("title", ""),
                 "content": evt.get("content", ""),
+                # 透传 Agent 端原始事件时间（make_event 的 ts，毫秒）。Server 落库
+                # 用它而非接收时间，保证缓存归档的"间隔时间/顺序"在断线补发下仍准确。
+                "ts": evt.get("ts"),
             }
         )
 
@@ -184,32 +205,65 @@ class RunnerBridge:
             return
         step = int(evt.get("step") or 0)
         phase = str(evt.get("phase") or "before")  # "before" | "after"
-        try:
-            resp = await self._http.post(
-                "/api/files/upload",
-                files={"file": (f"s{step}-{phase}.jpg", data, "image/jpeg")},
-                data={"content_type": "image/jpeg"},
-            )
-            resp.raise_for_status()
-            url = resp.json().get("url") or ""
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("上传截图失败 step={} phase={}: {}", step, phase, exc)
+        # 截图上传是该图落地的唯一途径，失败=报告永久缺图，所以带退避重试。
+        # bytes 只在本函数局部持有、不进 outbox（太大）；上传成功后只让 URL
+        # 随 step_done（可靠队列）/ frame（best-effort）下行，符合"只 URL 进"。
+        url = await self._upload_with_retry(data, step, phase)
+        if not url:
             return
         slot = self._pending_step_urls.setdefault(step, {})
         key = "before_url" if phase == "before" else "after_url"
         slot[key] = url
-        # 同时给浏览器推一条轻量 frame 消息，画面模块可以实时显示（M2 画面流之前的占位）
+        # 同时给浏览器推一条轻量 frame 消息，画面模块可以实时显示（M2 画面流之前的占位）。
+        # frame 仅作实时占位，丢了不影响报告（图已随 step_done 的 *_url 可靠送达），
+        # 所以保持 best-effort，不进可靠队列。
         await self._send(
             {
                 "type": P.MSG_FRAME,
                 "run_id": self.run_id,
                 "serial": self.serial,
+                "attempt": self.attempt,
                 "step": step,
                 "phase": phase,
                 "frame_url": url,
                 "ts": evt.get("ts"),
             }
         )
+
+    async def _upload_with_retry(
+        self, data: bytes, step: int, phase: str, *, attempts: int = 3
+    ) -> str:
+        """上传截图，带温和退避重试。成功返回 url，耗尽返回空串（报告该图缺失）。
+
+        退避刻意温和（0.3→0.6→1.2s，总等待 ~2s）：截图上传失败多是瞬时网抖，
+        短退避即可恢复；又因 step_end 会 await 这批上传后才合成 step_done，
+        重试过久会拖慢步骤上报节奏，故不长等。长时间断网时放弃缺图，但 step_done
+        本身仍走可靠队列、步骤数据不丢。
+        """
+        delay = 0.3
+        for i in range(1, attempts + 1):
+            try:
+                resp = await self._http.post(
+                    "/api/files/upload",
+                    files={"file": (f"s{step}-{phase}.jpg", data, "image/jpeg")},
+                    data={"content_type": "image/jpeg"},
+                )
+                resp.raise_for_status()
+                return resp.json().get("url") or ""
+            except Exception as exc:  # noqa: BLE001
+                if i >= attempts:
+                    logger.warning(
+                        "上传截图失败（第 {} 次，放弃）step={} phase={}: {}",
+                        i, step, phase, exc,
+                    )
+                    return ""
+                logger.debug(
+                    "上传截图失败（第 {} 次，{}s 后重试）step={} phase={}: {}",
+                    i, delay, step, phase, exc,
+                )
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 5.0)
+        return ""
 
     async def _forward_step_end(self, evt: Dict[str, Any]) -> None:
         step = int(evt.get("step") or 0)
@@ -223,11 +277,12 @@ class RunnerBridge:
             except Exception as exc:  # noqa: BLE001
                 logger.debug("等待 step={} 上传完成时异常: {}", step, exc)
         slot = self._pending_step_urls.pop(step, {})
-        await self._send(
+        await self._reliable_send(
             {
                 "type": P.MSG_STEP_DONE,
                 "run_id": self.run_id,
                 "serial": self.serial,
+                "attempt": self.attempt,
                 "step": step,
                 "thought": evt.get("thought", ""),
                 "action": evt.get("action", ""),
@@ -236,6 +291,7 @@ class RunnerBridge:
                 "unknown": bool(evt.get("unknown")),
                 "before_url": slot.get("before_url"),
                 "after_url": slot.get("after_url"),
+                "ts": evt.get("ts"),  # 原始事件时间，缓存归档时序保真用
             }
         )
 
@@ -255,6 +311,7 @@ class RunnerBridge:
             "type": P.MSG_RUN_DONE,
             "run_id": self.run_id,
             "serial": self.serial,
+            "attempt": self.attempt,
             "result": result,
             "message": message,
             "steps": int(evt.get("steps") or 0),
@@ -266,7 +323,43 @@ class RunnerBridge:
         external_report_url = evt.get("external_report_url")
         if external_report_url:
             payload["external_report_url"] = str(external_report_url)
-        await self._send(payload)
+        await self._reliable_send(payload)
+
+    # ------------------------------------------------------------------
+    # M3 可靠上报：交给进程级 ReliableReporter（统一收发室）
+    # ------------------------------------------------------------------
+    async def _reliable_send(self, msg: Dict[str, Any]) -> None:
+        """把一条上报交给可靠队列。
+
+        生产路径：注入了进程级 reporter —— 入队即返回；串行发送 / 断线留存 /
+        重连补发 / 跨 run 存活都在 reporter 那层，**本 run 结束也不会丢**。
+        退化路径：无 reporter（仅用于不关心可靠性的单测）—— 直接发、best-effort。
+        """
+        if self._reporter is not None:
+            await self._reporter.enqueue(msg)
+            return
+        try:
+            await self._send(msg)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "上报发送失败（无 reporter，best-effort）type={}: {}", msg.get("type"), exc
+            )
+
+    async def send_run_done(self, payload: Dict[str, Any]) -> None:
+        """供 main.py 旁路（前置失败 / 异常 / 取消）发终态用。
+
+        与正常 run_finish 一样走可靠队列：打 event_id + seq、断线留存、重连按序
+        补发、Server 按 event_id 去重。这样无论从哪条路径结束，run 终态都不丢。
+        """
+        await self._reliable_send(dict(payload))
+
+    async def send_cache_suspect(self, payload: Dict[str, Any]) -> None:
+        """命中缓存回放 / 断言失败 → 通知 Server 把该缓存标 suspect。
+
+        走可靠队列（同 run_done）：断线留存、重连补发，避免坏缓存因信号丢失而反复
+        命中。mark suspect 的实际写库在 Server（trajectory_cache.v3_service）。
+        """
+        await self._reliable_send(dict(payload))
 
     # ------------------------------------------------------------------
     def _enqueue(self, coro) -> asyncio.Task:

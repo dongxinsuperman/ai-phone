@@ -26,19 +26,32 @@ import inspect
 import io
 import socket
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+import time
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from PIL import Image
 from loguru import logger
 
 from ...config import get_settings
 from .base import BaseDriver, DeviceInfo
-from .ios_wda_launcher import IosWdaXcodeLauncher, _probe_wda_http
+from .ios_wda_launcher import IosWdaXcodeLauncher, _developer_app_trust_hint, _probe_wda_http
 from .wda_client import WdaClient, WdaError
 
 
 # WDA 在 iOS 内部监听的端口
 _WDA_DEVICE_PORT = 8100
+
+_IOS_SYSTEM_APP_BUNDLE_FALLBACKS: Tuple[str, ...] = (
+    "com.apple.Preferences",
+    "com.apple.mobilesafari",
+    "com.apple.mobileslideshow",
+    "com.apple.AppStore",
+    "com.apple.camera",
+    "com.apple.mobiletimer",
+    "com.apple.mobilecal",
+    "com.apple.mobilemail",
+    "com.apple.MobileSMS",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -403,6 +416,24 @@ class IosDriver(BaseDriver):
         self._scale: Optional[float] = None
 
     # ------------------------------------------------------------------
+    # Run 前准备
+    # ------------------------------------------------------------------
+    def prepare_for_run(self) -> None:
+        """Run 前只调用 WDA unlock；不复用带 press_home fallback 的旧唤醒路径。"""
+        try:
+            self._wda.unlock()
+            logger.info("iOS Run 前唤醒：wda.unlock serial={}", self.serial)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("iOS prepare_for_run unlock 失败 serial={}: {}", self.serial, exc)
+
+        settle_s = max(
+            0,
+            int(getattr(get_settings(), "ios_wake_before_run_settle_ms", 500)),
+        ) / 1000.0
+        if settle_s > 0:
+            time.sleep(settle_s)
+
+    # ------------------------------------------------------------------
     # 屏幕信息
     # ------------------------------------------------------------------
     def _get_scale(self) -> float:
@@ -600,9 +631,22 @@ class IosDriver(BaseDriver):
     # 输入 & 按键
     # ------------------------------------------------------------------
     def type_text(self, text: str) -> None:
+        """文本输入。
+
+        与 Android (``input text`` 直接 IME 注入) / Harmony (``hmdriver.input_text``)
+        的语义对齐：写完字立即收起软键盘，让后续 VLM 决策看到的截图是"键盘
+        已落"的状态。iOS WDA 走 IOHIDEvent，每次 type_text 必然弹起软键盘
+        且不会自动收，常常遮挡"完成 / 提交"等下方按钮，导致 VLM 后续无法
+        点击业务按钮。
+        """
         if not text:
             return
         self._wda.type_text(text)
+        try:
+            self._wda.dismiss_keyboard()
+        except Exception as exc:  # noqa: BLE001
+            # 极端兜底：老 WDA / 非常规键盘场景失败都不影响输入本身
+            logger.debug("[ios] dismiss_keyboard 忽略 udid={}: {}", self.serial, exc)
 
     def press_home(self) -> None:
         self._wda.press_button("home")
@@ -666,46 +710,252 @@ class IosDriver(BaseDriver):
         return self._list_apps(application_type="User")
 
     def list_all_packages(self) -> List[str]:
-        # application_type="Any" 会把 User + System + Internal 一起返回，含
-        # "设置 / 相册 / Safari / App Store" 等系统 bundle，便于 open_app 命中
-        return self._list_apps(application_type="Any")
+        # 不再依赖 application_type="Any" 作为唯一入口：部分低版本 iOS 设备上
+        # Any 会把 installation_proxy 管道打断。Run 语义只需要"用户应用 +
+        # 常见系统应用"，所以分开取 User/System，并允许单侧失败。
+        packages: List[str] = []
+        errors: List[str] = []
+        succeeded = False
+        for application_type in ("User", "System"):
+            try:
+                part = self._list_apps(application_type=application_type)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{application_type}: {type(exc).__name__}: {exc}")
+                logger.warning(
+                    "iOS list_all_packages 分段失败 udid={} type={}: {}",
+                    self.serial,
+                    application_type,
+                    exc,
+                )
+                continue
+            succeeded = True
+            packages.extend(part)
+
+        if succeeded:
+            packages.extend(_IOS_SYSTEM_APP_BUNDLE_FALLBACKS)
+            return [p for p in dict.fromkeys(packages) if p]
+
+        detail = "; ".join(errors) if errors else "no result"
+        raise RuntimeError(
+            f"iOS 列应用失败 udid={self.serial} type=User/System: {detail}"
+        )
 
     def _list_apps(self, *, application_type: str) -> List[str]:
-        try:
-            from pymobiledevice3.services.installation_proxy import (  # noqa: PLC0415
-                InstallationProxyService,
-            )
-            ip = InstallationProxyService(lockdown=self._lockdown)
-            _maybe_sync(ip.connect())
+        """iOS 取已装应用 bundle_id 列表。
+
+        iOS 17+ 把 ``com.apple.mobile.installation_proxy`` 列为 trusted lockdown
+        service：USB usbmuxd lockdown 通道直接 connect 会被 ``NotPairedError``
+        打回，必须走 tunneld 提供的 RemoteServiceDiscovery（RSD）lockdown。
+        本函数策略：
+
+        1. **优先**走 tunneld + RSD（iOS 17+ 唯一可行通道）
+        2. RSD 不可用时**回落**到 usbmux ``self._lockdown``（兼容 iOS 16 / 没起
+           tunneld 的环境，行为与升级前一致）
+        3. 全部失败时**不再吞异常返回空列表**，而是带原因 raise RuntimeError，
+           交由 vlm_loop 上层翻成「执行失败」RunLog，避免前端只看到含糊的
+           「无法获取设备应用列表」却不知道该开 tunneld。
+
+        附注：实测同一台 iOS 17+ 设备上，tunneld+RSD 与 usbmux 两路通道返回的
+        app 集合是一致的（差集为 0），所以不再做"两路合并去重"——多一次 IPC
+        没有收益，反而拖慢 close_app/open_app 起跑线。
+        """
+        last_exc: Optional[BaseException] = None
+
+        rsd = self._try_get_tunneld_rsd()
+        if rsd is not None:
             try:
-                apps = _maybe_sync(ip.get_apps(application_type=application_type)) or {}
+                apps = self._fetch_apps_via_lockdown(rsd, application_type)
+                logger.info(
+                    "iOS list_apps udid={} type={} via=tunneld+RSD count={}",
+                    self.serial,
+                    application_type,
+                    len(apps),
+                )
+                return apps
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                logger.warning(
+                    "iOS list_apps via tunneld+RSD 失败 udid={} type={}: {}",
+                    self.serial,
+                    application_type,
+                    exc,
+                )
             finally:
                 try:
-                    _maybe_sync(ip.close())
+                    _maybe_sync(rsd.close())
                 except Exception:  # noqa: BLE001
                     pass
-            # apps 是 dict[bundle_id -> {info}]；只回 bundle id 列表，对齐 Android 行为
-            return list(apps.keys())
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "iOS 列应用失败 udid={} type={}: {}",
+
+        try:
+            apps = self._fetch_apps_via_lockdown(self._lockdown, application_type)
+            logger.info(
+                "iOS list_apps udid={} type={} via=usbmux count={}",
                 self.serial,
                 application_type,
+                len(apps),
+            )
+            return apps
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+
+        hint = ""
+        exc_name = type(last_exc).__name__ if last_exc is not None else "未知"
+        if "NotPaired" in exc_name:
+            hint = (
+                "（iOS 17+ 需要 tunneld：在另一终端跑 "
+                "`sudo pymobiledevice3 remote tunneld` 并在 iPhone 上完成"
+                " Remote Pairing 确认弹窗，必要时先在 设置 → 隐私与安全性 → "
+                "开发者模式 中打开 Developer Mode）"
+            )
+        raise RuntimeError(
+            f"iOS 列应用失败 udid={self.serial} type={application_type}: "
+            f"{exc_name}: {last_exc}{hint}"
+        )
+
+    def _try_get_tunneld_rsd(self):
+        """尝试从 tunneld 拿到 RSD device。失败一律返回 None（让上层走回落）。
+
+        失败按 ``DEBUG`` 级别记录，不打 warning：tunneld 没启动是合法状态
+        （iOS 16 / 用户暂未配置），不应该刷 warning 日志干扰排查。
+        """
+        try:
+            from pymobiledevice3.tunneld.api import (  # noqa: PLC0415
+                get_tunneld_device_by_udid,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("udid={} pmd3 tunneld API 不可用: {}", self.serial, exc)
+            return None
+        try:
+            rsd = _maybe_sync(get_tunneld_device_by_udid(self.serial))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "udid={} 查询 tunneld 失败（未起 tunneld？）: {}",
+                self.serial,
                 exc,
             )
-            return []
+            return None
+        if rsd is None:
+            logger.debug(
+                "udid={} tunneld 没有这台设备；iOS 17+ 请先跑 "
+                "`sudo pymobiledevice3 remote tunneld`",
+                self.serial,
+            )
+        return rsd
+
+    def _fetch_apps_via_lockdown(self, lockdown, application_type: str) -> List[str]:
+        from pymobiledevice3.services.installation_proxy import (  # noqa: PLC0415
+            InstallationProxyService,
+        )
+        ip = InstallationProxyService(lockdown=lockdown)
+        _maybe_sync(ip.connect())
+        try:
+            apps = _maybe_sync(ip.get_apps(application_type=application_type)) or {}
+        finally:
+            try:
+                _maybe_sync(ip.close())
+            except Exception:  # noqa: BLE001
+                pass
+        return list(apps.keys())
 
     def activate_app(self, package_name: str) -> None:
         self._wda.launch_app(package_name)
 
     def terminate_app(self, package_name: str) -> None:
-        self._wda.terminate_app(package_name)
+        """命令级杀进程：DVT ProcessControl（Xcode Instruments 同款通道）。
+
+        WDA 的 ``POST /wda/apps/terminate`` 在 iOS 17+ / 18 / 26 上对**前台 app**
+        经常返回 success 但 SpringBoard 静默拒绝（API 行为，不是 bug），表现是
+        close_app 日志看着成功、屏幕没变、VLM 反复重试到 case 终止。
+
+        正确做法是走 DVT 的 ``ProcessControl`` instrument 直接 kill 进程，
+        等同 Xcode Instruments / iOS Simulator 杀 app 的官方通道，命令级执行，
+        不依赖 SpringBoard 拒绝/同意：
+
+        1. 拿 tunneld 提供的 RSD lockdown（iOS 17+ 唯一可走的 DVT 通道）
+        2. 起 DvtProvider + ProcessControl（需要 DDI 已挂在设备上）
+        3. ``process_identifier_for_bundle_identifier(bundle)`` 拿 pid
+           - pid <= 0：进程不在跑，直接当成功（语义对齐 force-stop）
+           - pid > 0：``kill(pid)`` 真杀
+        4. 释放 ProcessControl / DvtProvider / RSD
+
+        前提缺失（tunneld 没起 / DDI 未挂 / 通道异常）一律 raise RuntimeError，
+        带原因和操作建议，由上层翻成「执行失败」RunLog；**不再 fallback 到 WDA
+        terminate**，避免回到不可靠路径产生静默"成功"。
+        """
+        rsd = self._try_get_tunneld_rsd()
+        if rsd is None:
+            raise RuntimeError(
+                f"iOS terminate_app 失败 udid={self.serial} bundle={package_name}: "
+                "tunneld 不可用（iOS 17+ 需要 DVT 通道才能命令级杀进程）；"
+                "请在另一终端跑 `sudo pymobiledevice3 remote tunneld` 并在 iPhone "
+                "上完成 Remote Pairing，必要时先在 设置 → 隐私与安全性 → "
+                "开发者模式 中打开 Developer Mode"
+            )
+
+        last_exc: Optional[BaseException] = None
+        try:
+            try:
+                from pymobiledevice3.services.dvt.instruments.dvt_provider import (  # noqa: PLC0415
+                    DvtProvider,
+                )
+                from pymobiledevice3.services.dvt.instruments.process_control import (  # noqa: PLC0415
+                    ProcessControl,
+                )
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError(
+                    f"pymobiledevice3 DVT ProcessControl 模块不可用：{exc}"
+                ) from exc
+
+            provider = DvtProvider(lockdown=rsd)
+            _maybe_sync(provider.connect())
+            pc = ProcessControl(provider)
+            _maybe_sync(pc.connect())
+            try:
+                pid_raw = _maybe_sync(
+                    pc.process_identifier_for_bundle_identifier(package_name)
+                )
+                pid = int(pid_raw or 0)
+                if pid <= 0:
+                    logger.info(
+                        "iOS terminate_app: 进程未在跑，视为成功 udid={} bundle={}",
+                        self.serial, package_name,
+                    )
+                    return
+                _maybe_sync(pc.kill(pid))
+                logger.info(
+                    "iOS terminate_app: 已 kill udid={} bundle={} pid={}",
+                    self.serial, package_name, pid,
+                )
+            finally:
+                try:
+                    _maybe_sync(pc.close())
+                except Exception:  # noqa: BLE001
+                    pass
+        except RuntimeError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            hint = ""
+            if "DDI" in str(exc) or "DeveloperDiskImage" in str(exc) or "PersonalizedImage" in str(exc):
+                hint = (
+                    "（DDI 似乎没挂上：跑 `sudo pymobiledevice3 mounter "
+                    "auto-mount --udid <udid>` 一次；重启手机或电脑后需要重挂）"
+                )
+            raise RuntimeError(
+                f"iOS terminate_app 失败 udid={self.serial} bundle={package_name}: "
+                f"{type(last_exc).__name__}: {last_exc}{hint}"
+            ) from last_exc
+        finally:
+            try:
+                _maybe_sync(rsd.close())
+            except Exception:  # noqa: BLE001
+                pass
 
     def current_app(self) -> str:
         try:
-            info = self._wda.active_app()
+            info = self._wda.active_app() or {}
             return str(info.get("bundleId") or "")
-        except Exception:
+        except Exception:  # noqa: BLE001
             return ""
 
     # ------------------------------------------------------------------
@@ -770,15 +1020,140 @@ class IosDriver(BaseDriver):
 # ---------------------------------------------------------------------------
 # 设备发现 + 上线
 # ---------------------------------------------------------------------------
+# 最近一次 list_ios_devices 是否拿到了"可信的 USB 扫描结果"。
+#
+# 背景：macOS 上 usbmuxd 偶尔会抖一下，常见两种症状：
+#   1. ``usbmux.list_devices()`` 抛异常 / 超时
+#   2. **更隐蔽**：调用成功、返回 ``[]`` 空列表（socket 正常，只是 usbmuxd
+#      内部状态短暂不返回设备），常见持续几百毫秒到几秒
+# 在 stable 模式下，agent 是根据"udid 是否还在扫描结果里"来判断"USB 是否
+# 拔出"的；如果一次扫描抖动被当成"全部拔出"，会误清 spawn 状态机里的"已
+# spawn 标记"，下一次成功扫描时所有 udid 又被视为"新插入" → agent 又允许
+# spawn 一次 WDA，打破方案 §6.1 "只有物理拔插才能让 agent 重新触碰
+# WDA/XCTest"的核心承诺。
+#
+# 因此对外提供一个布尔信号 ``was_last_ios_scan_ok()``，**只有"扫描结果是
+# 可信的关于 USB 上有/没有 iOS 设备的判定"**才是 True。可信的两种情形：
+#   * 本轮看到 ≥1 个 udid（无歧义，肯定可信）
+#   * 本轮空列表 + 上一轮也是空（持续空稳定）
+#   * 本轮空列表 + 上轮有 udid + **连续 _EMPTY_STREAK_THRESHOLD 次确认**
+#     才认定"真拔出"——单次空被视为抖动，外层不更新拔插会话状态
+# 任何 ``list_devices()`` 抛异常、pmd3 ImportError 都直接标 False。
+#
+# 注意：ImportError（pmd3 没装）也算"不可信"，但因为 iOS 平台禁用是稳态、
+# 列表恒为空、``_last_seen_ios_serials`` 也恒为空，实际不会触发误清；标 False
+# 只是为了语义干净。
+_IOS_SCAN_LAST_OK: bool = False
+_IOS_SCAN_LOCK = threading.Lock()
+
+# 上一轮"被认定可信"的扫描看到的 udid 集合。用于判断"本轮空列表是持续空
+# 还是从有到无"。注意它与 ``main.py`` 的 ``_last_seen_ios_serials`` 不同：
+# 后者是"上次 _emit_ios_disconnect_events 看到的可信 udid"，前者是本模块
+# 内部的扫描状态机变量。两者分别维护，互不耦合。
+_IOS_LAST_GOOD_SCAN_UDIDS: Set[str] = set()
+# 连续空扫描次数计数。只在"上轮有 udid + 本轮空"的转换里递增；任意一次
+# 非空扫描都清零。达到阈值后才把空列表当作"真拔出"。
+_IOS_SCAN_EMPTY_STREAK: int = 0
+# 需要连续多少次空才认定真拔出。2 次即可——rescan 间隔约几秒，真拔出延迟
+# 一轮被识别完全可以接受；usbmuxd 抖动很少连续两轮都恰好空。
+_EMPTY_STREAK_THRESHOLD = 2
+
+
+def was_last_ios_scan_ok() -> bool:
+    """返回最近一次 ``list_ios_devices`` 是否拿到可信扫描结果。
+
+    用法见 ``_IOS_SCAN_LAST_OK`` 文档。**仅用于"是否可以根据扫描结果更新
+    USB 插拔会话状态"这一判断**，不要拿它做别的策略。
+    """
+    with _IOS_SCAN_LOCK:
+        return _IOS_SCAN_LAST_OK
+
+
+def _set_ios_scan_ok(ok: bool) -> None:
+    global _IOS_SCAN_LAST_OK
+    with _IOS_SCAN_LOCK:
+        _IOS_SCAN_LAST_OK = bool(ok)
+
+
+def _update_ios_scan_streak(raw_udids: Set[str]) -> None:
+    """根据本轮原始 udid 集合更新空扫描计数 + scan_ok 信号。
+
+    决策表（详见 ``_IOS_SCAN_LAST_OK`` 文档头）：
+
+    ============= =================  =====================================
+    上轮有 udid   本轮 raw_udids     scan_ok / 状态变迁
+    ============= =================  =====================================
+    -             非空               True，清空 streak，更新 last_good
+    False         空                 True（持续空稳定），streak 保持 0
+    True          空（streak<阈值-1） False（疑似抖动，外层跳过 disconnect）
+    True          空（streak≥阈值-1） True（确认真拔出），清 last_good
+    ============= =================  =====================================
+    """
+    global _IOS_LAST_GOOD_SCAN_UDIDS, _IOS_SCAN_EMPTY_STREAK, _IOS_SCAN_LAST_OK
+    with _IOS_SCAN_LOCK:
+        if raw_udids:
+            _IOS_SCAN_EMPTY_STREAK = 0
+            _IOS_LAST_GOOD_SCAN_UDIDS = set(raw_udids)
+            _IOS_SCAN_LAST_OK = True
+            return
+        if not _IOS_LAST_GOOD_SCAN_UDIDS:
+            # 上轮也空 → 持续空稳定状态，可信
+            _IOS_SCAN_EMPTY_STREAK = 0
+            _IOS_SCAN_LAST_OK = True
+            return
+        # 上轮有 udid，本轮空 → 进入"疑似抖动 / 待确认拔出"窗口
+        _IOS_SCAN_EMPTY_STREAK += 1
+        if _IOS_SCAN_EMPTY_STREAK >= _EMPTY_STREAK_THRESHOLD:
+            # 连续 N 次空，认定真拔出
+            confirmed_count = len(_IOS_LAST_GOOD_SCAN_UDIDS)
+            _IOS_LAST_GOOD_SCAN_UDIDS = set()
+            _IOS_SCAN_EMPTY_STREAK = 0
+            _IOS_SCAN_LAST_OK = True
+            logger.info(
+                "iOS USB 扫描连续 {} 次返回空 → 认定 {} 个 udid 真拔出，"
+                "将由 disconnect 钩子清空对应 stable spawn 标记",
+                _EMPTY_STREAK_THRESHOLD, confirmed_count,
+            )
+            return
+        # 第一次空：疑似 usbmuxd 抖动，标不可信，让外层完全跳过
+        # 本轮 disconnect 判定（不更新 _last_seen_ios_serials）
+        _IOS_SCAN_LAST_OK = False
+        logger.debug(
+            "iOS USB 扫描返回空但上轮有 {} 个 udid，疑似 usbmuxd 抖动，"
+            "本轮标不可信（streak={}/{}）；下一轮再确认",
+            len(_IOS_LAST_GOOD_SCAN_UDIDS),
+            _IOS_SCAN_EMPTY_STREAK,
+            _EMPTY_STREAK_THRESHOLD,
+        )
+
+
+def _reset_ios_scan_state_for_tests() -> None:
+    """测试钩子：清空扫描状态机的所有变量。仅供单测使用。"""
+    global _IOS_LAST_GOOD_SCAN_UDIDS, _IOS_SCAN_EMPTY_STREAK, _IOS_SCAN_LAST_OK
+    with _IOS_SCAN_LOCK:
+        _IOS_LAST_GOOD_SCAN_UDIDS = set()
+        _IOS_SCAN_EMPTY_STREAK = 0
+        _IOS_SCAN_LAST_OK = False
+
+
 def list_ios_devices(include_offline: bool = False) -> List[DeviceInfo]:
     """扫描 USB 上的 iOS 设备，返回 ``DeviceInfo`` 列表。
 
     不实际打开 WDA / 端口转发，只读 lockdown 里的元信息。WDA 那一步在
     ``open_ios_driver`` 时才做，避免每次设备扫描都启动 WDA。
+
+    本函数同时维护模块级的 ``_IOS_SCAN_LAST_OK`` 信号——见
+    ``was_last_ios_scan_ok`` 文档；stable 模式下的 USB 拔插会话状态机依赖
+    它防止 usbmux 抖动（包括"成功返回空列表"这种隐蔽抖动）被误判为"全部
+    拔出"。
     """
     try:
         usbmux, create_using_usbmux, _, _ = _import_pmd3()
     except ImportError as exc:
+        # pmd3 没装 = iOS 平台禁用稳态。标 False 让上层 disconnect 钩子也不
+        # 误以为这是"一次成功的空扫描"；实际 _last_seen_ios_serials 也恒为空，
+        # 没什么状态可清，但语义保持一致更省心。
+        _set_ios_scan_ok(False)
         logger.debug("跳过 iOS 设备扫描：{}", exc)
         return []
 
@@ -787,16 +1162,44 @@ def list_ios_devices(include_offline: bool = False) -> List[DeviceInfo]:
         # pmd3 9.x: list_devices 是 async；老版是 sync。统一过 _maybe_sync
         devices = _maybe_sync(usbmux.list_devices()) or []
     except Exception as exc:  # noqa: BLE001
+        # usbmux 抛异常：标 False 后**立刻 return**，让上层完全跳过本轮的
+        # disconnect 钩子，绝不更新 _last_seen_ios_serials。下一轮 rescan
+        # 成功后再恢复正常。
+        _set_ios_scan_ok(False)
         logger.warning("usbmux list_devices 失败：{}", exc)
         return []
+
+    # 只认 USB 物理连接的设备：usbmux 也会列出"过去配对、现在同 WiFi 网络可达"的设备
+    # （connection_type='Network'），那不是本机插着的真机，排除掉——否则设备总览会冒出
+    # 一台连不上 WDA 的"幽灵 iOS 设备"。本函数语义本就是"扫描 USB 上的 iOS 设备"。
+    devices = [
+        d
+        for d in devices
+        if str(getattr(d, "connection_type", "") or "").strip().lower() != "network"
+    ]
+
+    # 关键修复（Codex P1 二次审查）：成功调用 + 空列表的隐蔽抖动也得防。
+    # 把"原始 udid 集合"先抽出来喂给扫描状态机，由后者决定本轮是否可信。
+    # 注意：这里只看 raw_udids 而不是后面的 infos——infos 还会因为 lockdown
+    # 抽风而退化成 offline/unauthorized，跟"USB 上是否物理在场"是两回事。
+    raw_udids: Set[str] = set()
+    for dev in devices:
+        udid = getattr(dev, "serial", None) or getattr(dev, "udid", None)
+        if udid:
+            raw_udids.add(str(udid))
+    _update_ios_scan_streak(raw_udids)
 
     for dev in devices:
         udid = getattr(dev, "serial", None) or getattr(dev, "udid", None)
         if not udid:
             continue
         try:
-            # pmd3 9.x: create_using_usbmux 是 async；4.x 是 sync
-            ld = _maybe_sync(create_using_usbmux(serial=udid))
+            # pmd3 9.x: create_using_usbmux 是 async；4.x 是 sync。
+            # 设备总览的后台 rescan 必须是只读探测，不能触发 iOS pairing 流程；
+            # 否则 pair record 写入异常（如 SavePairRecordFailed）时，agent 会每轮
+            # 扫描都把“信任此电脑”弹窗重新打出来。真正需要用户交互的配对留给
+            # open_ios_driver / Xcode 等显式启动链路处理。
+            ld = _maybe_sync(create_using_usbmux(serial=udid, autopair=False))
         except Exception as exc:  # noqa: BLE001
             # iOS 18/26 起，锁屏状态下连 StartSession 也会返回 PasswordProtected，
             # 即使 pair record 里有 EscrowBag。这是 iOS 本身的限制，不是配对问题。
@@ -952,8 +1355,9 @@ def _check_developer_mode(lockdown) -> bool:  # noqa: ANN001
         # pmd3 9.x：要先 connect；4.x 是同步且 connect 在 ctor 里
         try:
             _maybe_sync(svc.connect())
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Developer Mode 状态探测连接失败：{}", exc)
+            return True
         try:
             return bool(_maybe_sync(svc.query_developer_mode_status()))
         finally:
@@ -1054,6 +1458,17 @@ def open_ios_driver(
                 f"iOS 端口转发启动失败 udid={udid} local={local_port}: {exc}"
             ) from exc
 
+    # iOS WDA 生命周期策略：launcher 本身不感知 auto/stable，只读布尔。
+    # auto 下 allow_runtime_drop_respawn/allow_preflight_deadlock_respawn 都为 True，
+    # 行为与本字段引入前完全等价；stable 下两个开关都为 False，preflight 死锁只
+    # 刷 need_unlock 提示、runtime_drop 只发 device_status 让浏览器报错等人工。
+    # 详见 docs/ios-setup（iOS接入指南）.md。
+    from .ios_wda_lifecycle import (  # noqa: PLC0415
+        StableWdaUnavailable,
+        get_ios_wda_lifecycle_policy,
+    )
+
+    policy = get_ios_wda_lifecycle_policy()
     launcher = IosWdaXcodeLauncher(
         udid=udid,
         project_dir=settings.wda_project_dir,
@@ -1062,22 +1477,51 @@ def open_ios_driver(
         on_status=on_status,
         bundle_id=settings.wda_bundle_id,
         team_id=settings.wda_team_id,
+        allow_runtime_drop_respawn=policy.allow_runtime_drop_respawn(),
+        allow_preflight_deadlock_respawn=policy.allow_preflight_deadlock_respawn(),
     )
-    mode = launcher.start()
-    logger.info("udid={} WDA launcher 模式={} local_port={}", udid, mode, local_port)
+    # §7.5.1 spawn 状态机：auto 永远允许；stable 下本次"USB 插入会话"内最多一次
+    # （或严格 attach-only 子方案下永远不允许）。launcher 只读布尔，决策在 policy。
+    spawn_allowed = policy.allow_spawn(udid, reason="open_driver")
+    mode = launcher.start(allow_spawn=spawn_allowed)
+    logger.info(
+        "udid={} WDA launcher 模式={} local_port={} lifecycle={} spawn_allowed={}",
+        udid, mode, local_port, policy.mode.value, spawn_allowed,
+    )
+    # stable + 本次会话已 spawn 过 + 当前 attach 又失败 → 真挂，让上层显式上报浏览器，
+    # 而不是在 wait_ready 卡 timeout 后吐一坨 launcher disabled 文案。
+    if (
+        policy.is_stable
+        and mode == "disabled"
+        and not spawn_allowed
+    ):
+        if forwarder is not None:
+            forwarder.stop()
+        launcher.stop()
+        raise StableWdaUnavailable(policy.stable_unavailable_message(
+            "本次 USB 插入会话内 WDA 已失效；请拔出 USB 并重新插入设备走一遍人工准备"
+        ))
 
     wda = WdaClient(f"http://127.0.0.1:{local_port}")
     try:
         wda.wait_ready(timeout=timeout)
         # 关掉 launcher 里的锁屏 watcher（如果起过），避免 WDA 已就绪后还刷提示
         launcher.mark_ready()
+        # §7.5.1 spawn 状态机：只在"真正走了 spawn 分支 + WDA ready"两件事都满足时
+        # 才记 record_spawned。spawn 失败（rc!=0 / wait_ready 超时）不记，
+        # 让用户根据错误提示走完人工准备后下次 open 还能 spawn。auto 下本调用
+        # 是 no-op（policy 内部不维护集合）。
+        if mode == "spawn":
+            policy.record_spawned(udid)
     except Exception as exc:  # noqa: BLE001
         if callable(on_status):
             try:
                 on_status(
                     "error",
                     "WDA 启动失败",
-                    f"WDA 在 {timeout}s 内未就绪：{exc}。\n请检查 iPhone 是否解锁、证书是否过期、USB 线是否正常，然后重试。",
+                    f"WDA 在 {timeout}s 内未就绪：{exc}。\n"
+                    "请检查 iPhone 是否解锁、是否已信任此 Mac、开发者模式是否开启、USB 线是否正常。\n"
+                    + _developer_app_trust_hint(),
                     0,
                 )
             except Exception:  # noqa: BLE001

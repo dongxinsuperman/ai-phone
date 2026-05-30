@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import platform
 import socket
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from loguru import logger
 from websockets.asyncio.client import connect as ws_connect
@@ -24,9 +26,11 @@ from websockets.exceptions import ConnectionClosed
 from ai_phone.shared import protocol as P
 
 Handler = Callable[["AgentWSClient", Dict[str, Any]], Awaitable[None]]
+ConnectHandler = Callable[["AgentWSClient"], Awaitable[None]]
 DeviceProvider = Callable[[], List[Dict[str, Any]]]  # 无参，返回 device dict 列表
 
 _BACKOFF_STEPS = (1.0, 2.0, 5.0, 10.0, 15.0)
+_DEFAULT_AGENT_WS_PATH = "/ws/agent"
 
 
 @dataclass
@@ -35,15 +39,21 @@ class AgentWSClient:
     token: str
     agent_id: str
     agent_name: str
+    server_http_base: str = ""
     host_os: str = field(default_factory=lambda: f"{platform.system()} {platform.release()}")
 
     # 由 Agent 主程序注入
     device_provider: Optional[DeviceProvider] = None
     handlers: Dict[str, Handler] = field(default_factory=dict)
+    connect_handlers: List[ConnectHandler] = field(default_factory=list)
 
     # 心跳 / 重扫描间隔
     ping_interval: float = 15.0
     rescan_interval: float = 5.0
+    # serial 集合不变时，也周期性重发一次完整设备快照，刷新 Server DB 里的
+    # Device.last_seen_at / 基础元数据。否则首页会只看到旧 DB 行，而 Agent
+    # 心跳仍然很新，形成"能进入工作台但设备总览像假死"的分裂状态。
+    device_snapshot_refresh_sec: float = 30.0
 
     # 内部
     _ws: Any = None
@@ -65,6 +75,9 @@ class AgentWSClient:
 
     def on(self, msg_type: str, handler: Handler) -> None:
         self.handlers[msg_type] = handler
+
+    def on_connect(self, handler: ConnectHandler) -> None:
+        self.connect_handlers.append(handler)
 
     async def send(self, payload: Dict[str, Any]) -> bool:
         ws = self._ws
@@ -102,6 +115,11 @@ class AgentWSClient:
                     self._connected.set()
                     attempt = 0
                     await self._on_connected()
+                    for handler in list(self.connect_handlers):
+                        try:
+                            await handler(self)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning("connect handler 异常：{}", exc)
                     await self._session_loop()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("WS 会话结束/失败：{}", exc)
@@ -124,7 +142,11 @@ class AgentWSClient:
     async def _on_connected(self) -> None:
         devices = self.device_provider() if self.device_provider else []
         self._last_serials = {d.get("serial") for d in devices if d.get("serial")}
-        await self.send(
+        await self._send_hello(devices)
+        logger.info("hello sent | devices={}", sorted(self._last_serials))
+
+    async def _send_hello(self, devices: List[Dict[str, Any]]) -> bool:
+        return await self.send(
             {
                 "type": P.MSG_HELLO,
                 "agent_id": self.agent_id,
@@ -133,7 +155,6 @@ class AgentWSClient:
                 "devices": devices,
             }
         )
-        logger.info("hello sent | devices={}", sorted(self._last_serials))
 
     async def _session_loop(self) -> None:
         """会话期：并发跑 recv / 心跳 / 设备重扫描。"""
@@ -187,6 +208,9 @@ class AgentWSClient:
             return
         logger.info("rescan_loop 启动，间隔 {:.1f}s", self.rescan_interval)
         tick = 0
+        refresh_ticks = _ticks_for_interval(
+            self.rescan_interval, self.device_snapshot_refresh_sec
+        )
         while True:
             await asyncio.sleep(self.rescan_interval)
             tick += 1
@@ -206,22 +230,85 @@ class AgentWSClient:
                 logger.info("设备集合变化 {} → {} (tick={})",
                             sorted(self._last_serials), sorted(cur), tick)
                 self._last_serials = cur
-                await self.send(
-                    {
-                        "type": P.MSG_HELLO,
-                        "agent_id": self.agent_id,
-                        "agent_name": self.agent_name,
-                        "host_os": self.host_os,
-                        "devices": devices,
-                    }
+                await self._send_hello(devices)
+            elif tick % refresh_ticks == 0:
+                sent = await self._send_hello(devices)
+                logger.debug(
+                    "rescan_loop keepalive sent={} tick={} serials={}",
+                    sent, tick, sorted(cur),
                 )
-            elif tick % 6 == 0:
-                # 每 30s 打一次脉搏日志，便于排查 rescan 是否还在跑
-                logger.debug("rescan_loop alive tick={} serials={}",
-                             tick, sorted(cur))
 
 
 # --------------------------------------------------------------------- helpers
+
+def _ticks_for_interval(scan_interval: float, refresh_interval: float) -> int:
+    try:
+        scan = max(0.1, float(scan_interval))
+        refresh = max(scan, float(refresh_interval))
+    except Exception:  # noqa: BLE001
+        return 1
+    return max(1, int(math.ceil(refresh / scan)))
+
+
+def normalize_server_address(raw: str) -> tuple[str, str]:
+    """把用户输入的 Server 地址归一成 Agent 需要的 WS URL + HTTP base。
+
+    支持三种输入：
+    - ``http://server:8000``  -> ``ws://server:8000/ws/agent`` + HTTP base
+    - ``https://server``      -> ``wss://server/ws/agent`` + HTTP base
+    - ``ws://server/ws/agent`` 直接保留 WS，并反推出 HTTP base
+
+    这样 Agent 启动时只需要一份"Server 地址"，不要求用户理解 WS path。
+    """
+    value = (raw or "").strip()
+    if not value:
+        raise ValueError("server address is empty")
+    if "://" not in value:
+        value = f"http://{value}"
+
+    parsed = urlsplit(value)
+    scheme = parsed.scheme.lower()
+    if scheme not in {"http", "https", "ws", "wss"}:
+        raise ValueError(f"unsupported server scheme: {parsed.scheme}")
+    if not parsed.netloc:
+        raise ValueError(f"server address missing host: {raw}")
+
+    if scheme in {"http", "https"}:
+        http_scheme = scheme
+        ws_scheme = "wss" if scheme == "https" else "ws"
+        base_path = _base_path_from_http_path(parsed.path)
+        ws_path = _join_path(base_path, _DEFAULT_AGENT_WS_PATH)
+    else:
+        ws_scheme = scheme
+        http_scheme = "https" if scheme == "wss" else "http"
+        ws_path = parsed.path if parsed.path and parsed.path != "/" else _DEFAULT_AGENT_WS_PATH
+        base_path = _base_path_from_ws_path(ws_path)
+
+    ws_url = urlunsplit((ws_scheme, parsed.netloc, ws_path, "", ""))
+    http_base = urlunsplit((http_scheme, parsed.netloc, base_path, "", "")).rstrip("/")
+    return ws_url, http_base
+
+
+def _base_path_from_http_path(path: str) -> str:
+    p = (path or "").rstrip("/")
+    if not p or p == _DEFAULT_AGENT_WS_PATH:
+        return ""
+    if p.endswith(_DEFAULT_AGENT_WS_PATH):
+        return p[: -len(_DEFAULT_AGENT_WS_PATH)].rstrip("/")
+    return p
+
+
+def _base_path_from_ws_path(path: str) -> str:
+    p = (path or "").rstrip("/")
+    if p.endswith(_DEFAULT_AGENT_WS_PATH):
+        return p[: -len(_DEFAULT_AGENT_WS_PATH)].rstrip("/")
+    return ""
+
+
+def _join_path(base: str, suffix: str) -> str:
+    b = (base or "").rstrip("/")
+    s = "/" + suffix.strip("/")
+    return f"{b}{s}" if b else s
 
 def _build_url(base: str, token: str) -> str:
     sep = "&" if "?" in base else "?"

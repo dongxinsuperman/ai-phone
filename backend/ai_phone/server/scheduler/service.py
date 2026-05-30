@@ -1,17 +1,16 @@
 """SubmissionScheduler：v1 第 2 梯队内部排队 + 调度核心。
 
-本文件严格遵守项目内部 v1 冻结清单：
-
-    **不修改** 既有的 WS `start_run` 协议（仍是 ``run_id / device_serial / goal``），
-    **不修改** agent 侧执行流程，**不修改** /api/runs 已有字段。
+本文件保留 v1 队列 / 锁 / 终态语义；Run 派发统一改走 ``RunDispatchService``，
+Distributed Agent Brain 下所有 Run 都派发给 Agent 本地执行（发送 WS `start_run`
+协议：``run_id / device_serial / goal``），Server 不再在进程内运行 VLMRunner。
 
 Scheduler 只做三件事：
 
 1. 把 ``SubmissionItem`` 按 ``platform`` 分池排队；
 2. 从"可调度池"选一对 ``(item, device)``——device 需满足 **online + ready +
    无锁**，platform 一致；
-3. 复用现有的 Run 创建 + WS 派发路径：建 Run 行 → bind_run → 发
-   MSG_START_RUN；Run 终态由 ``on_run_done()`` 在既有 agent_ws 里钩回来。
+3. 复用统一 Run 创建 + 派发路径：建 Run 行 → ``RunDispatchService`` 派发；
+   Run 终态由 Agent 上报 ``MSG_RUN_DONE`` → ``agent_ws`` → ``on_run_done()`` 钩回来。
 
 超时 & 取消：
 
@@ -27,20 +26,32 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ai_phone.config import get_settings
+from ai_phone.server.retry import (
+    normalize_requested_retry_max,
+    resolve_effective_retry_max,
+    total_attempts_for_retry_max,
+)
 from ai_phone.shared import protocol as P
 
 from ..hub import Hub
 from ..lockstore import DeviceLockStore, LockConflict
-from ..models import Device, Run, Submission, SubmissionItem
+from ..models import Device, Run, RunLog, Submission, SubmissionItem
+from ..runner.dispatch import RunDispatchService
+from ..trajectory_cache.mode import normalize_requested_cache_mode, resolve_effective_cache_mode
+from ..trajectory_cache import (
+    delete_trajectory_cache_v1_for_run,
+    delete_trajectory_cache_v2_for_run,
+    delete_trajectory_cache_v3_for_run,
+)
 from ..submissions import (
     ResultPublisher,
     StdoutPublisher,
@@ -158,12 +169,13 @@ class ItemDraft:
     device_alias_pool: Optional[List[str]] = None
     # 外部传 caseName 时透传；缺省由调用方回填（一般 = case_id）。
     case_name: Optional[str] = None
+    cache_mode: str = "off"
 
 
 def parse_and_validate(
     raw_body: Any,
-) -> Tuple[str, Optional[str], List[ItemDraft]]:
-    """把外部 JSON 解析为 ``(submission_name, callback_url, drafts)``。
+) -> Tuple[str, Optional[str], Optional[int], List[ItemDraft]]:
+    """把外部 JSON 解析为 ``(submission_name, callback_url, retry_max, drafts)``。
 
     **唯一受理格式（v1.7）**——wrapper 对象 + 池语义单条 item：
 
@@ -239,6 +251,9 @@ def parse_and_validate(
             )
         callback_url = cb_str
 
+    default_cache_mode = normalize_requested_cache_mode(raw_body.get("cacheMode"))
+    requested_retry_max = normalize_requested_retry_max(raw_body.get("retryMax"))
+
     items_list = raw_body.get("items")
     if not isinstance(items_list, list):
         raise AdmissionError(
@@ -260,6 +275,7 @@ def parse_and_validate(
         case_name_raw = raw.get("caseName")
         case_name = str(case_name_raw).strip() if case_name_raw else ""
         run_content = str(raw.get("runContent") or "").strip()
+        item_cache_mode = normalize_requested_cache_mode(raw.get("cacheMode") or default_cache_mode)
 
         if not case_id:
             raise AdmissionError("missing_field", "caseId 必填", index=i)
@@ -358,8 +374,9 @@ def parse_and_validate(
                 run_content=run_content,
                 device_alias_pool=normalized_pool,
                 case_name=case_name or None,
+                cache_mode=item_cache_mode,
             ))
-    return submission_name, callback_url, out
+    return submission_name, callback_url, requested_retry_max, out
 
 
 # ---------------------------------------------------------------------------
@@ -392,11 +409,13 @@ class SubmissionScheduler:
         lock_store: DeviceLockStore,
         session_factory: async_sessionmaker[AsyncSession],
         publisher: Optional[ResultPublisher] = None,
+        dispatch_service: Optional[RunDispatchService] = None,
     ) -> None:
         self._hub = hub
         self._lock_store = lock_store
         self._session_factory = session_factory
         self._settings = get_settings()
+        self._dispatch_service = dispatch_service or RunDispatchService(hub=hub)
         # 广播 publisher：默认 stdout（v1 broker 未到位），scheduler 在 item
         # 进入终态（on_run_done / cancel queued / submission_timeout）时调一次。
         # 广播失败永远不影响主流程——publisher 内部吞异常。
@@ -491,7 +510,12 @@ class SubmissionScheduler:
         - 老：``[{}, {}]``
         - 新：``{"submissionName": "...", "items": [{}, {}]}``
         """
-        submission_name, callback_url, drafts = parse_and_validate(raw_body)
+        submission_name, callback_url, requested_retry_max, drafts = parse_and_validate(raw_body)
+        effective_retry_max = resolve_effective_retry_max(
+            env_retry_enabled=bool(self._settings.run_retry_enabled),
+            env_retry_max=int(self._settings.run_retry_max or 0),
+            payload_retry_max=requested_retry_max,
+        )
 
         # "每个端必须至少有一台 online 设备"才准入；这里不要求 ready，以避免
         # 一台临时锁屏就整批打回（排队等就行）。
@@ -570,6 +594,8 @@ class SubmissionScheduler:
             accepted_at=now,
             expire_at=expire_at,
             callback_url=callback_url,
+            requested_retry_max=requested_retry_max,
+            effective_retry_max=effective_retry_max,
         )
         items: List[SubmissionItem] = []
         for d in drafts:
@@ -581,6 +607,9 @@ class SubmissionScheduler:
                     platform=d.platform,
                     run_content=d.run_content,
                     device_alias_pool=list(d.device_alias_pool) if d.device_alias_pool else None,
+                    cache_mode=d.cache_mode,
+                    requested_retry_max=requested_retry_max,
+                    effective_retry_max=effective_retry_max,
                     state="queued",
                     enqueued_at=now,
                 )
@@ -609,6 +638,8 @@ class SubmissionScheduler:
         return {
             "submissionId": sub.id,
             "submissionName": sub.submission_name or sub.id,
+            "requestedRetryMax": requested_retry_max,
+            "effectiveRetryMax": effective_retry_max,
             "acceptedAt": sub.accepted_at.isoformat(),
             "expireAt": sub.expire_at.isoformat(),
             "items": [
@@ -619,6 +650,9 @@ class SubmissionScheduler:
                     "platform": it.platform,
                     "deviceAliasPool": list(it.device_alias_pool or []) or None,
                     "state": it.state,
+                    "requestedCacheMode": it.cache_mode or "off",
+                    "retryMax": it.effective_retry_max or 0,
+                    "attempts": it.attempts or 0,
                 }
                 for it in items
             ],
@@ -677,8 +711,6 @@ class SubmissionScheduler:
         - ``False`` = 暂时派不出去（没 ready 设备 / 全部被锁），保持 queued
         - ``None``  = 这条 item 已经不是 queued（被取消/超时），从队列里剔除
         """
-        dispatch_engine = "vlm"
-        trajectory: Optional[Dict[str, Any]] = None
         async with self._session_factory() as session:
             item = await session.get(SubmissionItem, item_id)
             if item is None:
@@ -717,54 +749,77 @@ class SubmissionScheduler:
                 case_id=None,
                 goal=item.run_content,
                 status="pending",
+                requested_cache_mode=item.cache_mode,
+                effective_cache_mode=resolve_effective_cache_mode(
+                    env_cache_enabled=bool(self._settings.trajectory_cache_enabled),
+                    requested_cache_mode=item.cache_mode,
+                ),
+                requested_retry_max=item.requested_retry_max,
+                effective_retry_max=item.effective_retry_max or 0,
+                attempts=1,
+                last_attempt=1,
             )
             session.add(run)
 
             item.state = "running"
             item.run_id = ""  # 先占位，提交后再补
             item.device_serial = serial
+            item.attempts = 1
             item.started_at = datetime.now(timezone.utc)
             await session.flush()
             item.run_id = run.id
+            if run.effective_retry_max:
+                session.add(
+                    RunLog(
+                        run_id=run.id,
+                        attempt=1,
+                        level=1,
+                        title="重跑",
+                        content=(
+                            "━━ attempt 1/"
+                            f"{total_attempts_for_retry_max(run.effective_retry_max)} 开始 ━━"
+                        ),
+                    )
+                )
             await session.commit()
             await session.refresh(run)
             await session.refresh(item)
-            from ..trajectory_cache import get_dispatch_trajectory_cache  # noqa: PLC0415
 
-            cache = await get_dispatch_trajectory_cache(
-                session,
-                run_id=run.id,
-                device_code=serial,
-                run_semantic_text=item.run_content,
-            )
-            await session.commit()
-            if cache is not None:
-                dispatch_engine = "trajectory_cache"
-                trajectory = dict(cache.get("trajectory_json") or {})
-
-        # 4) 绑定 + 派发 WS。出错回滚状态 + 释放锁。
-        await self._hub.bind_run(run.id, agent_id)
-        ok = await self._hub.send_to_agent(
-            agent_id,
-            {
-                "type": P.MSG_START_RUN,
-                "run_id": run.id,
-                "device_serial": serial,
-                "goal": item.run_content,
-                "engine": dispatch_engine,
-                **({"trajectory": trajectory} if trajectory else {}),
-            },
+        self._runs[run.id] = _RunTrack(
+            item_id=item.id,
+            submission_id=item.submission_id,
+            platform=platform,
+            serial=serial,
+            lock_token=info.token,
+            started_at_mono=time.monotonic(),
         )
+
+        # 4) 派发 Run。agent_brain / server_brain 都从这里走，保证 API 与
+        # scheduler 的执行入口一致；出错回滚状态 + 释放锁。
+        await self._dispatch_service.wait_until_not_running(run.id)
+        result = await self._dispatch_service.dispatch(
+            run_id=run.id,
+            serial=serial,
+            agent_id=agent_id,
+            goal=item.run_content,
+            engine="vlm",
+            dispatch_source="scheduler",
+            platform=platform,
+            attempt=1,
+        )
+        ok = bool(result.get("dispatched"))
         if not ok:
             logger.warning(
-                "[scheduler] send_to_agent 失败，回滚 item={} run={}",
+                "[scheduler] dispatch 失败，回滚 item={} run={} mode={}",
                 item.id, run.id,
+                result.get("execution_mode"),
             )
             await self._hub.unbind_run(run.id)
             try:
                 await self._lock_store.release(serial, info.token, force=True)
             except Exception:  # noqa: BLE001
                 pass
+            self._runs.pop(run.id, None)
             async with self._session_factory() as session:
                 it2 = await session.get(SubmissionItem, item.id)
                 if it2 is not None:
@@ -776,22 +831,26 @@ class SubmissionScheduler:
                 if run2 is not None:
                     run2.status = "failed"
                     run2.reason = "dispatch_failed"
+                    run2.execution_mode = str(result.get("execution_mode") or "agent_brain")
+                    run2.dispatch_source = "scheduler"
+                    run2.agent_id_at_start = agent_id
                     run2.finished_at = datetime.now(timezone.utc)
                 await session.commit()
             return False
 
-        self._runs[run.id] = _RunTrack(
-            item_id=item.id,
-            submission_id=item.submission_id,
-            platform=platform,
-            serial=serial,
-            lock_token=info.token,
-            started_at_mono=time.monotonic(),
-        )
+        execution_mode = str(result.get("execution_mode") or "agent_brain")
+        # Distributed Agent Brain：dispatch 恒走 Agent 本地执行，回填执行快照字段。
+        async with self._session_factory() as session:
+            run2 = await session.get(Run, run.id)
+            if run2 is not None:
+                run2.execution_mode = execution_mode
+                run2.dispatch_source = "scheduler"
+                run2.agent_id_at_start = agent_id
+                await session.commit()
 
         logger.info(
-            "[scheduler] dispatch submission={} item={} platform={} serial={} run={}",
-            item.submission_id, item.id, platform, serial, run.id,
+            "[scheduler] dispatch submission={} item={} platform={} serial={} run={} mode={}",
+            item.submission_id, item.id, platform, serial, run.id, execution_mode,
         )
         return True
 
@@ -1024,6 +1083,412 @@ class SubmissionScheduler:
     # ------------------------------------------------------------------
     # Run 终态回落
     # ------------------------------------------------------------------
+    @staticmethod
+    def _run_result_is_success(result: str) -> bool:
+        return result in ("finished", "pass")
+
+    @staticmethod
+    def _run_result_is_cancelled(result: str) -> bool:
+        return result == "cancelled"
+
+    @staticmethod
+    def _attempt_from_done_msg(
+        msg: Dict[str, Any],
+        *,
+        run: Optional[Run],
+        item: Optional[SubmissionItem],
+    ) -> int:
+        for raw in (
+            msg.get("attempt"),
+            getattr(run, "last_attempt", None),
+            getattr(item, "attempts", None),
+            getattr(run, "attempts", None),
+        ):
+            try:
+                if raw is not None:
+                    return max(1, int(raw))
+            except Exception:  # noqa: BLE001
+                continue
+        return 1
+
+    async def _emit_retry_log(
+        self,
+        *,
+        run_id: str,
+        serial: Optional[str],
+        attempt: int,
+        level: int,
+        title: str,
+        content: str,
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        async with self._session_factory() as session:
+            session.add(
+                RunLog(
+                    run_id=run_id,
+                    attempt=max(1, int(attempt or 1)),
+                    level=level,
+                    title=title[:255],
+                    content=content,
+                    ts=now,
+                )
+            )
+            await session.commit()
+        if serial:
+            await self._hub.broadcast_to_serial(
+                serial,
+                {
+                    "type": P.MSG_LOG,
+                    "run_id": run_id,
+                    "serial": serial,
+                    "attempt": max(1, int(attempt or 1)),
+                    "level": level,
+                    "step": None,
+                    "ts": now.timestamp() * 1000,
+                    "title": title,
+                    "content": content,
+                },
+            )
+
+    async def _clear_retry_cache(
+        self,
+        *,
+        run_id: str,
+        serial: Optional[str],
+        attempt: int,
+        cache_mode: str,
+    ) -> None:
+        mode = str(cache_mode or "off").lower()
+        if not bool(self._settings.run_retry_clear_cache) or mode == "off":
+            return
+        await self._emit_retry_log(
+            run_id=run_id,
+            serial=serial,
+            attempt=attempt,
+            level=1,
+            title="重跑准备",
+            content=f"删除当前 mode cache: {mode}",
+        )
+        try:
+            if mode == "v1":
+                await delete_trajectory_cache_v1_for_run(self._session_factory, run_id)
+            elif mode == "v2":
+                await delete_trajectory_cache_v2_for_run(self._session_factory, run_id)
+            elif mode == "v3":
+                await delete_trajectory_cache_v3_for_run(self._session_factory, run_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[scheduler] retry 清缓存失败 run_id={} mode={}: {}", run_id, mode, exc)
+
+    async def _finalize_retry_failure(
+        self,
+        *,
+        run_id: str,
+        item_id: str,
+        track: _RunTrack,
+        status_reason: str,
+        message: str,
+        item_state: str = "failed",
+        run_status: str = "failed",
+    ) -> None:
+        async with self._session_factory() as session:
+            item = await session.get(SubmissionItem, item_id)
+            run_obj = await session.get(Run, run_id)
+            if item is None:
+                return
+            item.state = item_state
+            item.status_reason = status_reason
+            item.finished_at = datetime.now(timezone.utc)
+            if run_obj is not None:
+                run_obj.status = run_status
+                run_obj.reason = message
+                run_obj.finished_at = datetime.now(timezone.utc)
+            await session.commit()
+            await self._finalize_and_publish(session, item, run=run_obj)
+
+        await self._release_track_lock(track)
+        self.kick()
+
+    async def _release_track_lock(self, track: _RunTrack) -> None:
+        try:
+            if track.lock_token:
+                await self._lock_store.release(track.serial, track.lock_token, force=True)
+            else:
+                existing = self._lock_store.peek(track.serial)
+                if existing is not None and existing.holder == f"sched-{track.item_id}":
+                    await self._lock_store.release(track.serial, existing.token, force=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[scheduler] 释放锁失败 serial={} err={}", track.serial, exc)
+
+    async def _start_retry_attempt(
+        self,
+        *,
+        run_id: str,
+        item: SubmissionItem,
+        track: _RunTrack,
+        failed_attempt: int,
+        raw_message: str,
+    ) -> bool:
+        retry_max = int(item.effective_retry_max or 0)
+        total = total_attempts_for_retry_max(retry_max)
+        next_attempt = failed_attempt + 1
+        serial = track.serial or item.device_serial
+        await self._emit_retry_log(
+            run_id=run_id,
+            serial=serial,
+            attempt=failed_attempt,
+            level=2,
+            title="重跑",
+            content=f"━━ attempt {failed_attempt}/{total} FAILED ━━",
+        )
+        await self._emit_retry_log(
+            run_id=run_id,
+            serial=serial,
+            attempt=failed_attempt,
+            level=2,
+            title="失败原因",
+            content=raw_message or "unknown failure",
+        )
+        cache_mode = "off"
+        async with self._session_factory() as session:
+            run_obj = await session.get(Run, run_id)
+            if run_obj is not None:
+                cache_mode = str(run_obj.effective_cache_mode or "off")
+        await self._clear_retry_cache(
+            run_id=run_id,
+            serial=serial,
+            attempt=failed_attempt,
+            cache_mode=cache_mode,
+        )
+
+        cooldown = float(self._settings.run_retry_cooldown_sec or 0)
+        await self._emit_retry_log(
+            run_id=run_id,
+            serial=serial,
+            attempt=failed_attempt,
+            level=1,
+            title="重跑准备",
+            content=f"将重新执行原始 goal，冷却 {cooldown:g}s 后开始下一次",
+        )
+        if cooldown > 0:
+            await asyncio.sleep(cooldown)
+
+        async with self._session_factory() as session:
+            item2 = await session.get(SubmissionItem, item.id)
+            run2 = await session.get(Run, run_id)
+            if item2 is None or run2 is None:
+                return False
+            if item2.status_reason == "cancelled_by_request" or run2.status == "stopped":
+                await session.commit()
+                await self._finalize_retry_failure(
+                    run_id=run_id,
+                    item_id=item.id,
+                    track=track,
+                    status_reason="cancelled_by_request",
+                    message="retry_cancelled_by_request",
+                    item_state="cancelled",
+                    run_status="stopped",
+                )
+                return False
+            if item2.state != "running":
+                return False
+            agent_id = self._hub.agent_id_for_serial(serial or "") or run2.agent_id
+            if not serial or not agent_id:
+                await session.commit()
+                await self._finalize_retry_failure(
+                    run_id=run_id,
+                    item_id=item.id,
+                    track=track,
+                    status_reason="executor_resource_lost",
+                    message="retry_dispatch_no_agent",
+                )
+                return False
+            run2.status = "pending"
+            run2.reason = ""
+            run2.finished_at = None
+            run2.steps = 0
+            run2.last_attempt = next_attempt
+            run2.attempts = max(int(run2.attempts or 1), next_attempt)
+            item2.attempts = max(int(item2.attempts or 0), next_attempt)
+            item2.finished_at = None
+            session.add(
+                RunLog(
+                    run_id=run_id,
+                    attempt=next_attempt,
+                    level=1,
+                    title="重跑",
+                    content=f"━━ attempt {next_attempt}/{total} 开始 ━━",
+                )
+            )
+            await session.commit()
+
+        self._runs[run_id] = _RunTrack(
+            item_id=track.item_id,
+            submission_id=track.submission_id,
+            platform=track.platform,
+            serial=str(serial),
+            lock_token=track.lock_token,
+            started_at_mono=track.started_at_mono,
+        )
+        if not await self._dispatch_service.wait_until_not_running(run_id):
+            self._runs.pop(run_id, None)
+            await self._finalize_retry_failure(
+                run_id=run_id,
+                item_id=item.id,
+                track=track,
+                status_reason="executor_resource_lost",
+                message="retry_previous_attempt_still_running",
+            )
+            return False
+        result = await self._dispatch_service.dispatch(
+            run_id=run_id,
+            serial=str(serial),
+            agent_id=agent_id,
+            goal=item.run_content,
+            engine="vlm",
+            dispatch_source="scheduler",
+            platform=item.platform,
+            attempt=next_attempt,
+        )
+        if bool(result.get("dispatched")):
+            return True
+
+        self._runs.pop(run_id, None)
+        await self._finalize_retry_failure(
+            run_id=run_id,
+            item_id=item.id,
+            track=track,
+            status_reason="executor_resource_lost",
+            message="retry_dispatch_failed",
+        )
+        return False
+
+    async def _start_api_retry_attempt(
+        self,
+        *,
+        run_id: str,
+        failed_attempt: int,
+        raw_message: str,
+    ) -> bool:
+        async with self._session_factory() as session:
+            run = await session.get(Run, run_id)
+            if run is None:
+                return False
+            retry_max = int(run.effective_retry_max or 0)
+            total = total_attempts_for_retry_max(retry_max)
+            serial = run.device_serial
+            cache_mode = str(run.effective_cache_mode or "off")
+            goal = run.goal
+            engine = run.engine or "vlm"
+            dispatch_source = run.dispatch_source or "api"
+            dev = await session.get(Device, serial)
+            platform = str(getattr(dev, "platform", "") or "android")
+
+        await self._emit_retry_log(
+            run_id=run_id,
+            serial=serial,
+            attempt=failed_attempt,
+            level=2,
+            title="重跑",
+            content=f"━━ attempt {failed_attempt}/{total} FAILED ━━",
+        )
+        await self._emit_retry_log(
+            run_id=run_id,
+            serial=serial,
+            attempt=failed_attempt,
+            level=2,
+            title="失败原因",
+            content=raw_message or "unknown failure",
+        )
+        await self._clear_retry_cache(
+            run_id=run_id,
+            serial=serial,
+            attempt=failed_attempt,
+            cache_mode=cache_mode,
+        )
+        cooldown = float(self._settings.run_retry_cooldown_sec or 0)
+        await self._emit_retry_log(
+            run_id=run_id,
+            serial=serial,
+            attempt=failed_attempt,
+            level=1,
+            title="重跑准备",
+            content=f"将重新执行原始 goal，冷却 {cooldown:g}s 后开始下一次",
+        )
+        if cooldown > 0:
+            await asyncio.sleep(cooldown)
+
+        next_attempt = failed_attempt + 1
+        async with self._session_factory() as session:
+            run = await session.get(Run, run_id)
+            if run is None or run.status == "stopped":
+                return False
+            agent_id = self._hub.agent_id_for_serial(serial) or run.agent_id
+            if not agent_id:
+                run.status = "failed"
+                run.reason = "retry_dispatch_no_agent"
+                run.finished_at = datetime.now(timezone.utc)
+                await session.commit()
+                await self._release_api_auto_lock(run_id, serial)
+                return False
+            run.status = "pending"
+            run.reason = ""
+            run.finished_at = None
+            run.steps = 0
+            run.last_attempt = next_attempt
+            run.attempts = max(int(run.attempts or 1), next_attempt)
+            session.add(
+                RunLog(
+                    run_id=run_id,
+                    attempt=next_attempt,
+                    level=1,
+                    title="重跑",
+                    content=f"━━ attempt {next_attempt}/{total} 开始 ━━",
+                )
+            )
+            await session.commit()
+
+        if not await self._dispatch_service.wait_until_not_running(run_id):
+            async with self._session_factory() as session:
+                run = await session.get(Run, run_id)
+                if run is not None:
+                    run.status = "failed"
+                    run.reason = "retry_previous_attempt_still_running"
+                    run.finished_at = datetime.now(timezone.utc)
+                    await session.commit()
+            await self._release_api_auto_lock(run_id, serial)
+            return False
+
+        result = await self._dispatch_service.dispatch(
+            run_id=run_id,
+            serial=serial,
+            agent_id=agent_id,
+            goal=goal,
+            engine=engine,
+            dispatch_source=dispatch_source,
+            platform=platform,
+            attempt=next_attempt,
+        )
+        if bool(result.get("dispatched")):
+            return True
+
+        async with self._session_factory() as session:
+            run = await session.get(Run, run_id)
+            if run is not None:
+                run.status = "failed"
+                run.reason = "retry_dispatch_failed"
+                run.finished_at = datetime.now(timezone.utc)
+                await session.commit()
+        await self._release_api_auto_lock(run_id, serial)
+        return False
+
+    async def _release_api_auto_lock(self, run_id: str, serial: str) -> None:
+        lock = self._lock_store.peek(serial)
+        if lock is not None and lock.holder == run_id and lock.meta.get("auto_acquired"):
+            try:
+                await self._lock_store.release(serial, lock.token, force=True)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[scheduler] 释放 api retry 自动锁失败 serial={} err={}", serial, exc)
+
     async def on_run_done(self, run_id: str, msg: Dict[str, Any]) -> None:
         """Server 侧 agent_ws 在 _finalize_run 之后调进来。
 
@@ -1036,6 +1501,8 @@ class SubmissionScheduler:
         item_id = track.item_id if track else None
         serial = track.serial if track else None
         lock_token = track.lock_token if track else None
+        retry_payload: Optional[Tuple[SubmissionItem, _RunTrack, int, str]] = None
+        api_retry_payload: Optional[Tuple[int, str]] = None
 
         async with self._session_factory() as session:
             item: Optional[SubmissionItem] = None
@@ -1048,35 +1515,131 @@ class SubmissionScheduler:
                 )
                 item = res.scalars().first()
             if item is None:
-                return  # 非调度器派发的 run（手动 /api/runs），不归我们管
-
-            result = str(msg.get("result") or "error").lower()
-            raw_message = str(msg.get("message") or "")
-            if result == "finished":
-                item.state = "success"
-                item.status_reason = "completed"
-            elif result == "assert_fail":
-                item.state = "failed"
-                item.status_reason = "assert_failed"
-            elif result == "cancelled":
-                item.state = "cancelled"
-                if not item.status_reason:
-                    item.status_reason = "cancelled_by_request"
+                run_obj = await session.get(Run, run_id)
+                result = str(msg.get("result") or "error").lower()
+                raw_message = str(msg.get("message") or "")
+                attempt = self._attempt_from_done_msg(msg, run=run_obj, item=None)
+                if run_obj is not None:
+                    run_obj.last_attempt = max(int(run_obj.last_attempt or 1), attempt)
+                    run_obj.attempts = max(int(run_obj.attempts or 1), attempt)
+                    await session.commit()
+                if (
+                    run_obj is not None
+                    and (run_obj.dispatch_source or "api") == "api"
+                    and not self._run_result_is_success(result)
+                    and not self._run_result_is_cancelled(result)
+                    and attempt <= int(run_obj.effective_retry_max or 0)
+                ):
+                    api_retry_payload = (attempt, raw_message)
+                else:
+                    # Agent Brain：API 直起 / 无 submission item 的 Run 终态时，
+                    # 释放其 auto_acquired 自动锁。原先这步在 ServerRunEmitter
+                    # ._finalize_run 内做（server_brain）；执行脑下沉后 emitter
+                    # 删除，这里接管，避免设备锁泄漏（M1 附录 A 缺口）。
+                    release_serial = serial or (
+                        run_obj.device_serial if run_obj is not None else None
+                    )
+                    if release_serial:
+                        await self._release_api_auto_lock(run_id, release_serial)
+                    return
             else:
-                # result=error 的兜底分类——严格按 v1 P1 冻结的 12 项
-                # 枚举落位。Agent 上报的 message 没带明确 prefix 的，一律归到
-                # executor_error；有明显关键字的再细分。
-                item.state = "failed"
-                if not item.status_reason:
-                    item.status_reason = _classify_error_reason(raw_message)
-            item.finished_at = datetime.now(timezone.utc)
-            serial = serial or item.device_serial
-            await session.commit()
+                item_id = item.id
+                result = str(msg.get("result") or "error").lower()
+                raw_message = str(msg.get("message") or "")
+                run_obj = await session.get(Run, item.run_id) if item.run_id else None
+                attempt = self._attempt_from_done_msg(msg, run=run_obj, item=item)
+                item.attempts = max(int(item.attempts or 0), attempt)
+                if run_obj is not None:
+                    run_obj.last_attempt = max(int(run_obj.last_attempt or 1), attempt)
+                    run_obj.attempts = max(int(run_obj.attempts or 1), attempt)
+                if (
+                    not self._run_result_is_success(result)
+                    and not self._run_result_is_cancelled(result)
+                    and attempt <= int(item.effective_retry_max or 0)
+                ):
+                    item.state = "running"
+                    item.status_reason = ""
+                    item.finished_at = None
+                    serial = serial or item.device_serial
+                    retry_track = track or _RunTrack(
+                        item_id=item.id,
+                        submission_id=item.submission_id,
+                        platform=item.platform,
+                        serial=str(serial or ""),
+                        lock_token=lock_token or "",
+                        started_at_mono=time.monotonic(),
+                    )
+                    await session.commit()
+                    retry_payload = (item, retry_track, attempt, raw_message)
+                else:
+                    retry_max = int(item.effective_retry_max or 0)
+                    if self._run_result_is_success(result) and attempt > 1:
+                        total = total_attempts_for_retry_max(retry_max)
+                        session.add(
+                            RunLog(
+                                run_id=run_id,
+                                attempt=attempt,
+                                level=1,
+                                title="重跑成功",
+                                content=(
+                                    f"attempt {attempt}/{total} PASS"
+                                    f"（前 {attempt - 1} 次失败）"
+                                ),
+                            )
+                        )
+                    elif not self._run_result_is_success(result) and retry_max:
+                        total = total_attempts_for_retry_max(retry_max)
+                        session.add(
+                            RunLog(
+                                run_id=run_id,
+                                attempt=attempt,
+                                level=3,
+                                title="重跑用尽",
+                                content=f"共尝试 {attempt}/{total} 次全部失败，最终 FAIL",
+                            )
+                        )
+                    # "pass" 是缓存通道（trajectory cache replay）断言 PASS 时 emitter
+                    # 上报的 result 值。语义等同 "finished"，必须映射成 success。
+                    if result in ("finished", "pass"):
+                        item.state = "success"
+                        item.status_reason = "completed"
+                    elif result == "assert_fail":
+                        item.state = "failed"
+                        item.status_reason = "assert_failed"
+                    elif result == "cancelled":
+                        item.state = "cancelled"
+                        if not item.status_reason:
+                            item.status_reason = "cancelled_by_request"
+                    else:
+                        item.state = "failed"
+                        if not item.status_reason:
+                            item.status_reason = _classify_error_reason(raw_message)
+                    item.finished_at = datetime.now(timezone.utc)
+                    serial = serial or item.device_serial
+                    await session.commit()
+                # 同 session 内读一次 Run，传给 _finalize_and_publish 避免再发一次查询。
+                # 报告生成 + 广播放在 commit 之后——就算副作用挂了，item 状态已落盘。
+                    run_obj = await session.get(Run, item.run_id) if item.run_id else None
+                    await self._finalize_and_publish(session, item, run=run_obj)
 
-            # 同 session 内读一次 Run，传给 _finalize_and_publish 避免再发一次查询。
-            # 报告生成 + 广播放在 commit 之后——就算副作用挂了，item 状态已落盘。
-            run_obj = await session.get(Run, item.run_id) if item.run_id else None
-            await self._finalize_and_publish(session, item, run=run_obj)
+        if api_retry_payload is not None:
+            failed_attempt, retry_raw_message = api_retry_payload
+            asyncio.create_task(self._start_api_retry_attempt(
+                run_id=run_id,
+                failed_attempt=failed_attempt,
+                raw_message=retry_raw_message,
+            ))
+            return
+        if retry_payload is not None:
+            retry_item, retry_track, failed_attempt, retry_raw_message = retry_payload
+            asyncio.create_task(self._start_retry_attempt(
+                run_id=run_id,
+                item=retry_item,
+                track=retry_track,
+                failed_attempt=failed_attempt,
+                raw_message=retry_raw_message,
+            ))
+            return
 
         # 释放锁：有 token 就按 token，没 token（重启场景）就 force 释放当前锁
         if serial:
@@ -1118,6 +1681,7 @@ class SubmissionScheduler:
                     cancelled_queued.append(it.id)
                     cancelled_items.append(it)
                 elif it.state == "running" and it.run_id:
+                    it.status_reason = "cancelled_by_request"
                     stopped_running.append(it.run_id)
             sub.state = "cancelled"
             sub.finished_at = now
@@ -1134,7 +1698,7 @@ class SubmissionScheduler:
 
         # 对 running 的 run 发 stop_run；真正落位在 on_run_done(cancelled)
         for run_id in stopped_running:
-            await self._hub.send_to_run(run_id, {"type": P.MSG_STOP_RUN, "run_id": run_id})
+            await self._stop_run(run_id)
 
         return {
             "submissionId": submission_id,
@@ -1170,6 +1734,7 @@ class SubmissionScheduler:
                 item.finished_at = now
                 run_id_to_stop = None
             elif item.state == "running":
+                item.status_reason = "cancelled_by_request"
                 run_id_to_stop = item.run_id
             else:
                 # 已终态，幂等返回当前状态
@@ -1187,10 +1752,7 @@ class SubmissionScheduler:
                 self._queues[pid] = [i for i in q if i != item_id]
 
         if run_id_to_stop:
-            await self._hub.send_to_run(
-                run_id_to_stop,
-                {"type": P.MSG_STOP_RUN, "run_id": run_id_to_stop},
-            )
+            await self._stop_run(run_id_to_stop)
 
         return {
             "submissionId": submission_id,
@@ -1266,7 +1828,7 @@ class SubmissionScheduler:
                 to_stop.append(run_id)
         for run_id in to_stop:
             logger.warning("[scheduler] run={} 超过 1h，发送 stop_run", run_id)
-            await self._hub.send_to_run(run_id, {"type": P.MSG_STOP_RUN, "run_id": run_id})
+            await self._stop_run(run_id)
             # 顺手把 statusReason 预写进 item，on_run_done 看到 status_reason 非空
             # 就不会再覆盖
             track = self._runs.get(run_id)
@@ -1279,6 +1841,10 @@ class SubmissionScheduler:
                             await session.commit()
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("[scheduler] 预写 run_timeout 失败: {}", exc)
+
+    async def _stop_run(self, run_id: str) -> bool:
+        """停止调度器派发的 run：下发 MSG_STOP_RUN，由 Agent 本地收口。"""
+        return await self._dispatch_service.stop(run_id)
 
     # ------------------------------------------------------------------
     # 查询

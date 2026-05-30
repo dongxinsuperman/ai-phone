@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import (
     JSON,
@@ -21,7 +21,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -103,6 +102,31 @@ class DeviceAlias(Base):
         }
 
 
+class DeviceWakePolicy(Base):
+    """设备 wake 策略表：仅承载 HarmonyOS Run 前是否兜底上滑。"""
+
+    __tablename__ = "device_wake_policies"
+
+    serial: Mapped[str] = mapped_column(String(128), primary_key=True)
+    platform: Mapped[str] = mapped_column(String(16), index=True)
+    wake_swipe: Mapped[bool] = mapped_column(default=False)
+    remark: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "serial": self.serial,
+            "platform": self.platform,
+            "wake_swipe": bool(self.wake_swipe),
+            "remark": self.remark or "",
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class Case(Base):
     __tablename__ = "cases"
 
@@ -150,6 +174,38 @@ class Run(Base):
     # 外接引擎产物（如 Midscene HTML 报告）的对外可访问 URL。
     # 仅 engine != 'vlm' 时填充；vlm runner 永远是 None（其报告由 ai-phone 自己组装）。
     external_report_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    # —— 以下字段在 next/server-brain 引入；老 main 仅有 schema，不写值 ——
+    # 'agent_brain' / 'server_brain'：本条 Run 走的执行链路。
+    # server_default='agent_brain' 让历史 / main 路径下的 Run 自动归类为老链路，
+    # 排障时 SELECT WHERE execution_mode='server_brain' 一句 SQL 锁定新架构 Run。
+    execution_mode: Mapped[str] = mapped_column(
+        String(16), default="agent_brain", server_default="agent_brain", index=True
+    )
+    # 'api' / 'scheduler'：来自 RunDispatchService 的入口标记。
+    # NULL 表示老链路（没经过 RunDispatchService）。
+    dispatch_source: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    # run 级 trace_id，便于跨进程串联日志 / run_logs / run_commands。
+    # 老链路下为 NULL；新链路下生成方式建议 ``uuid.uuid4().hex[:16]``。
+    trace_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    # Run 启动时绑定的 Agent ID。区分"现在 Agent 掉线"和"启动时就没 Agent"。
+    # 与 agent_id 字段的区别：agent_id 反映当前态（重连后会变），
+    # agent_id_at_start 是启动快照，错误归因用。
+    agent_id_at_start: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Run 失败原因若为 agent 掉线，记录掉线时刻。Web 错误归因 UI 用。
+    agent_offline_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    requested_cache_mode: Mapped[str] = mapped_column(
+        String(8), default="off", server_default="off"
+    )
+    effective_cache_mode: Mapped[str] = mapped_column(
+        String(8), default="off", server_default="off", index=True
+    )
+    requested_retry_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    effective_retry_max: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # attempts = 已经启动过的 attempt 数；last_attempt = 最近一次落库/运行 attempt。
+    attempts: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    last_attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -158,6 +214,9 @@ class Run(Base):
         back_populates="run", cascade="all, delete-orphan", lazy="noload"
     )
     log_records: Mapped[list["RunLog"]] = relationship(
+        back_populates="run", cascade="all, delete-orphan", lazy="noload"
+    )
+    command_records: Mapped[list["RunCommand"]] = relationship(
         back_populates="run", cascade="all, delete-orphan", lazy="noload"
     )
 
@@ -175,6 +234,19 @@ class Run(Base):
             "token_summary": self.token_summary or {},
             "engine": self.engine or "vlm",
             "external_report_url": self.external_report_url,
+            "execution_mode": self.execution_mode or "agent_brain",
+            "dispatch_source": self.dispatch_source,
+            "trace_id": self.trace_id,
+            "agent_id_at_start": self.agent_id_at_start,
+            "agent_offline_at": self.agent_offline_at.isoformat() if self.agent_offline_at else None,
+            "requested_cache_mode": self.requested_cache_mode or "off",
+            "effective_cache_mode": self.effective_cache_mode or "off",
+            "cacheMode": self.effective_cache_mode or "off",
+            "requested_retry_max": self.requested_retry_max,
+            "effective_retry_max": self.effective_retry_max or 0,
+            "retryMax": self.effective_retry_max or 0,
+            "attempts": self.attempts or 1,
+            "last_attempt": self.last_attempt or self.attempts or 1,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
@@ -183,13 +255,21 @@ class Run(Base):
 
 class RunStep(Base):
     __tablename__ = "run_steps"
-    __table_args__ = (Index("ix_run_steps_run_step", "run_id", "step"),)
+    __table_args__ = (
+        Index("ix_run_steps_run_step", "run_id", "step"),
+        # 可靠上报去重：同 (run_id, attempt, event_id) 只落一条；event_id 为 NULL
+        # 的老数据/老链路不受唯一约束影响（PG/SQLite 多个 NULL 不冲突）。
+        Index("ux_run_steps_event", "run_id", "attempt", "event_id", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[str] = mapped_column(
         String(32), ForeignKey("runs.id", ondelete="CASCADE"), index=True
     )
+    attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1", index=True)
     step: Mapped[int] = mapped_column(Integer)
+    # 可靠上报幂等键（Agent 分配的 uuid hex）；老链路为 NULL
+    event_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     thought: Mapped[str] = mapped_column(Text, default="")
     action: Mapped[str] = mapped_column(Text, default="")
     action_type: Mapped[str] = mapped_column(String(32), default="")
@@ -197,6 +277,15 @@ class RunStep(Base):
     unknown: Mapped[int] = mapped_column(Integer, default=0)  # 0/1 布尔
     screenshot_before: Mapped[str] = mapped_column(String(512), default="")
     screenshot_after: Mapped[str] = mapped_column(String(512), default="")
+    # —— 以下字段在 next/server-brain 引入；老 main 不写 ——
+    # 本步骤主导调用的 BaseDriver 方法名（screenshot_jpeg / click / type_text 等）。
+    # 老链路下为 NULL；新链路下从 driver_command.method 透传。
+    driver_method: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    # 本步骤"主动作"对应的 driver_command.message_id（不含截图等附属命令）。
+    # 用于和 run_commands 表 join 拿命令时间线。
+    command_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # RPC 往返耗时（毫秒）；仅含跨进程，不含 VLM。与 elapsed_ms 字段分开统计。
+    rpc_elapsed_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     run: Mapped[Run] = relationship(back_populates="step_records")
@@ -204,7 +293,9 @@ class RunStep(Base):
     def to_dict(self) -> Dict[str, Any]:
         return {
             "run_id": self.run_id,
+            "attempt": self.attempt or 1,
             "step": self.step,
+            "event_id": self.event_id,
             "thought": self.thought,
             "action": self.action,
             "action_type": self.action_type,
@@ -212,22 +303,40 @@ class RunStep(Base):
             "unknown": bool(self.unknown),
             "screenshot_before": self.screenshot_before,
             "screenshot_after": self.screenshot_after,
+            "driver_method": self.driver_method,
+            "command_id": self.command_id,
+            "rpc_elapsed_ms": self.rpc_elapsed_ms,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 
 class RunLog(Base):
     __tablename__ = "run_logs"
-    __table_args__ = (Index("ix_run_logs_run_ts", "run_id", "ts"),)
+    __table_args__ = (
+        Index("ix_run_logs_run_ts", "run_id", "ts"),
+        # 可靠上报去重：同 (run_id, attempt, event_id) 只落一条；NULL 不受约束。
+        Index("ux_run_logs_event", "run_id", "attempt", "event_id", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[str] = mapped_column(
         String(32), ForeignKey("runs.id", ondelete="CASCADE"), index=True
     )
+    attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1", index=True)
     step: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # 可靠上报幂等键（Agent 分配的 uuid hex）；老链路为 NULL
+    event_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     level: Mapped[int] = mapped_column(Integer, default=1)  # 1=info,2=warn,3=error
     title: Mapped[str] = mapped_column(String(255), default="")
     content: Mapped[str] = mapped_column(Text, default="")
+    # —— 以下字段在 next/server-brain 引入；老 main 不写 ——
+    # 与 runs.trace_id / driver_command.message_id 关联；为 NULL 时退回老行为。
+    trace_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    # 错误类名（AdbError / WDAStaleSession / TimeoutError / RpcTimeout / AgentOffline 等）
+    error_class: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    # 错误归因桶：'model' / 'device' / 'network' / 'agent_offline'。
+    # Web 错误归因 UI 直接按这一列分桶展示。
+    error_category: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     run: Mapped[Run] = relationship(back_populates="log_records")
@@ -235,20 +344,170 @@ class RunLog(Base):
     def to_dict(self) -> Dict[str, Any]:
         return {
             "run_id": self.run_id,
+            "attempt": self.attempt or 1,
             "step": self.step,
             "level": self.level,
             "title": self.title,
             "content": self.content,
+            "trace_id": self.trace_id,
+            "error_class": self.error_class,
+            "error_category": self.error_category,
             "ts": self.ts.isoformat() if self.ts else None,
         }
 
 
-class VlmTrajectoryCache(Base):
-    """VLM 成功轨迹缓存。
+class RunCommand(Base):
+    """跨进程 driver_command 命令的细粒度记录（next/server-brain 引入）。
 
-    key = device_code + run_semantic_hash + schema_version。命中后由 Agent 侧
-    trajectory_cache runner 顺序回放 trajectory_json.actions；主 VLMRunner
-    不感知这张表。
+    设计要点：
+    - **仅在 next/server-brain（Server 大脑架构）写入**；老链路（agent_brain）不写
+    - 一次 ``driver_command`` ↔ 一条 RunCommand
+    - ``message_id`` 与 ``run_logs.trace_id`` / ``run_steps.command_id`` 共享
+      同一份 id 空间，方便 SQL join 排障
+    - 不与 run_steps 1:1：截图、状态查询等附属命令也都会写一行，但只有"主动作"
+      命令的 message_id 会回填到 ``run_steps.command_id``
+
+    典型用法：
+    - 排障：``SELECT * FROM run_commands WHERE run_id=? ORDER BY sent_at`` 拿命令时间线
+    - 统计：``SELECT method, count(*), avg(rpc_elapsed_ms) FROM run_commands
+            WHERE ok=true GROUP BY method`` 看每类方法的 RPC 平均耗时
+    - 截图丢失定位：``method='screenshot_jpeg' AND ok=false``
+    """
+
+    __tablename__ = "run_commands"
+    __table_args__ = (
+        Index("ix_run_commands_run_sent", "run_id", "sent_at"),
+        Index("ix_run_commands_message_id", "message_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("runs.id", ondelete="CASCADE"), index=True
+    )
+    attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1", index=True)
+    # run_steps.step 的可选反链；附属命令（截图等）可能没有 step
+    step: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # driver_command.message_id；兼作 trace_id，与 run_logs.trace_id 同空间
+    message_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    # screenshot_jpeg / click / type_text / window_size 等；DriverMethod 白名单
+    method: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    # Driver 调用参数快照。轨迹缓存清洗优先使用这里的真实绝对坐标；老数据或
+    # agent_brain 路径为空时再回退解析 RunStep.action。
+    params: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    # 派发时绑定的 Agent / 设备；Agent 重连不影响这条历史快照
+    agent_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    serial: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    # 命令完成态（True / False / NULL=超时未回）
+    ok: Mapped[Optional[bool]] = mapped_column(default=None, nullable=True)
+    # 错误结构（仅 ok=False 时填）
+    error_class: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    error_category: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
+    error_msg: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # RPC 往返耗时（毫秒）；含网络
+    rpc_elapsed_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Server 发出 driver_command 的时刻
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # Server 收到 driver_result 的时刻；超时 / 取消时为 NULL
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    run: Mapped[Run] = relationship(back_populates="command_records")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "run_id": self.run_id,
+            "attempt": self.attempt or 1,
+            "step": self.step,
+            "message_id": self.message_id,
+            "method": self.method,
+            "params": self.params or {},
+            "agent_id": self.agent_id,
+            "serial": self.serial,
+            "ok": self.ok,
+            "error_class": self.error_class,
+            "error_category": self.error_category,
+            "error_msg": self.error_msg,
+            "rpc_elapsed_ms": self.rpc_elapsed_ms,
+            "sent_at": self.sent_at.isoformat() if self.sent_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+        }
+
+
+class RunEvent(Base):
+    """Agent 上报过程事件的**预留承载表**（Distributed Agent Brain）。
+
+    现状（重要）：本架构按"无感保真"口径推进——执行脑下沉回 Agent 后，
+    Web 进度 / 报告 / 审计仍由现有链路承载：Agent 经 ``RunnerBridge`` 上报、
+    Server ``agent_ws._persist_log`` / ``_persist_step`` / ``_finalize_run``
+    **直写** ``run_logs`` / ``run_steps`` / ``runs``。**不**新增字段、**不**重做
+    投影、**不**改报告来源。
+
+    因此本表目前**不写入、不作为主链路事实流**，仅作为"未来若需要更细粒度
+    事实流"的预留结构（schema 已就位，按需再启用）。请勿据此引入 model_call /
+    结构化 error_category 等新留存——那与无感原则冲突。
+
+    `run_commands`（Server Brain 历史审计表）同样不再作为本分支的动作事实来源。
+    """
+
+    __tablename__ = "run_events"
+    __table_args__ = (
+        Index(
+            "ix_run_events_run_attempt_seq",
+            "run_id",
+            "attempt",
+            "seq",
+            unique=True,
+        ),
+        Index("ix_run_events_run_ts", "run_id", "ts"),
+        Index("ix_run_events_event_type", "event_type"),
+        Index("ix_run_events_event_id", "event_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("runs.id", ondelete="CASCADE"), index=True
+    )
+    attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1", index=True)
+    # Agent 侧单调递增序号；(run_id, attempt, seq) 唯一（预留：去重 + 保序）
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 事件全局幂等键（建议 uuid.uuid4().hex）；唯一索引兜底重复上报
+    event_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    # 事件类型（预留）：对齐 agent/runner/events.py 的 EVT_*
+    event_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    # 可选关联字段（预留）：步骤号 / 截图引用等
+    step: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    snapshot_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # 结构化失败分类（model/device/network/agent_offline/assertion/cache 等）
+    error_category: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
+    # 事件结构化负载；大产物只放引用，不放 bytes
+    payload: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    # 事件发生时刻（Agent 侧时间戳）
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # Server 落库时刻
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "run_id": self.run_id,
+            "attempt": self.attempt or 1,
+            "seq": self.seq,
+            "event_id": self.event_id,
+            "event_type": self.event_type,
+            "step": self.step,
+            "snapshot_id": self.snapshot_id,
+            "error_category": self.error_category,
+            "payload": self.payload or {},
+            "ts": self.ts.isoformat() if self.ts else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class VlmTrajectoryCache(Base):
+    """V1 固定动作轨迹缓存。
+
+    V1 是最小可控基线：保存首次成功时真实执行过的 driver 动作，命中后
+    只做固定动作顺序回放，增强能力必须放到 V2/V3 的独立表与入口里。
     """
 
     __tablename__ = "vlm_trajectory_cache"
@@ -303,6 +562,132 @@ class VlmTrajectoryCache(Base):
         }
 
 
+class VlmTrajectoryCacheV2(Base):
+    """V2 增强轨迹缓存。
+
+    V2 与 V1 分表：V2 可以保存状态路标、局部恢复、瞬态弹窗标记等增强元数据；
+    V1 表继续只承担固定动作回放基线。
+    """
+
+    __tablename__ = "vlm_trajectory_cache_v2"
+    __table_args__ = (
+        Index("ix_vlm_trajectory_cache_v2_key", "cache_key", unique=True),
+        Index("ix_vlm_trajectory_v2_device_semantic", "device_code", "run_semantic_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_short_id)
+    cache_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    device_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    run_semantic_hash: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    run_semantic_text: Mapped[str] = mapped_column(Text, default="")
+    case_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    platform: Mapped[str] = mapped_column(String(16), default="")
+    resolution: Mapped[str] = mapped_column(String(32), default="")
+    app_package_or_bundle: Mapped[str] = mapped_column(String(255), default="")
+    schema_version: Mapped[int] = mapped_column(Integer, default=2)
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    source_run_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    trajectory_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_failed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "mode": "v2",
+            "cache_key": self.cache_key,
+            "device_code": self.device_code,
+            "run_semantic_hash": self.run_semantic_hash,
+            "run_semantic_text": self.run_semantic_text,
+            "case_id": self.case_id,
+            "platform": self.platform,
+            "resolution": self.resolution,
+            "app_package_or_bundle": self.app_package_or_bundle,
+            "schema_version": self.schema_version,
+            "status": self.status,
+            "source_run_id": self.source_run_id,
+            "trajectory_json": self.trajectory_json or {},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "last_success_at": self.last_success_at.isoformat() if self.last_success_at else None,
+            "last_failed_at": self.last_failed_at.isoformat() if self.last_failed_at else None,
+        }
+
+
+class VlmTrajectoryCacheV3(Base):
+    """V3 语义坐标回放缓存。
+
+    V3 与 V2 分表：V2 保留完整 action + handoff landmark 路线；V3 保留增强
+    source actions，但正常复跑只信任 ``plan_intent`` 和 action 类型，不信任旧坐标。
+    """
+
+    __tablename__ = "vlm_trajectory_cache_v3"
+    __table_args__ = (
+        Index("ix_vlm_trajectory_cache_v3_key", "cache_key", unique=True),
+        Index("ix_vlm_trajectory_v3_device_semantic", "device_code", "run_semantic_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_short_id)
+    cache_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    device_code: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    run_semantic_hash: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    run_semantic_text: Mapped[str] = mapped_column(Text, default="")
+    case_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    platform: Mapped[str] = mapped_column(String(16), default="")
+    resolution: Mapped[str] = mapped_column(String(32), default="")
+    app_package_or_bundle: Mapped[str] = mapped_column(String(255), default="")
+    schema_version: Mapped[int] = mapped_column(Integer, default=3)
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    source_run_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    source_vlm_backend: Mapped[str] = mapped_column(String(64), default="")
+    actions_json: Mapped[List[Dict[str, Any]]] = mapped_column(JSON, default=list)
+    source_completion: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    meta_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_failed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "mode": "v3",
+            "cache_key": self.cache_key,
+            "device_code": self.device_code,
+            "run_semantic_hash": self.run_semantic_hash,
+            "run_semantic_text": self.run_semantic_text,
+            "case_id": self.case_id,
+            "platform": self.platform,
+            "resolution": self.resolution,
+            "app_package_or_bundle": self.app_package_or_bundle,
+            "schema_version": self.schema_version,
+            "status": self.status,
+            "source_run_id": self.source_run_id,
+            "source_vlm_backend": self.source_vlm_backend,
+            "actions": self.actions_json or [],
+            "source_completion": self.source_completion or {},
+            "meta": self.meta_json or {},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "last_success_at": self.last_success_at.isoformat() if self.last_success_at else None,
+            "last_failed_at": self.last_failed_at.isoformat() if self.last_failed_at else None,
+        }
+
+
 class Submission(Base):
     """一次外部请求的批次容器（v1 第 2 梯队）。
 
@@ -336,6 +721,8 @@ class Submission(Base):
     # v1.8 webhook：投递时可选传 callbackUrl。整批收口时异步 POST 一份
     # submission.terminal payload；发一次失败就吞，不影响主流程。
     callback_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    requested_retry_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    effective_retry_max: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     items: Mapped[list["SubmissionItem"]] = relationship(
         back_populates="submission", cascade="all, delete-orphan", lazy="noload"
@@ -356,6 +743,8 @@ class Submission(Base):
             "origin": self.origin,
             "submission_name": self.submission_name or self.id,
             "state": self.state,
+            "requested_retry_max": self.requested_retry_max,
+            "effective_retry_max": self.effective_retry_max or 0,
             "accepted_at": self.accepted_at.isoformat() if self.accepted_at else None,
             "expire_at": self.expire_at.isoformat() if self.expire_at else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
@@ -403,6 +792,10 @@ class SubmissionItem(Base):
     #   哪台先 ready 哪台拿下一条；自然形成"快机多跑、慢机少跑"的负载分担
     # 写入时以 list[str] 形式（按 sorted+dedup 之后的顺序），DB 用 JSON 列承载
     device_alias_pool: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    cache_mode: Mapped[str] = mapped_column(String(8), default="off", server_default="off")
+    requested_retry_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    effective_retry_max: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     # queued / running / success / failed / cancelled
     state: Mapped[str] = mapped_column(String(16), default="queued", index=True)
@@ -439,6 +832,11 @@ class SubmissionItem(Base):
             "platform": self.platform,
             "run_content": self.run_content,
             "device_alias_pool": list(self.device_alias_pool or []) or None,
+            "cacheMode": self.cache_mode or "off",
+            "requested_retry_max": self.requested_retry_max,
+            "effective_retry_max": self.effective_retry_max or 0,
+            "retryMax": self.effective_retry_max or 0,
+            "attempts": self.attempts or 0,
             "state": self.state,
             "status_reason": self.status_reason or None,
             "run_id": self.run_id,
@@ -450,13 +848,114 @@ class SubmissionItem(Base):
         }
 
 
+class AppPackage(Base):
+    """应用分发上传包。
+
+    只保存 Server 落盘所需的最小信息；created_at 用于区分同名重复上传包。
+    """
+
+    __tablename__ = "app_packages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_short_id)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    platform: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    storage_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+    tasks: Mapped[list["AppInstallTask"]] = relationship(
+        back_populates="package", cascade="all, delete-orphan", lazy="noload"
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "filename": self.filename,
+            "platform": self.platform,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class AppInstallTask(Base):
+    """一次应用批量安装任务。"""
+
+    __tablename__ = "app_install_tasks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_short_id)
+    package_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("app_packages.id", ondelete="CASCADE"), index=True
+    )
+    state: Mapped[str] = mapped_column(String(16), default="running", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    package: Mapped[AppPackage] = relationship(back_populates="tasks")
+    items: Mapped[list["AppInstallTaskItem"]] = relationship(
+        back_populates="task", cascade="all, delete-orphan", lazy="noload"
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "package_id": self.package_id,
+            "state": self.state,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+        }
+
+
+class AppInstallTaskItem(Base):
+    """应用安装任务中的单设备结果。"""
+
+    __tablename__ = "app_install_task_items"
+    __table_args__ = (
+        Index("ix_app_install_items_task_state", "task_id", "state"),
+        Index("ix_app_install_items_serial_state", "serial", "state"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_short_id)
+    task_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("app_install_tasks.id", ondelete="CASCADE"), index=True
+    )
+    serial: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    platform: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    state: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    reason: Mapped[str] = mapped_column(String(64), default="")
+    message: Mapped[str] = mapped_column(Text, default="")
+    timeout_sec: Mapped[int] = mapped_column(Integer, default=600)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    task: Mapped[AppInstallTask] = relationship(back_populates="items")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "task_id": self.task_id,
+            "serial": self.serial,
+            "platform": self.platform,
+            "state": self.state,
+            "reason": self.reason or None,
+            "message": self.message or "",
+            "timeout_sec": self.timeout_sec,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+        }
+
+
 __all__ = [
     "Device",
+    "DeviceAlias",
     "Case",
     "Run",
     "RunStep",
     "RunLog",
+    "RunCommand",
     "VlmTrajectoryCache",
+    "VlmTrajectoryCacheV2",
+    "VlmTrajectoryCacheV3",
     "Submission",
     "SubmissionItem",
+    "AppPackage",
+    "AppInstallTask",
+    "AppInstallTaskItem",
 ]

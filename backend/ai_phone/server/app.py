@@ -19,10 +19,12 @@ from ai_phone.config import get_settings
 from sqlalchemy import delete
 
 from .api import include_routers
+from .app_install import AppInstallTimeoutScanner
 from .db import dispose_engine, get_session_factory, init_db, init_engine
 from .hub import Hub
 from .lockstore import DeviceLockStore
 from .models import Device
+from .runner.dispatch import RunDispatchService
 from .scheduler import SubmissionScheduler, set_scheduler
 from .storage import mount_static
 from .submissions import make_publisher
@@ -52,6 +54,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.lock_store = DeviceLockStore()
     app.state.hub = Hub()
+    app.state.run_dispatch_service = RunDispatchService(
+        hub=app.state.hub,
+        session_factory=get_session_factory(),
+    )
 
     # v1 第 2 梯队：启动 SubmissionScheduler。调度器事件驱动 + 2s 兜底 tick；
     # 停止流程放在 finally 里，保证 shutdown 时 drain_loop/timeout_loop 都收掉。
@@ -64,16 +70,25 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         lock_store=app.state.lock_store,
         session_factory=get_session_factory(),
         publisher=publisher,
+        dispatch_service=app.state.run_dispatch_service,
     )
     await scheduler.start()
     app.state.scheduler = scheduler
     app.state.publisher = publisher
     set_scheduler(scheduler)
 
+    app_install_scanner = AppInstallTimeoutScanner(get_session_factory())
+    await app_install_scanner.start()
+    app.state.app_install_scanner = app_install_scanner
+
     logger.info("ai-phone server 启动完毕 | env={}", settings.env)
     try:
         yield
     finally:
+        try:
+            await app_install_scanner.stop()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("关停 app install scanner 异常（忽略）：{}", exc)
         try:
             await scheduler.stop()
         except Exception as exc:  # noqa: BLE001

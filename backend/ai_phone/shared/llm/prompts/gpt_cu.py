@@ -19,25 +19,121 @@ prompt 越简越好，不要再大段教 DSL。
 from __future__ import annotations
 
 
-def build_system_prompt(goal: str, substeps_text: str | None = None) -> str:
+_ZH_READABLE_POLICY = """## Human-readable Language Policy
+
+Use Simplified Chinese for all human-readable reasoning, explanations,
+status summaries, FINISHED reasons, and ASSERT_FAIL reasons.
+
+Keep protocol keywords, tool names, action names, and field names exactly as
+specified in English: `computer`, `FINISHED`, `ASSERT_FAIL`, `PLATFORM_ACTION`,
+and action names. The colon after these keywords accepts both half-width `:`
+and full-width `：` — pick whichever reads naturally in context.
+
+When referring to visible UI text, quote it exactly as shown on screen. Do not
+translate button names, tab names, app names, product names, or page titles.
+"""
+
+_SKIP_DUTY_EN = (
+    'When skipping, your reasoning must say "Screenshot shows <evidence> —'
+    ' substep N already satisfied; skipping."'
+)
+
+_SKIP_DUTY_ZH = (
+    'When skipping, your reasoning must say "截图显示 <状态证据> 已满足子步骤 N，跳过".'
+)
+
+_FORCED_VERDICT_REMINDER_EN = (
+    "**Forced verdict line**: The first sentence of every turn's reasoning must"
+    ' follow the fixed template defined in the top-of-prompt "Operation'
+    " Substeps Checklist\" block — output the [SATISFIED / NOT SATISFIED]"
+    " verdict before deciding the action. Hard protocol; skipping it will be"
+    " killed by the supervisor."
+)
+
+_FORCED_VERDICT_REMINDER_ZH = (
+    "**Forced verdict line**: The first sentence of every turn's reasoning must"
+    ' follow the fixed template defined in the top-of-prompt "Operation'
+    " Substeps Checklist\" block — output the [已满足 / 未满足] verdict before"
+    " deciding the action. Hard protocol; skipping it will be killed by the"
+    " supervisor."
+)
+
+
+def build_system_prompt(
+    goal: str,
+    substeps_text: str | None = None,
+    *,
+    zh_readable: bool = False,
+) -> str:
     """根据用户 goal 构建 OpenAI computer-use-preview 专用 system prompt。"""
     substeps_block = ""
     if substeps_text and substeps_text.strip():
-        substeps_block = (
-            "\n## Operation Substeps Checklist (active throughout the run)\n"
-            f"{substeps_text.strip()}\n\n"
-            "**Two equally-important iron rules**:\n"
-            "1. Advance through these substeps in order. State which substep"
-            " you are on in your reasoning each turn.\n"
-            "2. **Skip a substep when its target state is already satisfied**"
-            " in the current screenshot — repeating an already-done substep is"
-            " treated as stuck and will be killed by the supervisor.\n"
-            "When skipping, explicitly state the visual evidence.\n"
-            "Detailed rules in §B-1.\n"
-        )
+        # 与豆包版同步加入"forced verdict line"协议：每轮 reasoning 第一句
+        # 必须是固定句式的判读结论。详见 shared/prompt.py 的设计动机注释。
+        if zh_readable:
+            substeps_block = (
+                "\n## Operation Substeps Checklist (active throughout the run)\n"
+                f"{substeps_text.strip()}\n\n"
+                "### 每轮强制判读句（违反 = KILL）\n"
+                "你的 reasoning 第一句必须使用这个固定模板：\n"
+                "  \"子步骤 N「<原始片段>」→ 目标状态：<把动作转成状态>。"
+                "当前截图：[已满足 / 未满足]，依据：<具体视觉证据>。\"\n\n"
+                "按判定分支：\n"
+                "- **[已满足]** -> 下一句写：\"截图显示 <状态证据> 已满足子步骤 N，"
+                "跳过；下一步是 N+1\"。**不要为子步骤 N 发动作。** The action"
+                " call should target substep N+1 (or run another verdict line"
+                " for N+1 first to decide).\n"
+                "- **[未满足]** -> 正常推理，然后为子步骤 N 发动作。\n\n"
+                "**Most common failure (auto-KILL)**: the screenshot clearly"
+                " shows the tab is already highlighted / option already selected"
+                " / page is already the target page, but you still click that"
+                " location. That is \"hammering an already-done substep\" — worse"
+                " than skipping the wrong one.\n\n"
+                "**Two equally-important iron rules**:\n"
+                "1. Advance through substeps in order — no merging, reordering,"
+                " or premature drilling.\n"
+                "2. Skip when the target state is already satisfied — repeated"
+                " clicks on a satisfied state = stuck = supervisor KILL.\n"
+                "Detailed rules in §B-1.\n"
+            )
+        else:
+            substeps_block = (
+                "\n## Operation Substeps Checklist (active throughout the run)\n"
+                f"{substeps_text.strip()}\n\n"
+                "### Forced verdict line every turn (violations = KILL)\n"
+                "The **first sentence** of your reasoning each turn must follow"
+                " this exact template:\n"
+                "  \"Substep N '<original phrase>' -> target state: <verb"
+                " translated to state>. Current screenshot: [SATISFIED / NOT"
+                " SATISFIED], evidence: <concrete visual feature>.\"\n\n"
+                "Branch on the verdict:\n"
+                "- **[SATISFIED]** -> next sentence: \"skip substep N, next is"
+                " N+1\". **Do NOT issue an action for substep N.** The action"
+                " call should target substep N+1 (or run another verdict line"
+                " for N+1 first to decide).\n"
+                "- **[NOT SATISFIED]** -> proceed with normal reasoning then"
+                " issue an action for substep N.\n\n"
+                "**Most common failure (auto-KILL)**: the screenshot clearly"
+                " shows the tab is already highlighted / option already selected"
+                " / page is already the target page, but you still click that"
+                " location. That is \"hammering an already-done substep\" — worse"
+                " than skipping the wrong one.\n\n"
+                "**Two equally-important iron rules**:\n"
+                "1. Advance through substeps in order — no merging, reordering,"
+                " or premature drilling.\n"
+                "2. Skip when the target state is already satisfied — repeated"
+                " clicks on a satisfied state = stuck = supervisor KILL.\n"
+                "Detailed rules in §B-1.\n"
+            )
 
+    language_policy = _ZH_READABLE_POLICY if zh_readable else ""
+    skip_duty = _SKIP_DUTY_ZH if zh_readable else _SKIP_DUTY_EN
+    forced_verdict_reminder = (
+        _FORCED_VERDICT_REMINDER_ZH if zh_readable else _FORCED_VERDICT_REMINDER_EN
+    )
     return f"""You are operating a real mobile device. You receive a screenshot each turn and call the `computer` tool to perform UI actions.
 
+{language_policy}
 The UI may be in English, Korean, Japanese, Arabic, or other languages. Read the visible text carefully and act accordingly.
 
 **Don't ask for confirmation. Don't pause to clarify. Take the next action.** This is a one-way automation pipeline — there is no human to answer mid-run.
@@ -138,7 +234,9 @@ Has-target-state-been-met checklist (verb → state → screenshot evidence):
 - "Login if not logged in" → already logged in → avatar / profile entry visible
 - "Type X" → field contains X → input shows X
 
-When skipping, your reasoning must say "Screenshot shows <evidence> — substep N already satisfied; skipping."
+{skip_duty}
+
+{forced_verdict_reminder}
 
 Forbidden:
 - ⚠️ Hammering an already-done substep (target state met yet you keep clicking).

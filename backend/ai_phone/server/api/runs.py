@@ -29,19 +29,22 @@ M1.6a 历史说明（保留方便溯源）：
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.config import get_settings
+from ai_phone.server.retry import normalize_requested_retry_max, resolve_effective_retry_max
 from ai_phone.shared import protocol as P
 
 from ..hub import Hub
 from ..lockstore import DeviceLockStore, LockConflict
-from ..models import Case, Device, Run, RunLog, RunStep
+from ..models import Case, Device, Run, RunCommand, RunLog, RunStep
+from ..runner.dispatch import RunDispatchService
+from ..trajectory_cache.mode import normalize_requested_cache_mode, resolve_effective_cache_mode
 from ._deps import DBSession, HubDep, LockStoreDep
 
 # 白名单：API 接受的 engine 取值。新增引擎时同步本表 + factory.py。
@@ -65,6 +68,20 @@ class RunCreate(BaseModel):
     # 'midscene' 仅在 settings.midscene_enabled=True 时被接受；详见
     # `Midscene执行器接入方案.md`。批次投递（/api/submissions）不接受此字段。
     engine: Optional[str] = Field(default=None, max_length=32)
+    cache_mode: Optional[Annotated[str, Field(max_length=8)]] = None
+    retry_max: Optional[Any] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_camel_cache_mode(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            patched = dict(data)
+            if "cacheMode" in patched and "cache_mode" not in patched:
+                patched["cache_mode"] = patched.get("cacheMode")
+            if "retryMax" in patched and "retry_max" not in patched:
+                patched["retry_max"] = patched.get("retryMax")
+            return patched
+        return data
 
     @model_validator(mode="after")
     def _require_goal_or_case(self) -> "RunCreate":
@@ -98,7 +115,9 @@ async def get_run(run_id: str, session: AsyncSession = DBSession) -> Dict[str, A
     run = await session.get(Run, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
-    return run.to_dict()
+    payload = run.to_dict()
+    payload["error_summary"] = await _build_error_summary(run, session)
+    return payload
 
 
 @router.get("/{run_id}/steps")
@@ -107,7 +126,7 @@ async def get_run_steps(run_id: str, session: AsyncSession = DBSession) -> List[
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
     res = await session.execute(
-        select(RunStep).where(RunStep.run_id == run_id).order_by(RunStep.step)
+        select(RunStep).where(RunStep.run_id == run_id).order_by(RunStep.attempt, RunStep.step)
     )
     return [s.to_dict() for s in res.scalars().all()]
 
@@ -137,9 +156,28 @@ async def get_run_logs(
     }
 
 
+@router.get("/{run_id}/commands")
+async def get_run_commands(
+    run_id: str,
+    session: AsyncSession = DBSession,
+    limit: int = Query(1000, ge=1, le=5000),
+) -> List[Dict[str, Any]]:
+    run = await session.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
+    res = await session.execute(
+        select(RunCommand)
+        .where(RunCommand.run_id == run_id)
+        .order_by(RunCommand.sent_at, RunCommand.id)
+        .limit(limit)
+    )
+    return [cmd.to_dict() for cmd in res.scalars().all()]
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_run(
     body: RunCreate,
+    request: Request,
     session: AsyncSession = DBSession,
     store: DeviceLockStore = LockStoreDep,
     hub: Hub = HubDep,
@@ -212,6 +250,18 @@ async def create_run(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="midscene 引擎未启用：请在 .env 中设置 AI_PHONE_MIDSCENE_ENABLED=true",
         )
+    settings = get_settings()
+    requested_cache_mode = normalize_requested_cache_mode(body.cache_mode)
+    effective_cache_mode = resolve_effective_cache_mode(
+        env_cache_enabled=bool(settings.trajectory_cache_enabled),
+        requested_cache_mode=requested_cache_mode,
+    )
+    requested_retry_max = normalize_requested_retry_max(body.retry_max)
+    effective_retry_max = resolve_effective_retry_max(
+        env_retry_enabled=bool(settings.run_retry_enabled),
+        env_retry_max=int(settings.run_retry_max or 0),
+        payload_retry_max=requested_retry_max,
+    )
 
     run = Run(
         id=pre_run_id,
@@ -221,46 +271,43 @@ async def create_run(
         goal=goal,
         status="pending",
         engine=engine,
+        requested_cache_mode=requested_cache_mode,
+        effective_cache_mode=effective_cache_mode,
+        requested_retry_max=requested_retry_max,
+        effective_retry_max=effective_retry_max,
+        attempts=1,
+        last_attempt=1,
     )
     session.add(run)
     await session.commit()
     await session.refresh(run)
 
     dispatched = False
+    execution_mode = "agent_brain"
     if agent_id is not None:
-        await hub.bind_run(run.id, agent_id)
-        dispatch_engine = engine
-        trajectory: Optional[Dict[str, Any]] = None
-        if engine == "vlm":
-            from ..trajectory_cache import get_dispatch_trajectory_cache  # noqa: PLC0415
-
-            cache = await get_dispatch_trajectory_cache(
-                session,
-                run_id=run.id,
-                device_code=body.device_serial,
-                run_semantic_text=goal,
-            )
-            await session.commit()
-            if cache is not None:
-                dispatch_engine = "trajectory_cache"
-                trajectory = dict(cache.get("trajectory_json") or {})
-        dispatched = await hub.send_to_agent(
-            agent_id,
-            {
-                "type": P.MSG_START_RUN,
-                "run_id": run.id,
-                "device_serial": body.device_serial,
-                "goal": goal,
-                "engine": dispatch_engine,
-                **({"trajectory": trajectory} if trajectory else {}),
-            },
+        dispatch_service = _dispatch_service(request, hub)
+        result = await dispatch_service.dispatch(
+            run_id=run.id,
+            serial=body.device_serial,
+            agent_id=agent_id,
+            goal=goal,
+            engine=engine,
+            dispatch_source="api",
+            platform=dev.platform or "android",
+            attempt=1,
         )
-        if not dispatched:
-            await hub.unbind_run(run.id)
+        dispatched = bool(result.get("dispatched"))
+        execution_mode = str(result.get("execution_mode") or "agent_brain")
+        if execution_mode == "agent_brain":
+            run.execution_mode = "agent_brain"
+            run.dispatch_source = "api"
+            await session.commit()
+        await session.refresh(run)
 
     payload = run.to_dict()
     payload["dispatched"] = dispatched
     payload["agent_id"] = agent_id
+    payload["execution_mode"] = execution_mode
     # 只有 "代抢" 的 job 锁 token 才回吐，让调度端保存用于 Run 结束后释放；
     # 浏览器路径下 token 归 useDeviceLock 管，这里不回吐避免泄露
     if job_lock_token is not None:
@@ -271,6 +318,7 @@ async def create_run(
 @router.post("/{run_id}/stop")
 async def stop_run(
     run_id: str,
+    request: Request,
     session: AsyncSession = DBSession,
     store: DeviceLockStore = LockStoreDep,
     hub: Hub = HubDep,
@@ -278,14 +326,30 @@ async def stop_run(
     run = await session.get(Run, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
-    if run.status in ("success", "failed", "stopped"):
+    if run.status == "success":
+        return run.to_dict()
+    if run.status == "failed" and not _run_retry_pending(run):
+        return run.to_dict()
+    # agent_brain 的 stop 是软停：先发 stop_run，等 Agent 回 MSG_RUN_DONE 后
+    # 才算真正完成。历史上可能出现 status=stopped 但 finished_at 为空、且 Hub
+    # 已 unbind 的半收口 Run；这种情况下允许再次 stop，并用 run.agent_id 兜底
+    # 直发给原 Agent，清掉 Agent 端 _RunSupervisor 里的残留任务。
+    if run.status == "stopped" and run.finished_at is not None:
         return run.to_dict()
 
-    # 先通知 Agent 软停；具体兑现由 Agent 触发 run_done(cancelled) 回来
-    await hub.send_to_run(run_id, {"type": P.MSG_STOP_RUN, "run_id": run_id})
+    dispatch_service = _dispatch_service(request, hub)
+    stopped_by_server = await dispatch_service.stop(
+        run_id, execution_mode=run.execution_mode or "agent_brain"
+    )
+    if not stopped_by_server:
+        # 先通知 Agent 软停；具体兑现由 Agent 触发 run_done(cancelled) 回来
+        payload = {"type": P.MSG_STOP_RUN, "run_id": run_id}
+        sent = await hub.send_to_run(run_id, payload)
+        if not sent and run.agent_id:
+            await hub.send_to_agent(run.agent_id, payload)
 
     run.status = "stopped"
-    run.reason = run.reason or "stopped_by_user"
+    run.reason = "stopped_by_user"
     await session.commit()
     # 新锁模型：外部传入的锁不归属 run，由发起方（浏览器 tab / 调度端）自己管释放。
     # 但 POST /api/runs 自己代抢的 job 锁需要在 stop 时释放，否则设备会卡到 TTL 过期。
@@ -295,4 +359,109 @@ async def stop_run(
         await store.release(run.device_serial, lock.token)
     await hub.unbind_run(run_id)
     await session.refresh(run)
-    return run.to_dict()
+    payload = run.to_dict()
+    payload["error_summary"] = await _build_error_summary(run, session)
+    return payload
+
+
+def _run_retry_pending(run: Run) -> bool:
+    """Return whether a failed API run may still launch a retry attempt."""
+
+    try:
+        attempt = max(1, int(run.last_attempt or run.attempts or 1))
+    except Exception:  # noqa: BLE001
+        attempt = 1
+    try:
+        retry_max = max(0, int(run.effective_retry_max or 0))
+    except Exception:  # noqa: BLE001
+        retry_max = 0
+    return run.status == "failed" and retry_max > 0 and attempt <= retry_max
+
+
+def _dispatch_service(request: Request, hub: Hub) -> RunDispatchService:
+    svc = getattr(request.app.state, "run_dispatch_service", None)
+    if isinstance(svc, RunDispatchService):
+        return svc
+    svc = RunDispatchService(hub=hub)
+    request.app.state.run_dispatch_service = svc
+    return svc
+
+
+async def _build_error_summary(
+    run: Run, session: AsyncSession
+) -> Optional[Dict[str, Any]]:
+    """给前端一个轻量、稳定的错误归因摘要。
+
+    结构化来源优先级：
+    1. ``run_logs.error_category``：ServerRunnerService / agent_ws 写入的归因日志
+    2. ``run_commands.ok=false``：Server 大脑 RPC 命令失败
+    3. ``Run.reason``：老链路或人工 stop 的兜底原因
+    """
+    log_res = await session.execute(
+        select(RunLog)
+        .where(
+            RunLog.run_id == run.id,
+            or_(RunLog.error_category.is_not(None), RunLog.level >= 3),
+        )
+        .order_by(RunLog.id.desc())
+        .limit(1)
+    )
+    log = log_res.scalars().first()
+    if log is not None:
+        category = log.error_category or _category_from_reason(log.content or log.title)
+        return {
+            "category": category,
+            "error_class": log.error_class,
+            "message": log.content or log.title or run.reason or "",
+            "title": log.title or "",
+            "source": "run_log",
+            "trace_id": log.trace_id,
+            "step": log.step,
+        }
+
+    cmd_res = await session.execute(
+        select(RunCommand)
+        .where(RunCommand.run_id == run.id, RunCommand.ok.is_(False))
+        .order_by(RunCommand.id.desc())
+        .limit(1)
+    )
+    cmd = cmd_res.scalars().first()
+    if cmd is not None:
+        return {
+            "category": cmd.error_category or _category_from_reason(cmd.error_msg or ""),
+            "error_class": cmd.error_class,
+            "message": cmd.error_msg or "",
+            "title": cmd.method,
+            "source": "run_command",
+            "trace_id": cmd.message_id,
+            "step": cmd.step,
+            "method": cmd.method,
+            "command_id": cmd.message_id,
+        }
+
+    if run.status in ("failed", "stopped") and run.reason:
+        return {
+            "category": _category_from_reason(run.reason),
+            "error_class": None,
+            "message": run.reason,
+            "title": "",
+            "source": "run",
+            "trace_id": run.trace_id,
+            "step": None,
+        }
+    return None
+
+
+def _category_from_reason(reason: str) -> str:
+    text = (reason or "").lower()
+    if "agent_offline" in text or "agent offline" in text:
+        return "agent_offline"
+    if "timeout" in text or "rpc" in text or "network" in text or "server_restarted" in text:
+        return "network"
+    if "model" in text or "vlm" in text or "assert" in text:
+        return "model"
+    if "device" in text or "driver" in text or "adb" in text or "wda" in text:
+        return "device"
+    if "stopped" in text or "cancel" in text:
+        return "stopped"
+    return "unknown"

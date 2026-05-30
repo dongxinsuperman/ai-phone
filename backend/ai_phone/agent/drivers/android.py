@@ -25,6 +25,8 @@ from PIL import Image
 from adbutils import AdbDevice, adb
 from loguru import logger
 
+from ai_phone.config import get_settings
+
 from .base import BaseDriver, DeviceInfo
 
 # ADBKeyBoard（https://github.com/senzhk/ADBKeyBoard）是安卓生态里给自动化注入
@@ -67,6 +69,12 @@ class AndroidDriver(BaseDriver):
         self._adb_kb_last_fail_reason: str = ""
         # 记录进入 run 前默认 IME，任务结束可由上层调 restore 恢复；这里只做标记
         self._prev_ime: Optional[str] = None
+        # adbutils.window_size() 内部会读 rotation，少数设备/ROM 偶发
+        # ``rotation get failed``。尺寸本身是点击/滑动坐标换算的基础，不能因为
+        # rotation RPC 抖一下就直接杀 Run；失败时按 last-known / screenshot /
+        # wm size 逐层兜底。
+        self._last_window_size: Optional[Tuple[int, int]] = None
+        self._window_size_fallback_warned: bool = False
 
         # 禁自动息屏：设备 ready 就打一次，失败只 WARN。系统级命令，无 UI 副作用，
         # 和定时"滑动喂活"那种打桩方案比零感知，也不会误触运行中的 app。
@@ -81,6 +89,30 @@ class AndroidDriver(BaseDriver):
     # ------------------------------------------------------------------
     # 息屏策略
     # ------------------------------------------------------------------
+    def prepare_for_run(self) -> None:
+        """按需在 Run 前唤醒 Android 屏幕。
+
+        调用方由 env 决定是否执行本钩子；钩子只做 wake + dismiss-keyguard，
+        不再承载设备级上滑策略，也不在 Run 后主动熄屏。
+        """
+        try:
+            # KEYCODE_WAKEUP = 224：只唤醒，不像 KEYCODE_POWER 那样盲目切换状态。
+            self._device.keyevent(224)
+            logger.info("设备 {} Run 前唤醒：KEYCODE_WAKEUP", self.serial)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("设备 {} Run 前唤醒失败：{}", self.serial, exc)
+
+        try:
+            self._device.shell("wm dismiss-keyguard")
+            logger.info("设备 {} Run 前尝试收起 keyguard", self.serial)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("设备 {} dismiss-keyguard 失败：{}", self.serial, exc)
+
+        settings = get_settings()
+        settle_s = max(0, int(settings.android_wake_before_run_settle_ms)) / 1000.0
+        if settle_s > 0:
+            time.sleep(settle_s)
+
     def _setup_stay_awake(self) -> None:
         """把设备的自动息屏关掉，让排队期/长任务里设备不会自己锁屏。
 
@@ -131,9 +163,82 @@ class AndroidDriver(BaseDriver):
     # 屏幕信息
     # ------------------------------------------------------------------
     def window_size(self) -> Tuple[int, int]:
-        # adbutils 的 window_size 会根据当前旋转返回逻辑宽高
-        size = self._device.window_size()
-        return int(size.width), int(size.height)
+        # adbutils 的 window_size 会根据当前旋转返回逻辑宽高；正常路径必须优先
+        # 使用它，避免横屏/竖屏逻辑尺寸被兜底算法误改。
+        try:
+            size = self._device.window_size()
+            result = (int(size.width), int(size.height))
+            if result[0] > 0 and result[1] > 0:
+                self._last_window_size = result
+                return result
+        except Exception as exc:  # noqa: BLE001
+            original_exc = exc
+        else:
+            original_exc = RuntimeError(f"invalid adbutils window_size: {size!r}")
+
+        fallback = self._window_size_fallback(original_exc)
+        if fallback is not None:
+            self._last_window_size = fallback
+            return fallback
+        raise RuntimeError(f"window_size failed: {original_exc}") from original_exc
+
+    def _window_size_fallback(self, original_exc: Exception) -> Optional[Tuple[int, int]]:
+        """adbutils.window_size 失败后的兜底链。
+
+        顺序刻意保守：
+        1. 上次成功逻辑尺寸：同一个 Run 内最稳，且保留旋转后的宽高。
+        2. 当前截图尺寸：真实当前画面尺寸，适合 rotation RPC 已坏但截图可用。
+        3. ``wm size``：最后兜底，尽量用 rotation 修正；rotation 也坏时返回原值。
+        """
+        if self._last_window_size is not None:
+            self._warn_window_size_fallback("last-known", original_exc)
+            return self._last_window_size
+
+        try:
+            img = self._raw_screenshot()
+            if img.size[0] > 0 and img.size[1] > 0:
+                result = (int(img.size[0]), int(img.size[1]))
+                self._warn_window_size_fallback("screenshot", original_exc)
+                return result
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("设备 {} window_size 截图兜底失败：{}", self.serial, exc)
+
+        try:
+            result = self._window_size_from_wm_size()
+            if result is not None:
+                self._warn_window_size_fallback("wm size", original_exc)
+                return result
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("设备 {} window_size wm size 兜底失败：{}", self.serial, exc)
+        return None
+
+    def _warn_window_size_fallback(self, source: str, original_exc: Exception) -> None:
+        if self._window_size_fallback_warned:
+            return
+        self._window_size_fallback_warned = True
+        logger.warning(
+            "设备 {} adbutils.window_size 失败，已使用 {} 兜底；原始错误：{}",
+            self.serial,
+            source,
+            original_exc,
+        )
+
+    def _window_size_from_wm_size(self) -> Optional[Tuple[int, int]]:
+        out = (self._device.shell("wm size") or "").strip()
+        matches = re.findall(r"(Physical|Override) size:\s*(\d+)x(\d+)", out)
+        if not matches:
+            return None
+        # 有 Override 时优先使用 Override；否则用 Physical。
+        chosen = matches[-1]
+        for item in matches:
+            if item[0] == "Override":
+                chosen = item
+        w, h = int(chosen[1]), int(chosen[2])
+        # wm size 通常是自然方向尺寸。只有确认当前横屏时才交换，rotation 读不到
+        # 就保持原值，因为前面还有 last-known/screenshot 两层更可靠兜底。
+        if self.rotation() in (1, 3) and h > w:
+            w, h = h, w
+        return w, h
 
     def rotation(self) -> int:
         try:
@@ -549,7 +654,10 @@ def list_android_devices(include_offline: bool = False) -> List[DeviceInfo]:
             try:
                 # 扫描路径也会打一次息屏设置——靠 _STAY_AWAKE_DONE 做 serial 粒度
                 # 幂等，只有插上第一次才真跑 shell，后续 rescan 命中缓存直接跳过
-                driver = AndroidDriver(adb.device(serial=d.serial))
+                driver = AndroidDriver(
+                    adb.device(serial=d.serial),
+                    setup_power=bool(get_settings().android_setup_stay_awake),
+                )
                 infos.append(driver.device_info())
             except Exception as exc:  # noqa: BLE001
                 logger.warning("读取设备 {} 信息失败: {}", d.serial, exc)
@@ -567,4 +675,7 @@ def list_android_devices(include_offline: bool = False) -> List[DeviceInfo]:
 
 def open_android_driver(serial: str) -> AndroidDriver:
     """按 serial 打开一个 AndroidDriver；找不到或未授权会抛异常。"""
-    return AndroidDriver(adb.device(serial=serial))
+    return AndroidDriver(
+        adb.device(serial=serial),
+        setup_power=bool(get_settings().android_setup_stay_awake),
+    )

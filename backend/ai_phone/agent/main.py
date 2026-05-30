@@ -19,7 +19,8 @@ import platform
 import socket
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+import traceback
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 # 模块顶层的 MIRROR_* 常量从 os.environ 读，需要先把 backend/.env 加载进来。
 # pydantic Settings 自己解析 .env 不会注入到 os.environ，所以这里显式 load_dotenv。
@@ -32,11 +33,16 @@ except Exception:  # noqa: BLE001
 
 from loguru import logger
 
+from ai_phone.agent.app_install import handle_app_install_start
 from ai_phone.agent.drivers import (
     list_all_devices,
     open_driver as _open_driver_by_platform,
 )
 from ai_phone.agent.drivers.base import BaseDriver
+from ai_phone.agent.drivers.ios_wda_lifecycle import (
+    StableWdaUnavailable,
+    get_ios_wda_lifecycle_policy,
+)
 from ai_phone.agent.mirror import (
     FMp4Streamer,
     extract_codec_string_from_moov,
@@ -44,6 +50,12 @@ from ai_phone.agent.mirror import (
     extract_sps_nal as _extract_sps_nal,
 )
 from ai_phone.agent.runner import build_runner
+from ai_phone.agent.runner.events import log_event
+from ai_phone.agent.runner.stability import (
+    wait_page_stable_pixel,
+    wait_page_stable_v2_compare,
+)
+from ai_phone.agent.reliable_reporter import ReliableReporter
 from ai_phone.agent.runner_bridge import RunnerBridge
 from ai_phone.agent.scrcpy_client import (
     EVENT_DISCONNECT as _SCRCPY_EVENT_DISCONNECT,
@@ -51,8 +63,8 @@ from ai_phone.agent.scrcpy_client import (
     EVENT_RAW_BYTES as _SCRCPY_EVENT_RAW_BYTES,
     Client as ScrcpyClient,
 )
-from ai_phone.agent.ws_client import AgentWSClient, stable_agent_id
-from ai_phone.config import get_settings
+from ai_phone.agent.ws_client import AgentWSClient, normalize_server_address, stable_agent_id
+from ai_phone.config import get_settings, has_runtime_override
 from ai_phone.shared import protocol as P
 
 
@@ -73,49 +85,148 @@ def _env_int(key: str, default: int) -> int:
         return default
 
 
-MIRROR_MAX_WIDTH = _env_int("AI_PHONE_MIRROR_MAX_WIDTH", 1280)
-"""scrcpy server 缩放后的长边像素。720 模糊，1280 锐利，1920 接近原生。
-MSE 路径下没有再编码损失，1280 已经能看清细文字。"""
-
-MIRROR_MAX_FPS = _env_int("AI_PHONE_MIRROR_MAX_FPS", 30)
-"""H.264 帧率上限。MSE 不需要二次抽帧，30fps 流畅且 CPU < 5%。"""
-
-MIRROR_BITRATE = _env_int("AI_PHONE_MIRROR_BITRATE", 6_000_000)
-"""H.264 编码码率（bit/s）。1280→6M 是甜点；调高到 10M 可以更锐但带宽吃紧。"""
-
-MIRROR_FRAG_MS = _env_int("AI_PHONE_MIRROR_FRAG_MS", 50)
-"""fmp4 媒体分片时长（毫秒）。
-
-直接决定 ffmpeg 出货粒度，是端到端延迟最大的可调项之一：
-- 50  : 默认。延迟 ~50~120ms，CPU 略升（每段都走一次 muxer + 一次 WS 帧）
-- 100 : 老默认。延迟 ~100~250ms，CPU 更省
-- 33  : 接近 1 帧 1 段（30fps 下），延迟最低，但 WS 频率会很高 ~30msg/s
-
-不要小于 16ms，否则 ffmpeg muxer 会拒绝。"""
-
-MIRROR_GOP_SEC = _env_int("AI_PHONE_MIRROR_GOP_SEC", 1)
-"""IDR 关键帧间隔（秒）。
-
-影响：
-- 首帧时间：浏览器需要等到一个 IDR 才能开始解码
-- 拖动播放点 / 第二窗口订阅时的恢复延迟
-- 码率（IDR 比 P 帧大很多）
-推荐：1（默认）；想首帧快可调 0；要省码率调 2。"""
+# Android scrcpy 镜像参数已迁入 Settings（mirror_max_width / mirror_max_fps /
+# mirror_bitrate / mirror_frag_ms / mirror_gop_sec），改为运行时从 get_settings()
+# 读，以便 Server 下发统一覆盖（见 _scrcpy_mirror_params）。
+def _scrcpy_mirror_params() -> Dict[str, int]:
+    s = get_settings()
+    return {
+        "max_width": int(s.mirror_max_width),
+        "max_fps": int(s.mirror_max_fps),
+        "bitrate": int(s.mirror_bitrate),
+        "frag_ms": int(s.mirror_frag_ms),
+        "gop_sec": int(s.mirror_gop_sec),
+    }
 
 
 # 进程内驱动缓存：同一设备的 VLM Run 和手动 input 共享一个 driver 实例，
 # 避免反复构造连接，也让 ADBKeyBoard / WDA session 等缓存状态在 Run 内 / 间复用。
 _driver_cache: Dict[str, BaseDriver] = {}
 
+
+class _LatestMirrorPayloadSender:
+    """Lossy latest-only sender for high-volume mirror frames.
+
+    Reliable control/readiness/log messages still use the normal WS sender. This
+    helper is only for independent mirror_jpeg frames where stale payloads are
+    worse than dropped payloads.
+    """
+
+    def __init__(
+        self,
+        serial: str,
+        ws_client: "AgentWSClient",
+        loop: asyncio.AbstractEventLoop,
+        label: str,
+    ) -> None:
+        self._serial = serial
+        self._ws = ws_client
+        self._loop = loop
+        self._label = label
+        self._lock = threading.Lock()
+        self._sending = False
+        self._closed = False
+        self._pending: Optional[Dict[str, Any]] = None
+
+    def close(self) -> None:
+        with self._lock:
+            self._closed = True
+            self._pending = None
+
+    def send_latest(self, payload: Dict[str, Any]) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            if self._sending:
+                self._pending = payload
+                return
+            self._sending = True
+
+        coro = self._drain(payload)
+        try:
+            fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
+            fut.add_done_callback(self._on_done)
+        except Exception as exc:  # noqa: BLE001
+            coro.close()
+            with self._lock:
+                self._sending = False
+            logger.debug(
+                "调度 {} mirror_jpeg latest sender 失败 serial={}: {}",
+                self._label, self._serial, exc,
+            )
+
+    async def _drain(self, first_payload: Dict[str, Any]) -> None:
+        payload: Optional[Dict[str, Any]] = first_payload
+        normal_exit = False
+        try:
+            while payload is not None:
+                sent = await self._ws.send(payload)
+                if not sent:
+                    with self._lock:
+                        self._pending = None
+                        self._sending = False
+                    normal_exit = True
+                    return
+
+                with self._lock:
+                    if self._closed:
+                        self._pending = None
+                        self._sending = False
+                        normal_exit = True
+                        return
+                    payload = self._pending
+                    self._pending = None
+                    if payload is None:
+                        self._sending = False
+                        normal_exit = True
+                        return
+        finally:
+            if not normal_exit:
+                with self._lock:
+                    self._pending = None
+                    self._sending = False
+
+    def _on_done(self, fut) -> None:  # type: ignore[no-untyped-def]
+        try:
+            fut.result()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "{} mirror_jpeg latest sender 结束异常 serial={}: {}",
+                self._label, self._serial, exc,
+            )
+
+
 # serial → platform 映射。设备发现时填，open_driver / mirror 创建时按它路由。
 # 没记录的 serial 默认按 Android 处理（adbutils），保留旧行为兼容。
 _serial_platform: Dict[str, str] = {}
+_serial_screen_size: Dict[str, Tuple[int, int]] = {}
+_serial_product_type: Dict[str, str] = {}
+
+
+# iOS 会先以 UIKit scale 渲染、再缩放到物理屏幕的机型。
+# 典型表现：WDA/window 截图坐标是 1242x2208 或 1125x2436，
+# 但 web 镜像/设备物理屏是 1080x1920 或 1080x2340。
+_IOS_DOWNSAMPLED_PRODUCT_TYPES: Set[str] = {
+    "iPhone7,1",   # iPhone 6 Plus
+    "iPhone8,2",   # iPhone 6s Plus
+    "iPhone9,2",   # iPhone 7 Plus
+    "iPhone9,4",   # iPhone 7 Plus
+    "iPhone10,2",  # iPhone 8 Plus
+    "iPhone10,5",  # iPhone 8 Plus
+    "iPhone13,1",  # iPhone 12 mini
+    "iPhone14,4",  # iPhone 13 mini
+}
 
 
 def _record_serial_platform(infos: List[Any]) -> None:
     """把 device_provider 拿到的设备列表里的 serial → platform 记进缓存，
     给后续 ``_get_or_open_driver`` / mirror 路由复用。
+
+    ``infos`` 已经过 iOS snapshot freshness 处理，是 Agent 对外上报给 Server 的
+    最终快照；这里同步按它清理旧 serial，避免 readiness supervisor 继续探测
+    已经不在本轮快照里的设备。
     """
+    current_serials: Set[str] = set()
     for info in infos:
         # info 既可能是 DeviceInfo dataclass 也可能是 dict（device_provider 转过）
         try:
@@ -124,7 +235,27 @@ def _record_serial_platform(infos: List[Any]) -> None:
         except Exception:  # noqa: BLE001
             continue
         if serial and platform:
-            _serial_platform[str(serial)] = str(platform)
+            serial_s = str(serial)
+            current_serials.add(serial_s)
+            _serial_platform[serial_s] = str(platform)
+            try:
+                product_type = getattr(info, "model", None) or info["model"]
+            except Exception:  # noqa: BLE001
+                product_type = ""
+            if product_type:
+                _serial_product_type[serial_s] = str(product_type)
+            try:
+                width = int(getattr(info, "screen_width", None) or info["screen_width"])
+                height = int(getattr(info, "screen_height", None) or info["screen_height"])
+            except Exception:  # noqa: BLE001
+                width = height = 0
+            if width > 0 and height > 0:
+                _serial_screen_size[serial_s] = (width, height)
+    stale_serials = set(_serial_platform) - current_serials
+    for serial in stale_serials:
+        _serial_platform.pop(serial, None)
+        _serial_screen_size.pop(serial, None)
+        _serial_product_type.pop(serial, None)
 
 
 def _get_or_open_driver(
@@ -155,6 +286,145 @@ def _get_or_open_driver(
     return drv
 
 
+def _prepare_harmony_before_open(
+    serial: str,
+    *,
+    wake_policy: Optional[Dict[str, bool]] = None,
+) -> None:
+    """HarmonyOS Run 前纯 hdc 唤醒，必须能在 hmdriver2 初始化前执行。"""
+    from ai_phone.agent.drivers.harmony import prepare_harmony_for_run  # noqa: PLC0415
+
+    prepare_harmony_for_run(
+        serial,
+        screen_size=_serial_screen_size.get(serial),
+        swipe=bool((wake_policy or {}).get("wake_swipe")),
+    )
+
+
+def _wake_harmony_on_enter(serial: str) -> None:
+    """进入工作台/启动镜像前只点亮 HarmonyOS，手动上滑交给用户。"""
+    from ai_phone.agent.drivers.harmony import prepare_harmony_for_run  # noqa: PLC0415
+
+    prepare_harmony_for_run(
+        serial,
+        screen_size=_serial_screen_size.get(serial),
+        force=True,
+        swipe=False,
+    )
+
+
+def _check_ios_driver_health(serial: str) -> Tuple[bool, str]:
+    """纯只读探活：判断缓存里 iOS driver 对应的 WDA 是否还活着。
+
+    返回 ``(healthy, reason)``：
+      * ``healthy=True``：要么缓存里就没这把 driver，要么 ``/status`` 通。
+      * ``healthy=False``：driver 在 cache、但 WDA 不可达；``reason`` 解释原因。
+
+    本函数**不做任何处置**——不 close、不摘 cache、不 spawn——只回答"健康不健
+    康"。如何处置交给 ``_handle_ios_driver_unhealthy``，由 policy 决定是 auto
+    的"close + 重建"还是 stable 的"留着 + 报错"。这样一来，stable 下"WDA /status
+    抖动一下就被打断"的扰动彻底消失。详见 §7.3 / §7.0.1 #2。
+
+    stable 模式下额外做有限重试：单次 /status 失败不立刻判 unhealthy，按
+    300ms → 800ms 节拍补两次 probe，避免一次网络抖动直接报死。
+    """
+    drv = _driver_cache.get(serial)
+    if drv is None or getattr(drv, "platform", None) != "ios":
+        return True, "no_cache"
+    try:
+        from .drivers.ios import _WDA_CLIENT_MAP  # noqa: PLC0415
+    except Exception as exc:  # noqa: BLE001
+        return False, f"WDA client 全局 map 不可用：{exc}"
+    cli = _WDA_CLIENT_MAP.get(serial)
+    if cli is None:
+        return False, "WdaClient 未登记在全局 map"
+
+    policy = get_ios_wda_lifecycle_policy()
+    # auto 路径维持单次 probe 语义，与本拆分引入前完全等价。
+    # stable 路径做有限重试（§7.3）：300ms → 800ms，三次都失败才算 unhealthy。
+    probe_intervals = (0.3, 0.8) if policy.is_stable else ()
+    last_reason = ""
+    for attempt in range(1 + len(probe_intervals)):
+        try:
+            st = cli.status() or {}
+            if not st:
+                last_reason = "WDA /status 返回空"
+            else:
+                return True, ""
+        except Exception as exc:  # noqa: BLE001
+            last_reason = f"WDA /status 异常：{exc}"
+        if attempt < len(probe_intervals):
+            time.sleep(probe_intervals[attempt])
+    return False, last_reason or "WDA /status 不可达"
+
+
+def _handle_ios_driver_unhealthy(serial: str, reason: str) -> bool:
+    """处置探活已经判定为 unhealthy 的 iOS driver。
+
+    auto: 老的 close + 摘 cache 语义——下一次 ``_get_or_open_driver`` 会重新
+          拉起 xcodebuild + 建 session，调试期热拔插自愈不下降。
+    stable: 不 close、不摘 cache、不重建，仅 warn 一行；返回 False 让调用方
+          抛 ``StableWdaUnavailable`` 或显式 device_status 通知浏览器，告诉
+          用户走"拔 USB → 人工准备 → 重插"那一套。
+
+    返回值与历史 ``_invalidate_dead_ios_driver`` 对齐：True=真的清理了缓存
+    （调用方知道下次是冷启动），False=未清理（stable 下不主动 close）。
+    """
+    policy = get_ios_wda_lifecycle_policy()
+    drv = _driver_cache.get(serial)
+    if drv is None or getattr(drv, "platform", None) != "ios":
+        return False
+
+    if not policy.allow_driver_invalidation_close():
+        logger.warning(
+            "iOS driver 缓存疑似失效 serial={} reason={} — lifecycle={} 跳过 close+重建，"
+            "{}",
+            serial, reason, policy.mode.value,
+            policy.stable_unavailable_message(reason),
+        )
+        return False
+
+    logger.warning(
+        "iOS driver 缓存已失效 serial={} reason={} — 丢弃并在下次 open 时重建",
+        serial, reason,
+    )
+    try:
+        drv.close()
+    except Exception:  # noqa: BLE001
+        pass
+    _driver_cache.pop(serial, None)
+    return True
+
+
+def _drop_ios_driver_cache_after_usb_disconnect(serial: str) -> None:
+    """Forget cached iOS driver state after a trusted USB disconnect.
+
+    Stable lifecycle intentionally keeps the driver cache when WDA drops while
+    the device is still present: that is the "do not auto-restart" guard. A real
+    USB removal is different. It defines a new insertion session, so any cached
+    WDA client/forwarder/xcodebuild handle belongs to the old session and must
+    not block the next workbench entry from spawning WDA again.
+    """
+    drv = _driver_cache.pop(serial, None)
+    if drv is not None:
+        try:
+            drv.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("iOS USB 断开后关闭旧 driver 异常 serial={}: {}", serial, exc)
+        logger.info("iOS USB 断开，已丢弃旧 driver/WDA 缓存 serial={}", serial)
+        return
+
+    # Defensive cleanup for partially-opened paths where WdaClient was registered
+    # but the driver never made it into _driver_cache.
+    try:
+        from .drivers.ios import _PORT_ALLOC_LOCK, _WDA_CLIENT_MAP  # noqa: PLC0415
+
+        with _PORT_ALLOC_LOCK:
+            _WDA_CLIENT_MAP.pop(serial, None)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("iOS USB 断开后清理 WDA client map 异常 serial={}: {}", serial, exc)
+
+
 def _invalidate_dead_ios_driver(serial: str) -> bool:
     """热拔插自愈：若缓存里的 iOS driver 对应的 WDA 已经不可达，
     就把它关掉 + 从 ``_driver_cache`` 摘掉，让下一次 ``_get_or_open_driver``
@@ -165,31 +435,20 @@ def _invalidate_dead_ios_driver(serial: str) -> bool:
 
     返回 True 表示真的清理了缓存（调用方知道接下来是一次"冷启动"），False
     表示缓存健康或本来就没有缓存。
+
+    **薄壳保留**（§7.0.1 #2 / §7.3）：本函数内部委托给"检测 + 处置"两段。
+    auto 路径行为与拆分前完全一致；stable 路径下处置端会变为"不 close、不
+    摘 cache，返回 False"——但 stable 下：
+      * ``_maybe_preload_ios`` 已被 ``allow_preload()=False`` 短路，
+        ``_preload_ios_worker`` 整体不会被进入，该调用路径天然消失；
+      * ``_handle_start_mirror`` 必须自行 catch ``StableWdaUnavailable`` 或
+        检查返回 False 后显式生成 device_status 推到浏览器，否则 dead driver
+        会留在 cache 里继续被复用，比 auto 还糟（详见 §7.0.1 #2 说明）。
     """
-    drv = _driver_cache.get(serial)
-    if drv is None or getattr(drv, "platform", None) != "ios":
+    healthy, reason = _check_ios_driver_health(serial)
+    if healthy:
         return False
-    try:
-        from .drivers.ios import _WDA_CLIENT_MAP  # noqa: PLC0415
-        cli = _WDA_CLIENT_MAP.get(serial)
-        if cli is None:
-            raise RuntimeError("WdaClient 未登记在全局 map")
-        # /status 不需要 session，通不通最能反映 WDA 进程本身是否还活
-        st = cli.status() or {}
-        if not st:
-            raise RuntimeError("WDA /status 返回空")
-        return False
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "iOS driver 缓存已失效 serial={} reason={} — 丢弃并在下次 open 时重建",
-            serial, exc,
-        )
-        try:
-            drv.close()
-        except Exception:  # noqa: BLE001
-            pass
-        _driver_cache.pop(serial, None)
-        return True
+    return _handle_ios_driver_unhealthy(serial, reason)
 
 
 def _make_device_status_reporter(
@@ -218,8 +477,58 @@ def _make_device_status_reporter(
             asyncio.run_coroutine_threadsafe(ws_client.send(msg), loop)
         except Exception as exc:  # noqa: BLE001
             logger.debug("device_status 上报失败 serial={}: {}", serial, exc)
+        if stage == "ready":
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    _send_ios_readiness_probe_once(ws_client, serial),
+                    loop,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("device_readiness ready 补发调度失败 serial={}: {}", serial, exc)
 
     return _reporter
+
+
+async def _send_ios_readiness_probe_once(ws_client: "AgentWSClient", serial: str) -> None:
+    """After WDA reports ready, immediately publish the iOS readiness verdict.
+
+    The periodic readiness supervisor also probes this, but it de-dupes state
+    transitions and may race with WS reconnects. A one-shot probe on WDA-ready
+    keeps the home page and scheduler aligned with the workbench path without
+    changing the readiness criteria.
+    """
+    if _serial_platform.get(serial) != "ios":
+        return
+    try:
+        from .health.probe import IosProbe  # noqa: PLC0415
+
+        outcome = await IosProbe(
+            serial,
+            timeout_sec=float(get_settings().readiness_probe_timeout_sec),
+        ).probe()
+        sent = await ws_client.send(
+            {
+                "type": P.MSG_DEVICE_READINESS,
+                "serial": serial,
+                "platform": "ios",
+                "ready": bool(outcome.ready),
+                "not_ready_reason": outcome.not_ready_reason,
+                "hint": outcome.hint,
+                "fail_streak": 0 if outcome.ready else 1,
+                "ts": time.time(),
+            }
+        )
+        if not sent:
+            logger.debug("iOS WDA ready 后补发 readiness 未发送成功 serial={}", serial)
+            return
+        logger.info(
+            "iOS WDA ready 后补发 readiness serial={} ready={} reason={}",
+            serial,
+            outcome.ready,
+            outcome.not_ready_reason,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("iOS WDA ready 后补发 readiness 失败 serial={}: {}", serial, exc)
 
 
 class _RunSupervisor:
@@ -227,21 +536,46 @@ class _RunSupervisor:
 
     def __init__(self) -> None:
         self._runs: Dict[str, Dict[str, Any]] = {}
+        # 进程级可靠上报队列（统一收发室），由 run() 创建后注入。bridge 与各旁路都
+        # 用它发可靠上报；它跨 run 存活、run 结束不销毁，所以终态不丢。
+        self.reporter: Optional[ReliableReporter] = None
 
     def is_busy(self, serial: str) -> bool:
+        self._drop_done()
         return any(r["serial"] == serial for r in self._runs.values())
 
     def register(self, run_id: str, serial: str, task: asyncio.Task, bridge: RunnerBridge) -> None:
         self._runs[run_id] = {"serial": serial, "task": task, "bridge": bridge}
 
+        def _cleanup(done: asyncio.Task) -> None:
+            self._runs.pop(run_id, None)
+            if done.cancelled():
+                return
+            try:
+                exc = done.exception()
+            except Exception:  # noqa: BLE001
+                return
+            if exc is not None:
+                logger.error("runner task 提前异常 run_id={}: {}", run_id, exc)
+
+        task.add_done_callback(_cleanup)
+
     def pop(self, run_id: str) -> Optional[Dict[str, Any]]:
         return self._runs.pop(run_id, None)
 
     def get(self, run_id: str) -> Optional[Dict[str, Any]]:
+        self._drop_done()
         return self._runs.get(run_id)
 
     def all_tasks(self) -> List[asyncio.Task]:
+        self._drop_done()
         return [r["task"] for r in self._runs.values()]
+
+    def _drop_done(self) -> None:
+        for run_id, entry in list(self._runs.items()):
+            task = entry.get("task")
+            if isinstance(task, asyncio.Task) and task.done():
+                self._runs.pop(run_id, None)
 
 
 # ------------------------------------------------------------------
@@ -269,6 +603,18 @@ _preload_lock = threading.Lock()
 # 真未授权 / 未信任 的设备每 5s 起一次 xcodebuild。
 _preload_fail_ts: Dict[str, float] = {}
 _PRELOAD_RETRY_COOLDOWN_SEC = 45.0
+_stable_preload_skip_logged = False
+
+# §7.5.1.2 拔插会话语义：每次 rescan 用上一次的 iOS udid 集合对比当前集合，
+# 不在新集合里的 udid 视为"USB 拔出"，喂给 ios_wda_lifecycle policy 清掉 spawn
+# 标记，让下一次插入又算作一次新的"插入会话"。
+#
+# 判定离线必须用"udid 完全从 usbmux 列表消失"这一信号——不要用
+# ``status != "online"`` 过滤（unauthorized / passcode_locked 仍属于"在场但需
+# 人工解锁"，清状态会让用户解锁后又被允许 spawn 一次，不符合"我没拔啊"的预期）。
+# auto 下 policy 内部不维护 _spawned_serials，本钩子等同 no-op，但**钩子本身永
+# 远跑**，确保两种模式走相同的代码路径（§7.0.1 #4）。
+_last_seen_ios_serials: Set[str] = set()
 
 
 def _try_wake_ios(serial: str) -> None:
@@ -355,7 +701,23 @@ def _maybe_preload_ios(infos: List[Any]) -> None:
       的死循环。正解是**只要 usbmux 还能看到这个 udid**（说明 USB 物理通路没问题），
       就派一次 preload 去拉 WDA——xcodebuild 走的是 instruments，不依赖 lockdown。
       失败则走 cooldown。
+
+    stable 模式（``AI_PHONE_IOS_WDA_LIFECYCLE_MODE=stable``）会在顶部短路：
+    部署期不允许 agent 主动拉 WDA，避免设备空闲时突然出现"WDA 编译中"。
+    详见 docs/ios-setup（iOS接入指南）.md。
+    auto 模式下 ``allow_preload()`` 恒为 True，与本短路引入前完全等价。
     """
+    policy = get_ios_wda_lifecycle_policy()
+    if not policy.allow_preload():
+        global _stable_preload_skip_logged
+        # 静默 no-op：stable 下 rescan 每次都过这里，info 级会被刷屏；debug 留一条便于追踪
+        if not _stable_preload_skip_logged:
+            _stable_preload_skip_logged = True
+            logger.debug(
+                "iOS WDA 生命周期 mode={}，跳过 preload（部署期不主动拉 WDA）",
+                policy.mode.value,
+            )
+        return
     settings = get_settings()
     if not settings.ios_wda_preload:
         return
@@ -402,11 +764,276 @@ def _maybe_preload_ios(infos: List[Any]) -> None:
             logger.info("iOS 预热线程已派发 serial={}（AI_PHONE_IOS_WDA_PRELOAD=true）", s)
 
 
+# 上一份"被认定可信"的 iOS DeviceInfo 列表快照。
+#
+# 修 Codex 三审 P2：仅靠 _emit_ios_disconnect_events 在 scan_ok=False 时跳过
+# 还不够——下游 ws_client._rescan_loop 看到 _device_provider() 返回的 serial
+# 集合少了 iOS，就会触发 MSG_HELLO；server 端 _upsert_devices 直接 DELETE 不
+# 在场的设备，导致浏览器卡片闪烁、Hub/DB 短暂认为 iPhone 拔了。
+#
+# 修复策略：在 _device_provider 内做一层"iOS 快照保鲜"——
+#   * was_last_ios_scan_ok() == True ：把本次 iOS 部分写入快照（覆盖式更新）
+#   * was_last_ios_scan_ok() == False：把本次 iOS 部分撤掉，用快照补回去
+# Android / Harmony 部分完全不动；它们各自扫描有独立逻辑，跟 usbmuxd 抖动
+# 无关。修补后的 infos 再喂下游 _record_serial_platform /
+# _emit_ios_disconnect_events / _maybe_preload_ios，保证"agent 内部状态"与
+# "上报给 server 的真相"完全一致。
+_last_good_ios_snapshot: List[Any] = []
+
+
 def _device_provider() -> List[Dict[str, Any]]:
     infos = list_all_devices()
+    infos = _apply_ios_snapshot_freshness(infos)
     _record_serial_platform(infos)
+    _emit_ios_disconnect_events(infos)
     _maybe_preload_ios(infos)
     return [d.to_dict() for d in infos]
+
+
+def _apply_ios_snapshot_freshness(infos: List[Any]) -> List[Any]:
+    """根据 ``was_last_ios_scan_ok()`` 决定保留还是替换本次的 iOS 部分。
+
+    详见 ``_last_good_ios_snapshot`` 文档头。这是一道"对外可见的真相"保鲜
+    层——如果当前 iOS 扫描结果可信，就更新快照、原样返回；如果不可信
+    （usbmuxd 抖动 / 空列表 streak 未到阈值 / pmd3 未装），就把本次 iOS 段
+    替换成上一份可信快照，保证 ws_client 上报给 server 的 serial 集合不
+    抖动。
+    """
+    global _last_good_ios_snapshot
+    try:
+        from .drivers.ios import was_last_ios_scan_ok  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        # iOS 模块整体不可用（pmd3 未装）→ 没有 iOS 设备需要保鲜，原样返回
+        return infos
+
+    non_ios = [i for i in infos if getattr(i, "platform", None) != "ios"]
+    cur_ios = [i for i in infos if getattr(i, "platform", None) == "ios"]
+    if was_last_ios_scan_ok():
+        # 可信扫描：覆盖式更新快照。即使本次 cur_ios=[]（真的没插 iOS 设备
+        # 或者已经被 streak 状态机确认为真拔出）也要更新——快照本身就要
+        # 反映"上一份可信扫描"的真实内容。
+        _last_good_ios_snapshot = list(cur_ios)
+        return infos
+    # 不可信扫描：撤掉本次 iOS 段（通常是个空列表，但即使有部分残留也以快照
+    # 为准，避免"半新半旧"造成的混合态），用快照补回去
+    if cur_ios:
+        logger.debug(
+            "iOS 扫描不可信但本次仍带 {} 个 iOS 项，按快照覆盖以保持一致性",
+            len(cur_ios),
+        )
+    logger.debug(
+        "iOS 扫描不可信，沿用上一份可信快照（{} 个 iOS 设备）维持 rehello 稳定",
+        len(_last_good_ios_snapshot),
+    )
+    return non_ios + list(_last_good_ios_snapshot)
+
+
+def _reset_ios_snapshot_for_tests() -> None:
+    """测试钩子：清空 iOS 快照状态。仅供单测使用。"""
+    global _last_good_ios_snapshot
+    _last_good_ios_snapshot = []
+
+
+def _emit_ios_disconnect_events(infos: List[Any]) -> None:
+    """对比上一次 rescan 看到的 iOS udid 集合，把消失的喂给 lifecycle policy。
+
+    详见 docs/ios-setup（iOS接入指南）.md。
+
+    auto 模式下 policy 内部不维护 ``_spawned_serials``，``on_device_disconnected``
+    直接 return，整段是 no-op；但**这段代码本身永远跑**，不带 mode 判断，让两
+    种模式走相同的代码路径，避免后续 stable 路径出现"只在 stable 跑的状态机
+    缺少更新"这类 bug（§7.0.1 #4）。
+
+    **抖动保护**（修 P1 / Codex 审查）：本函数只有在 ``list_ios_devices`` 报告
+    "本轮 USB 扫描可信"时才更新拔插会话状态。macOS 上 usbmuxd 偶发抖动会让
+    ``usbmux.list_devices()`` 抛异常 / 返回空列表，几百毫秒后又恢复——如果直接
+    用 ``current_ios_serials`` 跟 ``_last_seen_ios_serials`` 做差集，会把"全部
+    在线 iOS"误判成"全部拔出"，下一次成功扫描时又被视为"新插入"，让 stable
+    模式偷偷允许 agent 再 spawn 一次 WDA，打破方案 §6.1 "拔插=唯一重置入口"
+    的核心承诺。
+    """
+    global _last_seen_ios_serials
+
+    # 不可信扫描（usbmux 抖动 / pmd3 未装）→ 完全跳过本轮 disconnect 判定，
+    # 也**不更新** _last_seen_ios_serials。下一轮扫描成功时再用上一次可信
+    # 快照做差集，能避免抖动期被误判为拔线。
+    try:
+        from .drivers.ios import was_last_ios_scan_ok  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        # iOS 模块整体不可用（环境没装 pmd3）—— 没有 iOS 设备需要跟踪，安全 no-op
+        return
+    if not was_last_ios_scan_ok():
+        logger.debug(
+            "iOS USB 扫描结果不可信（usbmuxd 抖动或 iOS 平台禁用），"
+            "本轮跳过拔插事件判定，保留上次快照（已记录 {} 个 udid）",
+            len(_last_seen_ios_serials),
+        )
+        return
+
+    current_ios_serials: Set[str] = set()
+    for info in infos:
+        try:
+            plat = getattr(info, "platform", None)
+            serial = getattr(info, "serial", None)
+        except Exception:  # noqa: BLE001
+            continue
+        # 注意：**只看 udid 是否在 usbmux 列表里**，不参考 status。
+        # unauthorized / passcode_locked 仍属于"在场但需人工解锁"，不应触发
+        # disconnect——否则用户解锁后会被状态机误以为"新一次插入"又允许 spawn。
+        if plat == "ios" and serial:
+            current_ios_serials.add(str(serial))
+
+    gone = _last_seen_ios_serials - current_ios_serials
+    if gone:
+        policy = get_ios_wda_lifecycle_policy()
+        for serial in gone:
+            try:
+                policy.on_device_disconnected(serial)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "policy.on_device_disconnected 异常 serial={}: {}", serial, exc
+                )
+            _drop_ios_driver_cache_after_usb_disconnect(serial)
+            # auto 下 policy 不维护集合，info 日志会刷屏；只在 stable 下打 info。
+            # auto 下打 debug 留个观测点。
+            if policy.is_stable:
+                logger.info(
+                    "iOS WDA 生命周期 — mode=stable，udid={} 已离线，"
+                    "清空 stable spawn 标记和旧 driver 缓存（下次插入视为新一次插入会话）",
+                    serial,
+                )
+            else:
+                logger.debug(
+                    "iOS rescan: udid={} 已离线（auto 模式无 spawn 标记需清）",
+                    serial,
+                )
+    _last_seen_ios_serials = current_ios_serials
+
+
+_V3_ARCHIVE_TASKS: "set[asyncio.Task[None]]" = set()
+
+
+def _schedule_cache_archive(
+    *,
+    client: AgentWSClient,
+    reporter: Any,
+    driver: Any,
+    run_id: str,
+    serial: str,
+    goal: str,
+    attempt: int,
+    recorder: Any,
+    cache_mode: str,
+    server_http_base: str,
+) -> None:
+    """首跑成功后**后台**归档成品（V2/V3）并回传（fire-and-forget）。
+
+    严格不阻塞 case 完成：run_done 已由 runner emit、case 此刻即算结束；本调度只是
+    把"整理 + 回传"丢到后台 task，整理→回传→Server 落库的几分钟时差可接受。
+    """
+    try:
+        task = asyncio.create_task(
+            _archive_and_report(
+                client=client, reporter=reporter, driver=driver, run_id=run_id,
+                serial=serial, goal=goal, attempt=attempt, recorder=recorder,
+                cache_mode=cache_mode, server_http_base=server_http_base,
+            ),
+            name=f"cache-archive-{run_id}",
+        )
+    except RuntimeError as exc:
+        logger.warning("缓存归档调度失败 run_id={}: {}", run_id, exc)
+        return
+    _V3_ARCHIVE_TASKS.add(task)
+    task.add_done_callback(_V3_ARCHIVE_TASKS.discard)
+
+
+async def _archive_and_report(
+    *,
+    client: AgentWSClient,
+    reporter: Any,
+    driver: Any,
+    run_id: str,
+    serial: str,
+    goal: str,
+    attempt: int,
+    recorder: Any,
+    cache_mode: str,
+    server_http_base: str,
+) -> None:
+    """用首跑第一手数据整理成品（V2/V3），经 M3 可靠通道（reporter）回传 Server。"""
+    try:
+        from ai_phone.agent.trajectory_cache.archive import (  # noqa: PLC0415
+            build_v1_archive,
+            build_v2_archive,
+            build_v3_archive,
+        )
+
+        # 屏幕尺寸用于把 normalized 坐标转绝对像素（doubao 系）；run 已结束、只读尺寸、安全。
+        screen_size = (0, 0)
+        try:
+            w, h = await asyncio.to_thread(driver.window_size)
+            screen_size = (int(w), int(h))
+        except Exception:  # noqa: BLE001
+            pass
+
+        common: Dict[str, Any] = dict(
+            goal=goal,
+            device_serial=serial,
+            source_run_id=run_id,
+            source_vlm_backend=str(getattr(get_settings(), "vlm_backend", "") or ""),
+            platform=_serial_platform.get(serial, ""),
+            screen_size=screen_size,
+            run_reason=recorder.finish_reason,
+            completion_logs=recorder.completion_logs,
+            steps=recorder.steps(),
+        )
+        if cache_mode == "v3":
+            archive = await build_v3_archive(**common)
+            has_actions = bool(archive.get("actions"))
+        elif cache_mode == "v2":
+            async def _upload(data: bytes) -> str:
+                return await _upload_cache_image(server_http_base, data)
+
+            archive = await build_v2_archive(**common, upload_image=_upload)
+            has_actions = bool((archive.get("trajectory_json") or {}).get("actions"))
+        elif cache_mode == "v1":
+            archive = await build_v1_archive(**common)
+            has_actions = bool((archive.get("trajectory_json") or {}).get("actions"))
+        else:
+            return
+        if not has_actions:
+            logger.info(
+                "缓存归档：首跑未整理出可回放动作，跳过回传 run_id={} mode={}", run_id, cache_mode
+            )
+            return
+        archive_msg = {
+            "type": P.MSG_CACHE_ARCHIVE,
+            "run_id": run_id,
+            "serial": serial,
+            "attempt": attempt,
+            "archive": archive,
+        }
+        if reporter is not None:
+            await reporter.enqueue(archive_msg)
+        else:
+            await client.send(archive_msg)
+        logger.info("成品缓存已整理回传 run_id={} mode={}", run_id, cache_mode)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("缓存归档回传失败 run_id={}: {}", run_id, exc)
+
+
+async def _upload_cache_image(server_http_base: str, data: bytes) -> str:
+    """上传 V2 landmark 证据图到 Server /files，返回 url（归档后台调；失败抛由调用方降级）。"""
+    import httpx  # noqa: PLC0415
+
+    async with httpx.AsyncClient(base_url=server_http_base, timeout=20.0) as http:
+        resp = await http.post(
+            "/api/files/upload",
+            files={"file": ("landmark.jpg", data, "image/jpeg")},
+            data={"content_type": "image/jpeg"},
+        )
+        resp.raise_for_status()
+        return str(resp.json().get("url") or "")
 
 
 async def _handle_start_run(
@@ -417,35 +1044,77 @@ async def _handle_start_run(
     run_id = str(msg.get("run_id") or "").strip()
     serial = str(msg.get("device_serial") or "").strip()
     goal = str(msg.get("goal") or "").strip()
+    try:
+        attempt = max(1, int(msg.get("attempt") or 1))
+    except Exception:  # noqa: BLE001
+        attempt = 1
     # 引擎选择：缺省 'vlm'（与历史行为完全等价）。'midscene' 等外接引擎走不同路径，
     # 比如不开 ai-phone driver、不走 vlm_loop。详见 `Midscene执行器接入方案.md`。
     engine = str(msg.get("engine") or "vlm").strip().lower() or "vlm"
-    trajectory = msg.get("trajectory") or {}
+    # M5：凭证集中下发的运维可见性——本 run 启动时若尚未应用 Server 下发配置（连接竞态 /
+    # Server 未下发），可信环境下用本机 .env 兜底；但本机也无主模型 key 时模型调用必失败，
+    # 这里前置告警便于排查（不 fail-fast 拒跑，符合"凭证没就绪就重试拿到为止"）。
+    if engine == "vlm" and not has_runtime_override():
+        # M5：本 run 未应用 Server 下发配置（连接时下发漏达 / 应用失败）→ 异步按需补拉一次
+        # （不阻塞本 run：本 run 走本机兜底，补发的 config 在后续 run 生效；不 fail-fast 拒跑）。
+        try:
+            await client.send({"type": P.MSG_AGENT_CONFIG_REQUEST})
+        except Exception:  # noqa: BLE001
+            pass
+        if not str(getattr(get_settings(), "vlm_api_key", "") or "").strip():
+            logger.warning(
+                "run_id={} 启动时未应用 Server 下发配置且本机无 vlm_api_key，模型调用将失败；"
+                "已请求补发配置，等下发到达 / 本机配置后重试",
+                run_id,
+            )
+    # M4 片1：命中缓存时 Server 随 start_run 下发回放快照。本片先记录、验证下发链路；
+    # 实际本地回放在片2（V3 端到端）起接入。
+    cache_snapshot = msg.get("cache_snapshot") or None
+    # M4 片3b：本 run 的 effective_cache_mode（Server 下发）。首跑（未命中）且 ==v3 时，
+    # 旁路收集第一手数据、成功后后台归档回传；命中回放看 cache_snapshot，不看本字段。
+    cache_mode = str(msg.get("cache_mode") or "").strip().lower()
+    if cache_snapshot:
+        logger.info(
+            "收到缓存命中快照 run_id={} mode={} actions={} landmarks={}（V1/V2/V3 本地回放）",
+            run_id, cache_snapshot.get("cache_mode"),
+            len(cache_snapshot.get("actions") or []),
+            len(cache_snapshot.get("state_landmarks") or []),
+        )
+    raw_wake_policy = msg.get("wake_policy")
+    wake_policy: Dict[str, bool] = (
+        dict(raw_wake_policy) if isinstance(raw_wake_policy, dict) else {}
+    )
     if not (run_id and serial and goal):
         logger.warning("start_run 参数不全 | run_id={} serial={} goal_len={}", run_id, serial, len(goal))
         return
 
     if supervisor.is_busy(serial):
-        await client.send(
-            {
-                "type": P.MSG_RUN_DONE,
-                "run_id": run_id,
-                "serial": serial,
-                "result": "error",
-                "message": "device busy on another run",
-                "steps": 0,
-                "elapsed_ms": 0,
-                "token_stats": {},
-            }
-        )
+        # 设备忙、拒绝这次派发。bridge 还没建，但有进程级 reporter，这条终态同样
+        # 走可靠队列（断线留存 / 重连补发），与其它终态一致地不丢。
+        busy_done = {
+            "type": P.MSG_RUN_DONE,
+            "run_id": run_id,
+            "serial": serial,
+            "attempt": attempt,
+            "result": "error",
+            "message": "device busy on another run",
+            "steps": 0,
+            "elapsed_ms": 0,
+            "token_stats": {},
+        }
+        if supervisor.reporter is not None:
+            await supervisor.reporter.enqueue(busy_done)
+        else:
+            await client.send(busy_done)
         return
 
-    settings = get_settings()
     bridge = RunnerBridge(
         run_id=run_id,
         serial=serial,
         ws_send=client.send,
-        server_http_base=settings.server_http_base,
+        server_http_base=client.server_http_base or get_settings().server_http_base,
+        attempt=attempt,
+        reporter=supervisor.reporter,
     )
 
     async def _run_task() -> None:
@@ -453,16 +1122,55 @@ async def _handle_start_run(
         # 客户端，由 bridge 子进程操作设备。这里跳过 _get_or_open_driver 既省时间，
         # 也避免在不需要时把 iOS WDA / scrcpy 这类副作用带起来。
         driver = None
-        if engine in {"vlm", "trajectory_cache"}:
+        if engine == "vlm":
+            prepared_before_open = False
+            settings = get_settings()
+            platform_name = _serial_platform.get(serial, "android")
+            if platform_name == "harmony" and settings.harmony_wake_before_run:
+                bridge.emit(
+                    log_event(
+                        run_id,
+                        1,
+                        "设备电源",
+                        "Run 前唤醒 HarmonyOS：power-shell wakeup"
+                        + (" + 兜底上滑" if wake_policy.get("wake_swipe") else ""),
+                    )
+                )
+                try:
+                    await asyncio.to_thread(
+                        _prepare_harmony_before_open,
+                        serial,
+                        wake_policy=wake_policy,
+                    )
+                    prepared_before_open = True
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Run 前唤醒 HarmonyOS 失败 serial={}", serial)
+                    await bridge.send_run_done(
+                        {
+                            "type": P.MSG_RUN_DONE,
+                            "run_id": run_id,
+                            "serial": serial,
+                            "attempt": attempt,
+                            "result": "error",
+                            "message": f"prepare_for_run_failed: {exc}",
+                            "steps": 0,
+                            "elapsed_ms": 0,
+                            "token_stats": {},
+                        }
+                    )
+                    await bridge.aclose()
+                    supervisor.pop(run_id)
+                    return
             try:
                 driver = await asyncio.to_thread(_get_or_open_driver, serial)
             except Exception as exc:  # noqa: BLE001
                 logger.exception("打开设备失败 serial={}", serial)
-                await client.send(
+                await bridge.send_run_done(
                     {
                         "type": P.MSG_RUN_DONE,
                         "run_id": run_id,
                         "serial": serial,
+                        "attempt": attempt,
                         "result": "error",
                         "message": f"open_driver_failed: {exc}",
                         "steps": 0,
@@ -473,6 +1181,153 @@ async def _handle_start_run(
                 await bridge.aclose()
                 supervisor.pop(run_id)
                 return
+            if (
+                driver is not None
+                and getattr(driver, "platform", "") == "android"
+                and settings.android_wake_before_run
+            ):
+                bridge.emit(
+                    log_event(
+                        run_id,
+                        1,
+                        "设备电源",
+                        "Run 前唤醒 Android：KEYCODE_WAKEUP + dismiss-keyguard",
+                    )
+                )
+                await asyncio.to_thread(driver.prepare_for_run)
+            elif (
+                driver is not None
+                and getattr(driver, "platform", "") == "harmony"
+                and settings.harmony_wake_before_run
+                and not prepared_before_open
+            ):
+                bridge.emit(
+                    log_event(
+                        run_id,
+                        1,
+                        "设备电源",
+                        "Run 前唤醒 HarmonyOS：power-shell wakeup"
+                        + (" + 兜底上滑" if wake_policy.get("wake_swipe") else ""),
+                    )
+                )
+                await asyncio.to_thread(driver.prepare_for_run, wake_policy=wake_policy)
+            elif (
+                driver is not None
+                and getattr(driver, "platform", "") == "ios"
+                and getattr(settings, "ios_wake_before_run", False)
+            ):
+                bridge.emit(
+                    log_event(
+                        run_id,
+                        1,
+                        "设备电源",
+                        "Run 前唤醒 iOS：wda.unlock",
+                    )
+                )
+                await asyncio.to_thread(driver.prepare_for_run)
+
+        # M4 片3a/4：命中缓存 → Agent 本地回放（替代 VLMRunner 首跑）。回放沿用上面
+        # open 好的 driver + 唤醒；编排自己发 run_done 终态，这里独立 try/finally 收尾、
+        # 跑完直接 return，不再走下方首跑路径。V1 命中暂不回放（见片5），落首跑。
+        if engine == "vlm" and cache_snapshot:
+            from ai_phone.agent.trajectory_cache.orchestrate import (  # noqa: PLC0415
+                is_v1_cache_hit,
+                is_v2_cache_hit,
+                is_v3_cache_hit,
+                run_v1_replay,
+                run_v2_replay,
+                run_v3_replay,
+            )
+
+            replay_coro = None
+            if is_v3_cache_hit(cache_snapshot):
+                replay_coro = run_v3_replay(
+                    run_id=run_id,
+                    serial=serial,
+                    goal=goal,
+                    attempt=attempt,
+                    driver=driver,
+                    bridge=bridge,
+                    snapshot=cache_snapshot,
+                    settings=get_settings(),
+                )
+            elif is_v2_cache_hit(cache_snapshot):
+                replay_coro = run_v2_replay(
+                    run_id=run_id,
+                    serial=serial,
+                    goal=goal,
+                    attempt=attempt,
+                    driver=driver,
+                    bridge=bridge,
+                    snapshot=cache_snapshot,
+                    settings=get_settings(),
+                    server_http_base=client.server_http_base or get_settings().server_http_base,
+                )
+            elif is_v1_cache_hit(cache_snapshot):
+                replay_coro = run_v1_replay(
+                    run_id=run_id,
+                    serial=serial,
+                    goal=goal,
+                    attempt=attempt,
+                    driver=driver,
+                    bridge=bridge,
+                    snapshot=cache_snapshot,
+                    settings=get_settings(),
+                )
+
+            if replay_coro is not None:
+                try:
+                    await replay_coro
+                except asyncio.CancelledError:
+                    await bridge.send_run_done(
+                        {
+                            "type": P.MSG_RUN_DONE,
+                            "run_id": run_id,
+                            "serial": serial,
+                            "attempt": attempt,
+                            "result": "cancelled",
+                            "message": "stopped_by_server",
+                            "steps": 0,
+                            "elapsed_ms": 0,
+                            "token_stats": {},
+                        }
+                    )
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("缓存回放异常 run_id={}", run_id)
+                    await bridge.send_run_done(
+                        {
+                            "type": P.MSG_RUN_DONE,
+                            "run_id": run_id,
+                            "serial": serial,
+                            "attempt": attempt,
+                            "result": "error",
+                            "message": f"trajectory_cache_orchestrate_crash: {exc}",
+                            "steps": 0,
+                            "elapsed_ms": 0,
+                            "token_stats": {},
+                        }
+                    )
+                finally:
+                    await bridge.aclose()
+                    supervisor.pop(run_id)
+                return
+
+        # M4 片3b/4c：首跑（未命中）且本 run 开了 V2/V3 缓存 → 旁路收集第一手执行数据，
+        # run 成功后后台归档成品回传。只旁听已有事件流（bridge.emit + recorder.feed），
+        # 不动 vlm_loop 核心。命中回放走上面分流、不到这里。
+        recorder = None
+        run_emit = bridge.emit
+        if engine == "vlm" and cache_mode in ("v1", "v2", "v3"):
+            from ai_phone.agent.trajectory_cache.recorder import (  # noqa: PLC0415
+                TrajectoryRecorder,
+            )
+
+            recorder = TrajectoryRecorder(run_id)
+
+            def run_emit(evt: Dict[str, Any], _b=bridge.emit, _r=recorder) -> None:
+                _b(evt)
+                _r.feed(evt)
 
         try:
             runner = build_runner(
@@ -481,16 +1336,16 @@ async def _handle_start_run(
                 serial=serial,
                 driver=driver,
                 goal=goal,
-                trajectory=trajectory if isinstance(trajectory, dict) else None,
-                emit=bridge.emit,
-                settings=settings,
+                emit=run_emit,
+                settings=get_settings(),
             )
-        except RuntimeError as exc:
-            await client.send(
+        except Exception as exc:  # noqa: BLE001
+            await bridge.send_run_done(
                 {
                     "type": P.MSG_RUN_DONE,
                     "run_id": run_id,
                     "serial": serial,
+                    "attempt": attempt,
                     "result": "error",
                     "message": f"init_runner_failed: {exc}",
                     "steps": 0,
@@ -504,12 +1359,28 @@ async def _handle_start_run(
 
         try:
             await runner.run()
+            # M4 片3b：首跑成功 → 后台归档 V3 成品回传（fire-and-forget，绝不阻塞 case
+            # 完成；run_done 已由 runner emit、case 此刻即算结束，归档/回传/落库慢慢来）。
+            if recorder is not None and recorder.success:
+                _schedule_cache_archive(
+                    client=client,
+                    reporter=supervisor.reporter,
+                    driver=driver,
+                    run_id=run_id,
+                    serial=serial,
+                    goal=goal,
+                    attempt=attempt,
+                    recorder=recorder,
+                    cache_mode=cache_mode,
+                    server_http_base=client.server_http_base or get_settings().server_http_base,
+                )
         except asyncio.CancelledError:
-            await client.send(
+            await bridge.send_run_done(
                 {
                     "type": P.MSG_RUN_DONE,
                     "run_id": run_id,
                     "serial": serial,
+                    "attempt": attempt,
                     "result": "cancelled",
                     "message": "stopped_by_server",
                     "steps": 0,
@@ -520,11 +1391,12 @@ async def _handle_start_run(
             raise
         except Exception as exc:  # noqa: BLE001
             logger.exception("Runner 异常 run_id={}", run_id)
-            await client.send(
+            await bridge.send_run_done(
                 {
                     "type": P.MSG_RUN_DONE,
                     "run_id": run_id,
                     "serial": serial,
+                    "attempt": attempt,
                     "result": "error",
                     "message": f"runner_crash: {exc}",
                     "steps": 0,
@@ -585,6 +1457,9 @@ async def _handle_input(
         logger.warning("input 参数不全 | serial={} kind={}", serial, kind)
         return
     try:
+        platform_name = _serial_platform.get(serial, "android")
+        if platform_name == "harmony" and get_settings().harmony_wake_on_enter:
+            await asyncio.to_thread(_wake_harmony_on_enter, serial)
         driver = await asyncio.to_thread(_get_or_open_driver, serial)
     except Exception as exc:  # noqa: BLE001
         logger.warning("input 无法打开设备 {}: {}", serial, exc)
@@ -609,6 +1484,15 @@ async def _handle_input(
     )
 
     try:
+        if (
+            platform_name == "ios"
+            and kind in ("tap", "swipe", "long_press")
+            and session is not None
+            and session.is_alive
+            and session.control is None
+        ):
+            params = _remap_ios_downsampled_manual_input(driver, session, kind, params)
+
         if use_scrcpy:
             # scrcpy fast-path：直接走控制 socket，几乎零延迟
             await _dispatch_input_via_scrcpy(driver, session, kind, params)
@@ -670,6 +1554,82 @@ async def _handle_input(
             logger.warning("input 未知 kind={} serial={}", kind, serial)
     except Exception as exc:  # noqa: BLE001
         logger.exception("input 执行失败 serial={} kind={}: {}", serial, kind, exc)
+
+
+def _ios_downsample_product_type(serial: str, driver: BaseDriver) -> str:
+    product_type = _serial_product_type.get(serial, "")
+    if product_type:
+        return product_type
+    try:
+        info = driver.device_info()
+        product_type = str(getattr(info, "model", "") or "")
+    except Exception:  # noqa: BLE001
+        product_type = ""
+    if product_type:
+        _serial_product_type[serial] = product_type
+    return product_type
+
+
+def _remap_ios_downsampled_manual_input(
+    driver: BaseDriver,
+    session: Any,
+    kind: str,
+    params: Dict[str, Any],
+) -> Dict[str, Any]:
+    """把 downsample iPhone 的 web 手动坐标换算到 WDA 坐标系。"""
+    serial = str(getattr(session, "serial", "") or "")
+    product_type = _ios_downsample_product_type(serial, driver)
+    if product_type not in _IOS_DOWNSAMPLED_PRODUCT_TYPES:
+        return params
+
+    source = _serial_screen_size.get(serial) or getattr(session, "resolution", None)
+    if not source or not source[0] or not source[1]:
+        return params
+    try:
+        sw, sh = int(source[0]), int(source[1])
+        dw, dh = session.get_device_size(driver)
+        dw, dh = int(dw), int(dh)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "ios.input.remap 跳过 serial={} product_type={} params={} err={}",
+            serial, product_type, params, exc,
+        )
+        return params
+    if sw <= 0 or sh <= 0 or dw <= 0 or dh <= 0 or (sw == dw and sh == dh):
+        return params
+
+    # 前端 displaySize 会按当前画面横竖屏交换 W/H；这里也按 driver 方向对齐。
+    if (sw > sh) != (dw > dh):
+        sw, sh = sh, sw
+    sx = dw / sw
+    sy = dh / sh
+
+    def _map(x: Any, y: Any) -> Tuple[int, int]:
+        mx = max(0, min(dw - 1, round(int(x) * sx)))
+        my = max(0, min(dh - 1, round(int(y) * sy)))
+        return mx, my
+
+    out = dict(params)
+    try:
+        if kind in ("tap", "long_press"):
+            out["x"], out["y"] = _map(out.get("x", 0), out.get("y", 0))
+        elif kind == "swipe":
+            out["x1"], out["y1"] = _map(out.get("x1", 0), out.get("y1", 0))
+            out["x2"], out["y2"] = _map(out.get("x2", 0), out.get("y2", 0))
+        else:
+            return params
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "ios.input.remap 失败 serial={} product_type={} kind={} params={} err={}",
+            serial, product_type, kind, params, exc,
+        )
+        return params
+
+    logger.info(
+        "ios.input.remap | serial={} product_type={} kind={} source={}x{} driver={}x{} in={} out={}",
+        serial, product_type, kind, sw, sh, dw, dh, params, out,
+    )
+    return out
 
 
 async def _dispatch_input_via_scrcpy(
@@ -806,12 +1766,13 @@ class _MirrorSession:
         self._last_init_payload: Optional[Dict[str, Any]] = None
 
     def start(self) -> None:
+        mirror = _scrcpy_mirror_params()
         try:
             self._scrcpy = ScrcpyClient(
                 device=self.serial,
-                max_width=MIRROR_MAX_WIDTH,
-                max_fps=MIRROR_MAX_FPS,
-                bitrate=MIRROR_BITRATE,
+                max_width=mirror["max_width"],
+                max_fps=mirror["max_fps"],
+                bitrate=mirror["bitrate"],
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("scrcpy 初始化失败 serial={}: {}", self.serial, exc)
@@ -820,9 +1781,9 @@ class _MirrorSession:
         self._fmp4 = FMp4Streamer(
             on_init=self._on_fmp4_init,
             on_segment=self._on_fmp4_segment,
-            framerate=MIRROR_MAX_FPS,
-            frag_ms=MIRROR_FRAG_MS,
-            gop_sec=MIRROR_GOP_SEC,
+            framerate=mirror["max_fps"],
+            frag_ms=mirror["frag_ms"],
+            gop_sec=mirror["gop_sec"],
             log_tag=f"fmp4:{self.serial}",
         )
 
@@ -1058,6 +2019,7 @@ class _IosMirrorSession:
         self._streamer = None  # type: ignore[assignment]
         self._mirror_resolution: Optional[Tuple[int, int]] = None
         self._last_init_payload: Optional[Dict[str, Any]] = None
+        self._jpeg_sender = _LatestMirrorPayloadSender(self.serial, self._ws, self._loop, "iOS")
 
     def start(self) -> None:
         # iOS mirror 后端按 settings.ios_mirror_backend 三选一：
@@ -1086,10 +2048,59 @@ class _IosMirrorSession:
             # ready / error）通过 WS 推给浏览器，让用户不用看 agent 终端。
             status_reporter = _make_device_status_reporter(self._ws, self._loop, self.serial)
             # 拔线重插场景：缓存里的 driver 对应的 WDA 很可能已经跟着设备死了，
-            # 先做一次健康检查，不通就丢弃缓存，避免后面 mjpeg 全 502
-            _invalidate_dead_ios_driver(self.serial)
+            # 先做一次健康检查，不通就丢弃缓存，避免后面 mjpeg 全 502。
+            #
+            # stable 模式（§7.0.1 #2 / §7.3）：_handle_ios_driver_unhealthy 不会
+            # close + 摘 cache，dead driver 会继续留在 _driver_cache 里，下一行
+            # _get_or_open_driver 直接复用导致全 502。因此这里显式两段：
+            #   * auto 下 _check_ios_driver_health 单次 probe，unhealthy → 处置
+            #     端 close + 摘 cache，与本拆分前完全等价。
+            #   * stable 下 _check_ios_driver_health 做 3 次有限重试，仍 unhealthy
+            #     就拒绝起 mirror、发 device_status(stage=error) 告诉用户拔插重做
+            #     人工准备，绝不复用 dead driver。
+            healthy, health_reason = _check_ios_driver_health(self.serial)
+            if not healthy:
+                policy = get_ios_wda_lifecycle_policy()
+                if policy.allow_driver_invalidation_close():
+                    _handle_ios_driver_unhealthy(self.serial, health_reason)
+                else:
+                    logger.warning(
+                        "iOS mirror 启动 serial={} 检测到 WDA 不可达（{}）但 lifecycle={}，"
+                        "拒绝起 mirror，请拔出 USB 重新插入设备",
+                        self.serial, health_reason, policy.mode.value,
+                    )
+                    try:
+                        # stage 用 error（DeviceStage Literal 内已定义、前端有
+                        # 红色卡片样式）。runtime_drop 是 launcher 内部约定，
+                        # 协议层从未声明、前端没匹配，stable failure 走 error
+                        # 才能保证浏览器真正显示出"未自动重启，请人工拔插"。
+                        status_reporter(
+                            "error",
+                            "WDA 不可达，未自动重启",
+                            policy.stable_unavailable_message(health_reason),
+                            0,
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self._stopped = True
+                    return
             try:
                 _get_or_open_driver(self.serial, on_status=status_reporter)
+            except StableWdaUnavailable as exc:
+                # stable + 本次插入会话已 spawn 过 + attach 又失败的情形：
+                # open_ios_driver 抛 StableWdaUnavailable，这里转成 device_status
+                # 让浏览器明确显示"未自动重启，请人工拔插"。
+                logger.warning(
+                    "iOS mjpeg mirror 启动 serial={} 被 stable policy 拒绝：{}",
+                    self.serial, exc,
+                )
+                try:
+                    # 同上：stage 用 error，确保前端能显示这条 stable failure
+                    status_reporter("error", "WDA 不可达，未自动重启", str(exc), 0)
+                except Exception:  # noqa: BLE001
+                    pass
+                self._stopped = True
+                return
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "iOS mjpeg mirror 启动前 open_driver 失败 serial={}: {} "
@@ -1113,6 +2124,7 @@ class _IosMirrorSession:
         except Exception:  # noqa: BLE001
             pass
 
+        mirror = _scrcpy_mirror_params()
         try:
             self._streamer = build_ios_streamer(
                 serial=self.serial,
@@ -1123,9 +2135,9 @@ class _IosMirrorSession:
                 # （再高 ffmpeg 按虚假帧率标 PTS → MSE 延迟堆积）
                 # wda_mjpeg / mjpeg_passthrough 路径：build_ios_streamer 会改用
                 # settings.wda_mjpeg_fps
-                target_fps=min(MIRROR_MAX_FPS, 5),
-                frag_ms=MIRROR_FRAG_MS,
-                gop_sec=MIRROR_GOP_SEC,
+                target_fps=min(mirror["max_fps"], 5),
+                frag_ms=mirror["frag_ms"],
+                gop_sec=mirror["gop_sec"],
                 log_tag=f"ios-fmp4:{self.serial}",
                 wda_local_port=wda_local_port,
             )
@@ -1145,6 +2157,7 @@ class _IosMirrorSession:
         if self._stopped:
             return
         self._stopped = True
+        self._jpeg_sender.close()
         if self._streamer is not None:
             try:
                 self._streamer.stop()
@@ -1240,7 +2253,7 @@ class _IosMirrorSession:
             "height": int(h),
             "ts": time.time(),
         }
-        self._dispatch(payload)
+        self._jpeg_sender.send_latest(payload)
         if self._segment_count == 1 or self._segment_count % 60 == 0:
             logger.info(
                 "iOS mjpeg passthrough 累计 serial={} count={} "
@@ -1295,6 +2308,7 @@ class _HarmonyMirrorSession:
 
         self._streamer = None  # type: ignore[assignment]
         self._mirror_resolution: Optional[Tuple[int, int]] = None
+        self._jpeg_sender = _LatestMirrorPayloadSender(self.serial, self._ws, self._loop, "harmony")
 
     def start(self) -> None:
         try:
@@ -1307,6 +2321,12 @@ class _HarmonyMirrorSession:
             )
             self._stopped = True
             return
+
+        try:
+            if get_settings().harmony_wake_on_enter:
+                _wake_harmony_on_enter(self.serial)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("harmony mirror 启动前 wake 失败 serial={}: {}", self.serial, exc)
 
         # 和 iOS 一样，先确保 driver 就绪——streamer 会复用同一个 hmdriver2.Driver
         # singleton，避免双方抢 hdc 端口转发。driver 创建失败（设备未授权 / uitest
@@ -1344,6 +2364,7 @@ class _HarmonyMirrorSession:
         if self._stopped:
             return
         self._stopped = True
+        self._jpeg_sender.close()
         if self._streamer is not None:
             try:
                 self._streamer.stop()
@@ -1392,7 +2413,7 @@ class _HarmonyMirrorSession:
             "height": int(h),
             "ts": time.time(),
         }
-        self._dispatch(payload)
+        self._jpeg_sender.send_latest(payload)
         if self._frame_count == 1 or self._frame_count % 60 == 0:
             logger.info(
                 "harmony mjpeg 累计 serial={} count={} 最近一帧 {}×{} bytes={}",
@@ -1444,6 +2465,16 @@ class _MirrorSupervisor:
             return
         existing = self._sessions.get(serial)
         if existing is not None and not getattr(existing, "_stopped", False):
+            platform = _serial_platform.get(serial, "android")
+            if platform == "harmony" and get_settings().harmony_wake_on_enter:
+                try:
+                    _wake_harmony_on_enter(serial)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "harmony mirror 复用前 wake 失败 serial={}: {}",
+                        serial,
+                        exc,
+                    )
             # 幂等：会话还在跑，但要把缓存的 init segment 重广播一次。
             existing.replay_init()
             return
@@ -1512,22 +2543,36 @@ async def _handle_stop_mirror(
         await asyncio.to_thread(supervisor.stop, serial)
 
 
+def _normalize_agent_token(raw: Optional[str]) -> str:
+    """清理 CLI/env token 两端常见复制粘贴字符。"""
+
+    return str(raw or "").strip().strip("'\"‘’“”")
+
+
 def run(
     server_ws: Optional[str] = None,
     token: Optional[str] = None,
     name: Optional[str] = None,
 ) -> None:
     settings = get_settings()
-    effective_ws = server_ws or settings.server_ws_url
-    effective_token = token or settings.agent_token
+    effective_ws, derived_http_base = normalize_server_address(server_ws or settings.server_ws_url)
+    default_http_base = "http://127.0.0.1:8000"
+    if server_ws is not None:
+        effective_http_base = derived_http_base
+    elif settings.server_http_base.rstrip("/") == default_http_base:
+        effective_http_base = derived_http_base
+    else:
+        effective_http_base = settings.server_http_base.rstrip("/")
+    effective_token = _normalize_agent_token(token or settings.agent_token)
     effective_name = name or settings.agent_name or socket.gethostname()
     agent_id = stable_agent_id(effective_name)
 
     logger.info(
-        "ai-phone agent starting | name={} id={} server={} os={}",
+        "ai-phone agent starting | name={} id={} ws={} http={} os={}",
         effective_name,
         agent_id,
         effective_ws,
+        effective_http_base,
         platform.platform(),
     )
 
@@ -1548,9 +2593,15 @@ def run(
         token=effective_token,
         agent_id=agent_id,
         agent_name=effective_name,
+        server_http_base=effective_http_base,
         device_provider=_device_provider,
     )
     mirror_sup = _MirrorSupervisor(client)
+
+    # M3 可靠上报：进程级"统一收发室"。所有 run 的日志 / 步骤 / 终态都经它串行发送，
+    # 断线留存、重连补发、跨 run 存活（run 结束也不丢终态）。出口绑定 client.send。
+    reporter = ReliableReporter(client.send)
+    supervisor.reporter = reporter
 
     async def _start_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         await _handle_start_run(c, supervisor, msg)
@@ -1567,11 +2618,29 @@ def run(
     async def _stop_mirror_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         await _handle_stop_mirror(mirror_sup, msg)
 
+    async def _agent_config_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
+        # Distributed Agent Brain：收到 Server 下发的执行配置 → 覆盖本机 Settings。
+        # 仅覆盖下发集字段（连接/签名/本机路径不受影响）；后续 get_settings() 全程
+        # 返回覆盖版。配置变更靠 Server 重启 → Agent 重连重新下发。
+        from ai_phone.config import set_runtime_override  # noqa: PLC0415
+
+        config = msg.get("config") or {}
+        try:
+            eff = set_runtime_override(config)
+            logger.info(
+                "已应用 Server 下发配置 | 字段数={} vlm_backend={} run_max_steps={}",
+                len(config), eff.vlm_backend, eff.run_max_steps,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("应用 Server 下发配置失败（保持本机默认）：{}", exc)
+
     client.on(P.MSG_START_RUN, _start_handler)
     client.on(P.MSG_STOP_RUN, _stop_handler)
     client.on(P.MSG_INPUT, _input_handler)
     client.on(P.MSG_START_MIRROR, _start_mirror_handler)
     client.on(P.MSG_STOP_MIRROR, _stop_mirror_handler)
+    client.on(P.MSG_APP_INSTALL_START, handle_app_install_start)
+    client.on(P.MSG_AGENT_CONFIG, _agent_config_handler)
 
     # 暴露给 _maybe_preload_ios 使用：必须在 ws loop 起来前绑定 ref；
     # event loop 则在 run_forever 里取（在此之前还没创建）
@@ -1588,12 +2657,25 @@ def run(
         return list(_serial_platform.items())
 
     async def _readiness_send(msg):
-        await client.send(msg)
+        return await client.send(msg)
 
     readiness = ReadinessSupervisor(
         device_lister=_readiness_device_lister,
         send_message=_readiness_send,
     )
+
+    async def _readiness_on_connect(_client: AgentWSClient) -> None:
+        readiness.mark_all_dirty()
+
+    client.on_connect(_readiness_on_connect)
+
+    async def _reporter_on_connect(_client: AgentWSClient) -> None:
+        # M3 可靠上报：WS（重）连成功后，确保 drain worker 已启动，并唤醒它立即从
+        # 队头续发断线期间积压的上报（保序、Server 按 event_id 去重）。
+        reporter.start()
+        reporter.notify_connected()
+
+    client.on_connect(_reporter_on_connect)
 
     async def _bootstrap() -> None:
         global _event_loop_ref

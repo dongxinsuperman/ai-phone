@@ -20,6 +20,8 @@ from typing import Optional
 
 from loguru import logger
 
+from ai_phone.config import get_settings
+
 
 # ---------------------------------------------------------------------------
 # 结果 dataclass
@@ -126,6 +128,12 @@ class AndroidProbe(BaseProbe):
         except Exception as exc:  # noqa: BLE001
             return _fail("driver_probe_failed", f"dumpsys power 失败：{exc}")
         if "state=OFF" in power_out or "state=DOZE" in power_out:
+            if get_settings().android_screen_off_dispatchable:
+                logger.debug(
+                    "[readiness:android:{}] screen off but dispatchable by env",
+                    self.serial,
+                )
+                return _ok()
             return _fail("screen_locked", "屏幕熄屏")
 
         # 3) 锁屏状态。mDreamingLockscreen 在 Android 10+ 一直可用；Android 14+
@@ -137,11 +145,61 @@ class AndroidProbe(BaseProbe):
             )
         except Exception as exc:  # noqa: BLE001
             return _fail("driver_probe_failed", f"dumpsys window 失败：{exc}")
-        # 有任一锁屏标志为 true 就认为锁着
-        if "mDreamingLockscreen=true" in win_out or "mShowingLockscreen=true" in win_out:
+        # 有任一锁屏标志为 true 时，还要区分"普通锁屏外壳"和"安全认证锁"。
+        # Samsung / One UI AOD 会返回 mDreamingLockscreen=true，但 secure=false 且
+        # deviceLocked=0；这种能被 Run 前 KEYCODE_WAKEUP + dismiss-keyguard 收掉。
+        if _android_keyguard_showing(win_out):
+            settings = get_settings()
+            if (
+                settings.android_screen_off_dispatchable
+                and settings.android_wake_before_run
+                and _android_keyguard_can_be_dismissed(device)
+            ):
+                logger.debug(
+                    "[readiness:android:{}] non-secure keyguard but dispatchable by env",
+                    self.serial,
+                )
+                return _ok()
             return _fail("screen_locked", "锁屏中，请解锁 Android")
 
         return _ok()
+
+
+def _android_keyguard_showing(win_out: str) -> bool:
+    return (
+        "mDreamingLockscreen=true" in win_out
+        or "mShowingLockscreen=true" in win_out
+        or "showing=true" in win_out
+    )
+
+
+def _android_keyguard_can_be_dismissed(device) -> bool:
+    """Return True only for non-secure keyguard layers.
+
+    This is intentionally conservative: if the secure/deviceLocked signals cannot
+    be read, readiness stays not-ready and asks the user to unlock manually.
+    """
+
+    try:
+        policy_out = device.shell(
+            "dumpsys window policy | grep -E 'showing=|secure=|screenState=|interactiveState='"
+        )
+        trust_out = device.shell(
+            "dumpsys trust | grep -E 'deviceLocked|strongAuthRequired|trusted|trustManaged'"
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[readiness:android] keyguard security probe failed: {}", exc)
+        return False
+
+    if "secure=true" in policy_out:
+        return False
+    if "deviceLocked=1" in trust_out or "deviceLocked=true" in trust_out:
+        return False
+    if "strongAuthRequired=0x0" not in trust_out:
+        return False
+    return "secure=false" in policy_out and (
+        "deviceLocked=0" in trust_out or "deviceLocked=false" in trust_out
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +236,7 @@ class IosProbe(BaseProbe):
 
         cli = _WDA_CLIENT_MAP.get(self.serial)
         if cli is None:
-            return _fail("wda_not_ready", "WDA 还没起，插上设备后会自动预热")
+            return _fail("wda_not_ready", self._wda_not_ready_hint())
 
         base_url = getattr(cli, "base_url", None) or ""
         if not base_url:
@@ -207,9 +265,32 @@ class IosProbe(BaseProbe):
         except Exception as exc:  # noqa: BLE001
             return _fail("driver_probe_failed", f"/wda/locked 解析失败：{exc}")
         if locked_val:
+            if get_settings().ios_screen_off_dispatchable:
+                logger.debug(
+                    "[readiness:ios:{}] locked/screen off but dispatchable by env",
+                    self.serial,
+                )
+                return _ok()
             return _fail("screen_locked", "iPhone 锁屏中，请解锁")
 
         return _ok()
+
+    @staticmethod
+    def _wda_not_ready_hint() -> str:
+        try:
+            from ai_phone.agent.drivers.ios_wda_lifecycle import (  # noqa: PLC0415
+                get_ios_wda_lifecycle_policy,
+            )
+
+            policy = get_ios_wda_lifecycle_policy()
+        except Exception:  # noqa: BLE001
+            return "WDA 还没起，插上设备后会自动预热"
+
+        if policy.is_stable:
+            if policy.allow_initial_spawn_in_stable:
+                return "WDA 还没起；stable 模式不会插线预热，请进入工作台或跑任务触发本次 USB 会话首次启动"
+            return "WDA 还没起；stable attach-only 模式要求先手动启动 WDA"
+        return "WDA 还没起，插上设备后会自动预热"
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +340,12 @@ class HarmonyProbe(BaseProbe):
         except Exception as exc:  # noqa: BLE001
             return _fail("driver_probe_failed", f"hidumper 失败：{exc}")
         if out and _harmony_screen_is_off(out):
+            if get_settings().harmony_screen_off_dispatchable:
+                logger.debug(
+                    "[readiness:harmony:{}] screen off but dispatchable by env",
+                    self.serial,
+                )
+                return _ok()
             return _fail("screen_locked", "鸿蒙设备屏幕息屏中，请点亮并保持亮屏")
 
         return _ok()

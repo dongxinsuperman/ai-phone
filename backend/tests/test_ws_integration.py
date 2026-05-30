@@ -72,6 +72,16 @@ def ws_app(storage_tmp, tmp_path):
 
     yield app
 
+    # 测试拆完后释放线程池 + 取消在飞 RPC，避免线程泄露
+    try:
+        app.state.driver_rpc_waiter.cancel_all(reason="test teardown")
+    except Exception:
+        pass
+    try:
+        app.state.driver_pool.shutdown(wait=False, cancel_futures=True)
+    except Exception:
+        pass
+
 
 # --------------------------------------------------------------------- upload
 
@@ -124,6 +134,15 @@ def _wait_device_online(client, serial: str, timeout: float = 2.0):
             return resp.json()
         time.sleep(0.05)
     raise AssertionError(f"device {serial} did not come online within {timeout}s")
+
+
+def _recv_until(agent, msg_type: str, max_msgs: int = 5) -> dict:
+    """收到指定 type 的消息为止，跳过中间的其它消息（如连接时下发的 agent_config）。"""
+    for _ in range(max_msgs):
+        msg = agent.receive_json()
+        if msg.get("type") == msg_type:
+            return msg
+    raise AssertionError(f"未在前 {max_msgs} 条消息内收到 type={msg_type}")
 
 
 def test_agent_ws_hello_registers_device(ws_app):
@@ -202,8 +221,8 @@ def test_start_run_dispatched_to_agent(ws_app):
             assert body["dispatched"] is True
             assert body["agent_id"] == "agent-x"
 
-            # Agent 端应收到 start_run 消息
-            msg = agent.receive_json()
+            # Agent 端应收到 start_run 消息（跳过连接时 Server 下发的 agent_config）
+            msg = _recv_until(agent, "start_run")
             assert msg["type"] == "start_run"
             assert msg["device_serial"] == "S1"
             assert msg["goal"] == "打开设置"
@@ -225,12 +244,12 @@ def test_stop_run_forwarded(ws_app):
             _wait_device_online(client, "S1")
             resp = client.post("/api/runs", json={"device_serial": "S1", "goal": "g"})
             run_id = resp.json()["id"]
-            agent.receive_json()  # 吞掉 start_run
+            _recv_until(agent, "start_run")  # 吞掉 start_run（跳过 agent_config）
 
             stop = client.post(f"/api/runs/{run_id}/stop")
             assert stop.status_code == 200
 
-            msg = agent.receive_json()
+            msg = _recv_until(agent, "stop_run")
             assert msg == {"type": "stop_run", "run_id": run_id}
 
 

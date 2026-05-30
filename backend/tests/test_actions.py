@@ -45,6 +45,30 @@ class TestParseAction:
         assert r.action == ACTION_SCROLL
         assert r.point == [500, 800]
         assert r.direction == "up"
+        # 不传 amount → 默认 1（与历史豆包路径行为一致）
+        assert r.scroll_amount == 1
+
+    def test_scroll_with_amount(self):
+        # 豆包路径暴露 amount 后 VLM 可以传 amount=N 表达"长滑 N 屏"
+        r = parse_action(
+            "scroll(point='<point>500 800</point>', direction='down', amount=5)"
+        )
+        assert r.action == ACTION_SCROLL
+        assert r.point == [500, 800]
+        assert r.direction == "down"
+        assert r.scroll_amount == 5
+
+    def test_scroll_amount_quoted_and_clamped(self):
+        # 既能解析带引号的数值，也能把 0 / 负值钳到 1
+        r = parse_action(
+            "scroll(point='<point>500 800</point>', direction='down', amount='3')"
+        )
+        assert r.scroll_amount == 3
+        # amount=0 不合法 → 钳到 1
+        r0 = parse_action(
+            "scroll(point='<point>500 800</point>', direction='down', amount=0)"
+        )
+        assert r0.scroll_amount == 1
 
     def test_drag(self):
         r = parse_action(
@@ -244,6 +268,30 @@ class TestExtractActions:
         actions = extract_actions("Thought: 漏了 Action 行")
         assert len(actions) == 1
         assert actions[0].startswith("assert_fail(")
+
+    def test_inline_action_after_thought_is_extracted(self):
+        text = (
+            "Thought: 当前页面未到底部，需要继续下滑。"
+            "Action: scroll(point='<point>559 500</point>', direction='down', amount=1)"
+        )
+        actions = extract_actions(text)
+        assert actions == [
+            "scroll(point='<point>559 500</point>', direction='down', amount=1)"
+        ]
+
+    def test_fullwidth_action_colon_is_extracted(self):
+        text = (
+            "Thought: 二次重试后决定点击二维码。"
+            "Action：click(point='<point>607 950</point>')"
+        )
+        assert extract_actions(text) == ["click(point='<point>607 950</point>')"]
+
+    def test_chinese_action_prefix_is_extracted(self):
+        text = (
+            "Thought: 继续点击。"
+            "动作：click(point='<point>607 950</point>')"
+        )
+        assert extract_actions(text) == ["click(point='<point>607 950</point>')"]
 
     def test_blank_lines_between_actions(self):
         text = (

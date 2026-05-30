@@ -20,7 +20,12 @@ from .events import (
 from .factory import build_runner
 from .midscene_runner import MidsceneRunner
 from .phash import compute_phash, diff_rate, hamming_distance
-from .stability import StabilityResult, wait_page_stable_pixel
+from .stability import (
+    StabilityResult,
+    compare_alignment,
+    wait_page_stable_pixel,
+    wait_page_stable_v2_compare,
+)
 from .vlm_loop import RunResult, VLMRunner
 
 __all__ = [
@@ -29,7 +34,9 @@ __all__ = [
     "build_runner",
     "RunResult",
     "StabilityResult",
+    "compare_alignment",
     "wait_page_stable_pixel",
+    "wait_page_stable_v2_compare",
     "compute_phash",
     "diff_rate",
     "hamming_distance",

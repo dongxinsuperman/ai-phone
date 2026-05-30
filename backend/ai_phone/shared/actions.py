@@ -111,12 +111,18 @@ _CONTENT_RE = re.compile(r"content='(.*)'", re.DOTALL)
 _APP_NAME_RE = re.compile(r"app_name\s*=\s*'([^']*)'")
 _NAME_RE = re.compile(r"name\s*=\s*'([^']*)'")
 _SECONDS_KV_RE = re.compile(r"seconds\s*=\s*['\"]?(\d+)['\"]?")
+# scroll(amount=N)：豆包路径让 VLM 自己决定"一次滑多远"。Claude/GPT-CU 走
+# 各自字段（scroll_amount / scroll_y）在 main/ 里换算，这里只负责豆包。
+_AMOUNT_KV_RE = re.compile(r"amount\s*=\s*['\"]?(\d+)['\"]?")
 _SECONDS_BARE_RE = re.compile(r"^\s*['\"]?(\d+)['\"]?\s*$")
 
 _THOUGHT_RE = re.compile(r"Thought:\s*(.+?)(?=\nAction:|$)", re.DOTALL)
-_ACTION_RE = re.compile(r"Action:\s*(.+)", re.DOTALL)
+# Action 前缀容忍模型轻微格式抖动：英文/中文标签 + 半角/全角冒号。
+# 只归一化前缀，不碰动作参数体，避免改坏 type(content='...') 里的用户文本。
+_ACTION_PREFIX_PATTERN = r"(?:Action|动作)\s*[:：]"
+_ACTION_RE = re.compile(_ACTION_PREFIX_PATTERN + r"\s*(.+)", re.DOTALL)
 # 多行 Action 抽取（chain 用）：每行单独抓一条 `Action: <call>`，按出现顺序返回
-_ACTION_LINE_RE = re.compile(r"^\s*Action:\s*(.+?)\s*$", re.MULTILINE)
+_ACTION_LINE_RE = re.compile(r"^\s*" + _ACTION_PREFIX_PATTERN + r"\s*(.+?)\s*$", re.MULTILINE)
 
 _CN_NUM_MAP = {
     "零": 0,
@@ -251,6 +257,12 @@ def extract_actions(content: str) -> List[str]:
     matches = [m.strip() for m in _ACTION_LINE_RE.findall(content) if m.strip()]
     if matches:
         return matches
+    # 模型偶发把 Action 嵌在自然语言同一行里：
+    # ``... 当前状态。Action: scroll(...)``。这类输出虽然不合规，但动作调用
+    # 本身是完整可解析的；先抽出来执行，避免被误归类成业务断言失败。
+    inline = extract_action(content)
+    if not inline.startswith("assert_fail("):
+        return [inline]
     snippet = content[:100]
     return [f"assert_fail(content='无法解析决策输出: {snippet}')"]
 
@@ -364,6 +376,14 @@ def parse_action(action_str: str) -> ParsedAction:
         dm = _DIRECTION_RE.search(params_str)
         if dm:
             parsed.direction = dm.group(1)
+        # amount 可选：豆包 prompt 默认 1（温和翻一页），允许 1-10。这里只
+        # 钳到 ≥1，上限钳留给 vlm_loop（max 10），与 Claude/GPT-CU 保持一致。
+        am = _AMOUNT_KV_RE.search(params_str)
+        if am:
+            try:
+                parsed.scroll_amount = max(1, int(am.group(1)))
+            except (TypeError, ValueError):
+                parsed.scroll_amount = 1
         return parsed
 
     if fn_name == ACTION_DRAG:

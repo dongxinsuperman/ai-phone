@@ -4,6 +4,8 @@
 
 当前包含：
     - ``midscene_enabled``：是否在前端显示 Midscene 引擎下拉框
+    - ``trajectory_cache_enabled``：是否允许前端选择 cacheMode
+    - ``run_retry_enabled`` / ``run_retry_max``：是否允许前端设置 retryMax
 """
 from __future__ import annotations
 
@@ -26,4 +28,7 @@ async def get_public_config() -> Dict[str, Any]:
     return {
         # 是否暴露 Midscene 引擎选项；详见 `Midscene执行器接入方案.md`
         "midscene_enabled": bool(settings.midscene_enabled),
+        "trajectory_cache_enabled": bool(settings.trajectory_cache_enabled),
+        "run_retry_enabled": bool(settings.run_retry_enabled),
+        "run_retry_max": int(settings.run_retry_max or 0),
     }

@@ -8,7 +8,18 @@ from datetime import datetime, timezone
 
 import pytest
 
-from ai_phone.server.models import Device
+from ai_phone.server.db import get_session_factory
+from ai_phone.server.models import Device, Run, RunCommand, RunLog
+from ai_phone.server.hub import Hub
+from ai_phone.server.ws.agent_ws import _upsert_devices
+
+
+class _FakeWs:
+    def __init__(self):
+        self.sent = []
+
+    async def send_json(self, payload):
+        self.sent.append(payload)
 
 
 async def _seed_device(session, *, serial="S1", status="online") -> Device:
@@ -56,6 +67,80 @@ async def test_list_and_get_device(client, session):
 
     miss = await client.get("/api/devices/UNKNOWN")
     assert miss.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_agents(client, app):
+    hub = Hub()
+    app.state.hub = hub
+    await hub.register_agent("agent-1", "mac-a", "Darwin", object())
+    await hub.set_devices("agent-1", {"S1", "S2"})
+    await hub.bind_run("run-1", "agent-1")
+
+    resp = await client.get("/api/agents")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["agent_id"] == "agent-1"
+    assert body[0]["agent_name"] == "mac-a"
+    assert body[0]["device_count"] == 2
+    assert body[0]["running_count"] == 1
+    assert body[0]["serials"] == ["S1", "S2"]
+    assert body[0]["connected_at"]
+    assert body[0]["last_seen_at"]
+
+
+@pytest.mark.asyncio
+async def test_upsert_devices_preserves_metadata_when_keepalive_snapshot_is_sparse(
+    client, session
+):
+    assert client is not None
+    session.add(
+        Device(
+            serial="S1",
+            agent_id="agent-local",
+            platform="android",
+            brand="Redmi",
+            model="23113RKC6C",
+            os_version="15",
+            screen_width=1080,
+            screen_height=2400,
+            status="online",
+            last_seen_at=datetime(2026, 5, 26, 8, 6, 45, tzinfo=timezone.utc),
+        )
+    )
+    await session.commit()
+
+    await _upsert_devices(
+        "agent-local",
+        [
+            {
+                "serial": "S1",
+                "platform": "android",
+                "brand": "",
+                "model": "",
+                "os_version": "",
+                "screen_width": 0,
+                "screen_height": 0,
+                "status": "online",
+            }
+        ],
+        Hub(),
+    )
+
+    async with get_session_factory()() as verify:
+        dev = await verify.get(Device, "S1")
+        assert dev is not None
+        assert dev.brand == "Redmi"
+        assert dev.model == "23113RKC6C"
+        assert dev.os_version == "15"
+        assert dev.screen_width == 1080
+        assert dev.screen_height == 2400
+        assert dev.last_seen_at is not None
+        last_seen = dev.last_seen_at
+        if last_seen.tzinfo is None:
+            last_seen = last_seen.replace(tzinfo=timezone.utc)
+        assert last_seen > datetime(2026, 5, 26, 8, 6, 45, tzinfo=timezone.utc)
 
 
 # --------------------------------------------------------------------- locking
@@ -253,6 +338,90 @@ async def test_run_list_and_detail(client, session):
     assert logs.json()["items"] == []
     assert logs.json()["next_since_id"] == 0
 
+    commands = await client.get(f"/api/runs/{run_id}/commands")
+    assert commands.status_code == 200
+    assert commands.json() == []
+
+
+@pytest.mark.asyncio
+async def test_run_commands_are_read_only_timeline(client, session):
+    await _seed_device(session)
+    r = await client.post("/api/runs", json={"device_serial": "S1", "goal": "g"})
+    run_id = r.json()["id"]
+    session.add(
+        RunCommand(
+            run_id=run_id,
+            step=1,
+            message_id="cmd-1",
+            method="screenshot_jpeg",
+            agent_id="agent-local",
+            serial="S1",
+            ok=True,
+            rpc_elapsed_ms=42,
+        )
+    )
+    await session.commit()
+
+    resp = await client.get(f"/api/runs/{run_id}/commands")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["message_id"] == "cmd-1"
+    assert body[0]["method"] == "screenshot_jpeg"
+    assert body[0]["rpc_elapsed_ms"] == 42
+
+
+@pytest.mark.asyncio
+async def test_run_detail_includes_error_summary_from_log(client, session):
+    await _seed_device(session)
+    r = await client.post("/api/runs", json={"device_serial": "S1", "goal": "g"})
+    run_id = r.json()["id"]
+    session.add(
+        RunLog(
+            run_id=run_id,
+            level=3,
+            title="Agent 离线",
+            content="agent_offline: agent-x",
+            error_class="AgentOffline",
+            error_category="agent_offline",
+            trace_id="trace-1",
+        )
+    )
+    await session.commit()
+
+    resp = await client.get(f"/api/runs/{run_id}")
+    assert resp.status_code == 200
+    summary = resp.json()["error_summary"]
+    assert summary["category"] == "agent_offline"
+    assert summary["error_class"] == "AgentOffline"
+    assert summary["source"] == "run_log"
+
+
+@pytest.mark.asyncio
+async def test_run_detail_includes_error_summary_from_command(client, session):
+    await _seed_device(session)
+    r = await client.post("/api/runs", json={"device_serial": "S1", "goal": "g"})
+    run_id = r.json()["id"]
+    session.add(
+        RunCommand(
+            run_id=run_id,
+            message_id="cmd-err",
+            method="click",
+            ok=False,
+            error_class="AdbError",
+            error_category="device",
+            error_msg="adb input tap failed",
+        )
+    )
+    await session.commit()
+
+    resp = await client.get(f"/api/runs/{run_id}")
+    assert resp.status_code == 200
+    summary = resp.json()["error_summary"]
+    assert summary["category"] == "device"
+    assert summary["error_class"] == "AdbError"
+    assert summary["method"] == "click"
+
 
 @pytest.mark.asyncio
 async def test_stop_run_releases_lock(client, session):
@@ -273,3 +442,31 @@ async def test_stop_run_releases_lock(client, session):
     assert r2.status_code == 201
     dev2 = (await client.get("/api/devices/S1")).json()
     assert dev2["lock"]["holder"] == r2.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_stop_stale_agent_brain_run_resends_to_agent(client, session, app):
+    await _seed_device(session)
+    hub = Hub()
+    ws = _FakeWs()
+    app.state.hub = hub
+    await hub.register_agent("agent-local", "mac", "Darwin", ws)
+    await hub.set_devices("agent-local", {"S1"})
+
+    run = Run(
+        id="stale-mid",
+        device_serial="S1",
+        agent_id="agent-local",
+        goal="g",
+        status="stopped",
+        reason="stopped_by_user",
+        engine="midscene",
+        execution_mode="agent_brain",
+    )
+    session.add(run)
+    await session.commit()
+
+    resp = await client.post("/api/runs/stale-mid/stop")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "stopped"
+    assert ws.sent[-1] == {"type": "stop_run", "run_id": "stale-mid"}

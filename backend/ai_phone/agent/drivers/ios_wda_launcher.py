@@ -127,6 +127,14 @@ def _port_bind_available(port: int) -> bool:
     return True
 
 
+def _developer_app_trust_hint() -> str:
+    return (
+        "首次安装或证书更新后，iPhone 可能不会弹出提示；请手动到 "
+        "设置 → 通用 → VPN与设备管理（或“设备管理”）→ 开发者 App，"
+        "信任当前 Apple Development 证书。"
+    )
+
+
 def _find_xcodebuild() -> Optional[str]:
     """查找 ``xcodebuild``。优先 ``xcode-select -p`` 指向的 Xcode；
     兜底走 ``shutil.which``（可能是 CLT 的，功能不全但存在）。"""
@@ -185,6 +193,17 @@ class IosWdaXcodeLauncher:
         on_status: Optional[StatusCallback] = None,
         bundle_id: Optional[str] = None,
         team_id: Optional[str] = None,
+        *,
+        # 生命周期策略开关：默认 True 与本字段引入前完全等价（auto 行为）。
+        # 调用方按 ``IosWdaLifecyclePolicy`` 传值——launcher 本身不感知 auto/stable
+        # 业务语义，只读布尔。两个开关分别对应：
+        #   - runtime_drop：xcodebuild test 已起 + WDA 曾 ready，运行中 XPC 失联
+        #     退出后是否自动 respawn；
+        #   - preflight_deadlock：iPhone 锁屏 ≥ _LOCKED_RESPAWN_SEC 时是否自动
+        #     kill + spawn 一次（软拔插）。
+        # 详见 docs/ios-setup（iOS接入指南）.md。
+        allow_runtime_drop_respawn: bool = True,
+        allow_preflight_deadlock_respawn: bool = True,
     ) -> None:
         self.udid = udid
         self.project_dir = Path(project_dir).expanduser().resolve() if project_dir else None
@@ -194,6 +213,8 @@ class IosWdaXcodeLauncher:
         # 这两个空串/None 都视为"不覆盖 .pbxproj"，把判断收敛到一处
         self.bundle_id = bundle_id.strip() if bundle_id and bundle_id.strip() else None
         self.team_id = team_id.strip() if team_id and team_id.strip() else None
+        self._allow_runtime_drop_respawn = bool(allow_runtime_drop_respawn)
+        self._allow_preflight_deadlock_respawn = bool(allow_preflight_deadlock_respawn)
         self._proc: Optional[subprocess.Popen] = None
         self._log_thread: Optional[threading.Thread] = None
         self._owned = False  # True=本实例 spawn 的，stop 时要 kill
@@ -212,6 +233,25 @@ class IosWdaXcodeLauncher:
         # 别再拉起来"，避免 agent 正常退出时还多起一条 xcodebuild 残留到 iPhone 里。
         self._stopping = False
         self._stage_start_ts: float = time.monotonic()  # 当前 stage 起点，用于 elapsed_ms
+
+    # ------------------------------------------------------------------
+    def _runner_bundle_id(self) -> Optional[str]:
+        """Return the XCTest runner bundle id that Xcode should launch."""
+        if not self.bundle_id:
+            return None
+        if self.bundle_id.endswith(".xctrunner"):
+            return self.bundle_id
+        return f"{self.bundle_id}.xctrunner"
+
+    # ------------------------------------------------------------------
+    def _xcodebuild_env(self) -> Optional[Dict[str, str]]:
+        """Build an env override that prevents stale WDA runner ids leaking in."""
+        runner_bundle_id = self._runner_bundle_id()
+        if not runner_bundle_id:
+            return None
+        env = os.environ.copy()
+        env["WDA_PRODUCT_BUNDLE_IDENTIFIER"] = runner_bundle_id
+        return env
 
     # ------------------------------------------------------------------
     def _emit(self, stage: str, title: str, hint: str = "") -> None:
@@ -258,18 +298,24 @@ class IosWdaXcodeLauncher:
         return None
 
     # ------------------------------------------------------------------
-    def start(self) -> str:
+    def start(self, *, allow_spawn: bool = True) -> str:
         """返回:
           * ``'attach'``  目标端口已有 WDA，直接复用
           * ``'spawn'``   本实例 spawn 了一个 xcodebuild test
-          * ``'disabled'`` 没配置 project_dir（或 precheck 失败），调用方自己想办法
+          * ``'disabled'`` 没配置 project_dir（或 precheck 失败 / allow_spawn=False
+            且既不能 attach、又没在其它流程的 spawn 上 follow），调用方自己想办法
 
         **spawn 成功只代表子进程已启动**，不代表 WDA 已 ready；上层必须接着
         跑 ``WdaClient.wait_ready`` 轮询 /status。
+
+        ``allow_spawn=False`` 用于 stable 模式 §7.5.1 状态机：本次"USB 插入会话"
+        内已经 spawn 过 / 严格 attach-only 子方案下，外层禁止再走 ``xcodebuild
+        test``。**attach / 复用已有 xcodebuild 子进程都不受 allow_spawn 影响**——
+        语义只是"是否允许新起一条 xcodebuild test"。
         """
         self._emit("initializing", "iOS 启动中", "正在检测 WDA 状态…")
 
-        # 1. attach 优先
+        # 1. attach 优先（不受 allow_spawn 影响）
         if _probe_wda_http(self.local_probe_port, timeout_s=0.8):
             logger.info(
                 "udid={} 检测到 127.0.0.1:{} 已有 WDA 响应 → attach，不启动 xcodebuild test",
@@ -306,6 +352,21 @@ class IosWdaXcodeLauncher:
                 self._emit("compiling", "WDA 正在编译", "xcodebuild 已在其它流程中启动，请等待…")
                 return "spawn"
 
+        # 真要新起 xcodebuild 之前看 allow_spawn —— attach / 复用都不会走到这里。
+        if not allow_spawn:
+            logger.warning(
+                "udid={} 当前策略拒绝 spawn xcodebuild test（attach 失败 + allow_spawn=False）。"
+                "可能原因：stable 模式本次 USB 插入会话内已 spawn 过，或严格 attach-only 子方案",
+                self.udid,
+            )
+            self._emit(
+                "error",
+                "WDA 未就绪，未自动重启",
+                "当前策略禁止 agent 主动启动 xcodebuild。请人工确认 WDA 是否仍在运行 / "
+                "USB 是否稳定 / iPhone 是否解锁；如需重启，请拔出 USB 并重新插入设备。",
+            )
+            return "disabled"
+
         proc = self._spawn_xcodebuild()
         if proc is None:
             self._emit("error", "xcodebuild 启动失败", "请查看 agent 日志排查 Xcode 环境")
@@ -315,7 +376,8 @@ class IosWdaXcodeLauncher:
         self._emit(
             "compiling",
             "WDA 编译中",
-            "首次冷启动约 1-3 分钟。请**保持 iPhone 解锁状态**直到屏幕出现 Automation Running。",
+            "首次冷启动约 1-3 分钟。请**保持 iPhone 解锁状态**直到屏幕出现 Automation Running。\n"
+            + _developer_app_trust_hint(),
         )
         return "spawn"
 
@@ -327,14 +389,21 @@ class IosWdaXcodeLauncher:
         xcodebuild，相当于 Agent 替你做了一次"USB 热拔插"）。
         """
         cmd = self._build_cmd()
+        env = self._xcodebuild_env()
         logger.info(
             "udid={} 启动 xcodebuild test：\n  cwd={}\n  cmd={}",
             self.udid, self.project_dir, " ".join(cmd),
         )
+        if env and env.get("WDA_PRODUCT_BUNDLE_IDENTIFIER"):
+            logger.info(
+                "udid={} WDA runner bundle id override: {}",
+                self.udid, env["WDA_PRODUCT_BUNDLE_IDENTIFIER"],
+            )
         try:
             proc = subprocess.Popen(
                 cmd,
                 cwd=str(self.project_dir),
+                env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 bufsize=1,
@@ -454,6 +523,8 @@ class IosWdaXcodeLauncher:
           * ``PRODUCT_BUNDLE_IDENTIFIER`` / ``DEVELOPMENT_TEAM``：可选 build settings
             override，让 .pbxproj 在 git 上保持"通用模板"，每台 Mac 用 .env 注入
             自己的 Bundle Id / Team Id（背景见模块顶部 docstring）
+          * ``WDA_PRODUCT_BUNDLE_IDENTIFIER``：显式告诉 XCTest runner 当前应启动的
+            bundle id，避免 Xcode 复用旧缓存时继续找上一轮的 ``*.xctrunner``
         """
         xb = _find_xcodebuild() or "xcodebuild"
         cmd = [
@@ -467,6 +538,9 @@ class IosWdaXcodeLauncher:
         # build settings override：放在 -args 之后是 xcodebuild 标准用法（key=value 形式）
         if self.bundle_id:
             cmd.append(f"PRODUCT_BUNDLE_IDENTIFIER={self.bundle_id}")
+        runner_bundle_id = self._runner_bundle_id()
+        if runner_bundle_id:
+            cmd.append(f"WDA_PRODUCT_BUNDLE_IDENTIFIER={runner_bundle_id}")
         if self.team_id:
             cmd.append(f"DEVELOPMENT_TEAM={self.team_id}")
         return cmd
@@ -488,6 +562,8 @@ class IosWdaXcodeLauncher:
             "bundle_dup": False,
             "privacy": False,
             "xctest_103": False,
+            "no_destination": False,
+            "developer_trust": False,
             "test_started": False,
         }
         try:
@@ -505,6 +581,17 @@ class IosWdaXcodeLauncher:
                     hints["privacy"] = True
                 if "error code: 103" in low or "xctesterrordomain" in low:
                     hints["xctest_103"] = True
+                if (
+                    "unable to find a device matching the provided destination specifier" in low
+                    or "no available devices matched the request" in low
+                ):
+                    hints["no_destination"] = True
+                if (
+                    "untrusted developer" in low
+                    or "not trusted" in low
+                    or ("developer app" in low and "trust" in low)
+                ):
+                    hints["developer_trust"] = True
                 if "test suite" in low and "started" in low:
                     if not hints["test_started"]:
                         # 第一次 Test Suite started = WDA runner 已经在真机启动，
@@ -553,6 +640,27 @@ class IosWdaXcodeLauncher:
                 # 另外如果此时 stop() 已经在执行（self._stopping=True），_respawn_once
                 # 里会自己吞掉，不会重复拉起。
                 if hints["test_started"]:
+                    # 策略短路（§7.0.1 #1）：stable 下禁止 runtime_drop 自动 respawn，
+                    # 只发 device_status 让浏览器提示"未自动重启，请人工拔插"。
+                    # auto 默认 True，与本短路引入前完全等价。_respawn_once 本体不动。
+                    if not self._allow_runtime_drop_respawn:
+                        logger.warning(
+                            "udid={} iOS WDA lifecycle 禁止 runtime_drop 自动 respawn，"
+                            "请人工确认设备并按需重新插入 USB",
+                            self.udid,
+                        )
+                        # stage 用 error（DeviceStage Literal 已定义、前端有红色卡片）。
+                        # 上方 _respawn_once 那处沿用 runtime_drop 是 auto 路径"正在重启
+                        # 1/2"的过渡态、性质不同且 §7.0.1 #11 明确不动；本短路是 stable
+                        # 终态失败，必须走 error 才能保证浏览器真正显示提示（修 P2-2）。
+                        self._emit(
+                            "error",
+                            "WDA 运行中掉线，未自动重启",
+                            "当前 iOS WDA 生命周期策略为 stable：xcodebuild ↔ iPhone 的 XPC "
+                            "通道被系统回收，但 agent 不主动重启 WDA。请人工确认 iPhone 已解锁、"
+                            "WDA 是否仍在运行；若需恢复，请拔出 USB 并重新插入设备走一遍人工准备。",
+                        )
+                        return
                     threading.Thread(
                         target=self._respawn_once,
                         kwargs={"reason": "runtime_drop"},
@@ -585,15 +693,29 @@ class IosWdaXcodeLauncher:
                     "XCTest Error 103：一般是 Xcode 版本比 iOS 老。确保已切换到完整 Xcode"
                     "（`sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`）并升级到能匹配 iOS 版本的 Xcode"
                 )
+            if hints["no_destination"]:
+                tips.append(
+                    "Xcode 找不到这台 iPhone 作为测试目标：请确认 iPhone 已解锁、已信任此 Mac、"
+                    "开发者模式已开启，并在 Xcode → Window → Devices and Simulators 里能看到该设备可用；"
+                    "然后拔插 USB 或重启 Agent 后重试"
+                )
+            if hints["developer_trust"]:
+                tips.append(_developer_app_trust_hint())
             if not tips:
                 tips.append(
                     "请手动跑一次 `xcodebuild test -project WebDriverAgent.xcodeproj"
                     f" -scheme {self.scheme} -destination 'id={self.udid}'"
                     " -allowProvisioningUpdates` 看完整报错"
                 )
+                tips.append(_developer_app_trust_hint())
             logger.warning(
                 "udid={} xcodebuild test 异常退出 rc={}\n  → {}",
                 self.udid, rc, "\n  → ".join(tips),
+            )
+            self._emit(
+                "error",
+                "WDA 启动失败",
+                "xcodebuild test 异常退出。\n" + "\n".join(f"- {tip}" for tip in tips),
             )
 
     # ------------------------------------------------------------------
@@ -667,12 +789,20 @@ class IosWdaXcodeLauncher:
             "（设置 → 显示与亮度 → 自动锁定 → 永不）。",
             udid_short,
         )
-        self._emit(
-            "need_unlock",
-            "请解锁 iPhone",
-            "面容/密码解锁 + 滑动到主屏幕。\n"
-            f"若超过 {_LOCKED_RESPAWN_SEC}s 未解锁，Agent 会自动重启 WDA 一次（相当于软拔插）。",
-        )
+        # 0~60s 阶段的 web 提示也要按 lifecycle 策略分两套——auto 下承诺 60s 后
+        # 自动重启 WDA；stable 下根本不会自动重启，再刷"X s 后自动重启"会误导
+        # 现场运维（修 P2-1 / Codex 审查）。下面的 watcher loop 同理。
+        if self._allow_preflight_deadlock_respawn:
+            initial_hint = (
+                "面容/密码解锁 + 滑动到主屏幕。\n"
+                f"若超过 {_LOCKED_RESPAWN_SEC}s 未解锁，Agent 会自动重启 WDA 一次（相当于软拔插）。"
+            )
+        else:
+            initial_hint = (
+                "面容/密码解锁 + 滑动到主屏幕。\n"
+                "当前策略 Agent 不会自动重启 WDA；若长时间未恢复，请拔出 USB 重新插入设备。"
+            )
+        self._emit("need_unlock", "请解锁 iPhone", initial_hint)
 
         def _loop() -> None:
             respawn_triggered = False
@@ -686,14 +816,33 @@ class IosWdaXcodeLauncher:
                     "[wda-xcb:{}] iPhone 仍锁屏中，已等 {}s —— 请立刻解锁到主屏幕。",
                     udid_short, elapsed,
                 )
-                self._emit(
-                    "need_unlock",
-                    "请解锁 iPhone",
-                    f"已等待 {elapsed}s —— 请面容/密码解锁并滑到主屏幕。\n"
-                    f"{max(0, _LOCKED_RESPAWN_SEC - elapsed)}s 后 Agent 将自动重启 WDA。",
-                )
+                if self._allow_preflight_deadlock_respawn:
+                    rolling_hint = (
+                        f"已等待 {elapsed}s —— 请面容/密码解锁并滑到主屏幕。\n"
+                        f"{max(0, _LOCKED_RESPAWN_SEC - elapsed)}s 后 Agent 将自动重启 WDA。"
+                    )
+                else:
+                    rolling_hint = (
+                        f"已等待 {elapsed}s —— 请面容/密码解锁并滑到主屏幕。\n"
+                        "当前策略 Agent 不会自动重启 WDA；若长时间未恢复，请拔出 USB 重新插入设备。"
+                    )
+                self._emit("need_unlock", "请解锁 iPhone", rolling_hint)
                 if elapsed >= _LOCKED_RESPAWN_SEC and not respawn_triggered:
                     respawn_triggered = True
+                    # 策略短路（§7.0.1 #1）：stable 下禁止 preflight_deadlock 自动
+                    # respawn——iPhone 锁屏即使到了 60s 阈值也只刷 need_unlock 提示，
+                    # 让用户自己解锁。auto 默认 True，与本短路引入前完全等价。
+                    if not self._allow_preflight_deadlock_respawn:
+                        logger.warning(
+                            "[wda-xcb:{}] iOS WDA lifecycle 禁止 preflight_deadlock 自动 respawn，"
+                            "watcher 继续按 10s 节拍刷 need_unlock 提示等待人工解锁",
+                            udid_short,
+                        )
+                        # watcher 不退出，沿用上面的 10s 节拍刷新 need_unlock 提示。
+                        # respawn_triggered 保持 True，后续 elapsed 增长不再重复打日志；
+                        # xcodebuild 被用户解锁后自己推进 / 进程死掉时 watcher 自然退出，
+                        # 无线程泄漏。
+                        continue
                     # 关掉当前 watcher（会被 _respawn_once 后的下一次 locked 重新触发）
                     self._locked_stop.set()
                     # 关键：在独立线程里做 kill + spawn，避免阻塞 watcher（虽然

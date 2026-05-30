@@ -20,16 +20,26 @@ logTokenSummary。与老实现的关键差异：
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from loguru import logger
 
 from ai_phone.config import get_settings
 from ai_phone.shared.actions import extract_action, extract_actions, extract_thought
+
+
+# 网络/超时类异常 → 自动重试 1 次（豆包视觉服务偶发 ReadTimeout / 5xx 网关
+# 抖动，分段重置后首发更容易撞到）。``TransportError`` 是基类，覆盖
+# ``NetworkError`` / ``RemoteProtocolError`` / ``ReadError`` / ``WriteError``。
+_VLM_RETRIABLE_NET_ERRORS: Tuple[type, ...] = (
+    httpx.TimeoutException,
+    httpx.TransportError,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +377,69 @@ class VLMClient:
         self.counter.last_prompt_tokens = 0
         return old_id
 
+    async def _post_with_retry(
+        self,
+        payload: Dict[str, Any],
+        headers: Dict[str, str],
+        *,
+        timeout_seconds: float,
+    ) -> Dict[str, Any]:
+        """对 Responses API 做 1 次重试的 POST 包装。
+
+        重试触发条件（仅这两类，业务异常不重试）：
+        - httpx 网络/超时类：``TimeoutException`` / ``TransportError``
+        - HTTP 5xx：服务端临时故障 / 网关抖动；429（限流）也归到重试
+
+        4xx（除 429）= 请求本身错（参数 / 鉴权 / prompt 超长）→ 立刻抛，重试无意义。
+        重试间退避 0.5s，避免 thundering herd。
+        """
+        attempts_max = 2
+        retry_backoff_sec = 0.5
+        last_exc: Optional[BaseException] = None
+        for attempt_idx in range(attempts_max):
+            try:
+                async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                    resp = await client.post(
+                        self.api_url, json=payload, headers=headers
+                    )
+            except _VLM_RETRIABLE_NET_ERRORS as net_exc:
+                last_exc = net_exc
+                if attempt_idx + 1 >= attempts_max:
+                    raise
+                logger.warning(
+                    "VLM 决策网络异常 ({}: {})，{:.1f}s 后重试 1 次 | 段={} 首轮={} timeout={}s",
+                    net_exc.__class__.__name__, net_exc, retry_backoff_sec,
+                    self.segment_count, self.previous_response_id is None,
+                    timeout_seconds,
+                )
+                await asyncio.sleep(retry_backoff_sec)
+                continue
+
+            if resp.status_code == 200:
+                return resp.json()
+
+            # 5xx / 429 → 视作可重试；4xx（其他）= 请求本身错，立刻抛
+            if (resp.status_code == 429 or 500 <= resp.status_code < 600) \
+                    and attempt_idx + 1 < attempts_max:
+                logger.warning(
+                    "VLM Responses API status={} body={}，{:.1f}s 后重试 1 次 | 段={} 首轮={}",
+                    resp.status_code, resp.text[:200], retry_backoff_sec,
+                    self.segment_count, self.previous_response_id is None,
+                )
+                await asyncio.sleep(retry_backoff_sec)
+                continue
+
+            raise RuntimeError(
+                f"VLM Responses API 失败: status={resp.status_code} "
+                f"body={resp.text[:500]}"
+            )
+
+        # 理论上到不了这里——循环里要么 return 要么 raise
+        raise RuntimeError(
+            f"VLM 决策异常: 重试 {attempts_max} 次仍失败"
+            + (f"，最近一次：{last_exc.__class__.__name__}: {last_exc}" if last_exc else "")
+        )
+
     async def decide(
         self,
         screenshot_bytes: bytes,
@@ -419,15 +492,20 @@ class VLMClient:
             "Content-Type": "application/json",
         }
 
+        # 单次 timeout：分段重置后首轮（segment > 1 且 previous_response_id 已
+        # 归零）服务端无法命中显式缓存，整个 system 前缀 + 续接 hint 都要重新
+        # 推理，单次耗时显著拉长。给 timeout 翻倍兜底，避免 ReadTimeout 把这
+        # 个本来能正常响应的请求误杀（线上典型现场：33 万 token 的长任务在
+        # 第 22 步分段后挂死）。
+        turn_timeout = float(self.timeout)
+        if is_first_turn and self.segment_count > 1:
+            turn_timeout = max(turn_timeout, float(self.timeout) * 2)
+
         t0 = time.monotonic()
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.post(self.api_url, json=payload, headers=headers)
-            if resp.status_code != 200:
-                raise RuntimeError(
-                    f"VLM Responses API 失败: status={resp.status_code} body={resp.text[:500]}"
-                )
-            data = resp.json()
+            data = await self._post_with_retry(
+                payload, headers, timeout_seconds=turn_timeout
+            )
             elapsed_ms = int((time.monotonic() - t0) * 1000)
 
             content = _extract_response_text(data)
@@ -460,4 +538,10 @@ class VLMClient:
             if pending_backup:
                 self.pending_hints[:0] = pending_backup
             logger.exception("VLM 决策异常")
-            raise RuntimeError(f"VLM 决策异常: {exc}") from exc
+            # 带上 exc 类名：``httpx.ReadTimeout`` / ``httpx.ConnectError`` 等
+            # 网络异常的 ``str(exc)`` 在新版 httpx 里会是空字符串，单看冒号后
+            # 文本完全猜不出错因。带 class 名后 "VLM 决策异常: ReadTimeout: "
+            # 至少能让人一眼判断是超时还是 5xx 还是格式错。
+            raise RuntimeError(
+                f"VLM 决策异常: {exc.__class__.__name__}: {exc}"
+            ) from exc

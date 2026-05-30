@@ -43,6 +43,9 @@ export function useJpegMirror(options = {}) {
 
   // 保留上一张 object URL，下一帧赋值时先 revoke，避免内存泄漏
   let prevUrl = null
+  let loading = false
+  let pendingMsg = null
+  let loadToken = 0
 
   function _log(...args) {
     if (options.debug) {
@@ -57,39 +60,18 @@ export function useJpegMirror(options = {}) {
     console.warn('[jpeg-mirror]', msg)
   }
 
-  function handleJpeg(msg) {
-    const el = imgEl.value
-    if (!el) return
-    const b64 = msg?.data
-    if (!b64) return
-    let bytes
-    try {
-      bytes = _b64ToBytes(b64)
-    } catch (e) {
-      _setError(`base64 解码失败：${e?.message || e}`)
-      return
+  function _revokeLater(url) {
+    if (!url) return
+    const revoke = () => { try { URL.revokeObjectURL(url) } catch (_) {} }
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(revoke, { timeout: 50 })
+    } else {
+      setTimeout(revoke, 0)
     }
-    if (!bytes.length) return
+  }
 
-    const blob = new Blob([bytes], { type: 'image/jpeg' })
-    const url = URL.createObjectURL(blob)
-    // 先拿到新 url 再 revoke 旧的，避免 img.src 还指着旧 url 时就 revoke
-    // 导致 Chrome 画白
-    const oldUrl = prevUrl
-    prevUrl = url
-    el.src = url
-    if (oldUrl) {
-      // requestIdleCallback 更稳（等浏览器处理完 src 切换再 revoke）；
-      // 没有就用 setTimeout 0 兜底
-      const revoke = () => { try { URL.revokeObjectURL(oldUrl) } catch (_) {} }
-      if (typeof window.requestIdleCallback === 'function') {
-        window.requestIdleCallback(revoke, { timeout: 50 })
-      } else {
-        setTimeout(revoke, 0)
-      }
-    }
-
-    // 首帧到达视为 ready；此后只要 websocket 活着就一直 ready
+  function _applyFrameMeta(msg) {
+    // 首帧完成加载视为 ready；此后只要 websocket 活着就一直 ready
     if (!ready.value) {
       ready.value = true
       error.value = null
@@ -105,9 +87,77 @@ export function useJpegMirror(options = {}) {
     }
   }
 
+  function _drainPending() {
+    const next = pendingMsg
+    pendingMsg = null
+    if (!next) return
+    const run = () => handleJpeg(next)
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(run)
+    } else {
+      setTimeout(run, 0)
+    }
+  }
+
+  function _finishLoad(token, msg, ok, failMessage = '') {
+    if (token !== loadToken) return
+    loading = false
+    if (ok) {
+      _applyFrameMeta(msg)
+    } else {
+      _setError(failMessage || 'JPEG 加载失败')
+    }
+    _drainPending()
+  }
+
+  function handleJpeg(msg) {
+    if (loading) {
+      pendingMsg = msg
+      return
+    }
+    _renderJpeg(msg)
+  }
+
+  function _renderJpeg(msg) {
+    const el = imgEl.value
+    if (!el) return
+    const b64 = msg?.data
+    if (!b64) return
+    let bytes
+    try {
+      bytes = _b64ToBytes(b64)
+    } catch (e) {
+      _setError(`base64 解码失败：${e?.message || e}`)
+      return
+    }
+    if (!bytes.length) return
+
+    const blob = new Blob([bytes], { type: 'image/jpeg' })
+    const url = URL.createObjectURL(blob)
+    const token = ++loadToken
+    loading = true
+    el.onload = () => {
+      if (el.src === url) _finishLoad(token, msg, true)
+    }
+    el.onerror = () => {
+      if (el.src === url) _finishLoad(token, msg, false, 'JPEG 加载失败')
+    }
+    // 先拿到新 url 再 revoke 旧的，避免 img.src 还指着旧 url 时就 revoke
+    // 导致 Chrome 画白
+    const oldUrl = prevUrl
+    prevUrl = url
+    el.src = url
+    _revokeLater(oldUrl)
+  }
+
   function reset() {
+    loadToken++
+    loading = false
+    pendingMsg = null
     const el = imgEl.value
     if (el) {
+      el.onload = null
+      el.onerror = null
       try { el.removeAttribute('src') } catch (_) {}
     }
     if (prevUrl) {
