@@ -317,9 +317,7 @@ Server 大脑只上移 VLM 决策，不会替代：
 
 ## 八、与 main 分支的关系
 
-`main` 分支是 Agent 大脑架构的旧稳定入口，自 2026-05 起按归档冻结处理。
-
-`next/server-brain` 是当前长期主力分支，用来承载：
+`main` 分支已恢复为默认主线，承载 **分布式 Agent 大脑** 架构（执行脑在 Agent 本地，Server 集中下发配置 / 密钥、命中下发缓存 + 薄存储）。本文档描述的 `next/server-brain` 是**并行架构线**，承载 **Server 大脑**：
 
 ```text
 Server 负责 VLM 决策 / 辅助系统 / 轨迹缓存
@@ -327,12 +325,12 @@ Agent 负责真机动作
 调用方使用 /api/submissions 批次契约
 ```
 
-两条分支建议保持隔离：
+两条线的定位：
 
-- `main`：旧架构归档，只接受 P0 bugfix
-- `next/server-brain`：当前主力架构，继续演进多 Agent、队列和稳定性
+- `main`（分布式 Agent 大脑）：默认主线，适合多 Agent 分布执行、就近决策。
+- `next/server-brain`（Server 大脑）：并行保留，适合合规要求 Agent 不得持有模型能力、强集中管控 / 审计的场景。
 
-当 `next/server-brain` 足够稳定后，可以再决定是否发布新的 tag 或新版本说明。
+两线**数据库 schema 兼容、二选一部署**（同一时间只让一个架构连同一套库跑）。两线对照详见 README 的「分支说明」；分布式 Agent 主线架构见 `main` 分支的 `docs/agent-brain（分布式Agent大脑架构说明）.md`。未来计划用配置开关把两种执行脑模式统一回单一 `main`。
 
 ---
 
