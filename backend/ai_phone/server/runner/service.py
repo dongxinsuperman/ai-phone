@@ -71,6 +71,7 @@ class ServerRunnerService:
         serial: str,
         agent_id: str,
         goal: str,
+        function_map_context: Optional[str] = None,
         dispatch_source: str,
         platform: str = "android",
         attempt: int = 1,
@@ -169,12 +170,21 @@ class ServerRunnerService:
             run.agent_id_at_start = agent_id
             run.last_attempt = attempt
             run.attempts = max(int(run.attempts or 1), attempt)
+            if function_map_context is None:
+                function_map_context = str(run.function_map_context or "")
             await session.commit()
 
         await self._hub.bind_run(run_id, agent_id)
         with attempt_context(attempt):
             task = asyncio.create_task(
-                self._run_task(run_id, goal, driver, emitter, attempt=attempt),
+                self._run_task(
+                    run_id,
+                    goal,
+                    driver,
+                    emitter,
+                    attempt=attempt,
+                    function_map_context=function_map_context or None,
+                ),
                 name=f"server-brain-run-{run_id}-attempt-{attempt}",
             )
         self._tasks[run_id] = task
@@ -277,10 +287,17 @@ class ServerRunnerService:
         goal: str,
         driver: RemoteDriver,
         emitter: ServerRunEmitter,
+        function_map_context: Optional[str] = None,
         attempt: int = 1,
     ) -> None:
         with attempt_context(attempt):
-            await self._run_task_inner(run_id, goal, driver, emitter)
+            await self._run_task_inner(
+                run_id,
+                goal,
+                driver,
+                emitter,
+                function_map_context=function_map_context,
+            )
 
     async def _run_task_inner(
         self,
@@ -288,6 +305,7 @@ class ServerRunnerService:
         goal: str,
         driver: RemoteDriver,
         emitter: ServerRunEmitter,
+        function_map_context: Optional[str] = None,
     ) -> None:
         try:
             settings = get_settings()
@@ -345,6 +363,7 @@ class ServerRunnerService:
                 run_id=run_id,
                 driver=driver,
                 goal=goal,
+                function_map_context=function_map_context,
                 emit=emitter.emit_serial,
             )
             await runner.run()

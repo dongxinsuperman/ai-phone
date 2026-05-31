@@ -160,6 +160,7 @@ class Run(Base):
     # 软引用：case 可以被删，run 依然保留自己的 goal 副本
     case_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
     goal: Mapped[str] = mapped_column(Text)
+    function_map_context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     # pending / running / success / failed / stopped
     reason: Mapped[str] = mapped_column(Text, default="")
@@ -227,6 +228,7 @@ class Run(Base):
             "agent_id": self.agent_id,
             "case_id": self.case_id,
             "goal": self.goal,
+            "function_map_context_chars": len(self.function_map_context or ""),
             "status": self.status,
             "reason": self.reason,
             "steps": self.steps,
@@ -637,6 +639,7 @@ class Submission(Base):
     # v1.8 webhook：投递时可选传 callbackUrl。整批收口时异步 POST 一份
     # submission.terminal payload；发一次失败就吞，不影响主流程。
     callback_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    function_map_context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     requested_retry_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     effective_retry_max: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
@@ -659,6 +662,7 @@ class Submission(Base):
             "origin": self.origin,
             "submission_name": self.submission_name or self.id,
             "state": self.state,
+            "function_map_context_chars": len(self.function_map_context or ""),
             "requested_retry_max": self.requested_retry_max,
             "effective_retry_max": self.effective_retry_max or 0,
             "accepted_at": self.accepted_at.isoformat() if self.accepted_at else None,

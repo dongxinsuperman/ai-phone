@@ -15,6 +15,7 @@ import pytest
 
 from ai_phone.server.scheduler.service import (
     AdmissionError,
+    parse_function_map_context,
     parse_and_validate,
 )
 
@@ -45,6 +46,29 @@ def test_minimal_single_platform_no_pool():
     assert d.run_content == "do something"
     assert d.device_alias_pool is None  # 全池任挑
     assert d.case_name is None
+
+
+def test_function_map_context_top_level_normalized():
+    text = parse_function_map_context(
+        {
+            "functionMapContext": "  首页：底部有我的 Tab\n账号：demo  ",
+            "items": [],
+        },
+        max_chars=100,
+    )
+
+    assert text == "首页：底部有我的 Tab\n账号：demo"
+
+
+def test_function_map_context_rejects_too_long():
+    with pytest.raises(AdmissionError) as exc_info:
+        parse_function_map_context(
+            {"functionMapContext": "abcd"},
+            max_chars=3,
+        )
+
+    assert exc_info.value.reason == "function_map_context_too_long"
+    assert "3 字符上限" in exc_info.value.detail
 
 
 def test_multi_platform_fanout_no_pool():

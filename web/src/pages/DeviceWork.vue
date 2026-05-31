@@ -18,6 +18,7 @@ const currentRunId = ref(null)
 const currentRun = ref(null)
 const wsConnected = ref(false)
 const goal = ref('')
+const functionMapContext = ref('')
 const busy = ref(false)
 const submitError = ref(null)
 // 引擎选择（仅在 midsceneEnabled=true 时下拉框可见，缺省永远 'vlm'）
@@ -28,11 +29,19 @@ const selectedCacheMode = ref('off')
 const retryEnabled = ref(false)
 const retryMaxLimit = ref(0)
 const selectedRetryMax = ref(0)
+const functionMapContextLimit = ref(2000)
 // 屏幕尺寸（设备端逻辑像素），用于点击坐标归一化；没拿到前按 video 元素尺寸兜底
 const devicePixel = ref({ w: 0, h: 0 })
 const tapBusy = ref(false)
 // 进入页面抢锁的结果：null=还没试/成功进入，非 null 就是被占用时要展示给用户的信息
 const blocked = ref(null)
+const FUNCTION_MAP_FILE_EXTS = ['txt', 'md', 'json', 'csv', 'yaml', 'yml', 'log']
+const FUNCTION_MAP_FILE_ACCEPT = FUNCTION_MAP_FILE_EXTS.map(ext => `.${ext}`).join(',')
+const FUNCTION_MAP_SUPPORTED_FORMATS = FUNCTION_MAP_FILE_EXTS.map(ext => `.${ext}`).join(' / ')
+const functionMapContextLength = computed(() => (functionMapContext.value || '').length)
+const functionMapContextTooLong = computed(() => (
+  functionMapContextLength.value > Number(functionMapContextLimit.value || 2000)
+))
 
 function executionModeText(mode) {
   return mode === 'server_brain' ? 'Server 大脑' : 'Agent 大脑'
@@ -606,10 +615,62 @@ function onMessage(msg) {
   }
 }
 
+function readTextFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error(`读取失败：${file.name}`))
+    reader.readAsText(file, 'utf-8')
+  })
+}
+
+function isSupportedFunctionMapFile(file) {
+  const relPath = String(file.webkitRelativePath || file.name || '')
+  const parts = relPath.split('/').filter(Boolean)
+  if (!parts.length) return false
+  if (parts.some(part => part === '__MACOSX' || part.startsWith('.'))) return false
+  const name = parts[parts.length - 1]
+  const dot = name.lastIndexOf('.')
+  if (dot <= 0) return false
+  return FUNCTION_MAP_FILE_EXTS.includes(name.slice(dot + 1).toLowerCase())
+}
+
+async function appendFunctionMapFiles(event) {
+  const files = Array.from(event.target.files || [])
+    .filter(file => file && file.name)
+    .filter(isSupportedFunctionMapFile)
+    .sort((a, b) => String(a.webkitRelativePath || a.name).localeCompare(String(b.webkitRelativePath || b.name)))
+  if (!files.length) {
+    submitError.value = `未找到可导入文本文件；支持 ${FUNCTION_MAP_SUPPORTED_FORMATS}`
+    event.target.value = ''
+    return
+  }
+  try {
+    const parts = []
+    for (const file of files) {
+      const text = await readTextFile(file)
+      const name = file.webkitRelativePath || file.name
+      parts.push(`## 来源：${name}\n${text.trim()}`)
+    }
+    functionMapContext.value = [
+      (functionMapContext.value || '').trim(),
+      ...parts.filter(Boolean),
+    ].filter(Boolean).join('\n\n')
+  } catch (e) {
+    submitError.value = e.message || String(e)
+  } finally {
+    event.target.value = ''
+  }
+}
+
 async function startRun() {
   submitError.value = null
   if (!goal.value.trim()) {
     submitError.value = '请输入 goal'
+    return
+  }
+  if (functionMapContextTooLong.value) {
+    submitError.value = `功能地图上下文超出 ${functionMapContextLimit.value} 字符上限`
     return
   }
   busy.value = true
@@ -624,6 +685,7 @@ async function startRun() {
       engine: selectedEngine.value || 'vlm',
       cacheMode: selectedCacheMode.value || 'off',
       retryMax: Number(selectedRetryMax.value || 0),
+      functionMapContext: (functionMapContext.value || '').trim() || undefined,
     })
     currentRunId.value = res.id
     currentRun.value = res
@@ -666,12 +728,14 @@ onMounted(async () => {
       midsceneEnabled.value = !!cfg?.midscene_enabled
       retryEnabled.value = !!cfg?.run_retry_enabled
       retryMaxLimit.value = Number(cfg?.run_retry_max || 0)
+      functionMapContextLimit.value = Number(cfg?.function_map_context_max_chars || 2000)
       if (!retryEnabled.value) selectedRetryMax.value = 0
     })
     .catch(() => {
       midsceneEnabled.value = false
       retryEnabled.value = false
       retryMaxLimit.value = 0
+      functionMapContextLimit.value = 2000
       selectedRetryMax.value = 0
     })
 
@@ -966,8 +1030,47 @@ watch(
             placeholder="例：打开设置，进入蓝牙页面"
             :disabled="!!currentRunId || lock.readonly.value"
           />
+          <label>
+            功能地图上下文（执行参考，可选）
+            <span class="char-count" :class="{ over: functionMapContextTooLong }">
+              {{ functionMapContextLength }} / {{ functionMapContextLimit }} 字
+            </span>
+          </label>
+          <textarea
+            v-model="functionMapContext"
+            rows="5"
+            placeholder="可放本次执行会用到的功能入口、测试账号、验证码规则、异常处理等短精参考"
+            :disabled="!!currentRunId || lock.readonly.value"
+            :class="{ over: functionMapContextTooLong }"
+          />
+          <div class="file-tools">
+            <label class="secondary small file-btn" :class="{ disabled: !!currentRunId || lock.readonly.value }">
+              导入文件
+              <input
+                type="file"
+                multiple
+                :accept="FUNCTION_MAP_FILE_ACCEPT"
+                :disabled="!!currentRunId || lock.readonly.value"
+                @change="appendFunctionMapFiles"
+              />
+            </label>
+            <label class="secondary small file-btn" :class="{ disabled: !!currentRunId || lock.readonly.value }">
+              导入文件夹
+              <input
+                type="file"
+                webkitdirectory
+                directory
+                multiple
+                :accept="FUNCTION_MAP_FILE_ACCEPT"
+                :disabled="!!currentRunId || lock.readonly.value"
+                @change="appendFunctionMapFiles"
+              />
+            </label>
+            <span class="file-hint">支持 {{ FUNCTION_MAP_SUPPORTED_FORMATS }}；文件夹会跳过隐藏/非文本文件</span>
+            <span v-if="functionMapContextTooLong" class="limit-warn">已超出上限，请精简后再执行</span>
+          </div>
           <div class="btn-row">
-            <button class="primary" :disabled="busy || !!currentRunId || lock.readonly.value" @click="startRun">
+            <button class="primary" :disabled="busy || !!currentRunId || lock.readonly.value || functionMapContextTooLong" @click="startRun">
               {{ currentRunId ? '运行中…' : '开始 Run' }}
             </button>
             <button class="danger" :disabled="busy || !currentRunId" @click="stopRun">停止</button>
@@ -1396,6 +1499,58 @@ h2 {
   border: 1px solid #d1d5db;
   border-radius: 6px;
   font-family: inherit;
+}
+.goal-panel textarea.over {
+  border-color: #dc2626;
+  background: #fef2f2;
+}
+.char-count {
+  color: #6b7280;
+  font-size: 12px;
+  margin-left: 6px;
+}
+.char-count.over,
+.limit-warn {
+  color: #b91c1c;
+}
+.file-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.secondary.small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  color: #4b5563;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.secondary.small.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.file-btn {
+  position: relative;
+  overflow: hidden;
+}
+.file-btn input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.limit-warn {
+  font-size: 12px;
+}
+.file-hint {
+  color: #6b7280;
+  font-size: 12px;
 }
 .engine-row {
   display: flex;

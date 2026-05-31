@@ -310,6 +310,9 @@ def test_v3_coord_space_follows_actual_locator_backend_family():
     settings = Settings(
         _env_file=None,
         vlm_backend="claude_cu",
+        vlm_api_url="",
+        vlm_api_key="",
+        vlm_model="",
         trajectory_cache_v3_coord_use_recovery_vlm_config=True,
         trajectory_cache_recovery_vlm_backend="claude_messages",
         trajectory_cache_recovery_vlm_api_url="https://example.test/messages",

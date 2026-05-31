@@ -32,6 +32,7 @@ class RunDispatchService:
         serial: str,
         agent_id: Optional[str],
         goal: str,
+        function_map_context: Optional[str] = None,
         engine: str,
         dispatch_source: str,
         platform: str = "android",
@@ -46,6 +47,7 @@ class RunDispatchService:
                 serial=serial,
                 agent_id=agent_id,
                 goal=goal,
+                function_map_context=function_map_context,
                 dispatch_source=dispatch_source,
                 platform=platform,
                 attempt=attempt,
@@ -63,6 +65,9 @@ class RunDispatchService:
             "engine": engine,
             "attempt": max(1, int(attempt or 1)),
         }
+        if function_map_context:
+            payload["function_map_context"] = function_map_context
+            payload["functionMapContext"] = function_map_context
         if wake_policy:
             payload["wake_policy"] = wake_policy
 

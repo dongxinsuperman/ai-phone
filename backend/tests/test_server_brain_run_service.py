@@ -63,7 +63,7 @@ class SlowBroadcastHub(Hub):
 
 
 class FastSuccessRunner:
-    def __init__(self, *, run_id, driver, goal, emit):  # noqa: ANN001
+    def __init__(self, *, run_id, driver, goal, emit, **_kwargs):  # noqa: ANN001
         self.run_id = run_id
         self.emit = emit
 
@@ -88,7 +88,7 @@ class FastSuccessRunner:
 class FailOnceThenSuccessRunner:
     calls: Dict[str, int] = {}
 
-    def __init__(self, *, run_id, driver, goal, emit):  # noqa: ANN001
+    def __init__(self, *, run_id, driver, goal, emit, **_kwargs):  # noqa: ANN001
         self.run_id = run_id
         self.emit = emit
 
@@ -137,7 +137,7 @@ async def _emit_compat(emit, evt: Dict[str, Any]) -> None:
 
 
 class HangingRunner:
-    def __init__(self, *, run_id, driver, goal, emit):  # noqa: ANN001
+    def __init__(self, *, run_id, driver, goal, emit, **_kwargs):  # noqa: ANN001
         self.run_id = run_id
         self.emit = emit
         self._event = asyncio.Event()
@@ -148,12 +148,29 @@ class HangingRunner:
 
 
 class ScreenshotRunner:
-    def __init__(self, *, run_id, driver, goal, emit):  # noqa: ANN001
+    def __init__(self, *, run_id, driver, goal, emit, **_kwargs):  # noqa: ANN001
         self.run_id = run_id
         self.driver = driver
 
     async def run(self):
         await asyncio.to_thread(self.driver.screenshot_jpeg)
+
+
+class CaptureFunctionMapRunner(FastSuccessRunner):
+    seen_context: Dict[str, Optional[str]] = {}
+
+    def __init__(
+        self,
+        *,
+        run_id,
+        driver,
+        goal,
+        emit,
+        function_map_context=None,
+        **_kwargs,
+    ):  # noqa: ANN001
+        super().__init__(run_id=run_id, driver=driver, goal=goal, emit=emit)
+        self.seen_context[run_id] = function_map_context
 
 
 class MemoryPublisher(ResultPublisher):
@@ -257,7 +274,65 @@ async def test_api_run_dispatches_to_server_brain(app, client, session):
 
 
 @pytest.mark.asyncio
+async def test_api_run_passes_function_map_context_to_server_brain(app, client, session):
+    CaptureFunctionMapRunner.seen_context = {}
+    hub = Hub()
+    fake_ws = FakeWS()
+    await hub.register_agent("agent-server-brain", "agent", "test", fake_ws)
+    await hub.set_devices("agent-server-brain", {"S1"})
+    app.state.hub = hub
+    waiter = DriverRpcWaiter()
+    app.state.driver_rpc_waiter = waiter
+    app.state.server_runner_service = ServerRunnerService(
+        hub=hub,
+        lock_store=app.state.lock_store,
+        session_factory=db_module.get_session_factory(),
+        waiter=waiter,
+        runner_factory=CaptureFunctionMapRunner,
+    )
+    app.state.run_dispatch_service = RunDispatchService(
+        hub=hub,
+        server_runner=app.state.server_runner_service,
+    )
+
+    session.add(
+        Device(
+            serial="S1",
+            platform="android",
+            status="online",
+            agent_id="agent-server-brain",
+        )
+    )
+    await session.commit()
+
+    context = "首页：底部有「我的」入口；测试账号：demo"
+    resp = await client.post(
+        "/api/runs",
+        json={
+            "device_serial": "S1",
+            "goal": "进入我的页",
+            "functionMapContext": context,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    run_id = resp.json()["id"]
+
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        await asyncio.sleep(0.02)
+        if run_id in CaptureFunctionMapRunner.seen_context:
+            break
+
+    assert CaptureFunctionMapRunner.seen_context[run_id] == context
+    async with db_module.get_session_factory()() as s:
+        run = await s.get(Run, run_id)
+        assert run is not None
+        assert run.function_map_context == context
+
+
+@pytest.mark.asyncio
 async def test_scheduler_dispatches_to_server_brain_and_finalizes(app, session):
+    CaptureFunctionMapRunner.seen_context = {}
     hub = Hub()
     fake_ws = FakeWS()
     await hub.register_agent("agent-server-brain", "agent", "test", fake_ws)
@@ -271,7 +346,7 @@ async def test_scheduler_dispatches_to_server_brain_and_finalizes(app, session):
         lock_store=lock_store,
         session_factory=db_module.get_session_factory(),
         waiter=waiter,
-        runner_factory=FastSuccessRunner,
+        runner_factory=CaptureFunctionMapRunner,
     )
     dispatch = RunDispatchService(hub=hub, server_runner=runner)
     publisher = MemoryPublisher()
@@ -290,6 +365,7 @@ async def test_scheduler_dispatches_to_server_brain_and_finalizes(app, session):
         submission_name="server-brain-submission",
         state="accepted",
         raw_body={},
+        function_map_context="首页：入口在底部 Tab",
         accepted_at=now,
         expire_at=now + timedelta(hours=1),
     )
@@ -344,6 +420,8 @@ async def test_scheduler_dispatches_to_server_brain_and_finalizes(app, session):
         assert run.execution_mode == "server_brain"
         assert run.dispatch_source == "scheduler"
         assert run.agent_id_at_start == "agent-server-brain"
+        assert run.function_map_context == "首页：入口在底部 Tab"
+    assert CaptureFunctionMapRunner.seen_context[run_id] == "首页：入口在底部 Tab"
 
     terminal_events = [e for e in publisher.events if e.get("event") == "submission.item.terminal"]
     assert len(terminal_events) == 1

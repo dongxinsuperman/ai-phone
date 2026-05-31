@@ -21,7 +21,11 @@ const devicesSnap = ref([])
 const loading = ref(false)
 const err = ref('')
 const lastRefreshedAt = ref(0)
-const publicConfig = ref({ run_retry_enabled: false, run_retry_max: 0 })
+const publicConfig = ref({
+  run_retry_enabled: false,
+  run_retry_max: 0,
+  function_map_context_max_chars: 2000,
+})
 
 // 示例数据模式：看不懂实时页面时一键展示"理想形态"。
 // 开启后停止轮询，按钮禁用（投递/取消都操作不了，避免误以为自己点没效果）。
@@ -422,6 +426,9 @@ const CACHE_MODE_OPTIONS = [
   { value: 'v2', label: 'v2（路标回放）' },
   { value: 'v3', label: 'v3（语义重定位）' },
 ]
+const FUNCTION_MAP_FILE_EXTS = ['txt', 'md', 'json', 'csv', 'yaml', 'yml', 'log']
+const FUNCTION_MAP_FILE_ACCEPT = FUNCTION_MAP_FILE_EXTS.map(ext => `.${ext}`).join(',')
+const FUNCTION_MAP_SUPPORTED_FORMATS = FUNCTION_MAP_FILE_EXTS.map(ext => `.${ext}`).join(' / ')
 
 function newFormItem() {
   return {
@@ -443,9 +450,20 @@ function parsePool(text) {
     .filter(Boolean)
   return [...new Set(arr)].sort()
 }
-const form = ref({ submissionName: '', cacheMode: 'off', retryMax: 0, items: [newFormItem()] })
+const form = ref({
+  submissionName: '',
+  cacheMode: 'off',
+  retryMax: 0,
+  functionMapContext: '',
+  items: [newFormItem()],
+})
 const submitErr = ref('')
 const submitting = ref(false)
+const functionMapContextLimit = computed(() => Number(publicConfig.value.function_map_context_max_chars || 2000))
+const functionMapContextLength = computed(() => (form.value.functionMapContext || '').length)
+const functionMapContextTooLong = computed(() => (
+  functionMapContextLength.value > functionMapContextLimit.value
+))
 
 function addFormItem() {
   form.value.items.push(newFormItem())
@@ -465,7 +483,13 @@ function togglePlatform(item, p) {
   }
 }
 function resetForm() {
-  form.value = { submissionName: '', cacheMode: 'off', retryMax: 0, items: [newFormItem()] }
+  form.value = {
+    submissionName: '',
+    cacheMode: 'off',
+    retryMax: 0,
+    functionMapContext: '',
+    items: [newFormItem()],
+  }
   submitErr.value = ''
 }
 function openSubmitDlg() {
@@ -497,13 +521,63 @@ function buildRawItem(it) {
   if (Object.keys(pools).length) obj.deviceAliasPools = pools
   return obj
 }
+function readTextFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error(`读取失败：${file.name}`))
+    reader.readAsText(file, 'utf-8')
+  })
+}
+function isSupportedFunctionMapFile(file) {
+  const relPath = String(file.webkitRelativePath || file.name || '')
+  const parts = relPath.split('/').filter(Boolean)
+  if (!parts.length) return false
+  if (parts.some(part => part === '__MACOSX' || part.startsWith('.'))) return false
+  const name = parts[parts.length - 1]
+  const dot = name.lastIndexOf('.')
+  if (dot <= 0) return false
+  return FUNCTION_MAP_FILE_EXTS.includes(name.slice(dot + 1).toLowerCase())
+}
+async function appendFunctionMapFiles(event) {
+  const files = Array.from(event.target.files || [])
+    .filter(file => file && file.name)
+    .filter(isSupportedFunctionMapFile)
+    .sort((a, b) => String(a.webkitRelativePath || a.name).localeCompare(String(b.webkitRelativePath || b.name)))
+  if (!files.length) {
+    submitErr.value = `未找到可导入文本文件；支持 ${FUNCTION_MAP_SUPPORTED_FORMATS}`
+    event.target.value = ''
+    return
+  }
+  try {
+    const parts = []
+    for (const file of files) {
+      const text = await readTextFile(file)
+      const name = file.webkitRelativePath || file.name
+      parts.push(`## 来源：${name}\n${text.trim()}`)
+    }
+    form.value.functionMapContext = [
+      (form.value.functionMapContext || '').trim(),
+      ...parts.filter(Boolean),
+    ].filter(Boolean).join('\n\n')
+  } catch (e) {
+    submitErr.value = e.message || String(e)
+  } finally {
+    event.target.value = ''
+  }
+}
 // 发送 payload：每条 form-item → 一条 raw item（不在前端预展开，后端会做）
-const previewPayload = computed(() => ({
-  submissionName: (form.value.submissionName || '').trim(),
-  cacheMode: form.value.cacheMode || 'off',
-  retryMax: Number(form.value.retryMax || 0),
-  items: form.value.items.map(buildRawItem),
-}))
+const previewPayload = computed(() => {
+  const functionMapContext = (form.value.functionMapContext || '').trim()
+  const payload = {
+    submissionName: (form.value.submissionName || '').trim(),
+    cacheMode: form.value.cacheMode || 'off',
+    retryMax: Number(form.value.retryMax || 0),
+    items: form.value.items.map(buildRawItem),
+  }
+  if (functionMapContext) payload.functionMapContext = functionMapContext
+  return payload
+})
 // 展示预览：用"按端一条"的视图，让用户一眼看出批次最终会起几条 Run
 const previewRows = computed(() => {
   const out = []
@@ -536,6 +610,9 @@ async function submitForm() {
   }
   if (retryLimit > 0 && retryMax > retryLimit) {
     return (submitErr.value = `retryMax 不能超过后端上限 ${retryLimit}`)
+  }
+  if (functionMapContextTooLong.value) {
+    return (submitErr.value = `功能地图上下文超出 ${functionMapContextLimit.value} 字符上限`)
   }
   const payload = previewPayload.value
   if (!Array.isArray(payload.items) || !payload.items.length) {
@@ -1114,7 +1191,7 @@ function loadDemoData() {
         <div class="modal-body">
           <div class="help small-help">
             本入口只是第 2 梯队阶段<b>临时验证用</b>，正式调用方后续用对外 HTTP API。
-            请求体（v1.9）：<code>{ submissionName, cacheMode, retryMax, items: [{ caseId, runContent, platforms[], cacheMode?, deviceAliasPools? }] }</code>。
+            请求体（v1.10）：<code>{ submissionName, cacheMode, retryMax, functionMapContext?, items: [{ caseId, runContent, platforms[], cacheMode?, deviceAliasPools? }] }</code>。
             <code>deviceAliasPools[p]</code> 留空 = 该端任意 ready 设备；
             填多个用逗号分隔即子集池（场景 5：调度器派发瞬间动态选 ready 的一台）。
           </div>
@@ -1158,6 +1235,34 @@ function loadDemoData() {
                 :max="publicConfig.run_retry_max || 0"
                 :disabled="!publicConfig.run_retry_enabled || !publicConfig.run_retry_max"
               />
+            </div>
+            <div class="form-row">
+              <label>
+                功能地图上下文（执行参考，可选）
+                <span class="label-hint">
+                  {{ functionMapContextLength }} / {{ functionMapContextLimit }} 字
+                </span>
+              </label>
+              <textarea
+                v-model="form.functionMapContext"
+                rows="5"
+                :class="{ over: functionMapContextTooLong }"
+                placeholder="可放本次执行会用到的功能入口、测试账号、验证码规则、异常处理等短精参考"
+              />
+              <div class="file-tools">
+                <label class="btn ghost tiny file-btn">
+                  导入文件
+                  <input type="file" multiple :accept="FUNCTION_MAP_FILE_ACCEPT" @change="appendFunctionMapFiles" />
+                </label>
+                <label class="btn ghost tiny file-btn">
+                  导入文件夹
+                  <input type="file" webkitdirectory directory multiple :accept="FUNCTION_MAP_FILE_ACCEPT" @change="appendFunctionMapFiles" />
+                </label>
+                <span class="file-hint">支持 {{ FUNCTION_MAP_SUPPORTED_FORMATS }}；文件夹会跳过隐藏/非文本文件</span>
+                <span v-if="functionMapContextTooLong" class="limit-warn">
+                  已超出上限，请精简后再投递
+                </span>
+              </div>
             </div>
           </div>
           <div v-for="(it, i) in form.items" :key="i" class="form-item">
@@ -1247,6 +1352,9 @@ function loadDemoData() {
               · 请求体 <b>{{ previewPayload.items.length }}</b> 条 · 后端展开后共
               <b>{{ previewRows.length }}</b> 条 Run
               · retryMax <b>{{ previewPayload.retryMax || 0 }}</b>
+              <span v-if="previewPayload.functionMapContext">
+                · 功能地图上下文 <b>{{ functionMapContextLength }}</b> 字
+              </span>
             </div>
             <div v-if="previewRows.length" class="preview-rows">
               <div v-for="(p, i) in previewRows" :key="i" class="preview-row">
@@ -1271,7 +1379,7 @@ function loadDemoData() {
         </div>
         <div class="modal-foot">
           <button class="btn ghost" @click="showSubmitDlg = false">取消</button>
-          <button class="btn primary" :disabled="submitting" @click="submitForm">
+          <button class="btn primary" :disabled="submitting || functionMapContextTooLong" @click="submitForm">
             {{ submitting ? '投递中…' : '投递' }}
           </button>
         </div>
@@ -2066,6 +2174,34 @@ function loadDemoData() {
   padding: 6px 8px;
   font-size: 13px;
   font-family: inherit;
+}
+.form-row textarea.over {
+  border-color: #dc2626;
+  background: #fef2f2;
+}
+.file-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.file-btn {
+  position: relative;
+  overflow: hidden;
+}
+.file-btn input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.limit-warn {
+  color: #b91c1c;
+  font-size: 12px;
+}
+.file-hint {
+  color: #6b7280;
+  font-size: 12px;
 }
 .form-item-tools {
   display: flex;

@@ -635,6 +635,7 @@ class VLMRunner:
         assistant: Optional[BaseAssistant] = None,
         stop_event: Optional[asyncio.Event] = None,
         max_steps: int = SAFETY_MAX_STEPS,
+        function_map_context: Optional[str] = None,
     ) -> None:
         if not goal or not goal.strip():
             raise ValueError("goal 不能为空")
@@ -651,6 +652,13 @@ class VLMRunner:
         self._vlm_cu_zh_prompt_enabled: bool = bool(
             getattr(self._settings, "vlm_cu_zh_prompt_enabled", False)
         )
+        self._function_map_context_raw = (function_map_context or "").strip()
+        self._function_map_context = (
+            self._function_map_context_raw
+            if self._function_map_context_raw
+            and bool(getattr(self._settings, "function_map_context_enabled", True))
+            else ""
+        )
 
         # 主 VLM 客户端：通过 ``create_main_vlm`` 工厂按 ``settings.vlm_backend`` 分派
         # （doubao_responses / claude_cu / gpt_cu）。测试时可以传 ``vlm_client``
@@ -661,6 +669,7 @@ class VLMRunner:
         # GPT 退化成"忠实输出豆包文本 DSL"，runner 的 tool_use 解析全部 miss。
         system_prompt = build_system_prompt_for_backend(
             self.goal,
+            function_map_context=self._function_map_context or None,
             backend=self._settings.vlm_backend,
             zh_readable=self._vlm_cu_zh_prompt_enabled,
         )
@@ -772,6 +781,18 @@ class VLMRunner:
         task_start = time.monotonic()
         await self._emit_event(make_event(EVT_RUN_START, self.run_id, goal=self.goal))
         await self._log(1, "智能Agent 启动", f"目标: {self.goal}")
+        if self._function_map_context:
+            await self._log(
+                1,
+                "功能地图上下文 · 已注入",
+                f"已注入 {len(self._function_map_context)} 字符，只读参考，按需取用。",
+            )
+        elif self._function_map_context_raw:
+            await self._log(
+                1,
+                "功能地图上下文 · 未注入",
+                "env 总开关关闭（AI_PHONE_FUNCTION_MAP_CONTEXT_ENABLED=false），字段已接收但不参与本次决策。",
+            )
 
         # —— 通道判定第 1 步：本地信号摘要 ——
         # 不管最终走哪条通道，都把所有信号+本地预判先打到日志，方便用户在
@@ -871,6 +892,7 @@ class VLMRunner:
                 self.vlm.system_prompt = build_system_prompt_for_backend(
                     self.goal,
                     substeps_text=substeps_text,
+                    function_map_context=self._function_map_context or None,
                     backend=self._settings.vlm_backend,
                     zh_readable=self._vlm_cu_zh_prompt_enabled,
                 )

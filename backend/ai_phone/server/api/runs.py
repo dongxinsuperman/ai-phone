@@ -9,7 +9,7 @@
     - 前端"只读 Run 抽屉"（Queue 页日志 + 步骤预览）仍走 ``GET /api/runs/{id}``；
     - 老的手工调试路径（``POST /api/runs``）短期内仍允许操作，但不推荐。
 
-    **新接入方**一律使用 ``/api/submissions``。老接口不再接受新字段、不扩展功能；
+    **新接入方**一律使用 ``/api/submissions``。老接口仅保留手工调试所需字段；
     v2 会移除 ``POST /api/runs`` / ``POST /api/runs/{id}/stop``，只保留 GET 只读
     查询用于前端日志展示。
 
@@ -37,6 +37,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.config import get_settings
+from ai_phone.server.function_map_context import (
+    FunctionMapContextValidationError,
+    normalize_function_map_context_text,
+)
 from ai_phone.server.retry import normalize_requested_retry_max, resolve_effective_retry_max
 from ai_phone.shared import protocol as P
 
@@ -70,16 +74,19 @@ class RunCreate(BaseModel):
     engine: Optional[str] = Field(default=None, max_length=32)
     cache_mode: Optional[Annotated[str, Field(max_length=8)]] = None
     retry_max: Optional[Any] = None
+    function_map_context: Optional[Any] = None
 
     @model_validator(mode="before")
     @classmethod
-    def _accept_camel_cache_mode(cls, data: Any) -> Any:
+    def _accept_camel_fields(cls, data: Any) -> Any:
         if isinstance(data, dict):
             patched = dict(data)
             if "cacheMode" in patched and "cache_mode" not in patched:
                 patched["cache_mode"] = patched.get("cacheMode")
             if "retryMax" in patched and "retry_max" not in patched:
                 patched["retry_max"] = patched.get("retryMax")
+            if "functionMapContext" in patched and "function_map_context" not in patched:
+                patched["function_map_context"] = patched.get("functionMapContext")
             return patched
         return data
 
@@ -208,6 +215,37 @@ async def create_run(
         combined = f"{pre_goal}\n\n{case.goal}".strip() if pre_goal else case.goal
         goal = body.goal or combined
 
+    settings = get_settings()
+    # 引擎选择：缺省走 vlm（与历史行为一致）。midscene 仅在 settings.midscene_enabled
+    # 显式启用时被接受，避免未配置 bridge 的环境意外路由到外接通道。
+    engine = (body.engine or "vlm").strip().lower()
+    if engine == "midscene" and not settings.midscene_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="midscene 引擎未启用：请在 .env 中设置 AI_PHONE_MIDSCENE_ENABLED=true",
+        )
+    requested_cache_mode = normalize_requested_cache_mode(body.cache_mode)
+    effective_cache_mode = resolve_effective_cache_mode(
+        env_cache_enabled=bool(settings.trajectory_cache_enabled),
+        requested_cache_mode=requested_cache_mode,
+    )
+    requested_retry_max = normalize_requested_retry_max(body.retry_max)
+    effective_retry_max = resolve_effective_retry_max(
+        env_retry_enabled=bool(settings.run_retry_enabled),
+        env_retry_max=int(settings.run_retry_max or 0),
+        payload_retry_max=requested_retry_max,
+    )
+    try:
+        function_map_context = normalize_function_map_context_text(
+            body.function_map_context,
+            max_chars=int(settings.function_map_context_max_chars or 0),
+        )
+    except FunctionMapContextValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=exc.detail,
+        ) from exc
+
     # 预生成 run.id，下面把它直接当锁 holder 用——这样：
     # 1) 并发自动抢锁天然按"不同 run = 不同 holder"判冲突，不会被同名续期绕过；
     # 2) 设备页 / 运维查锁时 holder 就是业务上的 Run ID，不必再绕 meta；
@@ -242,33 +280,13 @@ async def create_run(
                 detail=f"设备已被占用，无法启动自动任务：{exc}",
             )
 
-    # 引擎选择：缺省走 vlm（与历史行为一致）。midscene 仅在 settings.midscene_enabled
-    # 显式启用时被接受，避免未配置 bridge 的环境意外路由到外接通道。
-    engine = (body.engine or "vlm").strip().lower()
-    if engine == "midscene" and not get_settings().midscene_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="midscene 引擎未启用：请在 .env 中设置 AI_PHONE_MIDSCENE_ENABLED=true",
-        )
-    settings = get_settings()
-    requested_cache_mode = normalize_requested_cache_mode(body.cache_mode)
-    effective_cache_mode = resolve_effective_cache_mode(
-        env_cache_enabled=bool(settings.trajectory_cache_enabled),
-        requested_cache_mode=requested_cache_mode,
-    )
-    requested_retry_max = normalize_requested_retry_max(body.retry_max)
-    effective_retry_max = resolve_effective_retry_max(
-        env_retry_enabled=bool(settings.run_retry_enabled),
-        env_retry_max=int(settings.run_retry_max or 0),
-        payload_retry_max=requested_retry_max,
-    )
-
     run = Run(
         id=pre_run_id,
         device_serial=body.device_serial,
         agent_id=agent_id,
         case_id=case_id,
         goal=goal,
+        function_map_context=function_map_context or None,
         status="pending",
         engine=engine,
         requested_cache_mode=requested_cache_mode,
@@ -291,6 +309,7 @@ async def create_run(
             serial=body.device_serial,
             agent_id=agent_id,
             goal=goal,
+            function_map_context=function_map_context or None,
             engine=engine,
             dispatch_source="api",
             platform=dev.platform or "android",

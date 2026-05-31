@@ -32,6 +32,7 @@ def build_runner(
     serial: str,
     driver: Optional[BaseDriver],
     goal: str,
+    function_map_context: Optional[str] = None,
     emit: Optional[Callable[[Dict[str, Any]], None]] = None,
     settings: Optional[Settings] = None,
 ) -> _RunnerLike:
@@ -61,7 +62,13 @@ def build_runner(
         if driver is None:
             raise RuntimeError("vlm runner 需要 driver 不为空")
         logger.info("build_runner: 选用 VLMRunner | run_id={}", run_id)
-        return VLMRunner(run_id=run_id, driver=driver, goal=goal, emit=emit)
+        return VLMRunner(
+            run_id=run_id,
+            driver=driver,
+            goal=goal,
+            function_map_context=function_map_context,
+            emit=emit,
+        )
 
     if e == "midscene":
         if not settings.midscene_enabled:

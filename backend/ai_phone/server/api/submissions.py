@@ -96,6 +96,7 @@ async def create_submission(
 
         {
           "submissionName": "...",
+          "functionMapContext": "...", // 可选，批次级执行参考
           "items": [
             {
               "caseId": "...",
