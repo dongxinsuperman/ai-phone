@@ -7,7 +7,8 @@
 - archive 用 next 的 ``_action_from_parsed_raw`` 规范化字段（drag ``start``/``end``、
   scroll ``amount``、open_app ``app_name``、click ``point{x,y}``）——这些正是
   ReplayActionDispatcher 读的字段，避免回放执行对不上；
-- 坐标按 coord_space：doubao normalized 按屏幕换算成 abs；claude/gpt absolute 存原值；
+- 坐标按 coord_space：doubao normalized 按屏幕换算成 abs；claude/gpt absolute 按
+  「设备/截图」比例缩回设备坐标（带 vlm_screenshot_size 时；缺尺寸回退原值）；
 - 动作链拆成多条（不合并）；plan_intent 规则生成、可被模型 cleaner 覆盖；空动作不回传。
 
 注：``.env`` 实配了 plan cleaner（classifier=doubao），故默认 autouse fixture 把
@@ -43,12 +44,16 @@ def _rule_only_cleaner(monkeypatch):
     )
 
 
-def _feed_step(rec, run_id, step, *, thought, action_type, actions, display="x"):
+def _feed_step(
+    rec, run_id, step, *, thought, action_type, actions, display="x",
+    vlm_screenshot_size=None,
+):
     rec.feed(make_event(EVT_THOUGHT, run_id, step=step, text=thought))
     rec.feed(
         make_event(
             EVT_ACTION, run_id, step=step, text=display, elapsed_ms=100,
             action_type=action_type, actions=actions,
+            vlm_screenshot_size=vlm_screenshot_size,
         )
     )
 
@@ -142,7 +147,8 @@ async def test_v3_archive_normalizes_fields_for_replay_dispatcher():
 
 @pytest.mark.asyncio
 async def test_v3_archive_coord_space_doubao_vs_overseas():
-    """三协议坐标：doubao normalized 按屏幕换算成 abs；claude/gpt absolute 存原值。"""
+    """三协议坐标：doubao normalized 按屏幕换算成 abs；claude/gpt absolute 必须按
+    「设备/截图」比例缩回设备坐标（CU 截图被 max_long_edge 缩过，不能当设备坐标直接存）。"""
     rec_d = TrajectoryRecorder("rd")
     _feed_step(
         rec_d, "rd", 1, thought="点击", action_type="click",
@@ -155,17 +161,37 @@ async def test_v3_archive_coord_space_doubao_vs_overseas():
     )
     assert a_d["actions"][0]["point"] == {"x": 500, "y": 500}
 
+    # CU 系 absolute：模型坐标相对「被缩过的截图」，归档必须按 设备/截图 缩回设备坐标。
+    # 截图 540x1200、设备 1080x2400（正好 2 倍）：(200,400) → (400,800)。
+    # 回归守护：此前 bug 直接存原值 (200,400)，回放点偏。
     rec_c = TrajectoryRecorder("rc")
     _feed_step(
         rec_c, "rc", 1, thought="点击", action_type="click",
-        actions=[{"action": "click", "point": [640, 360], "coord_space": "absolute"}],
+        actions=[{"action": "click", "point": [200, 400], "coord_space": "absolute"}],
+        vlm_screenshot_size=(540, 1200),
     )
     rec_c.feed(make_event(EVT_RUN_FINISH, "rc", ok=True, reason="finished"))
     a_c = await build_v3_archive(
         goal="g", device_serial="S", source_run_id="rc",
-        screen_size=(1080, 1920), steps=rec_c.steps(),
+        screen_size=(1080, 2400), steps=rec_c.steps(),
     )
-    assert a_c["actions"][0]["point"] == {"x": 640, "y": 360}  # absolute 原值
+    assert a_c["actions"][0]["point"] == {"x": 400, "y": 800}  # 缩回设备坐标，非截图原值
+
+
+@pytest.mark.asyncio
+async def test_v3_archive_absolute_falls_back_to_raw_without_screenshot_size():
+    """缺截图尺寸时 absolute 回退原值、不崩（正常 CU 链路一定带尺寸，这是兜底分支）。"""
+    rec = TrajectoryRecorder("rcf")
+    _feed_step(
+        rec, "rcf", 1, thought="点击", action_type="click",
+        actions=[{"action": "click", "point": [640, 360], "coord_space": "absolute"}],
+    )
+    rec.feed(make_event(EVT_RUN_FINISH, "rcf", ok=True, reason="finished"))
+    a = await build_v3_archive(
+        goal="g", device_serial="S", source_run_id="rcf",
+        screen_size=(1080, 1920), steps=rec.steps(),
+    )
+    assert a["actions"][0]["point"] == {"x": 640, "y": 360}
 
 
 @pytest.mark.asyncio
