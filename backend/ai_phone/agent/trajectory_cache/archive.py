@@ -478,6 +478,7 @@ def _actions_from_steps(
     for s in steps:
         thought = str(s.get("thought") or "")
         raw_step = str(s.get("display_action") or "")
+        vlm_screenshot_size = s.get("vlm_screenshot_size")
         for parsed_dict in s.get("actions") or []:
             if not isinstance(parsed_dict, dict):
                 continue
@@ -487,6 +488,7 @@ def _actions_from_steps(
                 parsed=parsed,
                 raw=parsed.raw,
                 screen_size=screen_size,
+                vlm_screenshot_size=vlm_screenshot_size,
                 source="agent_first_hand",
             )
             if action is None:  # 终止 / 未知动作不入缓存
@@ -527,6 +529,7 @@ def _action_from_parsed_raw(
     raw: str,
     screen_size: Tuple[int, int],
     source: str,
+    vlm_screenshot_size: Optional[Tuple[int, int]] = None,
 ) -> Optional[Dict[str, Any]]:
     """自 next ``service._action_from_parsed_raw`` 迁来：parsed → 回放执行器认的规范化
     action。三协议坐标统一经 ``_parsed_point_to_abs``，字段名与 ReplayActionDispatcher 对齐。
@@ -543,7 +546,7 @@ def _action_from_parsed_raw(
         out = {
             **base,
             "type": action,
-            "point": _parsed_point_to_abs(parsed.point, parsed.coord_space, screen_size),
+            "point": _parsed_point_to_abs(parsed.point, parsed.coord_space, screen_size, vlm_screenshot_size),
             "coord_mode": "absolute",
         }
         if action == A.ACTION_LONG_PRESS:
@@ -561,7 +564,7 @@ def _action_from_parsed_raw(
             "amount": int(parsed.scroll_amount or 1),
         }
         if parsed.point:
-            out["center"] = _parsed_point_to_abs(parsed.point, parsed.coord_space, screen_size)
+            out["center"] = _parsed_point_to_abs(parsed.point, parsed.coord_space, screen_size, vlm_screenshot_size)
         return out
     if action == A.ACTION_DRAG:
         if not (parsed.start_point and parsed.end_point):
@@ -569,8 +572,8 @@ def _action_from_parsed_raw(
         return {
             **base,
             "type": action,
-            "start": _parsed_point_to_abs(parsed.start_point, parsed.coord_space, screen_size),
-            "end": _parsed_point_to_abs(parsed.end_point, parsed.coord_space, screen_size),
+            "start": _parsed_point_to_abs(parsed.start_point, parsed.coord_space, screen_size, vlm_screenshot_size),
+            "end": _parsed_point_to_abs(parsed.end_point, parsed.coord_space, screen_size, vlm_screenshot_size),
             "coord_mode": "absolute",
         }
     if action == A.ACTION_OPEN_APP:
@@ -590,12 +593,24 @@ def _parsed_point_to_abs(
     point: Iterable[int],
     coord_space: str,
     screen_size: Tuple[int, int],
+    vlm_screenshot_size: Optional[Tuple[int, int]] = None,
 ) -> Dict[str, int]:
-    """坐标 → 设备像素（自 next 迁来）：absolute 原值；normalized 按屏幕换算（需 w/h）。"""
+    """坐标 → 设备像素。
+
+    - normalized（豆包）：0-1000 按屏幕换算。
+    - absolute（claude/gpt CU）：模型给的是相对「被 max_long_edge 缩过的截图」的像素，
+      必须按 设备/截图 比例缩回设备坐标（与首跑 ``_vlm_point_to_abs`` 同源）；拿不到截图
+      尺寸时回退原值。此前对 absolute 直接存原值，回放会把截图坐标当设备坐标、点偏约 35%。
+    """
     x, y = [int(v) for v in list(point)[:2]]
-    if coord_space == "absolute":
-        return {"x": x, "y": y}
     w, h = screen_size
+    if coord_space == "absolute":
+        if vlm_screenshot_size:
+            sw = int(vlm_screenshot_size[0] or 0)
+            sh = int(vlm_screenshot_size[1] or 0)
+            if sw > 0 and sh > 0 and w > 0 and h > 0:
+                return {"x": int(x * (w / sw)), "y": int(y * (h / sh))}
+        return {"x": x, "y": y}
     if w > 0 and h > 0:
         ax, ay = A.vlm_point_to_abs(x, y, w, h)
         return {"x": int(ax), "y": int(ay)}

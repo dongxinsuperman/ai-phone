@@ -1228,6 +1228,11 @@ class VLMRunner:
                     # 执行；bridge 仍忽略 EVT_ACTION，对现有上报零影响。
                     action_type=action_type,
                     actions=[p.to_dict() for p in parsed_chain],
+                    # CU 系（claude/gpt）的 absolute 坐标是相对「被 max_long_edge 缩过的
+                    # 截图」的像素；归档要按 设备/截图 比例缩回设备坐标，必须带上当轮截图
+                    # 尺寸（豆包 normalized 路径为 None、不使用）。与首跑 _vlm_point_to_abs
+                    # 同源，避免缓存里存成截图坐标导致回放点偏。
+                    vlm_screenshot_size=self._last_vlm_screenshot_size,
                 )
             )
             await self._log(1, "思考", thought, step=step)
@@ -2696,6 +2701,7 @@ class VLMRunner:
         target = await self._match_package_name(app_name, pkgs)
         await asyncio.to_thread(self.driver.activate_app, target)
         await self._log(1, "打开App", f"成功: {target}")
+        await self._emit_cache_app_action(A.ACTION_OPEN_APP, target)
 
     async def _close_app_by_name(self, app_name: str) -> None:
         # 同 _open_app_by_name：close 也用全量，避免"关闭设置"这类命中系统包失败
@@ -2703,6 +2709,33 @@ class VLMRunner:
         target = await self._match_package_name(app_name, pkgs)
         await asyncio.to_thread(self.driver.terminate_app, target)
         await self._log(1, "关闭App", f"成功: {target}")
+        await self._emit_cache_app_action(A.ACTION_CLOSE_APP, target)
+
+    async def _emit_cache_app_action(self, action_name: str, package: str) -> None:
+        """补发带「实际包名」的 EVT_ACTION，覆盖本 step 在 TrajectoryRecorder 里的动作。
+
+        借鉴 next/server-brain：next 的缓存动作来自实际下发的 driver 命令
+        （``activate_app(package_name=...)`` → app_name 字段存包名），回放直接拿
+        这个包名喂 driver。main 的旁路收集器原本只接 VLM 的 ``EVT_ACTION``（携带
+        中文 app_name），回放时 ``activate_app('洋葱学园')`` 会让 monkey -p 找不到
+        Activity（No activities found）。这里在 open_app/close_app 的实际执行入口
+        （已匹配出包名 ``target``）补发一条带包名的 ``EVT_ACTION``——recorder 按
+        step 聚合、后到覆盖先到，于是缓存里存的是包名。本入口被起跑线 prelude 与
+        普通 step dispatch 共用，一处补发即两路统一生效。
+        """
+        if not package:
+            return
+        parsed = A.ParsedAction(action=action_name, name=package)
+        await self._emit_event(
+            make_event(
+                EVT_ACTION,
+                self.run_id,
+                step=self._current_step,
+                text=f"{action_name}({package})",
+                action_type=action_name,
+                actions=[parsed.to_dict()],
+            )
+        )
 
     # ------------------------------------------------------------------
     # 起跑线强制注入：close_app + open_app（不走 VLM）

@@ -51,6 +51,8 @@ class TrajectoryRecorder:
                     s["display_action"] = str(evt.get("text") or "")
                     s["elapsed_ms"] = int(evt.get("elapsed_ms") or 0)
                     s["ts"] = evt.get("ts")
+                    # CU 系 absolute 坐标缩放到设备坐标用的当轮截图尺寸（doubao 为 None）。
+                    s["vlm_screenshot_size"] = evt.get("vlm_screenshot_size")
             elif t == EVT_RUN_FINISH:
                 self._success = bool(evt.get("ok"))
                 self._finish_reason = str(evt.get("reason") or "")
