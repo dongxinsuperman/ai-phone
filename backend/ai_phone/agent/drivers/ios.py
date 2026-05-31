@@ -1136,6 +1136,16 @@ def _reset_ios_scan_state_for_tests() -> None:
         _IOS_SCAN_LAST_OK = False
 
 
+def _is_usbmux_usb_device(dev: Any) -> bool:
+    """Return whether a pymobiledevice3 usbmux device is physically on USB."""
+    connection_type = getattr(dev, "connection_type", None)
+    if connection_type is None:
+        # Older/fake MuxDevice-like objects may not expose transport metadata.
+        return True
+    normalized = str(connection_type).strip().lower()
+    return normalized == "usb" or normalized.endswith(".usb")
+
+
 def list_ios_devices(include_offline: bool = False) -> List[DeviceInfo]:
     """扫描 USB 上的 iOS 设备，返回 ``DeviceInfo`` 列表。
 
@@ -1168,6 +1178,11 @@ def list_ios_devices(include_offline: bool = False) -> List[DeviceInfo]:
         _set_ios_scan_ok(False)
         logger.warning("usbmux list_devices 失败：{}", exc)
         return []
+
+    # 只认 USB 物理连接的设备：usbmux 也会列出"过去配对、现在同 WiFi 网络可达"的设备
+    # （connection_type='Network'），那不是本机插着的真机，排除掉——否则设备总览会冒出
+    # 一台连不上 WDA 的"幽灵 iOS 设备"。本函数语义本就是"扫描 USB 上的 iOS 设备"。
+    devices = [d for d in devices if _is_usbmux_usb_device(d)]
 
     # 关键修复（Codex P1 二次审查）：成功调用 + 空列表的隐蔽抖动也得防。
     # 把"原始 udid 集合"先抽出来喂给扫描状态机，由后者决定本轮是否可信。
