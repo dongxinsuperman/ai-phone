@@ -988,40 +988,42 @@ watch(
         <div class="goal-panel">
           <!-- 引擎下拉框：仅在后端 AI_PHONE_MIDSCENE_ENABLED=true 时可见。
                缺省永远 'vlm'（与历史行为完全等价）。详见 Midscene执行器接入方案.md -->
-          <div v-if="midsceneEnabled" class="engine-row">
-            <label>执行引擎</label>
-            <select
-              v-model="selectedEngine"
-              :disabled="!!currentRunId || lock.readonly.value"
-            >
-              <option value="vlm">vlm（默认 / ai-phone 主链路）</option>
-              <option value="midscene">midscene（外接寄居）</option>
-            </select>
-          </div>
-          <div class="engine-row">
-            <label>轨迹缓存</label>
-            <select
-              v-model="selectedCacheMode"
-              :disabled="!!currentRunId || lock.readonly.value"
-            >
-              <option value="off">off（不使用缓存）</option>
-              <option value="v1">v1（旧轨迹缓存）</option>
-              <option value="v2">v2（路标回放）</option>
-              <option value="v3">v3（语义重定位）</option>
-            </select>
-          </div>
-          <div class="engine-row">
-            <label>失败重跑</label>
-            <input
-              v-model.number="selectedRetryMax"
-              type="number"
-              min="0"
-              :max="retryMaxLimit || 0"
-              :disabled="!!currentRunId || lock.readonly.value || !retryEnabled || !retryMaxLimit"
-            />
-            <span class="engine-hint">
-              {{ retryEnabled && retryMaxLimit ? `最多 ${retryMaxLimit} 次` : '后端未启用' }}
-            </span>
+          <div class="run-options">
+            <div v-if="midsceneEnabled" class="engine-row engine-row-main">
+              <label>执行引擎</label>
+              <select
+                v-model="selectedEngine"
+                :disabled="!!currentRunId || lock.readonly.value"
+              >
+                <option value="vlm">vlm 主链路</option>
+                <option value="midscene">midscene</option>
+              </select>
+            </div>
+            <div class="engine-row">
+              <label>轨迹缓存</label>
+              <select
+                v-model="selectedCacheMode"
+                :disabled="!!currentRunId || lock.readonly.value"
+              >
+                <option value="off">off</option>
+                <option value="v1">v1 旧缓存</option>
+                <option value="v2">v2 路标</option>
+                <option value="v3">v3 语义</option>
+              </select>
+            </div>
+            <div class="engine-row retry-row">
+              <label>失败重跑</label>
+              <input
+                v-model.number="selectedRetryMax"
+                type="number"
+                min="0"
+                :max="retryMaxLimit || 0"
+                :disabled="!!currentRunId || lock.readonly.value || !retryEnabled || !retryMaxLimit"
+              />
+              <span class="engine-hint">
+                {{ retryEnabled && retryMaxLimit ? `最多 ${retryMaxLimit}` : '未启用' }}
+              </span>
+            </div>
           </div>
           <label>Goal（自然语言目标）</label>
           <textarea
@@ -1043,38 +1045,47 @@ watch(
             :disabled="!!currentRunId || lock.readonly.value"
             :class="{ over: functionMapContextTooLong }"
           />
-          <div class="file-tools">
-            <label class="secondary small file-btn" :class="{ disabled: !!currentRunId || lock.readonly.value }">
-              导入文件
-              <input
-                type="file"
-                multiple
-                :accept="FUNCTION_MAP_FILE_ACCEPT"
-                :disabled="!!currentRunId || lock.readonly.value"
-                @change="appendFunctionMapFiles"
-              />
-            </label>
-            <label class="secondary small file-btn" :class="{ disabled: !!currentRunId || lock.readonly.value }">
-              导入文件夹
-              <input
-                type="file"
-                webkitdirectory
-                directory
-                multiple
-                :accept="FUNCTION_MAP_FILE_ACCEPT"
-                :disabled="!!currentRunId || lock.readonly.value"
-                @change="appendFunctionMapFiles"
-              />
-            </label>
-            <span class="file-hint">支持 {{ FUNCTION_MAP_SUPPORTED_FORMATS }}；文件夹会跳过隐藏/非文本文件</span>
-            <span v-if="functionMapContextTooLong" class="limit-warn">已超出上限，请精简后再执行</span>
-          </div>
-          <div class="btn-row">
-            <button class="primary" :disabled="busy || !!currentRunId || lock.readonly.value || functionMapContextTooLong" @click="startRun">
-              {{ currentRunId ? '运行中…' : '开始 Run' }}
-            </button>
-            <button class="danger" :disabled="busy || !currentRunId" @click="stopRun">停止</button>
-            <button class="ghost" @click="clearLogs">清空日志</button>
+          <div class="action-row">
+            <div class="file-tools">
+              <label
+                class="secondary small file-btn"
+                :class="{ disabled: !!currentRunId || lock.readonly.value }"
+                :title="`支持 ${FUNCTION_MAP_SUPPORTED_FORMATS}；跳过隐藏/非文本文件`"
+              >
+                导入文件
+                <input
+                  type="file"
+                  multiple
+                  :accept="FUNCTION_MAP_FILE_ACCEPT"
+                  :disabled="!!currentRunId || lock.readonly.value"
+                  @change="appendFunctionMapFiles"
+                />
+              </label>
+              <label
+                class="secondary small file-btn"
+                :class="{ disabled: !!currentRunId || lock.readonly.value }"
+                :title="`支持 ${FUNCTION_MAP_SUPPORTED_FORMATS}；跳过隐藏/非文本文件`"
+              >
+                导入文件夹
+                <input
+                  type="file"
+                  webkitdirectory
+                  directory
+                  multiple
+                  :accept="FUNCTION_MAP_FILE_ACCEPT"
+                  :disabled="!!currentRunId || lock.readonly.value"
+                  @change="appendFunctionMapFiles"
+                />
+              </label>
+              <span v-if="functionMapContextTooLong" class="limit-warn">已超出上限，请精简后再执行</span>
+            </div>
+            <div class="btn-row">
+              <button class="primary" :disabled="busy || !!currentRunId || lock.readonly.value || functionMapContextTooLong" @click="startRun">
+                {{ currentRunId ? '运行中…' : '开始 Run' }}
+              </button>
+              <button class="danger" :disabled="busy || !currentRunId" @click="stopRun">停止</button>
+              <button class="ghost" @click="clearLogs">清空日志</button>
+            </div>
           </div>
           <p v-if="submitError" class="err">{{ submitError }}</p>
           <div v-if="currentRun" class="run-meta">
@@ -1552,10 +1563,17 @@ h2 {
   color: #6b7280;
   font-size: 12px;
 }
+.run-options {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.1fr) minmax(150px, 0.9fr) minmax(160px, 0.85fr);
+  gap: 8px;
+  align-items: end;
+}
 .engine-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 .engine-row label {
   font-size: 13px;
@@ -1564,12 +1582,16 @@ h2 {
 }
 .engine-row select,
 .engine-row input {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 6px 8px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
   font-size: 13px;
   background: #fff;
+}
+.retry-row input {
+  max-width: 68px;
 }
 .engine-row select:disabled,
 .engine-row input:disabled {
@@ -1581,9 +1603,17 @@ h2 {
   font-size: 12px;
   white-space: nowrap;
 }
+.action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 .btn-row {
   display: flex;
   gap: 8px;
+  margin-left: auto;
 }
 .btn-row button {
   padding: 8px 16px;
@@ -1618,6 +1648,14 @@ h2 {
 }
 .ghost:hover:enabled {
   background: #f5f7fa;
+}
+@media (max-width: 1100px) {
+  .run-options {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+  .btn-row {
+    margin-left: 0;
+  }
 }
 .err {
   margin: 4px 0 0;
