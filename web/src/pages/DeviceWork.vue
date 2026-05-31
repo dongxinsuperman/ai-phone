@@ -172,9 +172,23 @@ function _onVideoSizeChange() {
   }
 }
 
-const lock = useDeviceLock(serial.value)
 let sub = null
 let deviceTimer = null
+const lock = useDeviceLock(serial.value, {
+  onKicked: () => {
+    if (sub) {
+      sub.close()
+      sub = null
+    }
+    router.replace({
+      path: '/',
+      query: {
+        lockLost: '1',
+        serial: serial.value,
+      },
+    })
+  },
+})
 
 async function refreshDevice() {
   try {

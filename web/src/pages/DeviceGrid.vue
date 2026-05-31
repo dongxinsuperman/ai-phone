@@ -1,8 +1,11 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import DeviceCard from '../components/DeviceCard.vue'
 import { api, internal } from '../lib/api.js'
 
+const route = useRoute()
+const router = useRouter()
 const devices = ref([])
 const agents = ref([])
 const loading = ref(false)
@@ -84,6 +87,17 @@ const agentSummary = computed(() => {
   const runningTotal = agents.value.reduce((sum, a) => sum + Number(a.running_count || 0), 0)
   return { online, devicesTotal, runningTotal }
 })
+const lockLostNotice = computed(() => {
+  if (route.query.lockLost !== '1') return ''
+  const serial = String(route.query.serial || '')
+  return serial
+    ? `设备 ${serial} 的控制权已释放或被其他任务占用，已回到设备总览。`
+    : '设备控制权已释放或被其他任务占用，已回到设备总览。'
+})
+
+function dismissLockNotice() {
+  router.replace({ path: '/', query: {} })
+}
 
 function formatAgentAge(ms) {
   if (ms == null) return '-'
@@ -233,6 +247,10 @@ function prettyErr(e) {
       </div>
     </header>
 
+    <p v-if="lockLostNotice" class="notice">
+      <span>{{ lockLostNotice }}</span>
+      <button @click="dismissLockNotice">知道了</button>
+    </p>
     <p v-if="error" class="err">加载失败：{{ error }}</p>
 
     <div class="agent-panel">
@@ -410,6 +428,29 @@ h2 {
   border: 1px solid #fecaca;
   color: #991b1b;
   border-radius: 6px;
+}
+.notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e3a8a;
+  border-radius: 6px;
+}
+.notice button {
+  border: 1px solid #93c5fd;
+  border-radius: 6px;
+  background: #fff;
+  color: #1d4ed8;
+  cursor: pointer;
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+.notice button:hover {
+  background: #dbeafe;
 }
 .agent-panel {
   margin-bottom: 16px;

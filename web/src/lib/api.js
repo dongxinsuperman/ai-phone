@@ -68,9 +68,13 @@ export const api = {
   listDevices: () => request('GET', '/api/devices'),
   listAgents: () => request('GET', '/api/agents'),
   getDevice: (serial) => request('GET', `/api/devices/${encodeURIComponent(serial)}`),
-  acquireLock: (serial, holder, holderType = 'manual') =>
+  acquireLock: (serial, holder, holderType = 'manual', ttlSeconds = null) =>
     request('POST', `/api/devices/${encodeURIComponent(serial)}/lock`, {
-      body: { holder, holder_type: holderType },
+      body: {
+        holder,
+        holder_type: holderType,
+        ...(ttlSeconds ? { ttl_seconds: ttlSeconds } : {}),
+      },
     }),
   heartbeatLock: (serial, token) =>
     request('POST', `/api/devices/${encodeURIComponent(serial)}/heartbeat`, {
