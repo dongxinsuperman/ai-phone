@@ -215,17 +215,27 @@ def test_start_run_dispatched_to_agent(ws_app):
                 }
             )
             _wait_device_online(client, "S1")
-            resp = client.post("/api/runs", json={"device_serial": "S1", "goal": "打开设置"})
+            resp = client.post(
+                "/api/runs",
+                json={
+                    "device_serial": "S1",
+                    "goal": "打开设置",
+                    "functionMapContext": "设置 App 首页有蓝牙入口",
+                },
+            )
             assert resp.status_code == 201, resp.text
             body = resp.json()
             assert body["dispatched"] is True
             assert body["agent_id"] == "agent-x"
+            assert body["function_map_context_chars"] == len("设置 App 首页有蓝牙入口")
 
             # Agent 端应收到 start_run 消息（跳过连接时 Server 下发的 agent_config）
             msg = _recv_until(agent, "start_run")
             assert msg["type"] == "start_run"
             assert msg["device_serial"] == "S1"
             assert msg["goal"] == "打开设置"
+            assert msg["function_map_context"] == "设置 App 首页有蓝牙入口"
+            assert msg["functionMapContext"] == "设置 App 首页有蓝牙入口"
 
 
 def test_stop_run_forwarded(ws_app):

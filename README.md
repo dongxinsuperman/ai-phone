@@ -123,6 +123,7 @@ curl -X POST http://localhost:8000/api/submissions \
   -H 'Content-Type: application/json' \
   -d '{
     "submissionName": "demo-smoke",
+    "functionMapContext": "可选：设置首页有“关于本机”入口",
     "items": [
       {
         "caseId": "demo_001",

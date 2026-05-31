@@ -808,6 +808,22 @@ class Settings(BaseSettings):
             "env: AI_PHONE_SCHEDULER_TICK_SEC"
         ),
     )
+    function_map_context_enabled: bool = Field(
+        default=True,
+        description=(
+            "功能地图上下文注入开关。关闭时字段仍接收/落库/校验，但不会注入主 VLM。"
+            "env: AI_PHONE_FUNCTION_MAP_CONTEXT_ENABLED"
+        ),
+    )
+    function_map_context_max_chars: int = Field(
+        default=2000,
+        ge=1,
+        le=20000,
+        description=(
+            "functionMapContext 硬字符上限，超限拒绝且不截断。"
+            "env: AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS"
+        ),
+    )
     run_retry_enabled: bool = Field(
         default=False,
         description=(

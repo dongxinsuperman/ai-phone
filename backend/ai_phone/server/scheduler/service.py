@@ -44,6 +44,10 @@ from ai_phone.shared import protocol as P
 
 from ..hub import Hub
 from ..lockstore import DeviceLockStore, LockConflict
+from ..function_map_context import (
+    FunctionMapContextValidationError,
+    normalize_function_map_context_text,
+)
 from ..models import Device, Run, RunLog, Submission, SubmissionItem
 from ..runner.dispatch import RunDispatchService
 from ..trajectory_cache.mode import normalize_requested_cache_mode, resolve_effective_cache_mode
@@ -183,6 +187,7 @@ def parse_and_validate(
 
         {
           "submissionName": "v3.4-回归",
+          "functionMapContext": "可选：批次级功能地图上下文 / 执行参考",
           "items": [
             {
               "caseId": "C-1",
@@ -379,6 +384,24 @@ def parse_and_validate(
     return submission_name, callback_url, requested_retry_max, out
 
 
+def parse_function_map_context(
+    raw_body: Any,
+    *,
+    max_chars: Optional[int] = None,
+) -> str:
+    """Parse top-level ``functionMapContext`` from a submission payload."""
+    if not isinstance(raw_body, dict):
+        return ""
+    raw_value = raw_body.get("functionMapContext")
+    if raw_value is None and "function_map_context" in raw_body:
+        raw_value = raw_body.get("function_map_context")
+    limit = int(max_chars or get_settings().function_map_context_max_chars)
+    try:
+        return normalize_function_map_context_text(raw_value, max_chars=limit)
+    except FunctionMapContextValidationError as exc:
+        raise AdmissionError(exc.reason, exc.detail) from exc
+
+
 # ---------------------------------------------------------------------------
 # 内存中的调度上下文
 # ---------------------------------------------------------------------------
@@ -511,6 +534,10 @@ class SubmissionScheduler:
         - 新：``{"submissionName": "...", "items": [{}, {}]}``
         """
         submission_name, callback_url, requested_retry_max, drafts = parse_and_validate(raw_body)
+        function_map_context = parse_function_map_context(
+            raw_body,
+            max_chars=int(self._settings.function_map_context_max_chars or 0),
+        )
         effective_retry_max = resolve_effective_retry_max(
             env_retry_enabled=bool(self._settings.run_retry_enabled),
             env_retry_max=int(self._settings.run_retry_max or 0),
@@ -594,6 +621,7 @@ class SubmissionScheduler:
             accepted_at=now,
             expire_at=expire_at,
             callback_url=callback_url,
+            function_map_context=function_map_context or None,
             requested_retry_max=requested_retry_max,
             effective_retry_max=effective_retry_max,
         )
@@ -717,6 +745,12 @@ class SubmissionScheduler:
                 return None
             if item.state != "queued":
                 return None
+            submission = await session.get(Submission, item.submission_id)
+            function_map_context = (
+                str(submission.function_map_context or "")
+                if submission is not None
+                else ""
+            )
 
             # 1) 找候选设备：platform 匹配 + online + ready + 无锁
             candidate = await self._pick_device(session, item)
@@ -748,6 +782,7 @@ class SubmissionScheduler:
                 agent_id=agent_id,
                 case_id=None,
                 goal=item.run_content,
+                function_map_context=function_map_context or None,
                 status="pending",
                 requested_cache_mode=item.cache_mode,
                 effective_cache_mode=resolve_effective_cache_mode(
@@ -802,6 +837,7 @@ class SubmissionScheduler:
             serial=serial,
             agent_id=agent_id,
             goal=item.run_content,
+            function_map_context=function_map_context or None,
             engine="vlm",
             dispatch_source="scheduler",
             platform=platform,
@@ -1308,6 +1344,7 @@ class SubmissionScheduler:
             run2.steps = 0
             run2.last_attempt = next_attempt
             run2.attempts = max(int(run2.attempts or 1), next_attempt)
+            function_map_context = str(run2.function_map_context or "")
             item2.attempts = max(int(item2.attempts or 0), next_attempt)
             item2.finished_at = None
             session.add(
@@ -1344,6 +1381,7 @@ class SubmissionScheduler:
             serial=str(serial),
             agent_id=agent_id,
             goal=item.run_content,
+            function_map_context=function_map_context or None,
             engine="vlm",
             dispatch_source="scheduler",
             platform=item.platform,
@@ -1418,6 +1456,7 @@ class SubmissionScheduler:
             await asyncio.sleep(cooldown)
 
         next_attempt = failed_attempt + 1
+        function_map_context = ""
         async with self._session_factory() as session:
             run = await session.get(Run, run_id)
             if run is None or run.status == "stopped":
@@ -1436,6 +1475,7 @@ class SubmissionScheduler:
             run.steps = 0
             run.last_attempt = next_attempt
             run.attempts = max(int(run.attempts or 1), next_attempt)
+            function_map_context = str(run.function_map_context or "")
             session.add(
                 RunLog(
                     run_id=run_id,
@@ -1463,6 +1503,7 @@ class SubmissionScheduler:
             serial=serial,
             agent_id=agent_id,
             goal=goal,
+            function_map_context=function_map_context or None,
             engine=engine,
             dispatch_source=dispatch_source,
             platform=platform,

@@ -13,7 +13,39 @@
 from __future__ import annotations
 
 
-def build_system_prompt(goal: str, substeps_text: str | None = None) -> str:
+def _build_function_map_context_block(function_map_context: str | None) -> str:
+    text = (function_map_context or "").strip()
+    if not text:
+        return ""
+    return (
+        "\n## 功能地图上下文（执行参考，只读手册）\n"
+        "下面是本次 Run 附带的一段可选参考资料。它**可能**包含（也可能完全没有）："
+        "被测 App 的功能地图（页面结构、各页功能、入口路径、点击后会发生什么）、"
+        "测试数据（账号 / 密码 / 验证码规则等）、业务背景与术语、异常 / 弹窗的处理规则。\n\n"
+        "它的唯一用途：当你对「当前在哪个页面、某入口点进去会怎样、要用什么测试数据、"
+        "遇到异常怎么办、业务术语是什么意思」不确定时，回这里查你需要的那一条。"
+        "若本轮决策不需要它，就忽略它。\n\n"
+        "严格纪律（违反即视为偏离，会被审判判定）：\n"
+        "1. 优先级：真实屏幕 > 你的任务(goal) > 执行铁律 > 本参考资料。任何冲突，一律以前者为准。\n"
+        "2. 它是「资料」不是「任务」：这里出现的功能 / 路径 / 数据，绝不构成「要去做」的步骤。"
+        "禁止因为这里提到某功能，就去点它、去操作 goal 没有要求的任何东西。\n"
+        "3. 它不是完成依据：禁止拿这里的描述当作「任务已完成」的证据。"
+        "finished 永远只认当前屏幕看得见的视觉证据。\n"
+        "4. 屏幕优先于资料：若资料与当前屏幕不一致（App 改版 / 版本差异 / 资料过时），"
+        "以屏幕为准，直接忽略这条资料。\n"
+        "5. 按需取用，不复述、不消化：不要在 Thought 里复述或总结这段资料；"
+        "只在用得上时取你需要的那一点。你是执行器，不是这份资料的阅读 / 总结器。\n"
+        "---\n"
+        f"{text}\n"
+    )
+
+
+def build_system_prompt(
+    goal: str,
+    substeps_text: str | None = None,
+    *,
+    function_map_context: str | None = None,
+) -> str:
     """根据用户 goal 构建 system prompt。
 
     ``substeps_text``：当结构化通道启用且系统在起跑线已用助手模型把"操作步骤"
@@ -53,10 +85,13 @@ def build_system_prompt(goal: str, substeps_text: str | None = None) -> str:
             "判定细节、动词→状态映射、禁止行为详见 §B-1。\n"
         )
 
+    function_map_context_block = _build_function_map_context_block(function_map_context)
+
     return f"""你是一个手机屏幕操作助手。每轮收到当前屏幕截图，**默认输出 1 个**下一步动作；仅在操作"瞬态 UI"时允许同 Thought 下输出 2 个 Action（详见 §C）。
 
 ## 你的任务
 {goal}
+{function_map_context_block}
 {substeps_block}
 ⚠️ 完成铁律：调用 `finished()` 前，必须从当前截图看到明确视觉证据证明任务完成。「可能完成」「应该已发」= 未完成，必须继续。
 

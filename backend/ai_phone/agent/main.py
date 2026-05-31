@@ -1044,6 +1044,11 @@ async def _handle_start_run(
     run_id = str(msg.get("run_id") or "").strip()
     serial = str(msg.get("device_serial") or "").strip()
     goal = str(msg.get("goal") or "").strip()
+    function_map_context = str(
+        msg.get("function_map_context")
+        or msg.get("functionMapContext")
+        or ""
+    ).strip()
     try:
         attempt = max(1, int(msg.get("attempt") or 1))
     except Exception:  # noqa: BLE001
@@ -1336,6 +1341,7 @@ async def _handle_start_run(
                 serial=serial,
                 driver=driver,
                 goal=goal,
+                function_map_context=function_map_context or None,
                 emit=run_emit,
                 settings=get_settings(),
             )

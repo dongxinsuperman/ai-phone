@@ -292,6 +292,24 @@ async def test_create_run_with_goal(client, session):
 
 
 @pytest.mark.asyncio
+async def test_create_run_rejects_function_map_context_too_long(client, session):
+    await _seed_device(session)
+    resp = await client.post(
+        "/api/runs",
+        json={
+            "device_serial": "S1",
+            "goal": "打开设置",
+            "functionMapContext": "x" * 2001,
+        },
+    )
+    assert resp.status_code == 400
+    assert "functionMapContext 超出" in resp.json()["detail"]
+
+    dev = (await client.get("/api/devices/S1")).json()
+    assert dev["lock"] is None
+
+
+@pytest.mark.asyncio
 async def test_create_run_with_case_id(client, session):
     await _seed_device(session)
     case = await client.post(
