@@ -120,16 +120,96 @@ const mirrorError = computed(() => (
   mirrorMode.value === 'jpeg' ? jpegMirror.error.value : mirror.error.value
 ))
 
-// 镜像容器：用户仍可右下角手动横向/纵向拉伸；设备横竖屏变化只改变内部画面
-// object-fit，不再自动改外框宽高，避免日志侧被旋转事件无意挤压。
 const mirrorWrap = ref(null)
-// 右栏高度跟随用户手动调整后的镜像框高度；横竖屏变化不再改镜像框，所以不会
-// 因旋转触发日志区抖动。
-const rightColHeight = ref(null)
-const rightColStyle = computed(() => (
-  rightColHeight.value ? { height: `${rightColHeight.value}px` } : {}
-))
-let _wrapResizeObserver = null
+const rightCol = ref(null)
+const RIGHT_SPLIT_KEY = 'ai-phone:device-work-right-split:v3'
+const RIGHT_PANEL_DEFAULT = { controls: 330 }
+const RIGHT_PANEL_MIN = { controls: 44, logs: 42 }
+const RIGHT_SPLITTER_HEIGHT = 10
+const CONTROL_COLLAPSED_HEIGHT = 58
+
+function loadRightControlsHeight() {
+  try {
+    const raw = window.localStorage.getItem(RIGHT_SPLIT_KEY)
+    const saved = raw ? JSON.parse(raw) : null
+    return Number(saved?.controls || RIGHT_PANEL_DEFAULT.controls)
+  } catch (_) {
+    return RIGHT_PANEL_DEFAULT.controls
+  }
+}
+
+const rightControlsHeight = ref(loadRightControlsHeight())
+const rightResizeActive = ref(false)
+const controlsCollapsed = computed(() => rightControlsHeight.value <= CONTROL_COLLAPSED_HEIGHT)
+let rightResizeState = null
+
+const rightStackStyle = computed(() => ({
+  '--controls-row': `${Math.round(rightControlsHeight.value)}px`,
+}))
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function currentRightHeight() {
+  return rightCol.value?.clientHeight
+    || mirrorWrap.value?.clientHeight
+    || (typeof window !== 'undefined' ? window.innerHeight - 160 : 0)
+}
+
+function clampRightControlsHeight(value) {
+  const total = currentRightHeight()
+  const maxControls = Math.max(
+    RIGHT_PANEL_MIN.controls,
+    total - RIGHT_SPLITTER_HEIGHT - RIGHT_PANEL_MIN.logs,
+  )
+  return Math.round(clamp(Number(value) || RIGHT_PANEL_DEFAULT.controls, RIGHT_PANEL_MIN.controls, maxControls))
+}
+
+function persistRightControlsHeight() {
+  try {
+    window.localStorage.setItem(RIGHT_SPLIT_KEY, JSON.stringify({ controls: rightControlsHeight.value }))
+  } catch (_) {
+    // localStorage 不可用时只保持本次会话布局。
+  }
+}
+
+function resetRightPanelLayout() {
+  rightControlsHeight.value = clampRightControlsHeight(RIGHT_PANEL_DEFAULT.controls)
+  persistRightControlsHeight()
+}
+
+function onViewportResize() {
+  rightControlsHeight.value = clampRightControlsHeight(rightControlsHeight.value)
+}
+
+function startRightPanelResize(ev) {
+  if (ev.pointerType === 'mouse' && ev.button !== 0) return
+  ev.preventDefault()
+  rightResizeState = {
+    startY: ev.clientY,
+    controls: rightControlsHeight.value,
+  }
+  rightResizeActive.value = true
+  window.addEventListener('pointermove', onRightPanelResize)
+  window.addEventListener('pointerup', stopRightPanelResize, { once: true })
+  window.addEventListener('pointercancel', stopRightPanelResize, { once: true })
+}
+
+function onRightPanelResize(ev) {
+  if (!rightResizeState) return
+  ev.preventDefault()
+  const dy = ev.clientY - rightResizeState.startY
+  rightControlsHeight.value = clampRightControlsHeight(rightResizeState.controls + dy)
+}
+
+function stopRightPanelResize() {
+  if (!rightResizeState) return
+  persistRightControlsHeight()
+  rightResizeState = null
+  rightResizeActive.value = false
+  window.removeEventListener('pointermove', onRightPanelResize)
+}
 // 当前视频帧实际尺寸（scrcpy 缩放后的，比如 576×1280），用来判断方向
 const frameSize = ref({ w: 0, h: 0 })
 // 顶部展示的分辨率：设备物理像素，根据当前画面方向决定要不要 W/H 互换
@@ -788,16 +868,8 @@ onMounted(async () => {
   if (imgEl.value) {
     imgEl.value.addEventListener('load', _onVideoSizeChange)
   }
-  // 高度只跟随用户手动调整的镜像框；设备旋转不再自动改 mirror-wrap 宽高，
-  // 所以不会因为横竖屏变化牵动右侧日志。
-  if (mirrorWrap.value && typeof ResizeObserver !== 'undefined') {
-    _wrapResizeObserver = new ResizeObserver(() => {
-      const el = mirrorWrap.value
-      if (el) rightColHeight.value = el.clientHeight
-    })
-    _wrapResizeObserver.observe(mirrorWrap.value)
-    rightColHeight.value = mirrorWrap.value.clientHeight
-  }
+  window.addEventListener('resize', onViewportResize)
+  onViewportResize()
   sub = openDeviceStream(serial.value, {
     onMessage,
     onOpen: () => {
@@ -822,10 +894,8 @@ onBeforeUnmount(() => {
   if (imgEl.value) {
     imgEl.value.removeEventListener('load', _onVideoSizeChange)
   }
-  if (_wrapResizeObserver) {
-    try { _wrapResizeObserver.disconnect() } catch (_) {}
-    _wrapResizeObserver = null
-  }
+  window.removeEventListener('resize', onViewportResize)
+  stopRightPanelResize()
 })
 
 watch(
@@ -871,9 +941,12 @@ watch(
       </div>
     </header>
 
-    <div class="layout">
-      <div class="left">
-          <div class="mirror-wrap" ref="mirrorWrap">
+    <div
+      class="layout"
+      :class="{ resizing: rightResizeActive }"
+    >
+      <section class="pane mirror-panel">
+        <div class="mirror-wrap" ref="mirrorWrap">
           <div class="mirror-bar">
             <span class="mirror-title">实时画面</span>
             <span class="mirror-size" v-if="displaySize.w">
@@ -889,7 +962,6 @@ watch(
               已被他人占用（只读）
             </span>
             <span v-if="kbFocused && !lock.readonly.value" class="kb-tag">⌨ 键盘已捕获</span>
-            <span class="resize-tip">右下角拖拽缩放</span>
           </div>
           <div class="mirror" :class="{ 'kb-on': kbFocused }">
             <!-- MSE 视频：muted + autoplay + playsinline 让 Chrome/Safari 都能直接自动播放 -->
@@ -996,10 +1068,19 @@ watch(
             </button>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div class="right" :style="rightColStyle">
-        <div class="goal-panel">
+      <section
+        class="right"
+        ref="rightCol"
+        :class="{ resizing: rightResizeActive, 'controls-collapsed': controlsCollapsed }"
+        :style="rightStackStyle"
+      >
+        <section class="pane controls-panel">
+          <div v-if="controlsCollapsed" class="controls-collapsed-strip">
+            参数区域已收起 · 向下拖拽展开
+          </div>
+          <div v-show="!controlsCollapsed" class="goal-panel">
           <!-- 引擎下拉框：仅在后端 AI_PHONE_MIDSCENE_ENABLED=true 时可见。
                缺省永远 'vlm'（与历史行为完全等价）。详见 Midscene执行器接入方案.md -->
           <div class="run-options">
@@ -1124,18 +1205,36 @@ watch(
             </a>
           </p>
         </div>
+        </section>
 
-        <div class="log-fill">
-          <LogPane :entries="logs" max-height="100%" />
+        <div
+          class="row-splitter"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="调整参数和日志区域高度"
+          title="上下拖拽调整参数和日志区域高度，双击恢复默认布局"
+          @pointerdown="startRightPanelResize"
+          @dblclick="resetRightPanelLayout"
+        >
+          <span></span>
         </div>
-      </div>
+
+        <section class="pane logs-panel">
+          <LogPane :entries="logs" max-height="100%" />
+        </section>
+      </section>
     </div>
   </section>
 </template>
 
 <style scoped>
 .work {
-  padding: 12px 20px 40px;
+  height: 100%;
+  min-height: 0;
+  padding: 12px 20px 14px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .blocked-card {
   max-width: 480px;
@@ -1206,6 +1305,7 @@ watch(
   background: #1565c0;
 }
 .head {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 16px;
@@ -1263,21 +1363,98 @@ h2 {
 
 .layout {
   display: grid;
-  /* 左列宽度跟随用户手动 resize 的 .mirror-wrap；横竖屏变化不会自动改列宽。 */
   grid-template-columns: auto minmax(320px, 1fr);
   gap: 16px;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: 100%;
+}
+.layout.resizing,
+.layout.resizing * {
+  cursor: row-resize;
+  user-select: none;
+}
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.mirror-panel {
+  min-width: 0;
+  height: 100%;
+}
+.right {
+  display: grid;
+  grid-template-rows: minmax(44px, var(--controls-row)) 10px minmax(42px, 1fr);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.controls-panel,
+.logs-panel {
+  min-height: 0;
+  overflow: hidden;
+}
+.controls-panel {
+  display: block;
+}
+.logs-panel > * {
+  height: 100%;
+}
+.row-splitter {
+  height: 10px;
+  min-height: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: row-resize;
+  touch-action: none;
+  border-radius: 6px;
+}
+.row-splitter span {
+  width: 64px;
+  height: 2px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  opacity: 0.75;
+  transition: background-color 0.12s, width 0.12s, opacity 0.12s;
+}
+.row-splitter:hover,
+.right.resizing .row-splitter {
+  background: #eef4fb;
+}
+.row-splitter:hover span,
+.right.resizing .row-splitter span {
+  width: 92px;
+  opacity: 1;
+  background: #1976d2;
+}
+.controls-collapsed-strip {
+  box-sizing: border-box;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid #dfe5ee;
+  border-radius: 8px;
+  background: #fff;
+  color: #64748b;
+  font-size: 12px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
 }
 @media (max-width: 1080px) {
   .layout {
     grid-template-columns: 1fr;
   }
-}
-
-.left {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
+  .right {
+    height: auto;
+    min-height: 520px;
+  }
+  .row-splitter {
+    display: none;
+  }
 }
 .mirror-wrap {
   display: flex;
@@ -1286,14 +1463,12 @@ h2 {
   border: 1px solid #2a2f38;
   overflow: hidden;
   background: #0d1117;
-  /* 用户可手动横向/纵向拉伸；设备旋转只改变内部画面比例，不再自动翻外框。 */
-  resize: both;
+  resize: horizontal;
   width: 420px;
-  height: calc(100vh - 160px);
+  height: 100%;
   min-width: 220px;
-  min-height: 320px;
+  min-height: 0;
   max-width: 95vw;
-  max-height: calc(100vh - 100px);
 }
 .mirror-bar {
   display: flex;
@@ -1421,11 +1596,6 @@ h2 {
 .status-banner.stage-need_unlock { border-left-color: #f59e0b; background: rgba(60, 45, 15, 0.92); }
 .status-banner.stage-preflight_deadlock { border-left-color: #f59e0b; background: rgba(60, 40, 15, 0.92); }
 .status-banner.stage-error { border-left-color: #ef4444; background: rgba(60, 20, 20, 0.92); }
-.resize-tip {
-  margin-left: auto;
-  color: #56627a;
-  font-size: 11px;
-}
 
 /* 虚拟导航条：和 mirror-bar 同色调，三个按钮等宽分布 */
 .navbar {
@@ -1486,25 +1656,9 @@ h2 {
   border: 2px solid currentColor;
   border-radius: 1.5px;
 }
-
-.right {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-  /* 必须给 0，子元素 flex:1 才能正确收缩到剩余高度 */
-  min-height: 0;
-}
-.log-fill {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-}
-.log-fill > * {
-  flex: 1 1 auto;
-  min-height: 0;
-}
 .goal-panel {
+  box-sizing: border-box;
+  height: 100%;
   background: #fff;
   border: 1px solid #e2e6ec;
   border-radius: 10px;
@@ -1512,6 +1666,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overflow: auto;
 }
 .goal-panel label {
   font-size: 13px;
@@ -1579,7 +1734,7 @@ h2 {
 }
 .run-options {
   display: grid;
-  grid-template-columns: minmax(180px, 1.1fr) minmax(150px, 0.9fr) minmax(160px, 0.85fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px;
   align-items: end;
 }
