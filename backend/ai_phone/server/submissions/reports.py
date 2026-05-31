@@ -769,18 +769,42 @@ class _TLEntry:
 def _build_timeline(steps: List[RunStep], logs: List[RunLog]) -> str:
     """合并 step / log 按时间正序输出，渲染为时间线 HTML。
 
+    时间基准（关键，修复"双图被甩到下一步开头"）：
+    - log 行用 ``RunLog.ts`` —— Agent 透传的「事件发生时间」，单调可靠。
+    - step 行（双图）**不能**用 ``RunStep.created_at``：那是 Server「落库时间」，
+      agent_brain 链路下截图上传 + 落库有延迟，落库时刻常常晚于下一步起始日志，
+      于是双图被排到了下一步开头。改为锚定到「本 step 最后一条 log 的 ts」——
+      把 step 双图固定排在该 step 日志序列之后、下一 step 之前，与 log 同一
+      事件时间基准，消除错位。
+    - 某 step 没有任何带 step 号的 log 时（极少见 / 老链路），回退 created_at。
+
     排序规则（同时间戳时）：
     - log 排在 step 前面（同一时刻通常先有日志、再有 step commit）；
     - 同类按出现顺序。
     """
+    # (attempt, step 号) → 该 step 内 log 的最大 ts，作为 step 双图行的时间锚点。
+    # 必须带 attempt：重跑会让同一 run 出现多个 attempt、step 号从 1 重复，而
+    # _load_run_bundle 不按 attempt 过滤（同一 run 全 attempt 混排）。仅用 step 号做
+    # key 会把不同 attempt 的同号 step 串到一起，把双图锚到错误 attempt 的时间。
+    step_anchor_ts: Dict[Tuple[int, int], datetime] = {}
+    for r in logs:
+        if r.step is None or r.ts is None:
+            continue
+        key = (int(r.attempt or 1), int(r.step))
+        cur = step_anchor_ts.get(key)
+        if cur is None or r.ts > cur:
+            step_anchor_ts[key] = r.ts
+
     entries: List[_TLEntry] = []
     seq = 0
     for r in logs:
         entries.append(_TLEntry(ts=r.ts, seq=seq, kind="log", html=_render_log_row(r)))
         seq += 1
     for s in steps:
+        anchor = step_anchor_ts.get((int(s.attempt or 1), int(s.step)))
+        ts = anchor if anchor is not None else s.created_at
         entries.append(
-            _TLEntry(ts=s.created_at, seq=seq, kind="step", html=_render_step_row(s))
+            _TLEntry(ts=ts, seq=seq, kind="step", html=_render_step_row(s))
         )
         seq += 1
 

@@ -61,11 +61,12 @@ class RunnerBridge:
         # 每步的 before/after URL 暂存，等 step_end 时合成 step_done 发出
         self._pending_step_urls: Dict[int, Dict[str, str]] = {}
         self._pending_uploads: set = set()
-        # 每步的截图上传 task 清单。step_end 合成前要 await 这些 task，
-        # 否则：upload 走 HTTP 要几百 ms，step_end 只是 ws.send <1ms，
-        # 两者并发时 step_end 先到 server，落库后 after_url 才上传完，
-        # 导致 RunStep.screenshot_after 永远是空（报告只显示"操作前"）。
-        self._pending_step_uploads: Dict[int, list[asyncio.Task]] = {}
+        # 事件串行链尾：emit 把每个事件接到上一个之后（_enqueue_serial），保证
+        # 「处理 + 入可靠队列」的顺序 == emit 调用顺序。截图上传慢只让后续事件在链
+        # 上多等，不会被轻量日志插队 —— 修复 web 实时日志「上一步 after/完成 被甩到
+        # 下一步开始之后」。同一 step 的截图（EVT_SCREENSHOT）必先于 EVT_STEP_END 入
+        # 链、串行上传完，step_end 取 after_url 时已就绪，因此不再需要单独 await 截图。
+        self._emit_tail: Optional[asyncio.Task] = None
         # EVT_TOKEN_SUMMARY 通常在 EVT_RUN_FINISH 之前就 emit，这里缓存一份，
         # 给 _forward_run_finish 兜底用：万一上游忘了把 token_stats 塞进
         # RUN_FINISH（历史就踩过这个坑，Run.token_summary 一直是 {}），
@@ -89,11 +90,18 @@ class RunnerBridge:
         await self._http.aclose()
 
     def emit(self, evt: Dict[str, Any]) -> None:
-        """Runner 的 emit 回调入口；同步 API，内部转异步 task。"""
+        """Runner 的 emit 回调入口；同步、瞬返，把事件接到串行链尾。
+
+        每个事件经 ``_enqueue_serial`` 串行：先 await 上一个处理完再处理自己，使
+        「处理 + 入可靠队列」的顺序严格 == emit 调用顺序。修复历史 bug——原来每个事件
+        各起独立并发 task，截图上传慢的（after / step_end）晚入队、被下一步轻量 LOG
+        插队，导致 web 实时日志「上一步 after / 完成」被甩到「下一步开始」之后。emit
+        仍瞬返、不阻塞 VLM 主循环；镜像高频帧走独立 lossy 通道、不经这里、实时性不变。
+        """
         t = evt.get("type")
         try:
             if t == EVT_LOG:
-                self._enqueue(self._forward_log(evt))
+                self._enqueue_serial(self._forward_log(evt))
             elif t == EVT_THOUGHT or t == EVT_ACTION:
                 # 不再翻译成 MSG_LOG。思考 / 动作的 WS 推送 + RunLog 落库由
                 # vlm_loop 那边的 self._log("思考"/"动作", ...) 唯一承担——后者
@@ -107,12 +115,10 @@ class RunnerBridge:
                 # （把 thought / action 写进 RunStep）留一条事件源。
                 pass
             elif t == EVT_SCREENSHOT:
-                step_no = int(evt.get("step") or 0)
-                task = self._enqueue(self._upload_screenshot(evt))
-                # 登记到 step 维度，step_end 合成前会 await 这批 task
-                self._pending_step_uploads.setdefault(step_no, []).append(task)
+                # 串行链保证它先于本 step 的 EVT_STEP_END 上传完，slot 自然就绪。
+                self._enqueue_serial(self._upload_screenshot(evt))
             elif t == EVT_STEP_END:
-                self._enqueue(self._forward_step_end(evt))
+                self._enqueue_serial(self._forward_step_end(evt))
             elif t == EVT_TOKEN_SUMMARY:
                 pt = int(evt.get("prompt_tokens") or 0)
                 cached = int(evt.get("cached_tokens") or 0)
@@ -155,7 +161,7 @@ class RunnerBridge:
                         f"completion={evt.get('completion_tokens')} "
                         f"total={evt.get('total_tokens')}"
                     )
-                self._enqueue(
+                self._enqueue_serial(
                     self._reliable_send(
                         {
                             "type": P.MSG_LOG,
@@ -170,7 +176,7 @@ class RunnerBridge:
                     )
                 )
             elif t == EVT_RUN_FINISH:
-                self._enqueue(self._forward_run_finish(evt))
+                self._enqueue_serial(self._forward_run_finish(evt))
             elif t == EVT_RUN_START or t == EVT_EXEC_RESULT or t == EVT_STEP_START:
                 # 这些内部事件不需要跨进程同步；丢弃
                 pass
@@ -267,15 +273,9 @@ class RunnerBridge:
 
     async def _forward_step_end(self, evt: Dict[str, Any]) -> None:
         step = int(evt.get("step") or 0)
-        # 先 await 这一步的截图上传全部结束，再取 slot 合成。防止并发 race：
-        # 没有这一步的话，_upload_screenshot 还没写 after_url 就被 pop 走了，
-        # RunStep.screenshot_after 永远落不进 DB。
-        upload_tasks = self._pending_step_uploads.pop(step, [])
-        if upload_tasks:
-            try:
-                await asyncio.gather(*upload_tasks, return_exceptions=True)
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("等待 step={} 上传完成时异常: {}", step, exc)
+        # 串行链保证：本 step 的截图（EVT_SCREENSHOT）先于 EVT_STEP_END 入链、已在前
+        # 面串行上传完，slot 的 after_url 此时已就绪——无需再单独 await 截图 task（旧
+        # 并发模型才需要 gather；串行后天然有序，且不会被下一步日志插队）。
         slot = self._pending_step_urls.pop(step, {})
         await self._reliable_send(
             {
@@ -363,11 +363,29 @@ class RunnerBridge:
 
     # ------------------------------------------------------------------
     def _enqueue(self, coro) -> asyncio.Task:
-        """安全地把协程挂到 loop 上，同时跟踪未完成 task 用于关闭等待。
-
-        返回 task，调用方可以 await / gather（step_end 要等截图上传完成再合成）。
-        """
+        """安全地把协程挂到 loop 上，同时跟踪未完成 task 用于关闭等待。"""
         task = asyncio.ensure_future(coro, loop=self._loop)
         self._pending_uploads.add(task)
         task.add_done_callback(lambda t: self._pending_uploads.discard(t))
+        return task
+
+    def _enqueue_serial(self, coro) -> asyncio.Task:
+        """把 ``coro`` 接到串行链尾：先 await 上一个事件处理完，再处理自己。
+
+        作用：让「处理 + 入可靠队列」的顺序严格等于 emit 调用顺序，截图上传慢只让
+        后续事件在链上多等、不会被轻量日志插队。emit 仍瞬返（这里只创建 task、不
+        await）。链上任一环异常都被吞掉、不阻断后续事件（它自身已在处理函数里记日志）。
+        """
+        prev = self._emit_tail
+
+        async def _chained() -> None:
+            if prev is not None:
+                try:
+                    await prev
+                except Exception:  # noqa: BLE001
+                    pass
+            await coro
+
+        task = self._enqueue(_chained())
+        self._emit_tail = task
         return task
