@@ -749,8 +749,8 @@ class IosDriver(BaseDriver):
         本函数策略：
 
         1. **优先**走 tunneld + RSD（iOS 17+ 唯一可行通道）
-        2. RSD 不可用时**回落**到 usbmux ``self._lockdown``（兼容 iOS 16 / 没起
-           tunneld 的环境，行为与升级前一致）
+        2. RSD 不可用时回落到 usbmux fresh lockdown 短连接（兼容 iOS 16 /
+           没起 tunneld 的环境，同时避免复用已老化的 ``self._lockdown``）
         3. 全部失败时**不再吞异常返回空列表**，而是带原因 raise RuntimeError，
            交由 vlm_loop 上层翻成「执行失败」RunLog，避免前端只看到含糊的
            「无法获取设备应用列表」却不知道该开 tunneld。
@@ -786,10 +786,12 @@ class IosDriver(BaseDriver):
                 except Exception:  # noqa: BLE001
                     pass
 
+        fresh_lockdown = None
         try:
-            apps = self._fetch_apps_via_lockdown(self._lockdown, application_type)
+            fresh_lockdown = self._open_fresh_lockdown_for_app_listing()
+            apps = self._fetch_apps_via_lockdown(fresh_lockdown, application_type)
             logger.info(
-                "iOS list_apps udid={} type={} via=usbmux count={}",
+                "iOS list_apps udid={} type={} via=usbmux/fresh-lockdown count={}",
                 self.serial,
                 application_type,
                 len(apps),
@@ -797,6 +799,9 @@ class IosDriver(BaseDriver):
             return apps
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
+        finally:
+            if fresh_lockdown is not None:
+                self._close_lockdown(fresh_lockdown)
 
         hint = ""
         exc_name = type(last_exc).__name__ if last_exc is not None else "未知"
@@ -811,6 +816,29 @@ class IosDriver(BaseDriver):
             f"iOS 列应用失败 udid={self.serial} type={application_type}: "
             f"{exc_name}: {last_exc}{hint}"
         )
+
+    def _open_fresh_lockdown_for_app_listing(self):
+        """为 installation_proxy 列应用创建短生命周期 lockdown 连接。
+
+        ``open_ios_driver`` 创建的 ``self._lockdown`` 可能在长时间运行后被
+        iPhone/usbmuxd 关闭。列 App 是低频操作，使用短连接比复用旧连接更稳。
+        """
+        _, create_using_usbmux, _, _ = _import_pmd3()
+        try:
+            return _maybe_sync(create_using_usbmux(serial=self.serial, autopair=False))
+        except TypeError as exc:
+            if "autopair" not in str(exc):
+                raise
+            return _maybe_sync(create_using_usbmux(serial=self.serial))
+
+    def _close_lockdown(self, lockdown) -> None:  # noqa: ANN001
+        close_fn = getattr(lockdown, "close", None)
+        if not callable(close_fn):
+            return
+        try:
+            _maybe_sync(close_fn())
+        except Exception:  # noqa: BLE001
+            pass
 
     def _try_get_tunneld_rsd(self):
         """尝试从 tunneld 拿到 RSD device。失败一律返回 None（让上层走回落）。
