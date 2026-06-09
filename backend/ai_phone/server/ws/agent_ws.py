@@ -28,6 +28,12 @@ from ai_phone.server.app_install.service import handle_result as handle_app_inst
 from ai_phone.server.retry import current_attempt
 from ai_phone.shared import protocol as P
 
+from ..android_vm.service import (
+    get_capability_waiter,
+    handle_vm_reconcile,
+    handle_vm_status,
+    mark_agent_vms_unavailable,
+)
 from ..lockstore import DeviceLockStore
 from ..models import Device, Run, RunLog, RunStep
 from ..db import get_session_factory
@@ -295,6 +301,18 @@ async def _dispatch(
             await handle_app_install_result(session, msg)
 
         await _with_session(op)
+        return
+
+    if t == P.MSG_VM_CAPABILITY:
+        get_capability_waiter().resolve(agent_id, msg)
+        return
+
+    if t == P.MSG_VM_STATUS:
+        await handle_vm_status(agent_id, msg, hub)
+        return
+
+    if t == P.MSG_VM_RECONCILE:
+        await handle_vm_reconcile(agent_id, msg, hub)
         return
 
     # 以下都可能带 run_id / serial / step
@@ -822,5 +840,11 @@ async def _on_disconnect(
     elif serials:
         hub.clear_device_extra(set(serials))
     await _offline_devices(agent_id, serials or (conn.serials if conn else set()))
+    try:
+        count = await mark_agent_vms_unavailable(agent_id)
+        if count:
+            logger.info("Agent {} 断开，已标记 VM unavailable {} 台", agent_id, count)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Agent {} 断开时标记 VM unavailable 失败：{}", agent_id, exc)
     # 新锁模型下锁不归 Agent 所有，Agent 断线不动锁。
     # 浏览器仍持锁；设备状态变 offline 让前端自然展示，恢复后无缝继续。

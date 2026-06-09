@@ -127,6 +127,218 @@ class DeviceWakePolicy(Base):
         }
 
 
+class AndroidVmInstance(Base):
+    """Android 虚拟手机配置与当前运行态。
+
+    Server 只保存配置、当前托管 Agent 与最近一次 ADB serial；真正的 Emulator
+    运行目录在 Agent 本地，由 Agent VM manager 维护。
+    """
+
+    __tablename__ = "android_vm_instances"
+    __table_args__ = (
+        Index("ix_android_vm_instances_state", "state"),
+        Index("ix_android_vm_instances_agent", "assigned_agent_id"),
+        Index("ix_android_vm_instances_adb_serial", "adb_serial"),
+        Index("ix_android_vm_instances_alias", "alias"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_short_id)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    alias: Mapped[str] = mapped_column(String(128), default="")
+    profile_ref_type: Mapped[str] = mapped_column(String(32), default="custom")
+    profile_ref_id: Mapped[str] = mapped_column(String(64), default="")
+    profile_id: Mapped[str] = mapped_column(String(64), default="")
+    profile_name: Mapped[str] = mapped_column(String(128), default="")
+    config_version: Mapped[int] = mapped_column(Integer, default=1)
+    config_json: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    capability_marks: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    api_level: Mapped[int] = mapped_column(Integer, nullable=False)
+    abi: Mapped[str] = mapped_column(String(32), nullable=False)
+    system_type: Mapped[str] = mapped_column(String(64), default="google_apis")
+    system_image: Mapped[str] = mapped_column(String(255), default="")
+    screen_width: Mapped[int] = mapped_column(Integer, default=1080)
+    screen_height: Mapped[int] = mapped_column(Integer, default=2400)
+    density: Mapped[int] = mapped_column(Integer, default=420)
+    orientation: Mapped[str] = mapped_column(String(16), default="portrait")
+    state: Mapped[str] = mapped_column(String(32), default="draft")
+    assigned_agent_id: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True
+    )
+    adb_serial: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    error_message: Mapped[str] = mapped_column(Text, default="")
+    runtime: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    stopped_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "alias": self.alias,
+            "profile_ref_type": self.profile_ref_type or "custom",
+            "profile_ref_id": self.profile_ref_id or "",
+            "profile_id": self.profile_id or "",
+            "profile_name": self.profile_name or "",
+            "config_version": self.config_version or 1,
+            "config_json": self.config_json or {},
+            "capability_marks": self.capability_marks or {},
+            "api_level": self.api_level,
+            "abi": self.abi,
+            "system_type": self.system_type or "google_apis",
+            "system_image": self.system_image or "",
+            "screen_width": self.screen_width or 1080,
+            "screen_height": self.screen_height or 2400,
+            "density": self.density or 420,
+            "orientation": self.orientation or "portrait",
+            "state": self.state,
+            "assigned_agent_id": self.assigned_agent_id,
+            "adb_serial": self.adb_serial,
+            "error_message": self.error_message,
+            "runtime": self.runtime or {},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "stopped_at": self.stopped_at.isoformat() if self.stopped_at else None,
+        }
+
+
+class AndroidDeviceProfile(Base):
+    """可信设备库条目。
+
+    真实设备 profile 必须带来源和可信等级；无来源的覆盖组合放到
+    AndroidVmCoverageProfile，不混进真实设备库。
+    """
+
+    __tablename__ = "android_device_profiles"
+    __table_args__ = (
+        Index("ix_android_device_profiles_brand", "brand"),
+        Index("ix_android_device_profiles_device", "device"),
+        Index("ix_android_device_profiles_model_code", "model_code"),
+        Index("ix_android_device_profiles_marketing_name", "marketing_name"),
+        Index("ix_android_device_profiles_source_type", "source_type"),
+        Index("ix_android_device_profiles_verification", "verification_status"),
+        Index("ix_android_device_profiles_region", "market_region"),
+        Index("ix_android_device_profiles_screen_shape", "screen_shape"),
+        Index("ix_android_device_profiles_resolution_bucket", "resolution_bucket"),
+        Index("ix_android_device_profiles_form_factor", "form_factor"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_short_id)
+    source_type: Mapped[str] = mapped_column(String(64), default="google_play_device_catalog")
+    source_url: Mapped[str] = mapped_column(String(512), default="")
+    collected_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    confidence: Mapped[str] = mapped_column(String(32), default="official")
+    verification_status: Mapped[str] = mapped_column(String(32), default="verified")
+    popularity_source: Mapped[str] = mapped_column(String(128), default="")
+    popularity_score: Mapped[int] = mapped_column(Integer, default=0)
+    market_region: Mapped[str] = mapped_column(String(32), default="CN")
+    manufacturer: Mapped[str] = mapped_column(String(128), default="")
+    brand: Mapped[str] = mapped_column(String(128), default="")
+    series: Mapped[str] = mapped_column(String(128), default="")
+    device: Mapped[str] = mapped_column(String(128), default="")
+    model_code: Mapped[str] = mapped_column(String(128), default="")
+    marketing_name: Mapped[str] = mapped_column(String(128), default="")
+    variant_key: Mapped[str] = mapped_column(String(128), default="")
+    form_factor: Mapped[str] = mapped_column(String(64), default="")
+    screen_shape: Mapped[str] = mapped_column(String(64), default="")
+    market_tags: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    ram_mb: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    soc: Mapped[str] = mapped_column(String(128), default="")
+    gpu: Mapped[str] = mapped_column(String(128), default="")
+    screen_size_in: Mapped[str] = mapped_column(String(128), default="")
+    screen_width: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    screen_height: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    densities: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    abis: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    sdk_versions: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    opengl_es: Mapped[str] = mapped_column(String(64), default="")
+    # 预清洗派生列：供服务端按维度筛选 + 分页（避免 JSON 跨库查询）。
+    resolution_bucket: Mapped[str] = mapped_column(String(16), default="")
+    # SDK 版本规范化索引串，形如 ";34;35;36;"，用 LIKE '%;34;%' 精确匹配某版本。
+    sdk_index: Mapped[str] = mapped_column(String(128), default="")
+    raw: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "source_type": self.source_type or "",
+            "source_url": self.source_url or "",
+            "collected_at": self.collected_at.isoformat() if self.collected_at else None,
+            "confidence": self.confidence or "",
+            "verification_status": self.verification_status or "verified",
+            "popularity_source": self.popularity_source or "",
+            "popularity_score": self.popularity_score or 0,
+            "market_region": self.market_region or "",
+            "manufacturer": self.manufacturer or "",
+            "brand": self.brand or "",
+            "series": self.series or "",
+            "device": self.device or "",
+            "model_code": self.model_code or "",
+            "marketing_name": self.marketing_name or "",
+            "variant_key": self.variant_key or "",
+            "form_factor": self.form_factor or "",
+            "screen_shape": self.screen_shape or "",
+            "market_tags": self.market_tags or [],
+            "ram_mb": self.ram_mb,
+            "soc": self.soc or "",
+            "gpu": self.gpu or "",
+            "screen_size_in": self.screen_size_in or "",
+            "screen_width": self.screen_width,
+            "screen_height": self.screen_height,
+            "densities": self.densities or [],
+            "abis": self.abis or [],
+            "sdk_versions": self.sdk_versions or [],
+            "opengl_es": self.opengl_es or "",
+            "resolution_bucket": self.resolution_bucket or "",
+            "raw": self.raw or {},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class AndroidVmCoverageProfile(Base):
+    """内部覆盖策略模板，不伪装成真实设备。"""
+
+    __tablename__ = "android_vm_coverage_profiles"
+    __table_args__ = (
+        Index("ix_android_vm_coverage_profiles_name", "name"),
+        Index("ix_android_vm_coverage_profiles_source_type", "source_type"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    config_template: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    capability_marks: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    source_type: Mapped[str] = mapped_column(String(64), default="internal_strategy")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description or "",
+            "tags": self.tags or [],
+            "config_template": self.config_template or {},
+            "capability_marks": self.capability_marks or {},
+            "source_type": self.source_type or "internal_strategy",
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class Case(Base):
     __tablename__ = "cases"
 

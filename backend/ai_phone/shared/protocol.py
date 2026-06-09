@@ -46,6 +46,9 @@ MSG_PONG = "pong"
 MSG_DEVICE_STATUS = "device_status"
 # 应用分发安装结果。Agent 只回命令执行结果，不做二次包名校验。
 MSG_APP_INSTALL_RESULT = "app_install_result"
+# Android VM：Agent 回传能力探查结果与生命周期状态。
+MSG_VM_CAPABILITY = "vm_capability"
+MSG_VM_STATUS = "vm_status"
 # Distributed Agent Brain（M4）：Agent 首跑成功后用执行第一手数据整理的成品轨迹缓存
 # 回传 Server；Server 算 cache_key 并 upsert vlm_trajectory_cache_v*（回放与归档下沉
 # Agent，Server 只做薄存储）。经 M3 可靠通道上行，断线不丢、重连补发。
@@ -63,6 +66,16 @@ MSG_STOP_MIRROR = "stop_mirror"
 MSG_PING = "ping"
 # Server 通知 Agent 对本机管辖设备执行应用安装。Agent 必须后台执行，不能阻塞 WS 收包。
 MSG_APP_INSTALL_START = "app_install_start"
+# Android VM：Server 下发能力探查与生命周期控制命令。
+MSG_VM_CAPABILITY_PROBE = "vm_capability_probe"
+MSG_VM_START = "vm_start"
+MSG_VM_STOP = "vm_stop"
+# 删除虚拟机配置 / 换绑到新 Agent 时，通知旧 Agent 清理远端 AVD（avdmanager delete）。
+# Agent 侧需先确保 emulator 已停再删；Agent 离线时该指令丢失，留待后续兜底清理。
+MSG_VM_DELETE = "vm_delete"
+# 孤儿 AVD 对账：Agent（重）连后上报本机受管 AVD 的 vm_id 清单；Server 比对 DB，
+# 对已不存在的 vm_id 回发 MSG_VM_DELETE 清理（复用删除链路，无需单独结果消息）。
+MSG_VM_RECONCILE = "vm_reconcile"
 # Distributed Agent Brain：Server 把"可下发执行配置"快照下发给 Agent。
 # Agent 连接（hello 完成）后由 Server 主动下发一次；Agent 收到后用它覆盖本机
 # Settings（仅覆盖下发集字段，连接 / 签名 / 本机路径等不受影响）。配置变更走
@@ -106,6 +119,112 @@ class DeviceUpdateMsg(TypedDict):
     type: Literal["device_update"]
     serial: str
     status: DeviceStatus
+
+
+class VmCapabilityProbeMsg(TypedDict, total=False):
+    type: Literal["vm_capability_probe"]
+    request_id: str
+    vm_id: str
+    alias: str
+    profile_ref_type: str
+    profile_ref_id: str
+    profile_id: str
+    profile_name: str
+    config_version: int
+    config_json: Dict[str, Any]
+    capability_marks: Dict[str, Any]
+    api_level: int
+    abi: str
+    system_type: str
+    system_image: str
+    screen_width: int
+    screen_height: int
+    density: int
+    orientation: str
+
+
+class VmCapabilityMsg(TypedDict, total=False):
+    type: Literal["vm_capability"]
+    request_id: str
+    agent_id: str
+    ok: bool
+    reason: str
+    details: Dict[str, Any]
+
+
+class VmStartMsg(TypedDict, total=False):
+    type: Literal["vm_start"]
+    request_id: str
+    vm_id: str
+    name: str
+    alias: str
+    profile_ref_type: str
+    profile_ref_id: str
+    profile_id: str
+    profile_name: str
+    config_version: int
+    config_json: Dict[str, Any]
+    capability_marks: Dict[str, Any]
+    api_level: int
+    abi: str
+    system_type: str
+    system_image: str
+    screen_width: int
+    screen_height: int
+    density: int
+    orientation: str
+    ram_mb: int
+    cpu_cores: int
+    vm_heap_mb: int
+    internal_storage_mb: int
+    sdcard_mb: int
+    gpu_mode: str
+    network_speed: str
+    network_delay: str
+    dns_server: str
+    http_proxy: str
+    wipe_data: bool
+    snapshot_policy: str
+    back_camera: str
+    front_camera: str
+    no_window: bool
+    no_audio: bool
+    no_boot_anim: bool
+    writable_system: bool
+
+
+class VmStopMsg(TypedDict, total=False):
+    type: Literal["vm_stop"]
+    request_id: str
+    vm_id: str
+    adb_serial: str
+
+
+class VmStatusMsg(TypedDict, total=False):
+    type: Literal["vm_status"]
+    request_id: str
+    vm_id: str
+    state: str
+    adb_serial: str
+    ok: bool
+    reason: str
+    error: str
+    details: Dict[str, Any]
+
+
+class VmDeleteMsg(TypedDict, total=False):
+    type: Literal["vm_delete"]
+    request_id: str
+    vm_id: str
+    adb_serial: str
+
+
+class VmReconcileMsg(TypedDict, total=False):
+    type: Literal["vm_reconcile"]
+    agent_id: str
+    vm_ids: list[str]  # 全集（兼容旧 Agent）= running_vm_ids ∪ stopped_vm_ids
+    running_vm_ids: list[str]  # 本机正在跑的（有 emulator 进程）
+    stopped_vm_ids: list[str]  # 本机只有 AVD、没在跑的
 
 
 LogLevel = Literal[1, 2, 3]  # 对齐 Sonic：1=info, 2=warn, 3=error
@@ -526,6 +645,9 @@ AgentToServer = Union[
     PongMsg,
     DeviceStatusMsg,
     AppInstallResultMsg,
+    VmCapabilityMsg,
+    VmStatusMsg,
+    VmReconcileMsg,  # 孤儿 AVD 对账：Agent 上报本机受管 AVD 清单
     DeviceReadinessMsg,
     DriverResultMsg,  # next/server-brain 新增
 ]
@@ -538,6 +660,10 @@ ServerToAgent = Union[
     StopMirrorMsg,
     PingMsg,
     AppInstallStartMsg,
+    VmCapabilityProbeMsg,
+    VmStartMsg,
+    VmStopMsg,
+    VmDeleteMsg,  # 删除 / 换绑清理远端 AVD
     AgentConfigMsg,  # Distributed Agent Brain：配置下发
     DriverCommandMsg,  # server_brain 历史（已 deprecated）
 ]

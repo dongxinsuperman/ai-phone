@@ -226,4 +226,75 @@ export const internal = {
         headers: internalHeaders(),
       }),
   },
+  androidVms: {
+    list: () =>
+      request('GET', '/api/internal/vm/instances', {
+        headers: internalHeaders(),
+      }),
+    create: (payload) =>
+      request('POST', '/api/internal/vm/instances', {
+        body: payload,
+        headers: internalHeaders(),
+      }),
+    patch: (id, payload) =>
+      request('PATCH', `/api/internal/vm/instances/${encodeURIComponent(id)}`, {
+        body: payload,
+        headers: internalHeaders(),
+      }),
+    remove: (id) =>
+      request('DELETE', `/api/internal/vm/instances/${encodeURIComponent(id)}`, {
+        headers: internalHeaders(),
+      }),
+    dispatchCandidates: (id) =>
+      request(
+        'POST',
+        `/api/internal/vm/instances/${encodeURIComponent(id)}/dispatch-candidates`,
+        { headers: internalHeaders() },
+      ),
+    dispatch: (id, agentId) =>
+      request('POST', `/api/internal/vm/instances/${encodeURIComponent(id)}/dispatch`, {
+        body: { agent_id: agentId },
+        headers: internalHeaders(),
+      }),
+    start: (id) =>
+      request('POST', `/api/internal/vm/instances/${encodeURIComponent(id)}/start`, {
+        headers: internalHeaders(),
+      }),
+    stop: (id) =>
+      request('POST', `/api/internal/vm/instances/${encodeURIComponent(id)}/stop`, {
+        headers: internalHeaders(),
+      }),
+    deviceProfiles: (params = {}) => {
+      const qs = new URLSearchParams(params).toString()
+      return request('GET', `/api/internal/vm/device-profiles${qs ? `?${qs}` : ''}`, {
+        headers: internalHeaders(),
+      })
+    },
+    deviceBrands: (params = {}) => {
+      const qs = new URLSearchParams(params).toString()
+      return request('GET', `/api/internal/vm/device-brands${qs ? `?${qs}` : ''}`, {
+        headers: internalHeaders(),
+      })
+    },
+    deviceFacets: (params = {}) => {
+      const qs = new URLSearchParams(params).toString()
+      return request('GET', `/api/internal/vm/device-facets${qs ? `?${qs}` : ''}`, {
+        headers: internalHeaders(),
+      })
+    },
+    coverageProfiles: () =>
+      request('GET', '/api/internal/vm/coverage-profiles', {
+        headers: internalHeaders(),
+      }),
+    importPlayCatalog: (payload) =>
+      request('POST', '/api/internal/vm/device-profiles/import-play-catalog', {
+        body: payload,
+        headers: internalHeaders(),
+      }),
+    importGoogleSupportedDevices: (payload) =>
+      request('POST', '/api/internal/vm/device-profiles/import-google-supported-devices', {
+        body: payload,
+        headers: internalHeaders(),
+      }),
+  },
 }

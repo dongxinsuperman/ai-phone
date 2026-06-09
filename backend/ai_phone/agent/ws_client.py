@@ -27,6 +27,8 @@ from ai_phone.shared import protocol as P
 
 Handler = Callable[["AgentWSClient", Dict[str, Any]], Awaitable[None]]
 ConnectHandler = Callable[["AgentWSClient"], Awaitable[None]]
+# 每轮设备重扫后回调，带上当前在线 serial 集合（复用 rescan 节拍，零额外扫描）。
+RescanHandler = Callable[["AgentWSClient", set], Awaitable[None]]
 DeviceProvider = Callable[[], List[Dict[str, Any]]]  # 无参，返回 device dict 列表
 
 _BACKOFF_STEPS = (1.0, 2.0, 5.0, 10.0, 15.0)
@@ -45,7 +47,9 @@ class AgentWSClient:
     # 由 Agent 主程序注入
     device_provider: Optional[DeviceProvider] = None
     handlers: Dict[str, Handler] = field(default_factory=dict)
+    pre_hello_handlers: List[ConnectHandler] = field(default_factory=list)
     connect_handlers: List[ConnectHandler] = field(default_factory=list)
+    rescan_handlers: List[RescanHandler] = field(default_factory=list)
 
     # 心跳 / 重扫描间隔
     ping_interval: float = 15.0
@@ -78,6 +82,13 @@ class AgentWSClient:
 
     def on_connect(self, handler: ConnectHandler) -> None:
         self.connect_handlers.append(handler)
+
+    def on_pre_hello(self, handler: ConnectHandler) -> None:
+        self.pre_hello_handlers.append(handler)
+
+    def on_rescan(self, handler: RescanHandler) -> None:
+        """注册"每轮设备重扫后"回调（带当前在线 serial 集合）。复用 rescan 节拍，零额外扫描。"""
+        self.rescan_handlers.append(handler)
 
     async def send(self, payload: Dict[str, Any]) -> bool:
         ws = self._ws
@@ -114,6 +125,11 @@ class AgentWSClient:
                     self._ws = ws
                     self._connected.set()
                     attempt = 0
+                    for handler in list(self.pre_hello_handlers):
+                        try:
+                            await handler(self)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning("pre-hello handler 异常：{}", exc)
                     await self._on_connected()
                     for handler in list(self.connect_handlers):
                         try:
@@ -155,6 +171,15 @@ class AgentWSClient:
                 "devices": devices,
             }
         )
+
+    async def refresh_devices(self) -> bool:
+        """Immediately send a full device snapshot if a provider is configured."""
+        if self.device_provider is None:
+            return False
+        loop = asyncio.get_running_loop()
+        devices = await loop.run_in_executor(None, self.device_provider)
+        self._last_serials = {d.get("serial") for d in devices if d.get("serial")}
+        return await self._send_hello(devices)
 
     async def _session_loop(self) -> None:
         """会话期：并发跑 recv / 心跳 / 设备重扫描。"""
@@ -226,6 +251,12 @@ class AgentWSClient:
                 logger.exception("device_provider 异常：{}", exc)
                 continue
             cur = {d.get("serial") for d in devices if d.get("serial")}
+            # 复用本轮扫描结果，回调订阅者（如 VM 存活巡检：发现在跑 VM 的 serial 消失即上报 stopped）
+            for handler in list(self.rescan_handlers):
+                try:
+                    await handler(self, cur)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("rescan handler 异常（忽略）：{}", exc)
             if cur != self._last_serials:
                 logger.info("设备集合变化 {} → {} (tick={})",
                             sorted(self._last_serials), sorted(cur), tick)

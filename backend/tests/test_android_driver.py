@@ -158,18 +158,54 @@ def test_terminate_app_uses_am_force_stop():
     fake.shell.assert_called_with("am force-stop com.tencent.mm")
 
 
-def test_activate_app_uses_monkey_first():
-    driver, fake = _make_driver()
+def test_activate_app_real_device_uses_monkey_first():
+    # 真机（serial 非 emulator-）：维持原 monkey 优先逻辑，零行为变化
+    driver, fake = _make_driver()  # _make_driver 默认 serial=EMU-TEST → 真机路径
     fake.shell.return_value = "Events injected: 1\n## Network stats"
     driver.activate_app("com.tencent.mm")
-    called_args = fake.shell.call_args_list[0][0][0]
-    assert "monkey -p com.tencent.mm" in called_args
+    first = fake.shell.call_args_list[0][0][0]
+    assert "monkey -p com.tencent.mm" in first
 
 
-def test_activate_app_raises_when_no_activity():
+def test_activate_app_real_device_raises_when_no_activity():
+    # 真机原逻辑：monkey aborted + app_info 取不到 → 抛错（与历史一致）
     driver, fake = _make_driver()
     fake.shell.return_value = "** No activities found to run, monkey aborted."
     fake.app_info.side_effect = Exception("not installed")
+    with pytest.raises(RuntimeError) as exc:
+        driver.activate_app("com.not.exist")
+    assert "com.not.exist" in str(exc.value)
+
+
+def test_activate_app_emulator_uses_am_start_and_verifies_foreground():
+    # 虚拟机（serial emulator-）：解析组件 + am start，并确认前台真的切到目标
+    driver, fake = _make_driver()
+    driver.serial = "emulator-5554"  # 切到虚拟机路径
+
+    def _shell(cmd, *a, **k):
+        if "resolve-activity" in cmd:
+            return "com.tencent.mm/.ui.LauncherUI"
+        if cmd.startswith("am start"):
+            return "Starting: Intent { cmp=com.tencent.mm/.ui.LauncherUI }"
+        return ""
+
+    fake.shell.side_effect = _shell
+    fake.app_current.return_value = SimpleNamespace(package="com.tencent.mm")
+
+    driver.activate_app("com.tencent.mm")
+
+    calls = [c[0][0] for c in fake.shell.call_args_list]
+    assert any("am start -n com.tencent.mm/.ui.LauncherUI" in c for c in calls)
+    assert not any(c.startswith("monkey") for c in calls)  # 前台已确认，不走 monkey 兜底
+
+
+def test_activate_app_emulator_raises_when_foreground_never_matches():
+    # 虚拟机：am start / monkey 都没把目标拉到前台 → 抛错，杜绝假成功
+    driver, fake = _make_driver()
+    driver.serial = "emulator-5554"
+    fake.shell.return_value = ""
+    fake.app_info.side_effect = Exception("not installed")
+    driver._wait_foreground = lambda *a, **k: False  # 前台始终不是目标
     with pytest.raises(RuntimeError) as exc:
         driver.activate_app("com.not.exist")
     assert "com.not.exist" in str(exc.value)

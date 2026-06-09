@@ -10,6 +10,16 @@ const emit = defineEmits(['edit-alias'])
 // "未就绪" 展示，带上 not_ready_reason 的中文提示。与 busy / offline / unauthorized
 // 互斥——只有在 online 且 未被锁占用 的前提下，才会退让给 readiness 态。
 const readiness = computed(() => props.device.extra?.readiness || null)
+const isVirtual = computed(() => (
+  props.device.extra?.is_virtual === true || props.device.extra?.device_kind === 'virtual'
+))
+// 真机：serial 即唯一身份（芯片序列号）。虚拟机：emulator-5554 只是 adb 端口地址、不唯一，
+// 唯一身份是 vm_id（extra.vm_instance_id）——主行显示它，adb 地址降为副行。
+const primaryId = computed(() => {
+  if (isVirtual.value) return props.device.extra?.vm_instance_id || props.device.serial
+  return props.device.serial
+})
+const showAdbSubline = computed(() => isVirtual.value && !!props.device.extra?.vm_instance_id)
 
 const statusMeta = computed(() => {
   const s = props.device.effective_status || props.device.status || 'unknown'
@@ -130,7 +140,10 @@ const agentLabel = computed(() => (
 <template>
   <div class="card" :class="statusMeta.cls">
     <div class="top">
-      <span class="platform">{{ device.platform?.toUpperCase() || '??' }}</span>
+      <span class="platform-line">
+        <span class="platform">{{ device.platform?.toUpperCase() || '??' }}</span>
+        <span v-if="isVirtual" class="vm-chip">虚拟机</span>
+      </span>
       <span class="badge" :class="statusMeta.cls">{{ statusMeta.label }}</span>
     </div>
     <div class="alias-row">
@@ -145,7 +158,8 @@ const agentLabel = computed(() => (
         改名
       </button>
     </div>
-    <div class="serial" :title="device.serial">{{ device.serial }}</div>
+    <div class="serial" :title="primaryId">{{ primaryId }}</div>
+    <div v-if="showAdbSubline" class="sub-serial" :title="device.serial">adb：{{ device.serial }}</div>
     <div class="model">{{ device.brand || '-' }} {{ device.model || '' }}</div>
     <div class="meta">
       <span>{{ device.os_version || 'os -' }}</span>
@@ -203,6 +217,20 @@ const agentLabel = computed(() => (
   font-weight: 700;
   color: #7b8494;
   letter-spacing: 0.06em;
+}
+.platform-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.vm-chip {
+  font-size: 11px;
+  color: #155e75;
+  background: #cffafe;
+  border: 1px solid #a5f3fc;
+  border-radius: 999px;
+  padding: 1px 7px;
 }
 .badge {
   font-size: 11px;
@@ -341,6 +369,15 @@ const agentLabel = computed(() => (
   font-family: ui-monospace, SF Mono, Menlo, monospace;
   font-size: 12px;
   color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sub-serial {
+  font-family: ui-monospace, SF Mono, Menlo, monospace;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: -2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

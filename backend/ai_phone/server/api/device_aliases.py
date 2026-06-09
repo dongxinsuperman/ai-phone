@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Path, status
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..aliases import (
@@ -26,6 +27,7 @@ from ..aliases import (
     get_alias_by_serial,
     list_aliases,
 )
+from ..models import AndroidVmInstance
 from ._deps import DBSession
 from .submissions import RequireBearer
 
@@ -94,6 +96,23 @@ async def put_alias(
                 "message": f"别名 {alias!r} 已绑定到设备 {existing_by_alias.serial}",
             },
         )
+
+    # 跨表唯一：别名同样不能撞到虚拟机配置里的 alias（VM 侧改名/创建也对称地查本表）。
+    # 例外：该 alias 正属于绑定到本 serial 的 VM（即这条 serial 本身就是该 VM 的 emulator）。
+    res_vm = await session.execute(
+        select(AndroidVmInstance).where(AndroidVmInstance.alias == alias)
+    )
+    for vm in res_vm.scalars().all():
+        if (vm.adb_serial or "") != serial:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "reason": "alias_conflict",
+                    "alias": alias,
+                    "conflictVmId": vm.id,
+                    "message": f"别名 {alias!r} 已被虚拟机 {vm.id} 占用",
+                },
+            )
 
     row = await create_or_update_alias(session, serial=serial, alias=alias, note=note)
     await session.commit()

@@ -42,6 +42,7 @@ onBeforeUnmount(() => {
         <RouterLink to="/" class="tab" active-class="on" exact>设备总览</RouterLink>
         <RouterLink to="/queue" class="tab" active-class="on">队列</RouterLink>
         <RouterLink to="/app-distribution" class="tab" active-class="on">应用分发</RouterLink>
+        <RouterLink to="/virtual-machines" class="tab" active-class="on">虚拟机</RouterLink>
         <RouterLink to="/device-config" class="tab" active-class="on">设备配置</RouterLink>
         <RouterLink to="/analytics" class="tab" active-class="on">大盘</RouterLink>
       </nav>

@@ -85,7 +85,7 @@ async def client(app) -> AsyncIterator[AsyncClient]:
 
 
 @pytest_asyncio.fixture
-async def session():
+async def session(_test_engine):
     """方便需要直接操作 DB 的测试预置数据。"""
     factory = db_module.get_session_factory()
     async with factory() as s:

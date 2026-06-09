@@ -52,6 +52,21 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("启动清理 device 表失败（忽略）：{}", exc)
 
+    # 虚拟机运行态同样是"重启后待重新认领"的：把非 draft 的 VM 归零为 agent_offline，
+    # 绑定关系保留。必须在开始接收 Agent 上报【之前】做（此刻还没 Agent 能连上）——
+    # 否则会与认领竞态。之后 Agent 重连各自认领回真实态；永不回来的就停在 agent_offline。
+    try:
+        from .android_vm.service import reset_vm_states_on_startup
+
+        factory = get_session_factory()
+        async with factory() as s:
+            n = await reset_vm_states_on_startup(s)
+            await s.commit()
+            if n:
+                logger.info("启动重置：{} 台虚拟机运行态归零为 agent_offline，待 Agent 重新认领", n)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("启动重置虚拟机状态失败（忽略）：{}", exc)
+
     app.state.lock_store = DeviceLockStore()
     app.state.hub = Hub()
     app.state.run_dispatch_service = RunDispatchService(

@@ -28,6 +28,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "Pillow>=12.2,<13",
     "loguru>=0.7",
+    "psutil>=5.9",                   # Agent 侧按宿主可用内存动态判断能否再起一台虚拟机
     # Android driver
     "adbutils>=2.6",
     # 实时镜像：scrcpy 解码（vendored client + scrcpy-server.jar v2.4）

@@ -57,6 +57,55 @@ class Settings(BaseSettings):
         default=None,
         description="Agent 展示名，未设则取 hostname",
     )
+
+    # ── Android 虚拟机（Emulator）行为参数 ──
+    # 统一收归 Settings，纳入「下发集」由 Server 集中控制（Agent 不自行改）。
+    # 真正"能起几台"由 capability.probe 按宿主实时可用内存自适应，不依赖配置，
+    # 所以这些统一下发不会有"每台机器容量不同"的问题。env 名 = AI_PHONE_ + 字段名大写。
+    android_vm_max_instances: int = Field(
+        default=15,
+        description="探查 details 里展示用的参考上限；**不再拦截**（数量/内存都改软提示，能起几台由实际资源决定）。env: AI_PHONE_ANDROID_VM_MAX_INSTANCES",
+    )
+    android_vm_min_free_mb: int = Field(
+        default=2048,
+        description="软提示阈值：宿主可用内存低于「该 VM RAM + 此余量」时，探查仍可用但附风险提醒（不拦截）。env: AI_PHONE_ANDROID_VM_MIN_FREE_MB",
+    )
+    android_vm_no_window: bool = Field(
+        default=True,
+        description="模拟器是否无头运行（不弹宿主窗口，画面仍走投屏）。env: AI_PHONE_ANDROID_VM_NO_WINDOW",
+    )
+    android_vm_boot_timeout_sec: int = Field(
+        default=120,
+        description="模拟器开机等待上限秒数。env: AI_PHONE_ANDROID_VM_BOOT_TIMEOUT_SEC",
+    )
+    android_vm_density: int = Field(
+        default=420,
+        description="模拟器默认显示密度（dpi）。env: AI_PHONE_ANDROID_VM_DENSITY",
+    )
+    android_vm_kill_foreign: bool = Field(
+        default=False,
+        description="是否清理非本系统启动的野生 emulator。env: AI_PHONE_ANDROID_VM_KILL_FOREIGN",
+    )
+    android_vm_orphan_cleanup: bool = Field(
+        default=True,
+        description="(重)连后是否上报本机受管 AVD 清单做孤儿对账清理。env: AI_PHONE_ANDROID_VM_ORPHAN_CLEANUP",
+    )
+    android_vm_image_cache_sec: int = Field(
+        default=300,
+        description="探查时列举已装 system-image 的结果缓存秒数（首次 sdkmanager 扫描慢，缓存长一些减少冷跑/探查超时）。env: AI_PHONE_ANDROID_VM_IMAGE_CACHE_SEC",
+    )
+    android_vm_locale: str = Field(
+        default="zh-CN",
+        description="新建虚拟机的系统语言 locale（开机后 setprop persist.sys.locale + 重启 framework 生效）。空串=不改，保持镜像默认。env: AI_PHONE_ANDROID_VM_LOCALE",
+    )
+    android_vm_timezone: str = Field(
+        default="Asia/Shanghai",
+        description="新建虚拟机的时区（启动 -prop + 开机后 setprop persist.sys.timezone）。空串=不改。env: AI_PHONE_ANDROID_VM_TIMEZONE",
+    )
+    android_vm_optimize_for_automation: bool = Field(
+        default=True,
+        description="开机后做自动化友好预置：关闭系统动画三件套 + 24 小时制。env: AI_PHONE_ANDROID_VM_OPTIMIZE_FOR_AUTOMATION",
+    )
     android_setup_stay_awake: bool = Field(
         default=True,
         description=(
@@ -1688,6 +1737,8 @@ AGENT_LOCAL_FIELDS: frozenset[str] = frozenset({
     "midscene_bridge_dir",
     "midscene_node_bin",
 })
+# 注：Android 虚拟机行为参数（android_vm_*）不在此列——它们是 Server 强控制的执行
+# 行为，纳入下发集统一下发。容量自适应由 capability.probe 按实时可用内存兜底。
 
 # Server 专属 / 敏感 / 调度 / 通用：绝不下发给 Agent
 SERVER_ONLY_FIELDS: frozenset[str] = frozenset({

@@ -129,6 +129,9 @@ const dlg = reactive({
   note: '',
   busy: false,
   error: '',
+  // 虚拟机：别名是 VM 配置的一部分（android_vm_instances.alias），改名要回写 VM
+  // 而不是 device_aliases 表；真机才走 device_aliases。vm_id 是唯一锚点。
+  vmInstanceId: '',
 })
 
 function openEdit(device) {
@@ -141,6 +144,8 @@ function openEdit(device) {
   dlg.note = ''
   dlg.busy = false
   dlg.error = ''
+  dlg.vmInstanceId =
+    device.extra?.device_kind === 'virtual' ? device.extra?.vm_instance_id || '' : ''
   // 如果已经绑过，异步把 note 拉回来（别名表里存了备注）
   if (device.alias) {
     internal.deviceAliases
@@ -161,7 +166,8 @@ function closeEdit() {
 
 async function saveAlias() {
   const alias = (dlg.alias || '').trim()
-  if (!alias) {
+  // 真机：别名必填（要解绑走"删除绑定"）。虚拟机：创建后允许改空（身份锚点是 vm_id）。
+  if (!alias && !dlg.vmInstanceId) {
     dlg.error = '别名不能为空；若要解除绑定请点"删除绑定"'
     return
   }
@@ -172,7 +178,12 @@ async function saveAlias() {
   dlg.busy = true
   dlg.error = ''
   try {
-    await internal.deviceAliases.put(dlg.serial, { alias, note: dlg.note || '' })
+    if (dlg.vmInstanceId) {
+      // 虚拟机：回写 VM 配置别名（后端同步 name + DeviceAlias 映射）
+      await internal.androidVms.patch(dlg.vmInstanceId, { alias })
+    } else {
+      await internal.deviceAliases.put(dlg.serial, { alias, note: dlg.note || '' })
+    }
     closeEdit()
     await refresh()
   } catch (e) {
@@ -321,7 +332,7 @@ function prettyErr(e) {
             />
           </div>
 
-          <div class="field">
+          <div v-if="!dlg.vmInstanceId" class="field">
             <label>备注（可选）</label>
             <textarea
               v-model="dlg.note"
@@ -331,12 +342,15 @@ function prettyErr(e) {
               :disabled="dlg.busy"
             />
           </div>
+          <p v-else class="hint" style="margin: -4px 0 0">
+            这是虚拟机，别名即设备身份（vm_id 唯一锚定），改名会回写 VM 配置。
+          </p>
 
           <p v-if="dlg.error" class="err-inline">{{ dlg.error }}</p>
         </div>
         <div class="modal-ft">
           <button
-            v-if="dlg.originalAlias"
+            v-if="dlg.originalAlias && !dlg.vmInstanceId"
             class="btn danger"
             :disabled="dlg.busy"
             @click="unbindAlias"

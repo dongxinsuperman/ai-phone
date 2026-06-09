@@ -779,10 +779,16 @@ def _maybe_preload_ios(infos: List[Any]) -> None:
 # _emit_ios_disconnect_events / _maybe_preload_ios，保证"agent 内部状态"与
 # "上报给 server 的真相"完全一致。
 _last_good_ios_snapshot: List[Any] = []
+_android_vm_manager: Optional[Any] = None
 
 
 def _device_provider() -> List[Dict[str, Any]]:
     infos = list_all_devices()
+    if _android_vm_manager is not None:
+        try:
+            infos = _android_vm_manager.decorate_devices(infos)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Android VM 设备标记失败（忽略，不影响普通设备扫描）：{}", exc)
     infos = _apply_ios_snapshot_freshness(infos)
     _record_serial_platform(infos)
     _emit_ios_disconnect_events(infos)
@@ -2594,6 +2600,10 @@ def run(
         )
 
     supervisor = _RunSupervisor()
+    from .android_vm import AndroidVmManager  # noqa: PLC0415
+
+    global _android_vm_manager
+    _android_vm_manager = AndroidVmManager()
     client = AgentWSClient(
         ws_url=effective_ws,
         token=effective_token,
@@ -2617,6 +2627,22 @@ def run(
 
     async def _input_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         await _handle_input(c, msg, mirror_sup)
+
+    async def _vm_capability_probe_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
+        assert _android_vm_manager is not None
+        await _android_vm_manager.handle_capability_probe(c, msg)
+
+    async def _vm_start_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
+        assert _android_vm_manager is not None
+        await _android_vm_manager.handle_start(c, msg)
+
+    async def _vm_stop_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
+        assert _android_vm_manager is not None
+        await _android_vm_manager.handle_stop(c, msg)
+
+    async def _vm_delete_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
+        assert _android_vm_manager is not None
+        await _android_vm_manager.handle_delete(c, msg)
 
     async def _start_mirror_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         await _handle_start_mirror(mirror_sup, msg)
@@ -2643,6 +2669,10 @@ def run(
     client.on(P.MSG_START_RUN, _start_handler)
     client.on(P.MSG_STOP_RUN, _stop_handler)
     client.on(P.MSG_INPUT, _input_handler)
+    client.on(P.MSG_VM_CAPABILITY_PROBE, _vm_capability_probe_handler)
+    client.on(P.MSG_VM_START, _vm_start_handler)
+    client.on(P.MSG_VM_STOP, _vm_stop_handler)
+    client.on(P.MSG_VM_DELETE, _vm_delete_handler)
     client.on(P.MSG_START_MIRROR, _start_mirror_handler)
     client.on(P.MSG_STOP_MIRROR, _stop_mirror_handler)
     client.on(P.MSG_APP_INSTALL_START, handle_app_install_start)
@@ -2674,6 +2704,58 @@ def run(
         readiness.mark_all_dirty()
 
     client.on_connect(_readiness_on_connect)
+
+    async def _vm_reclaim_before_hello(_client: AgentWSClient) -> None:
+        assert _android_vm_manager is not None
+        try:
+            reclaimed = await asyncio.to_thread(_android_vm_manager.reconcile_running_vms_sync)
+            if reclaimed:
+                logger.info("hello 前已认领 Android VM {} 台", len(reclaimed))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("hello 前认领 Android VM 失败（忽略）：{}", exc)
+
+    client.on_pre_hello(_vm_reclaim_before_hello)
+
+    async def _vm_reclaim_on_connect(c: AgentWSClient) -> None:
+        assert _android_vm_manager is not None
+        try:
+            reclaimed = await _android_vm_manager.report_reclaimed_vms(c, rescan=False)
+            if reclaimed:
+                logger.info("已认领恢复 Android VM {} 台", reclaimed)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("认领恢复 Android VM 失败（忽略）：{}", exc)
+
+    client.on_connect(_vm_reclaim_on_connect)
+
+    async def _vm_orphan_reconcile_on_connect(c: AgentWSClient) -> None:
+        assert _android_vm_manager is not None
+        try:
+            await _android_vm_manager.report_orphan_reconcile(c)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("上报 Android VM 孤儿对账失败（忽略）：{}", exc)
+
+    client.on_connect(_vm_orphan_reconcile_on_connect)
+
+    async def _vm_warm_capability_on_connect(_client: AgentWSClient) -> None:
+        assert _android_vm_manager is not None
+        try:
+            # 预热镜像缓存，避免"第一次探查因 sdkmanager 冷扫描慢而超时显示不可用"
+            await asyncio.to_thread(_android_vm_manager.warm_capability_cache)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("预热 VM 能力缓存失败（忽略）：{}", exc)
+
+    client.on_connect(_vm_warm_capability_on_connect)
+
+    async def _vm_liveness_sweep_on_rescan(c: AgentWSClient, present_serials: set) -> None:
+        # 蹭 5s rescan 节拍：在跑的 VM 若 serial 消失（崩溃/外部关闭）→ 上报 stopped
+        if _android_vm_manager is None:
+            return
+        try:
+            await _android_vm_manager.sweep_vanished_vms(c, present_serials)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("VM 存活巡检失败（忽略）：{}", exc)
+
+    client.on_rescan(_vm_liveness_sweep_on_rescan)
 
     async def _reporter_on_connect(_client: AgentWSClient) -> None:
         # M3 可靠上报：WS（重）连成功后，确保 drain worker 已启动，并唤醒它立即从
