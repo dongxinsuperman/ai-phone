@@ -115,6 +115,9 @@ POST /api/submissions
 | `submission_items` | 一个 case + platform 的执行单元 |
 | `vlm_trajectory_cache*` | 轨迹缓存 V1 / V2 / V3 |
 | `device_wake_policies` | HarmonyOS Run 前 wake 后是否兜底上滑的设备策略 |
+| `android_vm_instances` | Android 虚拟机实例（`main` 独有）：配置、状态、归属 Agent、adb serial |
+| `android_device_profiles` / `android_vm_coverage_profiles` | 虚拟机可选机型档案库与覆盖模板 |
+| `app_packages` / `app_install_tasks` / `app_install_task_items` | 应用分发：上传包、安装任务与每台设备的安装结果 |
 
 项目仍以 SQLAlchemy `create_all()` 为本地开发默认建表方式；已有库补字段时使用 `backend/migrations/*.sql`。
 
@@ -132,6 +135,10 @@ iOS 需要区分两条链路：
 
 - WDA 控制链路：截图、镜像、点击、滑动、输入、已知 bundle id 启动 App。
 - `pymobiledevice3` 设备服务链路：设备发现、应用列表、安装、DVT 兜底。自然语言 `open_app(app_name="...")` 需要先查应用列表再匹配 bundle id；当前实现分开查询 `User` / `System`，不再依赖 `Any` 一条路。
+
+**Android 虚拟机来源（`main` 独有）**：除真机外，Android 设备还可由「虚拟机」页创建——Server 维护机型档案库 / 覆盖模板（`android_device_profiles` / `android_vm_coverage_profiles`），把实例下发给 Agent，由 `agent/android_vm/`（`capability` 工具探查 + `manager` 生命周期）建 AVD 并启动 Emulator；启动后作为普通 android 设备进设备池，**与真机共用同一条调度与执行链路**。详见 [`agent-vm-env-setup（Agent虚拟机环境准备）.md`](./agent-vm-env-setup（Agent虚拟机环境准备）.md)。
+
+**应用分发**：`server/app_install/` 提供上传包、按平台筛可分发设备、批量下发安装（`MSG_APP_INSTALL_START`）与结果回传，独立于 Run 执行链路，仅复用设备池 / 锁 / Agent 通道。
 
 ## 7. iOS stable 线路
 
