@@ -116,6 +116,7 @@ GET /api/internal/server-brain/state
 | `submission_items` | 一个 case + platform 的执行单元 |
 | `vlm_trajectory_cache*` | 轨迹缓存 V1 / V2 / V3 |
 | `device_wake_policies` | HarmonyOS Run 前 wake 后是否兜底上滑的设备策略 |
+| `app_packages` / `app_install_tasks` / `app_install_task_items` | 应用分发：上传包、安装任务与每台设备的安装结果 |
 
 项目仍以 SQLAlchemy `create_all()` 为本地开发默认建表方式；已有库补字段时使用 `backend/migrations/*.sql`。
 
@@ -133,6 +134,8 @@ iOS 需要区分两条链路：
 
 - WDA 控制链路：截图、镜像、点击、滑动、输入、已知 bundle id 启动 App。
 - `pymobiledevice3` 设备服务链路：设备发现、应用列表、安装、DVT 兜底。自然语言 `open_app(app_name="...")` 需要先查应用列表再匹配 bundle id；当前实现分开查询 `User` / `System`，不再依赖 `Any` 一条路。
+
+**应用分发**：`server/app_install/` 提供上传包、按平台筛可分发设备、批量下发安装与结果回传，独立于 Run 执行链路，仅复用设备池 / 锁 / Agent 通道；支持 Android / HarmonyOS / iOS 三端（APK / HAP / IPA）。
 
 ## 7. iOS stable 线路
 
