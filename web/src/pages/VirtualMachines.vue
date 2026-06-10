@@ -288,7 +288,7 @@ function defaultForm() {
     ram_mb: 4096,
     cpu_cores: 4,
     vm_heap_mb: 384,
-    gpu_mode: 'auto',
+    gpu_mode: 'host',
     internal_storage_mb: 8192,
     sdcard_mb: 0,
     wipe_data: false,
@@ -865,6 +865,12 @@ function vmRam(vm) {
   return ram ? `${ram}MB` : '-'
 }
 
+function vmGpuLabel(vm) {
+  const mode = vm.config_json?.performance?.gpu_mode || 'auto'
+  const opt = gpuOptions.find((o) => o.id === mode)
+  return opt ? opt.label.split('（')[0] : mode
+}
+
 function systemImageForForm() {
   if (form.abi === 'auto') return ''
   const imageAbi = form.abi === 'arm64' ? 'arm64-v8a' : 'x86_64'
@@ -1261,6 +1267,12 @@ onBeforeUnmount(() => {
                 <span>SDCard（外部存储 MB）</span>
                 <input v-model.number="form.sdcard_mb" type="number" min="0" max="262144" />
               </label>
+              <label>
+                <span>GPU 模式（图形渲染路径）</span>
+                <select v-model="form.gpu_mode">
+                  <option v-for="item in gpuOptions" :key="item.id" :value="item.id">{{ item.label }}</option>
+                </select>
+              </label>
             </section>
           </template>
 
@@ -1431,6 +1443,7 @@ onBeforeUnmount(() => {
               <div><span>系统</span><b>{{ androidVersionShortLabel(vm.api_level) }} · {{ systemTypeShortLabel(vm.system_type) }} · {{ abiShortLabel(vm.abi) }}</b></div>
               <div><span>屏幕</span><b>{{ vm.screen_width }}×{{ vm.screen_height }} · {{ vm.density }}dpi</b></div>
               <div><span>内存</span><b>{{ vmRam(vm) }}</b></div>
+              <div><span>GPU</span><b>{{ vmGpuLabel(vm) }}</b></div>
               <div><span>Agent</span><b :title="vm.assigned_agent_id || ''">{{ vm.assigned_agent_id || '未分配' }}</b></div>
               <div v-if="vm.adb_serial"><span>Serial</span><b>{{ vm.adb_serial }}</b></div>
             </div>

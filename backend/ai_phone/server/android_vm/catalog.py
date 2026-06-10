@@ -991,7 +991,7 @@ def _coverage(
                 "ram_mb": ram_mb,
                 "cpu_cores": cpu_cores,
                 "vm_heap_mb": vm_heap_mb,
-                "gpu_mode": "auto",
+                "gpu_mode": "host",
             },
             "storage": {
                 "internal_storage_mb": storage_mb,
@@ -1102,7 +1102,7 @@ def _device(
                 "ram_mb": ram_mb,
                 "cpu_cores": 6 if ram_mb >= 8192 else 4,
                 "vm_heap_mb": 512 if ram_mb >= 8192 else 384,
-                "gpu_mode": "auto",
+                "gpu_mode": "host",
             },
             "storage": {
                 "internal_storage_mb": 16384,
