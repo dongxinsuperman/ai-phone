@@ -48,6 +48,7 @@ from .service import (
 )
 
 ACTIVE_STATES = {"starting", "running", "stopping"}
+REDISPATCH_REQUIRED_DETAIL = "assigned agent offline; please probe and dispatch again"
 
 router = APIRouter(
     prefix="/api/internal/vm/instances",
@@ -709,7 +710,16 @@ async def dispatch_instance(
     session: AsyncSession = DBSession,
     hub: Hub = HubDep,
 ) -> Dict[str, Any]:
-    return await _send_start(vm_id=vm_id, agent_id=body.agent_id, session=session, hub=hub)
+    agent_id = body.agent_id.strip()
+    if not hub.has_agent(agent_id):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=REDISPATCH_REQUIRED_DETAIL)
+    return await _send_start(
+        vm_id=vm_id,
+        agent_id=agent_id,
+        session=session,
+        hub=hub,
+        clear_assignment_on_send_failure=True,
+    )
 
 
 @router.post("/{vm_id}/start")
@@ -722,9 +732,19 @@ async def start_instance(
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="android vm not found")
-    if not vm.assigned_agent_id:
+    assigned_agent_id = (vm.assigned_agent_id or "").strip()
+    if not assigned_agent_id:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="vm has no assigned agent")
-    return await _send_start(vm_id=vm_id, agent_id=vm.assigned_agent_id, session=session, hub=hub)
+    if not hub.has_agent(assigned_agent_id):
+        await _clear_vm_assignment_for_redispatch(vm, session)
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=REDISPATCH_REQUIRED_DETAIL)
+    return await _send_start(
+        vm_id=vm_id,
+        agent_id=assigned_agent_id,
+        session=session,
+        hub=hub,
+        clear_assignment_on_send_failure=True,
+    )
 
 
 @router.post("/{vm_id}/stop")
@@ -769,6 +789,7 @@ async def _send_start(
     agent_id: str,
     session: AsyncSession,
     hub: Hub,
+    clear_assignment_on_send_failure: bool = False,
 ) -> Dict[str, Any]:
     try:
         vm = await get_vm_or_404(session, vm_id)
@@ -787,6 +808,9 @@ async def _send_start(
         **vm_payload(vm, request_id=_request_id()),
     }
     sent = await hub.send_to_agent(agent_id, payload)
+    if not sent and clear_assignment_on_send_failure:
+        await _clear_vm_assignment_for_redispatch(vm, session)
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=REDISPATCH_REQUIRED_DETAIL)
     vm.assigned_agent_id = agent_id
     vm.state = "starting" if sent else "unavailable"
     vm.error_message = "" if sent else "selected agent offline"
@@ -795,6 +819,18 @@ async def _send_start(
     await session.commit()
     await session.refresh(vm)
     return {"sent": sent, "instance": vm.to_dict()}
+
+
+async def _clear_vm_assignment_for_redispatch(
+    vm: AndroidVmInstance,
+    session: AsyncSession,
+) -> None:
+    vm.assigned_agent_id = None
+    vm.state = "stopped"
+    vm.error_message = REDISPATCH_REQUIRED_DETAIL
+    vm.adb_serial = None
+    vm.stopped_at = now_utc()
+    await session.commit()
 
 
 async def _switch_agent(
@@ -835,11 +871,13 @@ async def _switch_agent(
     # 4) 发 start 给新 Agent
     payload = {"type": P.MSG_VM_START, **vm_payload(new_vm, request_id=_request_id())}
     sent = await hub.send_to_agent(new_agent_id, payload)
+    if not sent:
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=REDISPATCH_REQUIRED_DETAIL)
     new_vm.assigned_agent_id = new_agent_id
-    new_vm.state = "starting" if sent else "unavailable"
-    new_vm.error_message = "" if sent else "selected agent offline"
-    if sent:
-        new_vm.stopped_at = None
+    new_vm.state = "starting"
+    new_vm.error_message = ""
+    new_vm.stopped_at = None
     await session.commit()
     await session.refresh(new_vm)
     # 5) DB 提交成功后，才通知旧 Agent 清理旧 AVD（在线即删；离线靠 reconcile「库里没有就删」兜底）。

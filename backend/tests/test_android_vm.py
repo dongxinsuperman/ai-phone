@@ -51,6 +51,18 @@ class _RecordingHub:
         return True
 
 
+class _FailingSendHub(Hub):
+    def __init__(self):
+        self.sent = []
+
+    def has_agent(self, agent_id):
+        return True
+
+    async def send_to_agent(self, agent_id, payload):
+        self.sent.append((agent_id, payload))
+        return False
+
+
 async def test_android_vm_create_and_list(client):
     resp = await client.post(
         "/api/internal/vm/instances",
@@ -350,6 +362,103 @@ async def test_android_vm_active_instance_is_not_dispatched_or_deleted(client, a
 
     delete = await client.delete(f"/api/internal/vm/instances/{vm_id}", headers=AUTH)
     assert delete.status_code == 409
+
+
+async def test_android_vm_start_clears_missing_assigned_agent(client, app, session):
+    app.state.hub = Hub()
+    created = await client.post(
+        "/api/internal/vm/instances",
+        headers=AUTH,
+        json={"name": "vm-a", "api_level": 35, "abi": "auto"},
+    )
+    vm_id = created.json()["id"]
+    vm = await session.get(AndroidVmInstance, vm_id)
+    vm.assigned_agent_id = "agent-old"
+    vm.state = "stopped"
+    await session.commit()
+
+    resp = await client.post(f"/api/internal/vm/instances/{vm_id}/start", headers=AUTH)
+
+    assert resp.status_code == 409
+    assert "probe and dispatch again" in resp.json()["detail"]
+    await session.refresh(vm)
+    assert vm.assigned_agent_id is None
+    assert vm.state == "stopped"
+    assert vm.error_message == "assigned agent offline; please probe and dispatch again"
+
+
+async def test_android_vm_start_send_failure_clears_assignment(client, app, session):
+    hub = _FailingSendHub()
+    app.state.hub = hub
+    created = await client.post(
+        "/api/internal/vm/instances",
+        headers=AUTH,
+        json={"name": "vm-a", "api_level": 35, "abi": "auto"},
+    )
+    vm_id = created.json()["id"]
+    vm = await session.get(AndroidVmInstance, vm_id)
+    vm.assigned_agent_id = "agent-1"
+    vm.state = "stopped"
+    await session.commit()
+
+    resp = await client.post(f"/api/internal/vm/instances/{vm_id}/start", headers=AUTH)
+
+    assert resp.status_code == 409
+    assert hub.sent[-1][0] == "agent-1"
+    await session.refresh(vm)
+    assert vm.assigned_agent_id is None
+    assert vm.state == "stopped"
+    assert vm.error_message == "assigned agent offline; please probe and dispatch again"
+
+
+async def test_android_vm_dispatch_rejects_offline_agent_without_switching(client, app, session):
+    app.state.hub = Hub()
+    created = await client.post(
+        "/api/internal/vm/instances",
+        headers=AUTH,
+        json={"name": "切机测试", "alias": "切机测试", "api_level": 35, "abi": "auto"},
+    )
+    vm_id = created.json()["id"]
+    vm = await session.get(AndroidVmInstance, vm_id)
+    vm.assigned_agent_id = "agent-A"
+    vm.state = "stopped"
+    await session.commit()
+
+    resp = await client.post(
+        f"/api/internal/vm/instances/{vm_id}/dispatch",
+        headers=AUTH,
+        json={"agent_id": "agent-B"},
+    )
+
+    assert resp.status_code == 409
+    assert "probe and dispatch again" in resp.json()["detail"]
+    await session.refresh(vm)
+    assert vm.assigned_agent_id == "agent-A"
+    assert vm.state == "stopped"
+
+
+async def test_android_vm_dispatch_send_failure_clears_assignment(client, app, session):
+    hub = _FailingSendHub()
+    app.state.hub = hub
+    created = await client.post(
+        "/api/internal/vm/instances",
+        headers=AUTH,
+        json={"name": "vm-a", "api_level": 35, "abi": "auto"},
+    )
+    vm_id = created.json()["id"]
+
+    resp = await client.post(
+        f"/api/internal/vm/instances/{vm_id}/dispatch",
+        headers=AUTH,
+        json={"agent_id": "agent-1"},
+    )
+
+    assert resp.status_code == 409
+    assert hub.sent[-1][0] == "agent-1"
+    vm = await session.get(AndroidVmInstance, vm_id)
+    assert vm.assigned_agent_id is None
+    assert vm.state == "stopped"
+    assert vm.error_message == "assigned agent offline; please probe and dispatch again"
 
 
 async def test_android_vm_alias_is_renamable_with_uniqueness(client):
@@ -747,8 +856,11 @@ async def test_android_vm_reclaim_binds_to_reporter(session):
     assert not hub.sent                           # 不再下发任何清理
 
 
-async def test_android_vm_switch_agent_deletes_old_creates_new(client, session):
+async def test_android_vm_switch_agent_deletes_old_creates_new(client, app, session):
     # 换 Agent：删旧 vm_id + 新建 vm_id（继承别名/配置）；旧记录消失、新记录绑新 Agent
+    hub = Hub()
+    app.state.hub = hub
+    await hub.register_agent("agent-B", "mac-b", "Darwin", _FakeWs())
     created = await client.post(
         "/api/internal/vm/instances",
         headers=AUTH,

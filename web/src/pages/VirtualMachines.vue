@@ -796,7 +796,13 @@ async function startVm(vm) {
     await internal.androidVms.start(vm.id)
     await refresh()
   } catch (e) {
-    err.value = prettyErr(e)
+    const message = prettyErr(e)
+    err.value = message
+    try {
+      await refresh()
+    } catch {
+      err.value = message
+    }
   } finally {
     busyId.value = ''
   }
