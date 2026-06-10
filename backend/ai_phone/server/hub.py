@@ -124,22 +124,41 @@ class Hub:
             logger.warning("Agent {} 重复注册，旧连接将被替换", agent_id)
             for s in list(old.serials):
                 self._serial_to_agent.pop(s, None)
-            for r in list(old.run_ids):
-                self._run_to_agent.pop(r, None)
+            # 同 id 重连：**不**清 old 的 run→agent 路由（保留，下面统一并入新连接）。
+            # serial 路由不迁——Agent 重连的 hello/set_devices 会自然重建。
             try:
                 await old.ws.close(code=4000, reason="replaced by new connection")
             except Exception:  # noqa: BLE001
                 pass
 
         conn = AgentConn(agent_id=agent_id, agent_name=agent_name, host_os=host_os, ws=ws)
+        # 把所有仍指向本 agent_id 的 run 路由并入新连接的 run_ids，覆盖两种来源：
+        # ① 同 id 重连（网络抖动、同进程）——旧连接在飞的 Run，进程没死还在跑；
+        # ② Server 重启恢复时 bind_run——彼时 Agent 还没连上、conn.run_ids 没写上。
+        # 这样 send_to_run 可达（下行 stop/cancel 投得到），且本连接日后断开时
+        # _on_disconnect 能从 conn.run_ids 取到这些 Run 做孤儿回收，不漏。
+        conn.run_ids = {r for r, aid in self._run_to_agent.items() if aid == agent_id}
         self._agents[agent_id] = conn
         logger.info("Agent 上线 | id={} name={} host_os={}", agent_id, agent_name, host_os)
         return conn
 
-    async def unregister_agent(self, agent_id: str) -> Optional[AgentConn]:
-        conn = self._agents.pop(agent_id, None)
+    async def unregister_agent(
+        self, agent_id: str, ws: Optional[WebSocket] = None
+    ) -> Optional[AgentConn]:
+        """注销某 Agent 连接，清掉它的设备 / run 路由。
+
+        连接身份校验：传入 ``ws`` 时，只有「当前登记的就是这条正在断开的连接」才注销。
+        这样同 agent_id 快速重连（网络抖动、同进程，agent_id 同进程稳定）时，**被替换
+        的旧连接** 的 finally 不会误把刚注册进来的新连接 pop 掉、清掉它的设备 / run 路由。
+        ``ws=None`` 退化为按 agent_id 注销（兼容旧调用，如单测）。
+        """
+        conn = self._agents.get(agent_id)
         if conn is None:
             return None
+        if ws is not None and conn.ws is not ws:
+            # 当前登记的是同 id 的更新连接，这条是过期的旧连接 —— 不动任何路由。
+            return None
+        self._agents.pop(agent_id, None)
         for s in list(conn.serials):
             self._serial_to_agent.pop(s, None)
         for r in list(conn.run_ids):
@@ -182,6 +201,14 @@ class Hub:
         conn = self._agents.get(agent_id)
         if conn is not None:
             conn.last_seen_at = time.time()
+
+    def has_agent(self, agent_id: str) -> bool:
+        """该 agent_id 当前是否有活跃连接。
+
+        用于断连回收：宽限期后若同一 agent_id 又出现在连接表里，说明是网络抖动
+        后同进程重连（agent_id 同进程稳定），其名下 Run 仍在本地执行，不应回收。
+        """
+        return agent_id in self._agents
 
     # ------------------------------------------------------------------
     # Run 路由

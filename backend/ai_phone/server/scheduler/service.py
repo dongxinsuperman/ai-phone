@@ -471,6 +471,7 @@ class SubmissionScheduler:
             return
         self._running = True
         await self._reload_queues_from_db()
+        await self._recover_running_from_db()
         self._loop_task = asyncio.create_task(self._drain_loop(), name="scheduler-drain")
         self._timeout_task = asyncio.create_task(self._timeout_loop(), name="scheduler-timeout")
         logger.info(
@@ -516,6 +517,145 @@ class SubmissionScheduler:
                 self._queues[it.platform].append(it.id)
         if items:
             logger.info("[scheduler] reloaded {} queued items from DB", len(items))
+
+    async def _recover_running_from_db(self) -> None:
+        """Server 重启恢复：对 DB 里仍 ``running`` 的 item 做对账，重建「设备占用 + track +
+        下行路由」，或收口已终态的脏数据。
+
+        背景：设备锁、``self._runs``、run→agent 路由都是进程内内存，Server 重启即清零；
+        而 ``_reload_queues_from_db`` 只捞 ``queued``，不管 ``running``。若不恢复，重启后
+        调度器会以为这些设备空闲，把后续 queued item 误派到「其实正被旧 Run 占用」的设备
+        上，被 Agent 的 is_busy 守卫弹回 → 后续队列被一串「device busy」误判失败。
+
+        对每条 running item 按其关联 Run 的真实状态分两类处理：
+
+        1) Run 已终态（success/failed/stopped 且 finished_at 非空），但 item 还停在
+           running —— 这是「崩在 ``_finalize_run`` 与 ``on_run_done`` 之间」的半提交脏数据。
+           这条 case 实际已结束，**直接按 Run 终态把 item 收尸**（落终态 + 生成报告 + 收口
+           批次），**不**重新上锁/建 track、**也不重跑**（已死的 case 无需再走 retry 等更深
+           逻辑；走 retry 反而会无锁重派、把设备误判空闲，引发队列连锁失败）。
+
+        2) Run 仍非终态（pending/running）—— 真正还在跑：
+           - 设备重新上锁（holder=``sched-<item_id>``，与正常派发同一约定，带 TTL）；
+           - 重建 ``_runs`` track，``started_at_mono`` 按 ``item.started_at`` 还原已跑时长，
+             不让 1h item TTL 因重启被刷新；
+           - 重建 run→agent 下行路由（``bind_run`` 到 Run 启动时的 agent_id），使重启后
+             cancel / 超时的 ``stop_run`` 仍能投到 Agent；
+           - 旧 Run 跑完回 ``run_done`` 时，``on_run_done`` 按既有逻辑解锁、收口、推进队列；
+           - 万一旧 Run 再也不回（极端：Agent 同期也挂了），锁 TTL 到点自动释放、设备不会
+             被永久占用，残留 running 由人工 / 其它兜底处理（本最小修不自动判死）。
+        """
+        # 先在一个 session 内分类 + 就地收口「Run 已终态」的脏数据；把「仍在跑」的需要
+        # 上锁/建 track 的信息收集出来，session 外再做锁与路由（锁/hub 非 DB）。
+        to_recover: List[Tuple[str, str, str, str, str, Optional[str], Optional[datetime]]] = []
+        reconciled = 0
+        async with self._session_factory() as session:
+            res = await session.execute(
+                select(SubmissionItem).where(SubmissionItem.state == "running")
+            )
+            items = list(res.scalars().all())
+            for it in items:
+                run_id = it.run_id
+                if not run_id:
+                    continue
+                run = await session.get(Run, run_id)
+                run_terminal = (
+                    run is not None
+                    and run.finished_at is not None
+                    and run.status in ("success", "failed", "stopped")
+                )
+                if run_terminal:
+                    # 半提交脏数据（崩在 _finalize_run 与 on_run_done 之间）：这条 Run 已经
+                    # 终态、case 实际已结束。直接按 Run 终态把 item 收尸即可——**不重新上锁、
+                    # 不建 track、也不重跑**（已死的 case 无需再走 retry 等更深逻辑）。这样既清掉
+                    # 幽灵 item、让批次能收口，又不会因「无锁重派」把设备误判空闲、引发队列连锁
+                    # 失败（不走 on_run_done 的 retry 分支正是为了避免这点）。
+                    if run.status == "success":
+                        it.state = "success"
+                        it.status_reason = it.status_reason or "completed"
+                    elif run.status == "stopped":
+                        it.state = "cancelled"
+                        it.status_reason = it.status_reason or "cancelled_by_request"
+                    else:
+                        it.state = "failed"
+                        it.status_reason = it.status_reason or "executor_error"
+                    it.finished_at = run.finished_at or datetime.now(timezone.utc)
+                    await session.commit()
+                    try:
+                        await self._finalize_and_publish(session, it, run=run)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "[scheduler] 重启对账收口脏数据失败（吞）item={} err={}",
+                            it.id, exc,
+                        )
+                    reconciled += 1
+                    continue
+                if not it.device_serial:
+                    continue
+                to_recover.append(
+                    (
+                        it.device_serial,
+                        run_id,
+                        it.id,
+                        it.submission_id,
+                        it.platform,
+                        run.agent_id if run is not None else None,
+                        it.started_at,
+                    )
+                )
+
+        if reconciled:
+            logger.info(
+                "[scheduler] 重启对账：{} 条 item 关联 Run 已终态，直接收尸收口（不占设备/不重跑）",
+                reconciled,
+            )
+
+        recovered = 0
+        for serial, run_id, item_id, submission_id, platform, agent_id, started_at in to_recover:
+            try:
+                info = await self._lock_store.acquire(
+                    serial,
+                    holder=f"sched-{item_id}",
+                    holder_type="auto",
+                    ttl_seconds=DEFAULT_ITEM_TTL_SEC + 60,
+                    meta={
+                        "submission_id": submission_id,
+                        "item_id": item_id,
+                    },
+                )
+            except LockConflict:
+                logger.warning(
+                    "[scheduler] 恢复 running 设备占用冲突，跳过 serial={} item={}",
+                    serial, item_id,
+                )
+                continue
+            # 恢复下行路由：bind 到 Run 启动时的 agent_id（Agent 在线场景下同进程重连
+            # agent_id 不变 → stop_run 可达；agent 真没了则 send_to_run 返回 False，无害）。
+            if agent_id:
+                await self._hub.bind_run(run_id, agent_id)
+            # 还原已跑时长，保持 1h item TTL 的绝对截止不被重启刷新。
+            started_mono = time.monotonic()
+            if started_at is not None:
+                try:
+                    elapsed = (datetime.now(timezone.utc) - started_at).total_seconds()
+                    if elapsed > 0:
+                        started_mono = time.monotonic() - elapsed
+                except Exception:  # noqa: BLE001
+                    pass
+            self._runs[run_id] = _RunTrack(
+                item_id=item_id,
+                submission_id=submission_id,
+                platform=platform,
+                serial=serial,
+                lock_token=info.token,
+                started_at_mono=started_mono,
+            )
+            recovered += 1
+        if recovered:
+            logger.info(
+                "[scheduler] 重启恢复 {} 条 running 的设备占用 + track（防误派/防误判失败）",
+                recovered,
+            )
 
     # ------------------------------------------------------------------
     # 准入：submit

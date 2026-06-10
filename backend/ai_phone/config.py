@@ -857,6 +857,18 @@ class Settings(BaseSettings):
             "env: AI_PHONE_SCHEDULER_TICK_SEC"
         ),
     )
+    orphan_reap_grace_sec: float = Field(
+        default=60.0,
+        ge=0.0,
+        le=600.0,
+        description=(
+            "Agent 断连后回收其名下在跑 Run 的宽限期（秒）。宽限期内同一 agent_id "
+            "重连（网络抖动、同进程仍在执行）则跳过回收，不误杀仍在本地跑的 Run；"
+            "超期仍未重连（进程重启 / 真死）则把其名下仍非终态的 Run 判 failed、"
+            "释放设备锁并收口批次（配了 retry 的按既有逻辑重投）。设 0 表示断连即回收。"
+            "env: AI_PHONE_ORPHAN_REAP_GRACE_SEC"
+        ),
+    )
     function_map_context_enabled: bool = Field(
         default=True,
         description=(
@@ -1768,6 +1780,7 @@ SERVER_ONLY_FIELDS: frozenset[str] = frozenset({
     "submission_ttl_sec",
     "item_ttl_sec",
     "scheduler_tick_sec",
+    "orphan_reap_grace_sec",
     "run_retry_enabled",
     "run_retry_max",
     "run_retry_clear_cache",

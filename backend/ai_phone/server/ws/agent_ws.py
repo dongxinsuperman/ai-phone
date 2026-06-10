@@ -249,7 +249,7 @@ async def agent_ws(
     except Exception as exc:  # noqa: BLE001
         logger.exception("Agent WS 异常 | id={} err={}", agent_id, exc)
     finally:
-        await _on_disconnect(hub, lock_store, agent_id, serials)
+        await _on_disconnect(hub, lock_store, agent_id, serials, ws=ws)
 
 
 # ---------------------------------------------------------------------------
@@ -825,16 +825,106 @@ async def _finalize_run(run_id: str, msg: Dict[str, Any]) -> bool:
     return True
 
 
+async def _reap_disconnected_runs(
+    hub: Hub,
+    agent_id: str,
+    run_ids: set[str],
+    grace_sec: float,
+) -> None:
+    """Agent 断连后回收其名下"孤儿 Run"。
+
+    时序：
+    1. 等一个宽限期（``orphan_reap_grace_sec``，默认 60s）。
+    2. 宽限期内**同一 agent_id 重连** = 网络抖动、同进程仍活着（agent_id 同进程
+       稳定），其名下 Run 仍在本地真实执行 —— 直接跳过，绝不误杀；它的 run_done
+       会经 Agent 可靠上报正常补达。
+    3. 宽限期满仍未重连 = 进程重启 / 真死，本地 Run task 已随进程消失、永远不会
+       再回 run_done —— 把其名下**仍非终态**的 Run 走「等价于 agent 上报执行中断」
+       的既有终态路径收口（落 failed、释放设备锁、收口批次，配了 retry 的重投）。
+
+    纯增量旁路：只在断连且确无同 id 重连时触发，不改派发 / 正常 run_done / 超时 /
+    取消 / 重试的既有行为。
+    """
+    if not run_ids:
+        return
+    try:
+        if grace_sec > 0:
+            await asyncio.sleep(grace_sec)
+    except asyncio.CancelledError:
+        return
+    if hub.has_agent(agent_id):
+        logger.info(
+            "Agent {} 在宽限期内重连（同进程/网络抖动），跳过孤儿 Run 回收（{} 条）",
+            agent_id, len(run_ids),
+        )
+        return
+    logger.warning(
+        "Agent {} 宽限期满仍未重连（疑似进程重启/退出），回收其名下孤儿 Run {} 条",
+        agent_id, len(run_ids),
+    )
+    for run_id in run_ids:
+        try:
+            await _reap_one_orphan_run(hub, run_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("回收孤儿 Run 失败 run_id={}: {}", run_id, exc)
+
+
+async def _reap_one_orphan_run(hub: Hub, run_id: str) -> None:
+    """把单个孤儿 Run 走既有 run_done 终态路径收口（幂等、只动仍非终态的 Run）。"""
+    # 只回收仍非终态的 Run；已被（断线补发的）run_done 收口的直接跳过，避免重复。
+    async def _still_orphan(session: AsyncSession) -> bool:
+        run = await session.get(Run, run_id)
+        if run is None:
+            return False
+        if run.status in ("success", "failed", "stopped") and run.finished_at is not None:
+            return False
+        return True
+
+    if not await _with_session(_still_orphan):
+        return
+
+    # 合成一条"agent 上报执行中断"的终态消息，复用既有 _finalize_run + scheduler
+    # .on_run_done：落 Run failed → 落 item 终态 + 释放锁 + 收口批次（retry 按既有逻辑）。
+    synthetic: Dict[str, Any] = {
+        "type": P.MSG_RUN_DONE,
+        "run_id": run_id,
+        "result": "error",
+        "message": "agent_disconnected",
+    }
+    finalized = await _finalize_run(run_id, synthetic)
+    if finalized:
+        try:
+            from ..scheduler import get_scheduler  # noqa: PLC0415
+
+            sched = get_scheduler()
+            if sched is not None:
+                await sched.on_run_done(run_id, synthetic)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "孤儿 Run 回收 scheduler.on_run_done 异常（忽略）run_id={}: {}", run_id, exc
+            )
+    await hub.unbind_run(run_id)
+
+
 async def _on_disconnect(
     hub: Hub,
     lock_store: DeviceLockStore,
     agent_id: str,
     serials: set[str],
+    ws: Optional[WebSocket] = None,
 ) -> None:
-    # Distributed Agent Brain：Run 在 Agent 本地执行，Agent 断线后该 Run 由 Agent
-    # 侧收口；Server 侧不再持有进程内 runner，断线只做设备下线 + 路由清理。
-    # （Agent 侧孤儿 Run 的判死 / 重收口在 M6 由 run lease / 心跳过期驱动。）
-    conn = await hub.unregister_agent(agent_id)
+    # Distributed Agent Brain：Run 在 Agent 本地执行，Server 侧不持有进程内 runner，
+    # 断线只做设备下线 + 路由清理；其名下"孤儿 Run"的判死交给下方带宽限期的回收旁路。
+    conn = await hub.unregister_agent(agent_id, ws=ws)
+    if conn is None and hub.has_agent(agent_id):
+        # 连接身份校验拦下：当前登记的是同 id 的"更新连接"（同进程网络抖动已重连），
+        # 这条只是被替换的旧连接。新连接还活着、持有设备与在跑的 Run —— 整个下线 +
+        # 孤儿回收一律跳过，避免误删新连接的设备、误杀仍在本地执行的 Run。
+        logger.info("Agent {} 旧连接断开，但同 id 新连接已在线，跳过下线与孤儿回收", agent_id)
+        return
+    # unregister_agent 只清反查表，conn.run_ids 仍保留断连瞬间这台 Agent 在飞的 Run，
+    # 拿来交给宽限回收（精确到本连接，不会误伤别的 Agent）。
+    in_flight_runs = set(conn.run_ids) if conn is not None else set()
     if conn is not None:
         hub.clear_device_extra(set(conn.serials))
     elif serials:
@@ -846,5 +936,12 @@ async def _on_disconnect(
             logger.info("Agent {} 断开，已标记 VM unavailable {} 台", agent_id, count)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Agent {} 断开时标记 VM unavailable 失败：{}", agent_id, exc)
-    # 新锁模型下锁不归 Agent 所有，Agent 断线不动锁。
-    # 浏览器仍持锁；设备状态变 offline 让前端自然展示，恢复后无缝继续。
+    # 孤儿 Run 回收旁路：等宽限期，若同 agent_id 未重连（进程重启/真死）则把其名下
+    # 仍在跑的 Run 判失败并释放设备锁、收口批次。宽限期内同 id 重连（网络抖动、同
+    # 进程）则跳过，不误杀仍在本地执行的 Run。浏览器手动锁不受影响（仍由其心跳维护）。
+    if in_flight_runs:
+        grace_sec = float(get_settings().orphan_reap_grace_sec or 0.0)
+        asyncio.create_task(
+            _reap_disconnected_runs(hub, agent_id, in_flight_runs, grace_sec),
+            name=f"reap-orphan-{agent_id}",
+        )
