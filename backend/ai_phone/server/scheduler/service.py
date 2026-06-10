@@ -850,33 +850,56 @@ class SubmissionScheduler:
                 logger.exception("[scheduler] drain_once 异常: {}", exc)
 
     async def _drain_once(self) -> None:
-        """对每个平台的队头尝试派发；派不了就原位保留，等下一次事件。"""
+        """对每个平台队列做一趟派发。
+
+        语义就一句话：**一条 item 只在『它要的设备（指定池 / 全平台池）当前都被
+        占用』时才继续排队**；只要还能给它找到一台可用设备就立刻派出去，一条派不
+        出去绝不阻塞它后面的 item。这修掉了 ``device_alias_pool`` 粒度下的队头阻塞。
+
+        单趟扫描：每条 item 本轮**最多试一次**。能派的派出（移出队列），派不出去的
+        ——无论是『设备忙』还是『已选到设备但发 Agent 失败回滚』——一律保持排队、
+        等下一次 tick/kick 重试，本轮不再重抓。理由：
+
+        - 一趟 drain 内设备只会被我们越锁越多、不会有设备被释放（释放发生在
+          ``on_run_done``，且它释放后会再 ``kick`` 一次触发新的一趟）。所以本轮开头
+          派不出去的 item，本轮结尾也不可能突然派得出去——「重抓重试」没有收益；
+        - 而对『发 Agent 失败』那条，本轮重抓只会重复建 ``dispatch_failed`` 的失败
+          Run、重复给 Agent 发，纯有害。等下一次 tick 重试才对。
+
+        整段短路：item 的指定池必然是该平台设备的子集，该平台一台可用设备都没有
+        时池/非池的 item 全都派不出去，直接跳过本平台、省掉逐条试探（设备稍后变
+        ready 会重新 kick，不会漏派）。
+        """
         for platform in ALLOWED_PLATFORMS:
-            queue = self._queues[platform]
-            if not queue:
+            if not self._queues[platform]:
                 continue
-            # 每轮最多派发 len(queue) 次——每次派发成功消耗一条，队头往前推进；
-            # 派不出去（没 ready 设备 / 没锁得住）就 break，不无限重试。
-            for _ in range(len(queue)):
-                if not queue:
-                    break
-                item_id = queue[0]
-                dispatched = await self._try_dispatch(platform, item_id)
-                if dispatched is True:
-                    queue.pop(0)
-                elif dispatched is None:
-                    # item 已不是 queued（被取消 / 超时了）：从队列里丢掉
-                    queue.pop(0)
-                else:
-                    # False = 没 ready 设备，留着等下一轮
-                    break
+            if not await self._has_available_device(platform):
+                continue
+            consumed: set[str] = set()
+            # 快照遍历：派发过程有 await，并发的 submit/cancel/timeout 可能动 queue，
+            # 我们只按本趟结果记下「已消费」的 id，循环结束后再按它从 live 列表剔除。
+            for item_id in list(self._queues[platform]):
+                result = await self._try_dispatch(platform, item_id)
+                if result is True or result is None:
+                    # True=已派发；None=已不是 queued（取消/超时）——都移出队列
+                    consumed.add(item_id)
+                # False=本轮没派成（设备忙 / 发 Agent 失败）：保持排队，不重抓
+            if consumed:
+                # 读当前 live 列表（已含并发期间新入队的 item、也已反映并发取消/超时
+                # 的删改），过滤掉 consumed 后整体替换。其间无 await，对 asyncio 原子。
+                self._queues[platform] = [
+                    i for i in self._queues[platform] if i not in consumed
+                ]
 
     async def _try_dispatch(self, platform: str, item_id: str) -> Optional[bool]:
         """尝试派发单条 item。
 
         返回：
         - ``True`` = 成功派发，item 已 running
-        - ``False`` = 暂时派不出去（没 ready 设备 / 全部被锁），保持 queued
+        - ``False`` = 本轮没派成，保持 queued、等下一次 tick 重试。两种来源：
+          ① 设备暂时不可用（没挑到 / 抢锁瞬间被抢）；② 已选到设备并建了 Run，
+          但 ``dispatch`` 给 Agent 发失败，已回滚 item 回 queued + 把该 Run 落
+          ``dispatch_failed``。两者对调度器都是「这条这轮先放着」，故合并为 False。
         - ``None``  = 这条 item 已经不是 queued（被取消/超时），从队列里剔除
         """
         async with self._session_factory() as session:
@@ -1096,6 +1119,32 @@ class SubmissionScheduler:
                 continue
             return dev.serial, agent_id
         return None
+
+    async def _has_available_device(self, platform: str) -> bool:
+        """该平台当前是否存在至少一台可用设备（online + ready + 无锁 + 有 agent）。
+
+        ``_drain_once`` 的整段短路用：判定与 :meth:`_pick_device` 的"一台可用"
+        完全一致，但不关心是哪一台。指定池只是该平台设备的子集，所以平台级
+        "一台都没有"必然意味着池子里也没有——可以安全跳过整条队列。
+        """
+        async with self._session_factory() as session:
+            res = await session.execute(
+                select(Device.serial).where(
+                    Device.platform == platform,
+                    Device.status == "online",
+                )
+            )
+            serials = [str(s) for s in res.scalars().all()]
+        for serial in serials:
+            extra = self._hub.get_device_extra(serial)
+            if not (extra.get("readiness") or {}).get("ready"):
+                continue
+            if self._lock_store.peek(serial) is not None:
+                continue
+            if self._hub.agent_id_for_serial(serial) is None:
+                continue
+            return True
+        return False
 
     # ------------------------------------------------------------------
     # 终态统一广播路径（给 on_run_done / cancel / submission_timeout 三处复用）
