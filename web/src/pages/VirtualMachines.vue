@@ -1263,10 +1263,16 @@ onBeforeUnmount(() => {
                   <input v-model.number="form.internal_storage_mb" type="number" min="512" max="262144" />
                 </label>
               </div>
-              <label>
-                <span>SDCard（外部存储 MB）</span>
-                <input v-model.number="form.sdcard_mb" type="number" min="0" max="262144" />
-              </label>
+              <div class="grid2">
+                <label>
+                  <span>CPU 核数（Emulator 计算核数）</span>
+                  <input v-model.number="form.cpu_cores" type="number" min="1" max="16" />
+                </label>
+                <label>
+                  <span>SDCard（外部存储 MB）</span>
+                  <input v-model.number="form.sdcard_mb" type="number" min="0" max="262144" />
+                </label>
+              </div>
               <label>
                 <span>GPU 模式（图形渲染路径）</span>
                 <select v-model="form.gpu_mode">
