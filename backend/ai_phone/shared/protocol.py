@@ -68,6 +68,10 @@ MSG_PING = "ping"
 MSG_APP_INSTALL_START = "app_install_start"
 # Android VM：Server 下发能力探查与生命周期控制命令。
 MSG_VM_CAPABILITY_PROBE = "vm_capability_probe"
+# MSG_VM_START 载荷新增端口字段（Server 全局统一分配 emulator 端口，堵死跨机器 serial 撞号串台）：
+#   - assigned_port: int | None —— Server 在全局 5554-5682 端口池里钦定的端口，Agent 本机也空闲时优先用。
+#   - exclude_ports: list[int] —— 全局已占端口，Agent 选端口时一并避让（assigned_port 本机被占时的兜底）。
+# 旧 Agent 不认这两个字段会忽略（退回本机自选），向后兼容。
 MSG_VM_START = "vm_start"
 MSG_VM_STOP = "vm_stop"
 # 删除虚拟机配置 / 换绑到新 Agent 时，通知旧 Agent 清理远端 AVD（avdmanager delete）。

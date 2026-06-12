@@ -254,12 +254,17 @@ class AndroidVmManager:
             system_type,
         )
         avd_name = _safe_avd_name(vm_id)
+        # Server 全局分配的端口 + 全局已占端口（兜底避让），保证跨机器 serial 不撞。
+        assigned_port = _opt_port(msg.get("assigned_port"))
+        exclude_ports = {
+            p for p in (_opt_port(x) for x in (msg.get("exclude_ports") or [])) if p is not None
+        }
         # 锁内：幂等去重 + 选端口 + 占位注册（原子）——杜绝并发选到同一端口 / 同 vm_id 重复启动。
         with self._start_lock:
             existing = self._runtimes.get(vm_id)
             if existing is not None:
                 return {"adb_serial": existing.adb_serial, "details": {"reused": True}}
-            port = self._choose_port()
+            port = self._choose_port(prefer=assigned_port, exclude=exclude_ports)
             adb_serial = f"emulator-{port}"
             runtime = VmRuntime(
                 vm_id=vm_id,
@@ -962,10 +967,30 @@ class AndroidVmManager:
             time.sleep(1)
         return False
 
-    def _choose_port(self) -> int:
+    def _choose_port(
+        self,
+        *,
+        prefer: Optional[int] = None,
+        exclude: Optional[set[int]] = None,
+    ) -> int:
+        """挑一个本机空闲的 emulator 端口。
+
+        ``prefer``：Server 全局分配的端口——本机也空闲时优先用它，保证 serial 全网唯一。
+        ``exclude``：Server 下发的全局已占端口，并入本机已用一起避让（兜底防跨机撞号）。
+        本机该端口被其它进程占用时，落回区间扫描另选一个（serial 会经 vm_status 回填）。
+        """
         used = {runtime.port for runtime in self._runtimes.values()}
+        if exclude:
+            used |= exclude
+        if (
+            prefer is not None
+            and prefer not in used
+            and _is_port_free(prefer)
+            and _is_port_free(prefer + 1)
+        ):
+            return prefer
         for port in range(5554, 5684, 2):
-            if port in used:
+            if port in used or port == prefer:
                 continue
             if _is_port_free(port) and _is_port_free(port + 1):
                 return port
@@ -1092,6 +1117,17 @@ def _emulator_port(serial: str) -> int:
     except Exception:
         pass
     return 0
+
+
+def _opt_port(value: Any) -> Optional[int]:
+    """把 Server 下发的端口值（assigned_port / exclude_ports 元素）解析成 int；非法返回 None。"""
+    if value is None:
+        return None
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        return None
+    return port if port > 0 else None
 
 
 def _avd_config_path(tools: AndroidVmTools, avd_name: str) -> Optional[Path]:

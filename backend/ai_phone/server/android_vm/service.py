@@ -31,6 +31,72 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Emulator 控制台端口区间（与 Agent ``_choose_port`` 的 ``range(5554, 5684, 2)`` 对齐）：
+# 5554~5682 偶数，共 65 个槽。emulator serial 形如 ``emulator-<port>`` 本机唯一、跨机不唯一，
+# 故由 Server 在这个全局池里统一分配，保证全网 serial 不撞（堵死跨机器串台）。
+_EMULATOR_PORT_MIN = 5554
+_EMULATOR_PORT_MAX = 5682
+
+
+def _port_from_serial(serial: Optional[str]) -> Optional[int]:
+    s = (serial or "").strip()
+    if not s.startswith("emulator-"):
+        return None
+    try:
+        return int(s.rsplit("-", 1)[1])
+    except ValueError:
+        return None
+
+
+async def used_emulator_ports(
+    session: AsyncSession, *, exclude_vm_id: Optional[str] = None
+) -> set[int]:
+    """从所有 VM 的 ``adb_serial`` 反解出全局已占用的 emulator 端口集合。
+
+    ``exclude_vm_id``：排除某台 VM 自身（给它重新分配端口时，别把它旧端口算进冲突）。
+    """
+    res = await session.execute(
+        select(AndroidVmInstance.id, AndroidVmInstance.adb_serial).where(
+            AndroidVmInstance.adb_serial.is_not(None)
+        )
+    )
+    ports: set[int] = set()
+    for vm_id, serial in res.all():
+        if exclude_vm_id and vm_id == exclude_vm_id:
+            continue
+        port = _port_from_serial(serial)
+        if port is not None:
+            ports.add(port)
+    return ports
+
+
+def _pick_free_port(used: set[int]) -> Optional[int]:
+    for port in range(_EMULATOR_PORT_MIN, _EMULATOR_PORT_MAX + 1, 2):
+        if port not in used:
+            return port
+    return None
+
+
+async def assign_emulator_port(
+    session: AsyncSession, vm: AndroidVmInstance
+) -> tuple[Optional[int], list[int]]:
+    """给待启动 VM 在全局端口池里分配一个不与其它 VM 冲突的端口。
+
+    返回 ``(assigned_port, exclude_ports)``：
+    - ``assigned_port``：Server 钦定的端口（池满返回 ``None``，退回 Agent 自选）。
+    - ``exclude_ports``：全局已占端口列表，随 ``vm_start`` 下发给 Agent 作兜底避让。
+
+    **副作用（轻量预占）**：把 ``assigned_port`` 写进 ``vm.adb_serial`` 占坑，让随后并发
+    发起的另一台 VM 启动在计算 ``used`` 时就能看见它、不会撞同一端口。本机该端口若被其它
+    进程占用，由 Agent 侧 ``_choose_port`` 的本机探测兜底改选，并经 ``vm_status`` 回填真实 serial。
+    """
+    used = await used_emulator_ports(session, exclude_vm_id=vm.id)
+    port = _pick_free_port(used)
+    if port is not None:
+        vm.adb_serial = f"emulator-{port}"
+    return port, sorted(used)
+
+
 def vm_payload(vm: AndroidVmInstance, *, request_id: Optional[str] = None) -> Dict[str, Any]:
     config = vm.config_json or {}
     payload: Dict[str, Any] = {

@@ -39,6 +39,7 @@ from .schemas import (
 )
 from .service import (
     apply_vm_patch,
+    assign_emulator_port,
     delete_vm_alias,
     get_capability_waiter,
     get_vm_or_404,
@@ -803,9 +804,13 @@ async def _send_start(
     old_agent = (vm.assigned_agent_id or "").strip()
     if old_agent and old_agent != agent_id:
         return await _switch_agent(vm=vm, new_agent_id=agent_id, session=session, hub=hub)
+    # Server 全局统一分配 emulator 端口（并预占 adb_serial），保证全网 serial 不撞 → 不串台。
+    assigned_port, exclude_ports = await assign_emulator_port(session, vm)
     payload = {
         "type": P.MSG_VM_START,
         **vm_payload(vm, request_id=_request_id()),
+        "assigned_port": assigned_port,
+        "exclude_ports": exclude_ports,
     }
     sent = await hub.send_to_agent(agent_id, payload)
     if not sent and clear_assignment_on_send_failure:
@@ -816,6 +821,9 @@ async def _send_start(
     vm.error_message = "" if sent else "selected agent offline"
     if sent:
         vm.stopped_at = None
+    else:
+        # 没发出去：释放刚才预占的端口，别让离线 VM 长期占着全局槽位。
+        vm.adb_serial = None
     await session.commit()
     await session.refresh(vm)
     return {"sent": sent, "instance": vm.to_dict()}
@@ -868,8 +876,14 @@ async def _switch_agent(
     new_vm = AndroidVmInstance(state="draft", **inherited)
     session.add(new_vm)
     await session.flush()
-    # 4) 发 start 给新 Agent
-    payload = {"type": P.MSG_VM_START, **vm_payload(new_vm, request_id=_request_id())}
+    # 4) 发 start 给新 Agent（Server 全局统一分配 emulator 端口，保证 serial 不撞）
+    assigned_port, exclude_ports = await assign_emulator_port(session, new_vm)
+    payload = {
+        "type": P.MSG_VM_START,
+        **vm_payload(new_vm, request_id=_request_id()),
+        "assigned_port": assigned_port,
+        "exclude_ports": exclude_ports,
+    }
     sent = await hub.send_to_agent(new_agent_id, payload)
     if not sent:
         await session.rollback()
