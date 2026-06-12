@@ -160,12 +160,19 @@ def test_ios_open_fresh_lockdown_for_app_listing_disables_autopair(monkeypatch):
 class _FakeWda:
     def __init__(self) -> None:
         self.terminated: list[str] = []
+        self.launched: list[str] = []
         self.raise_on_terminate: Exception | None = None
+        self.raise_on_launch: Exception | None = None
 
     def terminate_app(self, bundle_id: str) -> None:
         if self.raise_on_terminate is not None:
             raise self.raise_on_terminate
         self.terminated.append(bundle_id)
+
+    def launch_app(self, bundle_id: str) -> None:
+        if self.raise_on_launch is not None:
+            raise self.raise_on_launch
+        self.launched.append(bundle_id)
 
 
 def test_ios_terminate_app_falls_back_to_wda_when_no_tunneld(monkeypatch):
@@ -220,3 +227,56 @@ def test_ios_terminate_app_wda_fallback_propagates_wda_error(monkeypatch):
         raise AssertionError("expected RuntimeError")
 
     assert "回落 WDA terminate 失败" in message
+
+
+def test_ios_activate_app_success_when_app_reaches_foreground(monkeypatch):
+    """launch 后目标已在前台 → 复核通过，不抛错。"""
+    fake_wda = _FakeWda()
+    driver = IosDriver("IOS-1", object(), fake_wda)
+
+    monkeypatch.setattr(driver, "current_app", lambda: "com.guanghe.ycmathEnterpriseTest")
+    monkeypatch.setattr(ios_mod.time, "sleep", lambda *_: None)
+
+    driver.activate_app("com.guanghe.ycmathEnterpriseTest")
+
+    assert fake_wda.launched == ["com.guanghe.ycmathEnterpriseTest"]
+
+
+def test_ios_activate_app_raises_when_app_never_foreground(monkeypatch):
+    """launch 后前台始终不是目标（静默失败/被弹窗挡住）→ 超时判失败。"""
+    import itertools
+
+    fake_wda = _FakeWda()
+    driver = IosDriver("IOS-1", object(), fake_wda)
+
+    # 前台始终是 SpringBoard，配合快进时钟让轮询窗口迅速耗尽
+    monkeypatch.setattr(driver, "current_app", lambda: "com.apple.springboard")
+    monkeypatch.setattr(ios_mod.time, "sleep", lambda *_: None)
+    clock = itertools.count(0.0, 1.0)
+    monkeypatch.setattr(ios_mod.time, "monotonic", lambda: next(clock))
+
+    try:
+        driver.activate_app("com.guanghe.ycmathEnterpriseTest")
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected RuntimeError")
+
+    assert "未切到前台" in message
+    assert fake_wda.launched == ["com.guanghe.ycmathEnterpriseTest"]
+
+
+def test_ios_activate_app_treats_current_app_error_as_success(monkeypatch):
+    """current_app 复核自身异常（WDA 抖动）不应阻断 launch，按成功处理。"""
+    fake_wda = _FakeWda()
+    driver = IosDriver("IOS-1", object(), fake_wda)
+
+    def boom() -> str:
+        raise RuntimeError("WDA activeAppInfo 抖动")
+
+    monkeypatch.setattr(driver, "current_app", boom)
+    monkeypatch.setattr(ios_mod.time, "sleep", lambda *_: None)
+
+    driver.activate_app("com.guanghe.ycmathEnterpriseTest")
+
+    assert fake_wda.launched == ["com.guanghe.ycmathEnterpriseTest"]
