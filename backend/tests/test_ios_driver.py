@@ -155,3 +155,68 @@ def test_ios_open_fresh_lockdown_for_app_listing_disables_autopair(monkeypatch):
 
     assert lockdown == "fresh-lockdown"
     assert calls == [{"serial": "IOS-1", "autopair": False}]
+
+
+class _FakeWda:
+    def __init__(self) -> None:
+        self.terminated: list[str] = []
+        self.raise_on_terminate: Exception | None = None
+
+    def terminate_app(self, bundle_id: str) -> None:
+        if self.raise_on_terminate is not None:
+            raise self.raise_on_terminate
+        self.terminated.append(bundle_id)
+
+
+def test_ios_terminate_app_falls_back_to_wda_when_no_tunneld(monkeypatch):
+    """iOS 15/16 无 DVT 通道（rsd 为 None）时，应回落 WDA terminate 而非直接报错。"""
+    fake_wda = _FakeWda()
+    driver = IosDriver("IOS-1", object(), fake_wda)
+
+    monkeypatch.setattr(driver, "_try_get_tunneld_rsd", lambda: None)
+    # terminate 后目标已不在前台 → 复核通过
+    monkeypatch.setattr(driver, "current_app", lambda: "com.apple.springboard")
+    monkeypatch.setattr(ios_mod.time, "sleep", lambda *_: None)
+
+    driver.terminate_app("com.guanghe.ycmathEnterpriseTest")
+
+    assert fake_wda.terminated == ["com.guanghe.ycmathEnterpriseTest"]
+
+
+def test_ios_terminate_app_wda_fallback_raises_when_app_stays_foreground(monkeypatch):
+    """回落 WDA terminate 后目标仍在前台（iOS 17+ 静默拒绝）应判失败。"""
+    fake_wda = _FakeWda()
+    driver = IosDriver("IOS-1", object(), fake_wda)
+
+    monkeypatch.setattr(driver, "_try_get_tunneld_rsd", lambda: None)
+    monkeypatch.setattr(driver, "current_app", lambda: "com.guanghe.ycmathEnterpriseTest")
+    monkeypatch.setattr(ios_mod.time, "sleep", lambda *_: None)
+
+    try:
+        driver.terminate_app("com.guanghe.ycmathEnterpriseTest")
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected RuntimeError")
+
+    assert "仍在前台" in message
+    assert fake_wda.terminated == ["com.guanghe.ycmathEnterpriseTest"]
+
+
+def test_ios_terminate_app_wda_fallback_propagates_wda_error(monkeypatch):
+    """WDA terminate 自身抛错时，回落路径要翻成 RuntimeError 让上层判失败。"""
+    fake_wda = _FakeWda()
+    fake_wda.raise_on_terminate = RuntimeError("WDA 500")
+    driver = IosDriver("IOS-1", object(), fake_wda)
+
+    monkeypatch.setattr(driver, "_try_get_tunneld_rsd", lambda: None)
+    monkeypatch.setattr(ios_mod.time, "sleep", lambda *_: None)
+
+    try:
+        driver.terminate_app("com.guanghe.ycmathEnterpriseTest")
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected RuntimeError")
+
+    assert "回落 WDA terminate 失败" in message

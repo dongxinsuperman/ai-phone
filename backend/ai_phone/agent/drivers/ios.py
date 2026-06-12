@@ -889,13 +889,13 @@ class IosDriver(BaseDriver):
         self._wda.launch_app(package_name)
 
     def terminate_app(self, package_name: str) -> None:
-        """命令级杀进程：DVT ProcessControl（Xcode Instruments 同款通道）。
+        """命令级杀进程：优先 DVT ProcessControl，DVT 不可用时回落 WDA terminate。
 
         WDA 的 ``POST /wda/apps/terminate`` 在 iOS 17+ / 18 / 26 上对**前台 app**
         经常返回 success 但 SpringBoard 静默拒绝（API 行为，不是 bug），表现是
         close_app 日志看着成功、屏幕没变、VLM 反复重试到 case 终止。
 
-        正确做法是走 DVT 的 ``ProcessControl`` instrument 直接 kill 进程，
+        所以**首选**走 DVT 的 ``ProcessControl`` instrument 直接 kill 进程，
         等同 Xcode Instruments / iOS Simulator 杀 app 的官方通道，命令级执行，
         不依赖 SpringBoard 拒绝/同意：
 
@@ -906,21 +906,24 @@ class IosDriver(BaseDriver):
            - pid > 0：``kill(pid)`` 真杀
         4. 释放 ProcessControl / DvtProvider / RSD
 
-        前提缺失（tunneld 没起 / DDI 未挂 / 通道异常）一律 raise RuntimeError，
-        带原因和操作建议，由上层翻成「执行失败」RunLog；**不再 fallback 到 WDA
-        terminate**，避免回到不可靠路径产生静默"成功"。
+        但 iOS 15 / 16 这类**没有 RSD/DVT 通道**的低版本设备拿不到 tunneld，
+        DVT 路径根本走不通；这些设备上 WDA ``/wda/apps/terminate`` 实测可靠
+        （iPad6 / iPhone iOS 15.7 已验证）。因此 DVT 前提缺失（tunneld 没起 /
+        DDI 未挂 / 模块或通道异常）时**回落到 WDA terminate**，而不是直接判失败。
+        回落后用 ``current_app`` 复核前台是否真的切走，避免重新踩到 iOS 17+
+        "静默成功" 的老坑。
         """
         rsd = self._try_get_tunneld_rsd()
         if rsd is None:
-            raise RuntimeError(
-                f"iOS terminate_app 失败 udid={self.serial} bundle={package_name}: "
-                "tunneld 不可用（iOS 17+ 需要 DVT 通道才能命令级杀进程）；"
-                "请在另一终端跑 `sudo pymobiledevice3 remote tunneld` 并在 iPhone "
-                "上完成 Remote Pairing，必要时先在 设置 → 隐私与安全性 → "
-                "开发者模式 中打开 Developer Mode"
+            # iOS 15/16 无 RSD/DVT 通道：tunneld 必然为空，直接走 WDA 回落
+            logger.info(
+                "iOS terminate_app: tunneld 不可用，回落 WDA terminate "
+                "udid={} bundle={}（iOS 15/16 无 DVT 通道，属正常）",
+                self.serial, package_name,
             )
+            self._terminate_app_via_wda(package_name)
+            return
 
-        last_exc: Optional[BaseException] = None
         try:
             try:
                 from pymobiledevice3.services.dvt.instruments.dvt_provider import (  # noqa: PLC0415
@@ -959,25 +962,60 @@ class IosDriver(BaseDriver):
                     _maybe_sync(pc.close())
                 except Exception:  # noqa: BLE001
                     pass
-        except RuntimeError:
-            raise
         except Exception as exc:  # noqa: BLE001
-            last_exc = exc
+            # DVT 通道异常（模块缺失 / DDI 未挂 / 连接失败等）：回落 WDA terminate。
+            # 高版本设备走到这里说明 DVT 本就不通，WDA 是唯一兜底；低版本设备本就靠 WDA。
             hint = ""
             if "DDI" in str(exc) or "DeveloperDiskImage" in str(exc) or "PersonalizedImage" in str(exc):
                 hint = (
                     "（DDI 似乎没挂上：跑 `sudo pymobiledevice3 mounter "
                     "auto-mount --udid <udid>` 一次；重启手机或电脑后需要重挂）"
                 )
-            raise RuntimeError(
-                f"iOS terminate_app 失败 udid={self.serial} bundle={package_name}: "
-                f"{type(last_exc).__name__}: {last_exc}{hint}"
-            ) from last_exc
+            logger.warning(
+                "iOS terminate_app: DVT 路径失败，回落 WDA terminate "
+                "udid={} bundle={}: {}: {}{}",
+                self.serial, package_name, type(exc).__name__, exc, hint,
+            )
+            self._terminate_app_via_wda(package_name)
         finally:
             try:
                 _maybe_sync(rsd.close())
             except Exception:  # noqa: BLE001
                 pass
+
+    def _terminate_app_via_wda(self, package_name: str) -> None:
+        """回落路径：WDA ``POST /wda/apps/terminate`` + 前台复核。
+
+        iOS 15 / 16 没有 DVT 通道，这是唯一可靠的命令级关闭路径，实测可用。
+        iOS 17+ 上 WDA terminate 对前台 app 可能返回 success 但被 SpringBoard
+        静默拒绝，所以杀完用 ``current_app`` 复核：若目标 app 仍在前台 → 判失败，
+        由上层翻成「执行失败」RunLog，避免假成功让 VLM 空转。
+        """
+        try:
+            self._wda.terminate_app(package_name)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                f"iOS terminate_app 回落 WDA terminate 失败 udid={self.serial} "
+                f"bundle={package_name}: {type(exc).__name__}: {exc}"
+            ) from exc
+
+        # 给 SpringBoard 一点切换时间再复核前台，避免刚下发就读到旧前台
+        time.sleep(0.5)
+        try:
+            front = self.current_app()
+        except Exception:  # noqa: BLE001
+            # current_app 自身异常不应阻断：terminate 已下发，按成功处理
+            front = ""
+        if front == package_name:
+            raise RuntimeError(
+                f"iOS terminate_app 回落 WDA terminate 后目标仍在前台 "
+                f"udid={self.serial} bundle={package_name}：可能被 SpringBoard "
+                "静默拒绝（iOS 17+ 常见）；请起 tunneld 并挂 DDI 改走 DVT 通道"
+            )
+        logger.info(
+            "iOS terminate_app: WDA terminate 成功 udid={} bundle={}",
+            self.serial, package_name,
+        )
 
     def current_app(self) -> str:
         try:
