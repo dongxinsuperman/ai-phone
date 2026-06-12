@@ -886,48 +886,7 @@ class IosDriver(BaseDriver):
         return list(apps.keys())
 
     def activate_app(self, package_name: str) -> None:
-        """前台启动 App：WDA launch + 前台复核（与 terminate_app / Android 对称）。
-
-        WDA ``POST /wda/apps/launch`` 是「下发即返回」，不保证 app 真到前台
-        （罕见但存在：bundleId 装了没起来 / launch 静默失败）。为避免「日志成功、
-        屏幕没变、VLM 空转」的假成功，launch 后轮询 ``current_app`` 复核前台，
-        语义对齐 Android ``_wait_foreground`` + 抛错：超时仍未切到目标则 raise，
-        由上层翻成「动作判失败」RunLog。
-
-        注意：首启可能弹系统权限/引导弹窗，此时 ``current_app`` 可能短暂报
-        SpringBoard，靠轮询窗口（默认 4s）吸收瞬态；持续被弹窗挡住才判失败。
-        """
         self._wda.launch_app(package_name)
-        if not self._wait_app_foreground(package_name):
-            try:
-                front = self.current_app()
-            except Exception:  # noqa: BLE001
-                front = ""
-            raise RuntimeError(
-                f"iOS activate_app 启动后目标未切到前台 udid={self.serial} "
-                f"bundle={package_name}（当前前台={front or '未知'}）：launch 可能"
-                "静默失败或被系统弹窗拦截；请确认 bundleId 正确且 app 已安装"
-            )
-        logger.info(
-            "iOS activate_app: 已确认前台 udid={} bundle={}",
-            self.serial, package_name,
-        )
-
-    def _wait_app_foreground(self, package_name: str, timeout: float = 4.0) -> bool:
-        """轮询前台 bundleId，直到等于 ``package_name`` 或超时。
-
-        ``current_app`` 自身异常（WDA 抖动）按「无法复核」处理——不阻断 launch，
-        直接当成功返回 True，避免把可恢复的读失败误判成启动失败。
-        """
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            try:
-                if self.current_app() == package_name:
-                    return True
-            except Exception:  # noqa: BLE001
-                return True
-            time.sleep(0.3)
-        return False
 
     def terminate_app(self, package_name: str) -> None:
         """命令级杀进程：优先 DVT ProcessControl，DVT 不可用时回落 WDA terminate。
