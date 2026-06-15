@@ -1,3 +1,7 @@
+<p align="right">
+  简体中文 | <a href="./README.en.md">English</a>
+</p>
+
 # ai-phone
 
 [![CI](https://github.com/dongxinsuperman/ai-phone/actions/workflows/ci.yml/badge.svg)](https://github.com/dongxinsuperman/ai-phone/actions/workflows/ci.yml)
