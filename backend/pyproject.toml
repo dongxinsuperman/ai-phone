@@ -8,7 +8,7 @@ version = "0.0.1"
 description = "Lightweight VLM-driven mobile automation platform (Server + Agent)"
 requires-python = ">=3.11,<3.13"
 authors = [{ name = "ai-phone" }]
-license = "GPL-3.0-only"
+license = "MIT"
 dependencies = [
     # Server (FastAPI 生态)
     "fastapi>=0.110,<0.116",

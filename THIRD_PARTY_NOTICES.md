@@ -5,7 +5,7 @@ dependencies used by ai-phone. Each component remains under its own license.
 When updating a vendored component or binary, update this file and keep the
 upstream license text where required.
 
-The ai-phone project code is licensed under GNU GPLv3. Bundled and optional
+The ai-phone project code is licensed under the MIT License. Bundled and optional
 third-party components remain under their respective upstream licenses.
 
 ## Bundled Components
