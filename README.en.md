@@ -56,7 +56,7 @@ In practice, this means an upstream system can generate a test case like "Open S
 ```bash
 git clone https://github.com/dongxinsuperman/ai-phone.git
 cd ai-phone/backend
-cp .env.example .env
+cp .env.example .env  # Fill DB, agent token, PHONE_VLM/AUX, and local Agent/WDA values.
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -72,6 +72,22 @@ cd ../web
 npm install
 npm run dev
 ```
+
+Config file roles:
+
+```text
+backend/.env.defaults      runtime defaults committed with the project
+backend/.env.example       fill-in guide copied to .env
+backend/.env.full.example  full advanced reference; not loaded at runtime
+backend/.env               real deployment config; not committed
+backend/.env.local         local machine override; not committed
+```
+
+Upgrade note: `backend/.env` is ignored by git, so `git pull` will not update
+your existing local file. After pulling the ENV migration, follow
+[ENV Migration Guide](./docs/env-migration-guide.md), add `AI_PHONE_PHONE_VLM_*`
+and `AI_PHONE_AUX_*`, and remove old `AI_PHONE_VLM_* / AI_PHONE_ASSISTANT_*`
+connection entries from your local `.env`.
 
 Open <http://127.0.0.1:5180>, choose a device, enter a natural-language goal, and watch the run.
 

@@ -11,11 +11,10 @@
 2. 工厂可以在"切错家但缺 import"时抛出友好提示，避免 import-time 直接崩。
 3. 三家实现互相不 import，工厂里"按需 import"，没 anthropic 包也不影响豆包跑。
 
-切换示例：
-    AI_PHONE_VLM_BACKEND=claude_cu       # 主 VLM 走 Claude Computer Use
-    AI_PHONE_ASSISTANT_BACKEND=doubao_chat  # 辅助系统继续走豆包（省 token）
+外部配置入口是 ``AI_PHONE_PHONE_VLM_*`` / ``AI_PHONE_AUX_*`` 两块；这里的
+``vlm_backend`` / ``assistant_backend`` 是内部派生字段，不再建议直接手填 ENV。
 
-支持任意组合，但首批我们先保证：
+支持组合：
     - 全 doubao（默认，存量行为）
     - 全 claude
     - 全 openai
@@ -98,7 +97,8 @@ def create_main_vlm(
 
     raise RuntimeError(
         f"未知的 vlm_backend={backend!r}，"
-        f"支持的取值：{SUPPORTED_VLM_BACKENDS}。请检查环境变量 AI_PHONE_VLM_BACKEND"
+        f"支持的取值：{SUPPORTED_VLM_BACKENDS}。请检查 AI_PHONE_PHONE_VLM_PROVIDER "
+        "或配置派生逻辑。"
     )
 
 
@@ -144,5 +144,6 @@ def create_assistant(
 
     raise RuntimeError(
         f"未知的 assistant_backend={backend!r}，"
-        f"支持的取值：{SUPPORTED_ASSISTANT_BACKENDS}。请检查环境变量 AI_PHONE_ASSISTANT_BACKEND"
+        f"支持的取值：{SUPPORTED_ASSISTANT_BACKENDS}。请检查 AI_PHONE_AUX_PROVIDER "
+        "或配置派生逻辑。"
     )

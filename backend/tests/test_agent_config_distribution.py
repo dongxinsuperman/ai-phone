@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from ai_phone.config import (
@@ -22,11 +24,48 @@ from ai_phone.config import (
 
 
 @pytest.fixture(autouse=True)
+def _isolate_aiphone_env(monkeypatch):
+    """清掉 os.environ 里的 ``AI_PHONE_`` 前缀变量，保证本文件用例不受运行顺序影响。
+
+    背景：其他测试 ``import ai_phone.agent.main`` 时其顶部 ``load_dotenv()`` 会把
+    ``.env.defaults`` / ``.env`` / ``.env.local`` 里的 ``AI_PHONE_*`` **永久**注入
+    ``os.environ``。本文件多处用 ``Settings(_env_file=None, ...)`` 合成“缺配置 /
+    本机残留”场景，但 pydantic 仍会读 os.environ，导致合成 Settings 意外带上
+    phone_vlm 配置。清掉前缀变量即可保证断言只受本用例输入影响。"""
+    import os
+
+    for _key in list(os.environ):
+        if _key.startswith("AI_PHONE_"):
+            monkeypatch.delenv(_key, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _reset_override():
     """每个用例前后清掉运行时覆盖，避免串扰。"""
     clear_runtime_override()
     yield
     clear_runtime_override()
+
+
+def _new_doubao_settings(**overrides) -> Settings:
+    values = {
+        "phone_vlm_provider": "doubao",
+        "phone_vlm_base_url": "https://ark.cn-beijing.volces.com/api/v3",
+        "phone_vlm_api_key": "server-phone-key",
+        "phone_vlm_model": "doubao-seed-1-6-vision-250815",
+        "aux_provider": "doubao",
+        "aux_base_url": "https://ark.cn-beijing.volces.com/api/v3",
+        "aux_api_key": "server-aux-key",
+        "aux_model": "doubao-seed-1-6-250615",
+    }
+    values.update(overrides)
+    return Settings(_env_file=None, **values)
+
+
+def _derived_doubao_settings(**overrides) -> Settings:
+    import ai_phone.config as cfg
+
+    return cfg._derive_new_model_config(_new_doubao_settings(**overrides))
 
 
 def test_downlink_excludes_local_and_server_only():
@@ -50,9 +89,97 @@ def test_sensitive_fields_never_distributed():
     ):
         assert sensitive not in dl, f"{sensitive} 不应出现在下发集"
     # 下发包里也不含这些
-    snap = build_downlink_config()
+    snap = build_downlink_config(settings=_derived_doubao_settings())
     for sensitive in ("db_url", "agent_token", "kafka_sasl_password"):
         assert sensitive not in snap
+
+
+def test_settings_loads_env_defaults_before_env_and_env_local(monkeypatch, tmp_path):
+    """配置文件优先级：.env.defaults < .env < .env.local < 系统环境变量。"""
+    (tmp_path / ".env.defaults").write_text(
+        "\n".join([
+            "AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS=8000",
+            "AI_PHONE_RUN_MAX_STEPS=77",
+            "AI_PHONE_AUDIT_ALLOW_LIMIT=11",
+        ]),
+        encoding="utf-8",
+    )
+    (tmp_path / ".env").write_text(
+        "\n".join([
+            "AI_PHONE_RUN_MAX_STEPS=88",
+            "AI_PHONE_AUDIT_ALLOW_LIMIT=22",
+        ]),
+        encoding="utf-8",
+    )
+    (tmp_path / ".env.local").write_text(
+        "AI_PHONE_RUN_MAX_STEPS=99\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AI_PHONE_AUDIT_ALLOW_LIMIT", "33")
+
+    s = Settings()
+
+    assert s.function_map_context_max_chars == 8000
+    assert s.run_max_steps == 99
+    assert s.audit_allow_limit == 33
+
+
+def test_env_defaults_contains_only_public_runtime_defaults():
+    """进 git 的 .env.defaults 只能放公开默认策略，不能放密钥/真实部署值。"""
+    path = Path(__file__).resolve().parents[1] / ".env.defaults"
+    active: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        name, value = stripped.split("=", 1)
+        active[name.strip()] = value.strip()
+
+    forbidden = {
+        "AI_PHONE_DB_URL",
+        "AI_PHONE_AGENT_TOKEN",
+        "AI_PHONE_SUBMISSION_INTERNAL_TOKEN",
+        "AI_PHONE_PHONE_VLM_PROVIDER",
+        "AI_PHONE_PHONE_VLM_MODEL",
+        "AI_PHONE_PHONE_VLM_API_KEY",
+        "AI_PHONE_PHONE_VLM_BASE_URL",
+        "AI_PHONE_AUX_PROVIDER",
+        "AI_PHONE_AUX_MODEL",
+        "AI_PHONE_AUX_API_KEY",
+        "AI_PHONE_AUX_BASE_URL",
+        "AI_PHONE_WDA_PROJECT_DIR",
+        "AI_PHONE_WDA_BUNDLE_ID",
+        "AI_PHONE_WDA_TEAM_ID",
+        "AI_PHONE_KAFKA_BROKERS",
+        "AI_PHONE_KAFKA_SASL_USERNAME",
+        "AI_PHONE_KAFKA_SASL_PASSWORD",
+        "AI_PHONE_SERVER_WS_URL",
+        "AI_PHONE_SERVER_HTTP_BASE",
+        "AI_PHONE_MIDSCENE_BRIDGE_DIR",
+    }
+
+    assert forbidden.isdisjoint(active)
+    assert active["AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS"] == "8000"
+    assert active["AI_PHONE_IOS_WDA_PRELOAD"] == "true"
+    assert active["AI_PHONE_RUN_RETRY_ENABLED"] == "true"
+    assert active["AI_PHONE_SCROLL_STUCK_THRESHOLD"] == "8"
+    assert active["AI_PHONE_VLM_TRAJECTORY_CACHE_REPLAY_ENABLED"] == "true"
+    assert active["AI_PHONE_TRAJECTORY_CACHE_ENABLED"] == "true"
+    assert active["AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_ENABLED"] == "true"
+    assert active["AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_ENABLED"] == "true"
+    assert active["AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_ACTION_ENABLED"] == "true"
+    assert active["AI_PHONE_STRUCT_STRICTNESS_HARD_SCORE"] == "10"
+    assert active["AI_PHONE_STRUCT_STRICTNESS_AUDIT_SCORE"] == "10"
+
+
+def test_code_defaults_match_project_runtime_policy():
+    """代码兜底也要跟 .env.defaults 的项目默认策略一致。"""
+    s = Settings(_env_file=None)
+
+    assert s.function_map_context_max_chars == 8000
+    assert s.struct_strictness_hard_score == 10
+    assert s.struct_strictness_audit_score == 10
 
 
 def test_execution_fields_are_distributed():
@@ -69,46 +196,434 @@ def test_execution_fields_are_distributed():
         assert exe in dl, f"{exe} 应在下发集"
 
 
-def test_downlink_only_main_vlm_creds_skip_empty():
-    """主 VLM 三件套空串不下发（本机兜底）；assistant/旁路等空串照常下发（Server 集中控制）。"""
-    s = Settings(
-        _env_file=None,
-        vlm_api_key="", vlm_api_url="", vlm_model="srv-model",
-        assistant_api_key="",  # 辅助空 = "留空回退 vlm_api_key" 语义，应下发让 Agent 覆盖
-    )
-    snap = build_downlink_config(settings=s)
-    assert "vlm_api_key" not in snap  # 主 key 空不下发（兜底）
-    assert "vlm_api_url" not in snap
-    assert snap.get("vlm_model") == "srv-model"  # 有值正常下发
-    assert snap.get("assistant_api_key") == ""  # 辅助空值照常下发（集中控制，非兜底字段）
+def test_new_model_env_fields_are_distributed_with_explicit_aux_config():
+    """新版模型 ENV 明确属于下发集；AUX 必须显式下发，不能空串跟随主模型。"""
+    dl = downlink_field_names()
+    new_model_fields = {
+        "phone_vlm_provider",
+        "phone_vlm_base_url",
+        "phone_vlm_api_key",
+        "phone_vlm_model",
+        "aux_provider",
+        "aux_base_url",
+        "aux_api_key",
+        "aux_model",
+    }
+
+    assert new_model_fields <= dl
+    assert new_model_fields.isdisjoint(AGENT_LOCAL_FIELDS)
+    assert new_model_fields.isdisjoint(SERVER_ONLY_FIELDS)
+
+    snap = build_downlink_config(settings=_derived_doubao_settings())
+
+    for name in new_model_fields:
+        assert name in snap, f"{name} 应显式出现在下发包里"
+    assert snap["phone_vlm_provider"] == "doubao"
+    assert snap["phone_vlm_api_key"] == "server-phone-key"
+    assert snap["aux_provider"] == "doubao"
+    assert snap["aux_base_url"] == "https://ark.cn-beijing.volces.com/api/v3"
+    assert snap["aux_api_key"] == "server-aux-key"
+    assert snap["aux_model"] == "doubao-seed-1-6-250615"
 
 
-def test_main_vlm_empty_falls_back_but_assistant_empty_overrides(monkeypatch):
-    """主 VLM 空串保留本机兜底；assistant 空串覆盖本机（清空回退主，不保留本机旧 key）。
+def test_downlink_rejects_missing_phone_vlm_config():
+    """Server 没配新版 PHONE_VLM 时，不再生成旧式 legacy 下发包。"""
+    with pytest.raises(RuntimeError, match="AI_PHONE_PHONE_VLM_API_KEY"):
+        build_downlink_config(settings=_new_doubao_settings(phone_vlm_api_key=""))
 
-    M5 字段级策略：主凭证缺失靠本机兜底，但 assistant/旁路的"留空回退"语义属 Server
-    集中控制——Server 下发空即"统一回退主 key"，不能被 Agent 本机旧 key 截胡。
-    """
+
+def test_downlink_rejects_missing_aux_config():
+    """Server 没配新版 AUX 时，不允许辅助模型偷偷跟随 PHONE_VLM。"""
+    with pytest.raises(RuntimeError, match="AI_PHONE_AUX_API_KEY"):
+        build_downlink_config(settings=_new_doubao_settings(aux_api_key=""))
+
+
+def test_runtime_override_new_phone_config_overrides_local_legacy_residue(monkeypatch):
+    """Server 新块齐全时，Agent 本机旧式 VLM_* 残留不会参与兜底。"""
     import ai_phone.config as cfg
 
     local = Settings(
-        _env_file=None, vlm_api_key="local-vlm", assistant_api_key="local-assist"
+        _env_file=None,
+        vlm_backend="claude_cu",
+        vlm_api_url="local-legacy-url",
+        vlm_api_key="local-legacy-key",
+        vlm_model="local-legacy-model",
+        assistant_api_key="local-assist",
     )
     monkeypatch.setattr(cfg, "_base_settings", lambda: local)
 
     eff = cfg.set_runtime_override({
-        "vlm_api_key": "",          # 主 key 空 → 保留本机 local-vlm（兜底）
-        "assistant_api_key": "",    # 辅助空 → 覆盖本机成空（回退主，不留 local-assist）
+        "phone_vlm_provider": "doubao",
+        "phone_vlm_base_url": "https://ark.cn-beijing.volces.com/api/v3",
+        "phone_vlm_api_key": "server-phone-key",
+        "phone_vlm_model": "server-phone-model",
+        "aux_provider": "doubao",
+        "aux_base_url": "https://ark.cn-beijing.volces.com/api/v3",
+        "aux_api_key": "server-aux-key",
+        "aux_model": "server-aux-model",
+        "vlm_api_key": "",
+        "assistant_api_key": "",
         "run_max_steps": 99,
     })
-    assert eff.vlm_api_key == "local-vlm"  # 主 key 兜底保留
-    assert eff.assistant_api_key == ""  # 辅助被 Server 空串覆盖（集中控制、清空回退）
+    assert eff.vlm_backend == "doubao_responses"
+    assert eff.vlm_api_key == "server-phone-key"
+    assert eff.vlm_model == "server-phone-model"
+    assert eff.assistant_api_key == "server-aux-key"
+    assert eff.assistant_model == "server-aux-model"
     assert eff.run_max_steps == 99
 
 
+def test_new_model_config_derives_claude_chain():
+    """新版 PHONE_VLM/AUX 填 Claude 时，只改配置映射，不改 Claude 执行链路。"""
+    import ai_phone.config as cfg
+
+    s = Settings(
+        _env_file=None,
+        phone_vlm_provider="claude",
+        phone_vlm_base_url="https://api.anthropic.com/v1/messages",
+        phone_vlm_api_key="sk-ant-phone",
+        phone_vlm_model="claude-sonnet-4-5",
+        aux_provider="claude",
+        aux_base_url="https://api.anthropic.com/v1/messages",
+        aux_api_key="sk-ant-aux",
+        aux_model="claude-haiku",
+    )
+    eff = cfg._derive_new_model_config(s)
+
+    assert eff.vlm_backend == "claude_cu"
+    assert eff.vlm_api_url == "https://api.anthropic.com/v1/messages"
+    assert eff.vlm_api_key == "sk-ant-phone"
+    assert eff.vlm_model == "claude-sonnet-4-5"
+    assert eff.trajectory_cache_recovery_vlm_backend == "claude_messages"
+    assert eff.trajectory_cache_recovery_vlm_api_url == "https://api.anthropic.com/v1/messages"
+    assert eff.trajectory_cache_recovery_vlm_api_key == "sk-ant-phone"
+    assert eff.trajectory_cache_recovery_vlm_model == "claude-sonnet-4-5"
+    assert eff.trajectory_cache_v3_coord_use_recovery_vlm_config is True
+    assert eff.trajectory_cache_v3_rescue_use_recovery_vlm_config is True
+    assert eff.trajectory_cache_ephemeral_gate_use_recovery_vlm_config is True
+    assert eff.assistant_backend == "claude"
+    assert eff.assistant_api_url == "https://api.anthropic.com/v1/messages"
+    assert eff.assistant_api_key == "sk-ant-aux"
+    assert eff.assistant_model == "claude-haiku"
+    assert eff.trajectory_cache_ephemeral_classifier_backend == "claude_messages"
+
+
+@pytest.mark.parametrize(
+    ("raw_base", "expected_url"),
+    [
+        ("https://api.anthropic.com", "https://api.anthropic.com/v1/messages"),
+        ("https://api.anthropic.com/v1", "https://api.anthropic.com/v1/messages"),
+        ("https://api.anthropic.com/v1/messages", "https://api.anthropic.com/v1/messages"),
+    ],
+)
+def test_new_model_config_normalizes_claude_phone_base_url(raw_base, expected_url):
+    import ai_phone.config as cfg
+
+    eff = cfg._derive_new_model_config(Settings(
+        _env_file=None,
+        phone_vlm_provider="anthropic",
+        phone_vlm_base_url=raw_base,
+        phone_vlm_api_key="sk-ant-phone",
+        phone_vlm_model="claude-sonnet-4-5",
+        aux_provider="claude",
+        aux_base_url=raw_base,
+        aux_api_key="sk-ant-aux",
+        aux_model="claude-haiku",
+    ))
+
+    assert eff.vlm_backend == "claude_cu"
+    assert eff.vlm_api_url == expected_url
+    assert eff.vlm_chat_api_url == expected_url
+    assert eff.trajectory_cache_recovery_vlm_backend == "claude_messages"
+    assert eff.trajectory_cache_recovery_vlm_api_url == expected_url
+    assert eff.assistant_backend == "claude"
+    assert eff.assistant_api_url == expected_url
+    assert eff.assistant_api_key == "sk-ant-aux"
+    assert eff.assistant_model == "claude-haiku"
+
+
+def test_runtime_override_can_switch_local_doubao_to_server_claude(monkeypatch):
+    """Server 下发新版 Claude 块时，Agent 本机残留豆包块不能把海外链路派生回豆包。"""
+    import ai_phone.config as cfg
+
+    local = cfg._derive_new_model_config(Settings(
+        _env_file=None,
+        phone_vlm_provider="doubao",
+        phone_vlm_base_url="https://ark.cn-beijing.volces.com/api/v3",
+        phone_vlm_api_key="local-doubao",
+        phone_vlm_model="doubao-seed-1-6-vision-250815",
+        aux_provider="doubao",
+        aux_base_url="https://ark.cn-beijing.volces.com/api/v3",
+        aux_api_key="local-doubao",
+        aux_model="doubao-seed-1-6-250615",
+    ))
+    monkeypatch.setattr(cfg, "_base_settings", lambda: local)
+
+    eff = cfg.set_runtime_override({
+        "phone_vlm_provider": "claude",
+        "phone_vlm_base_url": "https://api.anthropic.com",
+        "phone_vlm_api_key": "server-claude",
+        "phone_vlm_model": "claude-sonnet-4-5",
+        "aux_provider": "claude",
+        "aux_base_url": "https://api.anthropic.com/v1/messages",
+        "aux_api_key": "server-claude-aux",
+        "aux_model": "claude-haiku",
+    })
+
+    assert eff.vlm_backend == "claude_cu"
+    assert eff.vlm_api_url == "https://api.anthropic.com/v1/messages"
+    assert eff.vlm_api_key == "server-claude"
+    assert eff.assistant_backend == "claude"
+    assert eff.assistant_api_key == "server-claude-aux"
+
+
+def test_new_model_config_derives_openai_gpt_chain():
+    """新版 PHONE_VLM/AUX 填 OpenAI 时，主链路派到 gpt_cu，单次手机层派到 openai_responses。"""
+    import ai_phone.config as cfg
+
+    s = Settings(
+        _env_file=None,
+        phone_vlm_provider="gpt",
+        phone_vlm_base_url="https://api.openai.com/v1",
+        phone_vlm_api_key="sk-openai-phone",
+        phone_vlm_model="computer-use-preview",
+        aux_provider="openai",
+        aux_base_url="https://api.openai.com/v1",
+        aux_api_key="sk-openai-aux",
+        aux_model="gpt-4o-mini",
+    )
+    eff = cfg._derive_new_model_config(s)
+
+    assert eff.vlm_backend == "gpt_cu"
+    assert eff.vlm_api_url == "https://api.openai.com/v1/responses"
+    assert eff.vlm_chat_api_url == "https://api.openai.com/v1/chat/completions"
+    assert eff.vlm_api_key == "sk-openai-phone"
+    assert eff.vlm_model == "computer-use-preview"
+    assert eff.trajectory_cache_recovery_vlm_backend == "openai_responses"
+    assert eff.trajectory_cache_recovery_vlm_api_url == "https://api.openai.com/v1/responses"
+    assert eff.trajectory_cache_recovery_vlm_api_key == "sk-openai-phone"
+    assert eff.trajectory_cache_recovery_vlm_model == "computer-use-preview"
+    assert eff.assistant_backend == "openai"
+    assert eff.assistant_api_url == "https://api.openai.com/v1/chat/completions"
+    assert eff.assistant_api_key == "sk-openai-aux"
+    assert eff.assistant_model == "gpt-4o-mini"
+    assert eff.trajectory_cache_ephemeral_classifier_backend == "openai_compatible"
+
+
+@pytest.mark.parametrize(
+    ("raw_base", "expected_responses", "expected_chat"),
+    [
+        (
+            "https://api.openai.com/v1",
+            "https://api.openai.com/v1/responses",
+            "https://api.openai.com/v1/chat/completions",
+        ),
+        (
+            "https://api.openai.com/v1/responses",
+            "https://api.openai.com/v1/responses",
+            "https://api.openai.com/v1/chat/completions",
+        ),
+        (
+            "https://api.openai.com/v1/chat/completions",
+            "https://api.openai.com/v1/responses",
+            "https://api.openai.com/v1/chat/completions",
+        ),
+    ],
+)
+def test_new_model_config_normalizes_openai_phone_base_url(raw_base, expected_responses, expected_chat):
+    import ai_phone.config as cfg
+
+    eff = cfg._derive_new_model_config(Settings(
+        _env_file=None,
+        phone_vlm_provider="openai",
+        phone_vlm_base_url=raw_base,
+        phone_vlm_api_key="sk-openai-phone",
+        phone_vlm_model="computer-use-preview",
+        aux_provider="openai",
+        aux_base_url=raw_base,
+        aux_api_key="sk-openai-aux",
+        aux_model="gpt-4o-mini",
+    ))
+
+    assert eff.vlm_backend == "gpt_cu"
+    assert eff.vlm_api_url == expected_responses
+    assert eff.vlm_chat_api_url == expected_chat
+    assert eff.trajectory_cache_recovery_vlm_backend == "openai_responses"
+    assert eff.trajectory_cache_recovery_vlm_api_url == expected_responses
+    assert eff.assistant_backend == "openai"
+    assert eff.assistant_api_url == expected_chat
+    assert eff.assistant_api_key == "sk-openai-aux"
+    assert eff.assistant_model == "gpt-4o-mini"
+
+
+def test_runtime_override_can_switch_local_claude_to_server_openai(monkeypatch):
+    """Server 改成 GPT 新块时，Agent 本机残留 Claude 块不能把链路派回 Claude。"""
+    import ai_phone.config as cfg
+
+    local = cfg._derive_new_model_config(Settings(
+        _env_file=None,
+        phone_vlm_provider="claude",
+        phone_vlm_base_url="https://api.anthropic.com/v1/messages",
+        phone_vlm_api_key="local-claude",
+        phone_vlm_model="claude-sonnet-4-5",
+        aux_provider="claude",
+        aux_base_url="https://api.anthropic.com/v1/messages",
+        aux_api_key="local-claude",
+        aux_model="claude-haiku",
+    ))
+    monkeypatch.setattr(cfg, "_base_settings", lambda: local)
+
+    eff = cfg.set_runtime_override({
+        "phone_vlm_provider": "openai",
+        "phone_vlm_base_url": "https://api.openai.com/v1/responses",
+        "phone_vlm_api_key": "server-openai",
+        "phone_vlm_model": "computer-use-preview",
+        "aux_provider": "openai",
+        "aux_base_url": "https://api.openai.com/v1",
+        "aux_api_key": "server-openai-aux",
+        "aux_model": "gpt-4o-mini",
+    })
+
+    assert eff.vlm_backend == "gpt_cu"
+    assert eff.vlm_api_url == "https://api.openai.com/v1/responses"
+    assert eff.trajectory_cache_recovery_vlm_backend == "openai_responses"
+    assert eff.assistant_backend == "openai"
+    assert eff.assistant_api_key == "server-openai-aux"
+
+
+def test_runtime_override_rejects_empty_aux_instead_of_following_phone(monkeypatch):
+    """Server AUX 留空时直接拒绝，不能跟随 PHONE 或被 Agent 本机残留截胡。"""
+    import ai_phone.config as cfg
+
+    local = cfg._derive_new_model_config(Settings(
+        _env_file=None,
+        phone_vlm_provider="doubao",
+        phone_vlm_base_url="https://ark.cn-beijing.volces.com/api/v3",
+        phone_vlm_api_key="local-doubao-phone",
+        phone_vlm_model="doubao-vision",
+        aux_provider="doubao",
+        aux_base_url="https://ark.cn-beijing.volces.com/api/v3",
+        aux_api_key="local-doubao-aux",
+        aux_model="doubao-aux",
+    ))
+    monkeypatch.setattr(cfg, "_base_settings", lambda: local)
+
+    snap = {
+        "phone_vlm_provider": "claude",
+        "phone_vlm_base_url": "https://api.anthropic.com",
+        "phone_vlm_api_key": "server-claude-phone",
+        "phone_vlm_model": "claude-sonnet-4-5",
+        "aux_provider": "",
+        "aux_base_url": "",
+        "aux_api_key": "",
+        "aux_model": "",
+    }
+
+    with pytest.raises(RuntimeError, match="AI_PHONE_AUX_PROVIDER"):
+        cfg.set_runtime_override(snap)
+
+    assert cfg.has_runtime_override() is False
+
+
+def test_runtime_override_rejects_empty_phone_block_instead_of_using_local(monkeypatch):
+    """Server 下发缺 PHONE_VLM 时，即使 Agent 本机有新块残留也不能兜底。"""
+    import ai_phone.config as cfg
+
+    local = cfg._derive_new_model_config(Settings(
+        _env_file=None,
+        phone_vlm_provider="doubao",
+        phone_vlm_base_url="https://ark.cn-beijing.volces.com/api/v3",
+        phone_vlm_api_key="local-doubao-phone",
+        phone_vlm_model="doubao-vision",
+        aux_provider="doubao",
+        aux_base_url="https://ark.cn-beijing.volces.com/api/v3",
+        aux_api_key="local-doubao-aux",
+        aux_model="doubao-aux",
+    ))
+    monkeypatch.setattr(cfg, "_base_settings", lambda: local)
+
+    with pytest.raises(RuntimeError, match="AI_PHONE_PHONE_VLM_PROVIDER"):
+        cfg.set_runtime_override({
+            "vlm_backend": "claude_cu",
+            "vlm_api_url": "https://api.anthropic.com/v1/messages",
+            "vlm_api_key": "server-legacy-claude",
+            "vlm_model": "claude-sonnet-4-5",
+            "phone_vlm_provider": "",
+            "phone_vlm_base_url": "",
+            "phone_vlm_api_key": "",
+            "phone_vlm_model": "",
+        })
+
+    assert cfg.has_runtime_override() is False
+
+
+def test_incomplete_new_model_config_rejects_legacy_fallback():
+    """PHONE_VLM 不齐时直接报错，不再沿用旧式海外 legacy 连接字段。"""
+    import ai_phone.config as cfg
+
+    s = Settings(
+        _env_file=None,
+        phone_vlm_provider="claude",
+        phone_vlm_base_url="https://api.anthropic.com/v1/messages",
+        phone_vlm_api_key="",
+        phone_vlm_model="claude-sonnet-4-5",
+        vlm_backend="claude_cu",
+        vlm_api_url="legacy-url",
+        vlm_api_key="legacy-key",
+        vlm_model="legacy-model",
+        assistant_backend="doubao_chat",
+        assistant_api_url="legacy-assistant-url",
+    )
+    with pytest.raises(RuntimeError, match="AI_PHONE_PHONE_VLM_API_KEY"):
+        cfg._derive_new_model_config(s)
+
+
+def test_new_model_config_rejects_missing_provider():
+    import ai_phone.config as cfg
+
+    with pytest.raises(RuntimeError, match="AI_PHONE_PHONE_VLM_PROVIDER"):
+        cfg._derive_new_model_config(Settings(
+            _env_file=None,
+            phone_vlm_provider="",
+            phone_vlm_base_url="https://ark.cn-beijing.volces.com/api/v3",
+            phone_vlm_api_key="key",
+            phone_vlm_model="model",
+        ))
+
+
+def test_new_model_config_rejects_missing_aux_config():
+    import ai_phone.config as cfg
+
+    with pytest.raises(RuntimeError, match="AI_PHONE_AUX_PROVIDER"):
+        cfg._derive_new_model_config(Settings(
+            _env_file=None,
+            phone_vlm_provider="doubao",
+            phone_vlm_base_url="https://ark.cn-beijing.volces.com/api/v3",
+            phone_vlm_api_key="key",
+            phone_vlm_model="model",
+        ))
+
+
+def test_new_model_config_rejects_unknown_provider():
+    import ai_phone.config as cfg
+
+    with pytest.raises(RuntimeError, match="AI_PHONE_PHONE_VLM_PROVIDER"):
+        cfg._derive_new_model_config(Settings(
+            _env_file=None,
+            phone_vlm_provider="unknown-vendor",
+            phone_vlm_base_url="https://example.test",
+            phone_vlm_api_key="key",
+            phone_vlm_model="model",
+            aux_provider="doubao",
+            aux_base_url="https://ark.cn-beijing.volces.com/api/v3",
+            aux_api_key="aux-key",
+            aux_model="aux-model",
+        ))
+
+
 def test_apply_override_takes_effect_and_protects_local_fields():
-    base_steps = get_settings().run_max_steps
-    snap = build_downlink_config()
+    base_steps = 100
+    snap = build_downlink_config(settings=_derived_doubao_settings(run_max_steps=base_steps))
     # 调一个执行字段 + 故意混入本机/敏感字段，验证只覆盖下发集
     snap = dict(snap)
     snap["run_max_steps"] = base_steps + 7
@@ -124,8 +639,12 @@ def test_apply_override_takes_effect_and_protects_local_fields():
     assert "HACKED" not in eff.db_url
 
 
-def test_clear_override_reverts_to_local():
-    snap = dict(build_downlink_config())
+def test_clear_override_reverts_to_local(monkeypatch):
+    import ai_phone.config as cfg
+
+    local = _derived_doubao_settings(run_max_steps=100)
+    monkeypatch.setattr(cfg, "_base_settings", lambda: local)
+    snap = dict(build_downlink_config(settings=_derived_doubao_settings(run_max_steps=100)))
     snap["run_max_steps"] = 3
     set_runtime_override(snap)
     assert get_settings().run_max_steps == 3
@@ -155,7 +674,7 @@ def test_vlm_loop_thresholds_refresh_on_override():
         vl._refresh_run_tuning_from_settings()
         base_steps = vl.SAFETY_MAX_STEPS
 
-        snap = dict(build_downlink_config())
+        snap = dict(build_downlink_config(settings=_derived_doubao_settings(run_max_steps=base_steps)))
         snap["run_max_steps"] = base_steps + 5
         snap["click_stuck_threshold"] = 9
         set_runtime_override(snap)
@@ -172,10 +691,17 @@ def test_vlm_loop_thresholds_refresh_on_override():
 
 
 @pytest.mark.asyncio
-async def test_agent_config_request_triggers_resend():
+async def test_agent_config_request_triggers_resend(monkeypatch):
     """M5 P1：Agent 发 MSG_AGENT_CONFIG_REQUEST（下发漏达补偿）→ Server 补发 MSG_AGENT_CONFIG。"""
     from ai_phone.server.ws.agent_ws import _dispatch
     from ai_phone.shared import protocol as P
+    import ai_phone.config as cfg
+
+    monkeypatch.setattr(
+        cfg,
+        "build_downlink_config",
+        lambda: {"phone_vlm_provider": "doubao", "run_max_steps": 100},
+    )
 
     sent: list = []
 

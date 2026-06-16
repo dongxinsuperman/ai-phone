@@ -154,14 +154,18 @@ AI_PHONE_AGENT_TOKEN=dev
 AI_PHONE_SERVER_WS_URL=ws://127.0.0.1:8000/ws/agent
 AI_PHONE_SERVER_HTTP_BASE=http://127.0.0.1:8000
 
-AI_PHONE_VLM_BACKEND=doubao_responses
-AI_PHONE_VLM_API_URL=https://ark.cn-beijing.volces.com/api/v3/responses
-AI_PHONE_VLM_CHAT_API_URL=https://ark.cn-beijing.volces.com/api/v3/chat/completions
-AI_PHONE_VLM_API_KEY=<你的主VLM Key>
-AI_PHONE_VLM_MODEL=doubao-seed-1-6-vision-250815
+AI_PHONE_PHONE_VLM_PROVIDER=doubao
+AI_PHONE_PHONE_VLM_MODEL=doubao-seed-1-6-vision-250815
+AI_PHONE_PHONE_VLM_API_KEY=<你的主VLM Key>
+AI_PHONE_PHONE_VLM_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+
+AI_PHONE_AUX_PROVIDER=doubao
+AI_PHONE_AUX_MODEL=doubao-seed-1-6-250615
+AI_PHONE_AUX_API_KEY=<你的辅助模型 Key>
+AI_PHONE_AUX_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 ```
 
-如果换 Claude / GPT，看 `.env.example` 第 5 组注释同步改 `AI_PHONE_VLM_BACKEND`、`AI_PHONE_VLM_API_URL`、`AI_PHONE_VLM_API_KEY`、`AI_PHONE_VLM_MODEL`。不填 VLM key 时，设备和工作台可以起来，但自然语言任务会 401。
+如果换 Claude / GPT，看 `.env.example` 的“模型配置”段，同步改 `AI_PHONE_PHONE_VLM_*` 和 `AI_PHONE_AUX_*` 两块。不填模型 key 时，设备和工作台可以起来，但自然语言任务会 401。
 
 如果前端要给局域网同事访问，把 Mac 的局域网地址也加入 CORS，例如：
 
@@ -486,7 +490,7 @@ hdc list targets -v
 | 现象 | 优先检查 |
 |---|---|
 | `AI_PHONE_DB_URL` 连接失败 | Postgres 是否启动；本机用户是否有 `auto_app` 数据库；远程库网络是否可达 |
-| VLM 任务 401 | `AI_PHONE_VLM_API_KEY` 是否填入；协议、URL、模型是否匹配 |
+| VLM 任务 401 | `AI_PHONE_PHONE_VLM_API_KEY` / `AI_PHONE_AUX_API_KEY` 是否填入；provider、base url、model 是否匹配 |
 | Android `unauthorized` | 手机 USB 调试弹窗是否确认；重新拔插；撤销 USB 调试授权后重连 |
 | Android / HarmonyOS 黑屏但设备可调度 | 这是推荐黑屏待机线路；Run 前会 wake。若设备有密码，自动化不能越过认证 |
 | iOS 看得到设备但 WDA 未就绪 | Xcode 是否完整；WDA 签名 env 是否正确；开发者 App 是否已信任；iOS 17+ / DVT 兜底场景再检查 `remote tunneld` 和 DDI mount |

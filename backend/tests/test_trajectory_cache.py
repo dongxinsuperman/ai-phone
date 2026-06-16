@@ -79,8 +79,8 @@ from ai_phone.server.trajectory_cache import (
 @pytest.fixture(autouse=True)
 def _isolate_aiphone_env(monkeypatch):
     """本文件用例都用 ``Settings(_env_file=None)`` 构造、期望取代码默认值。但其他测试
-    ``import ai_phone.agent.main`` 时其顶部 ``load_dotenv()`` 会把 ``.env``（含
-    ``AI_PHONE_VLM_*`` / ``AI_PHONE_TRAJECTORY_CACHE_*`` 等 160+ 项）注入 ``os.environ``，
+    ``import ai_phone.agent.main`` 时其顶部 ``load_dotenv()`` 会把 ``.env.defaults`` /
+    ``.env`` / ``.env.local`` 里的 ``AI_PHONE_*`` 注入 ``os.environ``，
     pydantic 仍会读到，污染如 v3 coord 的 overseas 配置判定。清掉 ``AI_PHONE_`` 前缀
     保证用例不受运行顺序影响、可独立复现（next 时本文件整体 skip，故从未暴露）。"""
     import os
@@ -553,9 +553,10 @@ async def test_ephemeral_gate_overseas_claude_cu_falls_back_to_chat_messages(mon
 
 
 @pytest.mark.asyncio
-async def test_ephemeral_gate_overseas_gpt_cu_translates_responses_url_to_chat(monkeypatch):
-    """主 vlm = gpt_cu（用 /v1/responses 端点）时，ephemeral gate 自动翻译成
-    /v1/chat/completions + openai_compatible backend，复用主 vlm key/model。
+async def test_ephemeral_gate_overseas_gpt_cu_uses_openai_responses(monkeypatch):
+    """主 vlm = gpt_cu 时，ephemeral gate 复用主 VLM 的 OpenAI Responses 端点。
+
+    这里不走 chat completions，也不挂 computer tool，只做单次图像 verdict。
     """
     seen = {}
 
@@ -599,8 +600,8 @@ async def test_ephemeral_gate_overseas_gpt_cu_translates_responses_url_to_chat(m
         cached_after_bytes=_test_jpeg(80, 120, (120, 120, 120)),
     )
 
-    assert seen["backend"] == "openai_compatible"
-    assert seen["api_url"] == "https://api.openai.com/v1/chat/completions"
+    assert seen["backend"] == "openai_responses"
+    assert seen["api_url"] == "https://api.openai.com/v1/responses"
     assert seen["model"] == "computer-use-preview"
     assert seen["api_key"] == "main-key"
     assert decision.verdict == GATE_EXECUTE_ORIGINAL
@@ -693,7 +694,7 @@ def test_overseas_cu_to_chat_config_translates_claude_and_gpt():
         main_api_url="https://api.openai.com/v1/responses",
         main_api_key="k",
         main_model="cu-preview",
-    ) == ("openai_compatible", "https://api.openai.com/v1/chat/completions", "k", "cu-preview")
+    ) == ("openai_responses", "https://api.openai.com/v1/responses", "k", "cu-preview")
 
     # 自部署代理保留 host 前缀
     assert ephemeral_module._overseas_cu_to_chat_config(
@@ -701,16 +702,136 @@ def test_overseas_cu_to_chat_config_translates_claude_and_gpt():
         main_api_url="https://my-proxy.internal/openai/v1/responses",
         main_api_key="k",
         main_model="m",
-    ) == ("openai_compatible", "https://my-proxy.internal/openai/v1/chat/completions", "k", "m")
+    ) == ("openai_responses", "https://my-proxy.internal/openai/v1/responses", "k", "m")
+
+    assert ephemeral_module._overseas_cu_to_chat_config(
+        main_backend="gpt_cu",
+        main_api_url="https://api.openai.com/v1/chat/completions",
+        main_api_key="k",
+        main_model="m",
+    ) == ("openai_responses", "https://api.openai.com/v1/responses", "k", "m")
 
 
 @pytest.mark.asyncio
-async def test_v3_locator_gpt_cu_falls_back_to_chat_completions(monkeypatch):
-    """gpt_cu 主 vlm → v3 locator 翻译为 openai_compatible chat completions。
+async def test_ephemeral_openai_responses_payload_shape(monkeypatch):
+    captured: dict = {}
+
+    async def _fake_post_json(api_url, api_key, payload, timeout_sec):
+        captured["api_url"] = api_url
+        captured["api_key"] = api_key
+        captured["payload"] = payload
+        captured["timeout_sec"] = timeout_sec
+        return {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {"type": "output_text", "text": "{\"verdict\":\"SKIP\"}"}
+                    ],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(ephemeral_module, "_post_json", _fake_post_json)
+
+    text = await ephemeral_module._call_vlm_with_images(
+        backend="openai_responses",
+        api_url="https://api.openai.com/v1/responses",
+        api_key="sk-openai",
+        model="computer-use-preview",
+        timeout_sec=12,
+        system="system",
+        prompt="prompt",
+        images=[("current", _test_jpeg(10, 20, (10, 10, 10)))],
+    )
+
+    assert text == "{\"verdict\":\"SKIP\"}"
+    assert captured["api_url"] == "https://api.openai.com/v1/responses"
+    assert captured["api_key"] == "sk-openai"
+    assert captured["timeout_sec"] == 12
+    payload = captured["payload"]
+    assert payload["model"] == "computer-use-preview"
+    assert "messages" not in payload
+    assert "tools" not in payload
+    assert payload["reasoning"] == {"effort": "medium"}
+    assert payload["input"][0] == {"role": "system", "content": "system"}
+    assert payload["input"][1]["role"] == "user"
+    assert payload["input"][1]["content"][0] == {"type": "input_text", "text": "prompt"}
+    assert payload["input"][1]["content"][1]["type"] == "input_image"
+
+
+@pytest.mark.asyncio
+async def test_v3_locator_openai_responses_payload_shape(monkeypatch):
+    from ai_phone.agent.trajectory_cache import v3_replay as v3_replay_module
+
+    captured: dict = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "<point>10 20</point>"}],
+                    }
+                ]
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, api_url, json, headers):
+            captured["api_url"] = api_url
+            captured["payload"] = json
+            captured["headers"] = headers
+            return FakeResponse()
+
+    monkeypatch.setattr(v3_replay_module.httpx, "AsyncClient", FakeAsyncClient)
+    locator = V3PlanLocator(
+        settings=Settings(
+            _env_file=None,
+            trajectory_cache_v3_coord_gpt_reasoning_effort="high",
+        ),
+        main_vlm_backend="gpt_cu",
+    )
+
+    text = await locator._openai_responses_single_image(
+        prompt="locate",
+        image_bytes=_test_jpeg(20, 30, (10, 10, 10)),
+        api_url="https://api.openai.com/v1/responses",
+        api_key="sk-openai",
+        model="computer-use-preview",
+        timeout_sec=11,
+    )
+
+    assert text == "<point>10 20</point>"
+    assert captured["api_url"] == "https://api.openai.com/v1/responses"
+    assert captured["headers"]["Authorization"] == "Bearer sk-openai"
+    payload = captured["payload"]
+    assert payload["model"] == "computer-use-preview"
+    assert payload["reasoning"] == {"effort": "high"}
+    assert "tools" not in payload
+    assert "messages" not in payload
+    assert payload["input"][1]["content"][0]["type"] == "input_text"
+    assert payload["input"][1]["content"][1]["type"] == "input_image"
+
+
+@pytest.mark.asyncio
+async def test_v3_locator_gpt_cu_uses_openai_responses(monkeypatch):
+    """gpt_cu 主 vlm → v3 locator 走 openai_responses 单次视觉定位。
 
     见 docs/executable-logic-contract.md §14：定位 vlm 和主 vlm 用同一把 key、
-    同一个模型，但不走 CU agent loop——/v1/responses 后缀翻译为
-    /v1/chat/completions。坐标空间仍然 absolute（gpt 训练就是按图像像素回坐标）。
+    同一个模型，但不走 CU agent loop。坐标空间仍然 absolute。
     """
     settings = Settings(
         _env_file=None,
@@ -722,8 +843,8 @@ async def test_v3_locator_gpt_cu_falls_back_to_chat_completions(monkeypatch):
     )
     locator = V3PlanLocator(settings=settings, main_vlm_backend="gpt_cu")
     backend, api_url, api_key, model, _timeout = locator._config()
-    assert backend == "openai_compatible"
-    assert api_url == "https://api.openai.com/v1/chat/completions"
+    assert backend == "openai_responses"
+    assert api_url == "https://api.openai.com/v1/responses"
     assert api_key == "main-openai-key"
     assert model == "gpt-4o"
     assert locator.coord_space == "absolute"
@@ -734,7 +855,7 @@ async def test_v3_locator_gpt_cu_falls_back_to_chat_completions(monkeypatch):
         captured.update(kwargs)
         return "<point>50 100</point>"
 
-    monkeypatch.setattr(locator, "_chat_completions_single_image", _fake_chat)
+    monkeypatch.setattr(locator, "_openai_responses_single_image", _fake_chat)
 
     result = await locator.locate_action(
         goal="g",
@@ -745,7 +866,7 @@ async def test_v3_locator_gpt_cu_falls_back_to_chat_completions(monkeypatch):
         window_size=(1000, 2000),
     )
 
-    assert captured["api_url"] == "https://api.openai.com/v1/chat/completions"
+    assert captured["api_url"] == "https://api.openai.com/v1/responses"
     assert captured["api_key"] == "main-openai-key"
     assert captured["model"] == "gpt-4o"
     # absolute 坐标按 image_size→window_size 等比放大
@@ -877,6 +998,170 @@ def test_ephemeral_classifier_falls_back_to_assistant_config():
     assert model == "claude-sonnet-4-5"
 
 
+@pytest.mark.parametrize(
+    (
+        "provider",
+        "base_url",
+        "api_key",
+        "model",
+        "expected_backend",
+        "expected_url",
+    ),
+    [
+        (
+            "claude",
+            "https://api.anthropic.com",
+            "sk-ant-phone",
+            "claude-sonnet-4-5",
+            "claude_messages",
+            "https://api.anthropic.com/v1/messages",
+        ),
+        (
+            "openai",
+            "https://api.openai.com/v1",
+            "sk-openai-phone",
+            "computer-use-preview",
+            "openai_responses",
+            "https://api.openai.com/v1/responses",
+        ),
+    ],
+)
+def test_new_overseas_config_drives_all_phone_layer_helpers(
+    provider,
+    base_url,
+    api_key,
+    model,
+    expected_backend,
+    expected_url,
+):
+    import ai_phone.config as cfg
+
+    settings = cfg._derive_new_model_config(Settings(
+        _env_file=None,
+        phone_vlm_provider=provider,
+        phone_vlm_base_url=base_url,
+        phone_vlm_api_key=api_key,
+        phone_vlm_model=model,
+        aux_provider=provider,
+        aux_base_url=base_url,
+        aux_api_key=f"{api_key}-aux",
+        aux_model="aux-model",
+        trajectory_cache_recovery_vlm_enabled=True,
+        trajectory_cache_ephemeral_action_enabled=True,
+        trajectory_cache_ephemeral_gate_enabled=True,
+        trajectory_cache_v3_coord_enabled=True,
+        trajectory_cache_v3_rescue_enabled=True,
+    ))
+    expected = (expected_backend, expected_url, api_key, model)
+
+    gate = ephemeral_module.CacheEphemeralGateVerifier(
+        settings=settings,
+        main_vlm_backend=settings.vlm_backend,
+    )
+    assert gate._config()[:4] == expected
+
+    recovery = CacheReplayRecoveryVerifier(
+        settings=settings,
+        main_vlm_backend=settings.vlm_backend,
+    )
+    assert recovery._resolve_chat_config()[:4] == expected
+
+    locator = V3PlanLocator(settings=settings, main_vlm_backend=settings.vlm_backend)
+    assert locator._config()[:4] == expected
+
+    rescue = V3RescueVerifier(settings=settings, main_vlm_backend=settings.vlm_backend)
+    assert rescue._config()[:4] == expected
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_classifier_new_claude_config_uses_aux_claude_messages(monkeypatch):
+    import ai_phone.config as cfg
+
+    settings = cfg._derive_new_model_config(Settings(
+        _env_file=None,
+        phone_vlm_provider="claude",
+        phone_vlm_base_url="https://api.anthropic.com/v1/messages",
+        phone_vlm_api_key="sk-ant-phone",
+        phone_vlm_model="claude-sonnet-4-5",
+        aux_provider="claude",
+        aux_base_url="https://api.anthropic.com/v1/messages",
+        aux_api_key="sk-ant-aux",
+        aux_model="claude-haiku",
+    )).model_copy(update={
+        "trajectory_cache_ephemeral_action_enabled": True,
+        "trajectory_cache_ephemeral_classify_enabled": True,
+    })
+    captured: dict = {}
+
+    async def _fake_call(**kwargs):
+        captured.update(kwargs)
+        return (
+            '{"role":"optional_ephemeral","category":"marketing_popup",'
+            '"confidence":0.99,"skip_if_absent":true,"reason":"popup close"}'
+        )
+
+    monkeypatch.setattr(ephemeral_module, "_call_vlm_with_images", _fake_call)
+    classifier = ephemeral_module.CacheEphemeralActionClassifier(settings=settings)
+    result = await classifier.classify_action(
+        goal="关闭广告后继续播放",
+        action={"action_id": "a001", "type": "click"},
+        before_bytes=_test_jpeg(80, 120, (20, 20, 20)),
+        after_bytes=_test_jpeg(80, 120, (30, 30, 30)),
+    )
+
+    assert captured["backend"] == "claude_messages"
+    assert captured["api_url"] == "https://api.anthropic.com/v1/messages"
+    assert captured["api_key"] == "sk-ant-aux"
+    assert captured["model"] == "claude-haiku"
+    assert [label for label, _ in captured["images"]] == ["action_before", "action_after"]
+    assert result.role == ephemeral_module.ROLE_OPTIONAL_EPHEMERAL
+    assert result.skip_if_absent is True
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_classifier_new_gpt_config_uses_aux_chat_not_phone_responses(monkeypatch):
+    import ai_phone.config as cfg
+
+    settings = cfg._derive_new_model_config(Settings(
+        _env_file=None,
+        phone_vlm_provider="openai",
+        phone_vlm_base_url="https://api.openai.com/v1",
+        phone_vlm_api_key="sk-openai-phone",
+        phone_vlm_model="computer-use-preview",
+        aux_provider="openai",
+        aux_base_url="https://api.openai.com/v1",
+        aux_api_key="sk-openai-aux",
+        aux_model="gpt-4o-mini",
+    )).model_copy(update={
+        "trajectory_cache_ephemeral_action_enabled": True,
+        "trajectory_cache_ephemeral_classify_enabled": True,
+    })
+    captured: dict = {}
+
+    async def _fake_call(**kwargs):
+        captured.update(kwargs)
+        return (
+            '{"role":"business_required","category":"case_goal_related",'
+            '"confidence":0.98,"skip_if_absent":false,"reason":"business click"}'
+        )
+
+    monkeypatch.setattr(ephemeral_module, "_call_vlm_with_images", _fake_call)
+    classifier = ephemeral_module.CacheEphemeralActionClassifier(settings=settings)
+    result = await classifier.classify_action(
+        goal="打开设置页",
+        action={"action_id": "a001", "type": "click"},
+        before_bytes=_test_jpeg(80, 120, (20, 20, 20)),
+        after_bytes=_test_jpeg(80, 120, (30, 30, 30)),
+    )
+
+    assert captured["backend"] == "openai_compatible"
+    assert captured["api_url"] == "https://api.openai.com/v1/chat/completions"
+    assert captured["api_key"] == "sk-openai-aux"
+    assert captured["model"] == "gpt-4o-mini"
+    assert result.role == "business_required"
+    assert result.skip_if_absent is False
+
+
 @pytest.mark.asyncio
 async def test_ephemeral_chat_payload_uses_provider_reasoning_fields(monkeypatch):
     captured = []
@@ -960,11 +1245,76 @@ async def test_ephemeral_claude_messages_payload_enables_thinking(monkeypatch):
 
     assert text == '{"verdict":"SKIP"}'
     assert captured["headers"]["x-api-key"] == "sk-ant-test"
+    assert "anthropic-beta" not in captured["headers"]
+    assert "tools" not in captured["payload"]
     assert captured["payload"]["thinking"] == {
         "type": "enabled",
         "budget_tokens": 1024,
     }
     assert captured["payload"]["max_tokens"] == 8192
+    user_content = captured["payload"]["messages"][0]["content"]
+    assert user_content[0] == {"type": "text", "text": "prompt"}
+    assert user_content[1]["type"] == "image"
+    assert user_content[1]["source"]["type"] == "base64"
+
+
+@pytest.mark.asyncio
+async def test_recovery_claude_messages_payload_has_no_cu_beta_or_tools(monkeypatch):
+    from ai_phone.agent.trajectory_cache import recovery as recovery_module
+
+    captured: dict = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {"content": [{"type": "text", "text": "Thought: ok\nAction: wait(1000)"}]}
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, api_url, json, headers):
+            captured["api_url"] = api_url
+            captured["payload"] = json
+            captured["headers"] = headers
+            return FakeResponse()
+
+    monkeypatch.setattr(recovery_module.httpx, "AsyncClient", FakeAsyncClient)
+    verifier = CacheReplayRecoveryVerifier(
+        settings=Settings(_env_file=None),
+        main_vlm_backend="claude_cu",
+    )
+
+    text = await verifier._messages_double_image(
+        prompt="recover",
+        landmark_bytes=_test_jpeg(20, 30, (10, 10, 10)),
+        current_bytes=_test_jpeg(20, 30, (20, 20, 20)),
+        api_url="https://api.anthropic.com/v1/messages",
+        api_key="sk-ant",
+        model="claude-sonnet-4-5",
+        timeout_sec=13,
+    )
+
+    assert text == "Thought: ok\nAction: wait(1000)"
+    assert captured["api_url"] == "https://api.anthropic.com/v1/messages"
+    assert captured["headers"]["x-api-key"] == "sk-ant"
+    assert "anthropic-beta" not in captured["headers"]
+    payload = captured["payload"]
+    assert payload["model"] == "claude-sonnet-4-5"
+    assert payload["max_tokens"] == 8192
+    assert "tools" not in payload
+    user_content = payload["messages"][0]["content"]
+    assert [item["type"] for item in user_content] == ["text", "image", "image"]
+    assert user_content[1]["source"]["type"] == "base64"
+    assert user_content[2]["source"]["type"] == "base64"
 
 
 def test_build_cache_assertion_prompt_contains_replay_summary():
@@ -995,7 +1345,7 @@ def test_cache_key_does_not_include_vlm_backend(monkeypatch):
         device_code="D1",
         run_semantic_text="点击我的",
     )
-    monkeypatch.setenv("AI_PHONE_VLM_BACKEND", "claude_cu")
+    monkeypatch.setenv("AI_PHONE_PHONE_VLM_PROVIDER", "claude")
     key_b, normalized_b, hash_b = build_cache_key(
         device_code="D1",
         run_semantic_text="点击我的",
@@ -3170,8 +3520,8 @@ async def test_recovery_overseas_claude_cu_falls_back_to_chat_messages(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_recovery_overseas_gpt_cu_translates_responses_url_to_chat(monkeypatch):
-    """海外 gpt_cu 主 vlm → recovery 用 openai_compatible，URL 后缀翻译为 chat completions。"""
+async def test_recovery_overseas_gpt_cu_uses_openai_responses(monkeypatch):
+    """海外 gpt_cu 主 vlm → recovery 用 openai_responses 单次视觉判断。"""
     settings = Settings(
         _env_file=None,
         vlm_backend="gpt_cu",
@@ -3187,8 +3537,8 @@ async def test_recovery_overseas_gpt_cu_translates_responses_url_to_chat(monkeyp
         settings=settings, main_vlm_backend="gpt_cu"
     )
     backend, api_url, api_key, model, _timeout = verifier._resolve_chat_config()
-    assert backend == "openai_compatible"
-    assert api_url == "https://api.openai.com/v1/chat/completions"
+    assert backend == "openai_responses"
+    assert api_url == "https://api.openai.com/v1/responses"
     assert api_key == "main-openai-key"
     assert model == "gpt-4o"
 
@@ -3198,7 +3548,7 @@ async def test_recovery_overseas_gpt_cu_translates_responses_url_to_chat(monkeyp
         captured.update(kwargs)
         return "Thought: 点击当前页按钮。\nAction: click(point='<point>130 74</point>')"
 
-    monkeypatch.setattr(verifier, "_chat_completions_double_image", _fake_chat)
+    monkeypatch.setattr(verifier, "_openai_responses_double_image", _fake_chat)
 
     decision = await verifier.verify_alignment_miss(
         goal="g",
@@ -3212,11 +3562,84 @@ async def test_recovery_overseas_gpt_cu_translates_responses_url_to_chat(monkeyp
         max_wait_ms=1500,
     )
 
-    assert captured["api_url"] == "https://api.openai.com/v1/chat/completions"
+    assert captured["api_url"] == "https://api.openai.com/v1/responses"
     assert captured["api_key"] == "main-openai-key"
     assert decision.verdict == VERDICT_REPAIR_ACTION
     # gpt 也按 absolute 像素坐标走
     assert decision.parsed_actions[0].coord_space == "absolute"
+
+
+@pytest.mark.asyncio
+async def test_recovery_openai_responses_payload_shape(monkeypatch):
+    from ai_phone.agent.trajectory_cache import recovery as recovery_module
+
+    captured: dict = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "Thought: ok\nAction: click(point='<point>1 2</point>')",
+                            }
+                        ],
+                    }
+                ]
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, api_url, json, headers):
+            captured["api_url"] = api_url
+            captured["payload"] = json
+            captured["headers"] = headers
+            return FakeResponse()
+
+    monkeypatch.setattr(recovery_module.httpx, "AsyncClient", FakeAsyncClient)
+    verifier = CacheReplayRecoveryVerifier(
+        settings=Settings(_env_file=None, vlm_main_reasoning_effort="high"),
+        main_vlm_backend="gpt_cu",
+    )
+
+    text = await verifier._openai_responses_double_image(
+        prompt="recover",
+        landmark_bytes=_test_jpeg(20, 30, (10, 10, 10)),
+        current_bytes=_test_jpeg(20, 30, (20, 20, 20)),
+        api_url="https://api.openai.com/v1/responses",
+        api_key="sk-openai",
+        model="computer-use-preview",
+        timeout_sec=14,
+    )
+
+    assert text == "Thought: ok\nAction: click(point='<point>1 2</point>')"
+    assert captured["api_url"] == "https://api.openai.com/v1/responses"
+    assert captured["headers"]["Authorization"] == "Bearer sk-openai"
+    payload = captured["payload"]
+    assert payload["model"] == "computer-use-preview"
+    assert payload["reasoning"] == {"effort": "high"}
+    assert "tools" not in payload
+    assert "messages" not in payload
+    user_content = payload["input"][1]["content"]
+    assert [item["type"] for item in user_content] == [
+        "input_text",
+        "input_image",
+        "input_image",
+    ]
 
 
 @pytest.mark.asyncio
@@ -3249,6 +3672,7 @@ async def test_recovery_verifier_unknown_backend_falls_back_to_wait_more():
     assert decision.verdict == VERDICT_WAIT_MORE
     assert "doubao_responses" in decision.reason
     assert "openai_compatible" in decision.reason
+    assert "openai_responses" in decision.reason
     assert "claude_messages" in decision.reason
 
 

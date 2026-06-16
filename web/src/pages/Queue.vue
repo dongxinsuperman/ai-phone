@@ -24,7 +24,7 @@ const lastRefreshedAt = ref(0)
 const publicConfig = ref({
   run_retry_enabled: false,
   run_retry_max: 0,
-  function_map_context_max_chars: 2000,
+  function_map_context_max_chars: 8000,
 })
 
 // 示例数据模式：看不懂实时页面时一键展示"理想形态"。
@@ -459,7 +459,7 @@ const form = ref({
 })
 const submitErr = ref('')
 const submitting = ref(false)
-const functionMapContextLimit = computed(() => Number(publicConfig.value.function_map_context_max_chars || 2000))
+const functionMapContextLimit = computed(() => Number(publicConfig.value.function_map_context_max_chars || 8000))
 const functionMapContextLength = computed(() => (form.value.functionMapContext || '').length)
 const functionMapContextTooLong = computed(() => (
   functionMapContextLength.value > functionMapContextLimit.value

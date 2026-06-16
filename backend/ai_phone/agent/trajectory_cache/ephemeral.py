@@ -16,16 +16,14 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import httpx
 
 from ai_phone.config import Settings, get_settings
 from ai_phone.agent.trajectory_cache._overseas_chat import (
-    gpt_responses_url_to_chat as _gpt_responses_url_to_chat,
     main_vlm_is_overseas_cu,
     overseas_cu_to_chat_config as _overseas_cu_to_chat_config,
 )
@@ -33,7 +31,6 @@ from ai_phone.agent.trajectory_cache.recovery import (
     _extract_messages_text,
     _extract_responses_text,
 )
-from ai_phone.shared import actions as A
 
 ROLE_BUSINESS_REQUIRED = "business_required"
 ROLE_OPTIONAL_EPHEMERAL = "optional_ephemeral"
@@ -407,7 +404,7 @@ def _ephemeral_call_failure_fallback(
     )
 
 
-# _overseas_cu_to_chat_config / _gpt_responses_url_to_chat 已抽到共享 helper
+# _overseas_cu_to_chat_config 已抽到共享 helper
 # ``_overseas_chat`` 模块（recovery / v3 locator 也复用），见上方 import。
 
 
@@ -622,6 +619,16 @@ async def _call_vlm_with_images(
             prompt=prompt,
             images=images,
         )
+    if normalized_backend == "openai_responses":
+        return await _openai_responses_images(
+            api_url=api_url,
+            api_key=api_key,
+            model=model,
+            timeout_sec=timeout_sec,
+            system=system,
+            prompt=prompt,
+            images=images,
+        )
     if normalized_backend == "claude_messages":
         return await _messages_images(
             api_url=api_url,
@@ -634,7 +641,7 @@ async def _call_vlm_with_images(
         )
     raise RuntimeError(
         f"ephemeral VLM 暂不支持 backend={normalized_backend}，"
-        "当前支持 doubao_responses / openai_compatible / claude_messages"
+        "当前支持 doubao_responses / openai_compatible / openai_responses / claude_messages"
     )
 
 
@@ -722,6 +729,39 @@ async def _chat_completions_images(
         text = ""
     if not text:
         raise RuntimeError("ephemeral chat 未返回可解析文本")
+    return text
+
+
+async def _openai_responses_images(
+    *,
+    api_url: str,
+    api_key: str,
+    model: str,
+    timeout_sec: float,
+    system: str,
+    prompt: str,
+    images: Sequence[Tuple[str, bytes]],
+) -> str:
+    content: List[Dict[str, Any]] = [{"type": "input_text", "text": prompt}]
+    for _label, data in images:
+        content.append(
+            {
+                "type": "input_image",
+                "image_url": f"data:image/jpeg;base64,{_b64(data)}",
+            }
+        )
+    payload: Dict[str, Any] = {
+        "model": model,
+        "input": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": content},
+        ],
+        "reasoning": {"effort": "medium"},
+    }
+    data = await _post_json(api_url, api_key, payload, timeout_sec)
+    text = _extract_responses_text(data)
+    if not text:
+        raise RuntimeError("ephemeral openai_responses 未返回可解析文本")
     return text
 
 

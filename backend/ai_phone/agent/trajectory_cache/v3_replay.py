@@ -264,6 +264,15 @@ class V3PlanLocator:
                 model=model,
                 timeout_sec=timeout_sec,
             )
+        if backend == "openai_responses":
+            return await self._openai_responses_single_image(
+                prompt=prompt,
+                image_bytes=image_bytes,
+                api_url=api_url,
+                api_key=api_key,
+                model=model,
+                timeout_sec=timeout_sec,
+            )
         if backend == "openai_compatible":
             return await self._chat_completions_single_image(
                 prompt=prompt,
@@ -275,7 +284,7 @@ class V3PlanLocator:
             )
         raise RuntimeError(
             f"v3 locator 暂不支持 backend={backend}，"
-            "当前支持 doubao_responses / openai_compatible / claude_messages"
+            "当前支持 doubao_responses / openai_compatible / openai_responses / claude_messages"
         )
 
     async def _chat_completions_single_image(
@@ -368,6 +377,62 @@ class V3PlanLocator:
         text = _extract_responses_text(resp.json())
         if not text:
             raise RuntimeError("v3 locator responses 未返回可解析文本")
+        return text
+
+    async def _openai_responses_single_image(
+        self,
+        *,
+        prompt: str,
+        image_bytes: bytes,
+        api_url: str,
+        api_key: str,
+        model: str,
+        timeout_sec: float,
+    ) -> str:
+        image_b64 = base64.b64encode(image_bytes).decode("ascii")
+        effort = (
+            self.settings.trajectory_cache_v3_coord_gpt_reasoning_effort or "low"
+        ).strip().lower()
+        if effort not in {"low", "medium", "high"}:
+            effort = "low"
+        payload: Dict[str, Any] = {
+            "model": model,
+            "input": [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是手机截图元素定位器。只输出坐标标签或 无，"
+                        "不负责决定动作类型。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": prompt},
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:image/jpeg;base64,{image_b64}",
+                        },
+                    ],
+                },
+            ],
+            "reasoning": {"effort": effort},
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        timeout = httpx.Timeout(timeout_sec, connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(api_url, json=payload, headers=headers)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"v3 locator openai_responses 失败: status={resp.status_code} "
+                f"body={resp.text[:200]}"
+            )
+        text = _extract_responses_text(resp.json())
+        if not text:
+            raise RuntimeError("v3 locator openai_responses 未返回可解析文本")
         return text
 
     async def _messages_single_image(

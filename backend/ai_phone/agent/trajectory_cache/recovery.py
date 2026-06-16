@@ -296,6 +296,16 @@ class CacheReplayRecoveryVerifier:
                 model=model,
                 timeout_sec=timeout_sec,
             )
+        if backend == "openai_responses":
+            return await self._openai_responses_double_image(
+                prompt=prompt,
+                landmark_bytes=landmark_bytes,
+                current_bytes=current_bytes,
+                api_url=api_url,
+                api_key=api_key,
+                model=model,
+                timeout_sec=timeout_sec,
+            )
         if backend == "claude_messages":
             return await self._messages_double_image(
                 prompt=prompt,
@@ -308,7 +318,7 @@ class CacheReplayRecoveryVerifier:
             )
         raise RuntimeError(
             f"recovery_vlm 暂不支持 backend={backend}，"
-            "当前支持 doubao_responses / openai_compatible / claude_messages"
+            "当前支持 doubao_responses / openai_compatible / openai_responses / claude_messages"
         )
 
     # ------------------------------------------------------------------
@@ -444,6 +454,65 @@ class CacheReplayRecoveryVerifier:
         text = _extract_responses_text(resp.json())
         if not text:
             raise RuntimeError("recovery_vlm 未返回可解析文本")
+        return text
+
+    async def _openai_responses_double_image(
+        self,
+        *,
+        prompt: str,
+        landmark_bytes: bytes,
+        current_bytes: bytes,
+        api_url: str,
+        api_key: str,
+        model: str,
+        timeout_sec: float,
+    ) -> str:
+        landmark_b64 = base64.b64encode(landmark_bytes).decode("ascii")
+        current_b64 = base64.b64encode(current_bytes).decode("ascii")
+        user_content: List[Dict[str, Any]] = [
+            {"type": "input_text", "text": prompt},
+            {
+                "type": "input_image",
+                "image_url": f"data:image/jpeg;base64,{landmark_b64}",
+            },
+            {
+                "type": "input_image",
+                "image_url": f"data:image/jpeg;base64,{current_b64}",
+            },
+        ]
+        effort = (self.settings.vlm_main_reasoning_effort or "medium").strip().lower()
+        if effort not in {"low", "medium", "high"}:
+            effort = "medium"
+        payload: Dict[str, Any] = {
+            "model": model,
+            "input": [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是轨迹缓存回放的局部恢复 VLM。"
+                        "必须使用 Thought/Action 格式输出一个局部恢复动作、"
+                        "wait、finished 或 assert_fail。"
+                    ),
+                },
+                {"role": "user", "content": user_content},
+            ],
+            "reasoning": {"effort": effort},
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        timeout = httpx.Timeout(timeout_sec, connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(api_url, json=payload, headers=headers)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"recovery_vlm openai_responses 失败: status={resp.status_code} "
+                f"body={resp.text[:200]}"
+            )
+        text = _extract_responses_text(resp.json())
+        if not text:
+            raise RuntimeError("recovery_vlm openai_responses 未返回可解析文本")
         return text
 
     # ------------------------------------------------------------------

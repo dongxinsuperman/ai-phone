@@ -217,11 +217,12 @@ STRUCT_AUDIT_PERIODIC_INTERVAL = _settings.audit_periodic_interval  # env: AI_PH
 PERIODIC_TRIGGER_PREFIX = "[周期巡检]"  # 协议常量：trigger 字符串前缀，区分 detector / periodic
 
 # ---- 结构化通道判定信号 ----
-# 不再只看「测试标题/前置条件/操作步骤/预期结果」四级标签——那是 QA 同学的写法，
-# 用户说"严格约束 + 大量定语"也应该走结构化通道。改成多信号综合评分：
+# 默认只做标签准入：命中「测试标题/前置条件/操作步骤/预期结果」等标签才进结构化。
+# 严格度评分最高 7；默认阈值为 10，等于关闭评分入口。保留评分逻辑是为了
+# 私有部署确实想恢复“长 case + 密集约束”准入时，只改 env 即可：
 #   关键字命中 ≥ HARD_HIT     → 直接结构化（最高置信，免审判调用）
-#   严格度评分 ≥ HARD_SCORE   → 直接结构化（即使关键字 < 2，长 case + 密集约束也算）
-#   严格度评分 ≥ AUDIT_SCORE  → 借审判模型一次性分类（中等置信，让模型拍板）
+#   严格度评分 ≥ HARD_SCORE   → 直接结构化（默认阈值 10 时不会触发）
+#   严格度评分 ≥ AUDIT_SCORE  → 借审判模型一次性分类（默认阈值 10 时不会触发）
 #   两条都不达标               → 自由对话通道
 # 启动横幅会把所有信号 + 决策路径打到日志里，避免出现"为什么走这个通道"的疑问。
 STRUCT_KEYWORD_HARD_HIT = _settings.struct_keyword_hard_hit              # env: AI_PHONE_STRUCT_KEYWORD_HARD_HIT
@@ -424,6 +425,12 @@ def _classify_structured_local(
             f"严格度评分 {signal.strictness_score}/7 处于"
             f" [{STRUCT_STRICTNESS_AUDIT_SCORE}, {STRUCT_STRICTNESS_HARD_SCORE}) "
             "中等档，借审判模型最终拍板"
+        )
+    if STRUCT_STRICTNESS_HARD_SCORE > 7 and STRUCT_STRICTNESS_AUDIT_SCORE > 7:
+        return False, (
+            f"四级标签 {signal.keyword_hits} 个 < {STRUCT_KEYWORD_HARD_HIT}；"
+            f"严格度 {signal.strictness_score}/7 不参与准入"
+            f"（评分阈值 {STRUCT_STRICTNESS_HARD_SCORE}/{STRUCT_STRICTNESS_AUDIT_SCORE} 均高于满分 7）"
         )
     return False, (
         f"四级标签 {signal.keyword_hits} 个 + 严格度 {signal.strictness_score}/7"
@@ -903,13 +910,22 @@ class VLMRunner:
                 f"审判 ALLOW 上限 {STRUCT_AUDIT_ALLOW_LIMIT} 次",
             )
         else:
+            if STRUCT_STRICTNESS_HARD_SCORE > 7 and STRUCT_STRICTNESS_AUDIT_SCORE > 7:
+                structured_hint = (
+                    f"如想启用，goal 需含 ≥{STRUCT_KEYWORD_HARD_HIT} 节四级标签；"
+                    "严格度评分入口已关闭，只做标签准入。"
+                )
+            else:
+                structured_hint = (
+                    f"如想启用，goal 含 ≥{STRUCT_KEYWORD_HARD_HIT} 节四级标签 或 严格度评分 "
+                    f"≥ {STRUCT_STRICTNESS_HARD_SCORE}/7 即可强制开启；"
+                    f"评分 ≥ {STRUCT_STRICTNESS_AUDIT_SCORE}/7 会借审判模型再判一次。"
+                )
             await self._log(
                 1,
                 "[自由对话通道]",
                 f"判定来源：{decision_source} | 审判通道未启用，VLM 拥有最大自由度。"
-                "如想启用，goal 含 ≥2 节四级标签 或 严格度评分 "
-                f"≥ {STRUCT_STRICTNESS_HARD_SCORE}/7 即可强制开启；"
-                f"评分 ≥ {STRUCT_STRICTNESS_AUDIT_SCORE}/7 会借审判模型再判一次。",
+                f"{structured_hint}",
             )
 
         # —— 动态判断系统 · 瞬态 UI（视频工具栏 / Toast）——

@@ -26,11 +26,9 @@ from PIL import Image
 from ai_phone.agent.drivers.base import BaseDriver, DeviceInfo
 from ai_phone.agent.runner.vlm_loop import (
     CLICK_STUCK_THRESHOLD,
-    CONSECUTIVE_SCREENSHOT_FAIL_LIMIT,
     UNKNOWN_ACTION_STREAK_LIMIT,
     VLMRunner,
 )
-from ai_phone.agent.runner.stability import StabilityResult
 from ai_phone.shared.vlm import Decision
 
 
@@ -334,7 +332,7 @@ async def test_parser_fallback_retries_once_before_assert_fail():
 async def test_unknown_action_streak_fails():
     driver = FakeDriver()
     vlm = ScriptedVLMClient(
-        [ScriptedStep(f"乱写 {i}", f"press(point='<point>100 100</point>')")
+        [ScriptedStep(f"乱写 {i}", "press(point='<point>100 100</point>')")
          for i in range(UNKNOWN_ACTION_STREAK_LIMIT)]
     )
     _events, emit = _collect_events()
@@ -781,11 +779,8 @@ async def test_structured_audit_failure_falls_through_to_allow(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_structured_classify_via_supervisor_when_strictness_mid(monkeypatch):
-    """严格度落在中等档（[3,5)）→ 借审判模型一次性分类，结果决定通道。
-
-    覆盖用户场景："非 QA 标签格式但写得很严谨" 的 goal 也要能进结构化通道。
-    """
+async def test_strictness_mid_stays_freeform_when_label_gate_only(monkeypatch):
+    """默认只做标签准入：中等严格度但无标签时，不再借审判模型分类。"""
     classify_calls = {"n": 0}
 
     async def fake_classify(self):
@@ -796,6 +791,8 @@ async def test_structured_classify_via_supervisor_when_strictness_mid(monkeypatc
         return ("OK", "")
 
     from ai_phone.agent.runner import vlm_loop as _vlm_mod
+    monkeypatch.setattr(_vlm_mod, "STRUCT_STRICTNESS_HARD_SCORE", 10)
+    monkeypatch.setattr(_vlm_mod, "STRUCT_STRICTNESS_AUDIT_SCORE", 10)
     monkeypatch.setattr(_vlm_mod.VLMRunner, "_classify_structured_via_supervisor", fake_classify)
     monkeypatch.setattr(_vlm_mod.VLMRunner, "_supervisor_audit", fake_audit)
 
@@ -815,15 +812,15 @@ async def test_structured_classify_via_supervisor_when_strictness_mid(monkeypatc
     )
     result = await runner.run()
     assert result.ok is True
-    assert classify_calls["n"] == 1
-    assert runner._is_structured is True
+    assert classify_calls["n"] == 0
+    assert runner._is_structured is False
     # 评分应该在 [3,5)
     assert 3 <= runner._struct_signal.strictness_score < 5
 
 
 @pytest.mark.asyncio
-async def test_strictness_high_skips_classify_directly_structured(monkeypatch):
-    """严格度 ≥ 5 → 直接结构化通道，不需要审判分类（即便没有四级标签）。"""
+async def test_strictness_high_stays_freeform_when_label_gate_only(monkeypatch):
+    """默认只做标签准入：高严格度但无标签时，也不会直接进结构化。"""
     classify_calls = {"n": 0}
 
     async def fake_classify(self):
@@ -834,12 +831,14 @@ async def test_strictness_high_skips_classify_directly_structured(monkeypatch):
         return ("OK", "")
 
     from ai_phone.agent.runner import vlm_loop as _vlm_mod
+    monkeypatch.setattr(_vlm_mod, "STRUCT_STRICTNESS_HARD_SCORE", 10)
+    monkeypatch.setattr(_vlm_mod, "STRUCT_STRICTNESS_AUDIT_SCORE", 10)
     monkeypatch.setattr(_vlm_mod.VLMRunner, "_classify_structured_via_supervisor", fake_classify)
     monkeypatch.setattr(_vlm_mod.VLMRunner, "_supervisor_audit", fake_audit)
 
     # 用户写得非常严谨但**完全不带四级标签**的 goal（300+ 字 + 6 个「」+
     # 多个数字约束 + 多个逻辑词 + 多次顺序词 + 多个动词）
-    # 评分预计 ≥ 5，应直接结构化
+    # 评分预计 ≥ 5；默认只做标签准入，所以仍不直接结构化
     strict_goal = (
         "首先打开「洋葱学园」并等待 3 秒，然后依次点击底部「学习」Tab、"
         "中部「全部功能」入口、下滑至底部点击「二维码」块；接着进入"
@@ -860,7 +859,7 @@ async def test_strictness_high_skips_classify_directly_structured(monkeypatch):
     )
     await runner.run()
     assert classify_calls["n"] == 0
-    assert runner._is_structured is True
+    assert runner._is_structured is False
     assert runner._struct_signal.strictness_score >= 5
     assert runner._struct_signal.keyword_hits == 0  # 没有任何 QA 标签
 
