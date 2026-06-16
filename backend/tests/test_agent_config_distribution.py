@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from ai_phone.config import (
@@ -26,7 +28,7 @@ def _isolate_aiphone_env(monkeypatch):
     """清掉 os.environ 里的 ``AI_PHONE_`` 前缀变量，保证本文件用例不受运行顺序影响。
 
     背景：其他测试 ``import ai_phone.agent.main`` 时其顶部 ``load_dotenv()`` 会把
-    ``.env``（含新版 ``AI_PHONE_PHONE_VLM_*`` / ``AI_PHONE_AUX_*`` 两块）**永久**注入
+    ``.env.defaults`` / ``.env`` / ``.env.local`` 里的 ``AI_PHONE_*`` **永久**注入
     ``os.environ``。本文件多处用 ``Settings(_env_file=None, ...)`` 合成“缺配置 /
     本机残留”场景，但 pydantic 仍会读 os.environ，导致合成 Settings 意外带上
     phone_vlm 配置。清掉前缀变量即可保证断言只受本用例输入影响。"""
@@ -90,6 +92,94 @@ def test_sensitive_fields_never_distributed():
     snap = build_downlink_config(settings=_derived_doubao_settings())
     for sensitive in ("db_url", "agent_token", "kafka_sasl_password"):
         assert sensitive not in snap
+
+
+def test_settings_loads_env_defaults_before_env_and_env_local(monkeypatch, tmp_path):
+    """配置文件优先级：.env.defaults < .env < .env.local < 系统环境变量。"""
+    (tmp_path / ".env.defaults").write_text(
+        "\n".join([
+            "AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS=8000",
+            "AI_PHONE_RUN_MAX_STEPS=77",
+            "AI_PHONE_AUDIT_ALLOW_LIMIT=11",
+        ]),
+        encoding="utf-8",
+    )
+    (tmp_path / ".env").write_text(
+        "\n".join([
+            "AI_PHONE_RUN_MAX_STEPS=88",
+            "AI_PHONE_AUDIT_ALLOW_LIMIT=22",
+        ]),
+        encoding="utf-8",
+    )
+    (tmp_path / ".env.local").write_text(
+        "AI_PHONE_RUN_MAX_STEPS=99\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AI_PHONE_AUDIT_ALLOW_LIMIT", "33")
+
+    s = Settings()
+
+    assert s.function_map_context_max_chars == 8000
+    assert s.run_max_steps == 99
+    assert s.audit_allow_limit == 33
+
+
+def test_env_defaults_contains_only_public_runtime_defaults():
+    """进 git 的 .env.defaults 只能放公开默认策略，不能放密钥/真实部署值。"""
+    path = Path(__file__).resolve().parents[1] / ".env.defaults"
+    active: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        name, value = stripped.split("=", 1)
+        active[name.strip()] = value.strip()
+
+    forbidden = {
+        "AI_PHONE_DB_URL",
+        "AI_PHONE_AGENT_TOKEN",
+        "AI_PHONE_SUBMISSION_INTERNAL_TOKEN",
+        "AI_PHONE_PHONE_VLM_PROVIDER",
+        "AI_PHONE_PHONE_VLM_MODEL",
+        "AI_PHONE_PHONE_VLM_API_KEY",
+        "AI_PHONE_PHONE_VLM_BASE_URL",
+        "AI_PHONE_AUX_PROVIDER",
+        "AI_PHONE_AUX_MODEL",
+        "AI_PHONE_AUX_API_KEY",
+        "AI_PHONE_AUX_BASE_URL",
+        "AI_PHONE_WDA_PROJECT_DIR",
+        "AI_PHONE_WDA_BUNDLE_ID",
+        "AI_PHONE_WDA_TEAM_ID",
+        "AI_PHONE_KAFKA_BROKERS",
+        "AI_PHONE_KAFKA_SASL_USERNAME",
+        "AI_PHONE_KAFKA_SASL_PASSWORD",
+        "AI_PHONE_SERVER_WS_URL",
+        "AI_PHONE_SERVER_HTTP_BASE",
+        "AI_PHONE_MIDSCENE_BRIDGE_DIR",
+    }
+
+    assert forbidden.isdisjoint(active)
+    assert active["AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS"] == "8000"
+    assert active["AI_PHONE_IOS_WDA_PRELOAD"] == "true"
+    assert active["AI_PHONE_RUN_RETRY_ENABLED"] == "true"
+    assert active["AI_PHONE_SCROLL_STUCK_THRESHOLD"] == "8"
+    assert active["AI_PHONE_VLM_TRAJECTORY_CACHE_REPLAY_ENABLED"] == "true"
+    assert active["AI_PHONE_TRAJECTORY_CACHE_ENABLED"] == "true"
+    assert active["AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_ENABLED"] == "true"
+    assert active["AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_ENABLED"] == "true"
+    assert active["AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_ACTION_ENABLED"] == "true"
+    assert active["AI_PHONE_STRUCT_STRICTNESS_HARD_SCORE"] == "10"
+    assert active["AI_PHONE_STRUCT_STRICTNESS_AUDIT_SCORE"] == "10"
+
+
+def test_code_defaults_match_project_runtime_policy():
+    """代码兜底也要跟 .env.defaults 的项目默认策略一致。"""
+    s = Settings(_env_file=None)
+
+    assert s.function_map_context_max_chars == 8000
+    assert s.struct_strictness_hard_score == 10
+    assert s.struct_strictness_audit_score == 10
 
 
 def test_execution_fields_are_distributed():

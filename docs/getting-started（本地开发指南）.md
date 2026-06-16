@@ -26,27 +26,28 @@ cd backend
 cp .env.example .env
 ```
 
-至少改这 3 项：
+至少改这几类：
 
 | 变量 | 用途 |
 |---|---|
 | `AI_PHONE_DB_URL` | Postgres 连接串 |
 | `AI_PHONE_AGENT_TOKEN` | Agent ↔ Server 鉴权（开发用 `dev` 即可） |
-| `AI_PHONE_VLM_API_KEY` | VLM key（不填只能手动调试，VLM 任务会 401） |
+| `AI_PHONE_PHONE_VLM_*` | 碰手机的主视觉模型：provider / model / api key / base url |
+| `AI_PHONE_AUX_*` | 不碰手机的辅助模型：provider / model / api key / base url |
 
 可选（有需要再开）：
 
 | 变量 | 用途 |
 |---|---|
-| `AI_PHONE_VLM_BACKEND` | 切换主 VLM 协议：`doubao_responses`（默认）/ `claude_cu` / `gpt_cu` |
-| `AI_PHONE_ASSISTANT_BACKEND` | 切换非执行型辅助系统协议：`doubao_chat` / `claude` / `openai`。注意：轨迹缓存回放中会产出手机动作的 gate / recovery 不属于普通辅助聊天链路，必须遵守 [可执行链路契约](./executable-logic-contract（可执行链路契约）.md)。 |
+| `AI_PHONE_PHONE_VLM_PROVIDER` | 切换主 VLM：`doubao` / `claude` / `openai` |
+| `AI_PHONE_AUX_PROVIDER` | 切换辅助模型：`doubao` / `claude` / `openai` |
 | `AI_PHONE_MIRROR_*` | Android 画质 / 延迟参数（详见 `.env.example` §8） |
 | `AI_PHONE_VLM_SESSION_RESET_PROMPT_THRESHOLD` | Doubao Responses 超阈值自动切段（默认 30000，≤0 关闭） |
 | `AI_PHONE_WDA_PROJECT_DIR` | iOS 接入入口，留空走"手动 Xcode + iproxy"过渡态 |
 | `AI_PHONE_IOS_WDA_LIFECYCLE_MODE` | iOS WDA 生命周期；部署推荐 `stable`，详见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md) |
 | `AI_PHONE_ANDROID_*WAKE*` / `AI_PHONE_HARMONY_*WAKE*` | Android / HarmonyOS 黑屏待机与 Run 前唤醒策略，详见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md) |
 
-`.env.example` 顶部按 §1–§20 分组，每组都有详细中文注释。
+`.env.example` 是用户填表说明；高级调参项见 `.env.full.example`，项目默认策略见 `.env.defaults`。
 
 ---
 
@@ -135,10 +136,10 @@ psql "$AI_PHONE_DB_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 `lsof -i :8000` 查谁在用，或换 `--port 8001` + 改前端 vite proxy。
 
 **Q：换 Claude / GPT 协议怎么配？**
-`backend/.env.example` §5 / §6 已经把"换协议示例"写在每个字段下方注释里。最少改 4 行：`AI_PHONE_VLM_BACKEND` + `VLM_API_URL` + `VLM_API_KEY` + `VLM_MODEL`。辅助系统也想换的话再改 §6 的 4 行。
+改 `backend/.env` 的 `AI_PHONE_PHONE_VLM_*` 和 `AI_PHONE_AUX_*` 两块。Claude 主循环仍走已验证的 Claude Computer Use；GPT 主循环走 OpenAI Computer Use；手机层单次辅助由系统内部派生。
 
 **Q：辅助系统的"卡死检测 / 审判 / 断言"误 kill 太多怎么办？**
-见 `backend/.env.example` §17–§20，全部 26 项阈值都是可配的。常见做法：把 `AI_PHONE_AUDIT_PERIODIC_INTERVAL` 调大（默认 30 步主动召唤，可以调到 50 让 VLM 多跑几步再监督），或把 `AI_PHONE_AUDIT_ALLOW_LIMIT` 调到 50–100。
+见 `backend/.env.full.example` 的高级阈值说明。常见做法：把 `AI_PHONE_AUDIT_PERIODIC_INTERVAL` 调大（默认 30 步主动召唤，可以调到 50 让 VLM 多跑几步再监督），或把 `AI_PHONE_AUDIT_ALLOW_LIMIT` 调到 50–100。
 
 ---
 

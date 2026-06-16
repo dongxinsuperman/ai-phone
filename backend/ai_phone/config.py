@@ -8,17 +8,20 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+ENV_FILES: tuple[str, str, str] = (".env.defaults", ".env", ".env.local")
+
+
 class Settings(BaseSettings):
-    """统一配置，环境变量优先，.env 兜底。
+    """统一配置，环境变量优先，项目默认配置兜底。
 
     所有变量名以 `AI_PHONE_` 前缀暴露。约定：
     - Server / Agent 同一套 Settings，各自只读自己需要的字段。
-    - 不在代码里硬编码路径；本地 / 生产都靠 env 注入差异。
+    - 不在代码里硬编码部署值；默认策略走 .env.defaults，真实部署值走 .env / .env.local。
     """
 
     model_config = SettingsConfigDict(
         env_prefix="AI_PHONE_",
-        env_file=(".env", ".env.local"),
+        env_file=ENV_FILES,
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -936,11 +939,11 @@ class Settings(BaseSettings):
         ),
     )
     function_map_context_max_chars: int = Field(
-        default=2000,
+        default=8000,
         ge=1,
         le=20000,
         description=(
-            "functionMapContext 硬字符上限，超限拒绝且不截断。"
+            "functionMapContext 硬字符上限，默认 8000；超限拒绝且不截断。"
             "env: AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS"
         ),
     )
@@ -1752,22 +1755,22 @@ class Settings(BaseSettings):
         ),
     )
     struct_strictness_hard_score: int = Field(
-        default=5,
+        default=10,
         ge=1,
         le=10,
         description=(
             "严格度综合评分 ≥ 此值直接走结构化（0-7 分制）。"
-            "评分维度：引号/数字约束/逻辑词/顺序词/动词等。"
+            "默认 10 表示关闭评分入口，只保留标签命中入口。"
             "env: AI_PHONE_STRUCT_STRICTNESS_HARD_SCORE"
         ),
     )
     struct_strictness_audit_score: int = Field(
-        default=3,
+        default=10,
         ge=1,
         le=10,
         description=(
             "严格度评分 ≥ 此值借审判模型分类（中等信号 case）。"
-            "调小让更多 case 进结构化（严格但慢）；调大放宽自由对话覆盖。"
+            "默认 10 表示关闭评分审判入口，只保留标签命中入口。"
             "env: AI_PHONE_STRUCT_STRICTNESS_AUDIT_SCORE"
         ),
     )

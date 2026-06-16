@@ -22,12 +22,14 @@ import time
 import traceback
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-# 模块顶层的 MIRROR_* 常量从 os.environ 读，需要先把 backend/.env 加载进来。
-# pydantic Settings 自己解析 .env 不会注入到 os.environ，所以这里显式 load_dotenv。
+# 少数历史/子进程路径仍可能从 os.environ 读配置。pydantic Settings 自己解析
+# env_file 不会注入到 os.environ，所以这里按 Settings 同样顺序显式加载。
 try:
+    from ai_phone.config import ENV_FILES as _AI_PHONE_ENV_FILES
     from dotenv import load_dotenv as _load_dotenv
 
-    _load_dotenv(override=False)
+    for _env_file in _AI_PHONE_ENV_FILES:
+        _load_dotenv(_env_file, override=False)
 except Exception:  # noqa: BLE001
     pass
 

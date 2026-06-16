@@ -259,7 +259,7 @@ AI_PHONE_SERVER_HTTP_BASE=http://<server-host>:8000
 AI_PHONE_SERVER_WS_URL=ws://<server-host>:8000/ws/agent
 ```
 
-Agent 侧不需要向管理员索取数据库、模型、Kafka 等 Server 专用配置。只要不在这台机器启动 Server，模板里的 `AI_PHONE_DB_URL`、`AI_PHONE_VLM_API_KEY`、`AI_PHONE_ASSISTANT_API_KEY`、`AI_PHONE_KAFKA_BROKERS` 不会影响 Agent 连接公司 Server。
+Agent 侧不需要向管理员索取数据库、模型、Kafka 等 Server 专用配置。只要不在这台机器启动 Server，模板里的 `AI_PHONE_DB_URL`、`AI_PHONE_PHONE_VLM_*`、`AI_PHONE_AUX_*`、`AI_PHONE_KAFKA_BROKERS` 不会影响 Agent 连接公司 Server。
 
 Agent 部署者至少要逐项确认：
 

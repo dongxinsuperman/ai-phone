@@ -79,8 +79,8 @@ from ai_phone.server.trajectory_cache import (
 @pytest.fixture(autouse=True)
 def _isolate_aiphone_env(monkeypatch):
     """本文件用例都用 ``Settings(_env_file=None)`` 构造、期望取代码默认值。但其他测试
-    ``import ai_phone.agent.main`` 时其顶部 ``load_dotenv()`` 会把 ``.env``（含
-    ``AI_PHONE_VLM_*`` / ``AI_PHONE_TRAJECTORY_CACHE_*`` 等 160+ 项）注入 ``os.environ``，
+    ``import ai_phone.agent.main`` 时其顶部 ``load_dotenv()`` 会把 ``.env.defaults`` /
+    ``.env`` / ``.env.local`` 里的 ``AI_PHONE_*`` 注入 ``os.environ``，
     pydantic 仍会读到，污染如 v3 coord 的 overseas 配置判定。清掉 ``AI_PHONE_`` 前缀
     保证用例不受运行顺序影响、可独立复现（next 时本文件整体 skip，故从未暴露）。"""
     import os

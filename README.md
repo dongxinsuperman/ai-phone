@@ -117,7 +117,7 @@ ai-phone 有两条同源、并行维护的架构线，底层架构区别在「VL
 ```bash
 git clone https://github.com/dongxinsuperman/ai-phone.git
 cd ai-phone/backend
-cp .env.example .env  # 至少填 AI_PHONE_DB_URL + AI_PHONE_VLM_API_KEY
+cp .env.example .env  # 按注释填写 DB、Agent token、PHONE_VLM/AUX、Agent/WDA 等真实值
 python3.11 -m venv .venv && source .venv/bin/activate && pip install -e .
 
 # 终端 A：起 Server
@@ -133,6 +133,16 @@ cd ../web && npm install && npm run dev
 ```
 
 打开 <http://127.0.0.1:5180> → 选设备 → 进工作台 → 输入自然语言 goal → 看 VLM 跑。
+
+配置文件职责：
+
+```text
+backend/.env.defaults      项目默认策略，进 git，会被运行时读取
+backend/.env.example       用户填写指南，复制成 .env 后填真实部署值
+backend/.env.full.example  全量高级参数参考，不参与运行时加载
+backend/.env               用户真实配置，不进 git
+backend/.env.local         本机覆盖配置，不进 git
+```
 
 > 新 Mac 从 0 到 1 完备部署请看 [deployment-from-zero（从0到1部署指南）](./docs/deployment-from-zero（从0到1部署指南）.md)。
 > 详细前置 / 数据库 / 调试参数请看 [getting-started（本地开发指南）](./docs/getting-started（本地开发指南）.md)。
