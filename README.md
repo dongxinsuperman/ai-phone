@@ -144,6 +144,11 @@ backend/.env               用户真实配置，不进 git
 backend/.env.local         本机覆盖配置，不进 git
 ```
 
+> 从旧版本升级时，本机 `backend/.env` 不会被 `git pull` 自动改。请按
+> [ENV Migration Guide](./docs/env-migration-guide.md) 补齐 `AI_PHONE_PHONE_VLM_*`
+> 和 `AI_PHONE_AUX_*`，并清理旧式 `AI_PHONE_VLM_* / AI_PHONE_ASSISTANT_*`
+> 连接项，避免看起来还在配旧入口。
+
 > 新 Mac 从 0 到 1 完备部署请看 [deployment-from-zero（从0到1部署指南）](./docs/deployment-from-zero（从0到1部署指南）.md)。
 > 详细前置 / 数据库 / 调试参数请看 [getting-started（本地开发指南）](./docs/getting-started（本地开发指南）.md)。
 > iOS / HarmonyOS 接入需要额外配置，见 [ios-setup（iOS接入指南）](./docs/ios-setup（iOS接入指南）.md) 与 [harmony-setup（HarmonyOS接入指南）](./docs/harmony-setup（HarmonyOS接入指南）.md)。

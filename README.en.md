@@ -83,6 +83,12 @@ backend/.env               real deployment config; not committed
 backend/.env.local         local machine override; not committed
 ```
 
+Upgrade note: `backend/.env` is ignored by git, so `git pull` will not update
+your existing local file. After pulling the ENV migration, follow
+[ENV Migration Guide](./docs/env-migration-guide.md), add `AI_PHONE_PHONE_VLM_*`
+and `AI_PHONE_AUX_*`, and remove old `AI_PHONE_VLM_* / AI_PHONE_ASSISTANT_*`
+connection entries from your local `.env`.
+
 Open <http://127.0.0.1:5180>, choose a device, enter a natural-language goal, and watch the run.
 
 For a full new-Mac setup, including iOS, Android, HarmonyOS, environment variables, and troubleshooting, see the Chinese deployment guide:

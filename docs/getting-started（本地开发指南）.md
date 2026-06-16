@@ -49,6 +49,11 @@ cp .env.example .env
 
 `.env.example` 是用户填表说明；高级调参项见 `.env.full.example`，项目默认策略见 `.env.defaults`。
 
+从旧版本升级时，本机 `.env` 不会被 `git pull` 自动改。请按
+[`ENV Migration Guide`](./env-migration-guide.md) 补齐 `AI_PHONE_PHONE_VLM_*`
+和 `AI_PHONE_AUX_*`，并清理旧式 `AI_PHONE_VLM_* / AI_PHONE_ASSISTANT_*`
+连接项，避免排查时误以为旧入口仍然生效。
+
 ---
 
 ## 三、起 Server
