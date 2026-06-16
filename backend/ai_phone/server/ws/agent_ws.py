@@ -214,7 +214,11 @@ async def agent_ws(
         )
         logger.info("已向 Agent {} 下发执行配置", agent_id)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("向 Agent {} 下发配置失败（忽略，Agent 走本机默认）：{}", agent_id, exc)
+        logger.warning(
+            "向 Agent {} 下发配置失败（VLM Run 未应用配置会拒绝执行，等待后续补发）：{}",
+            agent_id,
+            exc,
+        )
 
     # 兜底：agent 重启 / 故障切换时，浏览器 ws 可能并没有断（不会重新触发
     # /ws/browser 里的 start_mirror）。这里在新 agent 注册完成后，主动检查每
@@ -506,7 +510,8 @@ async def _dispatch(
 
     if t == P.MSG_AGENT_CONFIG_REQUEST:
         # M5：Agent 按需补拉配置——连接时 MSG_AGENT_CONFIG 下发漏达 / 应用失败时，
-        # Agent 在 run 启动发现未覆盖会请求补发（不 fail-fast，轻量重试拿到为止）。
+        # Agent 在 run 启动发现未覆盖会请求补发；本次 VLM Run 会直接失败，避免用
+        # Agent 本机旧式 VLM_* 兜底。
         # 重发当前可下发配置快照；Agent set_runtime_override 覆盖本机。
         try:
             from ai_phone.config import build_downlink_config  # noqa: PLC0415

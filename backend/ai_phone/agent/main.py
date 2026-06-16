@@ -1062,22 +1062,6 @@ async def _handle_start_run(
     # 引擎选择：缺省 'vlm'（与历史行为完全等价）。'midscene' 等外接引擎走不同路径，
     # 比如不开 ai-phone driver、不走 vlm_loop。详见 `Midscene执行器接入方案.md`。
     engine = str(msg.get("engine") or "vlm").strip().lower() or "vlm"
-    # M5：凭证集中下发的运维可见性——本 run 启动时若尚未应用 Server 下发配置（连接竞态 /
-    # Server 未下发），可信环境下用本机 .env 兜底；但本机也无主模型 key 时模型调用必失败，
-    # 这里前置告警便于排查（不 fail-fast 拒跑，符合"凭证没就绪就重试拿到为止"）。
-    if engine == "vlm" and not has_runtime_override():
-        # M5：本 run 未应用 Server 下发配置（连接时下发漏达 / 应用失败）→ 异步按需补拉一次
-        # （不阻塞本 run：本 run 走本机兜底，补发的 config 在后续 run 生效；不 fail-fast 拒跑）。
-        try:
-            await client.send({"type": P.MSG_AGENT_CONFIG_REQUEST})
-        except Exception:  # noqa: BLE001
-            pass
-        if not str(getattr(get_settings(), "vlm_api_key", "") or "").strip():
-            logger.warning(
-                "run_id={} 启动时未应用 Server 下发配置且本机无 vlm_api_key，模型调用将失败；"
-                "已请求补发配置，等下发到达 / 本机配置后重试",
-                run_id,
-            )
     # M4 片1：命中缓存时 Server 随 start_run 下发回放快照。本片先记录、验证下发链路；
     # 实际本地回放在片2（V3 端到端）起接入。
     cache_snapshot = msg.get("cache_snapshot") or None
@@ -1097,6 +1081,30 @@ async def _handle_start_run(
     )
     if not (run_id and serial and goal):
         logger.warning("start_run 参数不全 | run_id={} serial={} goal_len={}", run_id, serial, len(goal))
+        return
+
+    if engine == "vlm" and not has_runtime_override():
+        # 新版模型配置必须由 Server 下发并成功应用。没有 override 时只请求补发，
+        # 本次 Run 直接失败，避免继续吃 Agent 本机旧式 VLM_* 残留。
+        try:
+            await client.send({"type": P.MSG_AGENT_CONFIG_REQUEST})
+        except Exception:  # noqa: BLE001
+            pass
+        missing_config_done = {
+            "type": P.MSG_RUN_DONE,
+            "run_id": run_id,
+            "serial": serial,
+            "attempt": attempt,
+            "result": "error",
+            "message": "agent_config_not_applied: waiting for server PHONE_VLM config",
+            "steps": 0,
+            "elapsed_ms": 0,
+            "token_stats": {},
+        }
+        if supervisor.reporter is not None:
+            await supervisor.reporter.enqueue(missing_config_done)
+        else:
+            await client.send(missing_config_done)
         return
 
     if supervisor.is_busy(serial):
@@ -2664,7 +2672,10 @@ def run(
                 len(config), eff.vlm_backend, eff.run_max_steps,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("应用 Server 下发配置失败（保持本机默认）：{}", exc)
+            logger.warning(
+                "应用 Server 下发配置失败（VLM Run 将拒绝执行，等待下次补发）：{}",
+                exc,
+            )
 
     client.on(P.MSG_START_RUN, _start_handler)
     client.on(P.MSG_STOP_RUN, _stop_handler)

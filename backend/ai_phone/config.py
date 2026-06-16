@@ -305,8 +305,8 @@ class Settings(BaseSettings):
     vlm_backend: str = Field(
         default="doubao_responses",
         description=(
-            "主 VLM 协议后端。可选 doubao_responses（默认）/ claude_cu / gpt_cu。"
-            "env: AI_PHONE_VLM_BACKEND"
+            "内部派生字段：主 VLM 协议后端。可选 doubao_responses（默认）/ "
+            "claude_cu / gpt_cu；外部请配置 AI_PHONE_PHONE_VLM_PROVIDER。"
         ),
     )
     # 海外 Computer Use prompt 默认保持英文，避免开源用户拿到中文化默认体验；
@@ -467,9 +467,68 @@ class Settings(BaseSettings):
     assistant_backend: str = Field(
         default="doubao_chat",
         description=(
-            "辅助系统协议后端。可选 doubao_chat（默认）/ claude / openai。"
-            "env: AI_PHONE_ASSISTANT_BACKEND"
+            "内部派生字段：辅助系统协议后端。可选 doubao_chat（默认）/ "
+            "claude / openai；外部请配置 AI_PHONE_AUX_PROVIDER。"
         ),
+    )
+
+    # ── 新版统一模型配置（两块连接身份 · 必填 · 不再回退 legacy）────────
+    # 对外只暴露两块连接身份，详见 backend/.env.example：
+    #   1) phone_vlm_*：碰手机的 VLM（主决策 + 辅助恢复 / 定位 / 门控），vision 专版。
+    #      系统内部自动拆协议——主决策走 /responses 主动式缓存续接；辅助恢复 / 定位 /
+    #      门控走 /chat/completions 单次。用户不需要、也不应该手填这两个端点。
+    #   2) aux_*：辅助模型（包名 / 通道 / 审判 / 断言 / 瞬态分类 / 大盘分析），通用版，
+    #      单次判断，不碰手机；必须显式配置，不能跟随主模型。
+    # 生效规则：phone_vlm_* 四项和 aux_* 四项都必填；
+    # 由 _derive_new_model_config() 自动派生并覆盖下方内部 vlm_* / assistant_* /
+    # trajectory_cache_*_vlm_* 连接字段。缺项直接报配置错误，不再回退旧式 VLM_*。
+    # provider 决定内部执行链路：
+    #   - doubao：主决策走方舟 Responses，手机层单次走方舟 Chat。
+    #   - claude：主决策走已验证的 claude_cu，手机层单次走 claude_messages。
+    #   - openai/gpt：主决策走 gpt_cu，手机层单次走 OpenAI Responses。
+    # 重要约束：doubao 主执行必须在火山方舟控制台**手动开启“上下文缓存 /
+    # 主动缓存”开关**，否则主动缓存不生效、长任务 token 成本会暴涨。
+    phone_vlm_provider: str = Field(
+        default="",
+        description=(
+            "碰手机 VLM 提供方：doubao / claude / openai(gpt)。"
+            "env: AI_PHONE_PHONE_VLM_PROVIDER"
+        ),
+    )
+    phone_vlm_model: str = Field(
+        default="",
+        description="碰手机 VLM 模型（vision 专版，如 doubao-seed-1-6-vision-*）。env: AI_PHONE_PHONE_VLM_MODEL",
+    )
+    phone_vlm_api_key: str = Field(
+        default="",
+        description="碰手机 VLM API key。env: AI_PHONE_PHONE_VLM_API_KEY",
+    )
+    phone_vlm_base_url: str = Field(
+        default="",
+        description=(
+            "碰手机 VLM API 地址。doubao 填到 /api/v3；claude 可填 /v1/messages；"
+            "openai 可填 /v1 或 /v1/responses。填完整 endpoint 也会自动归一。"
+            "env: AI_PHONE_PHONE_VLM_BASE_URL"
+        ),
+    )
+    aux_provider: str = Field(
+        default="",
+        description=(
+            "辅助模型提供方：doubao / claude / openai(gpt)。"
+            "必填，不跟随 PHONE_VLM。env: AI_PHONE_AUX_PROVIDER"
+        ),
+    )
+    aux_model: str = Field(
+        default="",
+        description="辅助模型（通用版，不碰手机的判断 / 裁决）。env: AI_PHONE_AUX_MODEL",
+    )
+    aux_api_key: str = Field(
+        default="",
+        description="辅助模型 API key。必填，不跟随 PHONE_VLM。env: AI_PHONE_AUX_API_KEY",
+    )
+    aux_base_url: str = Field(
+        default="",
+        description="辅助模型 API 地址。必填，不跟随 PHONE_VLM。env: AI_PHONE_AUX_BASE_URL",
     )
 
     # --- VLM Agent · 瞬态 UI 检测（动态判断系统） ---
@@ -1099,7 +1158,7 @@ class Settings(BaseSettings):
         description=(
             "recovery_vlm 后端协议。支持 'doubao_responses'（可直接复用主 VLM responses "
             "配置）/ 'openai_compatible'（豆包/OpenAI 兼容 chat completions）/ "
-            "'claude_messages'。当主 VLM 为 claude_cu/gpt_cu 时，V2 recovery "
+            "'openai_responses' / 'claude_messages'。当主 VLM 为 claude_cu/gpt_cu 时，V2 recovery "
             "会优先复用主 VLM Computer Use 配置，本字段仅作为非 CU/历史兼容路径。"
             "env: AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_BACKEND"
         ),
@@ -1363,7 +1422,7 @@ class Settings(BaseSettings):
         default="openai_compatible",
         description=(
             "瞬态 action classifier 后端协议：doubao_responses / openai_compatible / "
-            "claude_messages。classifier url/key/model 留空时会复用 ASSISTANT_* 并按 "
+            "openai_responses / claude_messages。classifier url/key/model 留空时会复用 ASSISTANT_* 并按 "
             "assistant_backend 自动映射。env: AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_CLASSIFIER_BACKEND"
         ),
     )
@@ -1729,6 +1788,12 @@ class Settings(BaseSettings):
 #
 # 单机部署（server+agent 同一 .env）下三分区无感知差异；多机部署下 Agent 机器只需
 # 配 AGENT_LOCAL 那几个，其余执行配置由 Server 下发覆盖。
+#
+# 新版模型 ENV 的归属：
+#   - PHONE_VLM 四项（provider/base_url/api_key/model）：必须下发并覆盖；缺任一项直接报错。
+#   - AUX 四项（provider/base_url/api_key/model）：必须下发并覆盖；缺任一项直接报错。
+#   - 派生出来的 vlm_* / assistant_* / trajectory_cache_*_vlm_*：同属下发集，由 Server
+#     基于 PHONE_VLM/AUX 统一派生后下发，Agent 本机残留不参与兜底。
 
 # Agent 本机物理必需（代码证据：连接四元组 + iOS WDA 本机签名/路径/端口）
 AGENT_LOCAL_FIELDS: frozenset[str] = frozenset({
@@ -1794,14 +1859,271 @@ def downlink_field_names() -> frozenset[str]:
     return frozenset(all_fields - AGENT_LOCAL_FIELDS - SERVER_ONLY_FIELDS)
 
 
-# 主 VLM 连接三件套：Agent 跑首跑 / 回放的底线。Server 没配（空串）时不下发 / 不覆盖，
-# 留 Agent 本机 .env 兜底（可信环境）。其余字段（含 assistant / 缓存旁路 key）一律 Server
-# 集中控制：空串照常下发覆盖——assistant_api_key="" 等是"留空回退 vlm_api_key / 走主辅
-# 配置"的业务语义（见字段注释 + ``assistant_api_key or vlm_api_key``），不能当"没配"而
-# 保留 Agent 本机旧 key，否则削弱 Server 集中控制。
-_LOCAL_FALLBACK_FIELDS: frozenset[str] = frozenset(
-    {"vlm_api_key", "vlm_api_url", "vlm_model"}
+# 执行配置由 Server 集中控制：普通字段空串也要下发 / 覆盖，用来清理 Agent 本机残留。
+# 新版 PHONE_VLM/AUX 缺项时直接报错，不再保留旧式 VLM_* 作为本机兜底。
+_PHONE_VLM_REQUIRED_FIELDS: tuple[tuple[str, str], ...] = (
+    ("phone_vlm_provider", "AI_PHONE_PHONE_VLM_PROVIDER"),
+    ("phone_vlm_base_url", "AI_PHONE_PHONE_VLM_BASE_URL"),
+    ("phone_vlm_api_key", "AI_PHONE_PHONE_VLM_API_KEY"),
+    ("phone_vlm_model", "AI_PHONE_PHONE_VLM_MODEL"),
 )
+
+_AUX_REQUIRED_FIELDS: tuple[tuple[str, str], ...] = (
+    ("aux_provider", "AI_PHONE_AUX_PROVIDER"),
+    ("aux_base_url", "AI_PHONE_AUX_BASE_URL"),
+    ("aux_api_key", "AI_PHONE_AUX_API_KEY"),
+    ("aux_model", "AI_PHONE_AUX_MODEL"),
+)
+
+
+def _missing_required_fields(
+    values: object,
+    fields: tuple[tuple[str, str], ...],
+) -> list[str]:
+    missing: list[str] = []
+    for field_name, env_name in fields:
+        if isinstance(values, dict):
+            raw = values.get(field_name)
+        else:
+            raw = getattr(values, field_name, None)
+        if not str(raw or "").strip():
+            missing.append(env_name)
+    return missing
+
+
+def _missing_phone_vlm_fields(values: object) -> list[str]:
+    return _missing_required_fields(values, _PHONE_VLM_REQUIRED_FIELDS)
+
+
+def _missing_aux_fields(values: object) -> list[str]:
+    return _missing_required_fields(values, _AUX_REQUIRED_FIELDS)
+
+
+def _strip_endpoint_suffix(url: str) -> str:
+    """把可能带 ``/responses`` 或 ``/chat/completions`` 的地址归一成 API 根。
+
+    新版只让用户填 base_url（到 ``/api/v3``）；但容忍用户误填完整 endpoint，
+    自动剥掉已知后缀，保证内部能干净地拼出两个端点。
+    """
+    raw = (url or "").strip().rstrip("/")
+    for suffix in ("/chat/completions", "/responses"):
+        if raw.endswith(suffix):
+            return raw[: -len(suffix)].rstrip("/")
+    return raw
+
+
+def _normalize_model_provider(provider: str, *, default: str) -> str:
+    value = (provider or "").strip().lower().replace("-", "_")
+    if not value:
+        value = default
+    if value in {"doubao", "ark", "volcengine", "volc"}:
+        return "doubao"
+    if value in {"claude", "anthropic"}:
+        return "claude"
+    if value in {"openai", "gpt", "gpt_cu"}:
+        return "openai"
+    return value
+
+
+def _anthropic_messages_url(url: str) -> str:
+    raw = (url or "").strip().rstrip("/")
+    if not raw:
+        return raw
+    if raw.endswith("/messages"):
+        return raw
+    if raw.endswith("/v1"):
+        return f"{raw}/messages"
+    return f"{raw}/v1/messages"
+
+
+def _openai_responses_url(url: str) -> str:
+    raw = (url or "").strip().rstrip("/")
+    if not raw:
+        return raw
+    if raw.endswith("/responses"):
+        return raw
+    if raw.endswith("/chat/completions"):
+        return raw[: -len("/chat/completions")].rstrip("/") + "/responses"
+    if raw.endswith("/v1"):
+        return f"{raw}/responses"
+    return f"{raw}/v1/responses"
+
+
+def _openai_chat_completions_url(url: str) -> str:
+    raw = (url or "").strip().rstrip("/")
+    if not raw:
+        return raw
+    if raw.endswith("/chat/completions"):
+        return raw
+    if raw.endswith("/responses"):
+        return raw[: -len("/responses")].rstrip("/") + "/chat/completions"
+    if raw.endswith("/v1"):
+        return f"{raw}/chat/completions"
+    return f"{raw}/v1/chat/completions"
+
+
+def _derive_aux_model_config(settings: "Settings") -> dict:
+    missing = _missing_aux_fields(settings)
+    if missing:
+        raise RuntimeError(
+            "新版 AUX 配置缺失，无法派生辅助模型执行链路："
+            + ", ".join(missing)
+            + "。请配置 AI_PHONE_AUX_*；辅助模型必须显式配置，不再跟随 PHONE_VLM。"
+        )
+    provider = _normalize_model_provider(
+        getattr(settings, "aux_provider", ""),
+        default="",
+    )
+    base_url = (getattr(settings, "aux_base_url", "") or "").strip()
+    api_key = (getattr(settings, "aux_api_key", "") or "").strip()
+    model = (getattr(settings, "aux_model", "") or "").strip()
+
+    if provider == "doubao":
+        aux_base = _strip_endpoint_suffix(base_url)
+        assistant_backend = "doubao_chat"
+        assistant_api_url = f"{aux_base}/chat/completions" if aux_base else ""
+        classifier_backend = "openai_compatible"
+    elif provider == "claude":
+        assistant_backend = "claude"
+        assistant_api_url = _anthropic_messages_url(base_url)
+        classifier_backend = "claude_messages"
+    elif provider == "openai":
+        assistant_backend = "openai"
+        assistant_api_url = _openai_chat_completions_url(base_url)
+        classifier_backend = "openai_compatible"
+    else:
+        raise RuntimeError(
+            "AI_PHONE_AUX_PROVIDER 只支持 doubao / claude / openai，"
+            f"当前为 {provider!r}"
+        )
+
+    return {
+        "assistant_backend": assistant_backend,
+        "assistant_api_url": assistant_api_url,
+        "assistant_api_key": api_key,
+        "assistant_model": model,
+        "trajectory_cache_ephemeral_classifier_backend": classifier_backend,
+        "trajectory_cache_ephemeral_classifier_api_url": assistant_api_url,
+        "trajectory_cache_ephemeral_classifier_api_key": api_key,
+        "trajectory_cache_ephemeral_classifier_model": model,
+    }
+
+
+def _derive_new_model_config(settings: "Settings") -> "Settings":
+    """新版两块配置（``phone_vlm_*`` / ``aux_*``）派生覆盖内部连接字段。
+
+    新模式对外只暴露 PHONE_VLM / AUX 两块，内部按 provider 和“形态”自动拆协议：
+
+    - doubao：主决策 ``doubao_responses``；手机层单次 ``openai_compatible``。
+    - claude：主决策保持已验证的 ``claude_cu``；手机层单次 ``claude_messages``。
+    - openai/gpt：主决策 ``gpt_cu``；手机层单次 ``openai_responses``。
+    - AUX：按 ``aux_provider`` 分发到 ``doubao_chat`` / ``claude`` / ``openai``；
+      瞬态分类跟随 AUX，但只走单次视觉判断协议。
+
+    ``phone_vlm_provider`` + ``phone_vlm_base_url`` + ``phone_vlm_api_key`` +
+    ``phone_vlm_model`` 四项必填；缺项直接报错，不再回退旧式 ``VLM_*``。
+    ``aux_provider`` + ``aux_base_url`` + ``aux_api_key`` + ``aux_model``
+    四项也必填；辅助模型不跟随主模型，避免海外 CU 主模型被误用成通用辅助模型。
+    """
+    missing = _missing_phone_vlm_fields(settings)
+    if missing:
+        raise RuntimeError(
+            "新版 PHONE_VLM 配置缺失，无法派生模型执行链路："
+            + ", ".join(missing)
+            + "。请配置 AI_PHONE_PHONE_VLM_*；不再回退旧式 AI_PHONE_VLM_*。"
+        )
+    missing = _missing_aux_fields(settings)
+    if missing:
+        raise RuntimeError(
+            "新版 AUX 配置缺失，无法派生辅助模型执行链路："
+            + ", ".join(missing)
+            + "。请配置 AI_PHONE_AUX_*；辅助模型必须显式配置，不再跟随 PHONE_VLM。"
+        )
+    raw_base = (getattr(settings, "phone_vlm_base_url", "") or "").strip()
+    key = (getattr(settings, "phone_vlm_api_key", "") or "").strip()
+    model = (getattr(settings, "phone_vlm_model", "") or "").strip()
+
+    provider = _normalize_model_provider(
+        getattr(settings, "phone_vlm_provider", ""),
+        default="",
+    )
+
+    if provider == "doubao":
+        base = _strip_endpoint_suffix(raw_base)
+        chat_url = f"{base}/chat/completions"
+        update = {
+            # 形态 1 · 主 VLM（碰手机 · responses 续接 + 主动缓存）
+            "vlm_backend": "doubao_responses",
+            "vlm_api_url": f"{base}/responses",
+            "vlm_chat_api_url": chat_url,
+            "vlm_api_key": key,
+            "vlm_model": model,
+            # 形态 2 · 辅 VLM 恢复（碰手机 · chat 单次）；v3 / gate 跟随它
+            "trajectory_cache_recovery_vlm_backend": "openai_compatible",
+            "trajectory_cache_recovery_vlm_api_url": chat_url,
+            "trajectory_cache_recovery_vlm_api_key": key,
+            "trajectory_cache_recovery_vlm_model": model,
+            "trajectory_cache_v3_coord_use_recovery_vlm_config": True,
+            "trajectory_cache_v3_rescue_use_recovery_vlm_config": True,
+            "trajectory_cache_ephemeral_gate_use_recovery_vlm_config": True,
+        }
+        update.update(_derive_aux_model_config(settings))
+        return settings.model_copy(update=update)
+
+    if provider == "claude":
+        messages_url = _anthropic_messages_url(raw_base)
+        update = {
+            "vlm_backend": "claude_cu",
+            "vlm_api_url": messages_url,
+            "vlm_chat_api_url": messages_url,
+            "vlm_api_key": key,
+            "vlm_model": model,
+            "trajectory_cache_recovery_vlm_backend": "claude_messages",
+            "trajectory_cache_recovery_vlm_api_url": messages_url,
+            "trajectory_cache_recovery_vlm_api_key": key,
+            "trajectory_cache_recovery_vlm_model": model,
+            "trajectory_cache_v3_coord_use_recovery_vlm_config": True,
+            "trajectory_cache_v3_rescue_use_recovery_vlm_config": True,
+            "trajectory_cache_ephemeral_gate_use_recovery_vlm_config": True,
+        }
+        update.update(_derive_aux_model_config(settings))
+        return settings.model_copy(update=update)
+
+    if provider == "openai":
+        responses_url = _openai_responses_url(raw_base)
+        update = {
+            "vlm_backend": "gpt_cu",
+            "vlm_api_url": responses_url,
+            "vlm_chat_api_url": _openai_chat_completions_url(raw_base),
+            "vlm_api_key": key,
+            "vlm_model": model,
+            "trajectory_cache_recovery_vlm_backend": "openai_responses",
+            "trajectory_cache_recovery_vlm_api_url": responses_url,
+            "trajectory_cache_recovery_vlm_api_key": key,
+            "trajectory_cache_recovery_vlm_model": model,
+            "trajectory_cache_v3_coord_use_recovery_vlm_config": True,
+            "trajectory_cache_v3_rescue_use_recovery_vlm_config": True,
+            "trajectory_cache_ephemeral_gate_use_recovery_vlm_config": True,
+        }
+        update.update(_derive_aux_model_config(settings))
+        return settings.model_copy(update=update)
+
+    raise RuntimeError(
+        "AI_PHONE_PHONE_VLM_PROVIDER 只支持 doubao / claude / openai，"
+        f"当前为 {provider!r}"
+    )
+
+
+def _maybe_derive_new_model_config(settings: "Settings") -> "Settings":
+    """本机启动期宽松派生：PHONE_VLM/AUX 齐全就派生，不齐先保留基础配置。
+
+    Agent 需要先读取 server_ws_url / token 才能连上 Server 拿下发配置，所以启动期
+    不能因为本机没有模型 key 直接退出；真正执行配置由 build_downlink_config /
+    set_runtime_override 严格校验，不允许走本机旧式模型字段。
+    """
+    if _missing_phone_vlm_fields(settings) or _missing_aux_fields(settings):
+        return settings
+    return _derive_new_model_config(settings)
 
 
 def build_downlink_config(settings: "Settings | None" = None) -> dict:
@@ -1810,19 +2132,15 @@ def build_downlink_config(settings: "Settings | None" = None) -> dict:
     供 agent_ws 在 Agent 连接后下发。只含下发集字段，绝不含 AGENT_LOCAL /
     SERVER_ONLY（即不含 db_url、kafka 密码、内部 token、Agent 本机签名等）。
     """
-    cfg = settings or get_settings()
+    cfg = _derive_new_model_config(settings or _base_settings())
     out: dict = {}
     for name in downlink_field_names():
         value = getattr(cfg, name, None)
         # Path 等非 JSON 原生类型转成字符串，保证可序列化
         if isinstance(value, Path):
             value = str(value)
-        # None 不下发（Optional 字段未设）。主 VLM 三件套空串也不下发——留 Agent 本机
-        # 兜底；其余字段（assistant / 旁路 key 等）空串照常下发，让 Server "清空=回退主
-        # 配置"的集中控制生效（不被 Agent 本机旧值截胡）。
+        # None 不下发（Optional 字段未设）；空串照常下发，用来清理 Agent 本机残留。
         if value is None:
-            continue
-        if value == "" and name in _LOCAL_FALLBACK_FIELDS:
             continue
         out[name] = value
     return out
@@ -1835,8 +2153,13 @@ _runtime_override: "Settings | None" = None
 
 @lru_cache(maxsize=1)
 def _base_settings() -> Settings:
-    """本机 .env 解析出的基线 Settings（进程级单例）。"""
-    return Settings()
+    """本机 .env 解析出的基线 Settings（进程级单例）。
+
+    启动期只做宽松派生：PHONE_VLM/AUX 齐全就覆盖内部连接字段；不齐则先保留基础配置，
+    让 Agent 能连上 Server 拉取集中下发。Server 下发 / Agent 应用下发时会严格校验
+    PHONE_VLM/AUX，缺项直接失败。
+    """
+    return _maybe_derive_new_model_config(Settings())
 
 
 def get_settings() -> Settings:
@@ -1867,17 +2190,23 @@ def set_runtime_override(config: dict | None) -> Settings:
         _runtime_override = None
         return get_settings()
     allowed_names = downlink_field_names()
-    # 字段级兜底（双保险）：None 一律不覆盖；主 VLM 三件套空串不覆盖（留 Agent 本机兜底）；
-    # 其余字段空串照常覆盖——assistant / 旁路 key 的空串是"回退 vlm_api_key / 走主辅配置"
-    # 的业务语义，Server 下发空串即"集中清空回退"，不能当"没配"而保留 Agent 本机旧 key。
+    # None 一律不覆盖；空串照常覆盖，用来清理 Agent 本机残留。
     update: dict = {}
     for k, v in snapshot.items():
         if k not in allowed_names or v is None:
             continue
-        if v == "" and k in _LOCAL_FALLBACK_FIELDS:
-            continue
         update[k] = v
-    _runtime_override = _base_settings().model_copy(update=update)
+    missing = _missing_phone_vlm_fields(update) + _missing_aux_fields(update)
+    if missing:
+        raise RuntimeError(
+            "Server 下发缺少新版模型配置："
+            + ", ".join(missing)
+            + "。Agent 不再使用本机旧式 VLM_* 或本机 AUX 兜底。"
+        )
+    # 先合并 Server 下发值，再严格派生内部连接字段；不接受旧式 legacy 下发。
+    _runtime_override = _derive_new_model_config(
+        _base_settings().model_copy(update=update)
+    )
     return _runtime_override
 
 
