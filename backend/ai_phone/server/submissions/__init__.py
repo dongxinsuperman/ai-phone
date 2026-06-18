@@ -4,8 +4,8 @@
 
 * ``publisher`` —— ``ResultPublisher`` 抽象 + StdoutPublisher（默认）+
   KafkaPublisher（aiokafka 真发，broker 缺位降 mock）+ WebhookPublisher
-  （per-submission 一次性 HTTP 回调）。scheduler 在 item 进入终态
-  （success / failed / cancelled）时调一次 ``publish_terminal``。
+  （per-event 一次性 HTTP 回调）。scheduler 在 item 进入终态
+  （success / failed / cancelled）与 submission 整批收口时投递终态事件。
 * ``events``   —— 把 ``SubmissionItem`` + 关联 ``Run`` 序列化成"广播事件"字典。
   包含 reportUrl（如已生成）/ elapsedMs / tokenStats / statusReason / state 等
   供外部平台消费的最小字段集。
@@ -14,7 +14,7 @@
 
 本包**不** 触碰：三端 agent 执行流程、WS start_run/stop_run 协议、Run 现有字段。
 对 scheduler 的侵入仅限于：构造时多接一个 publisher、on_run_done + cancel +
-submission_timeout 三处各多发一次 publish_terminal 调用。
+submission_timeout 三处各多入队一次终态通知。
 """
 
 from __future__ import annotations

@@ -81,7 +81,7 @@ Content-Type: application/json
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | `submissionName` | 否 | 批次展示名；缺省回落到 `submissionId` |
-| `callbackUrl` | 否 | 批次全部收口后 POST 一次 `submission.terminal`；只支持 `http://` / `https://` |
+| `callbackUrl` | 否 | 每条 item 终态 POST 一次 `submission.item.terminal`，批次全部收口后再 POST 一次 `submission.terminal`；只支持 `http://` / `https://` |
 | `cacheMode` | 否 | 批次默认轨迹缓存模式，取值 `off` / `v1` / `v2` / `v3`；单 item 可覆盖。使用边界见 [trajectory-cache-usage（轨迹缓存使用文档）](./trajectory-cache-usage（轨迹缓存使用文档）.md) |
 | `retryMax` | 否 | 本批重跑上限；还会受服务端 `AI_PHONE_RUN_RETRY_*` 限制 |
 | `functionMapContext` | 否 | 批次级执行参考，最多 `AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS` 字符，默认 8000。可放功能地图、测试数据、业务背景、异常处理；只作为只读参考，不会改变 `runContent` 的任务范围 |
@@ -271,7 +271,7 @@ item 终态事件 `submission.item.terminal`：
 }
 ```
 
-如果投递时带了 `callbackUrl`，scheduler 在批次收口后会额外 POST 一次 `submission.terminal` 到该 URL。Webhook 不重试、不签名、5 秒超时，失败只记日志，不影响主流程。
+如果投递时带了 `callbackUrl`，scheduler 会把同一份终态事件旁路 POST 到该 URL：每条执行单元结束时发送 `submission.item.terminal`，批次收口后发送 `submission.terminal`。Webhook 与 Kafka 互不依赖，均为 best-effort 通知；Webhook 不重试、不签名、5 秒超时，失败只记日志，不影响主流程。
 
 ## 8. 其他接口
 

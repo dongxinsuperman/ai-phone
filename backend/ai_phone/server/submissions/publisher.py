@@ -9,7 +9,7 @@
   producer 启动失败时，自动回落到 "打结构化 loguru 日志" 的 mock 形态，
   保证主流程不受 broker 故障拖累。
 - **WebhookPublisher 旁路**：与 backend 选择正交。投递时 callbackUrl 跟批次走，
-  scheduler 收口时为这一批临时构造一个 WebhookPublisher 单发一次（与 Kafka
+  scheduler 会把 item 终态与 submission 终态事件都投递到该 URL（与 Kafka
   / stdout 主 publisher 并存）。失败发一次就吞，不重试不签名（v1.8 简化版）。
 - **永不抛异常到调用侧**：广播是副作用，广播挂不能把已经成功终态的 item
   拖回失败状态。publisher 内部捕获所有异常打 WARN 即可。
@@ -242,17 +242,17 @@ class WebhookPublisher(ResultPublisher):
 
     定位：与 KafkaPublisher 平级但作用域不同——
       - KafkaPublisher：进程级单例，所有批次都广播到同一 broker / topic
-      - WebhookPublisher：per-submission 一次性使用。投递时 callbackUrl 跟批次走，
-        scheduler 收口时为这一批临时构造一个 WebhookPublisher，发一次就丢
+      - WebhookPublisher：per-event 一次性使用。投递时 callbackUrl 跟批次走，
+        scheduler 通知 worker 临时构造一个 WebhookPublisher，发一次就丢
 
     契约（按 Q1=B / Q3=A / Q4=A）：
-      - 只接 submission.terminal（整批收口事件），不接 item.terminal
+      - 支持 submission.item.terminal（单条收口）与 submission.terminal（整批收口）
       - 不重试 / 不签名：发一次失败 WARN 吞异常，不影响主流程
       - 5s 超时，避免接收方挂掉拖死调度器
-      - 推送 body 是 submission.terminal 的原 JSON，与 Kafka 字节级等价
+      - 推送 body 是终态事件原 JSON，与 Kafka 字节级等价
 
     与 Kafka 的关系：互不相干、可并存。后端 backend=kafka 时主 publisher 走 Kafka；
-    同时只要批次带了 callbackUrl，scheduler 旁路再起一个 WebhookPublisher 单发一次。
+    同时只要批次带了 callbackUrl，scheduler 旁路也会对同一事件单发一次 webhook。
     """
 
     name = "webhook"
@@ -314,8 +314,8 @@ class WebhookPublisher(ResultPublisher):
 def make_publisher(settings: Optional[Settings] = None) -> ResultPublisher:
     """按 ``AI_PHONE_BROADCAST_BACKEND`` 选择实现，不认的值回落到 stdout。
 
-    注意：WebhookPublisher 不在这里构造——它是 per-submission 旁路，由
-    scheduler 收口时根据 ``Submission.callback_url`` 临时新建。
+    注意：WebhookPublisher 不在这里构造——它是 per-event 旁路，由
+    scheduler 通知 worker 根据 ``Submission.callback_url`` 临时新建。
     """
     s = settings or get_settings()
     backend = (s.broadcast_backend or "stdout").strip().lower()

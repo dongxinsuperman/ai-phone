@@ -28,7 +28,7 @@ import asyncio
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TypeAlias
 
 from loguru import logger
 from sqlalchemy import select
@@ -76,6 +76,8 @@ DEFAULT_ITEM_TTL_SEC = _settings.item_ttl_sec              # 默认 1h，env: AI
 # 事件驱动路径（on_run_done / on_readiness_change / submit）都会 kick 一下，真正
 # 决定延迟的是 kick 队列；这里只是防漏网。env: AI_PHONE_SCHEDULER_TICK_SEC
 SCHEDULER_TICK_SEC = _settings.scheduler_tick_sec
+
+_WebhookJob: TypeAlias = Tuple[str, Dict[str, Any]]
 
 
 # ---------------------------------------------------------------------------
@@ -458,6 +460,13 @@ class SubmissionScheduler:
         # submission.terminal（汇总 HTML 生成幂等覆盖，不会损坏数据）。
         self._finalized_submissions: set[str] = set()
 
+        # 终态通知是副作用，不能反向阻塞 item 落库、submission 收口、设备释放、
+        # 继续调度。Kafka 与 webhook 分成两条独立 FIFO：任一侧卡住都不影响另一侧。
+        self._publisher_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
+        self._webhook_queue: asyncio.Queue[_WebhookJob] = asyncio.Queue()
+        self._publisher_task: Optional[asyncio.Task[None]] = None
+        self._webhook_task: Optional[asyncio.Task[None]] = None
+
         self._kick = asyncio.Event()
         self._loop_task: Optional[asyncio.Task[None]] = None
         self._timeout_task: Optional[asyncio.Task[None]] = None
@@ -470,6 +479,7 @@ class SubmissionScheduler:
         if self._running:
             return
         self._running = True
+        self._start_notification_workers()
         await self._reload_queues_from_db()
         await self._recover_running_from_db()
         self._loop_task = asyncio.create_task(self._drain_loop(), name="scheduler-drain")
@@ -491,12 +501,116 @@ class SubmissionScheduler:
                     pass
         self._loop_task = None
         self._timeout_task = None
+        await self._stop_notification_workers()
         logger.info("[scheduler] stopped")
 
     def kick(self) -> None:
         """事件驱动入口：有新 item / 有 run 结束 / 有设备变 ready / 锁释放时调一下。
         非阻塞、可重复调用，drain_loop 会自己归并。"""
         self._kick.set()
+
+    def _start_notification_workers(self) -> None:
+        if self._publisher_task is None or self._publisher_task.done():
+            self._publisher_task = asyncio.create_task(
+                self._publisher_worker(),
+                name="scheduler-publisher-notify",
+            )
+        if self._webhook_task is None or self._webhook_task.done():
+            self._webhook_task = asyncio.create_task(
+                self._webhook_worker(),
+                name="scheduler-webhook-notify",
+            )
+
+    async def _stop_notification_workers(self) -> None:
+        # best-effort：关停时给队列一个短窗口；外部通知不能拖慢 Server shutdown。
+        for q, name in (
+            (self._publisher_queue, "publisher"),
+            (self._webhook_queue, "webhook"),
+        ):
+            try:
+                await asyncio.wait_for(q.join(), timeout=2.0)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[scheduler] {} 通知队列关停前未完全发送 pending={}",
+                    name,
+                    q.qsize(),
+                )
+
+        for task in (self._publisher_task, self._webhook_task):
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("[scheduler] 通知 worker 关闭异常（忽略）：{}", exc)
+        self._publisher_task = None
+        self._webhook_task = None
+
+    def _enqueue_publisher_event(self, event: Dict[str, Any]) -> None:
+        try:
+            self._publisher_queue.put_nowait(event)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[scheduler] 入队 publisher 终态通知失败 event={} err={}",
+                event.get("event"),
+                exc,
+            )
+
+    def _enqueue_webhook_event(
+        self,
+        submission: Optional[Submission],
+        event: Dict[str, Any],
+    ) -> None:
+        callback_url = getattr(submission, "callback_url", None) if submission else None
+        if not callback_url:
+            return
+        try:
+            self._webhook_queue.put_nowait((str(callback_url), event))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[scheduler] 入队 webhook 终态通知失败 submission={} event={} err={}",
+                getattr(submission, "id", None),
+                event.get("event"),
+                exc,
+            )
+
+    async def _publisher_worker(self) -> None:
+        while True:
+            event = await self._publisher_queue.get()
+            try:
+                await self._publisher.publish_terminal(event)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[scheduler] publisher 终态通知异常（吞）event={} submission={} err={}",
+                    event.get("event"),
+                    event.get("submissionId"),
+                    exc,
+                )
+            finally:
+                self._publisher_queue.task_done()
+
+    async def _webhook_worker(self) -> None:
+        while True:
+            callback_url, event = await self._webhook_queue.get()
+            try:
+                webhook = WebhookPublisher(url=callback_url)
+                await webhook.publish_terminal(event)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[scheduler] webhook 终态通知异常（吞）url={} event={} submission={} err={}",
+                    callback_url,
+                    event.get("event"),
+                    event.get("submissionId"),
+                    exc,
+                )
+            finally:
+                self._webhook_queue.task_done()
 
     async def _reload_queues_from_db(self) -> None:
         """Server 重启时从 DB 把所有 state=queued 的 item 捞回内存 FIFO。
@@ -1191,10 +1305,11 @@ class SubmissionScheduler:
                 run=run,
                 report_url=report_url,
             )
-            await self._publisher.publish_terminal(event)
+            self._enqueue_publisher_event(event)
+            self._enqueue_webhook_event(sub, event)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "[scheduler] 广播终态失败（吞异常）submission={} item={} err={}",
+                "[scheduler] 终态通知入队失败（吞异常）submission={} item={} err={}",
                 item.submission_id, item.id, exc,
             )
 
@@ -1270,39 +1385,16 @@ class SubmissionScheduler:
                 items=items,
                 summary_report_url=summary_url,
             )
-            await self._publisher.publish_terminal(event)
-            await self._maybe_send_webhook(sub, event)
+            self._enqueue_publisher_event(event)
+            self._enqueue_webhook_event(sub, event)
             logger.info(
                 "[scheduler] submission 终态收口 submission={} state={} items={} summary={}",
                 submission_id, sub.state, len(items), summary_url or "<failed>",
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "[scheduler] 广播 submission.terminal 失败 submission={} err={}",
+                "[scheduler] submission.terminal 通知入队失败 submission={} err={}",
                 submission_id, exc,
-            )
-
-    async def _maybe_send_webhook(
-        self,
-        submission: Submission,
-        event: Dict[str, Any],
-    ) -> None:
-        """v1.8 webhook 旁路：批次投递时若带 callbackUrl，主 publisher 之后再发一次
-        HTTP 回调（fire-and-forget，5s 超时，失败吞异常）。
-
-        与 Kafka / stdout 主通道并存，完全独立——一个挂掉不影响另一个。
-        WebhookPublisher 内部已经吞了所有异常，本方法的 try 只是双保险。
-        """
-        callback_url = getattr(submission, "callback_url", None)
-        if not callback_url:
-            return
-        try:
-            webhook = WebhookPublisher(url=callback_url)
-            await webhook.publish_terminal(event)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "[scheduler] webhook 旁路异常（吞）submission={} url={} err={}",
-                submission.id, callback_url, exc,
             )
 
     # ------------------------------------------------------------------
