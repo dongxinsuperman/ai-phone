@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import pytest
 
 from ai_phone.server.db import get_session_factory
-from ai_phone.server.models import Device, Run, RunCommand, RunLog
+from ai_phone.server.models import Device, DeviceAlias, Run, RunCommand, RunLog
 from ai_phone.server.hub import Hub
 from ai_phone.server.ws.agent_ws import _upsert_devices
 
@@ -67,6 +67,64 @@ async def test_list_and_get_device(client, session):
 
     miss = await client.get("/api/devices/UNKNOWN")
     assert miss.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_public_device_statuses_include_all_states(client, app, session):
+    await _seed_device(session, serial="S_READY")
+    await _seed_device(session, serial="S_BUSY")
+    await _seed_device(session, serial="S_OFFLINE", status="offline")
+    session.add_all(
+        [
+            DeviceAlias(serial="S_READY", alias="Android-A"),
+            DeviceAlias(serial="S_BUSY", alias="Android-B"),
+            DeviceAlias(serial="S_OFFLINE", alias="Android-C"),
+        ]
+    )
+    await session.commit()
+
+    hub = Hub()
+    app.state.hub = hub
+    await hub.register_agent("agent-local", "mac-a", "Darwin", _FakeWs())
+    await hub.set_devices("agent-local", {"S_READY", "S_BUSY"})
+    hub.set_device_readiness("S_READY", {"ready": True, "hint": "ok"})
+    hub.set_device_readiness("S_BUSY", {"ready": True, "hint": "ok"})
+    await app.state.lock_store.acquire(
+        "S_BUSY",
+        holder="sched-item",
+        holder_type="auto",
+        ttl_seconds=600,
+    )
+
+    resp = await client.get("/api/devices/statuses")
+    assert resp.status_code == 200
+    by_serial = {row["serial"]: row for row in resp.json()}
+
+    assert set(by_serial) == {"S_READY", "S_BUSY", "S_OFFLINE"}
+    assert by_serial["S_READY"]["alias"] == "Android-A"
+    assert by_serial["S_READY"]["effective_status"] == "online"
+    assert by_serial["S_READY"]["platform"] == "android"
+    assert by_serial["S_READY"]["brand"] == "samsung"
+    assert by_serial["S_READY"]["model"] == "SM-G991N"
+    assert by_serial["S_READY"]["os_version"] == "Android 14"
+    assert by_serial["S_READY"]["screen_width"] == 1080
+    assert by_serial["S_READY"]["screen_height"] == 2400
+    assert by_serial["S_READY"]["last_seen_at"]
+    assert by_serial["S_READY"]["lock"] is None
+
+    assert by_serial["S_BUSY"]["effective_status"] == "busy"
+    assert by_serial["S_BUSY"]["lock"]["holder_type"] == "auto"
+
+    assert by_serial["S_OFFLINE"]["effective_status"] == "offline"
+
+    # 对外新入口保持与当前全量设备接口等价，方便现有消费方无改造切换。
+    internal = await client.get("/api/devices")
+    assert internal.status_code == 200
+    assert by_serial == {row["serial"]: row for row in internal.json()}
+
+    available = await client.get("/api/devices/available")
+    assert available.status_code == 200
+    assert [row["serial"] for row in available.json()] == ["S_READY"]
 
 
 @pytest.mark.asyncio
@@ -299,7 +357,7 @@ async def test_create_run_rejects_function_map_context_too_long(client, session)
         json={
             "device_serial": "S1",
             "goal": "打开设置",
-            "functionMapContext": "x" * 2001,
+            "functionMapContext": "x" * 8001,
         },
     )
     assert resp.status_code == 400

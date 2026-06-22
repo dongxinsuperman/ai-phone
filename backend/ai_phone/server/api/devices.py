@@ -101,8 +101,30 @@ async def _load_alias_map(session: AsyncSession) -> Dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# 对外匿名：GET /api/devices/available
+# 对外匿名：GET /api/devices/statuses / available
 # ---------------------------------------------------------------------------
+@router.get("/statuses")
+async def list_device_statuses(
+    session: AsyncSession = DBSession,
+    store: DeviceLockStore = LockStoreDep,
+    hub: Hub = HubDep,
+) -> List[Dict[str, Any]]:
+    """匿名：全量设备状态清单，响应结构与 ``GET /api/devices`` 等价。
+
+    这个入口用于对外暴露当前工作台已经消费的设备状态模型，避免外部系统继续
+    依赖内部路径；字段名和嵌套结构保持一致（如 ``effective_status``、
+    ``screen_width``、``lock.holder_type``）。
+    """
+    res = await session.execute(select(Device).order_by(Device.serial))
+    alias_map = await _load_alias_map(session)
+    items: List[Dict[str, Any]] = []
+    for dev in res.scalars().all():
+        dd = dev.to_dict()
+        dd["alias"] = alias_map.get(dev.serial, "")
+        items.append(await _merge_lock_into(dd, store, hub))
+    return items
+
+
 # 语义："外部调用方想提交任务前，先看看平台现在哪台能接"。只返回 **此刻就能调度** 的
 # 设备：online + readiness.ready + 未被锁 + agent WS 在线。没绑别名的设备照样出现，
 # alias 字段空串，提交时只能走"不指定 alias"的随机派发。

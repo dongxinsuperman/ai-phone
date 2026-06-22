@@ -13,12 +13,80 @@
 | 接口组 | 路径 | 鉴权 | 说明 |
 |---|---|---|---|
 | 对外投递 | `/api/submissions` | 匿名 | 面向外部 CI / 回归平台；依赖网络隔离、防火墙或上游网关 |
+| 设备状态查询 | `/api/devices/statuses`、`/api/devices/available` | 匿名 | 面向外部调度前查询；`/statuses` 与当前全量设备状态模型等价 |
 | 内部投递 | `/api/internal/submissions` | `Authorization: Bearer <token>` | Web 队列页和内部调试使用 |
-| 设备 / Run / Case | `/api/devices`、`/api/runs`、`/api/cases` | 当前本地中台接口 | Web 工作台使用；生产外放前建议放在内网或网关后 |
+| 本地中台 | `/api/devices`、`/api/runs`、`/api/cases` | 当前本地中台接口 | Web 工作台使用；生产外放前建议放在内网或网关后 |
 
 内部 Bearer token 读取 `AI_PHONE_SUBMISSION_INTERNAL_TOKEN`，未配置时回落到 `AI_PHONE_AGENT_TOKEN`。
 
-## 2. 投递批次
+## 2. 查询设备状态
+
+```http
+GET /api/devices/statuses
+```
+
+返回全量设备状态，供外部平台一次性判断哪些设备可调度、哪些设备占用中或未就绪。响应结构与当前工作台全量接口 `GET /api/devices` 等价，方便已有调用方直接从内部路径切到对外路径。
+
+响应示例：
+
+```json
+[
+  {
+    "serial": "R58M1234ABC",
+    "alias": "Android-A",
+    "platform": "android",
+    "brand": "samsung",
+    "model": "SM-G991N",
+    "os_version": "Android 14",
+    "screen_width": 1080,
+    "screen_height": 2400,
+    "status": "online",
+    "last_seen_at": "2026-05-19T10:00:00+00:00",
+    "created_at": "2026-05-19T09:00:00+00:00",
+    "lock": {
+      "serial": "R58M1234ABC",
+      "holder": "sched-item-123",
+      "holder_type": "auto",
+      "acquired_at": 12345.6,
+      "last_heartbeat_at": 12350.6,
+      "ttl_seconds": 600,
+      "meta": {}
+    },
+    "effective_status": "busy",
+    "extra": {
+      "readiness": {
+        "ready": true,
+        "hint": "ok"
+      }
+    }
+  }
+]
+```
+
+字段说明：
+
+| 字段 | 说明 |
+|---|---|
+| `serial` | 设备唯一标识，外部去重主键 |
+| `alias` | 设备别名，未配置时为空字符串 |
+| `platform` | `android` / `ios` / `harmony` |
+| `brand` / `model` / `os_version` | 设备展示信息 |
+| `screen_width` / `screen_height` | 设备屏幕尺寸 |
+| `status` | 设备上报的原始在线状态，常见为 `online` / `offline` / `unauthorized` |
+| `effective_status` | 叠加占用锁后的状态；在线且被锁时为 `busy`，否则通常等于 `status` |
+| `lock` | 当前占用锁；空闲时为 `null`，占用时可读 `lock.holder_type` 判断 `manual` / `auto` / `job` 等占用类型 |
+| `last_seen_at` | Server 最后看到该设备的时间 |
+| `extra.readiness` | Agent 上报的 readiness 快照；调用方需要 ready 细节时读取，可能不存在 |
+
+如果只关心“此刻能接单”的设备，继续使用裁剪后的可用列表：
+
+```http
+GET /api/devices/available
+```
+
+该接口只返回 agent 在线、设备 ready、锁空闲的设备，字段比 `/api/devices/statuses` 更少，适合简单随机派发前筛选。
+
+## 3. 投递批次
 
 ```http
 POST /api/submissions
@@ -125,7 +193,7 @@ Content-Type: application/json
 | `device_alias_platform_mismatch` | 别名对应设备平台与 item 平台不一致 |
 | `no_device_on_platform` | 本批涉及的平台当前没有任何 online 设备 |
 
-## 3. 查询批次
+## 4. 查询批次
 
 ```http
 GET /api/submissions/{submissionId}
@@ -158,7 +226,7 @@ GET /api/submissions/{submissionId}
 
 `AI_PHONE_SUBMISSION_EXTERNAL_RETENTION_DAYS` 默认 15。终态超过可查窗口后，对外查询返回 `404 expired`；数据和报告文件是否物理清理由部署侧另行处理。
 
-## 4. 查询单条
+## 5. 查询单条
 
 ```http
 GET /api/submissions/{submissionId}/items/{caseId}/{platform}?include_run=true
@@ -166,7 +234,7 @@ GET /api/submissions/{submissionId}/items/{caseId}/{platform}?include_run=true
 
 `include_run=true` 时会附带 Run、步骤、日志，便于外部平台展示排障抽屉。单条报告 URL 只在 item `success` / `failed` 且已有 `run_id` 时生成；queued 阶段取消或 submission timeout 的 item 没有单条 HTML 报告。
 
-## 5. 取消
+## 6. 取消
 
 整批取消：
 
@@ -182,7 +250,7 @@ POST /api/submissions/{submissionId}/cases/{caseId}/cancel?platform=ios
 
 取消 queued item 会直接置为 `cancelled`；取消 running item 会继续向对应 Run 发 stop。
 
-## 6. 状态模型
+## 7. 状态模型
 
 Submission：
 
@@ -205,7 +273,7 @@ SubmissionItem：
 
 `statusReason` 是排障归因字段，当前由 scheduler 和 Run 终态共同写入；消费方应按字符串兼容追加新值。
 
-## 7. 广播与回调
+## 8. 广播与回调
 
 服务端按 `AI_PHONE_BROADCAST_BACKEND` 选择主广播：
 
@@ -273,12 +341,13 @@ item 终态事件 `submission.item.terminal`：
 
 如果投递时带了 `callbackUrl`，scheduler 会把同一份终态事件旁路 POST 到该 URL：每条执行单元结束时发送 `submission.item.terminal`，批次收口后发送 `submission.terminal`。Webhook 与 Kafka 互不依赖，均为 best-effort 通知；Webhook 不重试、不签名、5 秒超时，失败只记日志，不影响主流程。
 
-## 8. 其他接口
+## 9. 其他接口
 
 | 路径 | 当前用途 |
 |---|---|
-| `GET /api/devices` | 设备总览 |
+| `GET /api/devices/statuses` | 匿名全量设备状态列表，响应结构与 `GET /api/devices` 等价 |
 | `GET /api/devices/available` | 匿名可用设备列表，只返回 agent 在线、设备 ready、锁空闲的设备 |
+| `GET /api/devices` | 本地工作台设备总览，含内部锁与调试信息；外部集成优先使用 `/api/devices/statuses` |
 | `GET /api/agents` | 在线 Agent 状态 |
 | `GET /api/runs/{id}` / `steps` / `logs` / `commands` | 前端日志抽屉与排障 |
 | `POST /api/runs` | 已 deprecated，只保留手工调试；新接入方不要使用 |
