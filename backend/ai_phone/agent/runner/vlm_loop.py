@@ -1297,15 +1297,55 @@ class VLMRunner:
 
             if action_type == A.ACTION_FINISHED:
                 finish_msg = parsed.content or "任务完成"
-                # 非结构化执行语义下，主 VLM 的 finished 即为平台收口依据；
-                # 不再调用二级断言系统改写终态。后续 RunnerBridge / Server
-                # 仍沿用原有 finished -> success/completed 的外部状态映射。
                 await self._log(
                     1,
                     "主VLM申请完成",
                     f"共执行 {step} 步 | {finish_msg}",
                     step=step,
                 )
+                if self._is_structured:
+                    verdict, verify_reason = await self._verify_finished_assertion(
+                        prev_before_bytes=self._previous_before_bytes,
+                        final_bytes=screenshot_bytes,
+                        thought=thought,
+                        finish_msg=finish_msg,
+                        step=step,
+                    )
+                    if verdict == "FAIL":
+                        fail_msg = f"【断言系统驳回 finished】{verify_reason}"
+                        await self._emit_screenshot(step, "finish_fail", screenshot_bytes)
+                        await self._log(
+                            3,
+                            "断言系统 · 驳回",
+                            f"共执行 {step} 步 | {fail_msg}",
+                            step=step,
+                        )
+                        await self._emit_event(
+                            make_event(
+                                EVT_STEP_END,
+                                self.run_id,
+                                step=step,
+                                thought=thought,
+                                action=display_action,
+                                action_type=action_type,
+                                elapsed_ms=int(decision.elapsed_ms or 0),
+                            )
+                        )
+                        return False, f"assert_fail: {fail_msg}"
+                    if verdict == "PASS":
+                        await self._log(
+                            1,
+                            "断言系统 · 通过",
+                            verify_reason,
+                            step=step,
+                        )
+                else:
+                    await self._log(
+                        1,
+                        "非结构化通道 · 采纳主VLM完成",
+                        "首跑 finished 不再调用二级断言，直接按模型结果收口。",
+                        step=step,
+                    )
                 await self._emit_screenshot(step, "finish_ok", screenshot_bytes)
                 await self._log(
                     1,

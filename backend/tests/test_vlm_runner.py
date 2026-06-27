@@ -231,6 +231,81 @@ async def test_finished_action_returns_ok():
 
 
 @pytest.mark.asyncio
+async def test_unstructured_first_run_finished_skips_secondary_assertion(monkeypatch):
+    """非结构化首跑：主 VLM finished 后不再调用二级断言。"""
+    calls = 0
+
+    async def boom_assertion(self, **kwargs):  # noqa: ANN001, ARG001
+        nonlocal calls
+        calls += 1
+        raise AssertionError("非结构化首跑不应调用 finished 二级断言")
+
+    monkeypatch.setattr(VLMRunner, "_verify_finished_assertion", boom_assertion)
+
+    driver = FakeDriver()
+    vlm = ScriptedVLMClient(
+        [ScriptedStep("已经打开目标页面", "finished(content='done')")]
+    )
+    events, emit = _collect_events()
+    runner = VLMRunner(
+        run_id="R-unstructured-finished",
+        driver=driver,
+        goal="打开手机系统设置",
+        emit=emit,
+        vlm_client=vlm,
+    )
+
+    result = await runner.run()
+
+    assert result.ok is True
+    assert result.reason == "finished: done"
+    assert calls == 0
+    assert any(e.get("title") == "非结构化通道 · 采纳主VLM完成" for e in events)
+
+
+@pytest.mark.asyncio
+async def test_structured_first_run_finished_keeps_secondary_assertion(monkeypatch):
+    """结构化首跑：主 VLM finished 后仍保留二级断言收口。"""
+    calls = 0
+
+    async def fake_assertion(self, **kwargs):  # noqa: ANN001, ARG001
+        nonlocal calls
+        calls += 1
+        return ("FAIL", "结构化预期未满足")
+
+    async def no_substeps(self):  # noqa: ANN001, ARG001
+        return None
+
+    monkeypatch.setattr(VLMRunner, "_verify_finished_assertion", fake_assertion)
+    monkeypatch.setattr(VLMRunner, "_extract_struct_substeps", no_substeps)
+
+    driver = FakeDriver()
+    vlm = ScriptedVLMClient(
+        [ScriptedStep("看起来已满足预期", "finished(content='done')")]
+    )
+    events, emit = _collect_events()
+    runner = VLMRunner(
+        run_id="R-structured-finished",
+        driver=driver,
+        goal=(
+            "测试标题：结构化完成复核\n"
+            "操作步骤：打开手机系统设置。\n"
+            "预期结果：页面标题显示设置。"
+        ),
+        emit=emit,
+        vlm_client=vlm,
+    )
+
+    result = await runner.run()
+
+    assert result.ok is False
+    assert "assert_fail" in result.reason
+    assert "结构化预期未满足" in result.reason
+    assert calls == 1
+    assert any(e.get("title") == "断言系统 · 驳回" for e in events)
+
+
+@pytest.mark.asyncio
 async def test_click_then_finished_executes_driver():
     driver = FakeDriver()
     vlm = ScriptedVLMClient([
