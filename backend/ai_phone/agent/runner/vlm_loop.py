@@ -1297,56 +1297,15 @@ class VLMRunner:
 
             if action_type == A.ACTION_FINISHED:
                 finish_msg = parsed.content or "任务完成"
-                # —— 断言系统：finished 必须经独立 VLM 复核才能落锤 ——
-                # 主 VLM 决定"完成"后，再喂一次 VLM（带最终截图 + 主 VLM 的
-                # thought/finish_msg）做终局裁决，只返回 PASS/FAIL/SKIP：
-                #   PASS  → 走原 finished 收尾
-                #   FAIL  → 改写为 assert_fail，避免主 VLM 在难 case 下"自我
-                #          安慰式"完成
-                #   SKIP  → 配置缺失 / 调用失败 / 协议不合法，回退采纳主 VLM
-                # 该方法只读、不再继续执行任何 step；超时/异常都回退而非阻塞。
+                # 非结构化执行语义下，主 VLM 的 finished 即为平台收口依据；
+                # 不再调用二级断言系统改写终态。后续 RunnerBridge / Server
+                # 仍沿用原有 finished -> success/completed 的外部状态映射。
                 await self._log(
                     1,
                     "主VLM申请完成",
                     f"共执行 {step} 步 | {finish_msg}",
                     step=step,
                 )
-                verdict, verify_reason = await self._verify_finished_assertion(
-                    prev_before_bytes=self._previous_before_bytes,
-                    final_bytes=screenshot_bytes,
-                    thought=thought,
-                    finish_msg=finish_msg,
-                    step=step,
-                )
-                if verdict == "FAIL":
-                    fail_msg = f"【断言系统驳回 finished】{verify_reason}"
-                    await self._emit_screenshot(step, "finish_fail", screenshot_bytes)
-                    await self._log(
-                        3,
-                        "断言系统 · 驳回",
-                        f"共执行 {step} 步 | {fail_msg}",
-                        step=step,
-                    )
-                    await self._emit_event(
-                        make_event(
-                            EVT_STEP_END,
-                            self.run_id,
-                            step=step,
-                            thought=thought,
-                            action=display_action,
-                            action_type=action_type,
-                            elapsed_ms=int(decision.elapsed_ms or 0),
-                        )
-                    )
-                    return False, f"assert_fail: {fail_msg}"
-                if verdict == "PASS":
-                    await self._log(
-                        1,
-                        "断言系统 · 通过",
-                        verify_reason,
-                        step=step,
-                    )
-                # SKIP / PASS 都继续走原 finished 收尾
                 await self._emit_screenshot(step, "finish_ok", screenshot_bytes)
                 await self._log(
                     1,
