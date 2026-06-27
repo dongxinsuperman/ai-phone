@@ -260,7 +260,7 @@ async def test_unstructured_first_run_finished_skips_secondary_assertion(monkeyp
     assert result.ok is True
     assert result.reason == "finished: done"
     assert calls == 0
-    assert any(e.get("title") == "非结构化通道 · 采纳主VLM完成" for e in events)
+    assert not any(str(e.get("title", "")).startswith("断言系统 ·") for e in events)
 
 
 @pytest.mark.asyncio

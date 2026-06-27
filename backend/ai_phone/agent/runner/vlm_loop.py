@@ -1304,6 +1304,14 @@ class VLMRunner:
                     step=step,
                 )
                 if self._is_structured:
+                    # —— 断言系统：finished 必须经独立 VLM 复核才能落锤 ——
+                    # 主 VLM 决定"完成"后，再喂一次 VLM（带最终截图 + 主 VLM 的
+                    # thought/finish_msg）做终局裁决，只返回 PASS/FAIL/SKIP：
+                    #   PASS  → 走原 finished 收尾
+                    #   FAIL  → 改写为 assert_fail，避免主 VLM 在难 case 下"自我
+                    #          安慰式"完成
+                    #   SKIP  → 配置缺失 / 调用失败 / 协议不合法，回退采纳主 VLM
+                    # 该方法只读、不再继续执行任何 step；超时/异常都回退而非阻塞。
                     verdict, verify_reason = await self._verify_finished_assertion(
                         prev_before_bytes=self._previous_before_bytes,
                         final_bytes=screenshot_bytes,
@@ -1339,13 +1347,7 @@ class VLMRunner:
                             verify_reason,
                             step=step,
                         )
-                else:
-                    await self._log(
-                        1,
-                        "非结构化通道 · 采纳主VLM完成",
-                        "首跑 finished 不再调用二级断言，直接按模型结果收口。",
-                        step=step,
-                    )
+                    # SKIP / PASS 都继续走原 finished 收尾
                 await self._emit_screenshot(step, "finish_ok", screenshot_bytes)
                 await self._log(
                     1,
