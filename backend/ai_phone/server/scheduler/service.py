@@ -176,10 +176,13 @@ class ItemDraft:
     # 外部传 caseName 时透传；缺省由调用方回填（一般 = case_id）。
     case_name: Optional[str] = None
     cache_mode: str = "off"
+    function_map_context: str = ""
 
 
 def parse_and_validate(
     raw_body: Any,
+    *,
+    function_map_context_max_chars: Optional[int] = None,
 ) -> Tuple[str, Optional[str], Optional[int], List[ItemDraft]]:
     """把外部 JSON 解析为 ``(submission_name, callback_url, retry_max, drafts)``。
 
@@ -196,6 +199,7 @@ def parse_and_validate(
               "caseName": "登录用例",          // 可选
               "runContent": "打开 App ...",
               "platforms": ["android", "ios"],
+              "functionMapContext": "可选：本 raw item 的功能地图上下文 / 执行参考",
               "deviceAliasPools": {              // 可选
                 "android": ["A1", "B1"],
                 "ios": ["I1"]
@@ -283,6 +287,11 @@ def parse_and_validate(
         case_name = str(case_name_raw).strip() if case_name_raw else ""
         run_content = str(raw.get("runContent") or "").strip()
         item_cache_mode = normalize_requested_cache_mode(raw.get("cacheMode") or default_cache_mode)
+        item_function_map_context = parse_function_map_context_value(
+            _extract_function_map_context_value(raw),
+            max_chars=function_map_context_max_chars,
+            index=i,
+        )
 
         if not case_id:
             raise AdmissionError("missing_field", "caseId 必填", index=i)
@@ -382,8 +391,35 @@ def parse_and_validate(
                 device_alias_pool=normalized_pool,
                 case_name=case_name or None,
                 cache_mode=item_cache_mode,
+                function_map_context=item_function_map_context,
             ))
     return submission_name, callback_url, requested_retry_max, out
+
+
+def _extract_function_map_context_value(raw_body: Dict[str, Any]) -> Any:
+    raw_value = raw_body.get("functionMapContext")
+    if raw_value is None and "function_map_context" in raw_body:
+        raw_value = raw_body.get("function_map_context")
+    return raw_value
+
+
+def _function_map_context_limit(max_chars: Optional[int]) -> int:
+    if max_chars is None:
+        return int(get_settings().function_map_context_max_chars or 0)
+    return int(max_chars)
+
+
+def parse_function_map_context_value(
+    raw_value: Any,
+    *,
+    max_chars: Optional[int] = None,
+    index: Optional[int] = None,
+) -> str:
+    limit = _function_map_context_limit(max_chars)
+    try:
+        return normalize_function_map_context_text(raw_value, max_chars=limit)
+    except FunctionMapContextValidationError as exc:
+        raise AdmissionError(exc.reason, exc.detail, index=index) from exc
 
 
 def parse_function_map_context(
@@ -394,14 +430,23 @@ def parse_function_map_context(
     """Parse top-level ``functionMapContext`` from a submission payload."""
     if not isinstance(raw_body, dict):
         return ""
-    raw_value = raw_body.get("functionMapContext")
-    if raw_value is None and "function_map_context" in raw_body:
-        raw_value = raw_body.get("function_map_context")
-    limit = int(max_chars or get_settings().function_map_context_max_chars)
-    try:
-        return normalize_function_map_context_text(raw_value, max_chars=limit)
-    except FunctionMapContextValidationError as exc:
-        raise AdmissionError(exc.reason, exc.detail) from exc
+    return parse_function_map_context_value(
+        _extract_function_map_context_value(raw_body),
+        max_chars=max_chars,
+    )
+
+
+def merge_function_map_context(
+    batch_text: Optional[str],
+    item_text: Optional[str],
+) -> str:
+    parts = [
+        (batch_text or "").strip(),
+        (item_text or "").strip(),
+    ]
+    return "\n\n".join(p for p in parts if p)
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -787,10 +832,14 @@ class SubmissionScheduler:
         - 老：``[{}, {}]``
         - 新：``{"submissionName": "...", "items": [{}, {}]}``
         """
-        submission_name, callback_url, requested_retry_max, drafts = parse_and_validate(raw_body)
+        function_map_context_max_chars = int(self._settings.function_map_context_max_chars or 0)
+        submission_name, callback_url, requested_retry_max, drafts = parse_and_validate(
+            raw_body,
+            function_map_context_max_chars=function_map_context_max_chars,
+        )
         function_map_context = parse_function_map_context(
             raw_body,
-            max_chars=int(self._settings.function_map_context_max_chars or 0),
+            max_chars=function_map_context_max_chars,
         )
         effective_retry_max = resolve_effective_retry_max(
             env_retry_enabled=bool(self._settings.run_retry_enabled),
@@ -890,6 +939,7 @@ class SubmissionScheduler:
                     run_content=d.run_content,
                     device_alias_pool=list(d.device_alias_pool) if d.device_alias_pool else None,
                     cache_mode=d.cache_mode,
+                    function_map_context=d.function_map_context or None,
                     requested_retry_max=requested_retry_max,
                     effective_retry_max=effective_retry_max,
                     state="queued",
@@ -1023,10 +1073,14 @@ class SubmissionScheduler:
             if item.state != "queued":
                 return None
             submission = await session.get(Submission, item.submission_id)
-            function_map_context = (
+            batch_function_map_context = (
                 str(submission.function_map_context or "")
                 if submission is not None
                 else ""
+            )
+            function_map_context = merge_function_map_context(
+                batch_function_map_context,
+                str(item.function_map_context or ""),
             )
 
             # 1) 找候选设备：platform 匹配 + online + ready + 无锁

@@ -569,6 +569,9 @@ class StartRunMsg(TypedDict, total=False):
     run_id: str
     device_serial: str
     goal: str
+    # 本 Run 实际注入给 Agent 的功能地图上下文；camelCase 保留给旧客户端兼容。
+    function_map_context: NotRequired[str]
+    functionMapContext: NotRequired[str]
     attempt: NotRequired[int]
     engine: NotRequired[str]
     wake_policy: NotRequired[WakePolicyPayload]

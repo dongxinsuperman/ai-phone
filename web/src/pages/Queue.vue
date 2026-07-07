@@ -24,7 +24,7 @@ const lastRefreshedAt = ref(0)
 const publicConfig = ref({
   run_retry_enabled: false,
   run_retry_max: 0,
-  function_map_context_max_chars: 8000,
+  function_map_context_max_chars: 0,
 })
 
 // 示例数据模式：看不懂实时页面时一键展示"理想形态"。
@@ -437,6 +437,7 @@ function newFormItem() {
     platforms: ['android'],
     runContent: '',
     cacheMode: '',
+    functionMapContext: '',
     // 每端一段池文本（逗号分隔多个别名，留空 = 该端全池任挑）
     aliasPoolText: { android: '', ios: '', harmony: '' },
   }
@@ -459,11 +460,29 @@ const form = ref({
 })
 const submitErr = ref('')
 const submitting = ref(false)
-const functionMapContextLimit = computed(() => Number(publicConfig.value.function_map_context_max_chars || 8000))
+const functionMapContextLimit = computed(() => Number(publicConfig.value.function_map_context_max_chars ?? 0))
 const functionMapContextLength = computed(() => (form.value.functionMapContext || '').length)
 const functionMapContextTooLong = computed(() => (
-  functionMapContextLength.value > functionMapContextLimit.value
+  isFunctionMapContextTooLong(functionMapContextLength.value)
 ))
+const itemFunctionMapContextLengths = computed(() => (
+  form.value.items.map(it => (it.functionMapContext || '').length)
+))
+const itemFunctionMapContextTooLong = computed(() => (
+  itemFunctionMapContextLengths.value.map(len => isFunctionMapContextTooLong(len))
+))
+const anyFunctionMapContextTooLong = computed(() => (
+  functionMapContextTooLong.value || itemFunctionMapContextTooLong.value.some(Boolean)
+))
+
+function isFunctionMapContextTooLong(length) {
+  const limit = Number(functionMapContextLimit.value || 0)
+  return limit > 0 && Number(length || 0) > limit
+}
+function functionMapContextCountText(length) {
+  const limit = Number(functionMapContextLimit.value || 0)
+  return limit > 0 ? `${Number(length || 0)} / ${limit} 字` : `${Number(length || 0)} 字 / 不限`
+}
 
 function addFormItem() {
   form.value.items.push(newFormItem())
@@ -505,6 +524,7 @@ function buildRawItem(it) {
   const caseId = (it.caseId || '').trim()
   const caseName = (it.caseName || '').trim()
   const runContent = (it.runContent || '').trim()
+  const functionMapContext = (it.functionMapContext || '').trim()
   const obj = {
     caseId,
     runContent,
@@ -512,6 +532,7 @@ function buildRawItem(it) {
   }
   if (caseName) obj.caseName = caseName
   if (it.cacheMode) obj.cacheMode = it.cacheMode
+  if (functionMapContext) obj.functionMapContext = functionMapContext
   // 只把"当前仍被勾选、且非空池"的端发出去，防止用户切换端后残留脏数据
   const pools = {}
   for (const p of it.platforms) {
@@ -589,6 +610,7 @@ const previewRows = computed(() => {
         platform: p,
         pool: parsePool(it.aliasPoolText?.[p]),
         cacheMode: it.cacheMode || form.value.cacheMode || 'off',
+        functionMapContextLength: (it.functionMapContext || '').trim().length,
       })
     }
   }
@@ -612,7 +634,11 @@ async function submitForm() {
     return (submitErr.value = `retryMax 不能超过后端上限 ${retryLimit}`)
   }
   if (functionMapContextTooLong.value) {
-    return (submitErr.value = `功能地图上下文超出 ${functionMapContextLimit.value} 字符上限`)
+    return (submitErr.value = `批次功能地图上下文超出 ${functionMapContextLimit.value} 字符上限`)
+  }
+  const itemOverIndex = itemFunctionMapContextTooLong.value.findIndex(Boolean)
+  if (itemOverIndex >= 0) {
+    return (submitErr.value = `第 ${itemOverIndex + 1} 条：功能地图上下文超出 ${functionMapContextLimit.value} 字符上限`)
   }
   const payload = previewPayload.value
   if (!Array.isArray(payload.items) || !payload.items.length) {
@@ -1191,7 +1217,7 @@ function loadDemoData() {
         <div class="modal-body">
           <div class="help small-help">
             本入口只是第 2 梯队阶段<b>临时验证用</b>，正式调用方后续用对外 HTTP API。
-            请求体（v1.10）：<code>{ submissionName, cacheMode, retryMax, functionMapContext?, items: [{ caseId, runContent, platforms[], cacheMode?, deviceAliasPools? }] }</code>。
+            请求体（v1.10）：<code>{ submissionName, cacheMode, retryMax, functionMapContext?, items: [{ caseId, runContent, platforms[], cacheMode?, functionMapContext?, deviceAliasPools? }] }</code>。
             <code>deviceAliasPools[p]</code> 留空 = 该端任意 ready 设备；
             填多个用逗号分隔即子集池（场景 5：调度器派发瞬间动态选 ready 的一台）。
           </div>
@@ -1238,9 +1264,9 @@ function loadDemoData() {
             </div>
             <div class="form-row">
               <label>
-                功能地图上下文（执行参考，可选）
+                批次功能地图上下文（公共执行参考，可选）
                 <span class="label-hint">
-                  {{ functionMapContextLength }} / {{ functionMapContextLimit }} 字
+                  {{ functionMapContextCountText(functionMapContextLength) }}
                 </span>
               </label>
               <textarea
@@ -1337,6 +1363,23 @@ function loadDemoData() {
               <label>runContent (执行指令) <span class="req">*</span></label>
               <textarea v-model="it.runContent" rows="3" placeholder="例如：打开抖音，搜索「咖啡」，返回首页" />
             </div>
+            <div class="form-row">
+              <label>
+                本条功能地图上下文（追加执行参考，可选）
+                <span class="label-hint">
+                  {{ functionMapContextCountText(itemFunctionMapContextLengths[i] || 0) }}
+                </span>
+              </label>
+              <textarea
+                v-model="it.functionMapContext"
+                rows="3"
+                :class="{ over: itemFunctionMapContextTooLong[i] }"
+                placeholder="只放本 case 会用到的补充入口、业务术语或异常处理说明；多平台会共享这段参考"
+              />
+              <span v-if="itemFunctionMapContextTooLong[i]" class="limit-warn">
+                已超出上限，请精简后再投递
+              </span>
+            </div>
             <div class="form-item-tools">
               <button class="btn ghost tiny" @click="removeFormItem(i)" :disabled="form.items.length === 1">
                 删除此条
@@ -1353,7 +1396,7 @@ function loadDemoData() {
               <b>{{ previewRows.length }}</b> 条 Run
               · retryMax <b>{{ previewPayload.retryMax || 0 }}</b>
               <span v-if="previewPayload.functionMapContext">
-                · 功能地图上下文 <b>{{ functionMapContextLength }}</b> 字
+                · 批次功能地图 <b>{{ functionMapContextLength }}</b> 字
               </span>
             </div>
             <div v-if="previewRows.length" class="preview-rows">
@@ -1364,6 +1407,9 @@ function loadDemoData() {
                 <span v-if="p.caseName" class="pr-name">{{ p.caseName }}</span>
                 <code>{{ p.caseId || '(未填)' }}</code>
                 <span class="pr-cache">cache={{ p.cacheMode }}</span>
+                <span v-if="p.functionMapContextLength" class="pr-fmap">
+                  map+{{ p.functionMapContextLength }}字
+                </span>
                 <span
                   v-if="p.pool.length"
                   class="pr-alias"
@@ -1379,7 +1425,7 @@ function loadDemoData() {
         </div>
         <div class="modal-foot">
           <button class="btn ghost" @click="showSubmitDlg = false">取消</button>
-          <button class="btn primary" :disabled="submitting || functionMapContextTooLong" @click="submitForm">
+          <button class="btn primary" :disabled="submitting || anyFunctionMapContextTooLong" @click="submitForm">
             {{ submitting ? '投递中…' : '投递' }}
           </button>
         </div>
@@ -2283,6 +2329,15 @@ function loadDemoData() {
   color: #1d4ed8;
   background: #dbeafe;
   border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.preview-row .pr-fmap {
+  color: #047857;
+  background: #d1fae5;
+  border: 1px solid #a7f3d0;
   border-radius: 999px;
   padding: 1px 7px;
   font-size: 11px;

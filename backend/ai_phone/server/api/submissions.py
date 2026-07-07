@@ -103,6 +103,7 @@ async def create_submission(
               "caseName": "...",
               "runContent": "...",
               "platforms": ["android", ...],
+              "functionMapContext": "...", // 可选，当前 item 追加执行参考
               "deviceAliasPools": {"android": ["A1","B1"], ...}
             }
           ]

@@ -46,6 +46,7 @@ def test_minimal_single_platform_no_pool():
     assert d.run_content == "do something"
     assert d.device_alias_pool is None  # 全池任挑
     assert d.case_name is None
+    assert d.function_map_context == ""
 
 
 def test_function_map_context_top_level_normalized():
@@ -69,6 +70,49 @@ def test_function_map_context_rejects_too_long():
 
     assert exc_info.value.reason == "function_map_context_too_long"
     assert "3 字符上限" in exc_info.value.detail
+
+
+def test_item_function_map_context_fans_out_to_all_platforms():
+    """一条 raw item 多端裂变时，item 级 function map 复制到每个执行单元。"""
+    _name, _cb, _retry, drafts = parse_and_validate(
+        {
+            "submissionName": "fanout-map",
+            "items": [
+                {
+                    "caseId": "pay-status",
+                    "runContent": "check pay status",
+                    "platforms": ["android", "ios"],
+                    "functionMapContext": "支付页入口在 我的-订单-待支付",
+                }
+            ],
+        },
+        function_map_context_max_chars=100,
+    )
+
+    assert {d.platform for d in drafts} == {"android", "ios"}
+    assert {d.function_map_context for d in drafts} == {"支付页入口在 我的-订单-待支付"}
+
+
+def test_item_function_map_context_rejects_non_string():
+    with pytest.raises(AdmissionError) as exc_info:
+        parse_and_validate(
+            {
+                "submissionName": "bad-map",
+                "items": [
+                    {
+                        "caseId": "C-1",
+                        "runContent": "x",
+                        "platforms": ["android"],
+                        "functionMapContext": {"bad": "value"},
+                    }
+                ],
+            },
+            function_map_context_max_chars=100,
+        )
+
+    assert exc_info.value.reason == "invalid_body"
+    assert exc_info.value.index == 0
+    assert "functionMapContext 必须是字符串" in exc_info.value.detail
 
 
 def test_multi_platform_fanout_no_pool():

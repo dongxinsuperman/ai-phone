@@ -350,7 +350,10 @@ async def test_create_run_with_goal(client, session):
 
 
 @pytest.mark.asyncio
-async def test_create_run_rejects_function_map_context_too_long(client, session):
+async def test_create_run_accepts_long_function_map_context_by_default(client, session):
+    from ai_phone.config import get_settings
+
+    get_settings.cache_clear()
     await _seed_device(session)
     resp = await client.post(
         "/api/runs",
@@ -360,6 +363,33 @@ async def test_create_run_rejects_function_map_context_too_long(client, session)
             "functionMapContext": "x" * 8001,
         },
     )
+    assert resp.status_code == 201
+    assert resp.json()["function_map_context_chars"] == 8001
+
+
+@pytest.mark.asyncio
+async def test_create_run_rejects_function_map_context_when_limit_is_finite(
+    client,
+    session,
+    monkeypatch,
+):
+    from ai_phone.config import get_settings
+
+    monkeypatch.setenv("AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS", "3")
+    get_settings.cache_clear()
+    try:
+        await _seed_device(session)
+        resp = await client.post(
+            "/api/runs",
+            json={
+                "device_serial": "S1",
+                "goal": "打开设置",
+                "functionMapContext": "x" * 4,
+            },
+        )
+    finally:
+        get_settings.cache_clear()
+
     assert resp.status_code == 400
     assert "functionMapContext 超出" in resp.json()["detail"]
 

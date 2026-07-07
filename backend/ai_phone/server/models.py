@@ -1009,6 +1009,7 @@ class SubmissionItem(Base):
     # 写入时以 list[str] 形式（按 sorted+dedup 之后的顺序），DB 用 JSON 列承载
     device_alias_pool: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     cache_mode: Mapped[str] = mapped_column(String(8), default="off", server_default="off")
+    function_map_context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     requested_retry_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     effective_retry_max: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
@@ -1049,6 +1050,7 @@ class SubmissionItem(Base):
             "run_content": self.run_content,
             "device_alias_pool": list(self.device_alias_pool or []) or None,
             "cacheMode": self.cache_mode or "off",
+            "function_map_context_chars": len(self.function_map_context or ""),
             "requested_retry_max": self.requested_retry_max,
             "effective_retry_max": self.effective_retry_max or 0,
             "retryMax": self.effective_retry_max or 0,

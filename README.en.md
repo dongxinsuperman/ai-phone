@@ -101,6 +101,7 @@ curl -X POST http://localhost:8000/api/submissions \
       {
         "caseId": "demo_001",
         "platforms": ["android"],
+        "functionMapContext": "Optional item-specific reference: About is near the bottom",
         "runContent": "Open Settings and enter the About page"
       }
     ]

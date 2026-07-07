@@ -939,11 +939,10 @@ class Settings(BaseSettings):
         ),
     )
     function_map_context_max_chars: int = Field(
-        default=8000,
-        ge=1,
-        le=20000,
+        default=0,
+        ge=0,
         description=(
-            "functionMapContext 硬字符上限，默认 8000；超限拒绝且不截断。"
+            "functionMapContext 字符上限；0 表示不做产品层长度拦截，超限拒绝且不截断。"
             "env: AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS"
         ),
     )

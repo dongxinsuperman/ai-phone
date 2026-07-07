@@ -1,13 +1,13 @@
 """Function map context validation helpers.
 
 This field is a run-level read-only reference blob. Validation stays simple and
-content-agnostic: accept optional text, enforce a hard length cap, and never try
-to classify what the text contains.
+content-agnostic: accept optional text, optionally enforce a length cap, and
+never try to classify what the text contains.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 
 @dataclass(frozen=True)
@@ -22,13 +22,14 @@ class FunctionMapContextValidationError(ValueError):
 def normalize_function_map_context_text(
     value: Any,
     *,
-    max_chars: int,
+    max_chars: Optional[int],
 ) -> str:
     """Return normalized text or ``""`` when absent.
 
-    ``max_chars`` is a hard cap. We reject instead of truncating because missing
-    the tail of a reference manual is more misleading than making the caller
-    shorten it deliberately.
+    ``max_chars`` > 0 is a hard cap. ``max_chars`` <= 0 means ai-phone does not
+    apply a product-layer character cap. We reject instead of truncating because
+    missing the tail of a reference manual is more misleading than making the
+    caller shorten it deliberately.
     """
     if value is None or value == "":
         return ""
@@ -44,10 +45,7 @@ def normalize_function_map_context_text(
 
     limit = int(max_chars or 0)
     if limit <= 0:
-        raise FunctionMapContextValidationError(
-            "invalid_config",
-            "functionMapContext 字符上限配置必须大于 0",
-        )
+        return text
     if len(text) > limit:
         raise FunctionMapContextValidationError(
             "function_map_context_too_long",

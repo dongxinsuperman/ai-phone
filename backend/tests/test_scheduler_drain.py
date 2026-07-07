@@ -14,7 +14,7 @@ import pytest
 from ai_phone.server import db as db_module
 from ai_phone.server.hub import Hub
 from ai_phone.server.lockstore import DeviceLockStore
-from ai_phone.server.models import Device, DeviceAlias, Submission, SubmissionItem
+from ai_phone.server.models import Device, DeviceAlias, Run, Submission, SubmissionItem
 from ai_phone.server.scheduler.service import SubmissionScheduler
 
 
@@ -188,6 +188,43 @@ async def test_unpooled_item_takes_any_free_device(_test_engine):
     assert sched._queues["android"] == []
     async with factory() as s:
         assert (await s.get(SubmissionItem, "A")).state == "running"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_merges_batch_and_item_function_map_context(_test_engine):
+    """调度首跑建 Run 时写入批次级 + item 级的最终合并文本。"""
+    factory = db_module.get_session_factory()
+    await _seed_device(factory, "S1")
+    async with factory() as s:
+        s.add(Submission(id="sub1", state="accepted", function_map_context="批次：登录入口在首页"))
+        s.add(
+            SubmissionItem(
+                id="A",
+                submission_id="sub1",
+                case_id="A",
+                platform="android",
+                run_content="rc",
+                state="queued",
+                function_map_context="本条：支付状态页入口在订单页",
+            )
+        )
+        await s.commit()
+
+    sched, _lock_store, hub, dispatch = _make_scheduler(factory)
+    _mark_ready(hub, "S1", "agent1")
+    sched._queues["android"] = ["A"]
+
+    await sched._drain_once()
+
+    expected = "批次：登录入口在首页\n\n本条：支付状态页入口在订单页"
+    assert dispatch.calls[0]["function_map_context"] == expected
+    async with factory() as s:
+        item = await s.get(SubmissionItem, "A")
+        assert item is not None
+        assert item.run_id
+        run = await s.get(Run, item.run_id)
+        assert run is not None
+        assert run.function_map_context == expected
 
 
 @pytest.mark.asyncio

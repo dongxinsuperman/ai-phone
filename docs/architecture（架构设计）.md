@@ -54,7 +54,7 @@ POST /api/submissions
   -> Submission + SubmissionItem 落库
   -> 每个平台 FIFO 入队
   -> scheduler 按 ready 设备 + alias pool + lock 派发
-  -> 创建 Run
+  -> 合并批次级 + item 级 functionMapContext，创建 Run
   -> 派发 start_run 给目标设备所属 Agent（命中缓存时带 cache_snapshot）
   -> Agent 本地跑 VLM 决策循环 + 执行安全层，直接驱动本地设备动作
   -> Agent 经可靠通道上报 日志/步骤/截图/终态（首跑成功再回传成品缓存）

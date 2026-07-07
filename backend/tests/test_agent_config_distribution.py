@@ -160,7 +160,7 @@ def test_env_defaults_contains_only_public_runtime_defaults():
     }
 
     assert forbidden.isdisjoint(active)
-    assert active["AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS"] == "8000"
+    assert active["AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS"] == "0"
     assert active["AI_PHONE_IOS_WDA_PRELOAD"] == "true"
     assert active["AI_PHONE_RUN_RETRY_ENABLED"] == "true"
     assert active["AI_PHONE_SCROLL_STUCK_THRESHOLD"] == "8"
@@ -177,7 +177,7 @@ def test_code_defaults_match_project_runtime_policy():
     """代码兜底也要跟 .env.defaults 的项目默认策略一致。"""
     s = Settings(_env_file=None)
 
-    assert s.function_map_context_max_chars == 8000
+    assert s.function_map_context_max_chars == 0
     assert s.struct_strictness_hard_score == 10
     assert s.struct_strictness_audit_score == 10
 

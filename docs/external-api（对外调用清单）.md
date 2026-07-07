@@ -108,6 +108,7 @@ Content-Type: application/json
       "caseName": "进入关于本机",
       "runContent": "打开设置并进入关于本机页面",
       "platforms": ["android", "ios", "harmony"],
+      "functionMapContext": "可选：本 case 才需要的补充入口、测试数据或业务说明",
       "deviceAliasPools": {
         "android": ["Android-A", "Android-B"],
         "ios": ["iPhone-1"],
@@ -152,13 +153,21 @@ Content-Type: application/json
 | `callbackUrl` | 否 | 每条 item 终态 POST 一次 `submission.item.terminal`，批次全部收口后再 POST 一次 `submission.terminal`；只支持 `http://` / `https://` |
 | `cacheMode` | 否 | 批次默认轨迹缓存模式，取值 `off` / `v1` / `v2` / `v3`；单 item 可覆盖。使用边界见 [trajectory-cache-usage（轨迹缓存使用文档）](./trajectory-cache-usage（轨迹缓存使用文档）.md) |
 | `retryMax` | 否 | 本批重跑上限；还会受服务端 `AI_PHONE_RUN_RETRY_*` 限制 |
-| `functionMapContext` | 否 | 批次级执行参考，最多 `AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS` 字符，默认 8000。可放功能地图、测试数据、业务背景、异常处理；只作为只读参考，不会改变 `runContent` 的任务范围 |
+| `functionMapContext` | 否 | 批次级执行参考，默认不做产品层长度拦截；如服务端把 `AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS` 配成正整数，则按该值拒绝超长输入。可放整批共用的功能地图、测试数据、业务背景、异常处理；只作为只读参考，不会改变 `runContent` 的任务范围 |
 | `items` | 是 | 非空数组 |
 | `caseId` | 是 | 调用方业务主键；同一批次内 `caseId + platform` 唯一 |
 | `caseName` | 否 | 展示名；缺省回落到 `caseId` |
 | `runContent` | 是 | 自然语言执行目标；复杂业务回归建议写成四字段 AI 可消费 case，见 [AI 可消费测试用例指南](./ai-consumable-test-cases（AI可消费测试用例指南）.md) |
 | `platforms` | 是 | 非空数组，取值 `android` / `ios` / `harmony`，不可重复 |
+| `items[].functionMapContext` | 否 | 当前 raw item 的追加执行参考。raw item 按 `caseId + platform` 展开时，这段文本会复制到每个平台执行单元，并与批次级 `functionMapContext` 合并后注入本次 Run |
 | `deviceAliasPools` | 否 | `{platform: [alias]}`；缺省、`null`、`[]` 都表示该端全池任挑 |
+
+`functionMapContext` 合并规则：
+
+- 只传顶层：本批所有执行单元都拿到顶层文本。
+- 只传 `items[].functionMapContext`：只有该 raw item 展开的执行单元拿到 item 文本。
+- 两层都传：最终注入内容为“顶层文本 + item 文本”。
+- 一条 raw item 同时选择 Android/iOS/HarmonyOS 时，item 级文本会被这些平台共享；当前不做平台维度 map。
 
 别名池语义：
 

@@ -53,6 +53,7 @@ POST /api/submissions
       "caseName": "进入关于本机",
       "runContent": "打开设置并进入关于本机",
       "platforms": ["android", "ios"],
+      "functionMapContext": "可选：当前 case 的补充功能地图说明",
       "deviceAliasPools": {"ios": ["iPhone-1"]}
     }
   ]

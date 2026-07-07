@@ -29,7 +29,7 @@ const selectedCacheMode = ref('off')
 const retryEnabled = ref(false)
 const retryMaxLimit = ref(0)
 const selectedRetryMax = ref(0)
-const functionMapContextLimit = ref(8000)
+const functionMapContextLimit = ref(0)
 // 屏幕尺寸（设备端逻辑像素），用于点击坐标归一化；没拿到前按 video 元素尺寸兜底
 const devicePixel = ref({ w: 0, h: 0 })
 const tapBusy = ref(false)
@@ -40,8 +40,16 @@ const FUNCTION_MAP_FILE_ACCEPT = FUNCTION_MAP_FILE_EXTS.map(ext => `.${ext}`).jo
 const FUNCTION_MAP_SUPPORTED_FORMATS = FUNCTION_MAP_FILE_EXTS.map(ext => `.${ext}`).join(' / ')
 const functionMapContextLength = computed(() => (functionMapContext.value || '').length)
 const functionMapContextTooLong = computed(() => (
-  functionMapContextLength.value > Number(functionMapContextLimit.value || 8000)
+  Number(functionMapContextLimit.value || 0) > 0
+  && functionMapContextLength.value > Number(functionMapContextLimit.value || 0)
 ))
+
+function functionMapContextCountText() {
+  const limit = Number(functionMapContextLimit.value || 0)
+  return limit > 0
+    ? `${functionMapContextLength.value} / ${limit} 字`
+    : `${functionMapContextLength.value} 字 / 不限`
+}
 
 function executionModeText(mode) {
   return mode === 'server_brain' ? 'Server 大脑' : 'Agent 大脑'
@@ -822,14 +830,14 @@ onMounted(async () => {
       midsceneEnabled.value = !!cfg?.midscene_enabled
       retryEnabled.value = !!cfg?.run_retry_enabled
       retryMaxLimit.value = Number(cfg?.run_retry_max || 0)
-      functionMapContextLimit.value = Number(cfg?.function_map_context_max_chars || 8000)
+      functionMapContextLimit.value = Number(cfg?.function_map_context_max_chars ?? 0)
       if (!retryEnabled.value) selectedRetryMax.value = 0
     })
     .catch(() => {
       midsceneEnabled.value = false
       retryEnabled.value = false
       retryMaxLimit.value = 0
-      functionMapContextLimit.value = 8000
+      functionMapContextLimit.value = 0
       selectedRetryMax.value = 0
     })
 
@@ -1130,7 +1138,7 @@ watch(
           <label>
             功能地图上下文（执行参考，可选）
             <span class="char-count" :class="{ over: functionMapContextTooLong }">
-              {{ functionMapContextLength }} / {{ functionMapContextLimit }} 字
+              {{ functionMapContextCountText() }}
             </span>
           </label>
           <textarea
