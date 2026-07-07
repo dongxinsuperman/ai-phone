@@ -2734,8 +2734,8 @@ class VLMRunner:
         借鉴 next/server-brain：next 的缓存动作来自实际下发的 driver 命令
         （``activate_app(package_name=...)`` → app_name 字段存包名），回放直接拿
         这个包名喂 driver。main 的旁路收集器原本只接 VLM 的 ``EVT_ACTION``（携带
-        中文 app_name），回放时 ``activate_app('洋葱学园')`` 会让 monkey -p 找不到
-        Activity（No activities found）。这里在 open_app/close_app 的实际执行入口
+        中文 app_name），回放时 ``activate_app('洋葱学园')`` 无法让 driver 解析出
+        系统登记的启动入口。这里在 open_app/close_app 的实际执行入口
         （已匹配出包名 ``target``）补发一条带包名的 ``EVT_ACTION``——recorder 按
         step 聚合、后到覆盖先到，于是缓存里存的是包名。本入口被起跑线 prelude 与
         普通 step dispatch 共用，一处补发即两路统一生效。

@@ -7,7 +7,7 @@
 - 文本输入：``send_keys``（等价 ``input text``，英文/数字可用，中文需设备侧装
   ADBKeyBoard 等输入法；这里不强制替换用户设备，中文输入退化为告警）
 - press_home / press_back：keyevent 3 / 4
-- activate_app：优先 ``monkey -p`` 启动（不依赖知道启动 Activity）
+- activate_app：解析 ``MAIN + LAUNCHER`` 入口后用 ``am start`` 启动
 - terminate_app：``am force-stop``
 - list_packages：``pm list packages -3`` 取第三方
 - screenshot：adbutils ``screenshot()`` 返回 PIL.Image → PNG / JPEG
@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import io
 import re
+import shlex
 import time
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -581,14 +582,10 @@ class AndroidDriver(BaseDriver):
         return str(self.serial or "").startswith("emulator-")
 
     def activate_app(self, package_name: str) -> None:
-        """启动应用。真机与虚拟机**分流处理，互不影响**：
+        """启动应用：解析系统登记的桌面入口后用 ``am start`` 拉起。
 
-        - 真机：沿用原有「monkey 优先、失败再 am start 兜底」逻辑（一直可用，不改动）。
-        - 虚拟机：部分 Android Emulator 镜像下 ``monkey`` 会「静默失败」——退出码非 0、
-          实际没拉起任何 Activity，但 stdout 既不含 ``No activities found to run`` 也不含
-          ``Error``（只有一句 ``SYS_KEYS has no physical keys`` 警告）→ 盲信 stdout 会误判
-          成功（实测 open_app('设置') 连报成功但设置页始终没出现）。所以虚拟机单独走
-          「解析 LAUNCHER 组件 + am start + 前台校验」。
+        ``monkey`` 是压测工具，退出时会触发旋转锁清理，可能把用户的竖屏锁改成
+        自动旋转。这里不再使用 ``monkey`` 兜底；解析不到桌面入口时直接报错。
         """
         if self._is_emulator():
             self._activate_app_emulator(package_name)
@@ -596,59 +593,46 @@ class AndroidDriver(BaseDriver):
             self._activate_app_physical(package_name)
 
     def _activate_app_physical(self, package_name: str) -> None:
-        # 真机原逻辑（与历史完全一致）：monkey 优先，失败再用 app_info 拿 launcher Activity。
-        out = self._device.shell(
-            f"monkey -p {package_name} -c android.intent.category.LAUNCHER 1"
-        ) or ""
-        if "No activities found to run" in out or "Error" in out:
-            try:
-                info = self._device.app_info(package_name)
-            except Exception:
-                info = None
-            if info and getattr(info, "main_activity", None):
-                self._device.shell(
-                    f"am start -n {package_name}/{info.main_activity}"
-                )
-            else:
-                raise RuntimeError(f"无法启动应用: {package_name}; {out.strip()}")
+        comp = self._resolve_launcher_component(package_name)
+        if not comp:
+            raise RuntimeError(f"无法启动应用: {package_name}（未解析到 MAIN+LAUNCHER 入口）")
+
+        out = self._device.shell(f"am start -n {shlex.quote(comp)}") or ""
+        if "Error" in out or "Exception" in out:
+            raise RuntimeError(
+                f"无法启动应用: {package_name}（am start 组件={comp} 失败；"
+                f"输出={out.strip() or '空'}）"
+            )
 
     def _activate_app_emulator(self, package_name: str) -> None:
-        # 虚拟机专用：解析 LAUNCHER 组件 + am start，并**轮询前台确认真的切过去**才算成功；
-        # 不行再退回 monkey，仍不行抛错让上游走「动作判失败」而不是假成功。
+        # 虚拟机继续保留前台校验，避免 am start 误报成功；但不再回退 monkey。
         comp = self._resolve_launcher_component(package_name)
-        if comp:
-            out = self._device.shell(f"am start -n {comp}") or ""
-            if "Error" not in out and "Exception" not in out and self._wait_foreground(package_name):
-                return
-        # 兜底：monkey（极少数 am start 解析不到组件时）
-        self._device.shell(
-            f"monkey -p {package_name} -c android.intent.category.LAUNCHER 1"
-        )
-        if self._wait_foreground(package_name):
+        if not comp:
+            raise RuntimeError(f"无法启动虚拟机应用: {package_name}（未解析到 MAIN+LAUNCHER 入口）")
+
+        out = self._device.shell(f"am start -n {shlex.quote(comp)}") or ""
+        if (
+            "Error" not in out
+            and "Exception" not in out
+            and self._wait_foreground(package_name)
+        ):
             return
         raise RuntimeError(
-            f"无法启动虚拟机应用: {package_name}（am start 组件={comp or '未解析到'}，"
-            f"monkey 兜底后前台仍非该应用）"
+            f"无法启动虚拟机应用: {package_name}（am start 组件={comp} 后前台仍非该应用；"
+            f"输出={out.strip() or '空'}）"
         )
 
     def _resolve_launcher_component(self, package_name: str) -> str:
         """解析包的 LAUNCHER 入口组件，返回 ``pkg/activity``；解析不到返回空串。"""
         out = self._device.shell(
             f"cmd package resolve-activity --brief "
-            f"-c android.intent.category.LAUNCHER {package_name}"
+            f"-a android.intent.action.MAIN "
+            f"-c android.intent.category.LAUNCHER {shlex.quote(package_name)}"
         ) or ""
         for line in reversed(out.splitlines()):
             line = line.strip()
             if line.startswith(f"{package_name}/"):
                 return line
-        # 兜底用 adbutils app_info 拿 main_activity
-        try:
-            info = self._device.app_info(package_name)
-        except Exception:
-            info = None
-        act = getattr(info, "main_activity", None) if info else None
-        if act:
-            return act if "/" in act else f"{package_name}/{act}"
         return ""
 
     def _wait_foreground(self, package_name: str, timeout: float = 4.0) -> bool:

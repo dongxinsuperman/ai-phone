@@ -158,23 +158,64 @@ def test_terminate_app_uses_am_force_stop():
     fake.shell.assert_called_with("am force-stop com.tencent.mm")
 
 
-def test_activate_app_real_device_uses_monkey_first():
-    # 真机（serial 非 emulator-）：维持原 monkey 优先逻辑，零行为变化
+def test_activate_app_real_device_uses_launcher_component():
+    # 真机（serial 非 emulator-）：解析 MAIN+LAUNCHER 入口后用 am start。
     driver, fake = _make_driver()  # _make_driver 默认 serial=EMU-TEST → 真机路径
-    fake.shell.return_value = "Events injected: 1\n## Network stats"
+
+    def _shell(cmd, *a, **k):
+        if "resolve-activity" in cmd:
+            return (
+                "priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 "
+                "isDefault=false\n"
+                "com.tencent.mm/.ui.LauncherUI"
+            )
+        if cmd.startswith("am start"):
+            return "Starting: Intent { cmp=com.tencent.mm/.ui.LauncherUI }"
+        return ""
+
+    fake.shell.side_effect = _shell
+
     driver.activate_app("com.tencent.mm")
-    first = fake.shell.call_args_list[0][0][0]
-    assert "monkey -p com.tencent.mm" in first
+
+    calls = [c[0][0] for c in fake.shell.call_args_list]
+    assert any(
+        "cmd package resolve-activity --brief "
+        "-a android.intent.action.MAIN "
+        "-c android.intent.category.LAUNCHER com.tencent.mm" in c
+        for c in calls
+    )
+    assert any("am start -n com.tencent.mm/.ui.LauncherUI" in c for c in calls)
+    assert not any(c.startswith("monkey") for c in calls)
+
+
+def test_activate_app_quotes_launcher_component_for_shell():
+    driver, fake = _make_driver()
+
+    def _shell(cmd, *a, **k):
+        if "resolve-activity" in cmd:
+            return "com.example/.ui.Main$Activity"
+        if cmd.startswith("am start"):
+            return "Starting: Intent { cmp=com.example/.ui.Main$Activity }"
+        return ""
+
+    fake.shell.side_effect = _shell
+
+    driver.activate_app("com.example")
+
+    calls = [c[0][0] for c in fake.shell.call_args_list]
+    assert "am start -n 'com.example/.ui.Main$Activity'" in calls
+    assert not any(c.startswith("monkey") for c in calls)
 
 
 def test_activate_app_real_device_raises_when_no_activity():
-    # 真机原逻辑：monkey aborted + app_info 取不到 → 抛错（与历史一致）
+    # 真机：解析不到 MAIN+LAUNCHER 入口时直接失败，不回退 monkey。
     driver, fake = _make_driver()
-    fake.shell.return_value = "** No activities found to run, monkey aborted."
-    fake.app_info.side_effect = Exception("not installed")
+    fake.shell.return_value = ""
     with pytest.raises(RuntimeError) as exc:
         driver.activate_app("com.not.exist")
     assert "com.not.exist" in str(exc.value)
+    calls = [c[0][0] for c in fake.shell.call_args_list]
+    assert not any(c.startswith("monkey") for c in calls)
 
 
 def test_activate_app_emulator_uses_am_start_and_verifies_foreground():
@@ -200,15 +241,24 @@ def test_activate_app_emulator_uses_am_start_and_verifies_foreground():
 
 
 def test_activate_app_emulator_raises_when_foreground_never_matches():
-    # 虚拟机：am start / monkey 都没把目标拉到前台 → 抛错，杜绝假成功
+    # 虚拟机：am start 后没把目标拉到前台 → 抛错，杜绝假成功，不回退 monkey。
     driver, fake = _make_driver()
     driver.serial = "emulator-5554"
-    fake.shell.return_value = ""
-    fake.app_info.side_effect = Exception("not installed")
+
+    def _shell(cmd, *a, **k):
+        if "resolve-activity" in cmd:
+            return "com.not.exist/.Launcher"
+        if cmd.startswith("am start"):
+            return "Starting: Intent { cmp=com.not.exist/.Launcher }"
+        return ""
+
+    fake.shell.side_effect = _shell
     driver._wait_foreground = lambda *a, **k: False  # 前台始终不是目标
     with pytest.raises(RuntimeError) as exc:
         driver.activate_app("com.not.exist")
     assert "com.not.exist" in str(exc.value)
+    calls = [c[0][0] for c in fake.shell.call_args_list]
+    assert not any(c.startswith("monkey") for c in calls)
 
 
 def test_list_third_party_packages_parses_output():
