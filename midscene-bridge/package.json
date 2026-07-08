@@ -34,7 +34,7 @@
     "@midscene/shared": "^1.7.6",
     "@types/js-yaml": "^4.0.9",
     "dotenv": "^16.4.5",
-    "js-yaml": "^4.1.1"
+    "js-yaml": "^4.2.0"
   },
   "devDependencies": {
     "@midscene/cli": "^1.7.6",
