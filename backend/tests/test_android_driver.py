@@ -158,104 +158,107 @@ def test_terminate_app_uses_am_force_stop():
     fake.shell.assert_called_with("am force-stop com.tencent.mm")
 
 
-def test_activate_app_resolves_current_package_launcher_and_verifies_foreground():
-    driver, fake = _make_driver()
-    fake.app_current.return_value = SimpleNamespace(package="com.tencent.mm")
-    fake.shell.side_effect = [
-        "priority=0\ncom.tencent.mm/.ui.LauncherUI\n",
-        "Starting: Intent { cmp=com.tencent.mm/.ui.LauncherUI }",
-    ]
+def test_activate_app_real_device_uses_launcher_component():
+    # 真机（serial 非 emulator-）：解析 MAIN+LAUNCHER 入口后用 am start。
+    driver, fake = _make_driver()  # _make_driver 默认 serial=EMU-TEST → 真机路径
+
+    def _shell(cmd, *a, **k):
+        if "resolve-activity" in cmd:
+            return (
+                "priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 "
+                "isDefault=false\n"
+                "com.tencent.mm/.ui.LauncherUI"
+            )
+        if cmd.startswith("am start"):
+            return "Starting: Intent { cmp=com.tencent.mm/.ui.LauncherUI }"
+        return ""
+
+    fake.shell.side_effect = _shell
 
     driver.activate_app("com.tencent.mm")
 
-    calls = [call.args[0] for call in fake.shell.call_args_list]
-    assert calls == [
-        "cmd package query-activities --brief -a android.intent.action.MAIN "
-        "-c android.intent.category.LAUNCHER -p com.tencent.mm",
-        "am start -n com.tencent.mm/.ui.LauncherUI",
-    ]
-    fake.app_start.assert_not_called()
-    assert not any(call.startswith("monkey") for call in calls)
-
-
-def test_activate_app_raises_when_current_package_has_no_launcher_component():
-    driver, fake = _make_driver()
-    fake.shell.return_value = "priority=0 android/com.android.internal.app.ResolverActivity"
-    driver._read_launchable_activity = lambda package_name: ""
-
-    with pytest.raises(RuntimeError, match="未解析到当前包的桌面入口"):
-        driver.activate_app("com.not.exist")
-
-
-def test_activate_app_uses_apk_primary_launcher_when_package_has_multiple_icons(monkeypatch):
-    driver, fake = _make_driver()
-    fake.app_current.return_value = SimpleNamespace(package="com.example.debug")
-    fake.shell.side_effect = [
-        (
-            "2 activities found:\n"
-            "com.example.debug/.MainActivity\n"
-            "com.example.debug/.DiagnosticsActivity\n"
-        ),
-        "Starting: Intent { cmp=com.example.debug/.MainActivity }",
-    ]
-    monkeypatch.setattr(driver, "_read_launchable_activity", lambda package: ".MainActivity")
-
-    driver.activate_app("com.example.debug")
-
-    calls = [call.args[0] for call in fake.shell.call_args_list]
-    assert calls[-1] == "am start -n com.example.debug/.MainActivity"
-    assert not any(call.startswith("monkey") for call in calls)
-
-
-def test_activate_app_refuses_ambiguous_launcher_components_without_primary_metadata(monkeypatch):
-    driver, fake = _make_driver()
-    fake.shell.return_value = (
-        "com.example.debug/.MainActivity\n"
-        "com.example.debug/.DiagnosticsActivity\n"
+    calls = [c[0][0] for c in fake.shell.call_args_list]
+    assert any(
+        "cmd package resolve-activity --brief "
+        "-a android.intent.action.MAIN "
+        "-c android.intent.category.LAUNCHER com.tencent.mm" in c
+        for c in calls
     )
-    monkeypatch.setattr(driver, "_read_launchable_activity", lambda package: "")
-
-    with pytest.raises(RuntimeError, match="未解析到当前包的桌面入口") as exc:
-        driver.activate_app("com.example.debug")
-
-    assert "候选=com.example.debug/.MainActivity,com.example.debug/.DiagnosticsActivity" in str(exc.value)
-    assert not any(
-        call.args[0].startswith("am start") for call in fake.shell.call_args_list
-    )
+    assert any("am start -n com.tencent.mm/.ui.LauncherUI" in c for c in calls)
+    assert not any(c.startswith("monkey") for c in calls)
 
 
-def test_activate_app_fails_when_launcher_component_never_reaches_foreground(monkeypatch):
+def test_activate_app_quotes_launcher_component_for_shell():
     driver, fake = _make_driver()
-    monkeypatch.setattr(driver, "_wait_foreground", lambda package_name: False)
-    monkeypatch.setattr(driver, "current_app", lambda: "com.android.launcher")
 
-    fake.shell.side_effect = [
-        "com.example/.MainActivity",
-        "Starting: Intent { cmp=com.example/.MainActivity }",
-    ]
+    def _shell(cmd, *a, **k):
+        if "resolve-activity" in cmd:
+            return "com.example/.ui.Main$Activity"
+        if cmd.startswith("am start"):
+            return "Starting: Intent { cmp=com.example/.ui.Main$Activity }"
+        return ""
 
+    fake.shell.side_effect = _shell
+
+    driver.activate_app("com.example")
+
+    calls = [c[0][0] for c in fake.shell.call_args_list]
+    assert "am start -n 'com.example/.ui.Main$Activity'" in calls
+    assert not any(c.startswith("monkey") for c in calls)
+
+
+def test_activate_app_real_device_raises_when_no_activity():
+    # 真机：解析不到 MAIN+LAUNCHER 入口时直接失败，不回退 monkey。
+    driver, fake = _make_driver()
+    fake.shell.return_value = ""
     with pytest.raises(RuntimeError) as exc:
-        driver.activate_app("com.example")
+        driver.activate_app("com.not.exist")
+    assert "com.not.exist" in str(exc.value)
+    calls = [c[0][0] for c in fake.shell.call_args_list]
+    assert not any(c.startswith("monkey") for c in calls)
 
-    assert "启动组件=com.example/.MainActivity 后未进入前台" in str(exc.value)
-    assert "com.android.launcher" in str(exc.value)
+
+def test_activate_app_emulator_uses_am_start_and_verifies_foreground():
+    # 虚拟机（serial emulator-）：解析组件 + am start，并确认前台真的切到目标
+    driver, fake = _make_driver()
+    driver.serial = "emulator-5554"  # 切到虚拟机路径
+
+    def _shell(cmd, *a, **k):
+        if "resolve-activity" in cmd:
+            return "com.tencent.mm/.ui.LauncherUI"
+        if cmd.startswith("am start"):
+            return "Starting: Intent { cmp=com.tencent.mm/.ui.LauncherUI }"
+        return ""
+
+    fake.shell.side_effect = _shell
+    fake.app_current.return_value = SimpleNamespace(package="com.tencent.mm")
+
+    driver.activate_app("com.tencent.mm")
+
+    calls = [c[0][0] for c in fake.shell.call_args_list]
+    assert any("am start -n com.tencent.mm/.ui.LauncherUI" in c for c in calls)
+    assert not any(c.startswith("monkey") for c in calls)  # 前台已确认，不走 monkey 兜底
 
 
-def test_activate_app_uses_same_launcher_resolution_on_emulator():
+def test_activate_app_emulator_raises_when_foreground_never_matches():
+    # 虚拟机：am start 后没把目标拉到前台 → 抛错，杜绝假成功，不回退 monkey。
     driver, fake = _make_driver()
     driver.serial = "emulator-5554"
-    fake.app_current.return_value = SimpleNamespace(package="com.tencent.mm")
 
-    fake.shell.side_effect = [
-        "com.tencent.mm/.ui.LauncherUI",
-        "Starting: Intent { cmp=com.tencent.mm/.ui.LauncherUI }",
-    ]
+    def _shell(cmd, *a, **k):
+        if "resolve-activity" in cmd:
+            return "com.not.exist/.Launcher"
+        if cmd.startswith("am start"):
+            return "Starting: Intent { cmp=com.not.exist/.Launcher }"
+        return ""
 
-    driver.activate_app("com.tencent.mm")
-
-    calls = [call.args[0] for call in fake.shell.call_args_list]
-    assert calls[-1] == "am start -n com.tencent.mm/.ui.LauncherUI"
-    fake.app_start.assert_not_called()
+    fake.shell.side_effect = _shell
+    driver._wait_foreground = lambda *a, **k: False  # 前台始终不是目标
+    with pytest.raises(RuntimeError) as exc:
+        driver.activate_app("com.not.exist")
+    assert "com.not.exist" in str(exc.value)
+    calls = [c[0][0] for c in fake.shell.call_args_list]
+    assert not any(c.startswith("monkey") for c in calls)
 
 
 def test_list_third_party_packages_parses_output():
@@ -272,54 +275,6 @@ def test_list_third_party_packages_parses_output():
         "com.alibaba.android.rimet",
         "com.example.foo",
     ]
-
-
-def test_list_installed_apps_uses_device_display_name_and_package(monkeypatch):
-    driver, fake = _make_driver()
-
-    def _shell(command, *args, **kwargs):
-        if command == "pm list packages -3":
-            return "package:com.example.debug\n"
-        if command == "pm list packages":
-            return "package:com.example.debug\npackage:com.android.settings\n"
-        return ""
-
-    fake.shell.side_effect = _shell
-    monkeypatch.setattr(
-        driver,
-        "_read_application_label",
-        lambda package: "debug-build" if package == "com.example.debug" else "",
-    )
-
-    apps = driver.list_installed_apps()
-
-    assert [(app.display_name, app.package_name) for app in apps] == [
-        ("debug-build", "com.example.debug"),
-        ("com.android.settings", "com.android.settings"),
-    ]
-
-
-def test_read_application_label_reads_current_device_apk_metadata(monkeypatch):
-    driver, fake = _make_driver()
-    fake.shell.return_value = "package:/data/app/~~token/com.example.debug/base.apk\n"
-    monkeypatch.setattr(driver, "_find_aapt", lambda: "/sdk/build-tools/aapt")
-    monkeypatch.setattr(
-        android_mod.subprocess,
-        "run",
-        lambda *args, **kwargs: SimpleNamespace(
-            returncode=0,
-            stdout=(
-                "package: name='com.example.debug'\n"
-                "application-label:'debug-build'\n"
-                "launchable-activity: name='com.example.debug.MainActivity' label='' icon=''\n"
-            ),
-            stderr="",
-        ),
-    )
-
-    assert driver._read_application_label("com.example.debug") == "debug-build"
-    assert driver._read_launchable_activity("com.example.debug") == "com.example.debug.MainActivity"
-    fake.sync.pull.assert_called_once()
 
 
 def test_screenshot_png_returns_png_bytes():

@@ -80,7 +80,7 @@ def build_system_prompt_for_backend(
 # ---------------------------------------------------------------------------
 # 三家可识别动作集完全不同——直接发豆包动作清单给 Claude/GPT 会让它们
 # 主动模仿（实测 Claude 收到含 ``open_app`` 的提示后，把整段
-# ``open_app(app_name='示例应用')`` 当成 type 的 text 输入到屏幕上，完全
+# ``open_app(app_name='洋葱学园')`` 当成 type 的 text 输入到屏幕上，完全
 # 跑偏）。所以纠偏提示同样必须按 backend 分家。
 _UNKNOWN_ACTION_HINT_DOUBAO = (
     "⚠️ 你上一步输出的动作名「{action}」不在规范动作集合里，未被执行。"

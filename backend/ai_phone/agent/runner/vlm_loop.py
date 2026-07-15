@@ -30,7 +30,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from loguru import logger
 
 from ai_phone.agent.async_utils import run_blocking
-from ai_phone.agent.drivers.base import BaseDriver, InstalledApp
+from ai_phone.agent.drivers.base import BaseDriver
 from ai_phone.config import get_settings
 from ai_phone.shared import actions as A
 from ai_phone.shared.llm import (
@@ -2711,15 +2711,20 @@ class VLMRunner:
     # open_app / close_app：通过二次 VLM 做包名匹配
     # ------------------------------------------------------------------
     async def _open_app_by_name(self, app_name: str) -> None:
-        apps = await run_blocking(self.driver.list_installed_apps)
-        target = await self._match_package_name(app_name, apps)
+        # 走全量（含系统应用）列表，让 open_app('设置' / '相册' / '浏览器' /
+        # '应用市场' 等系统应用) 也能被 VLM 二次包名匹配命中——过去用
+        # list_third_party_packages 会把这些系统包过滤掉，导致 VLM 返回 NONE
+        # 整条动作判失败
+        pkgs = await run_blocking(self.driver.list_all_packages)
+        target = await self._match_package_name(app_name, pkgs)
         await run_blocking(self.driver.activate_app, target)
         await self._log(1, "打开App", f"成功: {target}")
         await self._emit_cache_app_action(A.ACTION_OPEN_APP, target)
 
     async def _close_app_by_name(self, app_name: str) -> None:
-        apps = await run_blocking(self.driver.list_installed_apps)
-        target = await self._match_package_name(app_name, apps)
+        # 同 _open_app_by_name：close 也用全量，避免"关闭设置"这类命中系统包失败
+        pkgs = await run_blocking(self.driver.list_all_packages)
+        target = await self._match_package_name(app_name, pkgs)
         await run_blocking(self.driver.terminate_app, target)
         await self._log(1, "关闭App", f"成功: {target}")
         await self._emit_cache_app_action(A.ACTION_CLOSE_APP, target)
@@ -2730,7 +2735,8 @@ class VLMRunner:
         借鉴 next/server-brain：next 的缓存动作来自实际下发的 driver 命令
         （``activate_app(package_name=...)`` → app_name 字段存包名），回放直接拿
         这个包名喂 driver。main 的旁路收集器原本只接 VLM 的 ``EVT_ACTION``（携带
-        显示名），回放时无法用显示名直接启动。这里在 open_app/close_app 的实际执行入口
+        中文 app_name），回放时 ``activate_app('洋葱学园')`` 无法让 driver 解析出
+        系统登记的启动入口。这里在 open_app/close_app 的实际执行入口
         （已匹配出包名 ``target``）补发一条带包名的 ``EVT_ACTION``——recorder 按
         step 聚合、后到覆盖先到，于是缓存里存的是包名。本入口被起跑线 prelude 与
         普通 step dispatch 共用，一处补发即两路统一生效。
@@ -2759,9 +2765,9 @@ class VLMRunner:
         number / before-after 截图 / "执行完成"日志），但**没有**思考行——
         因为这两步是系统决策，不是模型决策，让人一眼能看出"这是起跑线自动跑的"。
 
-        失败处理：close 失败只记 WARN 继续（目标可能本来就未运行）；但 open 失败
-        必须终止 Run。起跑线既然要求“关闭后重新打开”，VLM 后续仍会走同一套
-        ``open_app`` 能力，继续只会重复消耗 token、重复报同一错误。
+        失败处理：close 或 open 任何一步抛错都只记 WARN 不中断 Run；理由是设备
+        本来就可能没装这个 App / 包名匹配失败 / 当前 App 已是 closed——这些
+        情况下让 VLM 接着自己处理比直接 fail 更可救。
         """
         plan = (
             ("close_app", "关闭App（系统起跑线）", self._close_app_by_name),
@@ -2796,15 +2802,9 @@ class VLMRunner:
             except Exception as exc:  # noqa: BLE001
                 await self._log(
                     2, f"起跑线 {action_name} 失败",
-                    (
-                        f"{exc}（关闭失败可继续后续步骤）"
-                        if action_name == "close_app"
-                        else f"{exc}（无法打开目标 App，终止 Run，避免 VLM 重复尝试）"
-                    ),
+                    f"{exc}（继续后续步骤，由 VLM 兜底）",
                     step=step,
                 )
-                if action_name == "open_app":
-                    raise RuntimeError(f"起跑线无法打开「{app_name}」: {exc}") from exc
 
             # close 与 open 之间留 1.5s 让 App 真正退出，避免 open 立刻收到旧 PID
             if action_name == "close_app":
@@ -2827,8 +2827,8 @@ class VLMRunner:
             "不要再尝试 close_app / open_app。"
         )
 
-    async def _match_package_name(self, app_name: str, apps: List[InstalledApp]) -> str:
-        """从设备当前应用目录中匹配用户名称，并返回动态读取到的包名。
+    async def _match_package_name(self, app_name: str, packages: List[str]) -> str:
+        """① 起跑线 · 包名匹配：从设备包名列表里挑出与 ``app_name`` 最匹配的包名。
 
         协议层（构造 prompt、发请求、解析返回、token 累加）下沉到 assistant
         实现；本函数只承担两层薄编排：
@@ -2839,38 +2839,9 @@ class VLMRunner:
         切换 assistant_backend 时本函数零改动；各家把"NONE / null / 空"等家家
         各异的"未匹配"信号统一翻译为空串后返回。
         """
-        requested = (app_name or "").strip()
-        packages = [app.package_name for app in apps]
-        if requested in packages:
-            await self._log(1, "包名匹配", f"「{app_name}」→ {requested}（输入包名精确命中）")
-            return requested
-
-        exact_names = [
-            app for app in apps
-            if app.display_name.casefold() == requested.casefold()
-        ]
-        if len(exact_names) == 1:
-            target = exact_names[0].package_name
-            await self._log(
-                1,
-                "包名匹配",
-                f"「{app_name}」→ {target}（设备显示名精确命中）",
-            )
-            return target
-
-        candidates = [
-            f"{app.display_name} | {app.package_name}"
-            if app.display_name != app.package_name
-            else app.package_name
-            for app in apps
-        ]
-        target = await self._assistant.match_package(app_name, candidates)
+        target = await self._assistant.match_package(app_name, packages)
         if not target:
             raise RuntimeError(f"未找到与「{app_name}」匹配的应用")
-        if target not in packages:
-            raise RuntimeError(
-                f"包名匹配结果不在设备已安装列表中: 「{app_name}」→ {target}"
-            )
         await self._log(1, "包名匹配", f"「{app_name}」→ {target}")
         return target
 

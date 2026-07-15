@@ -33,13 +33,25 @@ from PIL import Image
 from loguru import logger
 
 from ...config import get_settings
-from .base import BaseDriver, DeviceInfo, InstalledApp
+from .base import BaseDriver, DeviceInfo
 from .ios_wda_launcher import IosWdaXcodeLauncher, _developer_app_trust_hint, _probe_wda_http
 from .wda_client import WdaClient, WdaError
 
 
 # WDA 在 iOS 内部监听的端口
 _WDA_DEVICE_PORT = 8100
+
+_IOS_SYSTEM_APP_BUNDLE_FALLBACKS: Tuple[str, ...] = (
+    "com.apple.Preferences",
+    "com.apple.mobilesafari",
+    "com.apple.mobileslideshow",
+    "com.apple.AppStore",
+    "com.apple.camera",
+    "com.apple.mobiletimer",
+    "com.apple.mobilecal",
+    "com.apple.mobilemail",
+    "com.apple.MobileSMS",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -402,9 +414,6 @@ class IosDriver(BaseDriver):
 
         # WDA 报告的 point 坐标系 → 物理像素需要乘 scale；缓存一次
         self._scale: Optional[float] = None
-        # 同一 Run 的 close_app + open_app 必须看到同一份动态应用目录，避免重复走
-        # installation_proxy，也避免两次查询间安装状态变化导致匹配漂移。
-        self._installed_apps_cache: Optional[List[InstalledApp]] = None
 
     # ------------------------------------------------------------------
     # Run 前准备
@@ -698,40 +707,18 @@ class IosDriver(BaseDriver):
     # 应用
     # ------------------------------------------------------------------
     def list_third_party_packages(self) -> List[str]:
-        return list(self._list_app_records(application_type="User"))
+        return self._list_apps(application_type="User")
 
     def list_all_packages(self) -> List[str]:
-        return list(self._list_all_app_records())
-
-    def list_installed_apps(self) -> List[InstalledApp]:
-        """动态读取 iOS 当前应用的显示名与 bundle ID。
-
-        ``installation_proxy`` 返回 ``bundle_id -> metadata``；苹果将
-        ``CFBundleDisplayName`` 定义为主屏图标下的用户可见名称，缺失时使用
-        ``CFBundleName``。两者都由当前设备 App 自己提供，不接受任何外部映射。
-        """
-        if self._installed_apps_cache is not None:
-            return list(self._installed_apps_cache)
-
-        records = self._list_all_app_records()
-        apps = [
-            InstalledApp(
-                display_name=self._display_name_from_record(bundle_id, metadata),
-                package_name=bundle_id,
-            )
-            for bundle_id, metadata in records.items()
-        ]
-        self._installed_apps_cache = apps
-        return list(apps)
-
-    def _list_all_app_records(self) -> Dict[str, Dict[str, Any]]:
-        """分段读取 User/System，避免 ``Any`` 在部分低版本设备上失效。"""
-        records: Dict[str, Dict[str, Any]] = {}
+        # 不再依赖 application_type="Any" 作为唯一入口：部分低版本 iOS 设备上
+        # Any 会把 installation_proxy 管道打断。Run 语义只需要"用户应用 +
+        # 常见系统应用"，所以分开取 User/System，并允许单侧失败。
+        packages: List[str] = []
         errors: List[str] = []
         succeeded = False
         for application_type in ("User", "System"):
             try:
-                part = self._list_app_records(application_type=application_type)
+                part = self._list_apps(application_type=application_type)
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"{application_type}: {type(exc).__name__}: {exc}")
                 logger.warning(
@@ -742,30 +729,19 @@ class IosDriver(BaseDriver):
                 )
                 continue
             succeeded = True
-            records.update(part)
+            packages.extend(part)
 
         if succeeded:
-            return records
+            packages.extend(_IOS_SYSTEM_APP_BUNDLE_FALLBACKS)
+            return [p for p in dict.fromkeys(packages) if p]
 
         detail = "; ".join(errors) if errors else "no result"
         raise RuntimeError(
             f"iOS 列应用失败 udid={self.serial} type=User/System: {detail}"
         )
 
-    @staticmethod
-    def _display_name_from_record(bundle_id: str, metadata: Dict[str, Any]) -> str:
-        for key in ("CFBundleDisplayName", "CFBundleName"):
-            value = metadata.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        return bundle_id
-
     def _list_apps(self, *, application_type: str) -> List[str]:
-        """iOS 取已装应用 bundle_id 列表。"""
-        return list(self._list_app_records(application_type=application_type))
-
-    def _list_app_records(self, *, application_type: str) -> Dict[str, Dict[str, Any]]:
-        """iOS 取已装应用的 ``bundle_id -> metadata`` 目录。
+        """iOS 取已装应用 bundle_id 列表。
 
         iOS 17+ 把 ``com.apple.mobile.installation_proxy`` 列为 trusted lockdown
         service：USB usbmuxd lockdown 通道直接 connect 会被 ``NotPairedError``
@@ -788,7 +764,7 @@ class IosDriver(BaseDriver):
         rsd = self._try_get_tunneld_rsd()
         if rsd is not None:
             try:
-                apps = self._fetch_app_records_via_lockdown(rsd, application_type)
+                apps = self._fetch_apps_via_lockdown(rsd, application_type)
                 logger.info(
                     "iOS list_apps udid={} type={} via=tunneld+RSD count={}",
                     self.serial,
@@ -813,7 +789,7 @@ class IosDriver(BaseDriver):
         fresh_lockdown = None
         try:
             fresh_lockdown = self._open_fresh_lockdown_for_app_listing()
-            apps = self._fetch_app_records_via_lockdown(fresh_lockdown, application_type)
+            apps = self._fetch_apps_via_lockdown(fresh_lockdown, application_type)
             logger.info(
                 "iOS list_apps udid={} type={} via=usbmux/fresh-lockdown count={}",
                 self.serial,
@@ -894,12 +870,7 @@ class IosDriver(BaseDriver):
             )
         return rsd
 
-    def _fetch_app_records_via_lockdown(
-        self,
-        lockdown,  # noqa: ANN001
-        application_type: str,
-    ) -> Dict[str, Dict[str, Any]]:
-        """通过官方 installation_proxy 保留完整应用元数据。"""
+    def _fetch_apps_via_lockdown(self, lockdown, application_type: str) -> List[str]:
         from pymobiledevice3.services.installation_proxy import (  # noqa: PLC0415
             InstallationProxyService,
         )
@@ -912,11 +883,7 @@ class IosDriver(BaseDriver):
                 _maybe_sync(ip.close())
             except Exception:  # noqa: BLE001
                 pass
-        return {
-            str(bundle_id): metadata if isinstance(metadata, dict) else {}
-            for bundle_id, metadata in apps.items()
-            if bundle_id
-        }
+        return list(apps.keys())
 
     def activate_app(self, package_name: str) -> None:
         self._wda.launch_app(package_name)

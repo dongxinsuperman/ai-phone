@@ -124,18 +124,22 @@ class OpenAIAssistant:
             raise RuntimeError("无法获取设备应用列表")
 
         prompt = (
-            "Task: From the device's dynamically read installed app list, find "
-            "the one that best matches the user's description. Each line is "
-            "`display name | package name` (or only a package name when the device "
-            "cannot provide a display name).\n\n"
+            "Task: From the device's installed third-party app package list, find "
+            "the one that best matches the user's description.\n\n"
             f"User description: {app_name}\n\n"
-            "Installed apps:\n"
+            "Installed package names:\n"
             + "\n".join(packages)
             + "\n\nRequirements:\n"
             "1. Identify the app keyword in the user description\n"
-            "2. Use either display name or package name to find the best match\n"
+            "2. Find the best-matching package from the list\n"
             "3. Output ONLY the full package name (no explanation, no extra text)\n"
             "4. If no match, output \"NONE\"\n\n"
+            "Business note: if the user description contains 「洋葱」 (e.g. 「洋葱学园」, "
+            "「洋葱数学」), pay special attention to packages whose name contains "
+            "\"yangcong\", \"guanghe\", or \"ycmath\". On iOS the apps from this "
+            "vendor use multiple naming conventions (public builds often use "
+            "yangcong345, enterprise/test builds often use guanghe or ycmath); "
+            "do NOT skip a candidate just because it lacks the literal \"yangcong\".\n\n"
             "Output format: package name only"
         )
         target = await self._post(

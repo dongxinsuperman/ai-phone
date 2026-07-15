@@ -78,7 +78,7 @@ _ASSERT_FAIL_RE = re.compile(
 # CU 在执行中调用平台原生能力（包名级 open_app / close_app 等）——这些是
 # computer tool 不具备的"项目级抽象"，又是 VLM 走"home + 找图标"路径最不
 # 可靠的部分。格式：
-#   PLATFORM_ACTION: open_app(app_name='示例应用')
+#   PLATFORM_ACTION: open_app(app_name='洋葱学园')
 #   PLATFORM_ACTION: close_app(app_name='淘宝')
 # 行首匹配 + 兼容全角冒号 + 单/双引号。匹配组：(action_name, app_name)。
 _PLATFORM_ACTION_RE = re.compile(

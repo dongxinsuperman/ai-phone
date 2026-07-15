@@ -480,7 +480,6 @@ DriverMethod = Literal[
     # 应用
     "list_third_party_packages",
     "list_all_packages",
-    "list_installed_apps",
     "activate_app",
     "terminate_app",
     "current_app",

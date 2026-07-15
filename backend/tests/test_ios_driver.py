@@ -12,48 +12,48 @@ def test_ios_list_all_packages_uses_user_and_system_not_any(monkeypatch):
     driver = _driver()
     calls: list[str] = []
 
-    def fake_list_app_records(*, application_type: str) -> dict[str, dict]:
+    def fake_list_apps(*, application_type: str) -> list[str]:
         calls.append(application_type)
         if application_type == "User":
-            return {"com.example.student": {}}
+            return ["com.yangcong345.student"]
         if application_type == "System":
-            return {"com.apple.Preferences": {}}
+            return ["com.apple.Preferences"]
         raise AssertionError(f"unexpected application_type={application_type}")
 
-    monkeypatch.setattr(driver, "_list_app_records", fake_list_app_records)
+    monkeypatch.setattr(driver, "_list_apps", fake_list_apps)
 
     packages = driver.list_all_packages()
 
     assert calls == ["User", "System"]
-    assert "com.example.student" in packages
+    assert "com.yangcong345.student" in packages
     assert "com.apple.Preferences" in packages
 
 
 def test_ios_list_all_packages_keeps_user_apps_when_system_breaks(monkeypatch):
     driver = _driver()
 
-    def fake_list_app_records(*, application_type: str) -> dict[str, dict]:
+    def fake_list_apps(*, application_type: str) -> list[str]:
         if application_type == "User":
-            return {"com.example.student": {}}
+            return ["com.yangcong345.student"]
         if application_type == "System":
             raise BrokenPipeError(32, "Broken pipe")
         raise AssertionError(f"unexpected application_type={application_type}")
 
-    monkeypatch.setattr(driver, "_list_app_records", fake_list_app_records)
+    monkeypatch.setattr(driver, "_list_apps", fake_list_apps)
 
     packages = driver.list_all_packages()
 
-    assert "com.example.student" in packages
-    assert packages == ["com.example.student"]
+    assert "com.yangcong345.student" in packages
+    assert "com.apple.Preferences" in packages
 
 
 def test_ios_list_all_packages_raises_when_both_segments_fail(monkeypatch):
     driver = _driver()
 
-    def fake_list_app_records(*, application_type: str) -> dict[str, dict]:
+    def fake_list_apps(*, application_type: str) -> list[str]:
         raise BrokenPipeError(32, f"{application_type} pipe")
 
-    monkeypatch.setattr(driver, "_list_app_records", fake_list_app_records)
+    monkeypatch.setattr(driver, "_list_apps", fake_list_apps)
 
     try:
         driver.list_all_packages()
@@ -86,16 +86,16 @@ def test_ios_list_apps_uses_fresh_lockdown_not_driver_lockdown(monkeypatch):
         lambda lockdown: closed_lockdowns.append(lockdown),
     )
 
-    def fake_fetch(lockdown, application_type: str) -> dict[str, dict]:
+    def fake_fetch(lockdown, application_type: str) -> list[str]:
         used_lockdowns.append(lockdown)
         assert application_type == "User"
-        return {"com.example.match": {"CFBundleDisplayName": "debug-build"}}
+        return ["com.yangcong345.match"]
 
-    monkeypatch.setattr(driver, "_fetch_app_records_via_lockdown", fake_fetch)
+    monkeypatch.setattr(driver, "_fetch_apps_via_lockdown", fake_fetch)
 
     packages = driver._list_apps(application_type="User")
 
-    assert packages == ["com.example.match"]
+    assert packages == ["com.yangcong345.match"]
     assert used_lockdowns == [fresh_lockdown]
     assert stale_lockdown not in used_lockdowns
     assert closed_lockdowns == [fresh_lockdown]
@@ -118,11 +118,11 @@ def test_ios_list_apps_closes_fresh_lockdown_when_fetch_fails(monkeypatch):
         lambda lockdown: closed_lockdowns.append(lockdown),
     )
 
-    def fake_fetch(lockdown, application_type: str) -> dict[str, dict]:
+    def fake_fetch(lockdown, application_type: str) -> list[str]:
         assert lockdown is fresh_lockdown
         raise BrokenPipeError(32, "Broken pipe")
 
-    monkeypatch.setattr(driver, "_fetch_app_records_via_lockdown", fake_fetch)
+    monkeypatch.setattr(driver, "_fetch_apps_via_lockdown", fake_fetch)
 
     try:
         driver._list_apps(application_type="User")
@@ -134,30 +134,6 @@ def test_ios_list_apps_closes_fresh_lockdown_when_fetch_fails(monkeypatch):
     assert "type=User" in message
     assert "BrokenPipeError" in message
     assert closed_lockdowns == [fresh_lockdown]
-
-
-def test_ios_list_installed_apps_uses_display_name_then_short_name(monkeypatch):
-    driver = _driver()
-    monkeypatch.setattr(
-        driver,
-        "_list_all_app_records",
-        lambda: {
-            "com.example.debug": {
-                "CFBundleDisplayName": "debug-build",
-                "CFBundleName": "debug",
-            },
-            "com.example.shortname": {"CFBundleName": "short-build"},
-            "com.apple.Preferences": {},
-        },
-    )
-
-    apps = driver.list_installed_apps()
-
-    assert [(app.display_name, app.package_name) for app in apps] == [
-        ("debug-build", "com.example.debug"),
-        ("short-build", "com.example.shortname"),
-        ("com.apple.Preferences", "com.apple.Preferences"),
-    ]
 
 
 def test_ios_open_fresh_lockdown_for_app_listing_disables_autopair(monkeypatch):
@@ -202,9 +178,9 @@ def test_ios_terminate_app_falls_back_to_wda_when_no_tunneld(monkeypatch):
     monkeypatch.setattr(driver, "current_app", lambda: "com.apple.springboard")
     monkeypatch.setattr(ios_mod.time, "sleep", lambda *_: None)
 
-    driver.terminate_app("com.example.testapp")
+    driver.terminate_app("com.guanghe.ycmathEnterpriseTest")
 
-    assert fake_wda.terminated == ["com.example.testapp"]
+    assert fake_wda.terminated == ["com.guanghe.ycmathEnterpriseTest"]
 
 
 def test_ios_terminate_app_wda_fallback_raises_when_app_stays_foreground(monkeypatch):
@@ -213,18 +189,18 @@ def test_ios_terminate_app_wda_fallback_raises_when_app_stays_foreground(monkeyp
     driver = IosDriver("IOS-1", object(), fake_wda)
 
     monkeypatch.setattr(driver, "_try_get_tunneld_rsd", lambda: None)
-    monkeypatch.setattr(driver, "current_app", lambda: "com.example.testapp")
+    monkeypatch.setattr(driver, "current_app", lambda: "com.guanghe.ycmathEnterpriseTest")
     monkeypatch.setattr(ios_mod.time, "sleep", lambda *_: None)
 
     try:
-        driver.terminate_app("com.example.testapp")
+        driver.terminate_app("com.guanghe.ycmathEnterpriseTest")
     except RuntimeError as exc:
         message = str(exc)
     else:
         raise AssertionError("expected RuntimeError")
 
     assert "仍在前台" in message
-    assert fake_wda.terminated == ["com.example.testapp"]
+    assert fake_wda.terminated == ["com.guanghe.ycmathEnterpriseTest"]
 
 
 def test_ios_terminate_app_wda_fallback_propagates_wda_error(monkeypatch):
@@ -237,7 +213,7 @@ def test_ios_terminate_app_wda_fallback_propagates_wda_error(monkeypatch):
     monkeypatch.setattr(ios_mod.time, "sleep", lambda *_: None)
 
     try:
-        driver.terminate_app("com.example.testapp")
+        driver.terminate_app("com.guanghe.ycmathEnterpriseTest")
     except RuntimeError as exc:
         message = str(exc)
     else:

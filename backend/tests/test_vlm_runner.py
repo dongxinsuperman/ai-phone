@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 from PIL import Image
 
-from ai_phone.agent.drivers.base import BaseDriver, DeviceInfo, InstalledApp
+from ai_phone.agent.drivers.base import BaseDriver, DeviceInfo
 from ai_phone.agent.runner.vlm_loop import (
     CLICK_STUCK_THRESHOLD,
     UNKNOWN_ACTION_STREAK_LIMIT,
@@ -129,17 +129,6 @@ class FakeDriver(BaseDriver):
         )
 
 
-class FailingLaunchDriver(FakeDriver):
-    """用于验证起跑线启动失败不会再交给 VLM 重试。"""
-
-    def list_third_party_packages(self):
-        return ["com.example.app"]
-
-    def activate_app(self, pkg):
-        self._record("activate_app", pkg)
-        raise RuntimeError("所有入口均未进入前台")
-
-
 @dataclass
 class ScriptedStep:
     thought: str
@@ -200,18 +189,6 @@ class ScriptedVLMClient:
         )
 
 
-class PackageMatcherAssistant:
-    """仅覆盖包名匹配的轻量辅助模型替身。"""
-
-    def __init__(self, result: str):
-        self.result = result
-        self.calls: List[Tuple[str, List[str]]] = []
-
-    async def match_package(self, app_name: str, packages: List[str]) -> str:
-        self.calls.append((app_name, packages))
-        return self.result
-
-
 def _collect_events():
     events: List[Dict[str, Any]] = []
 
@@ -221,84 +198,6 @@ def _collect_events():
         events.append(cleaned)
 
     return events, emit
-
-
-def _runner_for_package_match(assistant: PackageMatcherAssistant) -> VLMRunner:
-    return VLMRunner(
-        run_id="R-package-match",
-        driver=FakeDriver(),
-        goal="打开应用",
-        vlm_client=ScriptedVLMClient([]),
-        assistant=assistant,
-    )
-
-
-@pytest.mark.asyncio
-async def test_match_package_name_uses_exact_installed_package_without_model():
-    assistant = PackageMatcherAssistant("should-not-be-used")
-    runner = _runner_for_package_match(assistant)
-
-    target = await runner._match_package_name(
-        "com.example.app",
-        [
-            InstalledApp("Example", "com.example.app"),
-            InstalledApp("Other", "com.example.other"),
-        ],
-    )
-
-    assert target == "com.example.app"
-    assert assistant.calls == []
-
-
-@pytest.mark.asyncio
-async def test_match_display_name_requires_model_result_to_be_installed():
-    assistant = PackageMatcherAssistant("com.example.not-installed")
-    runner = _runner_for_package_match(assistant)
-
-    with pytest.raises(RuntimeError, match="不在设备已安装列表"):
-        await runner._match_package_name(
-            "示例应用", [InstalledApp("示例应用二", "com.example.app")]
-        )
-
-    assert assistant.calls == [("示例应用", ["示例应用二 | com.example.app"])]
-
-
-@pytest.mark.asyncio
-async def test_match_package_name_uses_dynamic_display_name_without_model():
-    assistant = PackageMatcherAssistant("should-not-be-used")
-    runner = _runner_for_package_match(assistant)
-
-    target = await runner._match_package_name(
-        "debug-build",
-        [InstalledApp("debug-build", "com.example.debug")],
-    )
-
-    assert target == "com.example.debug"
-    assert assistant.calls == []
-
-
-@pytest.mark.asyncio
-async def test_prelude_open_failure_stops_before_vlm_retries_same_app():
-    driver = FailingLaunchDriver()
-    assistant = PackageMatcherAssistant("com.example.app")
-    runner = VLMRunner(
-        run_id="R-prelude-open-fail",
-        driver=driver,
-        goal=(
-            "前置条件：关闭 App「示例应用」（杀进程）后重新打开 App「示例应用」；"
-            "操作步骤：查看首页；预期结果：首页显示"
-        ),
-        vlm_client=ScriptedVLMClient([]),
-        assistant=assistant,
-    )
-
-    result = await runner.run()
-
-    assert result.ok is False
-    assert "起跑线无法打开「示例应用」" in result.reason
-    assert [call for call in driver.calls if call[0] == "activate_app"] == [
-        ("activate_app", ("com.example.app",))
-    ]
 
 
 # ---------------------------------------------------------------------------
@@ -523,7 +422,7 @@ async def test_unknown_action_streak_fails():
 @pytest.mark.asyncio
 async def test_click_stuck_injects_hint():
     driver = FakeDriver()
-    # 连续 CLICK_STUCK_THRESHOLD 次点击相同点，第 threshold 次会注入提示
+    # 连续 CLICK_STUCK_THRESHOLD+1 次点击相同点，第 threshold 次会注入提示
     script = [
         ScriptedStep("点同一处", "click(point='<point>500 500</point>')")
         for _ in range(CLICK_STUCK_THRESHOLD)
@@ -889,7 +788,7 @@ async def test_structured_screen_revisit_triggers_audit(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_freeform_goal_never_calls_audit(monkeypatch):
-    """自由对话 goal 达到重复点击阈值也不触发审判，且 finished 正常成功。"""
+    """自由对话 goal（非结构化）下，同坐标点 5 次都不应触发审判，且 finished 正常成功。"""
     audit_log: List[Tuple[str, int]] = []
     _patch_supervisor(
         monkeypatch,
@@ -901,7 +800,7 @@ async def test_freeform_goal_never_calls_audit(monkeypatch):
     driver = FakeDriver()
     script = [
         ScriptedStep(f"点 {i}", "click(point='<point>668 803</point>')")
-        for i in range(CLICK_STUCK_THRESHOLD)
+        for i in range(5)
     ]
     script.append(ScriptedStep("收工", "finished()"))
     vlm = ScriptedVLMClient(script)
@@ -985,7 +884,6 @@ async def test_strictness_mid_stays_freeform_when_label_gate_only(monkeypatch):
     runner = VLMRunner(
         run_id="R-classify-mid", driver=driver, goal=border_goal,
         emit=emit, vlm_client=vlm,
-        assistant=PackageMatcherAssistant("com.tencent.mm"),
     )
     result = await runner.run()
     assert result.ok is True
@@ -1017,7 +915,7 @@ async def test_strictness_high_stays_freeform_when_label_gate_only(monkeypatch):
     # 多个数字约束 + 多个逻辑词 + 多次顺序词 + 多个动词）
     # 评分预计 ≥ 5；默认只做标签准入，所以仍不直接结构化
     strict_goal = (
-        "首先打开「示例学习应用」并等待 3 秒，然后依次点击底部「学习」Tab、"
+        "首先打开「洋葱学园」并等待 3 秒，然后依次点击底部「学习」Tab、"
         "中部「全部功能」入口、下滑至底部点击「二维码」块；接着进入"
         "「初中」「数学」教材的第 1 章第 1 节，找到第 1 张「未开始」状态"
         "的视频卡片（含缩略图+时长角标+双进度条的全宽卡片），若该卡片不"
@@ -1187,18 +1085,20 @@ async def test_chain_with_disallowed_action_falls_back_to_first():
 async def test_chain_clicks_both_count_in_stuck_detection():
     """链内每个 click 都进卡死检测，避免 VLM 用'链式 2 击同坐标'绕过同位置上限。"""
     driver = FakeDriver()
-    # 每步链包含 2 次同坐标 click，总数覆盖当前卡死阈值。
-    chain_step_count = (CLICK_STUCK_THRESHOLD + 1) // 2
-    script = [
+    # 2 步链 × 2 = 4 次同坐标 click，远超 CLICK_STUCK_THRESHOLD（默认 2）
+    vlm = ChainScriptedVLMClient([
         ScriptedStep(
-            f"链 {index + 1}",
+            "链 1",
             "click(point='<point>500 500</point>')\n"
             "click(point='<point>500 500</point>')",
-        )
-        for index in range(chain_step_count)
-    ]
-    script.append(ScriptedStep("完成", "finished()"))
-    vlm = ChainScriptedVLMClient(script)
+        ),
+        ScriptedStep(
+            "链 2",
+            "click(point='<point>500 500</point>')\n"
+            "click(point='<point>500 500</point>')",
+        ),
+        ScriptedStep("完成", "finished()"),
+    ])
     _events, emit = _collect_events()
     runner = VLMRunner(
         run_id="R-chain-stuck", driver=driver, goal="测试链卡死",
@@ -1206,9 +1106,9 @@ async def test_chain_clicks_both_count_in_stuck_detection():
     )
     result = await runner.run()
     assert result.ok is True
-    # 链内 click 都打到 driver
+    # 4 次 click 都打到 driver
     click_calls = [c for c in driver.calls if c[0] == "click"]
-    assert len(click_calls) == chain_step_count * 2
+    assert len(click_calls) == 4
     # 卡死提示应被注入
     assert any("几乎相同的位置" in h for h in vlm.pending_hints)
 
