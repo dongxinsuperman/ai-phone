@@ -182,7 +182,7 @@ def test_activate_app_real_device_uses_launcher_component():
     assert any(
         "cmd package resolve-activity --brief "
         "-a android.intent.action.MAIN "
-        "-c android.intent.category.LAUNCHER com.tencent.mm" in c
+        "-c android.intent.category.LAUNCHER -p com.tencent.mm" in c
         for c in calls
     )
     assert any("am start -n com.tencent.mm/.ui.LauncherUI" in c for c in calls)
@@ -240,7 +240,7 @@ def test_activate_app_falls_back_to_main_without_launcher():
 
     calls = [c[0][0] for c in fake.shell.call_args_list]
     assert any(
-        "-a android.intent.action.MAIN com.example" in call
+        "-a android.intent.action.MAIN -p com.example" in call
         for call in calls
     )
     assert any("am start -n com.example/.EntryActivity" in call for call in calls)

@@ -673,7 +673,11 @@ class AndroidDriver(BaseDriver):
         cmd = "cmd package resolve-activity --brief -a android.intent.action.MAIN"
         if require_launcher:
             cmd += " -c android.intent.category.LAUNCHER"
-        out = self._device.shell(f"{cmd} {shlex.quote(package_name)}") or ""
+        # ``cmd package`` 的最后一个裸参数不是“限定在此包内查询”。部署实测会
+        # 得到系统全局的 android/...ResolverActivity；必须用 Intent 的 ``-p``
+        # 显式设置 package，才是在目标 APK 的 Activity 里解析入口。
+        cmd += f" -p {shlex.quote(package_name)}"
+        out = self._device.shell(cmd) or ""
         source = "MAIN+LAUNCHER" if require_launcher else "MAIN"
         rendered_out = " ".join(out.strip().split()) or "空"
         self._launch_resolution_details.append(f"{source}={rendered_out[:500]}")
