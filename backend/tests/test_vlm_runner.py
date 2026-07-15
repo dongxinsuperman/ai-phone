@@ -869,7 +869,7 @@ async def test_structured_screen_revisit_triggers_audit(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_freeform_goal_never_calls_audit(monkeypatch):
-    """自由对话 goal（非结构化）下，同坐标点 5 次都不应触发审判，且 finished 正常成功。"""
+    """自由对话 goal 达到重复点击阈值也不触发审判，且 finished 正常成功。"""
     audit_log: List[Tuple[str, int]] = []
     _patch_supervisor(
         monkeypatch,
@@ -881,7 +881,7 @@ async def test_freeform_goal_never_calls_audit(monkeypatch):
     driver = FakeDriver()
     script = [
         ScriptedStep(f"点 {i}", "click(point='<point>668 803</point>')")
-        for i in range(5)
+        for i in range(CLICK_STUCK_THRESHOLD)
     ]
     script.append(ScriptedStep("收工", "finished()"))
     vlm = ScriptedVLMClient(script)
@@ -965,6 +965,7 @@ async def test_strictness_mid_stays_freeform_when_label_gate_only(monkeypatch):
     runner = VLMRunner(
         run_id="R-classify-mid", driver=driver, goal=border_goal,
         emit=emit, vlm_client=vlm,
+        assistant=PackageMatcherAssistant("com.tencent.mm"),
     )
     result = await runner.run()
     assert result.ok is True
