@@ -83,18 +83,18 @@ def test_openai_computer_actions_are_mapped_to_canonical_replay_actions():
 
 def test_platform_actions_are_available_for_overseas_backends():
     open_app = parse_cache_action(
-        "platform.open_app(app_name='com.yangcong345.android.phone')",
+        "platform.open_app(app_name='com.example.phone')",
         backend="claude_cu",
     )
     assert open_app.action == A.ACTION_OPEN_APP
-    assert open_app.name == "com.yangcong345.android.phone"
+    assert open_app.name == "com.example.phone"
 
     close_app = parse_cache_action(
-        'platform.close_app(app_name="com.yangcong345.android.phone")',
+        'platform.close_app(app_name="com.example.phone")',
         backend="gpt_cu",
     )
     assert close_app.action == A.ACTION_CLOSE_APP
-    assert close_app.name == "com.yangcong345.android.phone"
+    assert close_app.name == "com.example.phone"
 
 
 def test_doubao_cache_action_path_stays_on_project_dsl_parser():

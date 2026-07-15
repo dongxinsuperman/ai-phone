@@ -45,6 +45,18 @@ class DeviceInfo:
         return d
 
 
+@dataclass(frozen=True)
+class InstalledApp:
+    """设备当前安装的应用身份。
+
+    ``display_name`` 来自设备安装包自身的元数据，``package_name`` 是唯一用于
+    启动/关闭的标识。两者都不能由 Server、env 或 Prompt 预先配置。
+    """
+
+    display_name: str
+    package_name: str
+
+
 class BaseDriver(ABC):
     """统一的真机操控抽象。
 
@@ -153,6 +165,17 @@ class BaseDriver(ABC):
         ``application_type='Any'``）。
         """
         return self.list_third_party_packages()
+
+    def list_installed_apps(self) -> List[InstalledApp]:
+        """返回设备当前安装的应用目录。
+
+        旧驱动没有显示名读取能力时保留包名作为显示名，确保新增目录能力不会让
+        既有平台或第三方 Driver 直接不可用；平台 Driver 应尽量覆盖为设备元数据。
+        """
+        return [
+            InstalledApp(display_name=package, package_name=package)
+            for package in self.list_all_packages()
+        ]
 
     @abstractmethod
     def activate_app(self, package_name: str) -> None:

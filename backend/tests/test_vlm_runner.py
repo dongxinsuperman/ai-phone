@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 from PIL import Image
 
-from ai_phone.agent.drivers.base import BaseDriver, DeviceInfo
+from ai_phone.agent.drivers.base import BaseDriver, DeviceInfo, InstalledApp
 from ai_phone.agent.runner.vlm_loop import (
     CLICK_STUCK_THRESHOLD,
     UNKNOWN_ACTION_STREAK_LIMIT,
@@ -239,7 +239,11 @@ async def test_match_package_name_uses_exact_installed_package_without_model():
     runner = _runner_for_package_match(assistant)
 
     target = await runner._match_package_name(
-        "com.example.app", ["com.example.app", "com.example.other"]
+        "com.example.app",
+        [
+            InstalledApp("Example", "com.example.app"),
+            InstalledApp("Other", "com.example.other"),
+        ],
     )
 
     assert target == "com.example.app"
@@ -252,9 +256,25 @@ async def test_match_display_name_requires_model_result_to_be_installed():
     runner = _runner_for_package_match(assistant)
 
     with pytest.raises(RuntimeError, match="不在设备已安装列表"):
-        await runner._match_package_name("示例应用", ["com.example.app"])
+        await runner._match_package_name(
+            "示例应用", [InstalledApp("示例应用二", "com.example.app")]
+        )
 
-    assert assistant.calls == [("示例应用", ["com.example.app"])]
+    assert assistant.calls == [("示例应用", ["示例应用二 | com.example.app"])]
+
+
+@pytest.mark.asyncio
+async def test_match_package_name_uses_dynamic_display_name_without_model():
+    assistant = PackageMatcherAssistant("should-not-be-used")
+    runner = _runner_for_package_match(assistant)
+
+    target = await runner._match_package_name(
+        "debug-build",
+        [InstalledApp("debug-build", "com.example.debug")],
+    )
+
+    assert target == "com.example.debug"
+    assert assistant.calls == []
 
 
 @pytest.mark.asyncio
@@ -997,7 +1017,7 @@ async def test_strictness_high_stays_freeform_when_label_gate_only(monkeypatch):
     # 多个数字约束 + 多个逻辑词 + 多次顺序词 + 多个动词）
     # 评分预计 ≥ 5；默认只做标签准入，所以仍不直接结构化
     strict_goal = (
-        "首先打开「洋葱学园」并等待 3 秒，然后依次点击底部「学习」Tab、"
+        "首先打开「示例学习应用」并等待 3 秒，然后依次点击底部「学习」Tab、"
         "中部「全部功能」入口、下滑至底部点击「二维码」块；接着进入"
         "「初中」「数学」教材的第 1 章第 1 节，找到第 1 张「未开始」状态"
         "的视频卡片（含缩略图+时长角标+双进度条的全宽卡片），若该卡片不"

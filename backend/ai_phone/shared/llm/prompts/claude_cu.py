@@ -267,8 +267,8 @@ PLATFORM_ACTION: close_app(app_name='<app display name>')
 ```
 
 - `open_app` / `close_app` are the only platform actions available right now.
-- `<app display name>` is the user-visible name (e.g. `'Settings'`, `'微信'`,
-  `'洋葱学园'`); the runtime resolves it to a package name via fuzzy match.
+- `<app display name>` is the user-visible name (e.g. `'Settings'`, `'微信'`);
+  the runtime resolves it to a package name via fuzzy match.
 - Quotes can be single or double, but the line itself MUST stand alone (no
   trailing comments, no surrounding code fence).
 - These do NOT consume a `computer` tool call — they coexist with tool_use

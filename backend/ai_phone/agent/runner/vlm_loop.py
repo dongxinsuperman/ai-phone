@@ -30,7 +30,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from loguru import logger
 
 from ai_phone.agent.async_utils import run_blocking
-from ai_phone.agent.drivers.base import BaseDriver
+from ai_phone.agent.drivers.base import BaseDriver, InstalledApp
 from ai_phone.config import get_settings
 from ai_phone.shared import actions as A
 from ai_phone.shared.llm import (
@@ -2711,20 +2711,15 @@ class VLMRunner:
     # open_app / close_app：通过二次 VLM 做包名匹配
     # ------------------------------------------------------------------
     async def _open_app_by_name(self, app_name: str) -> None:
-        # 走全量（含系统应用）列表，让 open_app('设置' / '相册' / '浏览器' /
-        # '应用市场' 等系统应用) 也能被 VLM 二次包名匹配命中——过去用
-        # list_third_party_packages 会把这些系统包过滤掉，导致 VLM 返回 NONE
-        # 整条动作判失败
-        pkgs = await run_blocking(self.driver.list_all_packages)
-        target = await self._match_package_name(app_name, pkgs)
+        apps = await run_blocking(self.driver.list_installed_apps)
+        target = await self._match_package_name(app_name, apps)
         await run_blocking(self.driver.activate_app, target)
         await self._log(1, "打开App", f"成功: {target}")
         await self._emit_cache_app_action(A.ACTION_OPEN_APP, target)
 
     async def _close_app_by_name(self, app_name: str) -> None:
-        # 同 _open_app_by_name：close 也用全量，避免"关闭设置"这类命中系统包失败
-        pkgs = await run_blocking(self.driver.list_all_packages)
-        target = await self._match_package_name(app_name, pkgs)
+        apps = await run_blocking(self.driver.list_installed_apps)
+        target = await self._match_package_name(app_name, apps)
         await run_blocking(self.driver.terminate_app, target)
         await self._log(1, "关闭App", f"成功: {target}")
         await self._emit_cache_app_action(A.ACTION_CLOSE_APP, target)
@@ -2735,8 +2730,7 @@ class VLMRunner:
         借鉴 next/server-brain：next 的缓存动作来自实际下发的 driver 命令
         （``activate_app(package_name=...)`` → app_name 字段存包名），回放直接拿
         这个包名喂 driver。main 的旁路收集器原本只接 VLM 的 ``EVT_ACTION``（携带
-        中文 app_name），回放时 ``activate_app('洋葱学园')`` 无法让 driver 解析出
-        系统登记的启动入口。这里在 open_app/close_app 的实际执行入口
+        显示名），回放时无法用显示名直接启动。这里在 open_app/close_app 的实际执行入口
         （已匹配出包名 ``target``）补发一条带包名的 ``EVT_ACTION``——recorder 按
         step 聚合、后到覆盖先到，于是缓存里存的是包名。本入口被起跑线 prelude 与
         普通 step dispatch 共用，一处补发即两路统一生效。
@@ -2833,8 +2827,8 @@ class VLMRunner:
             "不要再尝试 close_app / open_app。"
         )
 
-    async def _match_package_name(self, app_name: str, packages: List[str]) -> str:
-        """① 起跑线 · 包名匹配：从设备包名列表里挑出与 ``app_name`` 最匹配的包名。
+    async def _match_package_name(self, app_name: str, apps: List[InstalledApp]) -> str:
+        """从设备当前应用目录中匹配用户名称，并返回动态读取到的包名。
 
         协议层（构造 prompt、发请求、解析返回、token 累加）下沉到 assistant
         实现；本函数只承担两层薄编排：
@@ -2846,11 +2840,31 @@ class VLMRunner:
         各异的"未匹配"信号统一翻译为空串后返回。
         """
         requested = (app_name or "").strip()
+        packages = [app.package_name for app in apps]
         if requested in packages:
             await self._log(1, "包名匹配", f"「{app_name}」→ {requested}（输入包名精确命中）")
             return requested
 
-        target = await self._assistant.match_package(app_name, packages)
+        exact_names = [
+            app for app in apps
+            if app.display_name.casefold() == requested.casefold()
+        ]
+        if len(exact_names) == 1:
+            target = exact_names[0].package_name
+            await self._log(
+                1,
+                "包名匹配",
+                f"「{app_name}」→ {target}（设备显示名精确命中）",
+            )
+            return target
+
+        candidates = [
+            f"{app.display_name} | {app.package_name}"
+            if app.display_name != app.package_name
+            else app.package_name
+            for app in apps
+        ]
+        target = await self._assistant.match_package(app_name, candidates)
         if not target:
             raise RuntimeError(f"未找到与「{app_name}」匹配的应用")
         if target not in packages:

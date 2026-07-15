@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -150,16 +150,6 @@ class Settings(BaseSettings):
             "开启后复用 Android Run 前 wake 逻辑。env: AI_PHONE_ANDROID_WAKE_ON_ENTER"
         ),
     )
-    android_app_launch_components: Dict[str, str] = Field(
-        default_factory=dict,
-        description=(
-            "Android 包名到显式启动 Activity 的兜底映射。仅当系统无法解析 "
-            "MAIN+LAUNCHER 入口时使用；value 可写 '.MainActivity' 或完整 "
-            "'com.example/.MainActivity'。env: AI_PHONE_ANDROID_APP_LAUNCH_COMPONENTS，"
-            "JSON 对象，例如 {\"com.example.app\":\".MainActivity\"}"
-        ),
-    )
-
     harmony_setup_stay_awake: bool = Field(
         default=True,
         description=(
@@ -566,8 +556,8 @@ class Settings(BaseSettings):
         ),
     )
     # detector 抓 late 帧的延迟（毫秒）。需要大于工具栏典型寿命，否则 late 帧时
-    # 工具栏还在，三段判定的"消失率"达不到阈值。当前默认 6000ms 来自洋葱学园
-    # ~5s 寿命的实测；做对照实验或适配工具栏寿命更长的 App 时通过 env 调整。
+    # 工具栏还在，三段判定的"消失率"达不到阈值。当前默认 6000ms 覆盖约 5s
+    # 寿命的常见场景；适配工具栏寿命更长的 App 时通过 env 调整。
     transient_ui_late_delay_ms: int = Field(
         default=6000,
         description=(

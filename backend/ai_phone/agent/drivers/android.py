@@ -7,8 +7,7 @@
 - 文本输入：``send_keys``（等价 ``input text``，英文/数字可用，中文需设备侧装
   ADBKeyBoard 等输入法；这里不强制替换用户设备，中文输入退化为告警）
 - press_home / press_back：keyevent 3 / 4
-- activate_app：优先解析 ``MAIN + LAUNCHER``，再按配置 / ``MAIN`` 入口用
-  ``am start`` 启动并校验前台
+- activate_app：动态解析当前包的桌面入口并精确启动，且不使用 Monkey
 - terminate_app：``am force-stop``
 - list_packages：``pm list packages -3`` 取第三方
 - screenshot：adbutils ``screenshot()`` 返回 PIL.Image → PNG / JPEG
@@ -17,8 +16,12 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 import re
 import shlex
+import shutil
+import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -29,7 +32,7 @@ from loguru import logger
 
 from ai_phone.config import get_settings
 
-from .base import BaseDriver, DeviceInfo
+from .base import BaseDriver, DeviceInfo, InstalledApp
 
 # ADBKeyBoard（https://github.com/senzhk/ADBKeyBoard）是安卓生态里给自动化注入
 # 文本（含中文 / Emoji）的事实标准 IME。安装后设为默认输入法即可通过广播下文。
@@ -44,6 +47,13 @@ _ADB_KB_APK_PATH = (
 
 # 设备可能返回多余空行，提前编一个匹配 ``package:xxx`` 的表达式
 _PKG_PREFIX_RE = re.compile(r"^package:(.+)$")
+_AAPT_APPLICATION_LABEL_RE = re.compile(r"^application-label:'(?P<label>.*)'$", re.MULTILINE)
+_AAPT_LAUNCHABLE_ACTIVITY_RE = re.compile(
+    r"^launchable-activity: name='(?P<activity>[^']+)'", re.MULTILINE
+)
+# ``open_android_driver`` 会为每个 Run 新建 driver。缓存以设备序列号和当前 APK
+# 路径为键：同一已安装版本不重复拉取 APK；App 更新后路径改变，自动重新读取。
+_APK_METADATA_CACHE: dict[tuple[str, str], Tuple[str, str]] = {}
 
 
 # 息屏策略幂等集合：serial 粒度。插上第一次（rescan / open_driver 哪个先都行）
@@ -71,16 +81,18 @@ class AndroidDriver(BaseDriver):
         self._adb_kb_last_fail_reason: str = ""
         # 记录进入 run 前默认 IME，任务结束可由上层调 restore 恢复；这里只做标记
         self._prev_ime: Optional[str] = None
+        # App 名称/包名目录只从当前设备读取；同一 Run 中 close_app + open_app 会
+        # 反复用到它，缓存避免重复读取 APK 元数据。
+        self._installed_apps_cache: Optional[List[InstalledApp]] = None
+        self._aapt_path: Optional[str] = None
+        self._aapt_path_checked = False
+        self._app_label_tool_warned = False
         # adbutils.window_size() 内部会读 rotation，少数设备/ROM 偶发
         # ``rotation get failed``。尺寸本身是点击/滑动坐标换算的基础，不能因为
         # rotation RPC 抖一下就直接杀 Run；失败时按 last-known / screenshot /
         # wm size 逐层兜底。
         self._last_window_size: Optional[Tuple[int, int]] = None
         self._window_size_fallback_warned: bool = False
-        # 每次 activate_app 重置。入口解析失败时把 Android 原始回包带回 Run 日志，
-        # 区分“包确实无入口”和“ROM/命令兼容性异常”，避免只剩一句笼统错误。
-        self._launch_resolution_details: List[str] = []
-
         # 禁自动息屏：设备 ready 就打一次，失败只 WARN。系统级命令，无 UI 副作用，
         # 和定时"滑动喂活"那种打桩方案比零感知，也不会误触运行中的 app。
         # 幂等：同一 serial 在 agent 进程内只打一次，rescan_loop 每 5s new 一个
@@ -571,6 +583,139 @@ class AndroidDriver(BaseDriver):
         # 指向系统应用的指令也能命中。
         return self._list_packages(third_party_only=False)
 
+    def list_installed_apps(self) -> List[InstalledApp]:
+        """动态读取当前设备的 App 显示名和包名。
+
+        Android 的 ``pm list packages`` 只返回包名，显示名在 APK 资源里。这里仅读取
+        第三方应用的 APK 元数据；系统应用继续以包名作为候选，避免一次打开 App 为
+        大量系统 APK 做无意义读取。读取失败不会编造名称，只保留该包名。
+        """
+        if self._installed_apps_cache is not None:
+            return list(self._installed_apps_cache)
+
+        packages = self.list_all_packages()
+        third_party = set(self.list_third_party_packages())
+        apps: List[InstalledApp] = []
+        for package in packages:
+            display_name = self._read_application_label(package) if package in third_party else ""
+            apps.append(
+                InstalledApp(
+                    display_name=display_name or package,
+                    package_name=package,
+                )
+            )
+        self._installed_apps_cache = apps
+        return list(apps)
+
+    def _read_application_label(self, package_name: str) -> str:
+        """从设备上已安装 APK 的资源中读取显示名；无法读取时返回空串。
+
+        这是目录信息采集，不参与启动，也没有任何按包名的预置规则。Android shell
+        本身不提供已解析的 application label，因此使用本机 Android SDK 的 ``aapt``
+        读取当前设备 APK 元数据。
+        """
+        label, _ = self._read_apk_metadata(package_name)
+        return label
+
+    def _read_launchable_activity(self, package_name: str) -> str:
+        """读取 APK 声明的主桌面 Activity；读取失败时返回空串。"""
+        _, activity = self._read_apk_metadata(package_name)
+        return activity
+
+    def _read_apk_metadata(self, package_name: str) -> Tuple[str, str]:
+        """返回 ``(application label, launchable activity)``。
+
+        ``aapt dump badging`` 给出的 ``launchable-activity`` 是 APK 声明的主
+        桌面入口。它与 ``query-activities`` 列出的所有入口结合使用：当一个包把
+        诊断页也声明为 LAUNCHER 时，不能随机取列表中的任意一项。
+        """
+        aapt = self._find_aapt()
+        if not aapt:
+            if not self._app_label_tool_warned:
+                logger.warning("未找到 aapt，Android 应用目录将只包含包名")
+                self._app_label_tool_warned = True
+            return "", ""
+
+        apk_path = self._base_apk_path(package_name)
+        if not apk_path:
+            return "", ""
+        cache_key = (self.serial, apk_path)
+        cached = _APK_METADATA_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            with tempfile.TemporaryDirectory(prefix="aiphone-app-metadata-") as tmp:
+                local_apk = Path(tmp) / "base.apk"
+                self._device.sync.pull(apk_path, local_apk)
+                result = subprocess.run(
+                    [aapt, "dump", "badging", str(local_apk)],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=30,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("读取 Android 应用元数据失败 package={} error={}", package_name, exc)
+            return "", ""
+
+        if result.returncode != 0:
+            logger.warning(
+                "aapt 无法读取 Android 应用元数据 package={} output={}",
+                package_name,
+                (result.stderr or result.stdout or "").strip()[:300],
+            )
+            return "", ""
+
+        badging = result.stdout or ""
+        label_match = _AAPT_APPLICATION_LABEL_RE.search(badging)
+        activity_match = _AAPT_LAUNCHABLE_ACTIVITY_RE.search(badging)
+        label = label_match.group("label").replace("\\'", "'").strip() if label_match else ""
+        activity = activity_match.group("activity").strip() if activity_match else ""
+        metadata = (label, activity)
+        _APK_METADATA_CACHE[cache_key] = metadata
+        return metadata
+
+    def _base_apk_path(self, package_name: str) -> str:
+        output = self._device.shell(f"pm path {shlex.quote(package_name)}") or ""
+        for line in output.splitlines():
+            line = line.strip()
+            if line.startswith("package:"):
+                return line.removeprefix("package:").strip()
+        return ""
+
+    def _find_aapt(self) -> Optional[str]:
+        if self._aapt_path_checked:
+            return self._aapt_path
+        self._aapt_path_checked = True
+
+        direct = shutil.which("aapt")
+        if direct:
+            self._aapt_path = direct
+            return direct
+
+        sdk_roots = [
+            value for value in (
+                os.environ.get("ANDROID_HOME"),
+                os.environ.get("ANDROID_SDK_ROOT"),
+            ) if value
+        ]
+        # macOS 上 Android Agent 的默认 SDK 位置；仅在 PATH / SDK 环境变量都没有
+        # 配置时探测，和任意业务 App 无关。
+        sdk_roots.append(str(Path.home() / "Library" / "Android" / "sdk"))
+        for root in sdk_roots:
+            candidates = sorted(
+                Path(root).glob("build-tools/*/aapt"),
+                key=lambda path: path.parent.name,
+                reverse=True,
+            )
+            if candidates:
+                self._aapt_path = str(candidates[0])
+                return self._aapt_path
+        return None
+
     def _list_packages(self, *, third_party_only: bool) -> List[str]:
         cmd = "pm list packages -3" if third_party_only else "pm list packages"
         out = self._device.shell(cmd) or ""
@@ -581,135 +726,74 @@ class AndroidDriver(BaseDriver):
                 pkgs.append(m.group(1).strip())
         return pkgs
 
-    def _is_emulator(self) -> bool:
-        # Android SDK Emulator 的 adb serial 固定是 ``emulator-<port>``；真机是设备序列号。
-        return str(self.serial or "").startswith("emulator-")
-
     def activate_app(self, package_name: str) -> None:
-        """启动应用并确认它真的进入前台。
+        """动态解析当前包的桌面入口并确认真的进入前台。
 
-        首选 ``MAIN + LAUNCHER`` 桌面入口；部分测试 / 壳包没有桌面入口，因此按
-        "显式配置组件 → MAIN 入口"继续尝试。``monkey`` 会影响少数设备的旋转
-        状态，不能作为自动兜底。
-
-        真机和模拟器都必须完成前台校验：``am start`` 没有异常输出不等于 App 已经
-        真正显示在屏幕上。
+        组件完全来自本次设备查询，既不读 env 映射，也不把任何 App 的 Activity
+        写进代码。严禁使用 ``monkey``：它可能从同一包的多个入口中随机挑选，且会
+        改动部分设备的旋转锁状态。
         """
-        self._launch_resolution_details = []
-        if self._is_emulator():
-            self._activate_app_emulator(package_name)
-        else:
-            self._activate_app_physical(package_name)
-
-    def _activate_app_physical(self, package_name: str) -> None:
-        self._activate_app_with_fallbacks(package_name)
-
-    def _activate_app_emulator(self, package_name: str) -> None:
-        self._activate_app_with_fallbacks(package_name)
-
-    def _activate_app_with_fallbacks(self, package_name: str) -> None:
-        """按候选入口依次启动；一个入口失败不阻断后续安全兜底。"""
-        candidates = self._launch_component_candidates(package_name)
-        if not candidates:
-            details = "；".join(self._launch_resolution_details) or "无"
+        component, resolution = self._resolve_launcher_component(package_name)
+        if not component:
             raise RuntimeError(
-                f"无法启动应用: {package_name}（未解析到可启动入口；已尝试 "
-                "MAIN+LAUNCHER、配置显式组件、MAIN。"
-                "可配置 AI_PHONE_ANDROID_APP_LAUNCH_COMPONENTS 指定启动 Activity；"
-                f"入口查询回包: {details}）"
+                f"无法启动应用: {package_name}（未解析到当前包的桌面入口；"
+                f"系统回包={resolution}）"
             )
 
-        failures: List[str] = []
-        for comp, source in candidates:
-            out = self._device.shell(f"am start -n {shlex.quote(comp)}") or ""
-            rendered_out = out.strip() or "空"
-            if "Error" in out or "Exception" in out:
-                failures.append(f"{source}={comp}: am start 输出={rendered_out}")
-                continue
-            if self._wait_foreground(package_name):
-                logger.info(
-                    "Android 应用启动成功 package={} component={} source={}",
-                    package_name,
-                    comp,
-                    source,
-                )
-                return
-            foreground = self.current_app() or "未知"
-            failures.append(
-                f"{source}={comp}: am start 输出={rendered_out}，前台仍为 {foreground}"
+        out = self._device.shell(f"am start -n {shlex.quote(component)}") or ""
+        rendered_out = out.strip() or "空"
+        if "Error" in out or "Exception" in out:
+            raise RuntimeError(
+                f"无法启动应用: {package_name}（启动组件={component} 失败；"
+                f"am start 输出={rendered_out}）"
             )
-
-        raise RuntimeError(
-            f"无法启动应用: {package_name}（所有入口均未进入前台；"
-            f"{'；'.join(failures)}；入口查询回包: "
-            f"{'；'.join(self._launch_resolution_details) or '无'}）"
-        )
-
-    def _launch_component_candidates(self, package_name: str) -> List[Tuple[str, str]]:
-        """返回同一包的候选启动组件，按安全性 / 确定性排序且去重。"""
-        raw_candidates = [
-            (self._resolve_launcher_component(package_name), "MAIN+LAUNCHER"),
-            (self._configured_launch_component(package_name), "配置显式组件"),
-            (self._resolve_main_component(package_name), "MAIN"),
-        ]
-        candidates: List[Tuple[str, str]] = []
-        seen: set[str] = set()
-        for comp, source in raw_candidates:
-            if not comp or comp in seen:
-                continue
-            seen.add(comp)
-            candidates.append((comp, source))
-        return candidates
-
-    def _resolve_launcher_component(self, package_name: str) -> str:
-        """解析包的标准桌面入口，返回 ``pkg/activity``；解析不到返回空串。"""
-        return self._resolve_activity_component(package_name, require_launcher=True)
-
-    def _resolve_main_component(self, package_name: str) -> str:
-        """解析不带 LAUNCHER 分类的 MAIN 入口，覆盖非桌面测试包。"""
-        return self._resolve_activity_component(package_name, require_launcher=False)
-
-    def _resolve_activity_component(self, package_name: str, *, require_launcher: bool) -> str:
-        cmd = "cmd package resolve-activity --brief -a android.intent.action.MAIN"
-        if require_launcher:
-            cmd += " -c android.intent.category.LAUNCHER"
-        # ``cmd package`` 的最后一个裸参数不是“限定在此包内查询”。部署实测会
-        # 得到系统全局的 android/...ResolverActivity；必须用 Intent 的 ``-p``
-        # 显式设置 package，才是在目标 APK 的 Activity 里解析入口。
-        cmd += f" -p {shlex.quote(package_name)}"
-        out = self._device.shell(cmd) or ""
-        source = "MAIN+LAUNCHER" if require_launcher else "MAIN"
-        rendered_out = " ".join(out.strip().split()) or "空"
-        self._launch_resolution_details.append(f"{source}={rendered_out[:500]}")
-        for line in reversed(out.splitlines()):
-            line = line.strip()
-            if line.startswith(f"{package_name}/"):
-                return line
-        return ""
-
-    def _configured_launch_component(self, package_name: str) -> str:
-        """读取运维配置的显式入口，只接受当前包自己的 Activity。"""
-        configured = getattr(get_settings(), "android_app_launch_components", {}) or {}
-        raw = configured.get(package_name)
-        if not isinstance(raw, str) or not raw.strip():
-            self._launch_resolution_details.append("配置显式组件=未配置")
-            return ""
-
-        component = raw.strip()
-        if "/" not in component:
-            component = f"{package_name}/{component}"
-        if not component.startswith(f"{package_name}/"):
-            logger.warning(
-                "忽略 Android 显式入口配置：package={} component={} 不属于该包",
+        if self._wait_foreground(package_name):
+            logger.info(
+                "Android 应用启动成功 package={} component={} source=launcher_resolution",
                 package_name,
                 component,
             )
-            self._launch_resolution_details.append(
-                f"配置显式组件={component[:500]}（不属于目标包，已忽略）"
-            )
-            return ""
-        self._launch_resolution_details.append(f"配置显式组件={component}")
-        return component
+            return
+
+        foreground = self.current_app() or "未知"
+        raise RuntimeError(
+            f"无法启动应用: {package_name}（启动组件={component} 后未进入前台；"
+            f"am start 输出={rendered_out}；前台仍为 {foreground}）"
+        )
+
+    def _resolve_launcher_component(self, package_name: str) -> Tuple[str, str]:
+        """仅在目标包中找出其主桌面入口，绝不随机选择 Activity。"""
+        command = (
+            "cmd package query-activities --brief "
+            "-a android.intent.action.MAIN "
+            "-c android.intent.category.LAUNCHER "
+            f"-p {shlex.quote(package_name)}"
+        )
+        out = self._device.shell(command) or ""
+        rendered_out = " ".join(out.strip().split()) or "空"
+        candidates: List[str] = []
+        for line in out.splitlines():
+            component = line.strip()
+            if component.startswith(f"{package_name}/"):
+                candidates.append(component)
+
+        if len(candidates) == 1:
+            return candidates[0], f"候选={candidates[0]}"
+
+        declared_activity = self._read_launchable_activity(package_name)
+        if declared_activity:
+            declared_component = f"{package_name}/{declared_activity}"
+            if declared_component in candidates:
+                return declared_component, (
+                    f"候选={','.join(candidates)}；APK 主桌面入口={declared_component}"
+                )
+
+        declared = declared_activity or "未读取到"
+        candidates_text = ",".join(candidates) or "无"
+        return "", (
+            f"查询={rendered_out[:500]}；候选={candidates_text[:500]}；"
+            f"APK 主桌面入口={declared[:500]}"
+        )
 
     def _wait_foreground(self, package_name: str, timeout: float = 4.0) -> bool:
         """轮询前台包名，直到等于 ``package_name`` 或超时。"""
