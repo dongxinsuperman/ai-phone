@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -148,6 +148,15 @@ class Settings(BaseSettings):
         description=(
             "Android 进入工作台/启动镜像前是否主动唤醒。默认 False 保持历史行为；"
             "开启后复用 Android Run 前 wake 逻辑。env: AI_PHONE_ANDROID_WAKE_ON_ENTER"
+        ),
+    )
+    android_app_launch_components: Dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Android 包名到显式启动 Activity 的兜底映射。仅当系统无法解析 "
+            "MAIN+LAUNCHER 入口时使用；value 可写 '.MainActivity' 或完整 "
+            "'com.example/.MainActivity'。env: AI_PHONE_ANDROID_APP_LAUNCH_COMPONENTS，"
+            "JSON 对象，例如 {\"com.example.app\":\".MainActivity\"}"
         ),
     )
 

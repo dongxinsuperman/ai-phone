@@ -129,6 +129,17 @@ class FakeDriver(BaseDriver):
         )
 
 
+class FailingLaunchDriver(FakeDriver):
+    """用于验证起跑线启动失败不会再交给 VLM 重试。"""
+
+    def list_third_party_packages(self):
+        return ["com.example.app"]
+
+    def activate_app(self, pkg):
+        self._record("activate_app", pkg)
+        raise RuntimeError("所有入口均未进入前台")
+
+
 @dataclass
 class ScriptedStep:
     thought: str
@@ -189,6 +200,18 @@ class ScriptedVLMClient:
         )
 
 
+class PackageMatcherAssistant:
+    """仅覆盖包名匹配的轻量辅助模型替身。"""
+
+    def __init__(self, result: str):
+        self.result = result
+        self.calls: List[Tuple[str, List[str]]] = []
+
+    async def match_package(self, app_name: str, packages: List[str]) -> str:
+        self.calls.append((app_name, packages))
+        return self.result
+
+
 def _collect_events():
     events: List[Dict[str, Any]] = []
 
@@ -198,6 +221,64 @@ def _collect_events():
         events.append(cleaned)
 
     return events, emit
+
+
+def _runner_for_package_match(assistant: PackageMatcherAssistant) -> VLMRunner:
+    return VLMRunner(
+        run_id="R-package-match",
+        driver=FakeDriver(),
+        goal="打开应用",
+        vlm_client=ScriptedVLMClient([]),
+        assistant=assistant,
+    )
+
+
+@pytest.mark.asyncio
+async def test_match_package_name_uses_exact_installed_package_without_model():
+    assistant = PackageMatcherAssistant("should-not-be-used")
+    runner = _runner_for_package_match(assistant)
+
+    target = await runner._match_package_name(
+        "com.example.app", ["com.example.app", "com.example.other"]
+    )
+
+    assert target == "com.example.app"
+    assert assistant.calls == []
+
+
+@pytest.mark.asyncio
+async def test_match_display_name_requires_model_result_to_be_installed():
+    assistant = PackageMatcherAssistant("com.example.not-installed")
+    runner = _runner_for_package_match(assistant)
+
+    with pytest.raises(RuntimeError, match="不在设备已安装列表"):
+        await runner._match_package_name("示例应用", ["com.example.app"])
+
+    assert assistant.calls == [("示例应用", ["com.example.app"])]
+
+
+@pytest.mark.asyncio
+async def test_prelude_open_failure_stops_before_vlm_retries_same_app():
+    driver = FailingLaunchDriver()
+    assistant = PackageMatcherAssistant("com.example.app")
+    runner = VLMRunner(
+        run_id="R-prelude-open-fail",
+        driver=driver,
+        goal=(
+            "前置条件：关闭 App「示例应用」（杀进程）后重新打开 App「示例应用」；"
+            "操作步骤：查看首页；预期结果：首页显示"
+        ),
+        vlm_client=ScriptedVLMClient([]),
+        assistant=assistant,
+    )
+
+    result = await runner.run()
+
+    assert result.ok is False
+    assert "起跑线无法打开「示例应用」" in result.reason
+    assert [call for call in driver.calls if call[0] == "activate_app"] == [
+        ("activate_app", ("com.example.app",))
+    ]
 
 
 # ---------------------------------------------------------------------------

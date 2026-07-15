@@ -2765,9 +2765,9 @@ class VLMRunner:
         number / before-after 截图 / "执行完成"日志），但**没有**思考行——
         因为这两步是系统决策，不是模型决策，让人一眼能看出"这是起跑线自动跑的"。
 
-        失败处理：close 或 open 任何一步抛错都只记 WARN 不中断 Run；理由是设备
-        本来就可能没装这个 App / 包名匹配失败 / 当前 App 已是 closed——这些
-        情况下让 VLM 接着自己处理比直接 fail 更可救。
+        失败处理：close 失败只记 WARN 继续（目标可能本来就未运行）；但 open 失败
+        必须终止 Run。起跑线既然要求“关闭后重新打开”，VLM 后续仍会走同一套
+        ``open_app`` 能力，继续只会重复消耗 token、重复报同一错误。
         """
         plan = (
             ("close_app", "关闭App（系统起跑线）", self._close_app_by_name),
@@ -2802,9 +2802,15 @@ class VLMRunner:
             except Exception as exc:  # noqa: BLE001
                 await self._log(
                     2, f"起跑线 {action_name} 失败",
-                    f"{exc}（继续后续步骤，由 VLM 兜底）",
+                    (
+                        f"{exc}（关闭失败可继续后续步骤）"
+                        if action_name == "close_app"
+                        else f"{exc}（无法打开目标 App，终止 Run，避免 VLM 重复尝试）"
+                    ),
                     step=step,
                 )
+                if action_name == "open_app":
+                    raise RuntimeError(f"起跑线无法打开「{app_name}」: {exc}") from exc
 
             # close 与 open 之间留 1.5s 让 App 真正退出，避免 open 立刻收到旧 PID
             if action_name == "close_app":
@@ -2839,9 +2845,18 @@ class VLMRunner:
         切换 assistant_backend 时本函数零改动；各家把"NONE / null / 空"等家家
         各异的"未匹配"信号统一翻译为空串后返回。
         """
+        requested = (app_name or "").strip()
+        if requested in packages:
+            await self._log(1, "包名匹配", f"「{app_name}」→ {requested}（输入包名精确命中）")
+            return requested
+
         target = await self._assistant.match_package(app_name, packages)
         if not target:
             raise RuntimeError(f"未找到与「{app_name}」匹配的应用")
+        if target not in packages:
+            raise RuntimeError(
+                f"包名匹配结果不在设备已安装列表中: 「{app_name}」→ {target}"
+            )
         await self._log(1, "包名匹配", f"「{app_name}」→ {target}")
         return target
 

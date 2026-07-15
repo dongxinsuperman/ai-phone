@@ -159,7 +159,7 @@ def test_terminate_app_uses_am_force_stop():
 
 
 def test_activate_app_real_device_uses_launcher_component():
-    # 真机（serial 非 emulator-）：解析 MAIN+LAUNCHER 入口后用 am start。
+    # 真机（serial 非 emulator-）：解析 MAIN+LAUNCHER 入口后用 am start，并校验前台。
     driver, fake = _make_driver()  # _make_driver 默认 serial=EMU-TEST → 真机路径
 
     def _shell(cmd, *a, **k):
@@ -174,6 +174,7 @@ def test_activate_app_real_device_uses_launcher_component():
         return ""
 
     fake.shell.side_effect = _shell
+    fake.app_current.return_value = SimpleNamespace(package="com.tencent.mm")
 
     driver.activate_app("com.tencent.mm")
 
@@ -199,6 +200,7 @@ def test_activate_app_quotes_launcher_component_for_shell():
         return ""
 
     fake.shell.side_effect = _shell
+    fake.app_current.return_value = SimpleNamespace(package="com.example")
 
     driver.activate_app("com.example")
 
@@ -208,14 +210,85 @@ def test_activate_app_quotes_launcher_component_for_shell():
 
 
 def test_activate_app_real_device_raises_when_no_activity():
-    # 真机：解析不到 MAIN+LAUNCHER 入口时直接失败，不回退 monkey。
+    # 真机：标准 / MAIN / 配置入口都没有时才失败，且不回退 monkey。
     driver, fake = _make_driver()
     fake.shell.return_value = ""
     with pytest.raises(RuntimeError) as exc:
         driver.activate_app("com.not.exist")
     assert "com.not.exist" in str(exc.value)
+    assert "MAIN+LAUNCHER" in str(exc.value)
     calls = [c[0][0] for c in fake.shell.call_args_list]
     assert not any(c.startswith("monkey") for c in calls)
+
+
+def test_activate_app_falls_back_to_main_without_launcher():
+    driver, fake = _make_driver()
+    fake.app_current.return_value = SimpleNamespace(package="com.example")
+
+    def _shell(cmd, *a, **k):
+        if "resolve-activity" in cmd and "android.intent.category.LAUNCHER" in cmd:
+            return ""
+        if "resolve-activity" in cmd:
+            return "com.example/.EntryActivity"
+        if cmd.startswith("am start"):
+            return "Starting: Intent { cmp=com.example/.EntryActivity }"
+        return ""
+
+    fake.shell.side_effect = _shell
+
+    driver.activate_app("com.example")
+
+    calls = [c[0][0] for c in fake.shell.call_args_list]
+    assert any(
+        "-a android.intent.action.MAIN com.example" in call
+        for call in calls
+    )
+    assert any("am start -n com.example/.EntryActivity" in call for call in calls)
+
+
+def test_activate_app_falls_back_to_configured_component(monkeypatch):
+    driver, fake = _make_driver()
+    fake.app_current.return_value = SimpleNamespace(package="com.example")
+    monkeypatch.setattr(
+        android_mod,
+        "get_settings",
+        lambda: SimpleNamespace(android_app_launch_components={"com.example": ".TestEntry"}),
+    )
+
+    def _shell(cmd, *a, **k):
+        if "resolve-activity" in cmd:
+            return ""
+        if cmd.startswith("am start"):
+            return "Starting: Intent { cmp=com.example/.TestEntry }"
+        return ""
+
+    fake.shell.side_effect = _shell
+
+    driver.activate_app("com.example")
+
+    calls = [c[0][0] for c in fake.shell.call_args_list]
+    assert "am start -n com.example/.TestEntry" in calls
+
+
+def test_activate_app_real_device_fails_when_component_never_reaches_foreground(monkeypatch):
+    driver, fake = _make_driver()
+    monkeypatch.setattr(driver, "_wait_foreground", lambda package_name: False)
+    monkeypatch.setattr(driver, "current_app", lambda: "com.android.launcher")
+
+    def _shell(cmd, *a, **k):
+        if "resolve-activity" in cmd:
+            return "com.example/.EntryActivity"
+        if cmd.startswith("am start"):
+            return "Starting: Intent { cmp=com.example/.EntryActivity }"
+        return ""
+
+    fake.shell.side_effect = _shell
+
+    with pytest.raises(RuntimeError) as exc:
+        driver.activate_app("com.example")
+
+    assert "所有入口均未进入前台" in str(exc.value)
+    assert "com.android.launcher" in str(exc.value)
 
 
 def test_activate_app_emulator_uses_am_start_and_verifies_foreground():

@@ -7,7 +7,8 @@
 - 文本输入：``send_keys``（等价 ``input text``，英文/数字可用，中文需设备侧装
   ADBKeyBoard 等输入法；这里不强制替换用户设备，中文输入退化为告警）
 - press_home / press_back：keyevent 3 / 4
-- activate_app：解析 ``MAIN + LAUNCHER`` 入口后用 ``am start`` 启动
+- activate_app：优先解析 ``MAIN + LAUNCHER``，再按配置 / ``MAIN`` 入口用
+  ``am start`` 启动并校验前台
 - terminate_app：``am force-stop``
 - list_packages：``pm list packages -3`` 取第三方
 - screenshot：adbutils ``screenshot()`` 返回 PIL.Image → PNG / JPEG
@@ -76,6 +77,9 @@ class AndroidDriver(BaseDriver):
         # wm size 逐层兜底。
         self._last_window_size: Optional[Tuple[int, int]] = None
         self._window_size_fallback_warned: bool = False
+        # 每次 activate_app 重置。入口解析失败时把 Android 原始回包带回 Run 日志，
+        # 区分“包确实无入口”和“ROM/命令兼容性异常”，避免只剩一句笼统错误。
+        self._launch_resolution_details: List[str] = []
 
         # 禁自动息屏：设备 ready 就打一次，失败只 WARN。系统级命令，无 UI 副作用，
         # 和定时"滑动喂活"那种打桩方案比零感知，也不会误触运行中的 app。
@@ -582,58 +586,126 @@ class AndroidDriver(BaseDriver):
         return str(self.serial or "").startswith("emulator-")
 
     def activate_app(self, package_name: str) -> None:
-        """启动应用：解析系统登记的桌面入口后用 ``am start`` 拉起。
+        """启动应用并确认它真的进入前台。
 
-        ``monkey`` 是压测工具，退出时会触发旋转锁清理，可能把用户的竖屏锁改成
-        自动旋转。这里不再使用 ``monkey`` 兜底；解析不到桌面入口时直接报错。
+        首选 ``MAIN + LAUNCHER`` 桌面入口；部分测试 / 壳包没有桌面入口，因此按
+        "显式配置组件 → MAIN 入口"继续尝试。``monkey`` 会影响少数设备的旋转
+        状态，不能作为自动兜底。
+
+        真机和模拟器都必须完成前台校验：``am start`` 没有异常输出不等于 App 已经
+        真正显示在屏幕上。
         """
+        self._launch_resolution_details = []
         if self._is_emulator():
             self._activate_app_emulator(package_name)
         else:
             self._activate_app_physical(package_name)
 
     def _activate_app_physical(self, package_name: str) -> None:
-        comp = self._resolve_launcher_component(package_name)
-        if not comp:
-            raise RuntimeError(f"无法启动应用: {package_name}（未解析到 MAIN+LAUNCHER 入口）")
-
-        out = self._device.shell(f"am start -n {shlex.quote(comp)}") or ""
-        if "Error" in out or "Exception" in out:
-            raise RuntimeError(
-                f"无法启动应用: {package_name}（am start 组件={comp} 失败；"
-                f"输出={out.strip() or '空'}）"
-            )
+        self._activate_app_with_fallbacks(package_name)
 
     def _activate_app_emulator(self, package_name: str) -> None:
-        # 虚拟机继续保留前台校验，避免 am start 误报成功；但不再回退 monkey。
-        comp = self._resolve_launcher_component(package_name)
-        if not comp:
-            raise RuntimeError(f"无法启动虚拟机应用: {package_name}（未解析到 MAIN+LAUNCHER 入口）")
+        self._activate_app_with_fallbacks(package_name)
 
-        out = self._device.shell(f"am start -n {shlex.quote(comp)}") or ""
-        if (
-            "Error" not in out
-            and "Exception" not in out
-            and self._wait_foreground(package_name)
-        ):
-            return
+    def _activate_app_with_fallbacks(self, package_name: str) -> None:
+        """按候选入口依次启动；一个入口失败不阻断后续安全兜底。"""
+        candidates = self._launch_component_candidates(package_name)
+        if not candidates:
+            details = "；".join(self._launch_resolution_details) or "无"
+            raise RuntimeError(
+                f"无法启动应用: {package_name}（未解析到可启动入口；已尝试 "
+                "MAIN+LAUNCHER、配置显式组件、MAIN。"
+                "可配置 AI_PHONE_ANDROID_APP_LAUNCH_COMPONENTS 指定启动 Activity；"
+                f"入口查询回包: {details}）"
+            )
+
+        failures: List[str] = []
+        for comp, source in candidates:
+            out = self._device.shell(f"am start -n {shlex.quote(comp)}") or ""
+            rendered_out = out.strip() or "空"
+            if "Error" in out or "Exception" in out:
+                failures.append(f"{source}={comp}: am start 输出={rendered_out}")
+                continue
+            if self._wait_foreground(package_name):
+                logger.info(
+                    "Android 应用启动成功 package={} component={} source={}",
+                    package_name,
+                    comp,
+                    source,
+                )
+                return
+            foreground = self.current_app() or "未知"
+            failures.append(
+                f"{source}={comp}: am start 输出={rendered_out}，前台仍为 {foreground}"
+            )
+
         raise RuntimeError(
-            f"无法启动虚拟机应用: {package_name}（am start 组件={comp} 后前台仍非该应用；"
-            f"输出={out.strip() or '空'}）"
+            f"无法启动应用: {package_name}（所有入口均未进入前台；"
+            f"{'；'.join(failures)}；入口查询回包: "
+            f"{'；'.join(self._launch_resolution_details) or '无'}）"
         )
 
+    def _launch_component_candidates(self, package_name: str) -> List[Tuple[str, str]]:
+        """返回同一包的候选启动组件，按安全性 / 确定性排序且去重。"""
+        raw_candidates = [
+            (self._resolve_launcher_component(package_name), "MAIN+LAUNCHER"),
+            (self._configured_launch_component(package_name), "配置显式组件"),
+            (self._resolve_main_component(package_name), "MAIN"),
+        ]
+        candidates: List[Tuple[str, str]] = []
+        seen: set[str] = set()
+        for comp, source in raw_candidates:
+            if not comp or comp in seen:
+                continue
+            seen.add(comp)
+            candidates.append((comp, source))
+        return candidates
+
     def _resolve_launcher_component(self, package_name: str) -> str:
-        """解析包的 LAUNCHER 入口组件，返回 ``pkg/activity``；解析不到返回空串。"""
-        out = self._device.shell(
-            f"cmd package resolve-activity --brief "
-            f"-a android.intent.action.MAIN "
-            f"-c android.intent.category.LAUNCHER {shlex.quote(package_name)}"
-        ) or ""
+        """解析包的标准桌面入口，返回 ``pkg/activity``；解析不到返回空串。"""
+        return self._resolve_activity_component(package_name, require_launcher=True)
+
+    def _resolve_main_component(self, package_name: str) -> str:
+        """解析不带 LAUNCHER 分类的 MAIN 入口，覆盖非桌面测试包。"""
+        return self._resolve_activity_component(package_name, require_launcher=False)
+
+    def _resolve_activity_component(self, package_name: str, *, require_launcher: bool) -> str:
+        cmd = "cmd package resolve-activity --brief -a android.intent.action.MAIN"
+        if require_launcher:
+            cmd += " -c android.intent.category.LAUNCHER"
+        out = self._device.shell(f"{cmd} {shlex.quote(package_name)}") or ""
+        source = "MAIN+LAUNCHER" if require_launcher else "MAIN"
+        rendered_out = " ".join(out.strip().split()) or "空"
+        self._launch_resolution_details.append(f"{source}={rendered_out[:500]}")
         for line in reversed(out.splitlines()):
             line = line.strip()
             if line.startswith(f"{package_name}/"):
                 return line
         return ""
+
+    def _configured_launch_component(self, package_name: str) -> str:
+        """读取运维配置的显式入口，只接受当前包自己的 Activity。"""
+        configured = getattr(get_settings(), "android_app_launch_components", {}) or {}
+        raw = configured.get(package_name)
+        if not isinstance(raw, str) or not raw.strip():
+            self._launch_resolution_details.append("配置显式组件=未配置")
+            return ""
+
+        component = raw.strip()
+        if "/" not in component:
+            component = f"{package_name}/{component}"
+        if not component.startswith(f"{package_name}/"):
+            logger.warning(
+                "忽略 Android 显式入口配置：package={} component={} 不属于该包",
+                package_name,
+                component,
+            )
+            self._launch_resolution_details.append(
+                f"配置显式组件={component[:500]}（不属于目标包，已忽略）"
+            )
+            return ""
+        self._launch_resolution_details.append(f"配置显式组件={component}")
+        return component
 
     def _wait_foreground(self, package_name: str, timeout: float = 4.0) -> bool:
         """轮询前台包名，直到等于 ``package_name`` 或超时。"""
