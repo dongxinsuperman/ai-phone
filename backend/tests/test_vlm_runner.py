@@ -503,7 +503,7 @@ async def test_unknown_action_streak_fails():
 @pytest.mark.asyncio
 async def test_click_stuck_injects_hint():
     driver = FakeDriver()
-    # 连续 CLICK_STUCK_THRESHOLD+1 次点击相同点，第 threshold 次会注入提示
+    # 连续 CLICK_STUCK_THRESHOLD 次点击相同点，第 threshold 次会注入提示
     script = [
         ScriptedStep("点同一处", "click(point='<point>500 500</point>')")
         for _ in range(CLICK_STUCK_THRESHOLD)
@@ -1166,20 +1166,18 @@ async def test_chain_with_disallowed_action_falls_back_to_first():
 async def test_chain_clicks_both_count_in_stuck_detection():
     """链内每个 click 都进卡死检测，避免 VLM 用'链式 2 击同坐标'绕过同位置上限。"""
     driver = FakeDriver()
-    # 2 步链 × 2 = 4 次同坐标 click，远超 CLICK_STUCK_THRESHOLD（默认 2）
-    vlm = ChainScriptedVLMClient([
+    # 每步链包含 2 次同坐标 click，总数覆盖当前卡死阈值。
+    chain_step_count = (CLICK_STUCK_THRESHOLD + 1) // 2
+    script = [
         ScriptedStep(
-            "链 1",
+            f"链 {index + 1}",
             "click(point='<point>500 500</point>')\n"
             "click(point='<point>500 500</point>')",
-        ),
-        ScriptedStep(
-            "链 2",
-            "click(point='<point>500 500</point>')\n"
-            "click(point='<point>500 500</point>')",
-        ),
-        ScriptedStep("完成", "finished()"),
-    ])
+        )
+        for index in range(chain_step_count)
+    ]
+    script.append(ScriptedStep("完成", "finished()"))
+    vlm = ChainScriptedVLMClient(script)
     _events, emit = _collect_events()
     runner = VLMRunner(
         run_id="R-chain-stuck", driver=driver, goal="测试链卡死",
@@ -1187,9 +1185,9 @@ async def test_chain_clicks_both_count_in_stuck_detection():
     )
     result = await runner.run()
     assert result.ok is True
-    # 4 次 click 都打到 driver
+    # 链内 click 都打到 driver
     click_calls = [c for c in driver.calls if c[0] == "click"]
-    assert len(click_calls) == 4
+    assert len(click_calls) == chain_step_count * 2
     # 卡死提示应被注入
     assert any("几乎相同的位置" in h for h in vlm.pending_hints)
 

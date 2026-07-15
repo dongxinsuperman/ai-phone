@@ -1613,14 +1613,13 @@ class Settings(BaseSettings):
     # "卡死提示"或直接终止 Run。阈值偏小 → 误 kill 多发；偏大 → 真死循环
     # 拖太久。开源用户根据自家 app 的"合法重试节奏"调整。
     click_stuck_threshold: int = Field(
-        default=2,
+        default=10,
         ge=2,
         le=20,
         description=(
             "同坐标连续点击触发卡死提示的次数。点过 N 次同位置仍无屏变化 → 注入提示。"
-            "历史默认 4 在「VLM 第 1-3 次反复点已满足按钮」期间无任何干预，配合"
-            "强制判读句协议（shared/prompt.py substeps_block）从 4 → 2，第 2 次"
-            "同位置就立即注入「目标可能已满足」提示，作为强制判读句的兜底。"
+            "默认 10：允许同一位置在合法连点、弱响应或页面延迟场景下重试，"
+            "第 10 次才注入「目标可能已满足」提示。"
             "调大可减少误 kill（合法连点场景，如刷新按钮/抽奖）。"
             "env: AI_PHONE_CLICK_STUCK_THRESHOLD"
         ),
@@ -1673,13 +1672,13 @@ class Settings(BaseSettings):
         ),
     )
     audit_click_bucket_trigger: int = Field(
-        default=10,
+        default=20,
         ge=2,
         le=20,
         description=(
             "同坐标桶累计 click ≥ N 次召唤审判。"
             "调大允许更多合法重试；调小快速发现反复点同一处模式。"
-            "历史默认 3 在长 case / 多视觉证据复点场景偏严，调到 10。"
+            "默认 20：使用允许范围上限，尽量容纳长 case 与多次合法复点。"
             "env: AI_PHONE_AUDIT_CLICK_BUCKET_TRIGGER"
         ),
     )
