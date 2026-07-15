@@ -29,6 +29,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from loguru import logger
 
+from ai_phone.agent.async_utils import run_blocking
 from ai_phone.agent.drivers.base import BaseDriver
 from ai_phone.config import get_settings
 from ai_phone.shared import actions as A
@@ -1394,7 +1395,7 @@ class VLMRunner:
                     step=step,
                 )
                 try:
-                    await asyncio.to_thread(self.driver.click, rcx, rcy)
+                    await run_blocking(self.driver.click, rcx, rcy)
                 except Exception as exc:  # noqa: BLE001
                     await self._log(
                         2,
@@ -1675,26 +1676,26 @@ class VLMRunner:
                 parsed.point or [500, 500], coord_space=parsed.coord_space
             )
             await self._log(1, "点击", f"坐标{abs_xy}", step=step)
-            await asyncio.to_thread(self.driver.click, abs_xy[0], abs_xy[1])
+            await run_blocking(self.driver.click, abs_xy[0], abs_xy[1])
 
         elif action == A.ACTION_DOUBLE_TAP:
             abs_xy = await self._vlm_point_to_abs(
                 parsed.point or [500, 500], coord_space=parsed.coord_space
             )
             await self._log(1, "双击", f"坐标{abs_xy}", step=step)
-            await asyncio.to_thread(self.driver.double_click, abs_xy[0], abs_xy[1])
+            await run_blocking(self.driver.double_click, abs_xy[0], abs_xy[1])
 
         elif action == A.ACTION_LONG_PRESS:
             abs_xy = await self._vlm_point_to_abs(
                 parsed.point or [500, 500], coord_space=parsed.coord_space
             )
             await self._log(1, "长按", f"坐标{abs_xy}，1000ms", step=step)
-            await asyncio.to_thread(self.driver.long_press, abs_xy[0], abs_xy[1], 1000)
+            await run_blocking(self.driver.long_press, abs_xy[0], abs_xy[1], 1000)
 
         elif action == A.ACTION_TYPE:
             content = parsed.content or ""
             await self._log(1, "输入", f"内容: {content!r}", step=step)
-            await asyncio.to_thread(self.driver.type_text, content)
+            await run_blocking(self.driver.type_text, content)
 
         elif action == A.ACTION_SCROLL:
             direction = parsed.direction or "down"
@@ -1722,7 +1723,7 @@ class VLMRunner:
                     f"方向: {direction}（屏幕中线兜底）{amount_suffix}",
                     step=step,
                 )
-            await asyncio.to_thread(self.driver.scroll, direction, abs_xy, amount)
+            await run_blocking(self.driver.scroll, direction, abs_xy, amount)
 
         elif action == A.ACTION_DRAG:
             sp = await self._vlm_point_to_abs(
@@ -1732,7 +1733,7 @@ class VLMRunner:
                 parsed.end_point or [500, 500], coord_space=parsed.coord_space
             )
             await self._log(1, "拖拽", f"从{sp} → {ep}", step=step)
-            await asyncio.to_thread(
+            await run_blocking(
                 self.driver.swipe, sp[0], sp[1], ep[0], ep[1], 500
             )
 
@@ -1762,11 +1763,11 @@ class VLMRunner:
 
         elif action == A.ACTION_PRESS_HOME:
             await self._log(1, "系统按键", "HOME", step=step)
-            await asyncio.to_thread(self.driver.press_home)
+            await run_blocking(self.driver.press_home)
 
         elif action == A.ACTION_PRESS_BACK:
             await self._log(1, "系统按键", "BACK", step=step)
-            await asyncio.to_thread(self.driver.press_back)
+            await run_blocking(self.driver.press_back)
 
         elif action == A.ACTION_KEY_EVENT:
             # 通用按键：Claude/GPT 输出 X11 键名（"Return"/"Tab"/"BackSpace"
@@ -1785,7 +1786,7 @@ class VLMRunner:
                     1, "按键事件", f"keycode={keycode}", step=step
                 )
                 try:
-                    await asyncio.to_thread(self.driver.press_keycode, keycode)
+                    await run_blocking(self.driver.press_keycode, keycode)
                 except NotImplementedError as exc:
                     await self._log(
                         2, "按键事件不支持",
@@ -2714,17 +2715,17 @@ class VLMRunner:
         # '应用市场' 等系统应用) 也能被 VLM 二次包名匹配命中——过去用
         # list_third_party_packages 会把这些系统包过滤掉，导致 VLM 返回 NONE
         # 整条动作判失败
-        pkgs = await asyncio.to_thread(self.driver.list_all_packages)
+        pkgs = await run_blocking(self.driver.list_all_packages)
         target = await self._match_package_name(app_name, pkgs)
-        await asyncio.to_thread(self.driver.activate_app, target)
+        await run_blocking(self.driver.activate_app, target)
         await self._log(1, "打开App", f"成功: {target}")
         await self._emit_cache_app_action(A.ACTION_OPEN_APP, target)
 
     async def _close_app_by_name(self, app_name: str) -> None:
         # 同 _open_app_by_name：close 也用全量，避免"关闭设置"这类命中系统包失败
-        pkgs = await asyncio.to_thread(self.driver.list_all_packages)
+        pkgs = await run_blocking(self.driver.list_all_packages)
         target = await self._match_package_name(app_name, pkgs)
-        await asyncio.to_thread(self.driver.terminate_app, target)
+        await run_blocking(self.driver.terminate_app, target)
         await self._log(1, "关闭App", f"成功: {target}")
         await self._emit_cache_app_action(A.ACTION_CLOSE_APP, target)
 
@@ -2865,7 +2866,7 @@ class VLMRunner:
         #   quality=90 远高于 Anthropic 推荐下限 70。Opus 4.7 上限 2576、
         #   OpenAI computer-use-preview 上限 2048，对 1568 都安全不浪费。
         quality, max_long_edge = self._screenshot_jpeg_params()
-        return await asyncio.to_thread(
+        return await run_blocking(
             self.driver.screenshot_jpeg, quality, max_long_edge
         )
 
@@ -2897,7 +2898,7 @@ class VLMRunner:
           于设备分辨率，直接把像素当设备坐标会偏。截图尺寸取自最近一次
           ``vlm.decide`` 喂入帧（见 ``_last_vlm_screenshot_size``）。
         """
-        w, h = await asyncio.to_thread(self.driver.window_size)
+        w, h = await run_blocking(self.driver.window_size)
         if coord_space == "absolute" and self._last_vlm_screenshot_size is not None:
             sw, sh = self._last_vlm_screenshot_size
             if sw > 0 and sh > 0:

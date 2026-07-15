@@ -257,7 +257,8 @@ POST /api/submissions/{submissionId}/cancel
 POST /api/submissions/{submissionId}/cases/{caseId}/cancel?platform=ios
 ```
 
-取消 queued item 会直接置为 `cancelled`；取消 running item 会继续向对应 Run 发 stop。
+取消 queued item 会直接置为 `cancelled`；取消 running item 会停止对应 Run，并在
+Agent 回报终态、设备释放后将该 Run 计入原响应的 `stoppedRunning` / `stoppedRunId`。
 
 ## 7. 状态模型
 

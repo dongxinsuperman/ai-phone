@@ -35,6 +35,7 @@ except Exception:  # noqa: BLE001
 
 from loguru import logger
 
+from ai_phone.agent.async_utils import run_blocking
 from ai_phone.agent.app_install import handle_app_install_start
 from ai_phone.agent.drivers import (
     list_all_devices,
@@ -1138,7 +1139,7 @@ async def _handle_start_run(
         reporter=supervisor.reporter,
     )
 
-    async def _run_task() -> None:
+    async def _run_task_body() -> None:
         # 外接引擎（如 midscene）不需要 ai-phone 自己的 driver 缓存：它们自带 ADB
         # 客户端，由 bridge 子进程操作设备。这里跳过 _get_or_open_driver 既省时间，
         # 也避免在不需要时把 iOS WDA / scrcpy 这类副作用带起来。
@@ -1158,7 +1159,7 @@ async def _handle_start_run(
                     )
                 )
                 try:
-                    await asyncio.to_thread(
+                    await run_blocking(
                         _prepare_harmony_before_open,
                         serial,
                         wake_policy=wake_policy,
@@ -1179,11 +1180,9 @@ async def _handle_start_run(
                             "token_stats": {},
                         }
                     )
-                    await bridge.aclose()
-                    supervisor.pop(run_id)
                     return
             try:
-                driver = await asyncio.to_thread(_get_or_open_driver, serial)
+                driver = await run_blocking(_get_or_open_driver, serial)
             except Exception as exc:  # noqa: BLE001
                 logger.exception("打开设备失败 serial={}", serial)
                 await bridge.send_run_done(
@@ -1199,8 +1198,6 @@ async def _handle_start_run(
                         "token_stats": {},
                     }
                 )
-                await bridge.aclose()
-                supervisor.pop(run_id)
                 return
             if (
                 driver is not None
@@ -1215,7 +1212,7 @@ async def _handle_start_run(
                         "Run 前唤醒 Android：KEYCODE_WAKEUP + dismiss-keyguard",
                     )
                 )
-                await asyncio.to_thread(driver.prepare_for_run)
+                await run_blocking(driver.prepare_for_run)
             elif (
                 driver is not None
                 and getattr(driver, "platform", "") == "harmony"
@@ -1231,7 +1228,7 @@ async def _handle_start_run(
                         + (" + 兜底上滑" if wake_policy.get("wake_swipe") else ""),
                     )
                 )
-                await asyncio.to_thread(driver.prepare_for_run, wake_policy=wake_policy)
+                await run_blocking(driver.prepare_for_run, wake_policy=wake_policy)
             elif (
                 driver is not None
                 and getattr(driver, "platform", "") == "ios"
@@ -1245,11 +1242,11 @@ async def _handle_start_run(
                         "Run 前唤醒 iOS：wda.unlock",
                     )
                 )
-                await asyncio.to_thread(driver.prepare_for_run)
+                await run_blocking(driver.prepare_for_run)
 
         # M4 片3a/4：命中缓存 → Agent 本地回放（替代 VLMRunner 首跑）。回放沿用上面
-        # open 好的 driver + 唤醒；编排自己发 run_done 终态，这里独立 try/finally 收尾、
-        # 跑完直接 return，不再走下方首跑路径。V1 命中暂不回放（见片5），落首跑。
+        # open 好的 driver + 唤醒；编排自己发 run_done 终态，清理由最外层 Run 生命周期
+        # 边界统一完成；跑完直接 return，不再走下方首跑路径。
         if engine == "vlm" and cache_snapshot:
             from ai_phone.agent.trajectory_cache.orchestrate import (  # noqa: PLC0415
                 is_v1_cache_hit,
@@ -1299,21 +1296,6 @@ async def _handle_start_run(
             if replay_coro is not None:
                 try:
                     await replay_coro
-                except asyncio.CancelledError:
-                    await bridge.send_run_done(
-                        {
-                            "type": P.MSG_RUN_DONE,
-                            "run_id": run_id,
-                            "serial": serial,
-                            "attempt": attempt,
-                            "result": "cancelled",
-                            "message": "stopped_by_server",
-                            "steps": 0,
-                            "elapsed_ms": 0,
-                            "token_stats": {},
-                        }
-                    )
-                    raise
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("缓存回放异常 run_id={}", run_id)
                     await bridge.send_run_done(
@@ -1329,9 +1311,6 @@ async def _handle_start_run(
                             "token_stats": {},
                         }
                     )
-                finally:
-                    await bridge.aclose()
-                    supervisor.pop(run_id)
                 return
 
         # M4 片3b/4c：首跑（未命中）且本 run 开了 V2/V3 缓存 → 旁路收集第一手执行数据，
@@ -1375,8 +1354,6 @@ async def _handle_start_run(
                     "token_stats": {},
                 }
             )
-            await bridge.aclose()
-            supervisor.pop(run_id)
             return
 
         try:
@@ -1396,6 +1373,27 @@ async def _handle_start_run(
                     cache_mode=cache_mode,
                     server_http_base=client.server_http_base or get_settings().server_http_base,
                 )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Runner 异常 run_id={}", run_id)
+            await bridge.send_run_done(
+                {
+                    "type": P.MSG_RUN_DONE,
+                    "run_id": run_id,
+                    "serial": serial,
+                    "attempt": attempt,
+                    "result": "error",
+                    "message": f"runner_crash: {exc}",
+                    "steps": 0,
+                    "elapsed_ms": 0,
+                    "token_stats": {},
+                }
+            )
+
+    async def _run_task() -> None:
+        """覆盖 Run 从设备准备到正式执行的统一取消/清理边界。"""
+
+        try:
+            await _run_task_body()
         except asyncio.CancelledError:
             await bridge.send_run_done(
                 {
@@ -1412,7 +1410,7 @@ async def _handle_start_run(
             )
             raise
         except Exception as exc:  # noqa: BLE001
-            logger.exception("Runner 异常 run_id={}", run_id)
+            logger.exception("Run 生命周期异常 run_id={}", run_id)
             await bridge.send_run_done(
                 {
                     "type": P.MSG_RUN_DONE,
@@ -1420,15 +1418,17 @@ async def _handle_start_run(
                     "serial": serial,
                     "attempt": attempt,
                     "result": "error",
-                    "message": f"runner_crash: {exc}",
+                    "message": f"run_lifecycle_crash: {exc}",
                     "steps": 0,
                     "elapsed_ms": 0,
                     "token_stats": {},
                 }
             )
         finally:
-            await bridge.aclose()
-            supervisor.pop(run_id)
+            try:
+                await bridge.aclose()
+            finally:
+                supervisor.pop(run_id)
 
     task = asyncio.create_task(_run_task(), name=f"runner-{run_id}")
     supervisor.register(run_id, serial, task, bridge)

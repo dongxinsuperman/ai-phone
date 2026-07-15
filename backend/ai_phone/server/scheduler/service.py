@@ -76,6 +76,9 @@ DEFAULT_ITEM_TTL_SEC = _settings.item_ttl_sec              # 默认 1h，env: AI
 # 事件驱动路径（on_run_done / on_readiness_change / submit）都会 kick 一下，真正
 # 决定延迟的是 kick 队列；这里只是防漏网。env: AI_PHONE_SCHEDULER_TICK_SEC
 SCHEDULER_TICK_SEC = _settings.scheduler_tick_sec
+# 对外取消保持原接口，但 running 必须等 Agent 回终态后才算 stoppedRunning。
+# 正常 task.cancel 路径应在毫秒~秒级完成；上限只用于避免 HTTP 请求永久挂住。
+CANCEL_STOP_WAIT_SEC = 10.0
 
 _WebhookJob: TypeAlias = Tuple[str, Dict[str, Any]]
 
@@ -497,6 +500,9 @@ class SubmissionScheduler:
 
         # run_id → _RunTrack
         self._runs: Dict[str, _RunTrack] = {}
+        # cancel 请求等待 run_done 的短期 waiter。只存在内存中，不改变对外协议；
+        # on_run_done 在 item 落终态并释放设备锁后统一唤醒。
+        self._run_done_waiters: Dict[str, set[asyncio.Future[None]]] = {}
 
         # submission_id 集合：进程内"已经发过 submission.terminal + 生成汇总报告"
         # 的去重表。避免 cancel_submission 一口气把 N 条 queued 都打 cancelled
@@ -1925,11 +1931,19 @@ class SubmissionScheduler:
                 run_obj = await session.get(Run, item.run_id) if item.run_id else None
                 attempt = self._attempt_from_done_msg(msg, run=run_obj, item=item)
                 item.attempts = max(int(item.attempts or 0), attempt)
+                cancel_requested = item.status_reason == "cancelled_by_request"
                 if run_obj is not None:
                     run_obj.last_attempt = max(int(run_obj.last_attempt or 1), attempt)
                     run_obj.attempts = max(int(run_obj.attempts or 1), attempt)
+                    if cancel_requested:
+                        # 取消拥有最高优先级：即使 Agent 因时序返回 error / success，
+                        # 也不能把已取消的 Case 改回失败、成功或重新触发 retry。
+                        run_obj.status = "stopped"
+                        run_obj.reason = "cancelled_by_request"
+                        run_obj.finished_at = datetime.now(timezone.utc)
                 if (
-                    not self._run_result_is_success(result)
+                    not cancel_requested
+                    and not self._run_result_is_success(result)
                     and not self._run_result_is_cancelled(result)
                     and attempt <= int(item.effective_retry_max or 0)
                 ):
@@ -1976,7 +1990,10 @@ class SubmissionScheduler:
                         )
                     # "pass" 是缓存通道（trajectory cache replay）断言 PASS 时 emitter
                     # 上报的 result 值。语义等同 "finished"，必须映射成 success。
-                    if result in ("finished", "pass"):
+                    if cancel_requested:
+                        item.state = "cancelled"
+                        item.status_reason = "cancelled_by_request"
+                    elif result in ("finished", "pass"):
                         item.state = "success"
                         item.status_reason = "completed"
                     elif result == "assert_fail":
@@ -2029,6 +2046,7 @@ class SubmissionScheduler:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[scheduler] 释放锁失败 serial={} err={}", serial, exc)
 
+        self._resolve_run_done_waiters(run_id)
         self.kick()
 
     # ------------------------------------------------------------------
@@ -2037,7 +2055,7 @@ class SubmissionScheduler:
     async def cancel_submission(self, submission_id: str) -> Dict[str, Any]:
         """把 submission 里所有仍 queued 的 item 踢出；running 的发 stop_run。"""
         cancelled_queued: List[str] = []
-        stopped_running: List[str] = []
+        running_to_stop: List[str] = []
 
         async with self._session_factory() as session:
             sub = await session.get(Submission, submission_id)
@@ -2058,7 +2076,7 @@ class SubmissionScheduler:
                     cancelled_items.append(it)
                 elif it.state == "running" and it.run_id:
                     it.status_reason = "cancelled_by_request"
-                    stopped_running.append(it.run_id)
+                    running_to_stop.append(it.run_id)
             sub.state = "cancelled"
             sub.finished_at = now
             await session.commit()
@@ -2073,8 +2091,12 @@ class SubmissionScheduler:
             self._queues[pid] = [i for i in q if i not in cancelled_queued]
 
         # 对 running 的 run 发 stop_run；真正落位在 on_run_done(cancelled)
-        for run_id in stopped_running:
-            await self._stop_run(run_id)
+        stop_results = await asyncio.gather(
+            *(self._stop_run_and_wait(run_id) for run_id in running_to_stop)
+        )
+        stopped_running = [
+            run_id for run_id, stopped in zip(running_to_stop, stop_results) if stopped
+        ]
 
         return {
             "submissionId": submission_id,
@@ -2127,15 +2149,20 @@ class SubmissionScheduler:
             for pid, q in self._queues.items():
                 self._queues[pid] = [i for i in q if i != item_id]
 
-        if run_id_to_stop:
-            await self._stop_run(run_id_to_stop)
+        stopped_run_id: Optional[str] = None
+        if run_id_to_stop and await self._stop_run_and_wait(run_id_to_stop):
+            stopped_run_id = run_id_to_stop
+            async with self._session_factory() as session:
+                refreshed = await session.get(SubmissionItem, item_id)
+                if refreshed is not None:
+                    item_state = refreshed.state
 
         return {
             "submissionId": submission_id,
             "caseId": case_id,
             "platform": platform,
             "state": item_state,
-            "stoppedRunId": run_id_to_stop,
+            "stoppedRunId": stopped_run_id,
         }
 
     # ------------------------------------------------------------------
@@ -2221,6 +2248,40 @@ class SubmissionScheduler:
     async def _stop_run(self, run_id: str) -> bool:
         """停止调度器派发的 run：下发 MSG_STOP_RUN，由 Agent 本地收口。"""
         return await self._dispatch_service.stop(run_id)
+
+    async def _stop_run_and_wait(self, run_id: str) -> bool:
+        """下发停止并等到 item 终态、设备锁释放；返回是否确认完成。"""
+
+        waiter: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        self._run_done_waiters.setdefault(run_id, set()).add(waiter)
+        try:
+            sent = await self._stop_run(run_id)
+            if not sent and not waiter.done():
+                logger.warning("[scheduler] cancel stop_run 未投达 run={}", run_id)
+                return False
+            try:
+                await asyncio.wait_for(waiter, timeout=CANCEL_STOP_WAIT_SEC)
+                return True
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[scheduler] cancel 等待停止确认超时 run={} timeout={}s",
+                    run_id,
+                    CANCEL_STOP_WAIT_SEC,
+                )
+                return False
+        finally:
+            waiters = self._run_done_waiters.get(run_id)
+            if waiters is not None:
+                waiters.discard(waiter)
+                if not waiters:
+                    self._run_done_waiters.pop(run_id, None)
+
+    def _resolve_run_done_waiters(self, run_id: str) -> None:
+        """在状态落库、设备释放完成后唤醒所有同 Run 的取消调用。"""
+
+        for waiter in self._run_done_waiters.pop(run_id, set()):
+            if not waiter.done():
+                waiter.set_result(None)
 
     # ------------------------------------------------------------------
     # 查询

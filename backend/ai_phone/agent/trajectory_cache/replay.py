@@ -14,6 +14,7 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tup
 
 from PIL import Image
 
+from ai_phone.agent.async_utils import run_blocking
 from ai_phone.agent.drivers.base import BaseDriver
 from ai_phone.agent.runner.events import (
     EVT_SCREENSHOT,
@@ -108,20 +109,20 @@ class ReplayActionDispatcher:
         action_type = str(action.get("type") or "")
         if action_type == A.ACTION_CLICK:
             point = _point(action, "point")
-            await asyncio.to_thread(self.driver.click, point[0], point[1])
+            await run_blocking(self.driver.click, point[0], point[1])
             return
         if action_type == A.ACTION_DOUBLE_TAP:
             point = _point(action, "point")
             interval_ms = int(action.get("interval_ms") or 100)
-            await asyncio.to_thread(self.driver.double_click, point[0], point[1], interval_ms)
+            await run_blocking(self.driver.double_click, point[0], point[1], interval_ms)
             return
         if action_type == A.ACTION_LONG_PRESS:
             point = _point(action, "point")
             duration_ms = int(action.get("duration_ms") or 1000)
-            await asyncio.to_thread(self.driver.long_press, point[0], point[1], duration_ms)
+            await run_blocking(self.driver.long_press, point[0], point[1], duration_ms)
             return
         if action_type == A.ACTION_TYPE:
-            await asyncio.to_thread(self.driver.type_text, str(action.get("content") or ""))
+            await run_blocking(self.driver.type_text, str(action.get("content") or ""))
             return
         if action_type == A.ACTION_WAIT:
             seconds = max(0, min(60, int(action.get("seconds") or 1)))
@@ -131,13 +132,13 @@ class ReplayActionDispatcher:
             center = _optional_point(action, "center")
             direction = str(action.get("direction") or "down")
             amount = int(action.get("amount") or 1)
-            await asyncio.to_thread(self.driver.scroll, direction, center, amount)
+            await run_blocking(self.driver.scroll, direction, center, amount)
             return
         if action_type == A.ACTION_DRAG:
             start = _point(action, "start")
             end = _point(action, "end")
             duration_ms = int(action.get("duration_ms") or 500)
-            await asyncio.to_thread(
+            await run_blocking(
                 self.driver.swipe,
                 start[0],
                 start[1],
@@ -148,23 +149,23 @@ class ReplayActionDispatcher:
             return
         if action_type == A.ACTION_OPEN_APP:
             target = _app_target(action)
-            await asyncio.to_thread(self.driver.activate_app, target)
+            await run_blocking(self.driver.activate_app, target)
             return
         if action_type == A.ACTION_CLOSE_APP:
             target = _app_target(action)
-            await asyncio.to_thread(self.driver.terminate_app, target)
+            await run_blocking(self.driver.terminate_app, target)
             return
         if action_type == A.ACTION_PRESS_HOME:
-            await asyncio.to_thread(self.driver.press_home)
+            await run_blocking(self.driver.press_home)
             return
         if action_type == A.ACTION_PRESS_BACK:
-            await asyncio.to_thread(self.driver.press_back)
+            await run_blocking(self.driver.press_back)
             return
         if action_type == A.ACTION_KEY_EVENT:
             keycode = action.get("keycode")
             if keycode is None:
                 raise ReplayActionError("missing keycode")
-            await asyncio.to_thread(self.driver.press_keycode, int(keycode))
+            await run_blocking(self.driver.press_keycode, int(keycode))
             return
         raise ReplayActionError(f"unsupported replay action type: {action_type!r}")
 
@@ -1572,7 +1573,7 @@ class ReplayRunner:
         point = _coerce_point(value)
         if point is None:
             raise ReplayActionError("invalid ephemeral gate point")
-        w, h = await asyncio.to_thread(self.driver.window_size)
+        w, h = await run_blocking(self.driver.window_size)
         if coord_space == "absolute":
             px, py = int(point[0]), int(point[1])
             img_size = self._recovery_image_size
@@ -1607,7 +1608,7 @@ class ReplayRunner:
         )
 
     async def _parsed_point_to_abs(self, point: List[int], coord_space: str) -> Tuple[int, int]:
-        w, h = await asyncio.to_thread(self.driver.window_size)
+        w, h = await run_blocking(self.driver.window_size)
         if coord_space == "absolute":
             # claude_cu / gpt_cu 路径：模型坐标是相对【附图 2】实际像素。
             # 附图 2 = _screenshot_jpeg() 出的 JPEG，按当前 backend 的截图
@@ -1683,7 +1684,7 @@ class ReplayRunner:
 
     async def _screenshot_jpeg(self) -> bytes:
         quality, max_long_edge = self._screenshot_jpeg_params()
-        return await asyncio.to_thread(
+        return await run_blocking(
             self.driver.screenshot_jpeg, quality, max_long_edge
         )
 

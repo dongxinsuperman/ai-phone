@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from PIL import Image
 
+from ai_phone.agent.async_utils import run_blocking
 from ai_phone.agent.drivers.base import BaseDriver
 from ai_phone.agent.runner.events import (
     EVT_SCREENSHOT,
@@ -1092,7 +1093,7 @@ class V3ReplayRunner:
     async def _locate_action(self, action: Dict[str, Any], screenshot_bytes: bytes) -> Dict[str, Any]:
         action_type = str(action.get("type") or "")
         image_size = _decode_image_size(screenshot_bytes)
-        window_size = await asyncio.to_thread(self.driver.window_size)
+        window_size = await run_blocking(self.driver.window_size)
         await self._log(
             1,
             "V3寻找目标",
@@ -1417,7 +1418,7 @@ class V3ReplayRunner:
             "intent": intent or raw.get("intent") or source,
             "source": source,
         }
-        window_size = await asyncio.to_thread(self.driver.window_size)
+        window_size = await run_blocking(self.driver.window_size)
         if action_type in (A.ACTION_CLICK, A.ACTION_DOUBLE_TAP, A.ACTION_LONG_PRESS):
             point = _coerce_point(raw.get("point"))
             if point is None:
@@ -1490,7 +1491,7 @@ class V3ReplayRunner:
 
     async def _screenshot_jpeg(self) -> bytes:
         quality, max_long_edge = self._screenshot_jpeg_params()
-        return await asyncio.to_thread(
+        return await run_blocking(
             self.driver.screenshot_jpeg, quality, max_long_edge
         )
 
