@@ -1322,3 +1322,69 @@ async def test_transient_snapshot_consumed_after_one_step():
     # step 3 VLM 收到的图应该不是 visible_frame=B（接管已清），而是真实抓帧 D
     assert vlm.received_screenshots[2] != B
     assert vlm.received_screenshots[2] == D
+
+
+# ---------------------------------------------------------------------------
+# 起跑线（prelude）："已执行完毕"提示只在 open_app 真成功时才注入
+# ---------------------------------------------------------------------------
+class _StubMatchAssistant:
+    """最小辅助系统替身：match_package 固定返回一个包名（让 target 非空）。"""
+
+    def __init__(self, package: str = "com.tencent.mm"):
+        self._package = package
+
+    async def match_package(
+        self, app_name, packages, *, function_map_context=None, platform=None
+    ):
+        return self._package
+
+
+@pytest.mark.asyncio
+async def test_prelude_open_failure_does_not_inject_done_hint():
+    """回归：起跑线解析到了包名，但 open_app 执行抛错（如无 MAIN+LAUNCHER 入口），
+    结尾**不能**注入"已关闭并重新打开"的提示——否则会把 VLM 的自救 open 也堵掉。
+    """
+
+    class _FailOpenDriver(FakeDriver):
+        def activate_app(self, pkg):  # open 失败
+            self._record("activate_app", pkg)
+            raise RuntimeError("无法启动应用：未解析到 MAIN+LAUNCHER 入口")
+
+    driver = _FailOpenDriver()
+    vlm = ScriptedVLMClient([])
+    _events, emit = _collect_events()
+    runner = VLMRunner(
+        run_id="R-prelude-openfail",
+        driver=driver,
+        goal="x",
+        emit=emit,
+        vlm_client=vlm,
+        assistant=_StubMatchAssistant("com.tencent.mm"),
+    )
+    await runner._run_app_lifecycle_prelude("重新打开「微信」")
+
+    # close 成功、open 抛错：两步都尝试过
+    assert ("terminate_app", ("com.tencent.mm",)) in driver.calls
+    assert ("activate_app", ("com.tencent.mm",)) in driver.calls
+    # open 未成功 → 不注入"已执行完毕"提示
+    assert not any("起跑线动作" in h for h in vlm.pending_hints)
+
+
+@pytest.mark.asyncio
+async def test_prelude_open_success_injects_done_hint():
+    """对照：起跑线 open_app 真成功时，注入"已关闭并重新打开、别再 open"提示。"""
+    driver = FakeDriver()
+    vlm = ScriptedVLMClient([])
+    _events, emit = _collect_events()
+    runner = VLMRunner(
+        run_id="R-prelude-ok",
+        driver=driver,
+        goal="x",
+        emit=emit,
+        vlm_client=vlm,
+        assistant=_StubMatchAssistant("com.tencent.mm"),
+    )
+    await runner._run_app_lifecycle_prelude("重新打开「微信」")
+
+    assert ("activate_app", ("com.tencent.mm",)) in driver.calls
+    assert any("起跑线动作" in h for h in vlm.pending_hints)

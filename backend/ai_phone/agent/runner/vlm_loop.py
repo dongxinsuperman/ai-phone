@@ -2878,6 +2878,9 @@ class VLMRunner:
             ("close_app", "关闭App（系统起跑线）", self._close_app_by_package),
             ("open_app", "打开App（系统起跑线）", self._open_app_by_package),
         )
+        # open_app 是否**真的执行成功**——决定结尾要不要告诉 VLM"已重启、别重做"。
+        # 只有 App 确实被打开了，这条提示才成立；否则会把 VLM 的自救 open 也堵掉。
+        open_ok = False
         for offset, (action_name, log_title, exec_fn) in enumerate(plan, start=1):
             if self._stop_event.is_set():
                 return
@@ -2897,6 +2900,8 @@ class VLMRunner:
                 t0 = time.monotonic()
                 try:
                     await exec_fn(target)
+                    if action_name == "open_app":
+                        open_ok = True
                     elapsed_ms = int((time.monotonic() - t0) * 1000)
                     await self._emit_event(
                         make_event(
@@ -2932,11 +2937,13 @@ class VLMRunner:
                 self._last_tail_bytes = tail
             await self._emit_event(make_event(EVT_STEP_END, self.run_id, step=step))
 
-        # 仅当**确实解析到目标包名并执行了** close+open 时，才提示 VLM"起跑线已做过"，
-        # 避免"没解析到包名（target 为空、两步都跳过）却谎报已执行"误导 VLM。
+        # 仅当 open_app **确实执行成功**（App 真被打开）时，才提示 VLM"起跑线已做过"。
+        # 两种情况都不提示，避免误导 VLM 把自救的 open 也跳过：
+        #   - 没解析到包名（target 为空、两步都跳过）；
+        #   - 解析到包名但 open 执行抛错（如无 MAIN+LAUNCHER 入口 / 应用崩溃）。
         # 不回填 app_name：放开路径下它可能是一整段前置条件原文，写进提示既冗长又可能
         # 反向误导，用中性的"目标 App"表述即可。
-        if target:
+        if open_ok:
             self.vlm.add_hint(
                 "【系统提示】起跑线动作（关闭并重新打开目标 App）已由系统在第 1-2 步"
                 "自动执行完毕，请直接从下一个未完成步骤开始（通常是登录判断或进入主页 Tab），"
