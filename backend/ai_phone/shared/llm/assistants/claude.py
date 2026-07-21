@@ -147,41 +147,76 @@ class ClaudeAssistant:
     # ------------------------------------------------------------------
     # ① 起跑线 · 包名匹配
     # ------------------------------------------------------------------
-    async def match_package(self, app_name: str, packages: List[str]) -> str:
+    async def match_package(
+        self,
+        app_name: str,
+        packages: List[str],
+        *,
+        function_map_context: Optional[str] = None,
+        platform: Optional[str] = None,
+    ) -> str:
         """根据应用名从已安装包列表里挑出最佳包名。
 
         协议（与豆包实现一致）：
         - 模型只输出"一个完整包名"或字面量 "NONE"
         - 返回 NONE / 空 → 适配层翻译为空串 ``""``
-        - 包名匹配是高频轻任务，固定 thinking=False
+        - 开启 thinking：让模型可靠地"先识别目标 App 再模糊匹配包名"（关思考时对带
+          动作词/泛称的自然语言 query 不稳）；仅在 4-thinking 系模型生效，其余忽略
+
+        ``function_map_context`` / ``platform`` 是可选软参考：map 里有精准包名就
+        优先用，没有就退回按 ``app_name`` 模糊匹配；绝不从 map 硬联想。
         """
         if not packages:
             raise RuntimeError("无法获取设备应用列表")
 
+        platform_line = f"Current device platform: {platform}\n\n" if platform else ""
+        map_block = (
+            "\n\nApp Map (read-only optional reference, may be empty):\n"
+            + function_map_context
+            if function_map_context
+            else ""
+        )
         prompt = (
-            "Task: From the device's installed third-party app package list, find "
-            "the one that best matches the user's description.\n\n"
-            f"User description: {app_name}\n\n"
+            "Task: Identify which app the user wants to launch/restart, then find "
+            "its package name from the device's installed app package list.\n\n"
+            + platform_line
+            + "User description (may be a short phrase or a full precondition "
+            f"text): {app_name}\n\n"
             "Installed package names:\n"
             + "\n".join(packages)
-            + "\n\nRequirements:\n"
-            "1. Identify the app keyword in the user description\n"
-            "2. Find the best-matching package from the list\n"
-            "3. Output ONLY the full package name (no explanation, no extra text)\n"
-            "4. If no match, output \"NONE\"\n\n"
-            "Business note: if the user description contains 「洋葱」 (e.g. 「洋葱学园」, "
-            "「洋葱数学」), pay special attention to packages whose name contains "
-            "\"yangcong\", \"guanghe\", or \"ycmath\". On iOS the apps from this "
-            "vendor use multiple naming conventions (public builds often use "
-            "yangcong345, enterprise/test builds often use guanghe or ycmath); "
-            "do NOT skip a candidate just because it lacks the literal \"yangcong\".\n\n"
-            "Output format: package name only"
+            + map_block
+            + "\n\nRules:\n"
+            "1. First understand which target app the user wants to launch. The "
+            "description may carry action verbs (open/close/restart/kill/launch/"
+            "enter) and generic words (app/应用); ignore that shell and focus on the "
+            "real app name (e.g. the target of 'open SomeApp' / 'reopen 某应用App' is "
+            "that app itself).\n"
+            "2. The App Map is only an optional reference: if it explicitly gives "
+            "the package name of that app for the current platform, prefer that "
+            "more precise package name.\n"
+            "3. This is FUZZY matching, not exact string matching: the user only "
+            "says the app's (usually Chinese) display name, never the package name. "
+            "A Chinese app name commonly appears in the package as its PINYIN / "
+            "pinyin abbreviation / English name (e.g. the pinyin of the Chinese name "
+            "is the core segment of the package). If the described app name "
+            "corresponds strongly to a package semantically or by pinyin, treat it "
+            "as a hit — do NOT reject just because the literal strings differ.\n"
+            "4. The App Map is only a bonus: when empty / missing this app / not "
+            "defining its package, do NOT hard-read or over-infer from the map; just "
+            "fuzzy-match against the installed package list as above.\n"
+            "5. Only output \"NONE\" when the description points to no concrete app at "
+            "all (e.g. just 'reopen the APP' with no app name), or when the installed "
+            "list truly has no semantically/pinyin-similar package; do not output "
+            "NONE lightly, and never pick an unrelated package.\n"
+            "6. Output ONLY one full package name, or \"NONE\" (no explanation, no "
+            "extra text).\n\n"
+            "Output format: package name only, or NONE"
         )
         target = await self._post(
             messages=[
                 {"role": "user", "content": [{"type": "text", "text": prompt}]}
             ],
-            thinking=False,
+            thinking=True,
             scene="包名匹配",
         )
         target = target.strip()

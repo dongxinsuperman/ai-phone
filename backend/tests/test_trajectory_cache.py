@@ -1446,7 +1446,9 @@ class FakeAssistant:
         self.text = text
         self.calls = []
 
-    async def match_package(self, app_name, packages):
+    async def match_package(
+        self, app_name, packages, *, function_map_context=None, platform=None
+    ):
         return ""
 
     async def chat_text(self, prompt, *, label="辅助", thinking=False):

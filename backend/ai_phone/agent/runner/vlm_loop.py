@@ -444,20 +444,26 @@ def _classify_structured_local(
 # 看到当前截图凑巧已在目标页就直接跳到操作步骤。改成代码侧扫描 goal、命中即
 # 程序化跑前两步，**不让 VLM 选择**。
 #
-# 触发条件分两档（任一命中即触发起跑线，且都跑同一段 close_app + open_app
+# 触发条件分三层（任一命中即触发起跑线，且都跑同一段 close_app + open_app
 # 流程；close_app 在 App 未运行时是无害 no-op，重启更安全）：
 #
-#   档 1：goal 同时含"杀进程"类 + "重新打开"类关键词 + 「App名」
+#   档 1（精确）：goal 同时含"杀进程"类 + "重新打开"类关键词 + 「App名」
 #         → 用户显式要求重启场景（如稳定性回归 / 冷启 case）
 #
-#   档 2：goal 含"启动"类关键词且**紧贴**「App 名」 + 「App 名」
+#   档 2（精确）：goal 含"启动"类关键词且**紧贴**「App 名」
 #         → 简单"打开 X 做 Y"场景（如 goal="打开「淘宝」搜耳机"）。
 #           退回 VLM 后，Claude/GPT CU 没有 open_app 抽象，走 home + 找
 #           图标的路径既慢又不靠谱，必须由起跑线兜底
 #
-# 「应用名」始终要求成对包裹符号包住——避免误抓 goal 内 free-text 提到的
-# 菜单 / Tab 名当 App 名。这里支持常见 CJK / ASCII 包裹符号，但要求成对
-# 匹配，避免 【淘宝」 这类脏文本被误收。
+#   放开兜底：只要出现任一生命周期动作词（杀/关/重启/重新打开/打开/进入/启动…）
+#         即触发，把原文整段交给联机模型结合 App Map + 当前平台 + 安装列表去
+#         识别目标 App 并解析包名——支持"重新打开应用A""杀掉应用A再进"这类
+#         **不带成对符号**的自然语言。原文没写清 App / 装的包里匹配不到 → 模型
+#         返回 NONE → 不执行任何关/开（"App 不明确就打不开"）。
+#
+# 档 1 / 档 2 仍要求「应用名」成对包裹，是为了在能抽出干净 App 名时走精确路径
+# （日志友好、query 最短）；抽不到时才落到放开兜底把原文交给模型。这里支持常见
+# CJK / ASCII 包裹符号，但要求成对匹配，避免 【淘宝」 这类脏文本被误收。
 _PRELUDE_KILL_KEYWORDS = (
     "杀进程", "杀掉", "关闭app", "关闭App", "kill", "关掉",
     "强制停止", "强制关闭", "强制退出",
@@ -512,6 +518,34 @@ _OPEN_APP_TIGHT_RE = re.compile(
     r"\s*(?:的|了|下|一下)?\s*" + _WRAPPED_APP_NAME_PATTERN,
     re.IGNORECASE,
 )
+# 生命周期动作词全集（归一化：去空格 + 小写），用于剔除"被成对符号包住、但本身
+# 只是动作词括注"的假 App 名。典型：前置条件写 "关闭主 App（杀进程）后重新打开
+# 主 App"——「（杀进程）」是澄清说明不是 App 名，若被当 App 名会去匹配到"清理大
+# 师"之类的错误包。剔除后落到"放开兜底"，把整段原文交给模型识别真正的目标 App。
+_PRELUDE_ACTION_KEYWORDS_NORM = frozenset(
+    k.replace(" ", "").lower()
+    for k in (
+        _PRELUDE_KILL_KEYWORDS + _PRELUDE_RESTART_KEYWORDS + _PRELUDE_OPEN_KEYWORDS
+    )
+)
+
+
+def _is_action_noise_name(name: str) -> bool:
+    """成对符号里包的内容**含**任一生命周期动作词 → 判为动作括注、非 App 名。
+
+    用"含"而非"完全相等"：前置条件里的动作括注常带补充说明，如
+    ``（杀进程，不清数据）`` / ``（强制停止 App）``——只认"完全等于关键词"会漏掉
+    这些变体，导致括注被误当 App 名（进而可能匹配到"清理大师"等错误包）。改成
+    "含关键词即剔除"覆盖这一整类。
+
+    误伤兜底：即便某个真 App 名恰好含动作词子串（如"启动器"含"启动"、
+    "Entertainment"含"enter"）被误判为括注，也只是从"精确短名路径"退到"放开兜底"
+    ——整段原文仍会交给模型识别该 App，不会漏触发、也不会关错应用，属安全降级。
+    """
+    norm = name.replace(" ", "").lower()
+    if not norm:
+        return True
+    return any(kw in norm for kw in _PRELUDE_ACTION_KEYWORDS_NORM)
 # 结构化 case 段切分：按 "测试标题：/前置条件：/操作步骤：/..." 这类标签把
 # goal 切成 {标签: 段内容}。只挑"段头"型标签（不含括号方括号变体），后者是
 # 内嵌内容标记，不是段头。
@@ -553,7 +587,8 @@ def _split_goal_by_segments(goal: str) -> Dict[str, str]:
 
 
 def _detect_app_lifecycle_prelude(goal: str) -> Optional[str]:
-    """检查 goal 是否要求起跑线注入。命中返回 app 名，否则 None。
+    """检查 goal 是否要求起跑线注入。命中返回"交给模型解析的目标描述"（能抽出
+    干净 App 名时返回该名，否则返回触发段原文），否则 None。
 
     设计要点（按段感知，2026-05 重构）：
 
@@ -586,27 +621,59 @@ def _detect_app_lifecycle_prelude(goal: str) -> Optional[str]:
 
 
 def _detect_in_text(text: str) -> Optional[str]:
-    """在指定文本片段内跑档1/档2 判定。供前置条件段 / 全文扫共用。"""
-    text_compact = text.replace(" ", "")
+    """在指定文本片段内判定是否触发起跑线；命中返回"交给模型解析的目标描述"。
 
-    # 档 1：杀进程 AND 重新打开 AND 「App名」
+    分三层，前两层是"精确路径"（历史行为，保留），第三层是本次"放开"新增：
+
+    - 档 1（精确）：杀进程 AND 重新打开 AND 成对符号包裹 App 名 → 返回该 App 名。
+    - 档 2（精确）：启动词紧贴成对符号包裹 App 名 → 返回该 App 名。
+      以上两档能抽出干净 App 名时直接返回它，日志友好、语义最准。
+    - 放开兜底：只要文本里出现任一生命周期动作词（杀/关/重启/重新打开/打开/进入/
+      启动…），即触发起跑线，把**整段原文**返回，交给联机模型结合 App Map +
+      当前平台 + 安装列表去识别目标 App 并解析精确包名。
+
+    放开的设计取向：**触发层从宽，匹配层兜底**。原文里没写清哪个 App、或安装列表
+    里找不到语义相近的包名时，模型会返回 NONE → 上游不执行任何关/开（"App 不明确
+    就打不开"）。因此这里不再要求 App 名必须成对符号包裹，也不额外加"页面/开关"
+    这类收紧否决——匹配得上就开、匹配不上就不开，与历史模糊匹配语义一致。
+    """
+    text_compact = text.replace(" ", "")
+    lower_compact = text_compact.lower()
+
     has_kill = any(k.replace(" ", "") in text_compact for k in _PRELUDE_KILL_KEYWORDS)
     has_restart = any(
         k.replace(" ", "") in text_compact for k in _PRELUDE_RESTART_KEYWORDS
     )
+    has_open = any(
+        k.replace(" ", "").lower() in lower_compact for k in _PRELUDE_OPEN_KEYWORDS
+    )
+
+    # 档 1（精确）：杀进程 AND 重新打开 AND 「App名」
     if has_kill and has_restart:
-        matches = _extract_wrapped_app_names(text)
+        # 剔除"（杀进程）"这类动作词括注，避免把澄清说明误当 App 名
+        matches = [
+            m for m in _extract_wrapped_app_names(text) if not _is_action_noise_name(m)
+        ]
         if matches:
             # 多次出现取最高频，避免误抓段内偶提的菜单 / 选项名当 App 名
             return Counter(matches).most_common(1)[0][0]
 
-    # 档 2：启动词紧贴包裹 App 名（"打开「淘宝」搜耳机"、"进入【微信】找联系人..." 类）
-    tight_matches = _extract_wrapped_app_names_from_matches(
-        _OPEN_APP_TIGHT_RE.finditer(text)
-    )
+    # 档 2（精确）：启动词紧贴包裹 App 名（"打开「淘宝」搜耳机"、"进入【微信】…" 类）
+    tight_matches = [
+        m
+        for m in _extract_wrapped_app_names_from_matches(
+            _OPEN_APP_TIGHT_RE.finditer(text)
+        )
+        if not _is_action_noise_name(m)
+    ]
     if tight_matches:
         # 多次出现取最高频，与档 1 同语义
         return Counter(tight_matches).most_common(1)[0][0]
+
+    # 放开兜底：出现任一生命周期动作词即触发，把原文整段交给模型解析目标 App。
+    if has_kill or has_restart or has_open:
+        stripped = text.strip()
+        return stripped or None
 
     return None
 
@@ -2717,14 +2784,22 @@ class VLMRunner:
         # 整条动作判失败
         pkgs = await run_blocking(self.driver.list_all_packages)
         target = await self._match_package_name(app_name, pkgs)
-        await run_blocking(self.driver.activate_app, target)
-        await self._log(1, "打开App", f"成功: {target}")
-        await self._emit_cache_app_action(A.ACTION_OPEN_APP, target)
+        await self._open_app_by_package(target)
 
     async def _close_app_by_name(self, app_name: str) -> None:
         # 同 _open_app_by_name：close 也用全量，避免"关闭设置"这类命中系统包失败
         pkgs = await run_blocking(self.driver.list_all_packages)
         target = await self._match_package_name(app_name, pkgs)
+        await self._close_app_by_package(target)
+
+    async def _open_app_by_package(self, target: str) -> None:
+        """已知精确包名直接前台启动（不再走包名匹配）。起跑线复用一次解析结果。"""
+        await run_blocking(self.driver.activate_app, target)
+        await self._log(1, "打开App", f"成功: {target}")
+        await self._emit_cache_app_action(A.ACTION_OPEN_APP, target)
+
+    async def _close_app_by_package(self, target: str) -> None:
+        """已知精确包名直接强杀（不再走包名匹配）。起跑线复用一次解析结果。"""
         await run_blocking(self.driver.terminate_app, target)
         await self._log(1, "关闭App", f"成功: {target}")
         await self._emit_cache_app_action(A.ACTION_CLOSE_APP, target)
@@ -2768,10 +2843,28 @@ class VLMRunner:
         失败处理：close 或 open 任何一步抛错都只记 WARN 不中断 Run；理由是设备
         本来就可能没装这个 App / 包名匹配失败 / 当前 App 已是 closed——这些
         情况下让 VLM 接着自己处理比直接 fail 更可救。
+
+        包名只解析一次、close + open 复用同一结果（2026-07 优化）：
+        - 少一次模型调用（包名匹配带 thinking 后单次更贵，省一次更划算）；
+        - 消除"两次匹配返回不同包名 → 关了 A 却打开 B"的风险；
+        - 解析失败（模型判定没有语义相近的 App / 目标不明确）→ 记一次 WARN，
+          close/open 都不执行（"目标 App 不明确或未安装就不动"），交 VLM 兜底。
         """
+        # —— 起跑线：一次性解析目标包名 ——
+        app_display = app_name if len(app_name) <= 40 else app_name[:40] + "…"
+        target = ""
+        try:
+            pkgs = await run_blocking(self.driver.list_all_packages)
+            target = await self._match_package_name(app_name, pkgs)
+        except Exception as exc:  # noqa: BLE001
+            await self._log(
+                2, "起跑线 · 目标包名未解析",
+                f"{exc}（跳过 close/open，交由 VLM 兜底）",
+            )
+
         plan = (
-            ("close_app", "关闭App（系统起跑线）", self._close_app_by_name),
-            ("open_app", "打开App（系统起跑线）", self._open_app_by_name),
+            ("close_app", "关闭App（系统起跑线）", self._close_app_by_package),
+            ("open_app", "打开App（系统起跑线）", self._open_app_by_package),
         )
         for offset, (action_name, log_title, exec_fn) in enumerate(plan, start=1):
             if self._stop_event.is_set():
@@ -2780,34 +2873,41 @@ class VLMRunner:
             self._current_step = step
             await self._emit_event(make_event(EVT_STEP_START, self.run_id, step=step))
             await self._log(1, f"━━ 第 {step} 步 ━━", "段=起跑线", step=step)
-            await self._log(1, log_title, f"应用: {app_name}", step=step)
-
-            t0 = time.monotonic()
-            try:
-                await exec_fn(app_name)
-                elapsed_ms = int((time.monotonic() - t0) * 1000)
-                await self._emit_event(
-                    make_event(
-                        EVT_EXEC_RESULT,
-                        self.run_id,
-                        step=step,
-                        action=action_name,
-                        elapsed_ms=elapsed_ms,
-                    )
-                )
+            if not target:
+                # 没解析到包名：本步不执行，只如实记录（目标原文截断展示）
                 await self._log(
-                    1, "执行完成",
-                    f"动作: {action_name}, 耗时: {elapsed_ms}ms", step=step,
-                )
-            except Exception as exc:  # noqa: BLE001
-                await self._log(
-                    2, f"起跑线 {action_name} 失败",
-                    f"{exc}（继续后续步骤，由 VLM 兜底）",
+                    1, log_title,
+                    f"目标: {app_display} → 未解析到包名，跳过（由 VLM 兜底）",
                     step=step,
                 )
+            else:
+                await self._log(1, log_title, f"目标: {target}", step=step)
+                t0 = time.monotonic()
+                try:
+                    await exec_fn(target)
+                    elapsed_ms = int((time.monotonic() - t0) * 1000)
+                    await self._emit_event(
+                        make_event(
+                            EVT_EXEC_RESULT,
+                            self.run_id,
+                            step=step,
+                            action=action_name,
+                            elapsed_ms=elapsed_ms,
+                        )
+                    )
+                    await self._log(
+                        1, "执行完成",
+                        f"动作: {action_name}, 耗时: {elapsed_ms}ms", step=step,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    await self._log(
+                        2, f"起跑线 {action_name} 失败",
+                        f"{exc}（继续后续步骤，由 VLM 兜底）",
+                        step=step,
+                    )
 
             # close 与 open 之间留 1.5s 让 App 真正退出，避免 open 立刻收到旧 PID
-            if action_name == "close_app":
+            if target and action_name == "close_app":
                 await asyncio.sleep(1.5)
 
             # 操作后截图 + 进时间线
@@ -2820,9 +2920,11 @@ class VLMRunner:
                 self._last_tail_bytes = tail
             await self._emit_event(make_event(EVT_STEP_END, self.run_id, step=step))
 
-        # 给 VLM 注入一条系统提示，避免它看到 App 主页又想重做一遍 close+open
+        # 给 VLM 注入一条系统提示，避免它看到 App 主页又想重做一遍 close+open。
+        # 这里不回填 app_name：放开路径下它可能是一整段前置条件原文，写进提示既冗长
+        # 又可能反向误导 VLM，用中性的"目标 App"表述即可。
         self.vlm.add_hint(
-            f"【系统提示】起跑线动作（关闭并重新打开「{app_name}」）已由系统在第 1-2 步"
+            "【系统提示】起跑线动作（关闭并重新打开目标 App）已由系统在第 1-2 步"
             "自动执行完毕，请直接从下一个未完成步骤开始（通常是登录判断或进入主页 Tab），"
             "不要再尝试 close_app / open_app。"
         )
@@ -2839,7 +2941,15 @@ class VLMRunner:
         切换 assistant_backend 时本函数零改动；各家把"NONE / null / 空"等家家
         各异的"未匹配"信号统一翻译为空串后返回。
         """
-        target = await self._assistant.match_package(app_name, packages)
+        # map（本次 Run 携带的 App Map 原文）与当前设备平台一起作为软参考下沉给
+        # assistant：map 有精准包名就优先用，没有就退回按 app_name 模糊匹配（详见
+        # BaseAssistant.match_package 契约）。map 未注入时传 None，行为等价历史。
+        target = await self._assistant.match_package(
+            app_name,
+            packages,
+            function_map_context=self._function_map_context or None,
+            platform=getattr(self.driver, "platform", None),
+        )
         if not target:
             raise RuntimeError(f"未找到与「{app_name}」匹配的应用")
         await self._log(1, "包名匹配", f"「{app_name}」→ {target}")

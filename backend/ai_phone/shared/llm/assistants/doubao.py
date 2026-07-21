@@ -108,38 +108,66 @@ class DoubaoAssistant:
     # ------------------------------------------------------------------
     # ① 起跑线 · 包名匹配（特殊协议：NONE → 空串）
     # ------------------------------------------------------------------
-    async def match_package(self, app_name: str, packages: List[str]) -> str:
+    async def match_package(
+        self,
+        app_name: str,
+        packages: List[str],
+        *,
+        function_map_context: Optional[str] = None,
+        platform: Optional[str] = None,
+    ) -> str:
         """根据应用名从已安装包列表里挑出最佳包名。
 
         协议约束（与 vlm_loop 现状一致）：
         - 模型只输出"一个完整包名"或字面量 "NONE"
         - 返回 NONE / 空 / 仅空白 → 适配层翻译为空串 ``""``
-        - 包名匹配是高频轻任务，固定 thinking=disabled（~1s 完成）
+        - 开启 thinking：让模型可靠地"先从自然语言里识别目标 App、再模糊匹配包名"。
+          实测关思考时对带"打开/app"等噪声的自然语言 query 会不稳（偶发 NONE），
+          开一点点思考即稳定；这层"先识别再匹配"必须由模型做，本地剥壳无法通用。
+
+        ``function_map_context`` / ``platform`` 是可选软参考：map 里有精准包名就
+        优先用，没有就退回按 ``app_name`` 模糊匹配；绝不从 map 硬联想。
         """
         if not packages:
             raise RuntimeError("无法获取设备应用列表")
 
+        platform_line = f"当前设备平台：{platform}\n\n" if platform else ""
+        map_block = (
+            "\n\nApp Map（只读软参考，可能为空）：\n" + function_map_context
+            if function_map_context
+            else ""
+        )
         prompt = (
-            "任务：从设备已安装的第三方应用包名列表中，找出与用户描述最匹配的一个应用包名。\n\n"
-            f"用户描述：{app_name}\n\n"
-            "设备已安装的第三方应用包名列表：\n"
+            "任务：判断用户想要启动/重启的目标应用，并从设备已安装应用包名列表中"
+            "找出对应的一个包名。\n\n"
+            + platform_line
+            + f"用户描述（可能是一句话，也可能是一段前置条件原文）：{app_name}\n\n"
+            "设备已安装的应用包名列表：\n"
             + "\n".join(packages)
-            + "\n\n要求：\n"
-            "1. 分析用户描述中的应用名称关键词\n"
-            "2. 从包名列表中找出最匹配的应用\n"
-            "3. 只返回一个完整的包名，不要有任何解释或额外文字\n"
-            "4. 如果无法匹配，返回\"NONE\"\n\n"
-            "业务特别关注：如果用户描述里含「洋葱」（如「洋葱学园」「洋葱数学」），"
-            "请在包名中重点扫描带 yangcong / guanghe / ycmath 等代号的项——"
-            "iOS 端洋葱集团旗下 app 命名风格不统一（公开版常用 yangcong345，"
-            "企业测试版常用 guanghe / ycmath 等内部代号），不要因为字面无 yangcong 就忽略。\n\n"
-            "输出格式：仅输出包名"
+            + map_block
+            + "\n\n规则：\n"
+            "1. 先从用户描述里理解要启动的目标应用是哪一个。描述可能夹带"
+            "“打开/关闭/重新打开/杀掉/启动/进入”等动作词，以及“app/应用”等泛称，"
+            "请忽略这些外壳，只聚焦真正的应用名（如“打开某应用App”的目标就是“某应用”本身）。\n"
+            "2. App Map 只是可选参考：若其中明确给出该应用在当前平台对应的包名，"
+            "优先采用这个更精准的包名。\n"
+            "3. 这是**模糊匹配**不是精确字符串匹配：用户只会说中文应用名，不会说包名。"
+            "中文应用名常以其**拼音 / 拼音缩写 / 英文名**出现在包名主段里"
+            "（例如中文名的拼音就是包名的核心片段）。只要用户描述的应用名与某个包名在"
+            "语义或拼音上高度对应，即视为命中——不要因为“字面不完全一致”就拒绝。\n"
+            "4. App Map 只是加分项：为空 / 未包含该应用 / 未规定其包名时，不要从 map "
+            "硬读硬联想，直接按上面的模糊匹配在“已安装应用包名列表”里找即可。\n"
+            "5. 只有当用户描述根本没有指向任何具体应用（如仅说“重新打开APP”而无 App 名），"
+            "或“已安装应用包名列表”里确实没有任何语义/拼音相近的包名时，才返回\"NONE\"；"
+            "不要轻易返回 NONE，也不要随便挑一个不相关的包。\n"
+            "6. 只返回一个完整包名，或\"NONE\"，不要任何解释或额外文字。\n\n"
+            "输出格式：仅输出包名或 NONE"
         )
         target = await self._post(
             messages=[
                 {"role": "user", "content": [{"type": "text", "text": prompt}]}
             ],
-            thinking=False,
+            thinking=True,
             scene="包名匹配",
         )
         if target == "NONE":

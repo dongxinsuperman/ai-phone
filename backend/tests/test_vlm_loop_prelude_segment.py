@@ -187,3 +187,100 @@ def test_detect_prelude_precondition_overrides_freeform_fulltext_noise():
     # 全文扫会因为「设置」「关于」「版本号」 vs「微信」频次（1:1:1:1）按
     # 出现位置抓到"设置"。新实现只看前置条件段，必须抽到"微信"。
     assert _detect_app_lifecycle_prelude(goal) == "微信"
+
+
+# ---------------------------------------------------------------------------
+# 放开（relaxed）：不带成对符号的自然语言也能触发起跑线
+# ---------------------------------------------------------------------------
+# 注意：放开路径不再抽干净 App 名，而是把触发段原文整段返回，交给联机模型结合
+# App Map + 当前平台 + 安装列表去识别目标 App 并解析包名。这里用通用占位名
+# "应用A"，不绑任何具体业务。
+def test_detect_prelude_relaxed_freeform_natural_language_triggers():
+    """放开：自由对话型、不带成对符号的重启/关闭+打开自然语言应触发，返回原文。"""
+    assert _detect_app_lifecycle_prelude("重新打开应用A") == "重新打开应用A"
+    assert (
+        _detect_app_lifecycle_prelude("关闭应用A，打开应用A") == "关闭应用A，打开应用A"
+    )
+    assert _detect_app_lifecycle_prelude("杀掉应用A后再打开") == "杀掉应用A后再打开"
+
+
+def test_detect_prelude_relaxed_structured_precondition_triggers():
+    """放开：结构化前置条件段里不带符号的自然语言重启，返回该段原文。"""
+    goal = (
+        "测试标题：登录主流程验证\n"
+        "前置条件：重新打开应用A\n"
+        "操作步骤：输入手机号、获取验证码、点击登录\n"
+        "预期结果：成功进入首页"
+    )
+    assert _detect_app_lifecycle_prelude(goal) == "重新打开应用A"
+
+
+def test_detect_prelude_relaxed_only_open_verb_without_wrapper_triggers():
+    """放开：仅"打开 + 不带符号 App 名"也触发（历史需成对符号，现放开）。"""
+    goal = (
+        "测试标题：X\n"
+        "前置条件：打开应用A\n"
+        "操作步骤：浏览首页\n"
+        "预期结果：正常展示"
+    )
+    assert _detect_app_lifecycle_prelude(goal) == "打开应用A"
+
+
+def test_detect_prelude_relaxed_still_none_without_any_action_keyword():
+    """放开只覆盖"有生命周期动作词"：纯状态描述（无杀/关/开/重启词）仍不触发。"""
+    goal = (
+        "测试标题：X\n"
+        "前置条件：已登录账号，停留在应用A首页\n"
+        "操作步骤：搜索商品\n"
+        "预期结果：展示结果"
+    )
+    assert _detect_app_lifecycle_prelude(goal) is None
+
+
+def test_detect_prelude_ignores_action_keyword_wrapped_in_parentheses():
+    """回归（E2E 实测发现）：前置条件里的"（杀进程）"是动作括注，不是 App 名。
+
+    "关闭主 App（杀进程）后重新打开主 App" 里，主 App 未成对包裹、而 (杀进程) 恰好
+    被成对符号（中文括号也在包裹集内）括住。若不剔除，档 1 会把"杀进程"当 App 名，
+    去匹配到"清理大师"等错误包。剔除动作词括注后应落到放开兜底，返回整段原文交给
+    模型结合 App Map 解析出真正的"主 App"。
+    """
+    goal = (
+        "测试标题：主 App 冷启动\n"
+        "前置条件：关闭主 App（杀进程）后重新打开主 App\n"
+        "操作步骤：确认进入首页\n"
+        "预期结果：首页正常"
+    )
+    result = _detect_app_lifecycle_prelude(goal)
+    assert result == "关闭主 App（杀进程）后重新打开主 App"
+    assert result != "杀进程"
+
+
+@pytest.mark.parametrize(
+    "precondition",
+    [
+        "关闭应用A（杀进程）后重新打开应用A",
+        "关闭应用A（强制停止）后重新打开应用A",
+        "关闭应用A(kill)后重新打开应用A",
+        # 审查发现的漏网变体：动作词括注带补充说明
+        "关闭应用A（杀进程，不清数据）后重新打开应用A",
+        "关闭应用A（强制停止 App）后重新打开应用A",
+    ],
+)
+def test_detect_prelude_action_parenthetical_with_extra_text_not_app_name(
+    precondition: str,
+):
+    """回归：动作词括注即使带补充说明（"（杀进程，不清数据）"/"（强制停止 App）"），
+    也应被识别为括注而非 App 名——过滤后落到放开兜底，返回整段原文交给模型。
+    """
+    goal = (
+        "测试标题：应用A 冷启动\n"
+        f"前置条件：{precondition}\n"
+        "操作步骤：确认进入首页\n"
+        "预期结果：首页正常"
+    )
+    result = _detect_app_lifecycle_prelude(goal)
+    assert result == precondition
+    # 不能把括注内容当成目标返回
+    for noise in ("杀进程", "强制停止", "kill", "不清数据"):
+        assert result != noise

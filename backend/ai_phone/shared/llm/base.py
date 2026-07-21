@@ -129,11 +129,23 @@ class BaseAssistant(Protocol):
         self,
         app_name: str,
         packages: List[str],
+        *,
+        function_map_context: Optional[str] = None,
+        platform: Optional[str] = None,
     ) -> str:
         """① 起跑线：根据应用名从已安装包列表里挑出最佳包名。
 
         返回包名字符串，若模型判定"列表里没有匹配项"则返回空串 ``""``
         （历史协议是返回 "NONE"，统一在适配层翻译成空串，对外表现一致）。
+
+        ``function_map_context`` / ``platform`` 均为**可选软参考**：
+        - ``function_map_context``：本次 Run 携带的 App Map 原文（只读）。若其中
+          明确给出目标 App 在当前平台的包名，实现方应优先采用这个更精准的包名；
+          若 map 为空 / 未包含该 App / 未明确规定包名，则**不得**从 map 硬读硬联
+          想，退回按 ``app_name`` 语义在 ``packages`` 中做模糊匹配。
+        - ``platform``：当前设备平台（``"android" / "ios" / "harmony"``），用于在
+          map 含多端包名时挑当前平台对应项。
+        两者都为 None 时行为等价于历史"仅凭 app_name 模糊匹配包名"。
         """
         ...
 

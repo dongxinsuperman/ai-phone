@@ -213,7 +213,9 @@ async def test_finished_action_returns_ok():
     runner = VLMRunner(
         run_id="R1",
         driver=driver,
-        goal="打开应用",
+        # 目标不含生命周期动作词（打开/进入/重启/关闭…），避免触发起跑线冷启动
+        # 前置注入而多出 close+open 两步——本用例只验证 finished 直接收敛。
+        goal="查看首页",
         emit=emit,
         vlm_client=vlm,
     )
@@ -520,7 +522,9 @@ async def test_run_start_and_finish_events_shape():
 # ---------------------------------------------------------------------------
 _STRUCT_GOAL = (
     "测试标题：结构化 case 审判通道守护\n"
-    "前置条件：进入应用\n"
+    # 前置条件刻意不含生命周期动作词（打开/进入/重启/关闭…），避免触发起跑线
+    # 冷启动前置注入而多出 close+open 两步，干扰审判通道的步号/裁决断言。
+    "前置条件：已在应用首页\n"
     "操作步骤：点击中部入口\n"
     "预期结果：屏幕显示目标页"
 )
