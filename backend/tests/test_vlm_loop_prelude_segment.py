@@ -190,18 +190,23 @@ def test_detect_prelude_precondition_overrides_freeform_fulltext_noise():
 
 
 # ---------------------------------------------------------------------------
-# 放开（relaxed）：不带成对符号的自然语言也能触发起跑线
+# 放开（relaxed）：仅结构化"前置条件"段启用；自由 goal 保持旧策略（需成对符号）
 # ---------------------------------------------------------------------------
-# 注意：放开路径不再抽干净 App 名，而是把触发段原文整段返回，交给联机模型结合
-# App Map + 当前平台 + 安装列表去识别目标 App 并解析包名。这里用通用占位名
+# 注意：结构化放开路径不再抽干净 App 名，而是把前置条件原文整段返回，交给联机模型
+# 结合 App Map + 当前平台 + 安装列表识别目标 App 并解析包名。这里用通用占位名
 # "应用A"，不绑任何具体业务。
-def test_detect_prelude_relaxed_freeform_natural_language_triggers():
-    """放开：自由对话型、不带成对符号的重启/关闭+打开自然语言应触发，返回原文。"""
-    assert _detect_app_lifecycle_prelude("重新打开应用A") == "重新打开应用A"
-    assert (
-        _detect_app_lifecycle_prelude("关闭应用A，打开应用A") == "关闭应用A，打开应用A"
-    )
-    assert _detect_app_lifecycle_prelude("杀掉应用A后再打开") == "杀掉应用A后再打开"
+def test_detect_prelude_freeform_requires_wrapped_symbols():
+    """自由 goal（非结构化）回到旧策略：不带成对符号的自然语言**不触发**，
+    交给 VLM；只有 App 名成对符号包裹时才走档1/档2 触发，返回干净 App 名。
+    """
+    # 不带符号 → 不触发（区别于结构化前置条件的放开）
+    assert _detect_app_lifecycle_prelude("重新打开应用A") is None
+    assert _detect_app_lifecycle_prelude("关闭应用A，打开应用A") is None
+    assert _detect_app_lifecycle_prelude("杀掉应用A后再打开") is None
+    assert _detect_app_lifecycle_prelude("在设置里打开蓝牙开关") is None
+    # 带成对符号 → 仍触发（旧行为保留），返回干净 App 名
+    assert _detect_app_lifecycle_prelude("杀掉「淘宝」重新打开做下单") == "淘宝"
+    assert _detect_app_lifecycle_prelude("打开「微信」找联系人") == "微信"
 
 
 def test_detect_prelude_relaxed_structured_precondition_triggers():

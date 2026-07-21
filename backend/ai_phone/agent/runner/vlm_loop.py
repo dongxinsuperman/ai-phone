@@ -455,15 +455,22 @@ def _classify_structured_local(
 #           退回 VLM 后，Claude/GPT CU 没有 open_app 抽象，走 home + 找
 #           图标的路径既慢又不靠谱，必须由起跑线兜底
 #
-#   放开兜底：只要出现任一生命周期动作词（杀/关/重启/重新打开/打开/进入/启动…）
-#         即触发，把原文整段交给联机模型结合 App Map + 当前平台 + 安装列表去
-#         识别目标 App 并解析包名——支持"重新打开应用A""杀掉应用A再进"这类
-#         **不带成对符号**的自然语言。原文没写清 App / 装的包里匹配不到 → 模型
-#         返回 NONE → 不执行任何关/开（"App 不明确就打不开"）。
+#   放开兜底（**仅结构化 case 的"前置条件"段启用**）：出现任一生命周期动作词
+#         （杀/关/重启/重新打开/打开/进入/启动…）即触发，把前置条件原文整段交给
+#         联机模型结合 App Map + 当前平台 + 安装列表识别目标 App 并解析包名——
+#         支持"重新打开主 App""关闭主 App（杀进程）后重新打开主 App"这类
+#         **不带成对符号**的自然语言。匹配不到 → 模型返回 NONE → 不执行关/开。
 #
-# 档 1 / 档 2 仍要求「应用名」成对包裹，是为了在能抽出干净 App 名时走精确路径
-# （日志友好、query 最短）；抽不到时才落到放开兜底把原文交给模型。这里支持常见
-# CJK / ASCII 包裹符号，但要求成对匹配，避免 【淘宝」 这类脏文本被误收。
+# 结构化 / 非结构化的分流（2026-07 决策）：
+#   - 结构化"前置条件"段：放开（档1/档2 + 放开兜底）。前置条件天然是环境准备语义。
+#   - 非结构化 / 自由 goal：**回到旧策略,只认档1/档2（必须成对符号）**，不做全文
+#     放开。自由 goal 的"打开/进入"常是任务中间步骤（如"在设置里打开蓝牙开关"），
+#     全文放开会误触发/误重启已在前台的 App；这类显式启动意图请用「App名」表达，
+#     其余交给 VLM。
+#
+# 档 1 / 档 2 要求「应用名」成对包裹：既是自由 goal 的唯一触发方式，也让结构化段
+# 能抽出干净 App 名走精确路径（日志友好、query 最短）。支持常见 CJK / ASCII 包裹
+# 符号，但要求成对匹配，避免 【淘宝」 这类脏文本被误收。
 _PRELUDE_KILL_KEYWORDS = (
     "杀进程", "杀掉", "关闭app", "关闭App", "kill", "关掉",
     "强制停止", "强制关闭", "强制退出",
@@ -596,46 +603,49 @@ def _detect_app_lifecycle_prelude(goal: str) -> Optional[str]:
       "Run 启动前的环境准备"，应该提前；同样的关键词在"操作步骤"段则是
       业务步骤的一部分（如"重启后验证配置持久化"），必须由 VLM 按顺序执
       行，不能被起跑线偷跑。
-    - 因此结构化 case：只在"前置条件"段里跑档1/档2 判定；前置条件段不命
-      中就直接放弃起跑线，**不再 fallback 到全文**，避免"操作步骤段被起
-      跑线误抓"。
-    - 自由对话 / 平铺型 goal（无任何段头标签）：退到"全文扫"兜底逻辑，
-      行为与重构前一致，保留对"杀掉淘宝再打开"、"打开「淘宝」搜耳机"这
-      类短句的支持。
+    - 因此结构化 case：只在"前置条件"段里判定；前置条件段不命中就直接放弃
+      起跑线，**不再 fallback 到全文**，避免"操作步骤段被起跑线误抓"。
+      前置条件段用 ``relaxed=True``（放开）：自然语言（无需成对符号）即可触发。
+    - 自由对话 / 平铺型 goal（无任何段头标签）：用 ``relaxed=False``（旧策略）——
+      只有 App 名被成对符号包裹（如「淘宝」）才触发档1/档2，其余交给 VLM。
+      自由 goal 的"打开/进入"常是任务中间步骤，全文放开会误触发/误重启，故保持严格。
 
-    返回的 app 名统一交给 _run_app_lifecycle_prelude 跑同一段 close_app +
-    open_app 流程——两档之间不再分支：close_app 对未运行的 App 等价于
-    no-op（驱动层 force-stop 报 "not running" 几十毫秒），重启对 case 行
-    为更确定（避免上次脏 session 残留）。
+    返回的目标描述统一交给 _run_app_lifecycle_prelude 跑同一段 close_app +
+    open_app 流程——close_app 对未运行的 App 等价于 no-op（驱动层 force-stop 报
+    "not running" 几十毫秒），重启对 case 行为更确定（避免上次脏 session 残留）。
     """
     segments = _split_goal_by_segments(goal)
     if segments:
-        # 结构化 case：只看"前置条件"段；没有该段或段内不命中 → 放弃起跑线
+        # 结构化 case：只看"前置条件"段；没有该段或段内不命中 → 放弃起跑线。
+        # 前置条件放开（relaxed=True）。
         precondition = segments.get("前置条件", "")
         if not precondition:
             return None
-        return _detect_in_text(precondition)
+        return _detect_in_text(precondition, relaxed=True)
 
-    # 自由对话 / 平铺型 goal：兜底走原"全文扫"逻辑
-    return _detect_in_text(goal)
+    # 自由对话 / 平铺型 goal：回到旧策略，必须成对符号才触发（relaxed=False）
+    return _detect_in_text(goal, relaxed=False)
 
 
-def _detect_in_text(text: str) -> Optional[str]:
+def _detect_in_text(text: str, *, relaxed: bool) -> Optional[str]:
     """在指定文本片段内判定是否触发起跑线；命中返回"交给模型解析的目标描述"。
 
-    分三层，前两层是"精确路径"（历史行为，保留），第三层是本次"放开"新增：
+    两条精确路径永远启用；"放开兜底"只在 ``relaxed=True`` 时启用：
 
     - 档 1（精确）：杀进程 AND 重新打开 AND 成对符号包裹 App 名 → 返回该 App 名。
     - 档 2（精确）：启动词紧贴成对符号包裹 App 名 → 返回该 App 名。
       以上两档能抽出干净 App 名时直接返回它，日志友好、语义最准。
-    - 放开兜底：只要文本里出现任一生命周期动作词（杀/关/重启/重新打开/打开/进入/
-      启动…），即触发起跑线，把**整段原文**返回，交给联机模型结合 App Map +
-      当前平台 + 安装列表去识别目标 App 并解析精确包名。
+    - 放开兜底（仅 relaxed=True）：出现任一生命周期动作词（杀/关/重启/重新打开/
+      打开/进入/启动…）即触发，把**整段原文**返回，交给联机模型结合 App Map +
+      当前平台 + 安装列表识别目标 App 并解析包名。
 
-    放开的设计取向：**触发层从宽，匹配层兜底**。原文里没写清哪个 App、或安装列表
-    里找不到语义相近的包名时，模型会返回 NONE → 上游不执行任何关/开（"App 不明确
-    就打不开"）。因此这里不再要求 App 名必须成对符号包裹，也不额外加"页面/开关"
-    这类收紧否决——匹配得上就开、匹配不上就不开，与历史模糊匹配语义一致。
+    ``relaxed`` 的分流（2026-07 决策）：
+    - **结构化 case 的"前置条件"段** → ``relaxed=True``。前置条件天然是"环境准备"
+      语义，"打开/重启 X"就是"从 X 启动"，放开到自然语言（无需符号）是安全的。
+    - **非结构化 / 自由对话型 goal** → ``relaxed=False``（回到旧策略）。自由 goal 是
+      一整条任务，"打开/进入"常是**中间步骤**（如"在设置里打开蓝牙开关"），全文放开
+      会把中间步骤误当冷启动、甚至误重启已在前台的 App。因此自由 goal 只认"成对符号
+      包裹 App 名"这种**显式启动意图**，其余一律不走起跑线，交给 VLM。
     """
     text_compact = text.replace(" ", "")
     lower_compact = text_compact.lower()
@@ -643,9 +653,6 @@ def _detect_in_text(text: str) -> Optional[str]:
     has_kill = any(k.replace(" ", "") in text_compact for k in _PRELUDE_KILL_KEYWORDS)
     has_restart = any(
         k.replace(" ", "") in text_compact for k in _PRELUDE_RESTART_KEYWORDS
-    )
-    has_open = any(
-        k.replace(" ", "").lower() in lower_compact for k in _PRELUDE_OPEN_KEYWORDS
     )
 
     # 档 1（精确）：杀进程 AND 重新打开 AND 「App名」
@@ -670,10 +677,15 @@ def _detect_in_text(text: str) -> Optional[str]:
         # 多次出现取最高频，与档 1 同语义
         return Counter(tight_matches).most_common(1)[0][0]
 
-    # 放开兜底：出现任一生命周期动作词即触发，把原文整段交给模型解析目标 App。
-    if has_kill or has_restart or has_open:
-        stripped = text.strip()
-        return stripped or None
+    # 放开兜底：仅结构化前置条件启用（relaxed=True）。自由 goal 保持严格，
+    # 不做全文放开，避免把中间步骤"打开X"误当冷启动。
+    if relaxed:
+        has_open = any(
+            k.replace(" ", "").lower() in lower_compact for k in _PRELUDE_OPEN_KEYWORDS
+        )
+        if has_kill or has_restart or has_open:
+            stripped = text.strip()
+            return stripped or None
 
     return None
 
@@ -2920,14 +2932,16 @@ class VLMRunner:
                 self._last_tail_bytes = tail
             await self._emit_event(make_event(EVT_STEP_END, self.run_id, step=step))
 
-        # 给 VLM 注入一条系统提示，避免它看到 App 主页又想重做一遍 close+open。
-        # 这里不回填 app_name：放开路径下它可能是一整段前置条件原文，写进提示既冗长
-        # 又可能反向误导 VLM，用中性的"目标 App"表述即可。
-        self.vlm.add_hint(
-            "【系统提示】起跑线动作（关闭并重新打开目标 App）已由系统在第 1-2 步"
-            "自动执行完毕，请直接从下一个未完成步骤开始（通常是登录判断或进入主页 Tab），"
-            "不要再尝试 close_app / open_app。"
-        )
+        # 仅当**确实解析到目标包名并执行了** close+open 时，才提示 VLM"起跑线已做过"，
+        # 避免"没解析到包名（target 为空、两步都跳过）却谎报已执行"误导 VLM。
+        # 不回填 app_name：放开路径下它可能是一整段前置条件原文，写进提示既冗长又可能
+        # 反向误导，用中性的"目标 App"表述即可。
+        if target:
+            self.vlm.add_hint(
+                "【系统提示】起跑线动作（关闭并重新打开目标 App）已由系统在第 1-2 步"
+                "自动执行完毕，请直接从下一个未完成步骤开始（通常是登录判断或进入主页 Tab），"
+                "不要再尝试 close_app / open_app。"
+            )
 
     async def _match_package_name(self, app_name: str, packages: List[str]) -> str:
         """① 起跑线 · 包名匹配：从设备包名列表里挑出与 ``app_name`` 最匹配的包名。
