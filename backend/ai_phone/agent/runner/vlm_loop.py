@@ -30,7 +30,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from loguru import logger
 
 from ai_phone.agent.async_utils import run_blocking
-from ai_phone.agent.drivers.base import BaseDriver
+from ai_phone.agent.drivers.base import AlbumSaveResult, BaseDriver
 from ai_phone.config import get_settings
 from ai_phone.shared import actions as A
 from ai_phone.shared.llm import (
@@ -1873,6 +1873,9 @@ class VLMRunner:
                         step=step,
                     )
 
+        elif action == A.ACTION_TAKE_SCREENSHOT:
+            await self._handle_take_screenshot(step=step)
+
         else:
             # 未知动作：注入修正提示供下一轮 VLM 消费
             # 提示文本按 backend 分家——豆包动作集和 Claude/GPT 的 computer
@@ -1897,6 +1900,65 @@ class VLMRunner:
         if settle_ms > 0:
             await asyncio.sleep(settle_ms / 1000.0)
         return {"action": action, "elapsed_ms": elapsed_ms, "unknown": False}
+
+    async def _handle_take_screenshot(self, *, step: int) -> None:
+        """执行 take_screenshot：按平台保存到系统相册，结果结构化回馈 VLM。
+
+        关键（方案 §3.4）：截图成功后画面通常不变，Runner **不能**靠"前后截图
+        是否变化"判断成败——完全以 driver 返回的 :class:`AlbumSaveResult` 为准，
+        并把结果作为 hint 喂给下一轮 VLM，让它据此决定继续或 finished；绝不因
+        画面没变而自动判失败或提前替 VLM 结束任务。
+
+        三种结果分明（方案 §9 兜底规则）：
+        - ok：明确成功，提示 VLM 无需再点系统截图按钮。
+        - supported=False：平台/版本未实现，明确"未支持"，劝阻反复尝试。
+        - 其余：真实失败，如实回报原因。
+        """
+        await self._log(1, "截图保存相册", "保存当前屏幕到系统相册", step=step)
+        try:
+            result: AlbumSaveResult = await run_blocking(
+                self.driver.save_screenshot_to_album
+            )
+        except NotImplementedError as exc:
+            result = AlbumSaveResult(
+                ok=False,
+                platform=getattr(self.driver, "platform", "?"),
+                supported=False,
+                error=str(exc),
+            )
+
+        if result.ok:
+            await self._log(
+                1, "截图已保存",
+                f"平台={result.platform} 文件={result.file_path} 方式={result.method}",
+                step=step,
+            )
+            self.vlm.add_hint(
+                "[系统提示] 已成功截图并保存到设备相册"
+                f"（{result.file_path or '已入库'}）。无需再通过点击系统截图按钮"
+                "或进入相册确认，可直接继续后续步骤或输出 finished。"
+            )
+        elif not result.supported:
+            await self._log(
+                2, "截图未支持",
+                f"平台={result.platform} 暂未实现相册保存：{result.error}",
+                step=step,
+            )
+            self.vlm.add_hint(
+                f"[系统提示] 当前设备平台（{result.platform}）暂不支持"
+                f"“截图保存到相册”：{result.error}。请不要反复尝试 take_screenshot，"
+                "按任务实际情况继续或输出 assert_fail 说明该能力不可用。"
+            )
+        else:
+            await self._log(
+                3, "截图保存失败",
+                f"平台={result.platform} 原因：{result.error}",
+                step=step,
+            )
+            self.vlm.add_hint(
+                f"[系统提示] 截图保存到相册失败：{result.error}。"
+                "可重试一次；若仍失败请勿反复重试。"
+            )
 
     def _decide_wait_seconds(self, parsed: A.ParsedAction) -> Dict[str, Any]:
         """对齐 Groovy wait 三档逻辑。"""

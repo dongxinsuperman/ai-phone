@@ -817,6 +817,15 @@ class V3ReplayRunner:
                 )
                 await self.dispatcher.execute(execution_action)
                 executed += 1
+                # take_screenshot 非致命失败：写进 Run 时间线（不杀 case），与首跑
+                # 可见性一致，避免 UI 只显示"完成"。用 level=2（警告/黄色）而非默认
+                # level=1，让"按等级判错/统计"的前端也能抓到，不被当普通信息漏掉。
+                if self.dispatcher.last_screenshot_error:
+                    await self._log(
+                        2,
+                        "缓存截图",
+                        f"保存相册失败（非致命，继续）：{self.dispatcher.last_screenshot_error}",
+                    )
                 # 实际执行细节统一用 `缓存执行` 标题（点击/输入/滑动/等待）。
                 await self._log_v3_stage(
                     index,
@@ -2036,6 +2045,8 @@ def _v3_action_stage_title(action: Dict[str, Any]) -> str:
         A.ACTION_KEY_EVENT,
     ):
         return "应用"
+    if action_type == A.ACTION_TAKE_SCREENSHOT:
+        return "截图"
     return "动作"
 
 
@@ -2070,6 +2081,8 @@ def _v3_executed_action_message(action: Dict[str, Any]) -> str:
         return "返回"
     if action_type == A.ACTION_KEY_EVENT:
         return f"按键 keycode={action.get('keycode')}"
+    if action_type == A.ACTION_TAKE_SCREENSHOT:
+        return "截图并保存到相册"
     return _format_v3_action_log(action)
 
 

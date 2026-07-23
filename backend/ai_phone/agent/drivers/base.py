@@ -45,6 +45,44 @@ class DeviceInfo:
         return d
 
 
+@dataclass
+class AlbumSaveResult:
+    """``save_screenshot_to_album`` 的结构化结果。
+
+    设计原则（见方案 §3.4 / §9「明确的失败与兜底规则」）：截图是"有副作用、
+    但画面可不变"的动作，Runner 不能靠前后截图变化判断成败，必须由 driver
+    显式返回结果。任何"没真正写进系统相册"的情况都要如实返回 ok=False，
+    绝不把"图片只留在 Agent 电脑"当成功。
+
+    - ok: 是否已成功保存到设备系统相册
+    - platform: 执行平台（android / ios / harmony）
+    - supported: 该平台/版本是否实现了相册保存；False = 明确未支持（非报错）
+    - file_path: 设备侧文件路径（若有）
+    - asset_id: 相册资产标识（若平台能返回）
+    - method: 实际走通的实现路径（fallback 链哪一档），便于回溯排查
+    - error: 失败/未支持原因
+    """
+
+    ok: bool
+    platform: str
+    supported: bool = True
+    file_path: Optional[str] = None
+    asset_id: Optional[str] = None
+    method: Optional[str] = None
+    error: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "platform": self.platform,
+            "supported": self.supported,
+            "file_path": self.file_path,
+            "asset_id": self.asset_id,
+            "method": self.method,
+            "error": self.error,
+        }
+
+
 class BaseDriver(ABC):
     """统一的真机操控抽象。
 
@@ -90,6 +128,27 @@ class BaseDriver(ABC):
 
         VLM 输入与 WS 推画面都走这条路，省一次解码编码。
         """
+
+    # ------------------------------------------------------------------
+    # 截图保存到设备系统相册（业务动作 take_screenshot 的落点）
+    # ------------------------------------------------------------------
+    def save_screenshot_to_album(self) -> "AlbumSaveResult":
+        """抓取当前屏幕并保存到设备"系统相册"，返回结构化结果。
+
+        与 ``screenshot_png/jpeg`` 的区别：那两个只把图像字节拿回 Agent（供
+        VLM / 镜像 / 报告），本方法要让图片成为**设备相册里的媒体资产**——
+        这是两个不同能力（见方案 §5）。
+
+        **刻意不设为 @abstractmethod**：三端相册写入的成熟度差异很大
+        （Android 可先落地；iOS 需 PhotoKit Helper App；Harmony 需 Media
+        Library 能力），设为抽象会逼迫尚未实现的平台被迫改造甚至无法实例化。
+        默认在此明确抛 ``NotImplementedError``；各平台子类按需覆盖：能做的
+        返回 ``ok=True`` 的结果，暂不能做的覆盖为返回 ``supported=False`` 的
+        结果（明确"未支持"而非报错、更不假装成功）。
+        """
+        raise NotImplementedError(
+            f"平台 {getattr(self, 'platform', '?')} 未实现 save_screenshot_to_album"
+        )
 
     # ------------------------------------------------------------------
     # 触控

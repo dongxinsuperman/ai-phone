@@ -97,6 +97,35 @@ def test_platform_actions_are_available_for_overseas_backends():
     assert close_app.name == "com.yangcong345.android.phone"
 
 
+def test_take_screenshot_platform_action_replays_for_overseas_backends():
+    # take_screenshot 无 app_name，独立识别；不能因参数形状不同被漏掉
+    for backend in ("claude_cu", "gpt_cu"):
+        shot = parse_cache_action(
+            "platform.take_screenshot(save_to_album=true)",
+            backend=backend,
+        )
+        assert shot.action == A.ACTION_TAKE_SCREENSHOT
+        assert shot.save_to_album is True
+        assert shot.coord_space == "absolute"
+
+    # 显式 false 也要如实解析
+    shot_false = parse_cache_action(
+        "platform.take_screenshot(save_to_album=false)",
+        backend="claude_cu",
+    )
+    assert shot_false.action == A.ACTION_TAKE_SCREENSHOT
+    assert shot_false.save_to_album is False
+
+
+def test_take_screenshot_does_not_regress_app_name_platform_actions():
+    # 回归护栏：新增 take_screenshot 识别不得影响 open_app/close_app 的 app_name 解析
+    open_app = parse_cache_action(
+        "platform.open_app(app_name='微信')", backend="claude_cu"
+    )
+    assert open_app.action == A.ACTION_OPEN_APP
+    assert open_app.name == "微信"
+
+
 def test_doubao_cache_action_path_stays_on_project_dsl_parser():
     action = parse_cache_action(
         "click(point='<point>500 250</point>')",

@@ -44,7 +44,12 @@ import httpx
 from loguru import logger
 
 from ai_phone.config import get_settings
-from ai_phone.shared.actions import ParsedAction, X11_TO_ANDROID_KEYCODE
+from ai_phone.shared.actions import (
+    ACTION_TAKE_SCREENSHOT,
+    ParsedAction,
+    X11_TO_ANDROID_KEYCODE,
+    parse_action,
+)
 from ai_phone.shared.llm.base import Decision, TokenCounter
 
 
@@ -89,6 +94,14 @@ _PLATFORM_ACTION_RE = re.compile(
 # 当前白名单只放 open_app / close_app。新增动作时同步扩白名单 + 在 prompt
 # 文档里添加示例 + runner do_action 加 dispatch 分支（已有的复用即可）。
 _PLATFORM_ACTION_WHITELIST = frozenset({"open_app", "close_app"})
+
+# take_screenshot 是无 app_name 的语义化平台动作，参数形状（save_to_album=true）
+# 与 open_app/close_app 完全不同，**不能**塞进上面的 app_name 专用正则。这里用
+# 独立正则单独识别，保证 open_app/close_app 的解析路径一个字节都不动（零回归）。
+_PLATFORM_TAKE_SCREENSHOT_RE = re.compile(
+    r"^\s*PLATFORM_ACTION\s*[:：]\s*(take_screenshot\s*\([^)]*\))\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 class ClaudeComputerUseClient:
@@ -827,9 +840,12 @@ def _parse_claude_response(
             )
 
     # thought = thinking 块（如有） + 去掉所有协议关键字行的 text 块
-    cleaned_text = _PLATFORM_ACTION_RE.sub(
+    cleaned_text = _PLATFORM_TAKE_SCREENSHOT_RE.sub(
         "",
-        _ASSERT_FAIL_RE.sub("", _FINISHED_RE.sub("", full_text)),
+        _PLATFORM_ACTION_RE.sub(
+            "",
+            _ASSERT_FAIL_RE.sub("", _FINISHED_RE.sub("", full_text)),
+        ),
     ).strip()
     thought_pieces = [p for p in (thinking_parts + [cleaned_text]) if p]
     thought = "\n".join(thought_pieces)
@@ -864,6 +880,18 @@ def _extract_platform_actions(full_text: str) -> List[ParsedAction]:
                 coord_space="absolute",
             )
         )
+    # take_screenshot：独立正则识别（无 app_name），用 parse_action 解出 save_to_album。
+    # raw 归一为 platform.take_screenshot(save_to_album=...) 供缓存回放识别。
+    for match in _PLATFORM_TAKE_SCREENSHOT_RE.finditer(full_text):
+        parsed = parse_action(match.group(1))
+        if parsed.action != ACTION_TAKE_SCREENSHOT:
+            continue
+        parsed.coord_space = "absolute"
+        parsed.raw = (
+            f"platform.{ACTION_TAKE_SCREENSHOT}"
+            f"(save_to_album={'true' if parsed.save_to_album else 'false'})"
+        )
+        out.append(parsed)
     return out
 
 

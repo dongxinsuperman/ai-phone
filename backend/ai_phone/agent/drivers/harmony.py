@@ -36,13 +36,24 @@ from loguru import logger
 
 from ai_phone.config import get_settings
 
-from .base import BaseDriver, DeviceInfo
+from .base import AlbumSaveResult, BaseDriver, DeviceInfo
 from .hdc import (
     HdcError,
     hdc_available,
     hdc_list_targets,
     hdc_shell,
 )
+
+# 鸿蒙系统截图触发：模拟"控制中心截图按钮"（trigger_type=control-panel），由系统
+# 截图服务 com.huawei.hmos.screenshot（持 CAPTURE_SCREEN + WRITE_IMAGEVIDEO 权限）
+# 完成截图并自动存入图库。真机实测 ALN-AL00 / HarmonyOS 6.1.0 可用（方案 §11 Step 5）。
+_HM_SCREENSHOT_CMD = (
+    "aa start -b com.huawei.hmos.screenshot "
+    "-a com.huawei.hmos.screenshot.ServiceExtAbility -m phone "
+    "-A com.ohos.systemui.action.TOGGLE --ps trigger_type control-panel"
+)
+# aa start 是异步的，留点时间让系统截图服务完成截图+入库
+_HM_SCREENSHOT_SETTLE_SEC = 2.0
 
 # hmdriver2 是可选 extras，没装不应让本模块 import 失败；真正用到才抛。
 try:  # pragma: no cover
@@ -636,6 +647,47 @@ class HarmonyDriver(BaseDriver):
         except Exception as exc:  # noqa: BLE001
             logger.warning("harmony screenshot_jpeg 重压失败，返原始 JPEG: {}", exc)
             return raw
+
+    def save_screenshot_to_album(self) -> AlbumSaveResult:
+        """HarmonyOS：aa start 触发系统截图服务（等同控制中心截图按钮），系统自动存入图库。
+
+        为什么走这条（已真机逐一实测，见方案 §11 Step 5）：
+        - ``snapshot_display`` 是开发者截图落文件，不进图库；``mediatool`` 只有
+          recv/query/delete（**不能**写入图库）；HarmonyOS NEXT 沙箱下 shell 也
+          访问不到媒体目录。丢文件进不了图库（同 iOS）。
+        - 系统截图服务 ``com.huawei.hmos.screenshot`` 持 ``CAPTURE_SCREEN`` +
+          ``WRITE_IMAGEVIDEO`` 权限；用其 ``ServiceExtAbility`` + TOGGLE 动作、
+          ``trigger_type=control-panel`` 触发（等价点控制中心的截图按钮），由系统
+          完成截图并自动入库。与 iOS 借 Siri、Android 用 screencap 同属"借系统能力"。
+
+        成功判据与局限：以 ``aa start`` 返回 "start ability successfully" 为成功；
+        能否真正落盘依赖系统截图服务（HarmonyOS 侧无法回读图库做二次确认）。
+        """
+        try:
+            out = (
+                hdc_shell(
+                    self.serial, _HM_SCREENSHOT_CMD, timeout=10.0, check=False
+                )
+                or ""
+            ).strip()
+        except Exception as exc:  # noqa: BLE001
+            return AlbumSaveResult(
+                ok=False, platform=self.platform, supported=True,
+                method="aa_start_screenshot",
+                error=f"触发系统截图失败：{exc}",
+            )
+        if "successfully" not in out.lower():
+            return AlbumSaveResult(
+                ok=False, platform=self.platform, supported=True,
+                method="aa_start_screenshot",
+                error=f"系统截图服务未成功启动：{out or '(空输出)'}",
+            )
+        # aa start 异步，留时间让系统完成截图+入库
+        time.sleep(_HM_SCREENSHOT_SETTLE_SEC)
+        return AlbumSaveResult(
+            ok=True, platform=self.platform,
+            method="aa_start(control-panel)",
+        )
 
     # ------------------------------------------------------------------
     # 触控（全部经 _call_with_reconnect，BrokenPipe 时自动重连重试）

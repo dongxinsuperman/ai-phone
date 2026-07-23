@@ -399,6 +399,22 @@ class WdaClient:
             {"name": name},
         )
 
+    @_auto_recover_session
+    def siri_activate(self, text: str) -> None:
+        """``POST /wda/siri/activate``：以文本唤起 Siri 并下达指令。
+
+        底层是 XCUITest 的 ``XCUISiriService.activate(voiceRecognitionText:)`` ——
+        把 ``text`` 当作"识别到的语音"注入，等价于对 Siri 说了一句话，但不用真发声、
+        不用"嘿 Siri"。Siri 是系统级代理，有权执行"截屏"等系统动作（截图由
+        SpringBoard 完成并自动存入「照片」）。用于 :meth:`IOSDriver.save_screenshot_to_album`。
+        """
+        sid = self._ensure_session()
+        self._request(
+            "POST",
+            f"/session/{sid}/wda/siri/activate",
+            {"text": text},
+        )
+
     # ------------------------------------------------------------------
     # 截图（WDA 自带，独立于 lockdown / DVT 通道）
     # ------------------------------------------------------------------

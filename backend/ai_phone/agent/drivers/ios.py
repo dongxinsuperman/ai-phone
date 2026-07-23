@@ -33,13 +33,20 @@ from PIL import Image
 from loguru import logger
 
 from ...config import get_settings
-from .base import BaseDriver, DeviceInfo
+from .base import AlbumSaveResult, BaseDriver, DeviceInfo
 from .ios_wda_launcher import IosWdaXcodeLauncher, _developer_app_trust_hint, _probe_wda_http
 from .wda_client import WdaClient, WdaError
 
 
 # WDA 在 iOS 内部监听的端口
 _WDA_DEVICE_PORT = 8100
+
+# 唤起 Siri 执行截图的短语（中文设备实测 iOS 26.5.2 可用）。Siri 会把它当作
+# 语音指令执行"截屏"这一系统动作，由 SpringBoard 完成截图并自动存入「照片」。
+_SIRI_SCREENSHOT_PHRASE = "截屏"
+# Siri 处理是异步的：触发后留一点时间让它完成截图，避免上层立刻改变画面导致
+# 截到的是下一屏。实测 2~3s 足够。
+_SIRI_SETTLE_SEC = 2.5
 
 _IOS_SYSTEM_APP_BUNDLE_FALLBACKS: Tuple[str, ...] = (
     "com.apple.Preferences",
@@ -596,6 +603,42 @@ class IosDriver(BaseDriver):
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=quality, optimize=True)
             return buf.getvalue()
+
+    def save_screenshot_to_album(self) -> AlbumSaveResult:
+        """iOS：唤起 Siri 执行"截屏"，由系统完成截图并自动存入「照片」。
+
+        为什么走 Siri（已真机逐一排除其它路径，见方案 §11 Step 2/3/4）：
+        - 非越狱 iOS **没有**"把文件塞进照片库"的开发者 API：AFC 推 DCIM 实测
+          不入库；WDA `/screenshot` / idevicescreenshot 拿到的是不经 SpringBoard
+          的开发者截图，也不进照片。
+        - 辅助触控悬浮球是**独立系统窗口**，WDA 元素树（仅当前 App）看不到、无法
+          定位（实测 source 里搜不到）。
+        - Siri 是**系统级代理**，有权执行"截屏"这一系统动作（等同按硬件键），截图
+          由 SpringBoard 完成并自动存进「照片」。WDA 的 ``siri/activate`` 能以文本
+          直接唤起并下达指令 —— 零 App、无需定位任何元素、无需硬件键；全程我们不碰
+          照片库，由 Siri/SpringBoard 用系统权限代劳。
+
+        前置：设备已开启 Siri（设置 → Siri 与搜索）。短语默认中文"截屏"，实测
+        iOS 26.5.2 可用。
+
+        成功判据与局限：以"``siri/activate`` 调用无错误"为成功；能否真正落盘取决于
+        设备端 Siri 已启用且能识别该短语（iOS 侧无法回读照片库做二次确认），method
+        里标注依赖项便于回溯。
+        """
+        try:
+            self._wda.siri_activate(_SIRI_SCREENSHOT_PHRASE)
+        except Exception as exc:  # noqa: BLE001
+            return AlbumSaveResult(
+                ok=False, platform=self.platform, supported=True,
+                method="siri_activate",
+                error=f"唤起 Siri 截屏失败：{exc}（请确认设备已开启 Siri）",
+            )
+        # Siri 异步处理，留时间让它完成截图，避免上层立刻改变画面
+        time.sleep(_SIRI_SETTLE_SEC)
+        return AlbumSaveResult(
+            ok=True, platform=self.platform,
+            method=f"siri_activate('{_SIRI_SCREENSHOT_PHRASE}')",
+        )
 
     # ------------------------------------------------------------------
     # 触控（注意 WDA 接口要 *点*，我们对外是 *像素*，要除回 scale）

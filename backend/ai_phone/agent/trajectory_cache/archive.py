@@ -586,6 +586,10 @@ def _action_from_parsed_raw(
         if parsed.keycode is None:
             return None
         return {**base, "type": action, "keycode": int(parsed.keycode)}
+    if action == A.ACTION_TAKE_SCREENSHOT:
+        # 无坐标/无文本的效果动作；仅携带 save_to_album 意图，回放时按原步骤
+        # 再次保存一张新截图（方案 §9：每次回放存一张新图是预期行为）。
+        return {**base, "type": action, "save_to_album": bool(parsed.save_to_album)}
     return None
 
 

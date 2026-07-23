@@ -23,6 +23,12 @@ _PLATFORM_RAW_ACTION_RE = re.compile(
     r"^\s*platform\.(\w+)\(\s*app_name\s*=\s*['\"]([^'\"]+)['\"]\s*\)\s*$",
     re.IGNORECASE | re.DOTALL,
 )
+# take_screenshot 的 raw 形是 platform.take_screenshot(save_to_album=...)，无 app_name，
+# 独立识别（不走上面的 app_name 专用正则），保证 open_app/close_app 回放零改动。
+_PLATFORM_TAKE_SCREENSHOT_RAW_RE = re.compile(
+    r"^\s*platform\.take_screenshot\s*\(([^)]*)\)\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def parse_cache_action(raw_action: str, *, backend: str) -> A.ParsedAction:
@@ -219,6 +225,13 @@ def _parse_computer_raw(raw_action: str) -> Optional[tuple[str, Dict[str, Any]]]
 
 
 def _parse_platform_action(raw_action: str) -> Optional[A.ParsedAction]:
+    # take_screenshot：无 app_name，先独立识别（用 parse_action 解出 save_to_album）
+    ts = _PLATFORM_TAKE_SCREENSHOT_RAW_RE.match(raw_action or "")
+    if ts is not None:
+        parsed = A.parse_action(f"take_screenshot({ts.group(1)})")
+        parsed.coord_space = "absolute"
+        parsed.raw = (raw_action or "").strip()
+        return parsed
     match = _PLATFORM_RAW_ACTION_RE.match(raw_action or "")
     if match is None:
         return None

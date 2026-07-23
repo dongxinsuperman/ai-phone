@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
 
 from PIL import Image
+from loguru import logger
 
 from ai_phone.agent.async_utils import run_blocking
 from ai_phone.agent.drivers.base import BaseDriver
@@ -104,8 +105,12 @@ class ReplayActionDispatcher:
 
     def __init__(self, driver: BaseDriver):
         self.driver = driver
+        # take_screenshot 非致命失败时在此暂存原因，供调用方（回放循环）读取后
+        # 写进 Run 时间线；每次 execute() 开头清空，读"最近一次动作"的结果。
+        self.last_screenshot_error: Optional[str] = None
 
     async def execute(self, action: Dict[str, Any]) -> None:
+        self.last_screenshot_error = None
         action_type = str(action.get("type") or "")
         if action_type == A.ACTION_CLICK:
             point = _point(action, "point")
@@ -166,6 +171,27 @@ class ReplayActionDispatcher:
             if keycode is None:
                 raise ReplayActionError("missing keycode")
             await run_blocking(self.driver.press_keycode, int(keycode))
+            return
+        if action_type == A.ACTION_TAKE_SCREENSHOT:
+            # 回放同样真正保存一张新截图，但 take_screenshot 与首跑保持**同一语义**：
+            # 失败/未支持只记日志、**不杀 case**（与 vlm_loop._handle_take_screenshot 一致）。
+            # 早期版本这里 raise ReplayActionError 会让命中缓存的 case 直接失败，造成
+            # "首跑非致命、回放致命"的行为反转，已改为非致命 best-effort。
+            try:
+                result = await run_blocking(self.driver.save_screenshot_to_album)
+                if not getattr(result, "ok", False):
+                    self.last_screenshot_error = (
+                        getattr(result, "error", "") or "unknown"
+                    )
+            except NotImplementedError as exc:
+                self.last_screenshot_error = f"未实现：{exc}"
+            except Exception as exc:  # noqa: BLE001
+                self.last_screenshot_error = f"异常：{exc}"
+            if self.last_screenshot_error:
+                logger.warning(
+                    "回放 take_screenshot 失败（非致命，继续）：{}",
+                    self.last_screenshot_error,
+                )
             return
         raise ReplayActionError(f"unsupported replay action type: {action_type!r}")
 
@@ -423,6 +449,16 @@ class ReplayRunner:
                 )
                 await self.dispatcher.execute(execution_action)
                 executed += 1
+                # take_screenshot 非致命失败：写进 Run 时间线（不杀 case），与首跑
+                # _handle_take_screenshot 的可见性一致，避免 UI 只显示"完成"。
+                # 用 level=2（警告/黄色）而非默认 level=1，让"按等级判错/统计"的前端
+                # 也能抓到，不被当普通信息漏掉。
+                if self.dispatcher.last_screenshot_error:
+                    await self._log(
+                        2,
+                        "缓存截图",
+                        f"保存相册失败（非致命，继续）：{self.dispatcher.last_screenshot_error}",
+                    )
                 # 实际执行细节（点击坐标 / 输入内容 / 滑动方向）统一用 `缓存执行`
                 # 标题，message 里写动词 + 参数（如"点击坐标 {x:584,y:1020}"）。
                 await self._log_replay_stage(
@@ -1981,6 +2017,8 @@ def _action_stage_title(action: Dict[str, Any]) -> str:
         A.ACTION_KEY_EVENT,
     ):
         return "应用"
+    if action_type == A.ACTION_TAKE_SCREENSHOT:
+        return "截图"
     return "动作"
 
 
@@ -2015,6 +2053,8 @@ def _executed_action_message(index: int, action: Dict[str, Any]) -> str:
         return "返回"
     if action_type == A.ACTION_KEY_EVENT:
         return f"按键 keycode={action.get('keycode')}"
+    if action_type == A.ACTION_TAKE_SCREENSHOT:
+        return "截图并保存到相册"
     return _format_action_log(action).removesuffix(" 已执行")
 
 

@@ -34,6 +34,11 @@ ACTION_KEY_EVENT = "key_event"
 ACTION_WAIT = "wait"
 ACTION_FINISHED = "finished"
 ACTION_ASSERT_FAIL = "assert_fail"
+# 业务动作扩展：语义化截图并保存到设备系统相册。模型只输出该动作，
+# 由 Runner 按当前设备平台分发到各自实现（Android=ADB、Harmony=HDC、
+# iOS=WDA/iOS 侧能力）；模型不感知平台命令差异。见
+# docs-internal/复用VLM动作通道的命令与截图方案.md。
+ACTION_TAKE_SCREENSHOT = "take_screenshot"
 
 KNOWN_ACTIONS = frozenset(
     {
@@ -49,6 +54,7 @@ KNOWN_ACTIONS = frozenset(
         ACTION_PRESS_BACK,
         ACTION_KEY_EVENT,
         ACTION_WAIT,
+        ACTION_TAKE_SCREENSHOT,
         ACTION_FINISHED,
         ACTION_ASSERT_FAIL,
     }
@@ -115,6 +121,8 @@ _SECONDS_KV_RE = re.compile(r"seconds\s*=\s*['\"]?(\d+)['\"]?")
 # 各自字段（scroll_amount / scroll_y）在 main/ 里换算，这里只负责豆包。
 _AMOUNT_KV_RE = re.compile(r"amount\s*=\s*['\"]?(\d+)['\"]?")
 _SECONDS_BARE_RE = re.compile(r"^\s*['\"]?(\d+)['\"]?\s*$")
+# take_screenshot(save_to_album=true)：容忍带/不带引号、true/false/1/0。
+_SAVE_TO_ALBUM_RE = re.compile(r"save_to_album\s*=\s*['\"]?(\w+)['\"]?", re.IGNORECASE)
 
 _THOUGHT_RE = re.compile(r"Thought:\s*(.+?)(?=\nAction:|$)", re.DOTALL)
 # Action 前缀容忍模型轻微格式抖动：英文/中文标签 + 半角/全角冒号。
@@ -176,6 +184,9 @@ class ParsedAction:
     # ``scroll_amount`` 字段直接透传；OpenAI ``scroll_x/scroll_y`` 像素值
     # 在 main/gpt_cu.py 按"每 100px ≈ 1 次"换算。
     scroll_amount: int = 1
+    # take_screenshot 专用：是否保存到系统相册。本期恒为 True（语义即"截图存相册"），
+    # 保留字段是为了让缓存序列化/回放能显式携带该意图，未来若支持"只截不存"可复用。
+    save_to_album: bool = True
     raw: str = ""
     extra: Dict[str, Any] = field(default_factory=dict)
     coord_space: str = "normalized"
@@ -200,6 +211,9 @@ class ParsedAction:
         # scroll_amount 仅在 >1 时显式输出，默认值不污染日志
         if self.scroll_amount and self.scroll_amount > 1:
             out["scroll_amount"] = self.scroll_amount
+        # take_screenshot 显式携带 save_to_album，供缓存归档/回放还原意图
+        if self.action == ACTION_TAKE_SCREENSHOT:
+            out["save_to_album"] = bool(self.save_to_album)
         # coord_space 仅在非默认值时显式输出，避免污染豆包系日志/快照
         if self.coord_space and self.coord_space != "normalized":
             out["coord_space"] = self.coord_space
@@ -428,6 +442,13 @@ def parse_action(action_str: str) -> ParsedAction:
             bm = _SECONDS_BARE_RE.search(params_str)
             if bm:
                 parsed.seconds = int(bm.group(1))
+        return parsed
+
+    if fn_name == ACTION_TAKE_SCREENSHOT:
+        # save_to_album 缺省视为 True（动作语义即"截图存相册"）；显式给 false/0 则关闭。
+        m = _SAVE_TO_ALBUM_RE.search(params_str)
+        if m:
+            parsed.save_to_album = m.group(1).strip().lower() in ("true", "1", "yes")
         return parsed
 
     if fn_name in (ACTION_FINISHED, ACTION_ASSERT_FAIL):

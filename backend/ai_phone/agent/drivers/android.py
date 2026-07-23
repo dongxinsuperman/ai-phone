@@ -19,6 +19,7 @@ import io
 import re
 import shlex
 import time
+import uuid
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -28,7 +29,7 @@ from loguru import logger
 
 from ai_phone.config import get_settings
 
-from .base import BaseDriver, DeviceInfo
+from .base import AlbumSaveResult, BaseDriver, DeviceInfo
 
 # ADBKeyBoard（https://github.com/senzhk/ADBKeyBoard）是安卓生态里给自动化注入
 # 文本（含中文 / Emoji）的事实标准 IME。安装后设为默认输入法即可通过广播下文。
@@ -272,6 +273,84 @@ class AndroidDriver(BaseDriver):
         # optimize 稍微耗 CPU 但体积收益大，VLM 主循环 JPEG 这条路值得开
         img.save(buf, format="JPEG", quality=quality, optimize=True)
         return buf.getvalue()
+
+    def save_screenshot_to_album(self) -> AlbumSaveResult:
+        """设备侧 ``screencap`` 写公共图片目录，由系统自动入库；查 MediaStore 确认。
+
+        现代 Android（scoped storage / API 29+）的 MediaProvider 会自动索引写入
+        ``DCIM`` 等公共媒体目录的新文件 —— 真机 Android 16 实测 screencap 后立即可在
+        MediaStore 查到，**无需任何扫描命令**（旧的 ``cmd media rescan`` 在该机上甚至
+        不存在，报 "Can't find service: media"）。
+
+        **不做隐藏兜底**（方案 §9）：不堆多个扫描命令、也不靠"扫描命令退出码"这种
+        不可靠信号；唯一成功判据是"文件是否真的登记进 MediaStore（图库）"——查得到
+        才 ``ok=True``，查不到就 ``ok=False``，绝不"日志成功、图库没图"。
+        """
+        # 文件名带亚秒级唯一标识：避免同一秒内两次截图（缓存快速回放 / 并发）
+        # 撞成同名 → screencap 覆盖 → MediaStore 查到旧资产却误报成功、实际没新增。
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        uniq = uuid.uuid4().hex[:8]
+        fname = f"aiphone_{ts}_{uniq}.png"
+        dev_dir = "/sdcard/DCIM/Screenshots"
+        dev_path = f"{dev_dir}/{fname}"
+        # /sdcard 是 /storage/emulated/0 的软链；MediaStore 里以后者登记，查询用它。
+        media_path = f"/storage/emulated/0/DCIM/Screenshots/{fname}"
+
+        sdk = 0
+        try:
+            sdk = int((self._device.shell("getprop ro.build.version.sdk") or "0").strip() or 0)
+        except (ValueError, TypeError):
+            sdk = 0
+        method = f"screencap+mediastore(sdk={sdk})"
+
+        # 1) 落盘：设备侧直接 screencap 到公共目录（不经 Agent 中转）
+        self._device.shell(f"mkdir -p {shlex.quote(dev_dir)}")
+        self._device.shell(f"screencap -p {shlex.quote(dev_path)}")
+
+        # 2) 校验文件确实生成（无权限 / 路径不可写时 screencap 静默失败）
+        ls_out = (self._device.shell(f"ls -l {shlex.quote(dev_path)}") or "").strip()
+        if (not ls_out) or ("No such file" in ls_out) or ("not found" in ls_out.lower()):
+            return AlbumSaveResult(
+                ok=False,
+                platform=self.platform,
+                file_path=dev_path,
+                method=method,
+                error=f"screencap 未生成文件：{ls_out or '(空输出)'}",
+            )
+
+        # 3) 唯一成功判据：查 MediaStore 是否登记（轮询数次容忍异步入库延迟）
+        asset_id: Optional[str] = None
+        for _ in range(6):  # 约 3s 上限
+            asset_id = self._mediastore_image_id(media_path)
+            if asset_id:
+                break
+            time.sleep(0.5)
+        if not asset_id:
+            return AlbumSaveResult(
+                ok=False,
+                platform=self.platform,
+                file_path=dev_path,
+                method=method,
+                error="文件已落盘但未进入图库（MediaStore 未登记）",
+            )
+
+        return AlbumSaveResult(
+            ok=True,
+            platform=self.platform,
+            file_path=dev_path,
+            asset_id=asset_id,
+            method=method,
+        )
+
+    def _mediastore_image_id(self, media_path: str) -> Optional[str]:
+        """查 MediaStore 外部图片库中该文件的 _id；未登记返回 None。"""
+        query = (
+            "content query --uri content://media/external/images/media "
+            f"--projection _id --where \"_data='{media_path}'\""
+        )
+        out = self._device.shell(query) or ""
+        m = re.search(r"_id=(\d+)", out)
+        return m.group(1) if m else None
 
     # ------------------------------------------------------------------
     # 触控

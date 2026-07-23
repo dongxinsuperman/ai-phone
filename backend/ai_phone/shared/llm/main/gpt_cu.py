@@ -48,7 +48,12 @@ import httpx
 from loguru import logger
 
 from ai_phone.config import get_settings
-from ai_phone.shared.actions import ParsedAction, X11_TO_ANDROID_KEYCODE
+from ai_phone.shared.actions import (
+    ACTION_TAKE_SCREENSHOT,
+    ParsedAction,
+    X11_TO_ANDROID_KEYCODE,
+    parse_action,
+)
 from ai_phone.shared.llm.base import Decision, TokenCounter
 
 
@@ -83,6 +88,13 @@ _PLATFORM_ACTION_RE = re.compile(
 )
 # 当前白名单只放 open_app / close_app（与 claude_cu.py 保持一致）。
 _PLATFORM_ACTION_WHITELIST = frozenset({"open_app", "close_app"})
+
+# take_screenshot 无 app_name，参数形状与 open_app/close_app 不同，用独立正则识别，
+# 不动 app_name 专用正则（零回归，与 claude_cu.py 保持一致）。
+_PLATFORM_TAKE_SCREENSHOT_RE = re.compile(
+    r"^\s*PLATFORM_ACTION\s*[:：]\s*(take_screenshot\s*\([^)]*\))\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 class GPTComputerUseClient:
@@ -536,9 +548,12 @@ def _parse_gpt_response(
                 coord_space="absolute",
             )
 
-    cleaned_text = _PLATFORM_ACTION_RE.sub(
+    cleaned_text = _PLATFORM_TAKE_SCREENSHOT_RE.sub(
         "",
-        _ASSERT_FAIL_RE.sub("", _FINISHED_RE.sub("", full_text)),
+        _PLATFORM_ACTION_RE.sub(
+            "",
+            _ASSERT_FAIL_RE.sub("", _FINISHED_RE.sub("", full_text)),
+        ),
     ).strip()
     thought_pieces = [p for p in (reasoning_parts + [cleaned_text]) if p]
     thought = "\n".join(thought_pieces)
@@ -574,6 +589,17 @@ def _extract_platform_actions(full_text: str) -> List[ParsedAction]:
                 coord_space="absolute",
             )
         )
+    # take_screenshot：独立正则识别（无 app_name），parse_action 解出 save_to_album。
+    for match in _PLATFORM_TAKE_SCREENSHOT_RE.finditer(full_text):
+        parsed = parse_action(match.group(1))
+        if parsed.action != ACTION_TAKE_SCREENSHOT:
+            continue
+        parsed.coord_space = "absolute"
+        parsed.raw = (
+            f"platform.{ACTION_TAKE_SCREENSHOT}"
+            f"(save_to_album={'true' if parsed.save_to_album else 'false'})"
+        )
+        out.append(parsed)
     return out
 
 

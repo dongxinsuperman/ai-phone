@@ -227,11 +227,17 @@ search the app drawer:
 ```
 PLATFORM_ACTION: open_app(app_name='<app display name>')
 PLATFORM_ACTION: close_app(app_name='<app display name>')
+PLATFORM_ACTION: take_screenshot(save_to_album=true)
 ```
 
-- `open_app` / `close_app` are the only platform actions available right now.
+- `open_app` / `close_app` / `take_screenshot` are the platform actions available right now.
 - `<app display name>` is the user-visible name (e.g. `'Settings'`, `'微信'`);
   runtime resolves it to a package name via fuzzy match.
+- `take_screenshot(save_to_album=true)` captures the CURRENT screen and saves it
+  into the device's system photo album (runtime handles the platform-specific save).
+  Emit it ONLY when the task explicitly asks to screenshot / 截屏 / 截图 and save to
+  the album; do NOT press hardware buttons or tap a system screenshot control via the
+  `computer` tool, and do NOT emit it when the task does not ask for a saved screenshot.
 - Quotes can be single or double; the line itself MUST stand alone (no
   trailing comments).
 - These do NOT consume a `computer` tool call — they may coexist with

@@ -13,6 +13,7 @@ from ai_phone.shared.actions import (
     ACTION_PRESS_BACK,
     ACTION_PRESS_HOME,
     ACTION_SCROLL,
+    ACTION_TAKE_SCREENSHOT,
     ACTION_TYPE,
     ACTION_WAIT,
     extract_action,
@@ -139,6 +140,26 @@ class TestParseAction:
         r = parse_action("assert_fail(content='没看到气泡')")
         assert r.action == ACTION_ASSERT_FAIL
         assert r.is_terminal
+
+    def test_take_screenshot(self):
+        r = parse_action("take_screenshot(save_to_album=true)")
+        assert r.action == ACTION_TAKE_SCREENSHOT
+        assert r.is_known
+        assert not r.is_terminal
+        assert r.save_to_album is True
+        # to_dict 必须显式携带 save_to_album，供缓存归档/回放还原意图
+        assert r.to_dict()["save_to_album"] is True
+
+    def test_take_screenshot_no_arg_defaults_true(self):
+        r = parse_action("take_screenshot()")
+        assert r.action == ACTION_TAKE_SCREENSHOT
+        assert r.save_to_album is True
+
+    def test_take_screenshot_explicit_false(self):
+        r = parse_action("take_screenshot(save_to_album=false)")
+        assert r.action == ACTION_TAKE_SCREENSHOT
+        assert r.save_to_album is False
+        assert r.to_dict()["save_to_album"] is False
 
     def test_unknown_action(self):
         r = parse_action("jump(point='<point>1 1</point>')")
