@@ -136,6 +136,17 @@ def test_prepare_for_run_swallows_wake_errors(monkeypatch):
     fake.shell.assert_called_once_with("wm dismiss-keyguard")
 
 
+def test_sleep_after_run_uses_non_toggling_sleep_key():
+    fake = MagicMock()
+    fake.serial = "EMU-SLEEP"
+    driver = AndroidDriver(fake, setup_power=False)
+
+    driver.sleep_after_run()
+
+    # 223=KEYCODE_SLEEP；不用 26=KEYCODE_POWER，避免黑屏态被反向点亮。
+    fake.keyevent.assert_called_once_with(223)
+
+
 def test_open_android_driver_respects_setup_stay_awake_env(monkeypatch):
     fake = MagicMock()
     fake.serial = "EMU-POWER-OFF"

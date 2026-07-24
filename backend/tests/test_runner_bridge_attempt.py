@@ -62,6 +62,34 @@ async def test_runner_bridge_forwards_attempt_on_agent_brain_events():
 
 
 @pytest.mark.asyncio
+async def test_runner_bridge_runs_final_hook_before_run_done_once():
+    sent: List[Dict[str, Any]] = []
+    order: List[str] = []
+
+    async def _send(payload: Dict[str, Any]) -> bool:
+        order.append(payload["type"])
+        sent.append(dict(payload))
+        return True
+
+    async def _sleep() -> None:
+        order.append("sleep")
+
+    bridge = RunnerBridge(
+        run_id="sleep-run",
+        serial="S1",
+        ws_send=_send,
+        server_http_base="http://test",
+        before_run_done=_sleep,
+    )
+    await bridge.send_run_done({"type": "run_done", "run_id": "sleep-run"})
+    await bridge.send_run_done({"type": "run_done", "run_id": "sleep-run"})
+    await bridge.aclose()
+
+    assert order == ["sleep", "run_done", "run_done"]
+    assert len(sent) == 2
+
+
+@pytest.mark.asyncio
 async def test_runner_bridge_keeps_step_end_before_next_step_log_under_slow_upload(
     monkeypatch,
 ):
@@ -103,4 +131,3 @@ async def test_runner_bridge_keeps_step_end_before_next_step_log_under_slow_uplo
         i for i, p in enumerate(sent) if p["type"] == "log" and p.get("step") == 2
     )
     assert step_done_idx < next_log_idx, types_in_order
-

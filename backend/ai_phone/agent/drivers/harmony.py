@@ -207,6 +207,21 @@ class HarmonyDriver(BaseDriver):
             swipe=bool((wake_policy or {}).get("wake_swipe")),
         )
 
+    def sleep_after_run(self) -> None:
+        """让 HarmonyOS 熄屏，不覆盖设备自身的自动熄屏设置。"""
+        try:
+            out = hdc_shell(
+                self.serial,
+                "power-shell suspend",
+                timeout=5.0,
+                check=False,
+            )
+            if out:
+                logger.debug("设备 {} HarmonyOS suspend 输出：{}", self.serial, out[:160])
+            logger.info("设备 {} Run 后熄屏：power-shell suspend", self.serial)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("设备 {} Run 后熄屏失败：{}", self.serial, exc)
+
     def _setup_stay_awake(self, *, first: bool) -> None:
         """把 HarmonyOS 的自动息屏关掉。
 

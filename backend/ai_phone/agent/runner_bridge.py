@@ -34,6 +34,7 @@ from ai_phone.agent.runner.events import (
 from ai_phone.shared import protocol as P
 
 SendFn = Callable[[Dict[str, Any]], Awaitable[bool]]
+BeforeRunDoneFn = Callable[[], Awaitable[None]]
 
 
 class RunnerBridge:
@@ -51,6 +52,7 @@ class RunnerBridge:
         loop: Optional[asyncio.AbstractEventLoop] = None,
         http_timeout: float = 15.0,
         reporter: Optional["ReliableReporter"] = None,
+        before_run_done: Optional[BeforeRunDoneFn] = None,
     ):
         self.run_id = run_id
         self.serial = serial
@@ -79,6 +81,10 @@ class RunnerBridge:
         # reporter 为 None 时退化为"直接发"（best-effort），仅用于不关心可靠性的
         # 单元测试；生产路径一律由 main.py 注入全局 reporter。
         self._reporter = reporter
+        # Run 终态入可靠队列前的唯一收尾点。电源策略这类动作必须在这里完成，
+        # 才不会出现 Server 已释放设备、旧 Run 又把下一 Run 的屏幕熄掉的竞态。
+        self._before_run_done = before_run_done
+        self._before_run_done_called = False
 
     async def aclose(self) -> None:
         # 等所有未完成的截图上传结束再关 http client。
@@ -323,6 +329,7 @@ class RunnerBridge:
         external_report_url = evt.get("external_report_url")
         if external_report_url:
             payload["external_report_url"] = str(external_report_url)
+        await self._run_before_run_done()
         await self._reliable_send(payload)
 
     # ------------------------------------------------------------------
@@ -351,7 +358,18 @@ class RunnerBridge:
         与正常 run_finish 一样走可靠队列：打 event_id + seq、断线留存、重连按序
         补发、Server 按 event_id 去重。这样无论从哪条路径结束，run 终态都不丢。
         """
+        await self._run_before_run_done()
         await self._reliable_send(dict(payload))
+
+    async def _run_before_run_done(self) -> None:
+        """执行每个 Run 一次的终态前收尾，失败不得阻断 run_done。"""
+        if self._before_run_done_called or self._before_run_done is None:
+            return
+        self._before_run_done_called = True
+        try:
+            await self._before_run_done()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Run 终态前收尾失败 run_id={}: {}", self.run_id, exc)
 
     async def send_cache_suspect(self, payload: Dict[str, Any]) -> None:
         """命中缓存回放 / 断言失败 → 通知 Server 把该缓存标 suspect。

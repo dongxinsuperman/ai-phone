@@ -1130,6 +1130,38 @@ async def _handle_start_run(
             await client.send(busy_done)
         return
 
+    # 终态前电源 hook 共享给 bridge 和 Run 主体：Runner 自己会 emit run_finish，
+    # 旁路错误路径也会直接 send_run_done，所以必须由 bridge 统一调用且只调用一次。
+    run_power: Dict[str, Any] = {"driver": None, "started": False}
+
+    async def _sleep_after_run_if_enabled() -> None:
+        if not bool(getattr(get_settings(), "sleep_after_run", False)):
+            return
+        if not bool(run_power["started"]):
+            # 前置参数/driver 初始化失败不是一次真正开始的设备 Run，不额外碰设备。
+            return
+
+        driver = run_power["driver"]
+        if driver is None:
+            # 外接引擎不复用 ai-phone driver；但既然已实际执行且总开关明确打开，
+            # 仍按相同平台 hook 打开一把 driver 执行熄屏。失败只显式记录，绝不改
+            # 自动息屏时间或换用其他强制命令。
+            try:
+                driver = await run_blocking(_get_or_open_driver, serial)
+                run_power["driver"] = driver
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Run 后熄屏跳过：无法打开设备 driver serial={}: {}", serial, exc
+                )
+                return
+
+        logger.info(
+            "Run 后统一熄屏策略执行 serial={} platform={}",
+            serial,
+            getattr(driver, "platform", "unknown"),
+        )
+        await run_blocking(driver.sleep_after_run)
+
     bridge = RunnerBridge(
         run_id=run_id,
         serial=serial,
@@ -1137,6 +1169,7 @@ async def _handle_start_run(
         server_http_base=client.server_http_base or get_settings().server_http_base,
         attempt=attempt,
         reporter=supervisor.reporter,
+        before_run_done=_sleep_after_run_if_enabled,
     )
 
     async def _run_task_body() -> None:
@@ -1183,6 +1216,7 @@ async def _handle_start_run(
                     return
             try:
                 driver = await run_blocking(_get_or_open_driver, serial)
+                run_power["driver"] = driver
             except Exception as exc:  # noqa: BLE001
                 logger.exception("打开设备失败 serial={}", serial)
                 await bridge.send_run_done(
@@ -1295,6 +1329,7 @@ async def _handle_start_run(
 
             if replay_coro is not None:
                 try:
+                    run_power["started"] = True
                     await replay_coro
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("缓存回放异常 run_id={}", run_id)
@@ -1357,6 +1392,7 @@ async def _handle_start_run(
             return
 
         try:
+            run_power["started"] = True
             await runner.run()
             # M4 片3b：首跑成功 → 后台归档 V3 成品回传（fire-and-forget，绝不阻塞 case
             # 完成；run_done 已由 runner emit、case 此刻即算结束，归档/回传/落库慢慢来）。

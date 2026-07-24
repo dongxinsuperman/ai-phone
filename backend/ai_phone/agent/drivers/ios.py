@@ -440,6 +440,14 @@ class IosDriver(BaseDriver):
         if settle_s > 0:
             time.sleep(settle_s)
 
+    def sleep_after_run(self) -> None:
+        """通过 WDA 锁定 iPhone；iOS 没有独立于锁屏的公开熄屏接口。"""
+        try:
+            self._wda.lock()
+            logger.info("iOS Run 后锁屏：wda.lock serial={}", self.serial)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("iOS Run 后锁屏失败 serial={}: {}", self.serial, exc)
+
     # ------------------------------------------------------------------
     # 屏幕信息
     # ------------------------------------------------------------------

@@ -171,6 +171,7 @@ def test_env_defaults_contains_only_public_runtime_defaults():
     assert active["AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_ACTION_ENABLED"] == "true"
     assert active["AI_PHONE_STRUCT_STRICTNESS_HARD_SCORE"] == "10"
     assert active["AI_PHONE_STRUCT_STRICTNESS_AUDIT_SCORE"] == "10"
+    assert active["AI_PHONE_SLEEP_AFTER_RUN"] == "true"
 
 
 def test_code_defaults_match_project_runtime_policy():
@@ -180,6 +181,7 @@ def test_code_defaults_match_project_runtime_policy():
     assert s.function_map_context_max_chars == 0
     assert s.struct_strictness_hard_score == 10
     assert s.struct_strictness_audit_score == 10
+    assert s.sleep_after_run is True
 
 
 def test_execution_fields_are_distributed():
@@ -192,8 +194,21 @@ def test_execution_fields_are_distributed():
         "audit_allow_limit",
         "mirror_max_width",
         "transient_ui_enabled",
+        "sleep_after_run",
     ):
         assert exe in dl, f"{exe} 应在下发集"
+
+
+def test_sleep_after_run_is_server_downlink_execution_policy():
+    """统一收尾电源策略既非 Agent 本机字段，也非 Server-only 字段。"""
+    assert "sleep_after_run" not in AGENT_LOCAL_FIELDS
+    assert "sleep_after_run" not in SERVER_ONLY_FIELDS
+
+    snapshot = build_downlink_config(
+        settings=_derived_doubao_settings(sleep_after_run=False)
+    )
+    assert snapshot["sleep_after_run"] is False
+    assert set_runtime_override(snapshot).sleep_after_run is False
 
 
 def test_new_model_env_fields_are_distributed_with_explicit_aux_config():

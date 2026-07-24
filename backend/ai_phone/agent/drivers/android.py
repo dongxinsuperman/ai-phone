@@ -115,6 +115,15 @@ class AndroidDriver(BaseDriver):
         if settle_s > 0:
             time.sleep(settle_s)
 
+    def sleep_after_run(self) -> None:
+        """让 Android 进入休眠，不触碰自动息屏或插电常亮系统设置。"""
+        try:
+            # KEYCODE_SLEEP = 223：已睡眠时无副作用，不能像 POWER 一样反向点亮。
+            self._device.keyevent(223)
+            logger.info("设备 {} Run 后熄屏：KEYCODE_SLEEP", self.serial)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("设备 {} Run 后熄屏失败：{}", self.serial, exc)
+
     def _setup_stay_awake(self) -> None:
         """把设备的自动息屏关掉，让排队期/长任务里设备不会自己锁屏。
 
