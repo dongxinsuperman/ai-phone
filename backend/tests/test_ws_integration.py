@@ -236,6 +236,7 @@ def test_start_run_dispatched_to_agent(ws_app):
             assert msg["goal"] == "打开设置"
             assert msg["function_map_context"] == "设置 App 首页有蓝牙入口"
             assert msg["functionMapContext"] == "设置 App 首页有蓝牙入口"
+            assert msg["should_sleep_after_run"] is False
 
 
 def test_stop_run_forwarded(ws_app):

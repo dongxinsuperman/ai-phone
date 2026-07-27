@@ -1086,6 +1086,34 @@ async def _handle_start_run(
         logger.warning("start_run 参数不全 | run_id={} serial={} goal_len={}", run_id, serial, len(goal))
         return
 
+    # 收尾熄屏由 Server 按本次入口已决：工作台 Run 不熄屏，队列 Run 按全局
+    # AI_PHONE_SLEEP_AFTER_RUN 策略处理。字段缺失/类型错误必须显式暴露协议版本
+    # 不一致，不能回退到 Agent 的本地配置或猜测任意默认值。
+    should_sleep_after_run = msg.get("should_sleep_after_run")
+    if type(should_sleep_after_run) is not bool:
+        policy_error_done = {
+            "type": P.MSG_RUN_DONE,
+            "run_id": run_id,
+            "serial": serial,
+            "attempt": attempt,
+            "result": "error",
+            "message": "start_run_invalid_should_sleep_after_run: expected boolean",
+            "steps": 0,
+            "elapsed_ms": 0,
+            "token_stats": {},
+        }
+        logger.error(
+            "拒绝 start_run：缺少或非法 should_sleep_after_run | run_id={} serial={} value={!r}",
+            run_id,
+            serial,
+            should_sleep_after_run,
+        )
+        if supervisor.reporter is not None:
+            await supervisor.reporter.enqueue(policy_error_done)
+        else:
+            await client.send(policy_error_done)
+        return
+
     if engine == "vlm" and not has_runtime_override():
         # 新版模型配置必须由 Server 下发并成功应用。没有 override 时只请求补发，
         # 本次 Run 直接失败，避免继续吃 Agent 本机旧式 VLM_* 残留。
@@ -1134,9 +1162,7 @@ async def _handle_start_run(
     # 旁路错误路径也会直接 send_run_done，所以必须由 bridge 统一调用且只调用一次。
     run_power: Dict[str, Any] = {"driver": None, "started": False}
 
-    async def _sleep_after_run_if_enabled() -> None:
-        if not bool(getattr(get_settings(), "sleep_after_run", False)):
-            return
+    async def _sleep_after_run() -> None:
         if not bool(run_power["started"]):
             # 前置参数/driver 初始化失败不是一次真正开始的设备 Run，不额外碰设备。
             return
@@ -1169,7 +1195,9 @@ async def _handle_start_run(
         server_http_base=client.server_http_base or get_settings().server_http_base,
         attempt=attempt,
         reporter=supervisor.reporter,
-        before_run_done=_sleep_after_run_if_enabled,
+        # 工作台 Run 不挂收尾 hook，任务结束后保持屏幕；队列 Run 才在 run_done
+        # 上报前执行。Agent 不再读取自己的全局 sleep_after_run 配置作判断。
+        before_run_done=_sleep_after_run if should_sleep_after_run else None,
     )
 
     async def _run_task_body() -> None:

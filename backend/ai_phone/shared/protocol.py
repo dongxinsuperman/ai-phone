@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, NotRequired, Optional, TypedDict, Union
+from typing import Any, Dict, List, Literal, NotRequired, Optional, Required, TypedDict, Union
 
 # ---------------------------------------------------------------------------
 # 消息类型枚举（字符串字面量）
@@ -569,6 +569,10 @@ class StartRunMsg(TypedDict, total=False):
     run_id: str
     device_serial: str
     goal: str
+    # Server 已按入口与全局策略算好的本次 Run 收尾动作：工作台 POST /api/runs
+    # 固定为 False，队列 POST /api/submissions 按 AI_PHONE_SLEEP_AFTER_RUN 决定。
+    # 必须显式下发，Agent 不允许根据本机/旧配置猜测。
+    should_sleep_after_run: Required[bool]
     # 本 Run 实际注入给 Agent 的功能地图上下文；camelCase 保留给旧客户端兼容。
     function_map_context: NotRequired[str]
     functionMapContext: NotRequired[str]

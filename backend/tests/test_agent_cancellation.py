@@ -33,7 +33,15 @@ async def test_run_blocking_waits_for_inflight_device_call_before_cancel() -> No
 
 
 @pytest.mark.asyncio
-async def test_stop_during_prepare_reports_cancelled_after_prepare_exits(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("should_sleep_after_run", "expects_sleep_hook"),
+    [(False, False), (True, True)],
+)
+async def test_stop_during_prepare_reports_cancelled_after_prepare_exits(
+    monkeypatch,
+    should_sleep_after_run: bool,
+    expects_sleep_hook: bool,
+) -> None:
     started = threading.Event()
     release = threading.Event()
 
@@ -81,11 +89,13 @@ async def test_stop_during_prepare_reports_cancelled_after_prepare_exits(monkeyp
             "device_serial": "S-CANCEL",
             "goal": "打开设置",
             "engine": "vlm",
+            "should_sleep_after_run": should_sleep_after_run,
         },
     )
     assert await asyncio.to_thread(started.wait, 1.0)
     entry = supervisor.get("run-cancel-prepare")
     assert entry is not None
+    assert (entry["bridge"]._before_run_done is not None) is expects_sleep_hook
     task = entry["task"]
 
     await agent_main._handle_stop_run(
@@ -105,3 +115,50 @@ async def test_stop_during_prepare_reports_cancelled_after_prepare_exits(monkeyp
     assert len(done) == 1
     assert done[0]["result"] == "cancelled"
     assert supervisor.get("run-cancel-prepare") is None
+
+
+@pytest.mark.asyncio
+async def test_start_run_requires_explicit_sleep_policy() -> None:
+    """缺失收尾策略是 Server/Agent 协议不一致，不能静默猜一个默认值。"""
+
+    class _Reporter:
+        def __init__(self) -> None:
+            self.messages: List[Dict[str, Any]] = []
+
+        async def enqueue(self, message: Dict[str, Any]) -> None:
+            self.messages.append(dict(message))
+
+    class _Client:
+        async def send(self, _message: Dict[str, Any]) -> bool:
+            return True
+
+    supervisor = agent_main._RunSupervisor()
+    reporter = _Reporter()
+    supervisor.reporter = reporter  # type: ignore[assignment]
+
+    await agent_main._handle_start_run(
+        _Client(),  # type: ignore[arg-type]
+        supervisor,
+        {
+            "type": "start_run",
+            "run_id": "run-policy-missing",
+            "device_serial": "S-POLICY",
+            "goal": "打开设置",
+            "engine": "vlm",
+        },
+    )
+
+    assert reporter.messages == [
+        {
+            "type": "run_done",
+            "run_id": "run-policy-missing",
+            "serial": "S-POLICY",
+            "attempt": 1,
+            "result": "error",
+            "message": "start_run_invalid_should_sleep_after_run: expected boolean",
+            "steps": 0,
+            "elapsed_ms": 0,
+            "token_stats": {},
+        }
+    ]
+    assert supervisor.get("run-policy-missing") is None

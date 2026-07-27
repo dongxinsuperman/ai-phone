@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 
 from loguru import logger
 
+from ai_phone.config import get_settings
 from ai_phone.shared import protocol as P
 
 from ..db import get_session_factory
@@ -43,6 +44,16 @@ class RunDispatchService:
         if agent_id is None:
             return {"dispatched": False, "execution_mode": "agent_brain"}
 
+        # 执行入口的语义在 Server 一次性收口：工作台 POST /api/runs 保持屏幕，
+        # submission 队列（含对外契约）才应用全局收尾熄屏策略。不能把入口判断
+        # 留给 Agent，也不能依赖 Agent 曾接收过的全局配置快照。
+        if dispatch_source == "api":
+            should_sleep_after_run = False
+        elif dispatch_source == "scheduler":
+            should_sleep_after_run = bool(get_settings().sleep_after_run)
+        else:
+            raise ValueError(f"未知的 Run dispatch_source: {dispatch_source!r}")
+
         wake_policy: Dict[str, bool] = {}
         if str(platform or "").strip().lower() == "harmony":
             wake_policy = await self._resolve_wake_policy(serial=serial, platform=platform)
@@ -53,14 +64,16 @@ class RunDispatchService:
             "goal": goal,
             "engine": engine,
             "attempt": max(1, int(attempt or 1)),
+            "should_sleep_after_run": should_sleep_after_run,
         }
         if function_map_context:
             payload["function_map_context"] = function_map_context
             payload["functionMapContext"] = function_map_context
         if wake_policy:
             payload["wake_policy"] = wake_policy
-        # 注：执行配置不随 start_run 下发——它在 Agent 连接时由 MSG_AGENT_CONFIG
-        # 统一下发并覆盖本机 Settings（配置集中分发，全局一份；见 M2）。
+        # 注：全局执行配置仍在 Agent 连接时由 MSG_AGENT_CONFIG 统一下发并覆盖
+        # 本机 Settings（配置集中分发，全局一份；见 M2）；只有收尾熄屏是本次
+        # Run 特有的已决结果，必须随 start_run 显式下发。
         # M4 片3b：下发本 run 的 effective_cache_mode，Agent 首跑（未命中）据此决定
         # 成功后是否归档成品缓存并回传（off 不下发、不归档）。
         effective_cache_mode = await self._resolve_effective_cache_mode(run_id)

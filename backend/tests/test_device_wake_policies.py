@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from ai_phone.server import db as db_module
+from ai_phone.server.runner import dispatch as dispatch_module
 from ai_phone.server.device_config.resolver import resolve_wake_decision
 from ai_phone.server.device_config.service import upsert_wake_policy
 from ai_phone.server.hub import Hub
@@ -126,6 +129,7 @@ async def test_agent_brain_dispatch_includes_wake_policy(_test_engine, session):
 
     assert result == {"dispatched": True, "execution_mode": "agent_brain"}
     assert ws.sent[0]["wake_policy"] == {"wake_swipe": True}
+    assert ws.sent[0]["should_sleep_after_run"] is False
 
 
 @pytest.mark.asyncio
@@ -150,3 +154,49 @@ async def test_agent_brain_dispatch_does_not_send_android_wake_policy(_test_engi
 
     assert result == {"dispatched": True, "execution_mode": "agent_brain"}
     assert "wake_policy" not in ws.sent[0]
+    assert ws.sent[0]["should_sleep_after_run"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("dispatch_source", "global_sleep_after_run", "expected"),
+    [
+        ("api", True, False),
+        ("api", False, False),
+        ("scheduler", True, True),
+        ("scheduler", False, False),
+    ],
+)
+async def test_dispatch_resolves_sleep_policy_by_entry(
+    _test_engine,
+    monkeypatch,
+    dispatch_source: str,
+    global_sleep_after_run: bool,
+    expected: bool,
+):
+    """工作台固定不熄屏；submission 队列才受 Server 全局策略控制。"""
+    monkeypatch.setattr(
+        dispatch_module,
+        "get_settings",
+        lambda: SimpleNamespace(sleep_after_run=global_sleep_after_run),
+    )
+    hub = Hub()
+    ws = FakeWS()
+    await hub.register_agent("agent-1", "agent", "test", ws)
+    dispatch = RunDispatchService(
+        hub=hub,
+        session_factory=db_module.get_session_factory(),
+    )
+
+    result = await dispatch.dispatch(
+        run_id=f"run-{dispatch_source}-{global_sleep_after_run}",
+        serial="A1",
+        agent_id="agent-1",
+        goal="do it",
+        engine="midscene",
+        dispatch_source=dispatch_source,
+        platform="android",
+    )
+
+    assert result == {"dispatched": True, "execution_mode": "agent_brain"}
+    assert ws.sent[0]["should_sleep_after_run"] is expected

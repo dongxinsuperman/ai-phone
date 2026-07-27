@@ -153,9 +153,10 @@ class Settings(BaseSettings):
     sleep_after_run: bool = Field(
         default=True,
         description=(
-            "统一 Run 收尾电源策略：开启后，每个任务的最终证据生成后、run_done 上报前，"
-            "Android 发送 KEYCODE_SLEEP，iOS 通过 WDA 锁屏，HarmonyOS 执行 "
-            "power-shell suspend。默认 True；不修改系统自动息屏或插电常亮设置。"
+            "submission 队列 Run 的收尾电源策略：开启后，在最终证据生成后、run_done "
+            "上报前，Android 发送 KEYCODE_SLEEP，iOS 通过 WDA 锁屏，HarmonyOS 执行 "
+            "power-shell suspend。工作台 POST /api/runs 始终保持屏幕。默认 True；"
+            "不修改系统自动息屏或插电常亮设置。"
             "env: AI_PHONE_SLEEP_AFTER_RUN"
         ),
     )
