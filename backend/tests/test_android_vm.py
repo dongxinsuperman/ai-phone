@@ -1473,7 +1473,7 @@ def test_android_vm_manager_start_translates_advanced_config_to_emulator_args(
         lambda: (tools, []),
     )
     monkeypatch.setattr(manager, "_ensure_avd", _fake_ensure_avd)
-    monkeypatch.setattr(manager, "_choose_port", lambda: 5554)
+    monkeypatch.setattr(manager, "_choose_port", lambda *args, **kwargs: 5554)
     monkeypatch.setattr(manager, "_wait_boot_completed", lambda *args, **kwargs: None)
     monkeypatch.setattr(manager, "_provision_device", lambda *args, **kwargs: None)
     monkeypatch.setattr(

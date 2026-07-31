@@ -34,6 +34,26 @@ Agent on Mac（执行脑）
 真实手机
 ```
 
+当前虚拟设备也走同一个控制面：
+
+```text
+Server
+  ├── WebSocket → Agent → Android Emulator（无头）
+  └── WebSocket → Agent → DevEco Emulator（当前为本地 GUI 模式）
+                                 │
+                                 └── Harmony 虚拟设备进入统一设备池
+```
+
+鸿蒙的下一阶段不是替换 Agent，而是新增并列资源通道：
+
+```text
+首选：官方本地 Headless 可用后，现有 Agent 启动层直接切换为无窗口
+扩展：Server → Harmony Linux gRPC Provider（规划）→ Linux 无头模拟器资源池
+```
+
+当前 Agent GUI 链路、规划中的 Provider 边界和明确失败规则见
+[`harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md`](./harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md)。
+
 核心职责：
 
 | 组件 | 职责 |
@@ -117,6 +137,10 @@ POST /api/submissions
 | `device_wake_policies` | HarmonyOS Run 前 wake 后是否兜底上滑的设备策略 |
 | `android_vm_instances` | Android 虚拟机实例（`main` 独有）：配置、状态、归属 Agent、adb serial |
 | `android_device_profiles` / `android_vm_coverage_profiles` | 虚拟机可选机型档案库与覆盖模板 |
+| `harmony_vm_instances` | 鸿蒙虚拟机配置、状态、归属 Agent、HDC serial 与租约 token |
+| `harmony_vm_port_leases` | 鸿蒙虚拟机的 Server 全局 HDC 端口租约 |
+| `harmony_vm_catalog_snapshots` | Server 保存并向所有用户统一提供的 DevEco 官方目录快照 |
+| `harmony_vm_settings` | 鸿蒙虚拟机全局设置及历史共享设备身份记录 |
 | `app_packages` / `app_install_tasks` / `app_install_task_items` | 应用分发：上传包、安装任务与每台设备的安装结果 |
 
 项目仍以 SQLAlchemy `create_all()` 为本地开发默认建表方式；已有库补字段时使用 `backend/migrations/*.sql`。
@@ -137,6 +161,8 @@ iOS 需要区分两条链路：
 - `pymobiledevice3` 设备服务链路：设备发现、应用列表、安装、DVT 兜底。自然语言 `open_app(app_name="...")` 需要先查应用列表再匹配 bundle id；当前实现分开查询 `User` / `System`，不再依赖 `Any` 一条路。
 
 **Android 虚拟机来源（`main` 独有）**：除真机外，Android 设备还可由「虚拟机」页创建——Server 维护机型档案库 / 覆盖模板（`android_device_profiles` / `android_vm_coverage_profiles`），把实例下发给 Agent，由 `agent/android_vm/`（`capability` 工具探查 + `manager` 生命周期）建 AVD 并启动 Emulator；启动后作为普通 android 设备进设备池，**与真机共用同一条调度与执行链路**。详见 [`agent-vm-env-setup（Agent虚拟机环境准备）.md`](./agent-vm-env-setup（Agent虚拟机环境准备）.md)。
+
+**HarmonyOS 虚拟机来源（`main` 独有）**：Server 使用独立表、API、端口租约和状态机保存鸿蒙虚拟机，下发给探查通过的 Agent；`agent/harmony_vm/` 调用本机 DevEco Emulator CLI，并以 HDC + hmdriver2 判定设备可用。当前实现会创建 GUI 窗口，属于 Agent 本地 GUI 模式；这是官方本地 Emulator 尚无经过验证的公开 Headless 入口造成的阶段性限制。官方能力补齐后只替换 Agent 启动层，其余生命周期不变，业务逻辑与 Android 统一。集中式场景另规划 Server 直连的 Linux gRPC Provider。详见 [`harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md`](./harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md)。
 
 **应用分发**：`server/app_install/` 提供上传包、按平台筛可分发设备、批量下发安装（`MSG_APP_INSTALL_START`）与结果回传，独立于 Run 执行链路，仅复用设备池 / 锁 / Agent 通道。
 

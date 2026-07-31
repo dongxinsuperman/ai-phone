@@ -1037,15 +1037,12 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (pollTimer) clearInterval(pollTimer)
 })
+
+defineExpose({ refresh })
 </script>
 
 <template>
   <section class="page">
-    <header class="head">
-      <h1>虚拟机</h1>
-      <button type="button" class="ghost" :disabled="loading" @click="refresh">刷新</button>
-    </header>
-
     <div v-if="err" class="error">{{ err }}</div>
 
     <div class="layout">

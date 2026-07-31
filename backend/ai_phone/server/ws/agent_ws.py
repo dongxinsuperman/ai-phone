@@ -34,6 +34,13 @@ from ..android_vm.service import (
     handle_vm_status,
     mark_agent_vms_unavailable,
 )
+from ..harmony_vm.service import (
+    filter_managed_devices_for_agent,
+    get_capability_waiter as get_harmony_capability_waiter,
+    handle_vm_reconcile as handle_harmony_vm_reconcile,
+    handle_vm_status as handle_harmony_vm_status,
+    mark_agent_vms_offline as mark_agent_harmony_vms_offline,
+)
 from ..lockstore import DeviceLockStore
 from ..models import Device, Run, RunLog, RunStep
 from ..db import get_session_factory
@@ -195,6 +202,7 @@ async def agent_ws(
         await ws.close(code=status.WS_1002_PROTOCOL_ERROR, reason="missing agent_id")
         return
 
+    devices = await filter_managed_devices_for_agent(agent_id, devices)
     serials = {str(d.get("serial")) for d in devices if d.get("serial")}
     await hub.register_agent(agent_id, agent_name, host_os, ws)
     await hub.set_devices(agent_id, serials)
@@ -278,6 +286,7 @@ async def _dispatch(
         # rescan 检测到设备集合变化时会重发 hello（保持初次握手同样的 schema）。
         # 这里做幂等的设备列表覆盖：和初次握手共用 _upsert_devices + hub.set_devices。
         devices = msg.get("devices") or []
+        devices = await filter_managed_devices_for_agent(agent_id, devices)
         serials = {str(d.get("serial")) for d in devices if d.get("serial")}
         await hub.set_devices(agent_id, serials)
         await _upsert_devices(agent_id, devices, hub)
@@ -317,6 +326,18 @@ async def _dispatch(
 
     if t == P.MSG_VM_RECONCILE:
         await handle_vm_reconcile(agent_id, msg, hub)
+        return
+
+    if t == P.MSG_HARMONY_VM_CAPABILITY:
+        get_harmony_capability_waiter().resolve(agent_id, msg)
+        return
+
+    if t == P.MSG_HARMONY_VM_STATUS:
+        await handle_harmony_vm_status(agent_id, msg, hub)
+        return
+
+    if t == P.MSG_HARMONY_VM_RECONCILE:
+        await handle_harmony_vm_reconcile(agent_id, msg, hub)
         return
 
     # 以下都可能带 run_id / serial / step
@@ -935,12 +956,22 @@ async def _on_disconnect(
     elif serials:
         hub.clear_device_extra(set(serials))
     await _offline_devices(agent_id, serials or (conn.serials if conn else set()))
+    # Harmony capability responses contain Agent-local HDC/fport/listener ports.
+    # They cease to be authoritative as soon as this exact Agent connection is
+    # gone; retaining them would permanently exclude ports after host changes.
+    get_harmony_capability_waiter().discard_agent(agent_id)
     try:
         count = await mark_agent_vms_unavailable(agent_id)
         if count:
             logger.info("Agent {} 断开，已标记 VM unavailable {} 台", agent_id, count)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Agent {} 断开时标记 VM unavailable 失败：{}", agent_id, exc)
+    try:
+        count = await mark_agent_harmony_vms_offline(agent_id)
+        if count:
+            logger.info("Agent {} 断开，已标记 Harmony VM agent_offline {} 台", agent_id, count)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Agent {} 断开时标记 Harmony VM agent_offline 失败：{}", agent_id, exc)
     # 孤儿 Run 回收旁路：等宽限期，若同 agent_id 未重连（进程重启/真死）则把其名下
     # 仍在跑的 Run 判失败并释放设备锁、收口批次。宽限期内同 id 重连（网络抖动、同
     # 进程）则跳过，不误杀仍在本地执行的 Run。浏览器手动锁不受影响（仍由其心跳维护）。

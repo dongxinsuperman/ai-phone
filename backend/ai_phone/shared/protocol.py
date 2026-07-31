@@ -49,6 +49,11 @@ MSG_APP_INSTALL_RESULT = "app_install_result"
 # Android VM：Agent 回传能力探查结果与生命周期状态。
 MSG_VM_CAPABILITY = "vm_capability"
 MSG_VM_STATUS = "vm_status"
+# Harmony VM uses a separate protocol namespace.  Do not reuse Android payloads:
+# HDC serial/lease identity and lifecycle acknowledgement rules are different.
+MSG_HARMONY_VM_CAPABILITY = "harmony_vm_capability"
+MSG_HARMONY_VM_STATUS = "harmony_vm_status"
+MSG_HARMONY_VM_RECONCILE = "harmony_vm_reconcile"
 # Distributed Agent Brain（M4）：Agent 首跑成功后用执行第一手数据整理的成品轨迹缓存
 # 回传 Server；Server 算 cache_key 并 upsert vlm_trajectory_cache_v*（回放与归档下沉
 # Agent，Server 只做薄存储）。经 M3 可靠通道上行，断线不丢、重连补发。
@@ -80,6 +85,10 @@ MSG_VM_DELETE = "vm_delete"
 # 孤儿 AVD 对账：Agent（重）连后上报本机受管 AVD 的 vm_id 清单；Server 比对 DB，
 # 对已不存在的 vm_id 回发 MSG_VM_DELETE 清理（复用删除链路，无需单独结果消息）。
 MSG_VM_RECONCILE = "vm_reconcile"
+MSG_HARMONY_VM_CAPABILITY_PROBE = "harmony_vm_capability_probe"
+MSG_HARMONY_VM_START = "harmony_vm_start"
+MSG_HARMONY_VM_STOP = "harmony_vm_stop"
+MSG_HARMONY_VM_DELETE = "harmony_vm_delete"
 # Distributed Agent Brain：Server 把"可下发执行配置"快照下发给 Agent。
 # Agent 连接（hello 完成）后由 Server 主动下发一次；Agent 收到后用它覆盖本机
 # Settings（仅覆盖下发集字段，连接 / 签名 / 本机路径等不受影响）。配置变更走

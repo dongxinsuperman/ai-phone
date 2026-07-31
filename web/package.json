@@ -1,7 +1,7 @@
 {
   "name": "ai-phone-web",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.6.0",
   "license": "MIT",
   "type": "module",
   "scripts": {

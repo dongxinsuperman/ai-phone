@@ -176,6 +176,11 @@ export PATH="/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/to
 
 可以把这行写进 `~/.zshrc`，然后重新打开终端。
 
+如果这台 Agent 还要承接 Server 下发的 HarmonyOS 虚拟机，不能只完成 `hdc`
+安装：还必须准备 DevEco Emulator、官方镜像、首次协议确认和可用的桌面 GUI
+登录会话。完整步骤见
+[Agent 鸿蒙虚拟机环境准备](./agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md)。
+
 ---
 
 ## 六、创建 Python 虚拟环境

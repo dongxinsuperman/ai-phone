@@ -19,6 +19,21 @@ Agent：连接手机、本地跑 VLM 决策循环（含执行安全层）、本�
 Agent 是大脑（执行脑在本地），Server 是控制面（集中管控 + 薄存储）
 ```
 
+这里的“Agent 大脑”描述的是 **Run 的 VLM 决策位置**。当前 Android / 鸿蒙虚拟机
+都由 Agent 承接；区别只是 Android 已经无头，而鸿蒙受官方本地 Emulator 能力限制
+暂时带 GUI。官方本地 Headless 可用后，鸿蒙只替换 Agent 启动层，其余 Server 与
+业务生命周期不变。集中式场景还计划增加 Server 直连的 Harmony Linux gRPC
+Provider；Provider 只改变虚拟机资源的生命周期入口。
+
+```text
+当前：Server → Agent → 本机 GUI 鸿蒙虚拟机
+首选演进：Server → Agent → 本机 Headless 鸿蒙虚拟机
+集中扩展：Server → Harmony gRPC Provider → Linux 无头虚拟机池
+```
+
+两条资源通道的完整边界见
+[`harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md`](./harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md)。
+
 与 `next/server-brain`（Server 大脑）的根本区别只有一个：**VLM 决策执行脑放在哪**。本线放在 Agent 本地（就近决策、Agent 侧算力可用、模型密钥由 Server 下发但不常驻），server-brain 放在 Server 集中。两条线**数据库 schema 与产品能力兼容、二选一部署**。
 
 ---
@@ -150,6 +165,12 @@ uvicorn ai_phone.server.app:app --host 0.0.0.0 --port 8000 --workers 1
 ```
 
   多 Pod（Redis + 共享 / 对象存储 + 分布式锁 / 调度 + lease 收口）是独立后续里程碑。
+- **Harmony Linux gRPC Provider**：官方方向已出现，但本项目尚未完成 Linux
+  无桌面启动、协议契约、HDC 映射和故障恢复验证。验证完成前不作为当前能力，
+  也不在失败时暗中改派到 Agent GUI 资源。
+- **Harmony 本地 Headless**：当前官方本地 Emulator 没有经过验证的公开无窗口
+  入口。后续一旦提供，现有 Agent 链路直接切换；若无头启动失败则明确报错，
+  不静默弹回 GUI。
 
 ---
 

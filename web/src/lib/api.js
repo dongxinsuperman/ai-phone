@@ -297,4 +297,74 @@ export const internal = {
         headers: internalHeaders(),
       }),
   },
+  harmonyVms: {
+    catalog: () =>
+      request('GET', '/api/internal/harmony-vm/catalog', {
+        headers: internalHeaders(),
+      }),
+    importCatalog: (payload) =>
+      request('POST', '/api/internal/harmony-vm/catalog/import', {
+        body: payload,
+        headers: internalHeaders(),
+      }),
+    settings: () =>
+      request('GET', '/api/internal/harmony-vm/settings', {
+        headers: internalHeaders(),
+      }),
+    saveSettings: (payload) =>
+      request('PUT', '/api/internal/harmony-vm/settings', {
+        body: payload,
+        headers: internalHeaders(),
+      }),
+    list: () =>
+      request('GET', '/api/internal/harmony-vm/instances', {
+        headers: internalHeaders(),
+      }),
+    create: (payload) =>
+      request('POST', '/api/internal/harmony-vm/instances', {
+        body: payload,
+        headers: internalHeaders(),
+      }),
+    patch: (id, payload) =>
+      request('PATCH', `/api/internal/harmony-vm/instances/${encodeURIComponent(id)}`, {
+        body: payload,
+        headers: internalHeaders(),
+      }),
+    remove: (id) =>
+      request('DELETE', `/api/internal/harmony-vm/instances/${encodeURIComponent(id)}`, {
+        headers: internalHeaders(),
+      }),
+    dispatchCandidates: (id) =>
+      request(
+        'POST',
+        `/api/internal/harmony-vm/instances/${encodeURIComponent(id)}/dispatch-candidates`,
+        { headers: internalHeaders() },
+      ),
+    dispatch: (id, agentId) =>
+      request(
+        'POST',
+        `/api/internal/harmony-vm/instances/${encodeURIComponent(id)}/dispatch`,
+        {
+          body: { agent_id: agentId },
+          headers: internalHeaders(),
+        },
+      ),
+    start: (id) =>
+      request('POST', `/api/internal/harmony-vm/instances/${encodeURIComponent(id)}/start`, {
+        headers: internalHeaders(),
+      }),
+    stop: (id) =>
+      request('POST', `/api/internal/harmony-vm/instances/${encodeURIComponent(id)}/stop`, {
+        headers: internalHeaders(),
+      }),
+    forceRelease: (id, payload) =>
+      request(
+        'POST',
+        `/api/internal/harmony-vm/instances/${encodeURIComponent(id)}/force-release`,
+        {
+          body: payload,
+          headers: internalHeaders(),
+        },
+      ),
+  },
 }

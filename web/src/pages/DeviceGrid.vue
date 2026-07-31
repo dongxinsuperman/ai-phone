@@ -132,6 +132,7 @@ const dlg = reactive({
   // 虚拟机：别名是 VM 配置的一部分（android_vm_instances.alias），改名要回写 VM
   // 而不是 device_aliases 表；真机才走 device_aliases。vm_id 是唯一锚点。
   vmInstanceId: '',
+  vmPlatform: '',
 })
 
 function openEdit(device) {
@@ -146,6 +147,7 @@ function openEdit(device) {
   dlg.error = ''
   dlg.vmInstanceId =
     device.extra?.device_kind === 'virtual' ? device.extra?.vm_instance_id || '' : ''
+  dlg.vmPlatform = device.extra?.vm_platform || device.platform || ''
   // 如果已经绑过，异步把 note 拉回来（别名表里存了备注）
   if (device.alias) {
     internal.deviceAliases
@@ -180,7 +182,11 @@ async function saveAlias() {
   try {
     if (dlg.vmInstanceId) {
       // 虚拟机：回写 VM 配置别名（后端同步 name + DeviceAlias 映射）
-      await internal.androidVms.patch(dlg.vmInstanceId, { alias })
+      if (dlg.vmPlatform === 'harmony') {
+        await internal.harmonyVms.patch(dlg.vmInstanceId, { alias })
+      } else {
+        await internal.androidVms.patch(dlg.vmInstanceId, { alias })
+      }
     } else {
       await internal.deviceAliases.put(dlg.serial, { alias, note: dlg.note || '' })
     }

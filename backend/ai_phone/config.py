@@ -109,6 +109,25 @@ class Settings(BaseSettings):
         default=True,
         description="开机后做自动化友好预置：关闭系统动画三件套 + 24 小时制。env: AI_PHONE_ANDROID_VM_OPTIMIZE_FOR_AUTOMATION",
     )
+    # ── HarmonyOS 虚拟机（DevEco Emulator）行为参数 ──
+    # 与 Android VM 同属 Server 强控制的下发集，但字段、端口池与生命周期实现完全独立。
+    # 数量 / 内存沿用 Android 的产品规则：只做软提示，不在 Agent 侧暗中拒绝下发。
+    harmony_vm_max_instances: int = Field(
+        default=15,
+        description="探查展示用参考上限，不做硬拦截。env: AI_PHONE_HARMONY_VM_MAX_INSTANCES",
+    )
+    harmony_vm_min_free_mb: int = Field(
+        default=2048,
+        description="软提示阈值；可用内存不足时仍允许用户下发。env: AI_PHONE_HARMONY_VM_MIN_FREE_MB",
+    )
+    harmony_vm_boot_timeout_sec: int = Field(
+        default=180,
+        description="DevEco Emulator 启动并完成 HDC/驱动握手的等待上限秒数。env: AI_PHONE_HARMONY_VM_BOOT_TIMEOUT_SEC",
+    )
+    harmony_vm_orphan_cleanup: bool = Field(
+        default=True,
+        description="Agent 重连时是否上报本机受管鸿蒙实例做孤儿对账。env: AI_PHONE_HARMONY_VM_ORPHAN_CLEANUP",
+    )
     android_setup_stay_awake: bool = Field(
         default=True,
         description=(

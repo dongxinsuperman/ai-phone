@@ -19,11 +19,13 @@
 
 环境前提：
 
-- macOS / Linux 下 ``hdc`` 二进制必须在 ``PATH``（DevEco Studio 装完后要加环境变量）
+- 标准 DevEco / Command Line Tools 安装目录会自动发现；非标准安装才需要让
+  ``hdc`` 位于进程 ``PATH``。不需要 Server 下发宿主机绝对路径。
 - ``hdc list targets`` 能看到设备（设备开发者模式 + USB 调试已开启 + 对 PC 授权）
 """
 from __future__ import annotations
 
+import glob
 import os
 import re
 import shutil
@@ -55,6 +57,83 @@ _HDC_DEFAULT_PATHS: List[str] = [
     "/opt/homebrew/bin/hdc",
 ]
 
+
+def _hdc_candidates() -> List[str]:
+    candidates = list(_HDC_DEFAULT_PATHS)
+    home = os.path.expanduser("~")
+    candidates.extend(
+        glob.glob(
+            os.path.join(
+                home,
+                "Library",
+                "Huawei",
+                "Sdk",
+                "openharmony",
+                "*",
+                "toolchains",
+                "hdc",
+            )
+        )
+    )
+    for root_name in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
+        root = os.environ.get(root_name, "")
+        if not root:
+            continue
+        candidates.extend(
+            [
+                os.path.join(
+                    root,
+                    "Huawei",
+                    "DevEco Studio",
+                    "sdk",
+                    "default",
+                    "openharmony",
+                    "toolchains",
+                    "hdc.exe",
+                ),
+                os.path.join(
+                    root,
+                    "Huawei",
+                    "Sdk",
+                    "default",
+                    "openharmony",
+                    "toolchains",
+                    "hdc.exe",
+                ),
+            ]
+        )
+        candidates.extend(
+            glob.glob(
+                os.path.join(
+                    root,
+                    "Huawei",
+                    "Sdk",
+                    "openharmony",
+                    "*",
+                    "toolchains",
+                    "hdc.exe",
+                )
+            )
+        )
+    candidates.extend(
+        [
+            os.path.join(
+                home,
+                "DevEco-Studio",
+                "sdk",
+                "default",
+                "openharmony",
+                "toolchains",
+                "hdc",
+            ),
+            "/opt/DevEco-Studio/sdk/default/openharmony/toolchains/hdc",
+        ]
+    )
+    return list(
+        dict.fromkeys(os.path.realpath(path) for path in candidates if path)
+    )
+
+
 # 只做一次：模块导入时解析 hdc 路径并（必要时）打补丁到 PATH。
 # 多进程 / 多次 import 都幂等（set 判重）。
 _HDC_BIN_RESOLVED: Optional[str] = None
@@ -76,7 +155,7 @@ def _resolve_hdc_binary() -> Optional[str]:
         _HDC_BIN_RESOLVED = hit
         return hit
 
-    for p in _HDC_DEFAULT_PATHS:
+    for p in _hdc_candidates():
         if os.path.isfile(p) and os.access(p, os.X_OK):
             _HDC_BIN_RESOLVED = p
             # 把 hdc 所在目录 prepend 进 PATH，确保 hmdriver2 / 其他

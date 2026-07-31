@@ -4,12 +4,15 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
+from loguru import logger
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..api._deps import DBSession, HubDep, LockStoreDep
 from ..hub import Hub
 from ..lockstore import DeviceLockStore
 from ..models import AppPackage
+from ..harmony_vm.package_meta import parse_hap_abi
 from .schemas import CreateTaskRequest
 from .service import (
     create_task,
@@ -34,7 +37,29 @@ async def upload_package(
     session.add(pkg)
     await session.commit()
     await session.refresh(pkg)
-    return pkg.to_dict()
+    result = pkg.to_dict()
+    package_id = str(result["id"])
+    if platform == "harmony":
+        meta = parse_hap_abi(package_id, package_file_path(pkg))
+        try:
+            session.add(meta)
+            await session.commit()
+            result["harmony_abi"] = meta.to_dict()
+        except SQLAlchemyError as exc:
+            # AppPackage 已在前一个事务提交。旁挂表失败时保留既有鸿蒙真机
+            # 上传能力；受管 VM 后续会因元数据缺失而明确拒绝安装。
+            await session.rollback()
+            logger.exception(
+                "Harmony HAP ABI 元数据入库失败，普通真机包仍保留 package_id={}",
+                package_id,
+            )
+            result["harmony_abi"] = {
+                "package_id": package_id,
+                "abi_set": "unknown",
+                "abi_state": "storage_unavailable",
+                "last_error": f"{type(exc).__name__}: {exc}"[:4000],
+            }
+    return result
 
 
 @router.get("/packages")

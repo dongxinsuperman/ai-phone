@@ -2,6 +2,40 @@
 
 本文只记录会影响部署、接入或排障口径的工程变化；细粒度代码历史仍以 Git commit 为准。
 
+## 0.6.0 - 2026-07-31
+
+### HarmonyOS 虚拟机完整接入（`main` 独有）
+
+- 新增与 Android 完全隔离的「鸿蒙虚拟机」配置页、API、数据库表、Agent Manager、
+  HDC 端口租约和生命周期状态机；启动后带 `virtual` 标识进入统一设备池，复用
+  鸿蒙真机的工作台、调度、执行和报告链路。
+- 支持按 DevEco 官方设备形态、机型和实测可创建系统版本选择配置；支持折叠屏初始
+  形态、Agent 能力探查、下发、启动、停止、复制、删除、重连认领和孤儿实例对账。
+- 新增全局共享 Emulator UUID / UDID 配置，便于开发证书只登记一次；配置只在
+  虚拟机下次启动时生效，写入失败会阻断启动，不静默使用错误身份。
+- **数据库迁移（部署需执行）**：`backend/migrations/harmony_vm_v1.sql`。
+- Agent 宿主准备见
+  [`docs/agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md`](./docs/agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md)。
+
+### 当前 GUI 边界与无头演进
+
+- 当前 DevEco 本地 Emulator 没有经过验证的公开 Headless / `-no-window` 等价入口，
+  因此首期是 **Agent 承接的本地 GUI 模式**。生命周期已自动化，但宿主需要已登录
+  图形会话；这属于官方能力限制下的阶段性形态，不是项目最终偏好。
+- 官方一旦提供本地 Headless，现有 Agent 启动层直接切换；前端、Server API、
+  数据库、HDC 端口、调度、设备池和停止回收不变，产品生命周期逻辑与 Android 统一。
+- 集中式场景另规划 Harmony Linux gRPC Provider。Provider 未通过交付物、协议、
+  真正无头和 HDC 映射验证前不进入当前 capability。
+- 明确禁止隐藏兜底：Headless 启动失败不偷偷弹回 GUI，gRPC Provider 失败不自动
+  改派员工 Agent，有窗口模式不伪装成 Headless。
+- 完整架构与演进说明见
+  [`docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md`](./docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md)。
+
+### 版本号统一
+
+- 项目版本升级为 `0.6.0`；后端健康检查、右上角版本展示、Python 包元数据和 Web
+  包元数据统一，不再继续显示历史占位版本 `0.0.1`。
+
 ## 2026-06-09
 
 ### Android 虚拟机（Emulator）接入（`main` 独有）

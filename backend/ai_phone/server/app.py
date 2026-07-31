@@ -20,7 +20,13 @@ from sqlalchemy import delete
 
 from .api import include_routers
 from .app_install import AppInstallTimeoutScanner
-from .db import dispose_engine, get_session_factory, init_db, init_engine
+from .db import (
+    dispose_engine,
+    get_session_factory,
+    init_db,
+    init_engine,
+    init_harmony_vm_db,
+)
 from .hub import Hub
 from .lockstore import DeviceLockStore
 from .models import Device
@@ -35,10 +41,21 @@ from .ws import include_ws
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     init_engine()
+    core_db_ready = False
+    app.state.harmony_vm_db_ready = False
     try:
         await init_db()
+        core_db_ready = True
     except Exception as exc:  # noqa: BLE001
         logger.warning("数据库初始化失败（通常是 PG 未启动）：{}", exc)
+    if core_db_ready:
+        try:
+            await init_harmony_vm_db()
+            app.state.harmony_vm_db_ready = True
+        except Exception as exc:  # noqa: BLE001
+            # Harmony feature DDL is deliberately isolated.  Existing Android
+            # and core APIs continue to run even if these new tables fail.
+            logger.warning("Harmony VM 数据表初始化失败，仅禁用该能力：{}", exc)
 
     # 设备列表是实时视图，server 重启后清空——等 agent hello 重新上报。
     # 没有 agent 在线的"幽灵设备"行没有任何意义（既不能控制也不能镜像）。
@@ -66,6 +83,22 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 logger.info("启动重置：{} 台虚拟机运行态归零为 agent_offline，待 Agent 重新认领", n)
     except Exception as exc:  # noqa: BLE001
         logger.warning("启动重置虚拟机状态失败（忽略）：{}", exc)
+
+    if core_db_ready:
+        try:
+            from .harmony_vm.service import reset_vm_states_on_startup as reset_harmony_vms
+
+            factory = get_session_factory()
+            async with factory() as s:
+                n = await reset_harmony_vms(s)
+                await s.commit()
+                if n:
+                    logger.info(
+                        "启动重置：{} 台 Harmony VM 标为 agent_offline，保留租约待认领",
+                        n,
+                    )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("启动重置 Harmony VM 状态失败，仅影响 Harmony VM：{}", exc)
 
     app.state.lock_store = DeviceLockStore()
     app.state.hub = Hub()

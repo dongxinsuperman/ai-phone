@@ -106,6 +106,7 @@ AI_PHONE_HARMONY_WAKE_ON_ENTER=true
 
 ## 八、相关链接
 
+- [Agent 鸿蒙虚拟机环境准备](./agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md)
 - [本地开发指南](./getting-started（本地开发指南）.md)
 - [从0到1部署指南](./deployment-from-zero（从0到1部署指南）.md)
 - [iOS 接入指南](./ios-setup（iOS接入指南）.md)

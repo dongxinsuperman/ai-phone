@@ -129,7 +129,8 @@ def build_harmony_streamer(
 
     Args:
         driver: 已就绪的 ``HarmonyDriver``。screenshot 后端用它截图；hypium
-            后端不直接用 driver（独立 socket），但保留参数让 supervisor 一视同仁。
+            后端从它取得当前设备唯一的 fport，再开独立视频 socket。禁止重新扫描
+            ``fport ls``，否则同一 Agent 连接多台鸿蒙设备时会误拿别人的端口。
     """
     from ai_phone.config import get_settings  # noqa: PLC0415
 
@@ -138,9 +139,39 @@ def build_harmony_streamer(
 
     if backend == "hypium":
         from .harmony_capture_hypium import HarmonyHypiumStreamer  # noqa: PLC0415
+        from ai_phone.agent.harmony_vm.registry import managed_fport  # noqa: PLC0415
+
+        try:
+            raw_driver = driver.get_raw_driver()
+            local_port = int(raw_driver._client.local_port)  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                f"harmony_mirror_driver_fport_unavailable:serial={serial}:{exc}"
+            ) from exc
+        if not 1 <= local_port <= 65535:
+            raise RuntimeError(
+                "harmony_mirror_driver_fport_invalid:"
+                f"serial={serial}:port={local_port}"
+            )
+
+        # VM manager 在 Driver 握手成功后记录这台受管 VM 的精确 fport。
+        # 跨 Agent 的 HDC serial 由 Server 全局租约保证唯一；同一 Agent 内的视频
+        # 端口则必须与当前 Driver 和 VM registry 三者完全一致，任何不一致都
+        # fail-closed，绝不扫描/猜测/复用其它设备的 8012 映射。
+        is_managed, expected_port = managed_fport(serial)
+        if is_managed and expected_port is None:
+            raise RuntimeError(
+                f"managed_harmony_vm_fport_missing:serial={serial}"
+            )
+        if is_managed and int(expected_port) != local_port:
+            raise RuntimeError(
+                "managed_harmony_vm_fport_mismatch:"
+                f"serial={serial}:expected={expected_port}:actual={local_port}"
+            )
 
         return HarmonyHypiumStreamer(
             serial=serial,
+            local_port=local_port,
             on_jpeg=on_jpeg,
             log_tag=log_tag.replace("hm-shot", "hm-hypium"),
         )

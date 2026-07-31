@@ -22,7 +22,7 @@ It is designed for QA teams and internal platforms that want to move from brittl
 - Adds guardrails around the model loop: page stability checks, stuck detection, audit model review, final assertion, trajectory cache, and transient UI gates.
 - Produces self-contained HTML reports with before/after screenshots, step logs, model thoughts, token usage, and final status.
 - Supports optional execution engines, including the bundled VLM runner and the Midscene bridge.
-- Manages Android virtual devices on `main`, so teams can scale Android coverage without only relying on physical devices.
+- Manages Android and HarmonyOS virtual devices on `main`, so teams can scale device coverage without only relying on physical devices. HarmonyOS currently uses Agent-hosted local GUI emulators because the local official runtime has no verified public headless entry point. Once Huawei provides one, the existing Agent path will switch directly to headless without changing the server lifecycle. A separate Linux gRPC provider is also planned for centralized pools.
 
 ## Why It Is Different
 
@@ -41,13 +41,13 @@ In practice, this means an upstream system can generate a test case like "Open S
 | Observability | Device dashboard, queue dashboard, analytics page, AI summary |
 | Stability | Page-stability waits, local stuck detection, audit model, final assertion |
 | Reuse | Trajectory cache modes `off`, `v1`, `v2`, `v3` |
-| Scaling | Android Emulator lifecycle management on `main` |
+| Scaling | Android and HarmonyOS virtual-device lifecycle management on `main` |
 | Distribution | APK / HAP / IPA upload and batch install |
 | License | MIT License |
 
 ## Branches
 
-`main` is the recommended branch. It uses the Distributed Agent Brain architecture and receives new major features first, including Android Emulator management.
+`main` is the recommended branch. It uses the Distributed Agent Brain architecture and receives new major features first, including Android and HarmonyOS virtual-device management.
 
 `next/server-brain` is still maintained for teams that require the model decision loop and model credentials to stay centralized on the server. It may not include every new feature from `main`.
 
@@ -128,6 +128,8 @@ Most detailed documents are currently written in Chinese, but the file names and
 | [harmony-setup](./docs/harmony-setup（HarmonyOS接入指南）.md) | HarmonyOS setup |
 | [trajectory-cache-usage](./docs/trajectory-cache-usage（轨迹缓存使用文档）.md) | Trajectory cache modes and risk boundaries |
 | [agent-vm-env-setup](./docs/agent-vm-env-setup（Agent虚拟机环境准备）.md) | Android Emulator host preparation |
+| [agent-harmony-vm-env-setup](./docs/agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md) | HarmonyOS Emulator host preparation |
+| [harmony-vm-architecture](./docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md) | Current Agent GUI limits, direct migration to official headless, and the planned Linux gRPC pool |
 
 ## License
 

@@ -16,6 +16,8 @@ from ..app_install import router as app_install_router
 from ..android_vm.api import catalog_router as android_vm_catalog_router
 from ..android_vm.api import router as android_vm_instances_router
 from ..device_config import router as device_config_router
+from ..harmony_vm.api import catalog_router as harmony_vm_catalog_router
+from ..harmony_vm.api import router as harmony_vm_router
 from ..submissions.public_routes import router as public_submissions_router
 
 android_vm_router = APIRouter()
@@ -36,4 +38,6 @@ def include_routers(app: FastAPI) -> None:
     app.include_router(device_config_router)      # /api/device-wake-policies（设备 wake 策略）
     app.include_router(app_install_router)        # /api/app-install（应用包上传与分发安装）
     app.include_router(android_vm_router)         # /api/internal/vm/instances（Android 虚拟机）
+    app.include_router(harmony_vm_router)         # /api/internal/harmony-vm/instances
+    app.include_router(harmony_vm_catalog_router) # /api/internal/harmony-vm/catalog
     app.include_router(public_submissions_router)  # /api/submissions（匿名，对外）

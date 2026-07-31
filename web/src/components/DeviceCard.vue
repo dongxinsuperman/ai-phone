@@ -19,7 +19,12 @@ const primaryId = computed(() => {
   if (isVirtual.value) return props.device.extra?.vm_instance_id || props.device.serial
   return props.device.serial
 })
-const showAdbSubline = computed(() => isVirtual.value && !!props.device.extra?.vm_instance_id)
+const showTransportSubline = computed(() => (
+  isVirtual.value && !!props.device.extra?.vm_instance_id
+))
+const transportLabel = computed(() => (
+  props.device.platform === 'harmony' ? 'HDC' : 'adb'
+))
 
 const statusMeta = computed(() => {
   const s = props.device.effective_status || props.device.status || 'unknown'
@@ -159,7 +164,9 @@ const agentLabel = computed(() => (
       </button>
     </div>
     <div class="serial" :title="primaryId">{{ primaryId }}</div>
-    <div v-if="showAdbSubline" class="sub-serial" :title="device.serial">adb：{{ device.serial }}</div>
+    <div v-if="showTransportSubline" class="sub-serial" :title="device.serial">
+      {{ transportLabel }}：{{ device.serial }}
+    </div>
     <div class="model">{{ device.brand || '-' }} {{ device.model || '' }}</div>
     <div class="meta">
       <span>{{ device.os_version || 'os -' }}</span>

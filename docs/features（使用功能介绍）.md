@@ -119,11 +119,14 @@ Token / 稳定性展示可通过 env 开关隐藏，但后端仍会保留计算�
 
 配置清单见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md)。
 
-## 9. 虚拟机（Android Emulator）
+## 9. 虚拟机（Android / HarmonyOS）
 
-> `main` 独有能力。不依赖真机即可按需扩容 android 设备。
+> `main` 独有能力。不依赖真机即可按需扩容 Android 和 HarmonyOS 设备。
 
-「虚拟机」页让你像挑真机一样创建模拟器：
+「虚拟机」页提供相互隔离的 Android 与鸿蒙配置页，两边不共享表单、配置表、
+端口规则或生命周期 Manager，启动后才在通用设备层汇合。
+
+Android：
 
 - 按 **品牌 / 机型 / 系统版本（API 21+，Android 5+）/ 分辨率** 筛选，从设备档案库里选一台模板创建配置。
 - 选一个**可运行 Agent** 下发：Agent 自动完成 `avdmanager create` → 写分辨率 / density / RAM → `emulator` 无头启动 → 等 `boot_completed` → 上报 `running`。
@@ -133,6 +136,21 @@ Token / 稳定性展示可通过 env 开关隐藏，但后端仍会保留计算�
 - 停止 / 删除：删除会自动清理远端 AVD。
 
 Agent 宿主的环境准备（JDK / SDK / 系统镜像矩阵，含 Windows）见 [`agent-vm-env-setup（Agent虚拟机环境准备）.md`](./agent-vm-env-setup（Agent虚拟机环境准备）.md)；功能使用见 [`android-vm-setup（安卓虚拟机接入与使用指南）.md`](./android-vm-setup（安卓虚拟机接入与使用指南）.md)。
+
+HarmonyOS 当前形态：
+
+- 按官方设备形态、机型、实测可创建系统版本和折叠屏初始形态创建配置。
+- Server 探查并选择 Agent，下发后由 Agent 调用本机 DevEco Emulator CLI 管理实例。
+- Agent 自动完成 HDC 端口连接和 hmdriver2 握手；成功后带 `virtual` 标识进入设备池，复用鸿蒙真机的工作台、调度和执行链路。
+- 当前是 **Agent 承接的本地 GUI 模式**：生命周期可以无人值守，但官方本地 Emulator 没有经过验证的公开无头入口，仍会创建窗口，宿主需要已登录图形会话。
+- 官方一旦提供真正 Headless，当前 Agent Manager 直接改用官方无窗口启动；Server 配置、数据库、端口、调度和设备池都不变，产品生命周期与 Android 完全统一。
+- 集中式场景另规划 **Linux gRPC 无头资源池**，作为与 Agent 并列的 Provider 接入方式。
+
+当前部署见 [`agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md`](./agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md)；当前与未来的完整边界见 [`harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md`](./harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md)。
+
+兜底规则：Agent GUI、未来 Agent Headless 和 gRPC Provider 都显式判定能力。
+Headless 启动失败不偷偷弹回 GUI，Provider 失败不自动切换资源来源；旧版 Emulator
+明确继续使用 GUI，直到完成官方版本升级。
 
 ## 10. 应用分发
 

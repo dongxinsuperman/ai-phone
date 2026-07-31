@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai_phone"
-version = "0.0.1"
+version = "0.6.0"
 description = "Lightweight VLM-driven mobile automation platform (Server + Agent)"
 requires-python = ">=3.11,<3.13"
 authors = [{ name = "ai-phone" }]
@@ -63,7 +63,9 @@ ios = [
 # 不拉重量级编码库，对 Windows / Linux 同事没有副作用，按需装即可。
 # 安装命令：pip install -e ".[harmony]"
 harmony = [
-    "hmdriver2>=1.4.4",
+    # Harmony VM 的全局 FPort 隔离补丁依赖该版本的 HdcWrapper.forward_port
+    # 签名；升版必须先做真机 + 多 VM 回归，不能静默落回随机端口。
+    "hmdriver2==1.4.4",
 ]
 
 [project.scripts]
@@ -72,6 +74,9 @@ ai_phone = "ai_phone.__main__:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["ai_phone*"]
+
+[tool.setuptools.package-data]
+"ai_phone.server.harmony_vm" = ["official_catalog.json", "create_compat.json"]
 
 [tool.ruff]
 target-version = "py311"

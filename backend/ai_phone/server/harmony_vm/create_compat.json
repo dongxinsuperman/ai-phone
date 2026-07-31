@@ -1,0 +1,2343 @@
+{
+  "schema": "harmony_create_compat/v3",
+  "emulator_version": "HarmonyOS Emulator :6.1.0.410",
+  "collected_at": "2026-07-30T21:15:21+08:00",
+  "judged_by": "DevEco Emulator -create 返回值",
+  "scope": "仅覆盖创建阶段。不代表该组合能启动、HDC 能连通或 Driver 可用，菜单可见性以启动验证台账为准。",
+  "entries": {
+    "2in1|HarmonyOS 6.0.31(23)": {
+      "device_type": "2in1",
+      "device_type_cli": "2in1",
+      "os_version": "HarmonyOS 6.0.31(23)",
+      "api_version": "23",
+      "software_version": "6.1.0.115",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PCEMU-FD00",
+          "productModel": "MateBook Pro",
+          "isCustomize": "false",
+          "hw.lcd.density": "304",
+          "hw.lcd.phy.height": "200",
+          "hw.lcd.phy.width": "300",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2080",
+          "hw.lcd.single.width": "3120",
+          "hw.lcd.single.diagonalSize": "14.2"
+        }
+      },
+      "custom_screen": {
+        "supported": true,
+        "reason": "",
+        "profiles_offered": 1,
+        "profiles_creatable": [
+          "MateBook Pro"
+        ],
+        "profiles_rejected": []
+      }
+    },
+    "2in1 Foldable|HarmonyOS 6.0.31(23)": {
+      "device_type": "2in1 Foldable",
+      "device_type_cli": "2in1 foldable",
+      "os_version": "HarmonyOS 6.0.31(23)",
+      "api_version": "23",
+      "software_version": "6.1.0.115",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PCEMU-FD05",
+          "hw.lcd.density": "288",
+          "hw.lcd.phy.height": "280",
+          "hw.lcd.phy.width": "370",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "1648",
+          "hw.lcd.single.width": "2472",
+          "hw.lcd.single.diagonalSize": "13",
+          "hw.lcd.double.height": "2472",
+          "hw.lcd.double.width": "3296",
+          "hw.lcd.double.diagonalSize": "18"
+        }
+      },
+      "custom_screen": {
+        "supported": null,
+        "reason": "",
+        "profiles_offered": 0,
+        "profiles_creatable": [],
+        "profiles_rejected": []
+      }
+    },
+    "Phone|HarmonyOS 6.0.31(23)": {
+      "device_type": "Phone",
+      "device_type_cli": "phone",
+      "os_version": "HarmonyOS 6.0.31(23)",
+      "api_version": "23",
+      "software_version": "6.1.0.115",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD00",
+          "productModel": "nova 15 Pro、nova 15 Ultra",
+          "isCustomize": "false",
+          "hw.lcd.density": "560",
+          "hw.lcd.phy.height": "163",
+          "hw.lcd.phy.width": "78",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2856",
+          "hw.lcd.single.width": "1320",
+          "hw.lcd.single.diagonalSize": "6.84",
+          "hw.lcd.single.CutoutPath": "M517 45 L802 45 v 103 h -285 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": true,
+        "reason": "",
+        "profiles_offered": 30,
+        "profiles_creatable": [
+          "Pura 80",
+          "nova 15",
+          "nova 14",
+          "nova 14 Pro",
+          "nova 14 Ultra",
+          "Mate 70",
+          "Pura 70",
+          "nova 13",
+          "nova 13 Pro",
+          "Pocket 2",
+          "Mate 60",
+          "nova 12"
+        ],
+        "profiles_rejected": [
+          {
+            "name": "Pura 90",
+            "reason": "Unknown ScreenProfile \"Pura 90\" for type \"phone\""
+          },
+          {
+            "name": "Pura 90 Pro",
+            "reason": "Unknown ScreenProfile \"Pura 90 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Pura 90 Pro Max",
+            "reason": "Unknown ScreenProfile \"Pura 90 Pro Max\" for type \"phone\""
+          },
+          {
+            "name": "nova 16",
+            "reason": "Unknown ScreenProfile \"nova 16\" for type \"phone\""
+          },
+          {
+            "name": "nova 16z",
+            "reason": "Unknown ScreenProfile \"nova 16z\" for type \"phone\""
+          },
+          {
+            "name": "nova 16 Ultra、nova 16 Pro",
+            "reason": "Unknown ScreenProfile \"nova 16 Ultra、nova 16 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Mate 80 Pro、Mate 80",
+            "reason": "Unknown ScreenProfile \"Mate 80 Pro、Mate 80\" for type \"phone\""
+          },
+          {
+            "name": "Mate 80 RS、Mate 80 Pro Max",
+            "reason": "Unknown ScreenProfile \"Mate 80 RS、Mate 80 Pro Max\" for type \"phone\""
+          },
+          {
+            "name": "Pura 80 Ultra、Pura 80 Pro+、Pura 80 Pro",
+            "reason": "Unknown ScreenProfile \"Pura 80 Ultra、Pura 80 Pro+、Pura 80 Pro\" for type \"phone\""
+          },
+          {
+            "name": "nova 15 Ultra、nova 15 Pro",
+            "reason": "Unknown ScreenProfile \"nova 15 Ultra、nova 15 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Enjoy 90 Plus、Enjoy 90",
+            "reason": "Unknown ScreenProfile \"Enjoy 90 Plus、Enjoy 90\" for type \"phone\""
+          },
+          {
+            "name": "Enjoy 90 Pro Max",
+            "reason": "Unknown ScreenProfile \"Enjoy 90 Pro Max\" for type \"phone\""
+          },
+          {
+            "name": "Mate 70 Air",
+            "reason": "Unknown ScreenProfile \"Mate 70 Air\" for type \"phone\""
+          },
+          {
+            "name": "Mate 70 RS、Mate 70 Pro+、Mate 70 Pro",
+            "reason": "Unknown ScreenProfile \"Mate 70 RS、Mate 70 Pro+、Mate 70 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Pura 70 Ultra、Pura 70 Pro+、Pura 70 Pro",
+            "reason": "Unknown ScreenProfile \"Pura 70 Ultra、Pura 70 Pro+、Pura 70 Pro\" for type \"phone\""
+          },
+          {
+            "name": "nova flip S、nova flip",
+            "reason": "Unknown ScreenProfile \"nova flip S、nova flip\" for type \"phone\""
+          },
+          {
+            "name": "Mate 60 RS、Mate 60 Pro+、Mate 60 Pro",
+            "reason": "Unknown ScreenProfile \"Mate 60 RS、Mate 60 Pro+、Mate 60 Pro\" for type \"phone\""
+          },
+          {
+            "name": "nova 12 Ultra、nova 12 Pro",
+            "reason": "Unknown ScreenProfile \"nova 12 Ultra、nova 12 Pro\" for type \"phone\""
+          }
+        ]
+      }
+    },
+    "Foldable|HarmonyOS 6.0.31(23)": {
+      "device_type": "Foldable",
+      "device_type_cli": "foldable",
+      "os_version": "HarmonyOS 6.0.31(23)",
+      "api_version": "23",
+      "software_version": "6.1.0.115",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD01",
+          "productModel": "Mate X5",
+          "isCustomize": "false",
+          "hw.lcd.density": "500",
+          "hw.lcd.phy.height": "158",
+          "hw.lcd.phy.width": "141",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "2504",
+          "hw.lcd.single.width": "1080",
+          "hw.lcd.single.diagonalSize": "6.4",
+          "hw.lcd.double.height": "2496",
+          "hw.lcd.double.width": "2224",
+          "hw.lcd.double.diagonalSize": "7.85",
+          "hw.lcd.single.CutoutPath": "M2109 28 L2178 28 v 69 h -69 Z",
+          "hw.lcd.double.CutoutPath": "M507 18 L573 18 v 66 h -66 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": true,
+        "reason": "",
+        "profiles_offered": 3,
+        "profiles_creatable": [
+          "Mate X7",
+          "Mate X6",
+          "Mate X5"
+        ],
+        "profiles_rejected": []
+      }
+    },
+    "TripleFold|HarmonyOS 6.0.31(23)": {
+      "device_type": "TripleFold",
+      "device_type_cli": "triplefold",
+      "os_version": "HarmonyOS 6.0.31(23)",
+      "api_version": "23",
+      "software_version": "6.1.0.115",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD06",
+          "hw.lcd.density": "460",
+          "hw.lcd.phy.height": "156",
+          "hw.lcd.phy.width": "219",
+          "hw.lcd.number": "3",
+          "hw.lcd.single.height": "2232",
+          "hw.lcd.single.width": "1008",
+          "hw.lcd.single.diagonalSize": "6.4",
+          "hw.lcd.double.height": "2232",
+          "hw.lcd.double.width": "2048",
+          "hw.lcd.double.diagonalSize": "7.9",
+          "hw.lcd.triple.height": "2232",
+          "hw.lcd.triple.width": "3184",
+          "hw.lcd.triple.diagonalSize": "10.2"
+        }
+      },
+      "custom_screen": {
+        "supported": null,
+        "reason": "",
+        "profiles_offered": 0,
+        "profiles_creatable": [],
+        "profiles_rejected": []
+      }
+    },
+    "WideFold|HarmonyOS 6.0.31(23)": {
+      "device_type": "WideFold",
+      "device_type_cli": "widefold",
+      "os_version": "HarmonyOS 6.0.31(23)",
+      "api_version": "23",
+      "software_version": "6.1.0.115",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD02",
+          "hw.lcd.density": "480",
+          "hw.lcd.phy.height": "134",
+          "hw.lcd.phy.width": "84",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "980",
+          "hw.lcd.single.width": "980",
+          "hw.lcd.single.diagonalSize": "3.5",
+          "hw.lcd.double.height": "2120",
+          "hw.lcd.double.width": "1320",
+          "hw.lcd.double.diagonalSize": "6.3"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 2,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Pura X Max",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Tablet|HarmonyOS 6.0.31(23)": {
+      "device_type": "Tablet",
+      "device_type_cli": "tablet",
+      "os_version": "HarmonyOS 6.0.31(23)",
+      "api_version": "23",
+      "software_version": "6.1.0.115",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "",
+          "productModel": "MatePad Pro 11",
+          "isCustomize": "false",
+          "hw.lcd.density": "360",
+          "hw.lcd.phy.height": "148",
+          "hw.lcd.phy.width": "237",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "1600",
+          "hw.lcd.single.width": "2560",
+          "hw.lcd.single.diagonalSize": "11",
+          "hw.lcd.single.CutoutPath": "M20 20 L67 20 v 47 h -47 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": true,
+        "reason": "",
+        "profiles_offered": 5,
+        "profiles_creatable": [
+          "MatePad Pro 13",
+          "MatePad Pro 12",
+          "MatePad Pro 11",
+          "MatePad Air 12",
+          "MatePad 11 S"
+        ],
+        "profiles_rejected": []
+      }
+    },
+    "WearableKid|HarmonyOS 6.0.31(23)": {
+      "device_type": "WearableKid",
+      "device_type_cli": "wearablekid",
+      "os_version": "HarmonyOS 6.0.31(23)",
+      "api_version": "23",
+      "software_version": "6.1.0.115",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": false,
+      "default_screen": {
+        "creatable": false,
+        "reason": "Invalid device type: \"wearablekid\"",
+        "config": {}
+      },
+      "custom_screen": {
+        "supported": null,
+        "reason": "Invalid device type: \"wearablekid\"",
+        "profiles_offered": 0,
+        "profiles_creatable": [],
+        "profiles_rejected": []
+      }
+    },
+    "Wearable|HarmonyOS 6.0.31(23)": {
+      "device_type": "Wearable",
+      "device_type_cli": "wearable",
+      "os_version": "HarmonyOS 6.0.31(23)",
+      "api_version": "23",
+      "software_version": "6.1.0.115",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "MCHEMU-AL00CN",
+          "hw.lcd.density": "320",
+          "hw.lcd.phy.height": "41",
+          "hw.lcd.phy.width": "41",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "466",
+          "hw.lcd.single.width": "466",
+          "hw.lcd.single.diagonalSize": "1.6"
+        }
+      },
+      "custom_screen": {
+        "supported": null,
+        "reason": "",
+        "profiles_offered": 0,
+        "profiles_creatable": [],
+        "profiles_rejected": []
+      }
+    },
+    "2in1|HarmonyOS 6.0.2(22)": {
+      "device_type": "2in1",
+      "device_type_cli": "2in1",
+      "os_version": "HarmonyOS 6.0.2(22)",
+      "api_version": "22",
+      "software_version": "6.0.0.130",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PCEMU-FD00",
+          "productModel": "MateBook Pro",
+          "isCustomize": "false",
+          "hw.lcd.density": "304",
+          "hw.lcd.phy.height": "200",
+          "hw.lcd.phy.width": "300",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2080",
+          "hw.lcd.single.width": "3120",
+          "hw.lcd.single.diagonalSize": "14.2"
+        }
+      },
+      "custom_screen": {
+        "supported": true,
+        "reason": "",
+        "profiles_offered": 1,
+        "profiles_creatable": [
+          "MateBook Pro"
+        ],
+        "profiles_rejected": []
+      }
+    },
+    "2in1 Foldable|HarmonyOS 6.0.2(22)": {
+      "device_type": "2in1 Foldable",
+      "device_type_cli": "2in1 foldable",
+      "os_version": "HarmonyOS 6.0.2(22)",
+      "api_version": "22",
+      "software_version": "6.0.0.130",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PCEMU-FD05",
+          "hw.lcd.density": "288",
+          "hw.lcd.phy.height": "280",
+          "hw.lcd.phy.width": "370",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "1648",
+          "hw.lcd.single.width": "2472",
+          "hw.lcd.single.diagonalSize": "13",
+          "hw.lcd.double.height": "2472",
+          "hw.lcd.double.width": "3296",
+          "hw.lcd.double.diagonalSize": "18"
+        }
+      },
+      "custom_screen": {
+        "supported": null,
+        "reason": "",
+        "profiles_offered": 0,
+        "profiles_creatable": [],
+        "profiles_rejected": []
+      }
+    },
+    "Phone|HarmonyOS 6.0.2(22)": {
+      "device_type": "Phone",
+      "device_type_cli": "phone",
+      "os_version": "HarmonyOS 6.0.2(22)",
+      "api_version": "22",
+      "software_version": "6.0.0.130",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD00",
+          "productModel": "nova 15 Pro、nova 15 Ultra",
+          "isCustomize": "false",
+          "hw.lcd.density": "560",
+          "hw.lcd.phy.height": "163",
+          "hw.lcd.phy.width": "78",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2856",
+          "hw.lcd.single.width": "1320",
+          "hw.lcd.single.diagonalSize": "6.84",
+          "hw.lcd.single.CutoutPath": "M517 45 L802 45 v 103 h -285 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": true,
+        "reason": "",
+        "profiles_offered": 30,
+        "profiles_creatable": [
+          "Pura 80",
+          "nova 15",
+          "nova 14",
+          "nova 14 Pro",
+          "nova 14 Ultra",
+          "Mate 70",
+          "Pura 70",
+          "nova 13",
+          "nova 13 Pro",
+          "Pocket 2",
+          "Mate 60",
+          "nova 12"
+        ],
+        "profiles_rejected": [
+          {
+            "name": "Pura 90",
+            "reason": "Unknown ScreenProfile \"Pura 90\" for type \"phone\""
+          },
+          {
+            "name": "Pura 90 Pro",
+            "reason": "Unknown ScreenProfile \"Pura 90 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Pura 90 Pro Max",
+            "reason": "Unknown ScreenProfile \"Pura 90 Pro Max\" for type \"phone\""
+          },
+          {
+            "name": "nova 16",
+            "reason": "Unknown ScreenProfile \"nova 16\" for type \"phone\""
+          },
+          {
+            "name": "nova 16z",
+            "reason": "Unknown ScreenProfile \"nova 16z\" for type \"phone\""
+          },
+          {
+            "name": "nova 16 Ultra、nova 16 Pro",
+            "reason": "Unknown ScreenProfile \"nova 16 Ultra、nova 16 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Mate 80 Pro、Mate 80",
+            "reason": "Unknown ScreenProfile \"Mate 80 Pro、Mate 80\" for type \"phone\""
+          },
+          {
+            "name": "Mate 80 RS、Mate 80 Pro Max",
+            "reason": "Unknown ScreenProfile \"Mate 80 RS、Mate 80 Pro Max\" for type \"phone\""
+          },
+          {
+            "name": "Pura 80 Ultra、Pura 80 Pro+、Pura 80 Pro",
+            "reason": "Unknown ScreenProfile \"Pura 80 Ultra、Pura 80 Pro+、Pura 80 Pro\" for type \"phone\""
+          },
+          {
+            "name": "nova 15 Ultra、nova 15 Pro",
+            "reason": "Unknown ScreenProfile \"nova 15 Ultra、nova 15 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Enjoy 90 Plus、Enjoy 90",
+            "reason": "Unknown ScreenProfile \"Enjoy 90 Plus、Enjoy 90\" for type \"phone\""
+          },
+          {
+            "name": "Enjoy 90 Pro Max",
+            "reason": "Unknown ScreenProfile \"Enjoy 90 Pro Max\" for type \"phone\""
+          },
+          {
+            "name": "Mate 70 Air",
+            "reason": "Unknown ScreenProfile \"Mate 70 Air\" for type \"phone\""
+          },
+          {
+            "name": "Mate 70 RS、Mate 70 Pro+、Mate 70 Pro",
+            "reason": "Unknown ScreenProfile \"Mate 70 RS、Mate 70 Pro+、Mate 70 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Pura 70 Ultra、Pura 70 Pro+、Pura 70 Pro",
+            "reason": "Unknown ScreenProfile \"Pura 70 Ultra、Pura 70 Pro+、Pura 70 Pro\" for type \"phone\""
+          },
+          {
+            "name": "nova flip S、nova flip",
+            "reason": "Unknown ScreenProfile \"nova flip S、nova flip\" for type \"phone\""
+          },
+          {
+            "name": "Mate 60 RS、Mate 60 Pro+、Mate 60 Pro",
+            "reason": "Unknown ScreenProfile \"Mate 60 RS、Mate 60 Pro+、Mate 60 Pro\" for type \"phone\""
+          },
+          {
+            "name": "nova 12 Ultra、nova 12 Pro",
+            "reason": "Unknown ScreenProfile \"nova 12 Ultra、nova 12 Pro\" for type \"phone\""
+          }
+        ]
+      }
+    },
+    "Foldable|HarmonyOS 6.0.2(22)": {
+      "device_type": "Foldable",
+      "device_type_cli": "foldable",
+      "os_version": "HarmonyOS 6.0.2(22)",
+      "api_version": "22",
+      "software_version": "6.0.0.130",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD01",
+          "productModel": "Mate X5",
+          "isCustomize": "false",
+          "hw.lcd.density": "500",
+          "hw.lcd.phy.height": "158",
+          "hw.lcd.phy.width": "141",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "2504",
+          "hw.lcd.single.width": "1080",
+          "hw.lcd.single.diagonalSize": "6.4",
+          "hw.lcd.double.height": "2496",
+          "hw.lcd.double.width": "2224",
+          "hw.lcd.double.diagonalSize": "7.85",
+          "hw.lcd.single.CutoutPath": "M2109 28 L2178 28 v 69 h -69 Z",
+          "hw.lcd.double.CutoutPath": "M507 18 L573 18 v 66 h -66 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": true,
+        "reason": "",
+        "profiles_offered": 3,
+        "profiles_creatable": [
+          "Mate X7",
+          "Mate X6",
+          "Mate X5"
+        ],
+        "profiles_rejected": []
+      }
+    },
+    "TripleFold|HarmonyOS 6.0.2(22)": {
+      "device_type": "TripleFold",
+      "device_type_cli": "triplefold",
+      "os_version": "HarmonyOS 6.0.2(22)",
+      "api_version": "22",
+      "software_version": "6.0.0.130",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD06",
+          "hw.lcd.density": "460",
+          "hw.lcd.phy.height": "156",
+          "hw.lcd.phy.width": "219",
+          "hw.lcd.number": "3",
+          "hw.lcd.single.height": "2232",
+          "hw.lcd.single.width": "1008",
+          "hw.lcd.single.diagonalSize": "6.4",
+          "hw.lcd.double.height": "2232",
+          "hw.lcd.double.width": "2048",
+          "hw.lcd.double.diagonalSize": "7.9",
+          "hw.lcd.triple.height": "2232",
+          "hw.lcd.triple.width": "3184",
+          "hw.lcd.triple.diagonalSize": "10.2"
+        }
+      },
+      "custom_screen": {
+        "supported": null,
+        "reason": "",
+        "profiles_offered": 0,
+        "profiles_creatable": [],
+        "profiles_rejected": []
+      }
+    },
+    "WideFold|HarmonyOS 6.0.2(22)": {
+      "device_type": "WideFold",
+      "device_type_cli": "widefold",
+      "os_version": "HarmonyOS 6.0.2(22)",
+      "api_version": "22",
+      "software_version": "6.0.0.130",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD02",
+          "hw.lcd.density": "480",
+          "hw.lcd.phy.height": "134",
+          "hw.lcd.phy.width": "84",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "980",
+          "hw.lcd.single.width": "980",
+          "hw.lcd.single.diagonalSize": "3.5",
+          "hw.lcd.double.height": "2120",
+          "hw.lcd.double.width": "1320",
+          "hw.lcd.double.diagonalSize": "6.3"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 2,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Pura X Max",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Tablet|HarmonyOS 6.0.2(22)": {
+      "device_type": "Tablet",
+      "device_type_cli": "tablet",
+      "os_version": "HarmonyOS 6.0.2(22)",
+      "api_version": "22",
+      "software_version": "6.0.0.130",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "",
+          "productModel": "MatePad Pro 11",
+          "isCustomize": "false",
+          "hw.lcd.density": "360",
+          "hw.lcd.phy.height": "148",
+          "hw.lcd.phy.width": "237",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "1600",
+          "hw.lcd.single.width": "2560",
+          "hw.lcd.single.diagonalSize": "11",
+          "hw.lcd.single.CutoutPath": "M20 20 L67 20 v 47 h -47 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": true,
+        "reason": "",
+        "profiles_offered": 5,
+        "profiles_creatable": [
+          "MatePad Pro 13",
+          "MatePad Pro 12",
+          "MatePad Pro 11",
+          "MatePad Air 12",
+          "MatePad 11 S"
+        ],
+        "profiles_rejected": []
+      }
+    },
+    "2in1|HarmonyOS 6.0.1(21)": {
+      "device_type": "2in1",
+      "device_type_cli": "2in1",
+      "os_version": "HarmonyOS 6.0.1(21)",
+      "api_version": "21",
+      "software_version": "6.0.0.112",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PCEMU-FD00",
+          "productModel": "MateBook Pro",
+          "isCustomize": "false",
+          "hw.lcd.density": "304",
+          "hw.lcd.phy.height": "200",
+          "hw.lcd.phy.width": "300",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2080",
+          "hw.lcd.single.width": "3120",
+          "hw.lcd.single.diagonalSize": "14.2"
+        }
+      },
+      "custom_screen": {
+        "supported": true,
+        "reason": "",
+        "profiles_offered": 1,
+        "profiles_creatable": [
+          "MateBook Pro"
+        ],
+        "profiles_rejected": []
+      }
+    },
+    "2in1 Foldable|HarmonyOS 6.0.1(21)": {
+      "device_type": "2in1 Foldable",
+      "device_type_cli": "2in1 foldable",
+      "os_version": "HarmonyOS 6.0.1(21)",
+      "api_version": "21",
+      "software_version": "6.0.0.112",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PCEMU-FD05",
+          "hw.lcd.density": "288",
+          "hw.lcd.phy.height": "280",
+          "hw.lcd.phy.width": "370",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "1648",
+          "hw.lcd.single.width": "2472",
+          "hw.lcd.single.diagonalSize": "13",
+          "hw.lcd.double.height": "2472",
+          "hw.lcd.double.width": "3296",
+          "hw.lcd.double.diagonalSize": "18"
+        }
+      },
+      "custom_screen": {
+        "supported": null,
+        "reason": "",
+        "profiles_offered": 0,
+        "profiles_creatable": [],
+        "profiles_rejected": []
+      }
+    },
+    "Phone|HarmonyOS 6.0.1(21)": {
+      "device_type": "Phone",
+      "device_type_cli": "phone",
+      "os_version": "HarmonyOS 6.0.1(21)",
+      "api_version": "21",
+      "software_version": "6.0.0.112",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD00",
+          "productModel": "nova 15 Pro、nova 15 Ultra",
+          "isCustomize": "false",
+          "hw.lcd.density": "560",
+          "hw.lcd.phy.height": "163",
+          "hw.lcd.phy.width": "78",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2856",
+          "hw.lcd.single.width": "1320",
+          "hw.lcd.single.diagonalSize": "6.84",
+          "hw.lcd.single.CutoutPath": "M517 45 L802 45 v 103 h -285 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": true,
+        "reason": "",
+        "profiles_offered": 30,
+        "profiles_creatable": [
+          "Pura 80",
+          "nova 15",
+          "nova 14",
+          "nova 14 Pro",
+          "nova 14 Ultra",
+          "Mate 70",
+          "Pura 70",
+          "nova 13",
+          "nova 13 Pro",
+          "Pocket 2",
+          "Mate 60",
+          "nova 12"
+        ],
+        "profiles_rejected": [
+          {
+            "name": "Pura 90",
+            "reason": "Unknown ScreenProfile \"Pura 90\" for type \"phone\""
+          },
+          {
+            "name": "Pura 90 Pro",
+            "reason": "Unknown ScreenProfile \"Pura 90 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Pura 90 Pro Max",
+            "reason": "Unknown ScreenProfile \"Pura 90 Pro Max\" for type \"phone\""
+          },
+          {
+            "name": "nova 16",
+            "reason": "Unknown ScreenProfile \"nova 16\" for type \"phone\""
+          },
+          {
+            "name": "nova 16z",
+            "reason": "Unknown ScreenProfile \"nova 16z\" for type \"phone\""
+          },
+          {
+            "name": "nova 16 Ultra、nova 16 Pro",
+            "reason": "Unknown ScreenProfile \"nova 16 Ultra、nova 16 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Mate 80 Pro、Mate 80",
+            "reason": "Unknown ScreenProfile \"Mate 80 Pro、Mate 80\" for type \"phone\""
+          },
+          {
+            "name": "Mate 80 RS、Mate 80 Pro Max",
+            "reason": "Unknown ScreenProfile \"Mate 80 RS、Mate 80 Pro Max\" for type \"phone\""
+          },
+          {
+            "name": "Pura 80 Ultra、Pura 80 Pro+、Pura 80 Pro",
+            "reason": "Unknown ScreenProfile \"Pura 80 Ultra、Pura 80 Pro+、Pura 80 Pro\" for type \"phone\""
+          },
+          {
+            "name": "nova 15 Ultra、nova 15 Pro",
+            "reason": "Unknown ScreenProfile \"nova 15 Ultra、nova 15 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Enjoy 90 Plus、Enjoy 90",
+            "reason": "Unknown ScreenProfile \"Enjoy 90 Plus、Enjoy 90\" for type \"phone\""
+          },
+          {
+            "name": "Enjoy 90 Pro Max",
+            "reason": "Unknown ScreenProfile \"Enjoy 90 Pro Max\" for type \"phone\""
+          },
+          {
+            "name": "Mate 70 Air",
+            "reason": "Unknown ScreenProfile \"Mate 70 Air\" for type \"phone\""
+          },
+          {
+            "name": "Mate 70 RS、Mate 70 Pro+、Mate 70 Pro",
+            "reason": "Unknown ScreenProfile \"Mate 70 RS、Mate 70 Pro+、Mate 70 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Pura 70 Ultra、Pura 70 Pro+、Pura 70 Pro",
+            "reason": "Unknown ScreenProfile \"Pura 70 Ultra、Pura 70 Pro+、Pura 70 Pro\" for type \"phone\""
+          },
+          {
+            "name": "nova flip S、nova flip",
+            "reason": "Unknown ScreenProfile \"nova flip S、nova flip\" for type \"phone\""
+          },
+          {
+            "name": "Mate 60 RS、Mate 60 Pro+、Mate 60 Pro",
+            "reason": "Unknown ScreenProfile \"Mate 60 RS、Mate 60 Pro+、Mate 60 Pro\" for type \"phone\""
+          },
+          {
+            "name": "nova 12 Ultra、nova 12 Pro",
+            "reason": "Unknown ScreenProfile \"nova 12 Ultra、nova 12 Pro\" for type \"phone\""
+          }
+        ]
+      }
+    },
+    "Foldable|HarmonyOS 6.0.1(21)": {
+      "device_type": "Foldable",
+      "device_type_cli": "foldable",
+      "os_version": "HarmonyOS 6.0.1(21)",
+      "api_version": "21",
+      "software_version": "6.0.0.112",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD01",
+          "productModel": "Mate X5",
+          "isCustomize": "false",
+          "hw.lcd.density": "500",
+          "hw.lcd.phy.height": "158",
+          "hw.lcd.phy.width": "141",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "2504",
+          "hw.lcd.single.width": "1080",
+          "hw.lcd.single.diagonalSize": "6.4",
+          "hw.lcd.double.height": "2496",
+          "hw.lcd.double.width": "2224",
+          "hw.lcd.double.diagonalSize": "7.85",
+          "hw.lcd.single.CutoutPath": "M2109 28 L2178 28 v 69 h -69 Z",
+          "hw.lcd.double.CutoutPath": "M507 18 L573 18 v 66 h -66 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": true,
+        "reason": "",
+        "profiles_offered": 3,
+        "profiles_creatable": [
+          "Mate X7",
+          "Mate X6",
+          "Mate X5"
+        ],
+        "profiles_rejected": []
+      }
+    },
+    "TripleFold|HarmonyOS 6.0.1(21)": {
+      "device_type": "TripleFold",
+      "device_type_cli": "triplefold",
+      "os_version": "HarmonyOS 6.0.1(21)",
+      "api_version": "21",
+      "software_version": "6.0.0.112",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD06",
+          "hw.lcd.density": "460",
+          "hw.lcd.phy.height": "156",
+          "hw.lcd.phy.width": "219",
+          "hw.lcd.number": "3",
+          "hw.lcd.single.height": "2232",
+          "hw.lcd.single.width": "1008",
+          "hw.lcd.single.diagonalSize": "6.4",
+          "hw.lcd.double.height": "2232",
+          "hw.lcd.double.width": "2048",
+          "hw.lcd.double.diagonalSize": "7.9",
+          "hw.lcd.triple.height": "2232",
+          "hw.lcd.triple.width": "3184",
+          "hw.lcd.triple.diagonalSize": "10.2"
+        }
+      },
+      "custom_screen": {
+        "supported": null,
+        "reason": "",
+        "profiles_offered": 0,
+        "profiles_creatable": [],
+        "profiles_rejected": []
+      }
+    },
+    "WideFold|HarmonyOS 6.0.1(21)": {
+      "device_type": "WideFold",
+      "device_type_cli": "widefold",
+      "os_version": "HarmonyOS 6.0.1(21)",
+      "api_version": "21",
+      "software_version": "6.0.0.112",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD02",
+          "hw.lcd.density": "480",
+          "hw.lcd.phy.height": "134",
+          "hw.lcd.phy.width": "84",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "980",
+          "hw.lcd.single.width": "980",
+          "hw.lcd.single.diagonalSize": "3.5",
+          "hw.lcd.double.height": "2120",
+          "hw.lcd.double.width": "1320",
+          "hw.lcd.double.diagonalSize": "6.3"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 2,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Pura X Max",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Tablet|HarmonyOS 6.0.1(21)": {
+      "device_type": "Tablet",
+      "device_type_cli": "tablet",
+      "os_version": "HarmonyOS 6.0.1(21)",
+      "api_version": "21",
+      "software_version": "6.0.0.112",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "",
+          "productModel": "MatePad Pro 11",
+          "isCustomize": "false",
+          "hw.lcd.density": "360",
+          "hw.lcd.phy.height": "148",
+          "hw.lcd.phy.width": "237",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "1600",
+          "hw.lcd.single.width": "2560",
+          "hw.lcd.single.diagonalSize": "11",
+          "hw.lcd.single.CutoutPath": "M20 20 L67 20 v 47 h -47 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": true,
+        "reason": "",
+        "profiles_offered": 5,
+        "profiles_creatable": [
+          "MatePad Pro 13",
+          "MatePad Pro 12",
+          "MatePad Pro 11",
+          "MatePad Air 12",
+          "MatePad 11 S"
+        ],
+        "profiles_rejected": []
+      }
+    },
+    "Wearable|HarmonyOS 6.0.1(21)": {
+      "device_type": "Wearable",
+      "device_type_cli": "wearable",
+      "os_version": "HarmonyOS 6.0.1(21)",
+      "api_version": "21",
+      "software_version": "6.0.0.112",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "MCHEMU-AL00CN",
+          "hw.lcd.density": "320",
+          "hw.lcd.phy.height": "41",
+          "hw.lcd.phy.width": "41",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "466",
+          "hw.lcd.single.width": "466",
+          "hw.lcd.single.diagonalSize": "1.6"
+        }
+      },
+      "custom_screen": {
+        "supported": null,
+        "reason": "",
+        "profiles_offered": 0,
+        "profiles_creatable": [],
+        "profiles_rejected": []
+      }
+    },
+    "2in1|HarmonyOS 6.0.0(20)": {
+      "device_type": "2in1",
+      "device_type_cli": "2in1",
+      "os_version": "HarmonyOS 6.0.0(20)",
+      "api_version": "20",
+      "software_version": "6.0.0.48",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PCEMU-FD00",
+          "productModel": "MateBook Pro",
+          "isCustomize": "false",
+          "hw.lcd.density": "304",
+          "hw.lcd.phy.height": "200",
+          "hw.lcd.phy.width": "300",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2080",
+          "hw.lcd.single.width": "3120",
+          "hw.lcd.single.diagonalSize": "14.2"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 1,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "MateBook Pro",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "2in1 Foldable|HarmonyOS 6.0.0(20)": {
+      "device_type": "2in1 Foldable",
+      "device_type_cli": "2in1 foldable",
+      "os_version": "HarmonyOS 6.0.0(20)",
+      "api_version": "20",
+      "software_version": "6.0.0.48",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PCEMU-FD05",
+          "hw.lcd.density": "288",
+          "hw.lcd.phy.height": "280",
+          "hw.lcd.phy.width": "370",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "1648",
+          "hw.lcd.single.width": "2472",
+          "hw.lcd.single.diagonalSize": "13",
+          "hw.lcd.double.height": "2472",
+          "hw.lcd.double.width": "3296",
+          "hw.lcd.double.diagonalSize": "18"
+        }
+      },
+      "custom_screen": {
+        "supported": null,
+        "reason": "",
+        "profiles_offered": 0,
+        "profiles_creatable": [],
+        "profiles_rejected": []
+      }
+    },
+    "Phone|HarmonyOS 6.0.0(20)": {
+      "device_type": "Phone",
+      "device_type_cli": "phone",
+      "os_version": "HarmonyOS 6.0.0(20)",
+      "api_version": "20",
+      "software_version": "6.0.0.48",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD00",
+          "productModel": "nova 15 Pro、nova 15 Ultra",
+          "isCustomize": "false",
+          "hw.lcd.density": "560",
+          "hw.lcd.phy.height": "163",
+          "hw.lcd.phy.width": "78",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2856",
+          "hw.lcd.single.width": "1320",
+          "hw.lcd.single.diagonalSize": "6.84",
+          "hw.lcd.single.CutoutPath": "M517 45 L802 45 v 103 h -285 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": true,
+        "reason": "",
+        "profiles_offered": 30,
+        "profiles_creatable": [
+          "Pura 80",
+          "nova 15",
+          "nova 14",
+          "nova 14 Pro",
+          "nova 14 Ultra",
+          "Mate 70",
+          "Pura 70",
+          "nova 13",
+          "nova 13 Pro",
+          "Pocket 2",
+          "Mate 60",
+          "nova 12"
+        ],
+        "profiles_rejected": [
+          {
+            "name": "Pura 90",
+            "reason": "Unknown ScreenProfile \"Pura 90\" for type \"phone\""
+          },
+          {
+            "name": "Pura 90 Pro",
+            "reason": "Unknown ScreenProfile \"Pura 90 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Pura 90 Pro Max",
+            "reason": "Unknown ScreenProfile \"Pura 90 Pro Max\" for type \"phone\""
+          },
+          {
+            "name": "nova 16",
+            "reason": "Unknown ScreenProfile \"nova 16\" for type \"phone\""
+          },
+          {
+            "name": "nova 16z",
+            "reason": "Unknown ScreenProfile \"nova 16z\" for type \"phone\""
+          },
+          {
+            "name": "nova 16 Ultra、nova 16 Pro",
+            "reason": "Unknown ScreenProfile \"nova 16 Ultra、nova 16 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Mate 80 Pro、Mate 80",
+            "reason": "Unknown ScreenProfile \"Mate 80 Pro、Mate 80\" for type \"phone\""
+          },
+          {
+            "name": "Mate 80 RS、Mate 80 Pro Max",
+            "reason": "Unknown ScreenProfile \"Mate 80 RS、Mate 80 Pro Max\" for type \"phone\""
+          },
+          {
+            "name": "Pura 80 Ultra、Pura 80 Pro+、Pura 80 Pro",
+            "reason": "Unknown ScreenProfile \"Pura 80 Ultra、Pura 80 Pro+、Pura 80 Pro\" for type \"phone\""
+          },
+          {
+            "name": "nova 15 Ultra、nova 15 Pro",
+            "reason": "Unknown ScreenProfile \"nova 15 Ultra、nova 15 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Enjoy 90 Plus、Enjoy 90",
+            "reason": "Unknown ScreenProfile \"Enjoy 90 Plus、Enjoy 90\" for type \"phone\""
+          },
+          {
+            "name": "Enjoy 90 Pro Max",
+            "reason": "Unknown ScreenProfile \"Enjoy 90 Pro Max\" for type \"phone\""
+          },
+          {
+            "name": "Mate 70 Air",
+            "reason": "Unknown ScreenProfile \"Mate 70 Air\" for type \"phone\""
+          },
+          {
+            "name": "Mate 70 RS、Mate 70 Pro+、Mate 70 Pro",
+            "reason": "Unknown ScreenProfile \"Mate 70 RS、Mate 70 Pro+、Mate 70 Pro\" for type \"phone\""
+          },
+          {
+            "name": "Pura 70 Ultra、Pura 70 Pro+、Pura 70 Pro",
+            "reason": "Unknown ScreenProfile \"Pura 70 Ultra、Pura 70 Pro+、Pura 70 Pro\" for type \"phone\""
+          },
+          {
+            "name": "nova flip S、nova flip",
+            "reason": "Unknown ScreenProfile \"nova flip S、nova flip\" for type \"phone\""
+          },
+          {
+            "name": "Mate 60 RS、Mate 60 Pro+、Mate 60 Pro",
+            "reason": "Unknown ScreenProfile \"Mate 60 RS、Mate 60 Pro+、Mate 60 Pro\" for type \"phone\""
+          },
+          {
+            "name": "nova 12 Ultra、nova 12 Pro",
+            "reason": "Unknown ScreenProfile \"nova 12 Ultra、nova 12 Pro\" for type \"phone\""
+          }
+        ]
+      }
+    },
+    "Foldable|HarmonyOS 6.0.0(20)": {
+      "device_type": "Foldable",
+      "device_type_cli": "foldable",
+      "os_version": "HarmonyOS 6.0.0(20)",
+      "api_version": "20",
+      "software_version": "6.0.0.48",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD01",
+          "productModel": "Mate X5",
+          "isCustomize": "false",
+          "hw.lcd.density": "500",
+          "hw.lcd.phy.height": "158",
+          "hw.lcd.phy.width": "141",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "2504",
+          "hw.lcd.single.width": "1080",
+          "hw.lcd.single.diagonalSize": "6.4",
+          "hw.lcd.double.height": "2496",
+          "hw.lcd.double.width": "2224",
+          "hw.lcd.double.diagonalSize": "7.85",
+          "hw.lcd.single.CutoutPath": "M2109 28 L2178 28 v 69 h -69 Z",
+          "hw.lcd.double.CutoutPath": "M507 18 L573 18 v 66 h -66 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 3,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Mate X7",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "TripleFold|HarmonyOS 6.0.0(20)": {
+      "device_type": "TripleFold",
+      "device_type_cli": "triplefold",
+      "os_version": "HarmonyOS 6.0.0(20)",
+      "api_version": "20",
+      "software_version": "6.0.0.48",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD06",
+          "hw.lcd.density": "460",
+          "hw.lcd.phy.height": "156",
+          "hw.lcd.phy.width": "219",
+          "hw.lcd.number": "3",
+          "hw.lcd.single.height": "2232",
+          "hw.lcd.single.width": "1008",
+          "hw.lcd.single.diagonalSize": "6.4",
+          "hw.lcd.double.height": "2232",
+          "hw.lcd.double.width": "2048",
+          "hw.lcd.double.diagonalSize": "7.9",
+          "hw.lcd.triple.height": "2232",
+          "hw.lcd.triple.width": "3184",
+          "hw.lcd.triple.diagonalSize": "10.2"
+        }
+      },
+      "custom_screen": {
+        "supported": null,
+        "reason": "",
+        "profiles_offered": 0,
+        "profiles_creatable": [],
+        "profiles_rejected": []
+      }
+    },
+    "WideFold|HarmonyOS 6.0.0(20)": {
+      "device_type": "WideFold",
+      "device_type_cli": "widefold",
+      "os_version": "HarmonyOS 6.0.0(20)",
+      "api_version": "20",
+      "software_version": "6.0.0.48",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD02",
+          "hw.lcd.density": "480",
+          "hw.lcd.phy.height": "134",
+          "hw.lcd.phy.width": "84",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "980",
+          "hw.lcd.single.width": "980",
+          "hw.lcd.single.diagonalSize": "3.5",
+          "hw.lcd.double.height": "2120",
+          "hw.lcd.double.width": "1320",
+          "hw.lcd.double.diagonalSize": "6.3"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 2,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Pura X Max",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Tablet|HarmonyOS 6.0.0(20)": {
+      "device_type": "Tablet",
+      "device_type_cli": "tablet",
+      "os_version": "HarmonyOS 6.0.0(20)",
+      "api_version": "20",
+      "software_version": "6.0.0.48",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "",
+          "productModel": "MatePad Pro 11",
+          "isCustomize": "false",
+          "hw.lcd.density": "360",
+          "hw.lcd.phy.height": "148",
+          "hw.lcd.phy.width": "237",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "1600",
+          "hw.lcd.single.width": "2560",
+          "hw.lcd.single.diagonalSize": "11",
+          "hw.lcd.single.CutoutPath": "M20 20 L67 20 v 47 h -47 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 5,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "MatePad Pro 13",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Wearable|HarmonyOS 6.0.0(20)": {
+      "device_type": "Wearable",
+      "device_type_cli": "wearable",
+      "os_version": "HarmonyOS 6.0.0(20)",
+      "api_version": "20",
+      "software_version": "6.0.0.48",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "MCHEMU-AL00CN",
+          "hw.lcd.density": "320",
+          "hw.lcd.phy.height": "41",
+          "hw.lcd.phy.width": "41",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "466",
+          "hw.lcd.single.width": "466",
+          "hw.lcd.single.diagonalSize": "1.6"
+        }
+      },
+      "custom_screen": {
+        "supported": null,
+        "reason": "",
+        "profiles_offered": 0,
+        "profiles_creatable": [],
+        "profiles_rejected": []
+      }
+    },
+    "Phone|HarmonyOS 5.1.1(19)": {
+      "device_type": "Phone",
+      "device_type_cli": "phone",
+      "os_version": "HarmonyOS 5.1.1(19)",
+      "api_version": "19",
+      "software_version": "5.1.0.235",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD00",
+          "productModel": "nova 15 Pro、nova 15 Ultra",
+          "isCustomize": "false",
+          "hw.lcd.density": "560",
+          "hw.lcd.phy.height": "163",
+          "hw.lcd.phy.width": "78",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2856",
+          "hw.lcd.single.width": "1320",
+          "hw.lcd.single.diagonalSize": "6.84",
+          "hw.lcd.single.CutoutPath": "M517 45 L802 45 v 103 h -285 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 30,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Pura 90",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "TripleFold|HarmonyOS 5.1.1(19)": {
+      "device_type": "TripleFold",
+      "device_type_cli": "triplefold",
+      "os_version": "HarmonyOS 5.1.1(19)",
+      "api_version": "19",
+      "software_version": "5.1.0.235",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD06",
+          "hw.lcd.density": "460",
+          "hw.lcd.phy.height": "156",
+          "hw.lcd.phy.width": "219",
+          "hw.lcd.number": "3",
+          "hw.lcd.single.height": "2232",
+          "hw.lcd.single.width": "1008",
+          "hw.lcd.single.diagonalSize": "6.4",
+          "hw.lcd.double.height": "2232",
+          "hw.lcd.double.width": "2048",
+          "hw.lcd.double.diagonalSize": "7.9",
+          "hw.lcd.triple.height": "2232",
+          "hw.lcd.triple.width": "3184",
+          "hw.lcd.triple.diagonalSize": "10.2"
+        }
+      },
+      "custom_screen": {
+        "supported": null,
+        "reason": "",
+        "profiles_offered": 0,
+        "profiles_creatable": [],
+        "profiles_rejected": []
+      }
+    },
+    "TV|HarmonyOS 5.1.1(19)": {
+      "device_type": "TV",
+      "device_type_cli": "tv",
+      "os_version": "HarmonyOS 5.1.1(19)",
+      "api_version": "19",
+      "software_version": "5.1.0.221",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "",
+          "hw.lcd.density": "480",
+          "hw.lcd.phy.height": "147",
+          "hw.lcd.phy.width": "247",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2160",
+          "hw.lcd.single.width": "3840",
+          "hw.lcd.single.diagonalSize": "98"
+        }
+      },
+      "custom_screen": {
+        "supported": null,
+        "reason": "",
+        "profiles_offered": 0,
+        "profiles_creatable": [],
+        "profiles_rejected": []
+      }
+    },
+    "Phone|HarmonyOS 5.1.0(18)": {
+      "device_type": "Phone",
+      "device_type_cli": "phone",
+      "os_version": "HarmonyOS 5.1.0(18)",
+      "api_version": "18",
+      "software_version": "5.1.0.110",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD00",
+          "productModel": "nova 15 Pro、nova 15 Ultra",
+          "isCustomize": "false",
+          "hw.lcd.density": "560",
+          "hw.lcd.phy.height": "163",
+          "hw.lcd.phy.width": "78",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2856",
+          "hw.lcd.single.width": "1320",
+          "hw.lcd.single.diagonalSize": "6.84",
+          "hw.lcd.single.CutoutPath": "M517 45 L802 45 v 103 h -285 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 30,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Pura 90",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Foldable|HarmonyOS 5.0.5(17)": {
+      "device_type": "Foldable",
+      "device_type_cli": "foldable",
+      "os_version": "HarmonyOS 5.0.5(17)",
+      "api_version": "17",
+      "software_version": "5.0.1.121",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD01",
+          "productModel": "Mate X5",
+          "isCustomize": "false",
+          "hw.lcd.density": "500",
+          "hw.lcd.phy.height": "158",
+          "hw.lcd.phy.width": "141",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "2504",
+          "hw.lcd.single.width": "1080",
+          "hw.lcd.single.diagonalSize": "6.4",
+          "hw.lcd.double.height": "2496",
+          "hw.lcd.double.width": "2224",
+          "hw.lcd.double.diagonalSize": "7.85",
+          "hw.lcd.single.CutoutPath": "M2109 28 L2178 28 v 69 h -69 Z",
+          "hw.lcd.double.CutoutPath": "M507 18 L573 18 v 66 h -66 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 3,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Mate X7",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Phone|HarmonyOS 5.0.5(17)": {
+      "device_type": "Phone",
+      "device_type_cli": "phone",
+      "os_version": "HarmonyOS 5.0.5(17)",
+      "api_version": "17",
+      "software_version": "5.0.1.121",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD00",
+          "productModel": "nova 15 Pro、nova 15 Ultra",
+          "isCustomize": "false",
+          "hw.lcd.density": "560",
+          "hw.lcd.phy.height": "163",
+          "hw.lcd.phy.width": "78",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2856",
+          "hw.lcd.single.width": "1320",
+          "hw.lcd.single.diagonalSize": "6.84",
+          "hw.lcd.single.CutoutPath": "M517 45 L802 45 v 103 h -285 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 30,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Pura 90",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Tablet|HarmonyOS 5.0.5(17)": {
+      "device_type": "Tablet",
+      "device_type_cli": "tablet",
+      "os_version": "HarmonyOS 5.0.5(17)",
+      "api_version": "17",
+      "software_version": "5.0.1.121",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "",
+          "productModel": "MatePad Pro 11",
+          "isCustomize": "false",
+          "hw.lcd.density": "360",
+          "hw.lcd.phy.height": "148",
+          "hw.lcd.phy.width": "237",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "1600",
+          "hw.lcd.single.width": "2560",
+          "hw.lcd.single.diagonalSize": "11",
+          "hw.lcd.single.CutoutPath": "M20 20 L67 20 v 47 h -47 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 5,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "MatePad Pro 13",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "WideFold|HarmonyOS 5.0.5(17)": {
+      "device_type": "WideFold",
+      "device_type_cli": "widefold",
+      "os_version": "HarmonyOS 5.0.5(17)",
+      "api_version": "17",
+      "software_version": "5.0.1.120",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD02",
+          "hw.lcd.density": "480",
+          "hw.lcd.phy.height": "134",
+          "hw.lcd.phy.width": "84",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "980",
+          "hw.lcd.single.width": "980",
+          "hw.lcd.single.diagonalSize": "3.5",
+          "hw.lcd.double.height": "2120",
+          "hw.lcd.double.width": "1320",
+          "hw.lcd.double.diagonalSize": "6.3"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 2,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Pura X Max",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "2in1|HarmonyOS 5.0.5(17)": {
+      "device_type": "2in1",
+      "device_type_cli": "2in1",
+      "os_version": "HarmonyOS 5.0.5(17)",
+      "api_version": "17",
+      "software_version": "5.0.0.319",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PCEMU-FD00",
+          "productModel": "MateBook Pro",
+          "isCustomize": "false",
+          "hw.lcd.density": "304",
+          "hw.lcd.phy.height": "200",
+          "hw.lcd.phy.width": "300",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2080",
+          "hw.lcd.single.width": "3120",
+          "hw.lcd.single.diagonalSize": "14.2"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 1,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "MateBook Pro",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Foldable|HarmonyOS 5.0.4(16)": {
+      "device_type": "Foldable",
+      "device_type_cli": "foldable",
+      "os_version": "HarmonyOS 5.0.4(16)",
+      "api_version": "16",
+      "software_version": "5.0.0.150",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD01",
+          "productModel": "Mate X5",
+          "isCustomize": "false",
+          "hw.lcd.density": "500",
+          "hw.lcd.phy.height": "158",
+          "hw.lcd.phy.width": "141",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "2504",
+          "hw.lcd.single.width": "1080",
+          "hw.lcd.single.diagonalSize": "6.4",
+          "hw.lcd.double.height": "2496",
+          "hw.lcd.double.width": "2224",
+          "hw.lcd.double.diagonalSize": "7.85",
+          "hw.lcd.single.CutoutPath": "M2109 28 L2178 28 v 69 h -69 Z",
+          "hw.lcd.double.CutoutPath": "M507 18 L573 18 v 66 h -66 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 3,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Mate X7",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Phone|HarmonyOS 5.0.4(16)": {
+      "device_type": "Phone",
+      "device_type_cli": "phone",
+      "os_version": "HarmonyOS 5.0.4(16)",
+      "api_version": "16",
+      "software_version": "5.0.0.150",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD00",
+          "productModel": "nova 15 Pro、nova 15 Ultra",
+          "isCustomize": "false",
+          "hw.lcd.density": "560",
+          "hw.lcd.phy.height": "163",
+          "hw.lcd.phy.width": "78",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2856",
+          "hw.lcd.single.width": "1320",
+          "hw.lcd.single.diagonalSize": "6.84",
+          "hw.lcd.single.CutoutPath": "M517 45 L802 45 v 103 h -285 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 30,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Pura 90",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Tablet|HarmonyOS 5.0.4(16)": {
+      "device_type": "Tablet",
+      "device_type_cli": "tablet",
+      "os_version": "HarmonyOS 5.0.4(16)",
+      "api_version": "16",
+      "software_version": "5.0.0.150",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "",
+          "productModel": "MatePad Pro 11",
+          "isCustomize": "false",
+          "hw.lcd.density": "360",
+          "hw.lcd.phy.height": "148",
+          "hw.lcd.phy.width": "237",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "1600",
+          "hw.lcd.single.width": "2560",
+          "hw.lcd.single.diagonalSize": "11",
+          "hw.lcd.single.CutoutPath": "M20 20 L67 20 v 47 h -47 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 5,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "MatePad Pro 13",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Foldable|HarmonyOS 5.0.3(15)": {
+      "device_type": "Foldable",
+      "device_type_cli": "foldable",
+      "os_version": "HarmonyOS 5.0.3(15)",
+      "api_version": "15",
+      "software_version": "5.0.0.135",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD01",
+          "productModel": "Mate X5",
+          "isCustomize": "false",
+          "hw.lcd.density": "500",
+          "hw.lcd.phy.height": "158",
+          "hw.lcd.phy.width": "141",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "2504",
+          "hw.lcd.single.width": "1080",
+          "hw.lcd.single.diagonalSize": "6.4",
+          "hw.lcd.double.height": "2496",
+          "hw.lcd.double.width": "2224",
+          "hw.lcd.double.diagonalSize": "7.85",
+          "hw.lcd.single.CutoutPath": "M2109 28 L2178 28 v 69 h -69 Z",
+          "hw.lcd.double.CutoutPath": "M507 18 L573 18 v 66 h -66 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 3,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Mate X7",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Phone|HarmonyOS 5.0.3(15)": {
+      "device_type": "Phone",
+      "device_type_cli": "phone",
+      "os_version": "HarmonyOS 5.0.3(15)",
+      "api_version": "15",
+      "software_version": "5.0.0.135",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD00",
+          "productModel": "nova 15 Pro、nova 15 Ultra",
+          "isCustomize": "false",
+          "hw.lcd.density": "560",
+          "hw.lcd.phy.height": "163",
+          "hw.lcd.phy.width": "78",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2856",
+          "hw.lcd.single.width": "1320",
+          "hw.lcd.single.diagonalSize": "6.84",
+          "hw.lcd.single.CutoutPath": "M517 45 L802 45 v 103 h -285 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 30,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Pura 90",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Tablet|HarmonyOS 5.0.3(15)": {
+      "device_type": "Tablet",
+      "device_type_cli": "tablet",
+      "os_version": "HarmonyOS 5.0.3(15)",
+      "api_version": "15",
+      "software_version": "5.0.0.135",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "",
+          "productModel": "MatePad Pro 11",
+          "isCustomize": "false",
+          "hw.lcd.density": "360",
+          "hw.lcd.phy.height": "148",
+          "hw.lcd.phy.width": "237",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "1600",
+          "hw.lcd.single.width": "2560",
+          "hw.lcd.single.diagonalSize": "11",
+          "hw.lcd.single.CutoutPath": "M20 20 L67 20 v 47 h -47 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 5,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "MatePad Pro 13",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Foldable|HarmonyOS 5.0.2(14)": {
+      "device_type": "Foldable",
+      "device_type_cli": "foldable",
+      "os_version": "HarmonyOS 5.0.2(14)",
+      "api_version": "14",
+      "software_version": "5.0.0.124",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD01",
+          "productModel": "Mate X5",
+          "isCustomize": "false",
+          "hw.lcd.density": "500",
+          "hw.lcd.phy.height": "158",
+          "hw.lcd.phy.width": "141",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "2504",
+          "hw.lcd.single.width": "1080",
+          "hw.lcd.single.diagonalSize": "6.4",
+          "hw.lcd.double.height": "2496",
+          "hw.lcd.double.width": "2224",
+          "hw.lcd.double.diagonalSize": "7.85",
+          "hw.lcd.single.CutoutPath": "M2109 28 L2178 28 v 69 h -69 Z",
+          "hw.lcd.double.CutoutPath": "M507 18 L573 18 v 66 h -66 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 3,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Mate X7",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Phone|HarmonyOS 5.0.2(14)": {
+      "device_type": "Phone",
+      "device_type_cli": "phone",
+      "os_version": "HarmonyOS 5.0.2(14)",
+      "api_version": "14",
+      "software_version": "5.0.0.124",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD00",
+          "productModel": "nova 15 Pro、nova 15 Ultra",
+          "isCustomize": "false",
+          "hw.lcd.density": "560",
+          "hw.lcd.phy.height": "163",
+          "hw.lcd.phy.width": "78",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2856",
+          "hw.lcd.single.width": "1320",
+          "hw.lcd.single.diagonalSize": "6.84",
+          "hw.lcd.single.CutoutPath": "M517 45 L802 45 v 103 h -285 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 30,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Pura 90",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Tablet|HarmonyOS 5.0.2(14)": {
+      "device_type": "Tablet",
+      "device_type_cli": "tablet",
+      "os_version": "HarmonyOS 5.0.2(14)",
+      "api_version": "14",
+      "software_version": "5.0.0.124",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "",
+          "productModel": "MatePad Pro 11",
+          "isCustomize": "false",
+          "hw.lcd.density": "360",
+          "hw.lcd.phy.height": "148",
+          "hw.lcd.phy.width": "237",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "1600",
+          "hw.lcd.single.width": "2560",
+          "hw.lcd.single.diagonalSize": "11",
+          "hw.lcd.single.CutoutPath": "M20 20 L67 20 v 47 h -47 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 5,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "MatePad Pro 13",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Foldable|HarmonyOS 5.0.1(13)": {
+      "device_type": "Foldable",
+      "device_type_cli": "foldable",
+      "os_version": "HarmonyOS 5.0.1(13)",
+      "api_version": "13",
+      "software_version": "5.0.0.112",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD01",
+          "productModel": "Mate X5",
+          "isCustomize": "false",
+          "hw.lcd.density": "500",
+          "hw.lcd.phy.height": "158",
+          "hw.lcd.phy.width": "141",
+          "hw.lcd.number": "2",
+          "hw.lcd.single.height": "2504",
+          "hw.lcd.single.width": "1080",
+          "hw.lcd.single.diagonalSize": "6.4",
+          "hw.lcd.double.height": "2496",
+          "hw.lcd.double.width": "2224",
+          "hw.lcd.double.diagonalSize": "7.85",
+          "hw.lcd.single.CutoutPath": "M2109 28 L2178 28 v 69 h -69 Z",
+          "hw.lcd.double.CutoutPath": "M507 18 L573 18 v 66 h -66 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 3,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Mate X7",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Phone|HarmonyOS 5.0.1(13)": {
+      "device_type": "Phone",
+      "device_type_cli": "phone",
+      "os_version": "HarmonyOS 5.0.1(13)",
+      "api_version": "13",
+      "software_version": "5.0.0.112",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "PHEMU-FD00",
+          "productModel": "nova 15 Pro、nova 15 Ultra",
+          "isCustomize": "false",
+          "hw.lcd.density": "560",
+          "hw.lcd.phy.height": "163",
+          "hw.lcd.phy.width": "78",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "2856",
+          "hw.lcd.single.width": "1320",
+          "hw.lcd.single.diagonalSize": "6.84",
+          "hw.lcd.single.CutoutPath": "M517 45 L802 45 v 103 h -285 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 30,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "Pura 90",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    },
+    "Tablet|HarmonyOS 5.0.1(13)": {
+      "device_type": "Tablet",
+      "device_type_cli": "tablet",
+      "os_version": "HarmonyOS 5.0.1(13)",
+      "api_version": "13",
+      "software_version": "5.0.0.112",
+      "release_type": "Release",
+      "verification_level": "create_only",
+      "creatable": true,
+      "default_screen": {
+        "creatable": true,
+        "reason": "",
+        "config": {
+          "deviceModel": "",
+          "productModel": "MatePad Pro 11",
+          "isCustomize": "false",
+          "hw.lcd.density": "360",
+          "hw.lcd.phy.height": "148",
+          "hw.lcd.phy.width": "237",
+          "hw.lcd.number": "1",
+          "hw.lcd.single.height": "1600",
+          "hw.lcd.single.width": "2560",
+          "hw.lcd.single.diagonalSize": "11",
+          "hw.lcd.single.CutoutPath": "M20 20 L67 20 v 47 h -47 Z"
+        }
+      },
+      "custom_screen": {
+        "supported": false,
+        "reason": "This type of devices does not support custom screen in this version.",
+        "profiles_offered": 5,
+        "profiles_creatable": [],
+        "profiles_rejected": [
+          {
+            "name": "MatePad Pro 13",
+            "reason": "This type of devices does not support custom screen in this version."
+          }
+        ]
+      }
+    }
+  }
+}

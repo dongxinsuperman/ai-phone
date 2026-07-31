@@ -11,6 +11,7 @@ M1 暂不引 Alembic，依赖 ``init_db()`` 在应用启动时 ``create_all`` �
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import AsyncGenerator
 
 from loguru import logger
@@ -92,9 +93,98 @@ async def init_db() -> None:
     # 延迟到此处才 import，避免循环依赖（models 依赖 Base，Base 在本文件）
     from ai_phone.server import models  # noqa: F401
 
+    # Only create the long-standing core tables here.  Optional feature models
+    # may already have been imported by route registration; running the full
+    # metadata would put their DDL in this transaction and let a Harmony-only
+    # failure roll back a fresh Android/core installation.
+    core_tables = [
+        mapper.local_table
+        for mapper in Base.registry.mappers
+        if mapper.class_.__module__ == "ai_phone.server.models"
+    ]
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(
+            lambda sync_conn: Base.metadata.create_all(
+                sync_conn, tables=core_tables, checkfirst=True
+            )
+        )
     logger.info("数据库建表完成")
+
+
+async def init_harmony_vm_db() -> None:
+    """Create Harmony VM tables in an isolated transaction.
+
+    A failure here must never roll back or otherwise change the existing core
+    tables.  The caller disables only the Harmony VM capability.
+    """
+    from ai_phone.server.harmony_vm.catalog import (
+        load_bundled_manifest,
+        normalize_manifest,
+    )
+    from ai_phone.server.harmony_vm.models import (
+        HARMONY_TABLES,
+        HarmonyVmCatalogSnapshot,
+    )
+
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            lambda sync_conn: Base.metadata.create_all(
+                sync_conn, tables=list(HARMONY_TABLES), checkfirst=True
+            )
+        )
+    factory = get_session_factory()
+    async with factory() as session:
+        existing = await session.get(HarmonyVmCatalogSnapshot, "official")
+        if existing is None:
+            manifest = load_bundled_manifest()
+            normalized = normalize_manifest(manifest)
+            collected_at_raw = str(manifest.get("collected_at") or "").strip()
+            collected_at = (
+                datetime.fromisoformat(collected_at_raw.replace("Z", "+00:00"))
+                if collected_at_raw
+                else None
+            )
+            session.add(
+                HarmonyVmCatalogSnapshot(
+                    id="official",
+                    source_type="deveco_emulator_official_preset",
+                    source_url=str(manifest.get("source_url") or ""),
+                    collected_at=collected_at,
+                    emulator_version=normalized["emulator_version"],
+                    device_types_json=normalized["device_types"],
+                    images_json=normalized["images"],
+                    screen_profiles_json=normalized["screen_profiles"],
+                )
+            )
+            await session.commit()
+            logger.info(
+                "Harmony VM 官方目录预设已初始化：{} 系统镜像 / {} 设备机型",
+                len(normalized["images"]),
+                len(normalized["screen_profiles"]),
+            )
+        else:
+            # 目录结构随 Server 版本演进。对既有快照重新做纯数据归一化，
+            # 例如补齐“设备机型 -> 同 deviceType 官方镜像”的显式兼容列表；
+            # 不访问 Agent，也不拿 Agent 本地安装状态覆盖 Server 目录。
+            normalized = normalize_manifest(
+                {
+                    "images": existing.images_json or [],
+                    "screen_profiles": existing.screen_profiles_json or [],
+                    "emulator_version": existing.emulator_version,
+                }
+            )
+            if (
+                existing.device_types_json != normalized["device_types"]
+                or existing.images_json != normalized["images"]
+                or existing.screen_profiles_json != normalized["screen_profiles"]
+            ):
+                existing.device_types_json = normalized["device_types"]
+                existing.images_json = normalized["images"]
+                existing.screen_profiles_json = normalized["screen_profiles"]
+                await session.commit()
+                logger.info("Harmony VM 官方目录结构已升级")
+    logger.info("Harmony VM 数据表建表完成")
 
 
 async def dispose_engine() -> None:

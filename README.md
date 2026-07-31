@@ -20,7 +20,7 @@
 
 ## 看一眼实际样子
 
-![设备总览 · 多 Agent（含 Windows）统一纳管 iOS / Android 多设备，业务化别名一栏管理](./assets/screenshots/devices-overview-multi.png)
+![设备总览 · 多 Agent 统一纳管 iOS / Android / HarmonyOS 真机与虚拟机](./assets/screenshots/devices-overview-multi.png)
 
 按"调度 → 调试 → 决策护城河 → 产出 → 观测"5 个节点串起来看：
 
@@ -46,11 +46,13 @@
 
 ![运维大盘 · 吞吐 / 设备 / Token / 稳定性四象限 + AI 摘要](./assets/screenshots/analytics-overview.png)
 
-**6. 不依赖真机的虚拟机扩容（`main` 独有）** —— 「虚拟机」页按品牌 / 机型 / 系统 / 分辨率挑选机型并下发到 Agent，自动建 AVD 启动；起来后带 `virtual` 标识进入设备池，与真机同池、复用真机同一条调度与执行链路：
+**6. Android / 鸿蒙虚拟机扩容（`main` 独有）** —— 「虚拟机」页提供相互隔离的 Android 与鸿蒙配置页：Android 按品牌 / 机型 / 系统 / 分辨率创建，鸿蒙按官方设备形态 / 机型 / 可用系统版本创建，并支持折叠屏初始形态。Server 统一保存配置、选择 Agent 下发并管理启停；虚拟机启动后带 `virtual` 标识进入设备池，与真机复用同一套调度、工作台和执行链路。当前鸿蒙采用 **Agent 承接的本地 GUI 模式**，这是官方本地 Emulator 尚无公开 Headless 入口下的阶段性形态；官方一旦提供真正无头能力，现有 Agent 链路将直接切换，业务逻辑与 Android 完全统一。集中式场景另规划 **Linux gRPC 无头资源池**：
 
-![虚拟机页 · 按品牌 / 系统 / 分辨率挑选机型并下发到 Agent](./assets/screenshots/virtual-machines.png)
+![虚拟机页 · Android 与鸿蒙独立配置并下发到 Agent](./assets/screenshots/virtual-machines.png)
 
-![设备总览 · 真机与虚拟机（virtual 标）同池纳管](./assets/screenshots/devices-overview-vm.png)
+![设备总览 · Android 与鸿蒙真机、虚拟机同池纳管](./assets/screenshots/devices-overview-vm.png)
+
+当前形态、后续 Provider 规划和明确失败规则见 [harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）](./docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md)。
 
 **7. 应用分发（三端通用）** —— 上传 APK / HAP / IPA 包（Android / HarmonyOS / iOS 三端），按平台筛出可分发设备，一键批量安装到设备池，实时回传每台安装结果、支持失败重试：
 
@@ -70,7 +72,7 @@
 | **可监督轨迹缓存** | V1 固定动作回放、V2 状态路标对齐、V3 意图回放重定位；缓存复跑后仍走最终断言，失败会清理或标记可疑缓存；非业务瞬态弹窗可标记为 optional gate，当前没有同类弹窗时跳过，有同类弹窗时按需执行或修复 |
 | **三家协议自由组合** | 主 VLM 走 Doubao / Claude / GPT 三选一，辅助系统也可异家组合（如"主 Claude + 辅 Doubao 省成本"），全部走 env 切换、零代码改动 |
 | **执行器可插拔** | 默认内置自研 VLM 决策循环；前端"引擎"下拉框允许挂载第三方执行器作为额外选项，调度 / 报告 / 设备池 / 终态广播仍然走中台统一链路 |
-| **虚拟机（Android Emulator）** | 「虚拟机」页按品牌 / 机型 / 系统 / 分辨率挑选，自动建 AVD 下发到 Agent 启动；起来后作为普通 android 设备进设备池，复用真机同一条调度与执行链路。**不依赖真机即可扩容**（`main` 独有能力） |
+| **虚拟机（Android / HarmonyOS）** | Android 与鸿蒙使用独立配置页和数据链路，由 Server 统一配置并下发到 Agent；启动后带 `virtual` 标识进入统一设备池，复用真机的调度、工作台与执行链路。支持 Android 机型 / 镜像配置，以及鸿蒙官方机型 / 系统版本 / 折叠屏初始形态（`main` 独有能力） |
 | **应用分发（三端）** | 上传 APK / HAP / IPA 包（Android / HarmonyOS / iOS 三端），按平台自动筛出可分发设备，一键批量安装到设备池，实时回传每台安装结果，支持失败重试与超时兜底 |
 | **黑屏待机** | 三端支持空闲自然息屏省电，Run 前由 preflight 唤醒（Android `wake + dismiss-keyguard` / iOS `wda.unlock` / HarmonyOS `wake + 按需上滑`）；息屏态仍可派发 |
 | **快速部署** | 一台 Mac + Postgres + 一根数据线即可起完整链路；生产部署模板在 Roadmap 中持续补齐 |
@@ -87,7 +89,7 @@
 
 ai-phone 有两条同源、并行维护的架构线，底层架构区别在「VLM 决策执行脑放在哪」。两者**核心数据库 schema 与基础产品能力（三端 driver、调度队列、缓存 V1/V2/V3、报告、大盘、辅助安全层）兼容**；但**新增大功能优先（或仅）落地 `main`，两条线的功能完整度正在拉开** —— `main` 是推荐主线。
 
-> ⚠️ **两条线并非功能对等**：像 **Android 虚拟机** 这类较新的大功能是 **`main` 独有、暂不同步 `next/server-brain`**。`next` 仍在维护、可继续使用，但会逐步落后于 `main`。**新接入请直接用 `main`。**
+> ⚠️ **两条线并非功能对等**：像 **Android / 鸿蒙虚拟机** 这类较新的大功能是 **`main` 独有、暂不同步 `next/server-brain`**。`next` 仍在维护、可继续使用，但会逐步落后于 `main`。**新接入请直接用 `main`。**
 
 | | `main`（默认主线） | `next/server-brain` |
 |---|---|---|
@@ -95,10 +97,10 @@ ai-phone 有两条同源、并行维护的架构线，底层架构区别在「VL
 | 执行脑 | VLM 决策循环在 **Agent 本地** 跑 | VLM 决策集中在 **Server** 跑 |
 | 配置 / 密钥 | Server 集中下发，Agent 不常驻模型密钥 | Server 集中持有 |
 | 缓存 V1/V2/V3 | Agent 本地回放 + 第一手归档回传，Server 薄存储 | Server 集中回放 + 归档 |
-| **独有大功能** | ✅ **Android 虚拟机（Emulator）**，后续大功能优先落地 | ⚠️ 暂不同步 `main` 的新增大功能，逐步落后 |
+| **独有大功能** | ✅ **Android / 鸿蒙虚拟机**，后续大功能优先落地 | ⚠️ 暂不同步 `main` 的新增大功能，逐步落后 |
 | 适合 | 多 Agent 分布执行、就近决策、Agent 侧算力可用、**需要虚拟机扩容** | 合规要求 Agent 不得持有模型出口、强集中管控 / 审计 |
 
-> **怎么选**：默认用 `main`（分布式 Agent 大脑，最新主线）。需要 **Android 虚拟机等 `main` 独有能力**时只能用 `main`。仅当合规要求"Agent 不得持有模型能力、一切决策与密钥集中在 Server"时才选 `next/server-brain`。两条线**二选一部署**。
+> **怎么选**：默认用 `main`（分布式 Agent 大脑，最新主线）。需要 **Android / 鸿蒙虚拟机等 `main` 独有能力**时只能用 `main`。仅当合规要求"Agent 不得持有模型能力、一切决策与密钥集中在 Server"时才选 `next/server-brain`。两条线**二选一部署**。
 
 > **怎么迁移（同库）**：两条线**数据库 schema 向前兼容**，`next/server-brain` 用户备份后可**同库增量升级**到 `main`，不需要新建库。**但同一时间只让一个架构连同一套库跑**（别让两个服务同时写一个库，会互相抢任务 / 覆盖设备池）。
 
@@ -191,13 +193,15 @@ AI PHONE 可以直接执行一句自然语言目标；但如果你要做业务�
 | VLM 决策循环 + 执行安全层（页面稳定 / 卡死 / 审判 / 断言 / 状态路标 / 瞬态 UI gate） | ✅ 完整 |
 | 多协议适配（Doubao / Claude / GPT 自由组合） | ✅ 完整 |
 | 执行器可插拔（内置 VLM + Midscene 桥接） | ✅ 完整 |
-| Android 虚拟机（Emulator）接入 + 全生命周期管理（`main` 独有） | ✅ 完整 |
+| Android / 鸿蒙虚拟机接入 + 全生命周期管理（`main` 独有） | ✅ 完整 |
 | 应用分发（上传包 / 批量安装 / 失败重试 / 超时兜底） | ✅ 完整 |
 | 黑屏待机（三端空闲息屏 + Run 前唤醒，息屏态可派发） | ✅ 完整 |
 
 ## Roadmap
 
 - 双架构统一：用配置开关统一「Agent 脑（`main`）/ Server 脑（`next/server-brain`）」两种执行模式，逐步把 `next/server-brain` 合回单一 `main`
+- 鸿蒙本地 Headless：等待官方 Emulator 提供公开无窗口入口；获得并验收后，现有 Agent 链路直接切换，Server、数据库、端口、调度和设备池不变
+- 鸿蒙 Linux gRPC Provider：在取得并验证官方 Linux 模拟器交付物和协议后，新增 Server 直连的集中式无头资源池，与 Agent 链路并存
 - Server 多 Pod 化（M6）：Redis + 共享存储 + 分布式锁 / 调度 lease，支持多副本横向扩展（当前单 Pod 已满足，按需推进）
 - 历史回放页 / Case 加载对话框：API 就位，前端待补
 - 日志服务系统：统一收集、检索、保留策略
@@ -208,7 +212,7 @@ AI PHONE 可以直接执行一句自然语言目标；但如果你要做业务�
 
 ## 维护与协作
 
-ai-phone 采用 **MIT License** 开源。Copyright (C) 2026 Dongxin and ai-phone contributors。官方默认主线是 `main`（分布式 Agent 大脑），新功能优先落地 `main`；`next/server-brain`（Server 大脑）作为并行架构线持续维护，但部分大功能（如 Android 虚拟机）暂不同步。
+ai-phone 采用 **MIT License** 开源。Copyright (C) 2026 Dongxin and ai-phone contributors。官方默认主线是 `main`（分布式 Agent 大脑），新功能优先落地 `main`；`next/server-brain`（Server 大脑）作为并行架构线持续维护，但部分大功能（如 Android / 鸿蒙虚拟机）暂不同步。
 
 协作上优先使用 Issues / Discussions 交流问题、场景和设计取舍。Pull Request 可以提交，但不承诺 review、响应时效或合并；PR 更适合作为 bug 报告、设计参考或候选补丁。
 
@@ -236,6 +240,8 @@ ai-phone 采用 **MIT License** 开源。Copyright (C) 2026 Dongxin and ai-phone
 | [harmony-setup（HarmonyOS接入指南）](./docs/harmony-setup（HarmonyOS接入指南）.md) | 鸿蒙接入者 | hdc / hmdriver2 / hypium 镜像后端切换 |
 | [android-vm-setup（安卓虚拟机接入与使用指南）](./docs/android-vm-setup（安卓虚拟机接入与使用指南）.md) | 虚拟机使用者 | `main` 独有：「虚拟机」页创建模拟器、机型 / 镜像口径、下发与生命周期 |
 | [agent-vm-env-setup（Agent虚拟机环境准备）](./docs/agent-vm-env-setup（Agent虚拟机环境准备）.md) | Agent 部署者 | 跑 Android Emulator 的宿主环境准备（JDK / SDK / 镜像矩阵，含 Windows 专章） |
+| [agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）](./docs/agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md) | Agent 部署者 | 从零准备 DevEco Studio、按需下载鸿蒙镜像并让 Agent 承接虚拟机下发 |
+| [harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）](./docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md) | 部署者 / 二次开发者 | 当前 Agent GUI 限制、官方 Headless 后的直接转换、Linux gRPC 资源池规划与明确失败规则 |
 | [recommended-env（推荐部署Env清单）](./docs/recommended-env（推荐部署Env清单）.md) | 部署者 | iOS stable、Android/Harmony 黑屏待机推荐默认 |
 | [assistant-systems（辅助系统核心逻辑及效果）](./docs/assistant-systems（辅助系统核心逻辑及效果）.md) | 算法调优者 | 执行安全层：页面稳定、通道判定、卡死检测、审判、断言、状态路标、瞬态 UI gate |
 | [Midscene 执行器接入方案](./Midscene执行器接入方案.md) | 执行器扩展者 | 第三方执行器挂载方案 |

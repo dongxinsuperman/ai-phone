@@ -36,15 +36,12 @@ import socket
 import threading
 import time
 from datetime import datetime
-from typing import Any, Callable, Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 from PIL import Image
 from loguru import logger
 
 
-# uitest 服务端口，与 hmdriver2 内部硬编码一致（见 hmdriver2/_client.py）。
-# 写死避免 import hmdriver2 内部私有常量。
-_UITEST_SERVICE_PORT = 8012
 _SOCKET_RECV_TIMEOUT = 8.0  # MJPEG 流稳态下每个 recv 应该 <100ms 拿到数据
 _RECV_CHUNK = 4 * 1024 * 1024  # 4MiB；和 hmdriver2 RecordClient 一致
 
@@ -59,6 +56,7 @@ class HarmonyHypiumStreamer:
 
     Args:
         serial: 设备 udid，用于日志
+        local_port: 当前 ``HarmonyDriver`` 已建立的精确本地 fport
         on_jpeg: 每帧回调，签名 ``(jpeg_bytes, width, height) -> None``
         log_tag: 日志前缀
     """
@@ -66,6 +64,7 @@ class HarmonyHypiumStreamer:
     def __init__(
         self,
         serial: str,
+        local_port: int,
         on_jpeg: Callable[[bytes, int, int], None],
         *,
         log_tag: str = "hm-hypium",
@@ -73,12 +72,13 @@ class HarmonyHypiumStreamer:
         self._serial = serial
         self._on_jpeg = on_jpeg
         self._log_tag = log_tag
+        self._local_port = int(local_port)
+        if not 1 <= self._local_port <= 65535:
+            raise ValueError(f"invalid Harmony mirror local_port: {local_port}")
 
         self._stopped = False
         self._thread: Optional[threading.Thread] = None
         self._sock: Optional[socket.socket] = None
-        self._local_port: Optional[int] = None
-        self._port_owned = False  # 是否由本 streamer 自己 fport（决定要不要 rm_fport）
         self._last_size: Optional[Tuple[int, int]] = None
 
     # ------------------------------------------------------------------
@@ -143,9 +143,7 @@ class HarmonyHypiumStreamer:
                 time.sleep(min(16.0, 2 ** (consecutive_fail - 1)))
 
     def _connect_and_pump(self) -> None:
-        """单次完整生命周期：fport → connect → startCaptureScreen → 读流 → 直到出错或 stop。"""
-        self._ensure_local_port()
-        assert self._local_port is not None
+        """连接精确 Driver fport → startCaptureScreen → 读流，直到出错或 stop。"""
 
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.settimeout(_SOCKET_RECV_TIMEOUT)
@@ -277,95 +275,6 @@ class HarmonyHypiumStreamer:
             return repr(data[:128])
 
     # ------------------------------------------------------------------
-    # 端口转发：复用 hmdriver2 已经 fport 出来的端口（如果有），否则自己 fport
-    # ------------------------------------------------------------------
-    def _ensure_local_port(self) -> None:
-        """优先复用 hmdriver2 ``HmClient`` 已经 fport 出来的本地端口。
-
-        策略：用 hdc 工具直接 ``fport ls`` 找到 ``tcp:<local> tcp:8012`` 的映射，
-        本 streamer 的 socket 直连这个 local 端口（uitest daemon 支持多 socket 客户端）。
-        找不到才自己 fport（这种情况是上层没初始化过 HarmonyDriver，本 streamer
-        被独立调用 —— 兜底用）。
-        """
-        if self._local_port is not None:
-            return
-
-        existing = self._find_existing_fport()
-        if existing is not None:
-            self._local_port = existing
-            self._port_owned = False
-            logger.debug(
-                "[{}] 复用已有 fport: 127.0.0.1:{} → device:{}",
-                self._log_tag, existing, _UITEST_SERVICE_PORT,
-            )
-            return
-
-        # 自己 fport
-        port = self._do_fport()
-        self._local_port = port
-        self._port_owned = True
-        logger.info(
-            "[{}] 自建 fport: 127.0.0.1:{} → device:{}",
-            self._log_tag, port, _UITEST_SERVICE_PORT,
-        )
-
-    def _find_existing_fport(self) -> Optional[int]:
-        """``hdc -t <serial> fport ls`` 输出形如：
-
-        ::
-
-            tcp:10001 tcp:8012
-            tcp:10255 tcp:8012
-
-        找指向 ``tcp:8012`` 的，返回 local 端口；找不到返回 None。
-        （每设备调用一次，hmdriver2 的 ``HdcWrapper.list_fport`` 同款解析。）
-        """
-        try:
-            from ai_phone.agent.drivers.hdc import hdc_run  # noqa: PLC0415
-        except ImportError:
-            return None
-        try:
-            output = hdc_run(
-                "fport", "ls",
-                serial=self._serial,
-                timeout=5.0,
-                check=False,
-            )
-        except Exception:  # noqa: BLE001
-            return None
-        # 正则抓 'tcp:<lport> tcp:<rport>'，hmdriver2/hdc.py 同款
-        import re  # noqa: PLC0415
-        pattern = re.compile(r"tcp:(\d+)\s+tcp:(\d+)")
-        for match in pattern.finditer(output or ""):
-            lport_str, rport_str = match.group(1), match.group(2)
-            try:
-                rport = int(rport_str)
-                if rport == _UITEST_SERVICE_PORT:
-                    return int(lport_str)
-            except ValueError:
-                continue
-        return None
-
-    def _do_fport(self) -> int:
-        from ai_phone.agent.drivers.hdc import hdc_run  # noqa: PLC0415
-
-        # 让 OS 选个空闲端口
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            s.bind(("127.0.0.1", 0))
-            port = s.getsockname()[1]
-        finally:
-            s.close()
-        hdc_run(
-            "fport",
-            f"tcp:{port}",
-            f"tcp:{_UITEST_SERVICE_PORT}",
-            serial=self._serial,
-            timeout=5.0,
-        )
-        return port
-
-    # ------------------------------------------------------------------
     # socket 清理
     # ------------------------------------------------------------------
     def _close_sock(self) -> None:
@@ -380,9 +289,6 @@ class HarmonyHypiumStreamer:
                 sock.close()
             except Exception:  # noqa: BLE001
                 pass
-        # 我们 fport 出来的端口要不要 rm？保守不 rm —— hmdriver2 自己会管理它的端口；
-        # 我们自建的端口反正下次 connect 还能用，rm 反而可能影响别处复用
-        # （fport 在 hdc 里是引用计数，反复 add 同 remote 端口幂等）
 
     # ------------------------------------------------------------------
     # 工具

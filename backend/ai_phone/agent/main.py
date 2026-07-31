@@ -783,6 +783,18 @@ def _maybe_preload_ios(infos: List[Any]) -> None:
 # "上报给 server 的真相"完全一致。
 _last_good_ios_snapshot: List[Any] = []
 _android_vm_manager: Optional[Any] = None
+_harmony_vm_manager: Optional[Any] = None
+
+
+def _drop_harmony_vm_driver_cache(serial: str) -> None:
+    """VM 回收前关闭并摘掉通用 Harmony driver，避免遗留 FPort/socket。"""
+    drv = _driver_cache.pop(serial, None)
+    if drv is None:
+        return
+    try:
+        drv.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Harmony VM 回收时关闭 driver cache 失败 serial={}: {}", serial, exc)
 
 
 def _device_provider() -> List[Dict[str, Any]]:
@@ -792,6 +804,11 @@ def _device_provider() -> List[Dict[str, Any]]:
             infos = _android_vm_manager.decorate_devices(infos)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Android VM 设备标记失败（忽略，不影响普通设备扫描）：{}", exc)
+    if _harmony_vm_manager is not None:
+        try:
+            infos = _harmony_vm_manager.decorate_devices(infos)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Harmony VM 设备标记失败（保留普通 Harmony 设备上报）：{}", exc)
     infos = _apply_ios_snapshot_freshness(infos)
     _record_serial_platform(infos)
     _emit_ios_disconnect_events(infos)
@@ -2675,9 +2692,24 @@ def run(
 
     supervisor = _RunSupervisor()
     from .android_vm import AndroidVmManager  # noqa: PLC0415
+    from .harmony_vm import HarmonyVmManager  # noqa: PLC0415
+    from .harmony_vm.fport import install_harmony_fport_patch  # noqa: PLC0415
 
-    global _android_vm_manager
+    global _android_vm_manager, _harmony_vm_manager
+    # 必须早于第一次 list_all_devices：Harmony 扫描本身会构造 hmdriver2.Driver，
+    # 如果晚装补丁，第一条随机 FPort 映射已经产生。
+    fport_ok, fport_reason = install_harmony_fport_patch()
+    if fport_ok:
+        logger.info("Harmony hmdriver2 FPort 已固定到独立端口池 16556..20000")
+    else:
+        logger.warning(
+            "Harmony VM 能力将显式不可用（普通 Harmony 真机扫描不拦截）：{}",
+            fport_reason,
+        )
     _android_vm_manager = AndroidVmManager()
+    _harmony_vm_manager = HarmonyVmManager(
+        drop_driver_cache=_drop_harmony_vm_driver_cache
+    )
     client = AgentWSClient(
         ws_url=effective_ws,
         token=effective_token,
@@ -2718,6 +2750,30 @@ def run(
         assert _android_vm_manager is not None
         await _android_vm_manager.handle_delete(c, msg)
 
+    async def _harmony_vm_capability_probe_handler(
+        c: AgentWSClient, msg: Dict[str, Any]
+    ) -> None:
+        assert _harmony_vm_manager is not None
+        await _harmony_vm_manager.handle_capability_probe(c, msg)
+
+    async def _harmony_vm_start_handler(
+        c: AgentWSClient, msg: Dict[str, Any]
+    ) -> None:
+        assert _harmony_vm_manager is not None
+        await _harmony_vm_manager.handle_start(c, msg)
+
+    async def _harmony_vm_stop_handler(
+        c: AgentWSClient, msg: Dict[str, Any]
+    ) -> None:
+        assert _harmony_vm_manager is not None
+        await _harmony_vm_manager.handle_stop(c, msg)
+
+    async def _harmony_vm_delete_handler(
+        c: AgentWSClient, msg: Dict[str, Any]
+    ) -> None:
+        assert _harmony_vm_manager is not None
+        await _harmony_vm_manager.handle_delete(c, msg)
+
     async def _start_mirror_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         await _handle_start_mirror(mirror_sup, msg)
 
@@ -2750,6 +2806,10 @@ def run(
     client.on(P.MSG_VM_START, _vm_start_handler)
     client.on(P.MSG_VM_STOP, _vm_stop_handler)
     client.on(P.MSG_VM_DELETE, _vm_delete_handler)
+    client.on(P.MSG_HARMONY_VM_CAPABILITY_PROBE, _harmony_vm_capability_probe_handler)
+    client.on(P.MSG_HARMONY_VM_START, _harmony_vm_start_handler)
+    client.on(P.MSG_HARMONY_VM_STOP, _harmony_vm_stop_handler)
+    client.on(P.MSG_HARMONY_VM_DELETE, _harmony_vm_delete_handler)
     client.on(P.MSG_START_MIRROR, _start_mirror_handler)
     client.on(P.MSG_STOP_MIRROR, _stop_mirror_handler)
     client.on(P.MSG_APP_INSTALL_START, handle_app_install_start)
@@ -2793,6 +2853,21 @@ def run(
 
     client.on_pre_hello(_vm_reclaim_before_hello)
 
+    async def _harmony_vm_reclaim_before_hello(
+        _client: AgentWSClient,
+    ) -> None:
+        assert _harmony_vm_manager is not None
+        try:
+            reclaimed = await asyncio.to_thread(
+                _harmony_vm_manager.reconcile_running_vms_sync
+            )
+            if reclaimed:
+                logger.info("hello 前已认领 Harmony VM {} 台", len(reclaimed))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("hello 前认领 Harmony VM 失败（不猜测认领）：{}", exc)
+
+    client.on_pre_hello(_harmony_vm_reclaim_before_hello)
+
     async def _vm_reclaim_on_connect(c: AgentWSClient) -> None:
         assert _android_vm_manager is not None
         try:
@@ -2804,6 +2879,19 @@ def run(
 
     client.on_connect(_vm_reclaim_on_connect)
 
+    async def _harmony_vm_reclaim_on_connect(c: AgentWSClient) -> None:
+        assert _harmony_vm_manager is not None
+        try:
+            reclaimed = await _harmony_vm_manager.report_reclaimed_vms(
+                c, rescan=False
+            )
+            if reclaimed:
+                logger.info("已认领恢复 Harmony VM {} 台", reclaimed)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("上报 Harmony VM 恢复状态失败：{}", exc)
+
+    client.on_connect(_harmony_vm_reclaim_on_connect)
+
     async def _vm_orphan_reconcile_on_connect(c: AgentWSClient) -> None:
         assert _android_vm_manager is not None
         try:
@@ -2812,6 +2900,17 @@ def run(
             logger.warning("上报 Android VM 孤儿对账失败（忽略）：{}", exc)
 
     client.on_connect(_vm_orphan_reconcile_on_connect)
+
+    async def _harmony_vm_orphan_reconcile_on_connect(
+        c: AgentWSClient,
+    ) -> None:
+        assert _harmony_vm_manager is not None
+        try:
+            await _harmony_vm_manager.report_orphan_reconcile(c)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("上报 Harmony VM 孤儿对账失败：{}", exc)
+
+    client.on_connect(_harmony_vm_orphan_reconcile_on_connect)
 
     async def _vm_warm_capability_on_connect(_client: AgentWSClient) -> None:
         assert _android_vm_manager is not None
@@ -2833,6 +2932,18 @@ def run(
             logger.debug("VM 存活巡检失败（忽略）：{}", exc)
 
     client.on_rescan(_vm_liveness_sweep_on_rescan)
+
+    async def _harmony_vm_liveness_sweep_on_rescan(
+        c: AgentWSClient, present_serials: set
+    ) -> None:
+        if _harmony_vm_manager is None:
+            return
+        try:
+            await _harmony_vm_manager.sweep_vanished_vms(c, present_serials)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Harmony VM 存活巡检失败：{}", exc)
+
+    client.on_rescan(_harmony_vm_liveness_sweep_on_rescan)
 
     async def _reporter_on_connect(_client: AgentWSClient) -> None:
         # M3 可靠上报：WS（重）连成功后，确保 drain worker 已启动，并唤醒它立即从
