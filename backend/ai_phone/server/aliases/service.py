@@ -21,6 +21,8 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ai_phone.shared import protocol as P
+
 from ..models import Device, DeviceAlias
 
 
@@ -109,8 +111,12 @@ async def validate_aliases(
     res = await session.execute(
         select(Device.serial, Device.platform).where(Device.serial.in_(serials))
     )
+    # 折算成**对外平台**再比：设备表里存的是内部通道（iOS 虚拟机记 ``ios_sim``），
+    # 而 item 声明的是 ``ios``。直接比原始值会把「用 deviceAliasPools 指定一台
+    # iOS 虚拟机」误判成平台不符。
     serial_to_platform: Dict[str, str] = {
-        row.serial: (row.platform or "").strip().lower() for row in res.all()
+        row.serial: P.platform_family((row.platform or "").strip().lower())
+        for row in res.all()
     }
 
     mismatches: List[str] = []

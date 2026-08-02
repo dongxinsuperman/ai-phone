@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import LogPane from '../components/LogPane.vue'
 import { api } from '../lib/api.js'
+import { platformLabel } from '../lib/platform.js'
 import { openDeviceStream } from '../lib/ws.js'
 import { useDeviceLock } from '../lib/useDeviceLock.js'
 import { useMseMirror } from '../lib/useMseMirror.js'
@@ -937,7 +938,7 @@ watch(
     <header class="head">
       <router-link to="/" class="back">← 返回总览</router-link>
       <h2>
-        <span class="platform">{{ device?.platform?.toUpperCase() || '...' }}</span>
+        <span class="platform">{{ device ? platformLabel(device) : '...' }}</span>
         <span class="serial">{{ serial }}</span>
       </h2>
       <div class="stat">

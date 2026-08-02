@@ -91,6 +91,16 @@ _WebhookJob: TypeAlias = Tuple[str, Dict[str, Any]]
 ALLOWED_PLATFORMS = ("android", "ios", "harmony")
 
 
+def device_platforms_for(platform: str) -> Tuple[str, ...]:
+    """提交里的平台 → 该平台在设备表里的取值集合。
+
+    映射本身定义在 :mod:`ai_phone.shared.protocol`——它是设备的固有属性
+    （``platform_family`` 的反向），不是调度器的私有知识。这里只是转发，保证
+    「界面上看到这台设备属于 iOS」和「派单时它能被 iOS 任务选中」永远是同一份真相。
+    """
+    return P.family_platforms(platform)
+
+
 # v1 statusReason 枚举（11 项，项目内部 P1 冻结）。
 # 放这里方便其他模块（测试 / 文档生成）统一引用，避免字符串散落。
 #
@@ -997,12 +1007,17 @@ class SubmissionScheduler:
         }
 
     async def _online_platforms(self) -> set[str]:
-        """从 DB 读"有哪些平台存在 online 设备"。准入期严格按 online 判定。"""
+        """有哪些**对外平台**存在 online 设备。准入期严格按 online 判定。
+
+        必须折算成对外平台再比：设备表里存的是内部通道（iOS 虚拟机记
+        ``ios_sim``），而提交里写的是 ``ios``。直接拿原始值比，会出现「设备明明
+        在线，提交却被拒收，说这个平台一台设备都没有」。
+        """
         async with self._session_factory() as session:
             res = await session.execute(
                 select(Device.platform).where(Device.status == "online").distinct()
             )
-            return {str(r) for r in res.scalars().all()}
+            return {P.platform_family(str(r)) for r in res.scalars().all()}
 
     # ------------------------------------------------------------------
     # 主循环
@@ -1266,14 +1281,14 @@ class SubmissionScheduler:
             res = await session.execute(
                 select(Device).where(
                     Device.serial.in_(pool_serials),
-                    Device.platform == item.platform,
+                    Device.platform.in_(device_platforms_for(item.platform)),
                     Device.status == "online",
                 )
             )
         else:
             res = await session.execute(
                 select(Device).where(
-                    Device.platform == item.platform,
+                    Device.platform.in_(device_platforms_for(item.platform)),
                     Device.status == "online",
                 )
             )
@@ -1304,7 +1319,7 @@ class SubmissionScheduler:
         async with self._session_factory() as session:
             res = await session.execute(
                 select(Device.serial).where(
-                    Device.platform == platform,
+                    Device.platform.in_(device_platforms_for(platform)),
                     Device.status == "online",
                 )
             )

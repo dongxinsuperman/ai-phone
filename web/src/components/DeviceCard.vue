@@ -1,5 +1,9 @@
 <script setup>
 import { computed } from 'vue'
+import {
+  platformLabel as platformLabelOf,
+  transportLabel as transportLabelOf,
+} from '../lib/platform.js'
 
 const props = defineProps({
   device: { type: Object, required: true },
@@ -22,9 +26,8 @@ const primaryId = computed(() => {
 const showTransportSubline = computed(() => (
   isVirtual.value && !!props.device.extra?.vm_instance_id
 ))
-const transportLabel = computed(() => (
-  props.device.platform === 'harmony' ? 'HDC' : 'adb'
-))
+const transportLabel = computed(() => transportLabelOf(props.device.platform))
+const platformLabel = computed(() => platformLabelOf(props.device))
 
 const statusMeta = computed(() => {
   const s = props.device.effective_status || props.device.status || 'unknown'
@@ -146,7 +149,7 @@ const agentLabel = computed(() => (
   <div class="card" :class="statusMeta.cls">
     <div class="top">
       <span class="platform-line">
-        <span class="platform">{{ device.platform?.toUpperCase() || '??' }}</span>
+        <span class="platform">{{ platformLabel }}</span>
         <span v-if="isVirtual" class="vm-chip">虚拟机</span>
       </span>
       <span class="badge" :class="statusMeta.cls">{{ statusMeta.label }}</span>

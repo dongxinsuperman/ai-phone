@@ -19,7 +19,9 @@ class DeviceInfo:
     """设备基本信息，用于注册到 Server 的设备列表。"""
 
     serial: str
-    platform: str  # "android" | "ios" | "harmony"
+    # 内部通道：android / ios / ios_sim / harmony。对外平台见 to_dict 的
+    # platform_family——两层的区别见 shared.protocol 的说明。
+    platform: str
     brand: str = ""
     model: str = ""
     os_version: str = ""
@@ -30,9 +32,14 @@ class DeviceInfo:
     extra: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
+        from ai_phone.shared.protocol import platform_family  # noqa: PLC0415
+
         d = {
             "serial": self.serial,
             "platform": self.platform,
+            # 这台设备对外算哪个平台。ios_sim → ios，其余与 platform 相同。
+            # 设备发现阶段就带上，免得下游各自去猜这层等价关系。
+            "platform_family": platform_family(self.platform),
             "brand": self.brand,
             "model": self.model,
             "os_version": self.os_version,

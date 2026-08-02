@@ -114,6 +114,12 @@ async def list_device_statuses(
     这个入口用于对外暴露当前工作台已经消费的设备状态模型，避免外部系统继续
     依赖内部路径；字段名和嵌套结构保持一致（如 ``effective_status``、
     ``screen_width``、``lock.holder_type``）。
+
+    唯一与 ``GET /api/devices`` 取值不同的是 ``platform``：这里报对外平台，
+    iOS 虚拟机报 ``ios``。内部通道（``ios_sim``）只在工作台用来路由到虚拟机
+    管理接口，对外没有意义，而提交时 ``platforms`` 也只认三端。
+    「这台是不是虚拟机」由 ``extra.is_virtual`` / ``extra.vm_platform`` 表达，
+    不靠 ``platform`` 承载，所以这里换口径不丢信息。
     """
     res = await session.execute(select(Device).order_by(Device.serial))
     alias_map = await _load_alias_map(session)
@@ -121,6 +127,7 @@ async def list_device_statuses(
     for dev in res.scalars().all():
         dd = dev.to_dict()
         dd["alias"] = alias_map.get(dev.serial, "")
+        dd["platform"] = P.platform_family(dev.platform)
         items.append(await _merge_lock_into(dd, store, hub))
     return items
 
@@ -145,6 +152,11 @@ async def list_available(
     - ``lastSeenAt``
 
     不暴露内部字段（agent_id、锁 token、readiness 原始 payload 等）。
+
+    ``platform`` 报的是**对外平台**（``android`` / ``ios`` / ``harmony``），不是内部
+    通道——iOS 虚拟机在这里报 ``ios``。这个接口的用途就是「提交前看看谁能接单」，
+    而提交时 ``platforms`` 只认这三个值；两处口径必须一致，否则照着设备列表写脚本
+    的人会拿 ``ios_sim`` 去投递，直接吃 ``invalid_platform``。
     """
     res = await session.execute(
         select(Device).where(Device.status == "online").order_by(Device.serial)
@@ -164,7 +176,7 @@ async def list_available(
         out.append({
             "serial": dev.serial,
             "alias": alias_map.get(dev.serial, ""),
-            "platform": dev.platform,
+            "platform": P.platform_family(dev.platform),
             "brand": dev.brand or "",
             "model": dev.model or "",
             "osVersion": dev.os_version or "",

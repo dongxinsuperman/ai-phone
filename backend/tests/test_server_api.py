@@ -22,11 +22,13 @@ class _FakeWs:
         self.sent.append(payload)
 
 
-async def _seed_device(session, *, serial="S1", status="online") -> Device:
+async def _seed_device(
+    session, *, serial="S1", status="online", platform="android"
+) -> Device:
     dev = Device(
         serial=serial,
         agent_id="agent-local",
-        platform="android",
+        platform=platform,
         brand="samsung",
         model="SM-G991N",
         os_version="Android 14",
@@ -118,6 +120,7 @@ async def test_public_device_statuses_include_all_states(client, app, session):
     assert by_serial["S_OFFLINE"]["effective_status"] == "offline"
 
     # 对外新入口保持与当前全量设备接口等价，方便现有消费方无改造切换。
+    # 唯一例外是 platform：对外报平台族，见下面的 ios_sim 用例。
     internal = await client.get("/api/devices")
     assert internal.status_code == 200
     assert by_serial == {row["serial"]: row for row in internal.json()}
@@ -125,6 +128,41 @@ async def test_public_device_statuses_include_all_states(client, app, session):
     available = await client.get("/api/devices/available")
     assert available.status_code == 200
     assert [row["serial"] for row in available.json()] == ["S_READY"]
+
+
+@pytest.mark.asyncio
+async def test_public_endpoints_report_platform_family_not_channel(
+    client, app, session
+):
+    """iOS 虚拟机对外报 ``ios``，不泄漏内部通道 ``ios_sim``。
+
+    这两个接口的用途是「提交前看谁能接单」，而提交时 ``platforms`` 只认三端；
+    口径不一致的话，照着设备列表写脚本的人会拿 ``ios_sim`` 去投递直接吃
+    ``invalid_platform``。工作台用的 ``GET /api/devices`` 保持内部通道不变——
+    它要靠这个值路由到虚拟机管理接口。
+    """
+    await _seed_device(session, serial="SIM_1", platform="ios_sim")
+    session.add(DeviceAlias(serial="SIM_1", alias="iPad测试"))
+    await session.commit()
+
+    hub = Hub()
+    app.state.hub = hub
+    await hub.register_agent("agent-local", "mac-a", "Darwin", _FakeWs())
+    await hub.set_devices("agent-local", {"SIM_1"})
+    hub.set_device_readiness("SIM_1", {"ready": True, "hint": "ok"})
+
+    statuses = await client.get("/api/devices/statuses")
+    assert statuses.status_code == 200
+    assert statuses.json()[0]["platform"] == "ios"
+
+    available = await client.get("/api/devices/available")
+    assert available.status_code == 200
+    assert available.json()[0]["platform"] == "ios"
+
+    # 工作台入口必须保留内部通道，否则改名弹窗会把虚拟机路由到安卓接口
+    internal = await client.get("/api/devices")
+    assert internal.status_code == 200
+    assert internal.json()[0]["platform"] == "ios_sim"
 
 
 @pytest.mark.asyncio

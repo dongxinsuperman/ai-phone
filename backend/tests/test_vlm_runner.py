@@ -1339,6 +1339,82 @@ class _StubMatchAssistant:
         return self._package
 
 
+class _PlatformSpyAssistant(_StubMatchAssistant):
+    """记录 match_package 收到的 platform，用于校验对外口径。"""
+
+    def __init__(self, package: str = "com.tencent.mm"):
+        super().__init__(package)
+        self.seen_platform = "__unset__"
+
+    async def match_package(
+        self, app_name, packages, *, function_map_context=None, platform=None
+    ):
+        self.seen_platform = platform
+        return self._package
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "driver_platform, expected",
+    [("ios_sim", "ios"), ("ios", "ios"), ("android", "android"), ("harmony", "harmony")],
+)
+async def test_match_package_receives_platform_family(driver_platform, expected):
+    """下沉给模型的必须是对外平台，不能是内部通道 ios_sim。
+
+    提示词里会写 "Current device platform: {platform}"，而业务写的 Function Map
+    只有 ios 这一档。传 ios_sim 进去，模型可能判定那条规则不适用，退回按应用名
+    模糊猜——不报错，只是悄悄降低包名命中率。
+    """
+    driver = FakeDriver()
+    driver.platform = driver_platform
+    assistant = _PlatformSpyAssistant("com.tencent.mm")
+    _events, emit = _collect_events()
+    runner = VLMRunner(
+        run_id="R-platform-family",
+        driver=driver,
+        goal="x",
+        emit=emit,
+        vlm_client=ScriptedVLMClient([]),
+        assistant=assistant,
+    )
+    await runner._run_app_lifecycle_prelude("重新打开「微信」")
+
+    assert assistant.seen_platform == expected
+
+
+@pytest.mark.asyncio
+async def test_album_hint_never_leaks_internal_channel_name():
+    """「不支持相册保存」这条提示会进 VLM 提示词，必须报对外平台。
+
+    这不是纯日志——内部通道名 ios_sim 进了提示词，就跟包名匹配传 ios_sim 一样，
+    是让模型看见一个业务侧从没定义过的平台。
+    """
+    from ai_phone.agent.drivers.base import AlbumSaveResult
+
+    class _UnsupportedAlbumDriver(FakeDriver):
+        platform = "ios_sim"
+
+        def save_screenshot_to_album(self):
+            return AlbumSaveResult(
+                ok=False, platform="ios_sim", supported=False, error="尚未实现",
+            )
+
+    vlm = ScriptedVLMClient([])
+    _events, emit = _collect_events()
+    runner = VLMRunner(
+        run_id="R-album-platform",
+        driver=_UnsupportedAlbumDriver(),
+        goal="x",
+        emit=emit,
+        vlm_client=vlm,
+    )
+    await runner._handle_take_screenshot(step=1)
+
+    hints = " ".join(vlm.pending_hints)
+    assert "ios_sim" not in hints, "内部通道名泄漏进了 VLM 提示词"
+    assert "ios" in hints
+
+
 @pytest.mark.asyncio
 async def test_prelude_open_failure_does_not_inject_done_hint():
     """回归：起跑线解析到了包名，但 open_app 执行抛错（如无 MAIN+LAUNCHER 入口），

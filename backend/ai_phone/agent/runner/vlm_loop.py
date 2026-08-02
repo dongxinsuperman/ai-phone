@@ -33,6 +33,7 @@ from ai_phone.agent.async_utils import run_blocking
 from ai_phone.agent.drivers.base import AlbumSaveResult, BaseDriver
 from ai_phone.config import get_settings
 from ai_phone.shared import actions as A
+from ai_phone.shared import protocol as P
 from ai_phone.shared.llm import (
     BaseAssistant,
     BaseMainVLM,
@@ -1927,10 +1928,15 @@ class VLMRunner:
                 error=str(exc),
             )
 
+        # 对外只说 android / ios / harmony。这几处不只是日志——下面
+        # supported=False 那支会把平台名注入 VLM 提示词，和包名匹配同理：
+        # 内部通道名 ios_sim 不该出现在模型和用户面前。
+        shown_platform = P.platform_family(result.platform or "") or result.platform
+
         if result.ok:
             await self._log(
                 1, "截图已保存",
-                f"平台={result.platform} 文件={result.file_path} 方式={result.method}",
+                f"平台={shown_platform} 文件={result.file_path} 方式={result.method}",
                 step=step,
             )
             self.vlm.add_hint(
@@ -1941,18 +1947,18 @@ class VLMRunner:
         elif not result.supported:
             await self._log(
                 2, "截图未支持",
-                f"平台={result.platform} 暂未实现相册保存：{result.error}",
+                f"平台={shown_platform} 暂未实现相册保存：{result.error}",
                 step=step,
             )
             self.vlm.add_hint(
-                f"[系统提示] 当前设备平台（{result.platform}）暂不支持"
+                f"[系统提示] 当前设备平台（{shown_platform}）暂不支持"
                 f"“截图保存到相册”：{result.error}。请不要反复尝试 take_screenshot，"
                 "按任务实际情况继续或输出 assert_fail 说明该能力不可用。"
             )
         else:
             await self._log(
                 3, "截图保存失败",
-                f"平台={result.platform} 原因：{result.error}",
+                f"平台={shown_platform} 原因：{result.error}",
                 step=step,
             )
             self.vlm.add_hint(
@@ -3027,11 +3033,17 @@ class VLMRunner:
         # map（本次 Run 携带的 App Map 原文）与当前设备平台一起作为软参考下沉给
         # assistant：map 有精准包名就优先用，没有就退回按 app_name 模糊匹配（详见
         # BaseAssistant.match_package 契约）。map 未注入时传 None，行为等价历史。
+        # 下沉给模型的是**对外平台**（android / ios / harmony），不是内部通道。
+        # 虚拟机的 driver.platform 是 ios_sim，直接传下去会让提示词写着
+        # "Current device platform: ios_sim"——而业务写的 Function Map 只有 ios
+        # 这一档，模型可能判定那条规则不适用于自己，退回按应用名模糊猜。
+        # 不会硬报错，是悄悄降低包名命中率。
         target = await self._assistant.match_package(
             app_name,
             packages,
             function_map_context=self._function_map_context or None,
-            platform=getattr(self.driver, "platform", None),
+            platform=P.platform_family(getattr(self.driver, "platform", "") or "")
+            or None,
         )
         if not target:
             raise RuntimeError(f"未找到与「{app_name}」匹配的应用")

@@ -296,3 +296,122 @@ async def test_dispatch_failed_item_not_retried_in_same_pass(_test_engine):
         g = await s.get(SubmissionItem, "G")
         assert f.state == "queued"
         assert g.state == "running"
+
+
+# ---------------------------------------------------------------------------
+# iOS 虚拟机并入 iOS 池
+#
+# 虚拟机的 Device.platform 是 ios_sim（Agent 内部必须与真机分开），但对外只有
+# 三端——提交里写 ios 就该能落到真机或虚拟机上，与 Android 同池的口径一致。
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_ios_item_dispatches_to_simulator(_test_engine):
+    """池里只有一台 iOS 虚拟机时，ios 提交也必须能派出去。"""
+    factory = db_module.get_session_factory()
+    await _seed_device(factory, "SIM-UDID", platform="ios_sim")
+    await _seed_item(factory, item_id="A", submission_id="sub1", platform="ios")
+
+    sched, lock_store, hub, dispatch = _make_scheduler(factory)
+    _mark_ready(hub, "SIM-UDID", "agent1")
+    sched._queues["ios"] = ["A"]
+
+    assert await sched._has_available_device("ios") is True
+    await sched._drain_once()
+
+    assert dispatch.dispatched_serials == ["SIM-UDID"]
+    async with factory() as s:
+        assert (await s.get(SubmissionItem, "A")).device_serial == "SIM-UDID"
+
+
+@pytest.mark.asyncio
+async def test_ios_item_can_still_take_real_device(_test_engine):
+    factory = db_module.get_session_factory()
+    await _seed_device(factory, "REAL-IPHONE", platform="ios")
+    await _seed_item(factory, item_id="A", submission_id="sub1", platform="ios")
+
+    sched, lock_store, hub, dispatch = _make_scheduler(factory)
+    _mark_ready(hub, "REAL-IPHONE", "agent1")
+    sched._queues["ios"] = ["A"]
+
+    await sched._drain_once()
+    assert dispatch.dispatched_serials == ["REAL-IPHONE"]
+
+
+@pytest.mark.asyncio
+async def test_alias_pool_can_pin_to_real_device_only(_test_engine):
+    """要只用真机就用 deviceAliasPools 指定——与 Android 的做法相同。"""
+    factory = db_module.get_session_factory()
+    await _seed_device(factory, "REAL-IPHONE", platform="ios")
+    await _seed_device(factory, "SIM-UDID", platform="ios_sim")
+    await _seed_alias(factory, "realOnly", "REAL-IPHONE")
+    await _seed_item(
+        factory, item_id="A", submission_id="sub1", platform="ios", pool=["realOnly"]
+    )
+
+    sched, lock_store, hub, dispatch = _make_scheduler(factory)
+    _mark_ready(hub, "REAL-IPHONE", "agent1")
+    _mark_ready(hub, "SIM-UDID", "agent1")
+    sched._queues["ios"] = ["A"]
+
+    await sched._drain_once()
+    assert dispatch.dispatched_serials == ["REAL-IPHONE"]
+
+
+@pytest.mark.asyncio
+async def test_simulator_does_not_leak_into_android_pool(_test_engine):
+    """只放宽 iOS 一端，不能让虚拟机漏进别的平台池。"""
+    factory = db_module.get_session_factory()
+    await _seed_device(factory, "SIM-UDID", platform="ios_sim")
+    await _seed_item(factory, item_id="A", submission_id="sub1", platform="android")
+
+    sched, lock_store, hub, dispatch = _make_scheduler(factory)
+    _mark_ready(hub, "SIM-UDID", "agent1")
+    sched._queues["android"] = ["A"]
+
+    assert await sched._has_available_device("android") is False
+    await sched._drain_once()
+    assert dispatch.calls == []
+
+
+@pytest.mark.asyncio
+async def test_admission_accepts_ios_when_only_simulator_online(_test_engine):
+    """准入校验必须折算成对外平台。
+
+    设备表里存的是内部通道（ios_sim），提交里写的是 ios。直接比原始值会出现
+    「设备明明在线，提交却被拒收，说这个平台一台设备都没有」——这条真踩过。
+    """
+    factory = db_module.get_session_factory()
+    await _seed_device(factory, "SIM-UDID", platform="ios_sim")
+
+    sched, _lock, _hub, _dispatch = _make_scheduler(factory)
+    assert "ios" in await sched._online_platforms()
+
+
+@pytest.mark.asyncio
+async def test_online_platforms_reports_families_not_channels(_test_engine):
+    factory = db_module.get_session_factory()
+    await _seed_device(factory, "SIM-UDID", platform="ios_sim")
+    await _seed_device(factory, "REAL-PHONE", platform="ios")
+    await _seed_device(factory, "ANDROID-1", platform="android")
+
+    sched, _lock, _hub, _dispatch = _make_scheduler(factory)
+    families = await sched._online_platforms()
+    assert families == {"ios", "android"}
+    assert "ios_sim" not in families, "对外平台里不该出现内部通道"
+
+
+@pytest.mark.asyncio
+async def test_unready_simulator_is_not_picked(_test_engine):
+    """探针没盖 ready 章的虚拟机不参与派单——探针存在的意义就在这里。"""
+    factory = db_module.get_session_factory()
+    await _seed_device(factory, "SIM-UDID", platform="ios_sim")
+    await _seed_item(factory, item_id="A", submission_id="sub1", platform="ios")
+
+    sched, lock_store, hub, dispatch = _make_scheduler(factory)
+    hub._serial_to_agent["SIM-UDID"] = "agent1"  # noqa: SLF001
+    hub.set_device_readiness("SIM-UDID", {"ready": False, "platform": "ios_sim"})
+    sched._queues["ios"] = ["A"]
+
+    assert await sched._has_available_device("ios") is False
+    await sched._drain_once()
+    assert dispatch.calls == []

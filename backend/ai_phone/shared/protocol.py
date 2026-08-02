@@ -7,7 +7,18 @@
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, NotRequired, Optional, Required, TypedDict, Union
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    NotRequired,
+    Optional,
+    Required,
+    Tuple,
+    TypedDict,
+    Union,
+)
 
 # ---------------------------------------------------------------------------
 # 消息类型枚举（字符串字面量）
@@ -54,6 +65,11 @@ MSG_VM_STATUS = "vm_status"
 MSG_HARMONY_VM_CAPABILITY = "harmony_vm_capability"
 MSG_HARMONY_VM_STATUS = "harmony_vm_status"
 MSG_HARMONY_VM_RECONCILE = "harmony_vm_reconcile"
+# iOS 虚拟机：Agent 回传能力探查结果与生命周期状态。命名空间独立，原因见下方
+# MSG_IOS_SIM_VM_START 处的注释。
+MSG_IOS_SIM_VM_CAPABILITY = "ios_sim_vm_capability"
+MSG_IOS_SIM_VM_STATUS = "ios_sim_vm_status"
+MSG_IOS_SIM_VM_RECONCILE = "ios_sim_vm_reconcile"
 # Distributed Agent Brain（M4）：Agent 首跑成功后用执行第一手数据整理的成品轨迹缓存
 # 回传 Server；Server 算 cache_key 并 upsert vlm_trajectory_cache_v*（回放与归档下沉
 # Agent，Server 只做薄存储）。经 M3 可靠通道上行，断线不丢、重连补发。
@@ -89,6 +105,17 @@ MSG_HARMONY_VM_CAPABILITY_PROBE = "harmony_vm_capability_probe"
 MSG_HARMONY_VM_START = "harmony_vm_start"
 MSG_HARMONY_VM_STOP = "harmony_vm_stop"
 MSG_HARMONY_VM_DELETE = "harmony_vm_delete"
+# iOS 虚拟机同样使用独立协议命名空间，不复用 Android / Harmony 载荷——三者的
+# 设备身份与就绪判据都不同：
+#   Android  serial=emulator-<port>，端口由 Server 全局分配（跨机会撞号）
+#   Harmony  serial=127.0.0.1:<port> + lease_token，端口由 Server 租约
+#   iOS Sim  serial=虚拟机 UDID（天然全局唯一），端口纯 Agent 本机事务、无需租约
+# 就绪判据也不同：Android 看 adb device、Harmony 看 HDC Connected + boot.completed，
+# iOS Sim 看 simctl bootstatus + WDA /status ready。
+MSG_IOS_SIM_VM_CAPABILITY_PROBE = "ios_sim_vm_capability_probe"
+MSG_IOS_SIM_VM_START = "ios_sim_vm_start"
+MSG_IOS_SIM_VM_STOP = "ios_sim_vm_stop"
+MSG_IOS_SIM_VM_DELETE = "ios_sim_vm_delete"
 # Distributed Agent Brain：Server 把"可下发执行配置"快照下发给 Agent。
 # Agent 连接（hello 完成）后由 Server 主动下发一次；Agent 收到后用它覆盖本机
 # Settings（仅覆盖下发集字段，连接 / 签名 / 本机路径等不受影响）。配置变更走
@@ -105,8 +132,61 @@ MSG_DRIVER_COMMAND = "driver_command"
 # ---------------------------------------------------------------------------
 # 设备描述
 # ---------------------------------------------------------------------------
-Platform = Literal["android", "ios", "harmony"]
+# "ios_sim" 是 **Agent 内部隔离用**的平台标识，不是第四个端。
+# ai-phone 对外永远只有 Android / iOS / HarmonyOS 三端，iOS 虚拟机是 iOS 端下的
+# 一种设备形态；前端与统计必须把 ios_sim 折叠显示为 iOS。之所以在内部单列，是为
+# 了让虚拟机绕开 iOS 真机那几个按 platform == "ios" 过滤的 USB 专用钩子（快照保鲜 /
+# 拔插会话 / WDA preload），避免真机 USB 抖动波及虚拟机、或虚拟机状态污染真机。
+# 详见 docs-internal/ios-simulator-plan（iOS虚拟机独立接入方案）.md §3.1、§6.1。
+Platform = Literal["android", "ios", "harmony", "ios_sim"]
 DeviceStatus = Literal["idle", "busy", "offline"]
+
+
+# ---------------------------------------------------------------------------
+# 内部通道 ↔ 对外平台
+# ---------------------------------------------------------------------------
+# 两层模型，别混用：
+#
+#   platform         内部通道，四个：android / ios / ios_sim / harmony
+#                    决定「归哪套驱动、端口域、镜像通道管」
+#   platform_family  对外平台，三个：android / ios / harmony
+#                    决定「提交里怎么写、界面上怎么显示、统计怎么归类」
+#
+# 只有 iOS 一端出现了分叉：虚拟机在 Agent 内部必须与真机彻底分开（真机那条路满是
+# USB / lockdown / 拔插会话的钩子，虚拟机一个都用不上，混在一起两边互相污染），
+# 所以内部单列成 ios_sim；但它在产品上就是一台 iOS 设备。
+#
+# **家族关系是设备的属性，不是某个模块的私货。** 定义放在协议层，调度、设备接口、
+# 前端共用同一份，避免「调度器里悄悄放宽了、界面上却看不出来」这种隐性知识。
+PLATFORM_FAMILY: Dict[str, str] = {
+    "android": "android",
+    "ios": "ios",
+    "ios_sim": "ios",
+    "harmony": "harmony",
+}
+
+# 反向：一个对外平台对应哪些内部通道。派发时用它展开候选设备。
+FAMILY_PLATFORMS: Dict[str, Tuple[str, ...]] = {
+    "android": ("android",),
+    "ios": ("ios", "ios_sim"),
+    "harmony": ("harmony",),
+}
+
+
+def platform_family(platform: str) -> str:
+    """内部通道 → 对外平台。未知值原样返回，不猜。"""
+    key = str(platform or "")
+    return PLATFORM_FAMILY.get(key, key)
+
+
+def family_platforms(family: str) -> Tuple[str, ...]:
+    """对外平台 → 该平台下的全部内部通道。未知值原样返回，不猜。"""
+    key = str(family or "")
+    return FAMILY_PLATFORMS.get(key, (key,))
+
+
+def is_virtual_ios(platform: str) -> bool:
+    return str(platform or "") == "ios_sim"
 
 
 class DeviceInfo(TypedDict, total=False):

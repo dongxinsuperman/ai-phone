@@ -56,10 +56,15 @@ class Device(Base):
     )
 
     def to_dict(self) -> Dict[str, Any]:
+        from ai_phone.shared.protocol import platform_family  # noqa: PLC0415
+
         return {
             "serial": self.serial,
             "agent_id": self.agent_id,
             "platform": self.platform,
+            # 对外平台。**由 platform 推导，不落库**——它是一份恒定映射，存进去
+            # 只会多一列可能与 platform 不一致的冗余数据，还得配迁移。
+            "platform_family": platform_family(self.platform),
             "brand": self.brand,
             "model": self.model,
             "os_version": self.os_version,
