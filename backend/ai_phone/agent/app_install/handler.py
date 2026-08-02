@@ -16,6 +16,7 @@ from ai_phone.shared import protocol as P
 from .android import install_apk
 from .harmony import install_hap
 from .ios import install_ipa
+from .ios_sim import install_sim_app
 
 _TASKS: Set[asyncio.Task] = set()
 
@@ -114,10 +115,13 @@ async def _install_by_platform(
     local_path: Path,
     timeout_sec: int,
 ) -> tuple[bool, str, str]:
+    # 按**内部通道**分发，不是对外平台：iOS 真机与虚拟机的安装方式毫无共同点
+    # （USB lockdown vs 宿主 simctl，.ipa vs .app），正是要分开的地方。
     installer = {
         "android": install_apk,
         "harmony": install_hap,
         "ios": install_ipa,
+        "ios_sim": install_sim_app,
     }.get(platform)
     if installer is None:
         return False, "platform_unsupported", f"不支持的平台: {platform}"

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../lib/api.js'
+import { platformLabel } from '../lib/platform.js'
 
 const LAST_TASK_KEY = 'aiPhoneLastAppInstallTaskId'
 
@@ -75,8 +76,10 @@ async function refreshAll() {
 function setPackageFile(nextFile) {
   if (!nextFile) return
   const lowerName = nextFile.name.toLowerCase()
-  if (!['.apk', '.hap', '.ipa', '.app'].some((suffix) => lowerName.endsWith(suffix))) {
-    err.value = '仅支持 .apk / .hap / .ipa / .app 包文件'
+  // .zip 是给 iOS 虚拟机用的：它的产物 xxx.app 是目录，只能压包上传。
+  // 具体是不是虚拟机包由后端开包看内容判定，前端不猜。
+  if (!['.apk', '.hap', '.ipa', '.app', '.zip'].some((suffix) => lowerName.endsWith(suffix))) {
+    err.value = '仅支持 .apk / .hap / .ipa / .app，以及装 iOS 虚拟机用的 .zip'
     return
   }
   file.value = nextFile
@@ -276,13 +279,19 @@ onBeforeUnmount(() => {
             <span class="drop-name">{{ file?.name || '拖拽包文件到这里' }}</span>
             <label class="choose-file">
               选择文件
-              <input class="hidden-file" type="file" accept=".apk,.hap,.app,.ipa" @change="onFileChange">
+              <input class="hidden-file" type="file" accept=".apk,.hap,.app,.ipa,.zip" @change="onFileChange">
             </label>
           </div>
           <button class="primary" :disabled="!file || uploading" @click="uploadPackage">
             {{ uploading ? '上传中...' : '上传' }}
           </button>
         </div>
+        <p class="upload-hint">
+          Android <code>.apk</code>　鸿蒙 <code>.hap</code> / <code>.app</code>　iOS 真机 <code>.ipa</code>
+          <br>
+          iOS 虚拟机用 <code>.zip</code>——它的产物 <code>xxx.app</code> 是目录，
+          整个压成 zip 上传即可（平台按内容识别，不看文件名）。
+        </p>
 
         <div class="field">
           <label>包文件</label>
@@ -313,7 +322,10 @@ onBeforeUnmount(() => {
               <strong>{{ d.alias || d.serial }}</strong>
               <span>{{ d.alias ? d.serial : [d.brand, d.model].filter(Boolean).join(' ') }}</span>
             </span>
-            <span class="platform">{{ d.platform }}</span>
+            <!-- 这里**不标虚拟机**：能出现在列表里的设备已经按包平台筛过一遍，
+                 是真机还是虚拟机对「往哪装」不产生任何影响，标了只是噪声。
+                 设备总览那边要标，是因为那里混着各种设备、需要一眼区分。 -->
+            <span class="platform">{{ platformLabel(d) }}</span>
           </label>
           <div v-if="!devices.length" class="empty">
             {{ selectedPackage ? '暂无可安装设备' : '暂无包文件' }}
@@ -425,7 +437,18 @@ h3 {
   display: flex;
   gap: 10px;
   align-items: center;
-  margin-bottom: 16px;
+}
+.upload-hint {
+  margin: 8px 0 16px;
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.upload-hint code {
+  background: #f3f4f6;
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: #374151;
 }
 .drop-zone {
   min-width: 0;

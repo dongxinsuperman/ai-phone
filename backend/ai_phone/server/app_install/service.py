@@ -140,6 +140,8 @@ async def eligible_devices(
                 "serial": dev.serial,
                 "alias": aliases.get(dev.serial, ""),
                 "platform": dev.platform,
+                # 界面按对外平台显示（ios_sim → IOS），与设备总览口径一致
+                "platform_family": P.platform_family(dev.platform),
                 "brand": dev.brand or "",
                 "model": dev.model or "",
                 "osVersion": dev.os_version or "",
