@@ -67,7 +67,7 @@ Concurrency requires enough devices to run at the same time. One physical device
 
 ![Unified device pool for physical and virtual devices across iOS, Android, and HarmonyOS](./assets/screenshots/devices-overview-vm-three-platform.png)
 
-Physical and virtual devices share the same execution path, while the external platform model remains iOS, Android, and HarmonyOS. Host preparation is documented in [Android virtual-device Agent setup](./docs/agent-vm-env-setup（Agent虚拟机环境准备）.md), [iOS virtual-device Agent setup](./docs/agent-ios-sim-vm-env-setup（Agent iOS虚拟机环境准备）.md), and [HarmonyOS virtual-device Agent setup](./docs/agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md).
+Physical and virtual devices share the same execution path, while the external platform model remains iOS, Android, and HarmonyOS. Host preparation is documented in [Android virtual-device Agent setup](./docs/agent-vm-env-setup（Agent虚拟机环境准备）.md), [iOS virtual-device Agent setup](<./docs/agent-ios-sim-vm-env-setup（Agent iOS虚拟机环境准备）.md>), and [HarmonyOS virtual-device Agent setup](./docs/agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md).
 
 ## Quick Start
 
@@ -146,7 +146,7 @@ Most detailed documents are currently written in Chinese, but the file names and
 | [harmony-setup](./docs/harmony-setup（HarmonyOS接入指南）.md) | HarmonyOS setup |
 | [trajectory-cache-usage](./docs/trajectory-cache-usage（轨迹缓存使用文档）.md) | Trajectory cache modes and risk boundaries |
 | [agent-vm-env-setup](./docs/agent-vm-env-setup（Agent虚拟机环境准备）.md) | Android Emulator host preparation |
-| [agent-ios-sim-vm-env-setup](./docs/agent-ios-sim-vm-env-setup（Agent iOS虚拟机环境准备）.md) | iOS Simulator host preparation |
+| [agent-ios-sim-vm-env-setup](<./docs/agent-ios-sim-vm-env-setup（Agent iOS虚拟机环境准备）.md>) | iOS Simulator host preparation |
 | [agent-harmony-vm-env-setup](./docs/agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md) | HarmonyOS Emulator host preparation |
 | [harmony-vm-architecture](./docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md) | Current Agent GUI limits, direct migration to official headless, and the planned Linux gRPC pool |
 

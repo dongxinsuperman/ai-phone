@@ -60,7 +60,7 @@
 
 ![设备总览 · iOS、Android、鸿蒙真机与虚拟机统一纳管](./assets/screenshots/devices-overview-vm-three-platform.png)
 
-三端真机与三端虚拟机进入同一个设备池、复用同一条任务执行链路，对外仍然只有 iOS、Android、HarmonyOS 三个平台。环境准备见 [Android 虚拟机 Agent 环境准备](./docs/agent-vm-env-setup（Agent虚拟机环境准备）.md)、[iOS 虚拟机 Agent 环境准备](./docs/agent-ios-sim-vm-env-setup（Agent iOS虚拟机环境准备）.md) 与 [鸿蒙虚拟机 Agent 环境准备](./docs/agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md)；鸿蒙当前形态与后续 Provider 规划见 [harmony-vm-architecture](./docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md)。
+三端真机与三端虚拟机进入同一个设备池、复用同一条任务执行链路，对外仍然只有 iOS、Android、HarmonyOS 三个平台。环境准备见 [Android 虚拟机 Agent 环境准备](./docs/agent-vm-env-setup（Agent虚拟机环境准备）.md)、[iOS 虚拟机 Agent 环境准备](<./docs/agent-ios-sim-vm-env-setup（Agent iOS虚拟机环境准备）.md>) 与 [鸿蒙虚拟机 Agent 环境准备](./docs/agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md)；鸿蒙当前形态与后续 Provider 规划见 [harmony-vm-architecture](./docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md)。
 
 **7. 应用分发（三端通用）** —— 上传 APK / HAP / IPA，以及 iOS Simulator 使用的 `.app` / `.zip` 产物，按平台和设备类型筛出可分发设备，一键批量安装到设备池，实时回传每台安装结果、支持失败重试：
 
