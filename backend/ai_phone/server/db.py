@@ -187,6 +187,34 @@ async def init_harmony_vm_db() -> None:
     logger.info("Harmony VM 数据表建表完成")
 
 
+async def init_ios_sim_db() -> None:
+    """在隔离事务里创建 iOS 虚拟机的表，并导入 bundle 的官方机型目录。
+
+    与 :func:`init_harmony_vm_db` 同构：**这里失败绝不能回滚或影响核心表**，调用方
+    只禁用 iOS 虚拟机这一项能力，Android / 鸿蒙 / 真机链路不受任何影响
+    （方案 §6.5.6）。
+
+    目录采用整体覆盖而非「不存在才写」：目录是一份完整快照，
+    ``scripts/export_ios_sim_catalog.py`` 重新导出后应当直接生效，没有增量合并
+    的语义。覆盖成本极低（79 个机型、32 KB）。
+    """
+    from ai_phone.server.ios_sim.catalog import ensure_catalog_row
+    from ai_phone.server.ios_sim.models import IOS_SIM_TABLES
+
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            lambda sync_conn: Base.metadata.create_all(
+                sync_conn, tables=list(IOS_SIM_TABLES), checkfirst=True
+            )
+        )
+    factory = get_session_factory()
+    async with factory() as session:
+        await ensure_catalog_row(session)
+        await session.commit()
+    logger.info("iOS 虚拟机数据表建表完成")
+
+
 async def dispose_engine() -> None:
     global _engine, _session_factory
     if _engine is not None:

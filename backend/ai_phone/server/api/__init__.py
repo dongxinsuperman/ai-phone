@@ -18,6 +18,8 @@ from ..android_vm.api import router as android_vm_instances_router
 from ..device_config import router as device_config_router
 from ..harmony_vm.api import catalog_router as harmony_vm_catalog_router
 from ..harmony_vm.api import router as harmony_vm_router
+from ..ios_sim.api import catalog_router as ios_sim_catalog_router
+from ..ios_sim.api import router as ios_sim_router
 from ..submissions.public_routes import router as public_submissions_router
 
 android_vm_router = APIRouter()
@@ -40,4 +42,6 @@ def include_routers(app: FastAPI) -> None:
     app.include_router(android_vm_router)         # /api/internal/vm/instances（Android 虚拟机）
     app.include_router(harmony_vm_router)         # /api/internal/harmony-vm/instances
     app.include_router(harmony_vm_catalog_router) # /api/internal/harmony-vm/catalog
+    app.include_router(ios_sim_router)            # /api/internal/ios-sim/instances
+    app.include_router(ios_sim_catalog_router)    # /api/internal/ios-sim/catalog
     app.include_router(public_submissions_router)  # /api/submissions（匿名，对外）

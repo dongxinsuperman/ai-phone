@@ -26,6 +26,25 @@ from ai_phone.server.lockstore import DeviceLockStore
 
 
 @pytest.fixture(autouse=True)
+def _isolate_storage_dir(tmp_path, monkeypatch):
+    """把 ``storage_dir`` 指到临时目录，**测试永远不许写真实 .data**。
+
+    踩过一次：iOS 虚拟机的端口预留表是落盘的，端口耗尽那个用例会一口气占满
+    8300~8399 全部 100 个槽位。没隔离时它写进了仓库的
+    ``.data/storage/ios_sim_ports.json``，于是真机器起虚拟机时报「端口域已耗尽」，
+    而且现场看不出跟测试有关系。
+
+    放在 conftest 而不是各测试文件：新加的用例不该需要记得做这件事。
+    """
+    from ai_phone.config import get_settings
+
+    monkeypatch.setenv("AI_PHONE_STORAGE_DIR", str(tmp_path / "storage"))
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def _bypass_finished_assertion_system(monkeypatch):
     """单测里把断言系统短路成 SKIP，避免真发 HTTP。
 

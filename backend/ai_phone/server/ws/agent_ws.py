@@ -41,6 +41,12 @@ from ..harmony_vm.service import (
     handle_vm_status as handle_harmony_vm_status,
     mark_agent_vms_offline as mark_agent_harmony_vms_offline,
 )
+from ..ios_sim.service import (
+    get_capability_waiter as get_ios_sim_capability_waiter,
+    handle_vm_reconcile as handle_ios_sim_vm_reconcile,
+    handle_vm_status as handle_ios_sim_vm_status,
+    mark_agent_vms_offline as mark_agent_ios_sim_vms_offline,
+)
 from ..lockstore import DeviceLockStore
 from ..models import Device, Run, RunLog, RunStep
 from ..db import get_session_factory
@@ -338,6 +344,18 @@ async def _dispatch(
 
     if t == P.MSG_HARMONY_VM_RECONCILE:
         await handle_harmony_vm_reconcile(agent_id, msg, hub)
+        return
+
+    if t == P.MSG_IOS_SIM_VM_CAPABILITY:
+        get_ios_sim_capability_waiter().resolve(agent_id, msg)
+        return
+
+    if t == P.MSG_IOS_SIM_VM_STATUS:
+        await handle_ios_sim_vm_status(agent_id, msg, hub)
+        return
+
+    if t == P.MSG_IOS_SIM_VM_RECONCILE:
+        await handle_ios_sim_vm_reconcile(agent_id, msg, hub)
         return
 
     # 以下都可能带 run_id / serial / step
@@ -972,6 +990,19 @@ async def _on_disconnect(
             logger.info("Agent {} 断开，已标记 Harmony VM agent_offline {} 台", agent_id, count)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Agent {} 断开时标记 Harmony VM agent_offline 失败：{}", agent_id, exc)
+    # iOS 虚拟机：结束正在等这台 Agent 的探查，避免调用方干等满超时。
+    # 不像鸿蒙那样是为了"释放被永久排除的端口"——我们不分配端口，纯粹为了不卡住探查。
+    get_ios_sim_capability_waiter().discard_agent(agent_id)
+    try:
+        count = await mark_agent_ios_sim_vms_offline(agent_id)
+        if count:
+            logger.info(
+                "Agent {} 断开，已标记 iOS 虚拟机 agent_offline {} 台", agent_id, count
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Agent {} 断开时标记 iOS 虚拟机 agent_offline 失败：{}", agent_id, exc
+        )
     # 孤儿 Run 回收旁路：等宽限期，若同 agent_id 未重连（进程重启/真死）则把其名下
     # 仍在跑的 Run 判失败并释放设备锁、收口批次。宽限期内同 id 重连（网络抖动、同
     # 进程）则跳过，不误杀仍在本地执行的 Run。浏览器手动锁不受影响（仍由其心跳维护）。

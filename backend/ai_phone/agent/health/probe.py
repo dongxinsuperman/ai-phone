@@ -294,6 +294,63 @@ class IosProbe(BaseProbe):
 
 
 # ---------------------------------------------------------------------------
+# iOS 虚拟机：WDA /status
+# ---------------------------------------------------------------------------
+class IosSimProbe(BaseProbe):
+    """iOS 虚拟机 readiness 判据：WDA 已登记且 ``GET /status`` 返回 200。
+
+    与真机 :class:`IosProbe` 的两点差异，都不是简化而是「那个前提不存在」：
+
+    1. **不读 ``ios._WDA_CLIENT_MAP``**，改读虚拟机自己的端点登记表。真机那张表
+       挂着拔插生命周期策略，混用会让两条链路互相干扰（见
+       ``ios_simulator_driver._SIM_ENDPOINTS``）。
+    2. **不查锁屏**。真机 iPhone 会自动息屏上锁、需要人去解锁，所以
+       ``/wda/locked`` 是真机的主要「在线但不能跑」场景；虚拟机没有物理电源键、
+       不会自己息屏，把它当判据只会平白多一次 HTTP 往返和一类假失败。
+
+    WDA 没起来 → ``wda_not_ready``。这里**不反向触发 launcher**，与真机一致：
+    探针只观测，不产生副作用。
+    """
+
+    platform = "ios_sim"
+
+    async def _do_probe(self) -> ProbeOutcome:
+        return await asyncio.to_thread(self._probe_sync)
+
+    def _probe_sync(self) -> ProbeOutcome:
+        try:
+            from ai_phone.agent.drivers.ios_simulator_driver import (  # noqa: PLC0415
+                get_sim_endpoint,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return _fail("wda_not_ready", f"iOS 虚拟机驱动不可用：{exc}")
+
+        endpoint = get_sim_endpoint(self.serial)
+        if endpoint is None:
+            return _fail(
+                "wda_not_ready",
+                "WDA 还没起；进入工作台或跑一次任务即可触发启动",
+            )
+
+        base_url = getattr(endpoint.client, "base_url", None) or ""
+        if not base_url:
+            return _fail("wda_not_ready", "WDA 客户端无 base_url")
+
+        try:
+            import httpx  # noqa: PLC0415
+        except Exception as exc:  # noqa: BLE001
+            return _fail("driver_probe_failed", f"httpx 未安装：{exc}")
+
+        try:
+            resp = httpx.get(f"{base_url.rstrip('/')}/status", timeout=2.0)
+        except Exception as exc:  # noqa: BLE001
+            return _fail("wda_not_ready", f"/status 不通：{exc}")
+        if resp.status_code != 200:
+            return _fail("wda_not_ready", f"/status HTTP {resp.status_code}")
+        return _ok()
+
+
+# ---------------------------------------------------------------------------
 # HarmonyOS：hdc shell 屏幕状态 + hdc targets 在线
 # ---------------------------------------------------------------------------
 class HarmonyProbe(BaseProbe):
@@ -376,6 +433,8 @@ def build_probe_for(platform: str, serial: str, *, timeout_sec: float = 3.0) -> 
         return AndroidProbe(serial, timeout_sec=timeout_sec)
     if platform == "ios":
         return IosProbe(serial, timeout_sec=timeout_sec)
+    if platform == "ios_sim":
+        return IosSimProbe(serial, timeout_sec=timeout_sec)
     if platform == "harmony":
         return HarmonyProbe(serial, timeout_sec=timeout_sec)
     return None

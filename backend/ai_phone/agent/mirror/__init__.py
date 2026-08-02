@@ -190,6 +190,41 @@ def build_harmony_streamer(
     )
 
 
+def build_ios_sim_streamer(
+    *,
+    serial: str,
+    on_jpeg: Callable[[bytes, int, int], None],
+    log_tag: str,
+) -> Any:
+    """iOS 虚拟机镜像 streamer 工厂。返回值 API 与其他 streamer 等价。
+
+    **只有一个后端**，不像真机那样三选一。真机的另两个后端都是为真机技术债存在
+    的：``dvt_screenshot`` 依赖 pymobiledevice3 的 DVT 通道（虚拟机没有 USB，压根
+    不存在），``wda_mjpeg`` 是 H.264 兜底（生产实测更卡，见方案 §1.10.2）。虚拟机
+    直接走与真机默认路径相同的 MJPEG 直通，不给自己留没意义的分支。
+
+    因此这里**故意不读** ``settings.ios_mirror_backend``：那个开关的语义是「真机
+    用哪条镜像路」，让它影响虚拟机等于把两条链路的配置耦在一起。
+    """
+    from ai_phone.config import get_settings  # noqa: PLC0415
+
+    from .ios_sim_capture_mjpeg_passthrough import (  # noqa: PLC0415
+        IosSimMjpegPassthroughStreamer,
+    )
+
+    s = get_settings()
+    # 画质参数与真机 MJPEG 直通共用同一组 env：同一条技术路线、同一套调参口径，
+    # 没有理由让用户为虚拟机再配一遍。
+    return IosSimMjpegPassthroughStreamer(
+        serial=serial,
+        on_jpeg=on_jpeg,
+        target_fps=int(s.wda_mjpeg_fps or 20),
+        jpeg_quality=int(s.wda_mjpeg_quality),
+        long_edge=int(s.wda_mjpeg_long_edge),
+        log_tag=log_tag,
+    )
+
+
 __all__ = [
     "FMp4Streamer",
     "extract_resolution_from_moov",
@@ -197,4 +232,5 @@ __all__ = [
     "extract_sps_nal",
     "build_ios_streamer",
     "build_harmony_streamer",
+    "build_ios_sim_streamer",
 ]

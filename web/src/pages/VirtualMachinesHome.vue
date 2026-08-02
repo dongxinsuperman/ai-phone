@@ -1,18 +1,25 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import HarmonyVirtualMachines from './HarmonyVirtualMachines.vue'
+import IosSimVirtualMachines from './IosSimVirtualMachines.vue'
 import VirtualMachines from './VirtualMachines.vue'
 
 const platform = ref('android')
 const androidPage = ref(null)
 const harmonyPage = ref(null)
+const iosSimPage = ref(null)
 const refreshing = ref(false)
+
+const activePage = computed(() => ({
+  android: androidPage.value,
+  harmony: harmonyPage.value,
+  ios_sim: iosSimPage.value,
+}[platform.value]))
 
 async function refreshActive() {
   refreshing.value = true
   try {
-    const page = platform.value === 'android' ? androidPage.value : harmonyPage.value
-    await page?.refresh?.()
+    await activePage.value?.refresh?.()
   } finally {
     refreshing.value = false
   }
@@ -37,14 +44,22 @@ async function refreshActive() {
         >
           鸿蒙虚拟机
         </button>
+        <button
+          type="button"
+          :class="{ active: platform === 'ios_sim' }"
+          @click="platform = 'ios_sim'"
+        >
+          iOS 虚拟机
+        </button>
       </div>
       <button type="button" class="refresh" :disabled="refreshing" @click="refreshActive">
         {{ refreshing ? '刷新中…' : '刷新' }}
       </button>
     </nav>
-    <!-- v-show 保留 Android 页原有表单、筛选与轮询状态。 -->
+    <!-- v-show 保留各页已填的表单、筛选与轮询状态，切 Tab 不重置。 -->
     <VirtualMachines ref="androidPage" v-show="platform === 'android'" />
     <HarmonyVirtualMachines ref="harmonyPage" v-show="platform === 'harmony'" />
+    <IosSimVirtualMachines ref="iosSimPage" v-show="platform === 'ios_sim'" />
   </section>
 </template>
 

@@ -1,0 +1,1040 @@
+{
+  "device_types": [
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-10th-generation",
+      "name": "iPad (10th generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad13,18",
+      "min_runtime_version": 1048832,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "16.1.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad--5th-generation-",
+      "name": "iPad (5th generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad6,12",
+      "min_runtime_version": 656128,
+      "max_runtime_version": 1050880,
+      "min_runtime_version_string": "10.3.0",
+      "max_runtime_version_string": "16.9.0"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad--6th-generation-",
+      "name": "iPad (6th generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad7,6",
+      "min_runtime_version": 721664,
+      "max_runtime_version": 1139456,
+      "min_runtime_version_string": "11.3.0",
+      "max_runtime_version_string": "17.99.0"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad--7th-generation-",
+      "name": "iPad (7th generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad7,12",
+      "min_runtime_version": 851968,
+      "max_runtime_version": 1204992,
+      "min_runtime_version_string": "13.0.0",
+      "max_runtime_version_string": "18.99.0"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad--8th-generation-",
+      "name": "iPad (8th generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad11,7",
+      "min_runtime_version": 851968,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "13.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-9th-generation",
+      "name": "iPad (9th generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad12,2",
+      "min_runtime_version": 983040,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "15.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-A16",
+      "name": "iPad (A16)",
+      "product_family": "iPad",
+      "model_identifier": "iPad15,7",
+      "min_runtime_version": 1180416,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "18.3.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Air--3rd-generation-",
+      "name": "iPad Air (3rd generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad11,3",
+      "min_runtime_version": 786944,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "12.2.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Air--4th-generation-",
+      "name": "iPad Air (4th generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad13,2",
+      "min_runtime_version": 786944,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "12.2.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Air-5th-generation",
+      "name": "iPad Air (5th generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad13,17",
+      "min_runtime_version": 984064,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "15.4.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M2",
+      "name": "iPad Air 11-inch (M2)",
+      "product_family": "iPad",
+      "model_identifier": "iPad14,9",
+      "min_runtime_version": 1115136,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "17.4.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M3",
+      "name": "iPad Air 11-inch (M3)",
+      "product_family": "iPad",
+      "model_identifier": "iPad15,3",
+      "min_runtime_version": 1180416,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "18.3.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Air-13-inch-M2",
+      "name": "iPad Air 13-inch (M2)",
+      "product_family": "iPad",
+      "model_identifier": "iPad14,11",
+      "min_runtime_version": 1115136,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "17.4.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Air-13-inch-M3",
+      "name": "iPad Air 13-inch (M3)",
+      "product_family": "iPad",
+      "model_identifier": "iPad15,5",
+      "min_runtime_version": 1180416,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "18.3.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Air-2",
+      "name": "iPad Air 2",
+      "product_family": "iPad",
+      "model_identifier": "iPad5,4",
+      "min_runtime_version": 524288,
+      "max_runtime_version": 1048575,
+      "min_runtime_version_string": "8.0.0",
+      "max_runtime_version_string": "15.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro--10-5-inch-",
+      "name": "iPad Pro (10.5-inch)",
+      "product_family": "iPad",
+      "model_identifier": "iPad7,3",
+      "min_runtime_version": 656128,
+      "max_runtime_version": 1139456,
+      "min_runtime_version_string": "10.3.0",
+      "max_runtime_version_string": "17.99.0"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro--11-inch-",
+      "name": "iPad Pro (11-inch) (1st generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad8,1",
+      "min_runtime_version": 786432,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "12.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro--11-inch---2nd-generation-",
+      "name": "iPad Pro (11-inch) (2nd generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad8,9",
+      "min_runtime_version": 852992,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "13.4.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-3rd-generation",
+      "name": "iPad Pro (11-inch) (3rd generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad13,5",
+      "min_runtime_version": 918784,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "14.5.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-4th-generation-8GB",
+      "name": "iPad Pro (11-inch) (4th generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad14,3",
+      "min_runtime_version": 1048832,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "16.1.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-4th-generation-16GB",
+      "name": "iPad Pro (11-inch) (4th generation) (16GB)",
+      "product_family": "iPad",
+      "model_identifier": "iPad14,4",
+      "min_runtime_version": 1048832,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "16.1.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro",
+      "name": "iPad Pro (12.9-inch) (1st generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad6,8",
+      "min_runtime_version": 590080,
+      "max_runtime_version": 1050880,
+      "min_runtime_version_string": "9.1.0",
+      "max_runtime_version_string": "16.9.0"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro--12-9-inch---2nd-generation-",
+      "name": "iPad Pro (12.9-inch) (2nd generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad7,1",
+      "min_runtime_version": 656128,
+      "max_runtime_version": 1139456,
+      "min_runtime_version_string": "10.3.0",
+      "max_runtime_version_string": "17.99.0"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro--12-9-inch---3rd-generation-",
+      "name": "iPad Pro (12.9-inch) (3rd generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad8,5",
+      "min_runtime_version": 786432,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "12.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro--12-9-inch---4th-generation-",
+      "name": "iPad Pro (12.9-inch) (4th generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad8,12",
+      "min_runtime_version": 852992,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "13.4.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-12-9-inch-5th-generation",
+      "name": "iPad Pro (12.9-inch) (5th generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad13,10",
+      "min_runtime_version": 918784,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "14.5.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-12-9-inch-6th-generation-8GB",
+      "name": "iPad Pro (12.9-inch) (6th generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad14,5",
+      "min_runtime_version": 1048832,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "16.1.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-12-9-inch-6th-generation-16GB",
+      "name": "iPad Pro (12.9-inch) (6th generation) (16GB)",
+      "product_family": "iPad",
+      "model_identifier": "iPad14,5",
+      "min_runtime_version": 1048832,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "16.1.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro--9-7-inch-",
+      "name": "iPad Pro (9.7-inch)",
+      "product_family": "iPad",
+      "model_identifier": "iPad6,4",
+      "min_runtime_version": 655360,
+      "max_runtime_version": 1050880,
+      "min_runtime_version_string": "10.0.0",
+      "max_runtime_version_string": "16.9.0"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4-8GB",
+      "name": "iPad Pro 11-inch (M4)",
+      "product_family": "iPad",
+      "model_identifier": "iPad16,4",
+      "min_runtime_version": 1115136,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "17.4.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4-16GB",
+      "name": "iPad Pro 11-inch (M4) (16GB)",
+      "product_family": "iPad",
+      "model_identifier": "iPad16,4",
+      "min_runtime_version": 1115136,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "17.4.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4-8GB",
+      "name": "iPad Pro 13-inch (M4)",
+      "product_family": "iPad",
+      "model_identifier": "iPad16,6",
+      "min_runtime_version": 1115136,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "17.4.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4-16GB",
+      "name": "iPad Pro 13-inch (M4) (16GB)",
+      "product_family": "iPad",
+      "model_identifier": "iPad16,6",
+      "min_runtime_version": 1115136,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "17.4.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-mini--5th-generation-",
+      "name": "iPad mini (5th generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad11,1",
+      "min_runtime_version": 786944,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "12.2.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-mini-6th-generation",
+      "name": "iPad mini (6th generation)",
+      "product_family": "iPad",
+      "model_identifier": "iPad14,1",
+      "min_runtime_version": 983040,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "15.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-mini-A17-Pro",
+      "name": "iPad mini (A17 Pro)",
+      "product_family": "iPad",
+      "model_identifier": "iPad16,2",
+      "min_runtime_version": 1179904,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "18.1.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-mini-4",
+      "name": "iPad mini 4",
+      "product_family": "iPad",
+      "model_identifier": "iPad5,1",
+      "min_runtime_version": 589824,
+      "max_runtime_version": 1048575,
+      "min_runtime_version_string": "9.0.0",
+      "max_runtime_version_string": "15.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-11",
+      "name": "iPhone 11",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone12,1",
+      "min_runtime_version": 851968,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "13.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-11-Pro",
+      "name": "iPhone 11 Pro",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone12,3",
+      "min_runtime_version": 851968,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "13.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-11-Pro-Max",
+      "name": "iPhone 11 Pro Max",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone12,5",
+      "min_runtime_version": 851968,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "13.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-12",
+      "name": "iPhone 12",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone13,2",
+      "min_runtime_version": 917760,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "14.1.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-12-Pro",
+      "name": "iPhone 12 Pro",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone13,3",
+      "min_runtime_version": 917760,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "14.1.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-12-Pro-Max",
+      "name": "iPhone 12 Pro Max",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone13,4",
+      "min_runtime_version": 917760,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "14.1.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-12-mini",
+      "name": "iPhone 12 mini",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone13,1",
+      "min_runtime_version": 917760,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "14.1.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-13",
+      "name": "iPhone 13",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone14,5",
+      "min_runtime_version": 983040,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "15.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-13-Pro",
+      "name": "iPhone 13 Pro",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone14,2",
+      "min_runtime_version": 983040,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "15.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-13-Pro-Max",
+      "name": "iPhone 13 Pro Max",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone14,3",
+      "min_runtime_version": 983040,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "15.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-13-mini",
+      "name": "iPhone 13 mini",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone14,4",
+      "min_runtime_version": 983040,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "15.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-14",
+      "name": "iPhone 14",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone14,7",
+      "min_runtime_version": 1048576,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "16.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-14-Plus",
+      "name": "iPhone 14 Plus",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone14,8",
+      "min_runtime_version": 1048576,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "16.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro",
+      "name": "iPhone 14 Pro",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone15,2",
+      "min_runtime_version": 1048576,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "16.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro-Max",
+      "name": "iPhone 14 Pro Max",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone15,3",
+      "min_runtime_version": 1048576,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "16.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-15",
+      "name": "iPhone 15",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone15,4",
+      "min_runtime_version": 1114112,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "17.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-15-Plus",
+      "name": "iPhone 15 Plus",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone15,5",
+      "min_runtime_version": 1114112,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "17.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-15-Pro",
+      "name": "iPhone 15 Pro",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone16,1",
+      "min_runtime_version": 1114112,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "17.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-15-Pro-Max",
+      "name": "iPhone 15 Pro Max",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone16,2",
+      "min_runtime_version": 1114112,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "17.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-16",
+      "name": "iPhone 16",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone17,3",
+      "min_runtime_version": 1179648,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "18.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Plus",
+      "name": "iPhone 16 Plus",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone17,4",
+      "min_runtime_version": 1179648,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "18.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro",
+      "name": "iPhone 16 Pro",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone17,1",
+      "min_runtime_version": 1179648,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "18.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max",
+      "name": "iPhone 16 Pro Max",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone17,2",
+      "min_runtime_version": 1179648,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "18.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-16e",
+      "name": "iPhone 16e",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone17,5",
+      "min_runtime_version": 1180416,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "18.3.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
+      "name": "iPhone 17",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone18,3",
+      "min_runtime_version": 1703936,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "26.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+      "name": "iPhone 17 Pro",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone18,1",
+      "min_runtime_version": 1703936,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "26.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max",
+      "name": "iPhone 17 Pro Max",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone18,2",
+      "min_runtime_version": 1703936,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "26.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-6s",
+      "name": "iPhone 6s",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone8,1",
+      "min_runtime_version": 589824,
+      "max_runtime_version": 1048575,
+      "min_runtime_version_string": "9.0.0",
+      "max_runtime_version_string": "15.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-6s-Plus",
+      "name": "iPhone 6s Plus",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone8,2",
+      "min_runtime_version": 589824,
+      "max_runtime_version": 1048575,
+      "min_runtime_version_string": "9.0.0",
+      "max_runtime_version_string": "15.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-7",
+      "name": "iPhone 7",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone9,1",
+      "min_runtime_version": 655360,
+      "max_runtime_version": 1048575,
+      "min_runtime_version_string": "10.0.0",
+      "max_runtime_version_string": "15.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-7-Plus",
+      "name": "iPhone 7 Plus",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone9,2",
+      "min_runtime_version": 655360,
+      "max_runtime_version": 1048575,
+      "min_runtime_version_string": "10.0.0",
+      "max_runtime_version_string": "15.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-8",
+      "name": "iPhone 8",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone10,4",
+      "min_runtime_version": 720896,
+      "max_runtime_version": 1050880,
+      "min_runtime_version_string": "11.0.0",
+      "max_runtime_version_string": "16.9.0"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-8-Plus",
+      "name": "iPhone 8 Plus",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone10,5",
+      "min_runtime_version": 720896,
+      "max_runtime_version": 1050880,
+      "min_runtime_version_string": "11.0.0",
+      "max_runtime_version_string": "16.9.0"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-Air",
+      "name": "iPhone Air",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone18,4",
+      "min_runtime_version": 1703936,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "26.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-SE",
+      "name": "iPhone SE (1st generation)",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone8,4",
+      "min_runtime_version": 590592,
+      "max_runtime_version": 1048575,
+      "min_runtime_version_string": "9.3.0",
+      "max_runtime_version_string": "15.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-SE--2nd-generation-",
+      "name": "iPhone SE (2nd generation)",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone12,8",
+      "min_runtime_version": 852993,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "13.4.1",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation",
+      "name": "iPhone SE (3rd generation)",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone14,6",
+      "min_runtime_version": 984064,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "15.4.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-X",
+      "name": "iPhone X",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone10,6",
+      "min_runtime_version": 720896,
+      "max_runtime_version": 1050880,
+      "min_runtime_version_string": "11.0.0",
+      "max_runtime_version_string": "16.9.0"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-XS",
+      "name": "iPhone Xs",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone11,2",
+      "min_runtime_version": 786432,
+      "max_runtime_version": 1204992,
+      "min_runtime_version_string": "12.0.0",
+      "max_runtime_version_string": "18.99.0"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-XS-Max",
+      "name": "iPhone Xs Max",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone11,4",
+      "min_runtime_version": 786432,
+      "max_runtime_version": 1204992,
+      "min_runtime_version_string": "12.0.0",
+      "max_runtime_version_string": "18.99.0"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-XR",
+      "name": "iPhone Xʀ",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone11,8",
+      "min_runtime_version": 786432,
+      "max_runtime_version": 1204992,
+      "min_runtime_version_string": "12.0.0",
+      "max_runtime_version_string": "18.99.0"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPod-touch--7th-generation-",
+      "name": "iPod touch (7th generation)",
+      "product_family": "iPhone",
+      "model_identifier": "iPod9,1",
+      "min_runtime_version": 787201,
+      "max_runtime_version": 1048575,
+      "min_runtime_version_string": "12.3.1",
+      "max_runtime_version_string": "15.255.255"
+    }
+  ],
+  "official_runtimes": [
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-12-4",
+      "name": "iOS 12.4",
+      "version": "12.4",
+      "build": "16G73"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-13-0",
+      "name": "iOS 13.0",
+      "version": "13.0",
+      "build": "17A577"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-13-1",
+      "name": "iOS 13.1",
+      "version": "13.1",
+      "build": "17A844"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-13-2",
+      "name": "iOS 13.2",
+      "version": "13.2.2",
+      "build": "17B102"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-13-3",
+      "name": "iOS 13.3",
+      "version": "13.3",
+      "build": "17C45"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-13-4",
+      "name": "iOS 13.4",
+      "version": "13.4",
+      "build": "17E255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-13-5",
+      "name": "iOS 13.5",
+      "version": "13.5",
+      "build": "17F61"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-13-6",
+      "name": "iOS 13.6",
+      "version": "13.6",
+      "build": "17G64"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-13-7",
+      "name": "iOS 13.7",
+      "version": "13.7",
+      "build": "17H22"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-14-0",
+      "name": "iOS 14.0",
+      "version": "14.0.1",
+      "build": "18A394"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-14-1",
+      "name": "iOS 14.1",
+      "version": "14.1",
+      "build": "18A8394"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-14-2",
+      "name": "iOS 14.2",
+      "version": "14.2",
+      "build": "18B79"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-14-3",
+      "name": "iOS 14.3",
+      "version": "14.3",
+      "build": "18C61"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-14-4",
+      "name": "iOS 14.4",
+      "version": "14.4",
+      "build": "18D46"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-14-5",
+      "name": "iOS 14.5",
+      "version": "14.5",
+      "build": "18E182"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-15-0",
+      "name": "iOS 15.0",
+      "version": "15.0",
+      "build": "19A339"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-15-2",
+      "name": "iOS 15.2",
+      "version": "15.2",
+      "build": "19C51"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-15-4",
+      "name": "iOS 15.4",
+      "version": "15.4",
+      "build": "19E240"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-15-5",
+      "name": "iOS 15.5",
+      "version": "15.5",
+      "build": "19F70"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-16-0",
+      "name": "iOS 16.0",
+      "version": "16.0",
+      "build": "20A360"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-16-1",
+      "name": "iOS 16.1",
+      "version": "16.1",
+      "build": "20B72"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-16-2",
+      "name": "iOS 16.2",
+      "version": "16.2",
+      "build": "20C52"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-16-4",
+      "name": "iOS 16.4",
+      "version": "16.4",
+      "build": "20E247"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-17-0",
+      "name": "iOS 17.0",
+      "version": "17.0.1",
+      "build": "21A342"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-17-2",
+      "name": "iOS 17.2",
+      "version": "17.2",
+      "build": "21C62"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-17-4",
+      "name": "iOS 17.4",
+      "version": "17.4",
+      "build": "21E213"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-17-5",
+      "name": "iOS 17.5",
+      "version": "17.5",
+      "build": "21F79"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-18-0",
+      "name": "iOS 18.0",
+      "version": "18.0",
+      "build": "22A3351"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-18-1",
+      "name": "iOS 18.1",
+      "version": "18.1",
+      "build": "22B81"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-18-2",
+      "name": "iOS 18.2",
+      "version": "18.2",
+      "build": "22C150"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-18-3",
+      "name": "iOS 18.3",
+      "version": "18.3.1",
+      "build": "22D8075"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-18-4",
+      "name": "iOS 18.4",
+      "version": "18.4",
+      "build": "22E238"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-18-5",
+      "name": "iOS 18.5",
+      "version": "18.5",
+      "build": "22F77"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-18-6",
+      "name": "iOS 18.6",
+      "version": "18.6",
+      "build": "22G86"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+      "name": "iOS 26.0",
+      "version": "26.0.1",
+      "build": "23A8464"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-1",
+      "name": "iOS 26.1",
+      "version": "26.1",
+      "build": "23B80"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-2",
+      "name": "iOS 26.2",
+      "version": "26.2",
+      "build": "23C54"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-3",
+      "name": "iOS 26.3",
+      "version": "26.3.1",
+      "build": "23D8133"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-4",
+      "name": "iOS 26.4",
+      "version": "26.4.1",
+      "build": "23E254a"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+      "name": "iOS 26.5",
+      "version": "26.5",
+      "build": "23F77"
+    }
+  ],
+  "xcode_version": "Xcode 26.0.1",
+  "source": "xcrun simctl list devicetypes -j",
+  "runtime_source": "https://devimages-cdn.apple.com/downloads/xcode/simulators/index2.dvtdownloadableindex",
+  "collected_at": "2026-08-01T02:03:44.644768+00:00"
+}

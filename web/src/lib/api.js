@@ -367,4 +367,56 @@ export const internal = {
         },
       ),
   },
+  iosSimVms: {
+    // 只回答「有哪些机型、各自支持哪些系统版本」。「这台 Agent 装了哪些 runtime」
+    // 得靠探查——每台 Agent 的 Xcode 与 runtime 都不同，目录里不会有。
+    catalog: () =>
+      request('GET', '/api/internal/ios-sim/catalog', {
+        headers: internalHeaders(),
+      }),
+    list: () =>
+      request('GET', '/api/internal/ios-sim/instances', {
+        headers: internalHeaders(),
+      }),
+    create: (payload) =>
+      request('POST', '/api/internal/ios-sim/instances', {
+        body: payload,
+        headers: internalHeaders(),
+      }),
+    // 机型与系统版本创建后由官方目录锁定，传不同值会 409；这里只用于改别名。
+    patch: (id, payload) =>
+      request('PATCH', `/api/internal/ios-sim/instances/${encodeURIComponent(id)}`, {
+        body: payload,
+        headers: internalHeaders(),
+      }),
+    remove: (id) =>
+      request('DELETE', `/api/internal/ios-sim/instances/${encodeURIComponent(id)}`, {
+        headers: internalHeaders(),
+      }),
+    // 与 Android / 鸿蒙不同：后端有专用 copy 端点，不需要前端回拼整份 payload。
+    copy: (id, payload) =>
+      request('POST', `/api/internal/ios-sim/instances/${encodeURIComponent(id)}/copy`, {
+        body: payload,
+        headers: internalHeaders(),
+      }),
+    dispatchCandidates: (id) =>
+      request(
+        'POST',
+        `/api/internal/ios-sim/instances/${encodeURIComponent(id)}/dispatch-candidates`,
+        { headers: internalHeaders() },
+      ),
+    dispatch: (id, agentId) =>
+      request('POST', `/api/internal/ios-sim/instances/${encodeURIComponent(id)}/dispatch`, {
+        body: { agent_id: agentId },
+        headers: internalHeaders(),
+      }),
+    start: (id) =>
+      request('POST', `/api/internal/ios-sim/instances/${encodeURIComponent(id)}/start`, {
+        headers: internalHeaders(),
+      }),
+    stop: (id) =>
+      request('POST', `/api/internal/ios-sim/instances/${encodeURIComponent(id)}/stop`, {
+        headers: internalHeaders(),
+      }),
+  },
 }

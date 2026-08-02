@@ -282,7 +282,9 @@ def _get_or_open_driver(
         return cached
     platform = _serial_platform.get(serial, "android")
     kwargs: Dict[str, Any] = {}
-    if on_status is not None and platform == "ios":
+    # 真机与虚拟机都要：两条 iOS 链路的 open_driver 都会在 WDA 起来之前推进度，
+    # 而这段等待正是用户盯着空白镜像的时间（虚拟机冷启动实测 8.8 秒）。
+    if on_status is not None and platform in P.family_platforms("ios"):
         kwargs["on_status"] = on_status
     drv = _open_driver_by_platform(serial, platform, **kwargs)
     _driver_cache[serial] = drv
@@ -784,6 +786,7 @@ def _maybe_preload_ios(infos: List[Any]) -> None:
 _last_good_ios_snapshot: List[Any] = []
 _android_vm_manager: Optional[Any] = None
 _harmony_vm_manager: Optional[Any] = None
+_ios_sim_manager: Optional[Any] = None
 
 
 def _drop_harmony_vm_driver_cache(serial: str) -> None:
@@ -795,6 +798,26 @@ def _drop_harmony_vm_driver_cache(serial: str) -> None:
         drv.close()
     except Exception as exc:  # noqa: BLE001
         logger.debug("Harmony VM 回收时关闭 driver cache 失败 serial={}: {}", serial, exc)
+
+
+def _drop_ios_sim_driver_cache(serial: str) -> None:
+    """虚拟机停止/删除前关掉并摘掉缓存的 driver。
+
+    停止时 manager 已经把 WDA 端点从登记表摘掉、端口也还回池子了，但
+    ``_driver_cache`` 里那个 driver 还攥着旧的 ``WdaClient``。不清的话，虚拟机
+    重启后再进工作台，``_get_or_open_driver`` 命中缓存直接返回，
+    ``open_ios_simulator_driver`` **根本不会被调到**，端点也就永远补不回来，
+    镜像启动时直接报「端点未登记」。
+
+    语义对齐安卓：停止 = 彻底交还，下一次启动是全新一次，不留任何上一次的句柄。
+    """
+    drv = _driver_cache.pop(serial, None)
+    if drv is None:
+        return
+    try:
+        drv.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("iOS 虚拟机回收时关闭 driver cache 失败 serial={}: {}", serial, exc)
 
 
 def _device_provider() -> List[Dict[str, Any]]:
@@ -809,6 +832,11 @@ def _device_provider() -> List[Dict[str, Any]]:
             infos = _harmony_vm_manager.decorate_devices(infos)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Harmony VM 设备标记失败（保留普通 Harmony 设备上报）：{}", exc)
+    if _ios_sim_manager is not None:
+        try:
+            infos = _ios_sim_manager.decorate_devices(infos)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("iOS 虚拟机设备标记失败（忽略，不影响其他平台）：{}", exc)
     infos = _apply_ios_snapshot_freshness(infos)
     _record_serial_platform(infos)
     _emit_ios_disconnect_events(infos)
@@ -2536,6 +2564,158 @@ class _HarmonyMirrorSession:
             logger.debug("调度 harmony mirror payload 失败 serial={}: {}", self.serial, exc)
 
 
+class _IosSimMirrorSession:
+    """单台 iOS 虚拟机的镜像会话：WDA MJPEG → JPEG 直推浏览器。
+
+    与真机 ``_IosMirrorSession`` 走**同一条 MJPEG 直通路线**（方案 §1.10），协议、
+    前端组件、帧格式完全一致；但**刻意不复用那个类**，因为它有一半篇幅在处理虚拟机
+    根本不存在的真机问题：
+
+    - ``get_ios_wda_lifecycle_policy()`` 的 stable/auto 拔插状态机
+      （虚拟机没有 USB，不存在「拔插会话」这个概念）
+    - ``_check_ios_driver_health`` / ``_handle_ios_driver_unhealthy``
+      （建立在真机 ``_WDA_CLIENT_MAP`` 上，虚拟机有独立登记表）
+    - ``StableWdaUnavailable`` 的「请人工拔插设备」提示（对虚拟机是错的引导）
+    - Face ID 机型息屏唤醒
+
+    把虚拟机接进那个类，等价于让真机的拔插策略开始管理虚拟机；反过来为虚拟机改那个
+    类，就是在动真机链路。因此按鸿蒙 ``_HarmonyMirrorSession`` 的先例独立一个会话
+    类——这也是本方案「高冗余、低耦合」的一贯做法。
+
+    接口与另三个会话类严格同形（``start`` / ``stop`` / ``replay_init`` /
+    ``is_alive`` / ``control`` / ``resolution`` / ``get_device_size``），
+    ``_MirrorSupervisor`` 因此不需要感知平台差异。
+    """
+
+    def __init__(
+        self,
+        serial: str,
+        ws_client: "AgentWSClient",
+        loop: asyncio.AbstractEventLoop,
+    ) -> None:
+        self.serial = serial
+        self._ws = ws_client
+        self._loop = loop
+        self._stopped = False
+        self._frame_count = 0
+
+        self._streamer = None  # type: ignore[assignment]
+        self._mirror_resolution: Optional[Tuple[int, int]] = None
+        self._jpeg_sender = _LatestMirrorPayloadSender(
+            self.serial, self._ws, self._loop, "ios_sim"
+        )
+
+    def start(self) -> None:
+        try:
+            from .mirror import build_ios_sim_streamer  # noqa: PLC0415
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "iOS 虚拟机 mirror 启动失败 serial={}: build_ios_sim_streamer 导入失败 {}",
+                self.serial, exc,
+            )
+            self._stopped = True
+            return
+
+        # 必须先把 driver 起来，两个原因：
+        # 1. WDA 的 mjpeg server 需要一个 active session，否则 XCUIScreen 拿不到
+        #    前台应用，每帧直接返 502（真机上踩过）
+        # 2. driver 就绪时才会登记 MJPEG / WDA 端口，streamer 靠登记表取端口
+        #
+        # 首次会编译 WDA（约 25 秒），所以把进度通过 device_status 推给浏览器，
+        # 与真机同一套提示条机制。
+        status_reporter = _make_device_status_reporter(self._ws, self._loop, self.serial)
+        try:
+            _get_or_open_driver(self.serial, on_status=status_reporter)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "iOS 虚拟机 mirror 启动前 open_driver 失败 serial={}: {}",
+                self.serial, exc,
+            )
+            try:
+                status_reporter("error", "虚拟机 WDA 启动失败", str(exc)[:300], 0)
+            except Exception:  # noqa: BLE001
+                pass
+            self._stopped = True
+            return
+
+        try:
+            self._streamer = build_ios_sim_streamer(
+                serial=self.serial,
+                on_jpeg=self._on_mirror_jpeg,
+                log_tag=f"ios-sim-mirror:{self.serial}",
+            )
+            self._streamer.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "iOS 虚拟机 mirror streamer 启动失败 serial={}: {}",
+                self.serial, exc,
+            )
+            self._stopped = True
+            self._streamer = None
+            return
+
+    def stop(self) -> None:
+        if self._stopped:
+            return
+        self._stopped = True
+        self._jpeg_sender.close()
+        if self._streamer is not None:
+            try:
+                self._streamer.stop()
+            except Exception:  # noqa: BLE001
+                pass
+            self._streamer = None
+
+    @property
+    def control(self):
+        # 虚拟机没有 scrcpy 控制信道；所有 input 走 driver → WDA，与真机一致。
+        return None
+
+    @property
+    def resolution(self) -> Optional[Tuple[int, int]]:
+        return self._mirror_resolution
+
+    @property
+    def is_alive(self) -> bool:
+        return (
+            not self._stopped
+            and self._streamer is not None
+            and self._streamer.is_alive
+        )
+
+    def get_device_size(self, driver: BaseDriver) -> Tuple[int, int]:
+        try:
+            return driver.window_size()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("拿不到 iOS 虚拟机 {} 尺寸：{}", self.serial, exc)
+            return (0, 0)
+
+    def _on_mirror_jpeg(self, jpeg: bytes, w: int, h: int) -> None:
+        if self._stopped:
+            return
+        self._frame_count += 1
+        if (w, h) != (0, 0) and self._mirror_resolution != (w, h):
+            self._mirror_resolution = (w, h)
+        payload = {
+            "type": P.MSG_MIRROR_JPEG,
+            "serial": self.serial,
+            "data": base64.b64encode(jpeg).decode("ascii"),
+            "width": int(w),
+            "height": int(h),
+            "ts": time.time(),
+        }
+        self._jpeg_sender.send_latest(payload)
+        if self._frame_count == 1 or self._frame_count % 60 == 0:
+            logger.info(
+                "iOS 虚拟机 mjpeg 累计 serial={} count={} 最近一帧 {}×{} bytes={}",
+                self.serial, self._frame_count, w, h, len(jpeg),
+            )
+
+    def replay_init(self) -> None:
+        """JPEG 路径无 init segment；保留空实现与另三个会话类签名一致。"""
+        return
+
+
 class _MirrorSupervisor:
     """管理每个 serial 的 mirror 会话；同一 serial 只允许一个会话。
 
@@ -2584,6 +2764,9 @@ class _MirrorSupervisor:
         platform = _serial_platform.get(serial, "android")
         if platform == "ios":
             session: Any = _IosMirrorSession(serial, self._ws, self._get_loop())
+        elif platform == "ios_sim":
+            # 必须显式分支：落到 else 会拿 scrcpy 去连虚拟机 udid，永远起不来。
+            session = _IosSimMirrorSession(serial, self._ws, self._get_loop())
         elif platform == "harmony":
             session = _HarmonyMirrorSession(serial, self._ws, self._get_loop())
         else:
@@ -2694,8 +2877,9 @@ def run(
     from .android_vm import AndroidVmManager  # noqa: PLC0415
     from .harmony_vm import HarmonyVmManager  # noqa: PLC0415
     from .harmony_vm.fport import install_harmony_fport_patch  # noqa: PLC0415
+    from .ios_sim import IosSimVmManager  # noqa: PLC0415
 
-    global _android_vm_manager, _harmony_vm_manager
+    global _android_vm_manager, _harmony_vm_manager, _ios_sim_manager
     # 必须早于第一次 list_all_devices：Harmony 扫描本身会构造 hmdriver2.Driver，
     # 如果晚装补丁，第一条随机 FPort 映射已经产生。
     fport_ok, fport_reason = install_harmony_fport_patch()
@@ -2709,6 +2893,11 @@ def run(
     _android_vm_manager = AndroidVmManager()
     _harmony_vm_manager = HarmonyVmManager(
         drop_driver_cache=_drop_harmony_vm_driver_cache
+    )
+    # iOS 虚拟机无需任何前置补丁（不像鸿蒙要先装 fport patch）：WDA 端口由
+    # SIMCTL_CHILD_USE_PORT 直接指定，没有第三方库会抢端口。
+    _ios_sim_manager = IosSimVmManager(
+        drop_driver_cache=_drop_ios_sim_driver_cache
     )
     client = AgentWSClient(
         ws_url=effective_ws,
@@ -2774,6 +2963,24 @@ def run(
         assert _harmony_vm_manager is not None
         await _harmony_vm_manager.handle_delete(c, msg)
 
+    async def _ios_sim_capability_probe_handler(
+        c: AgentWSClient, msg: Dict[str, Any]
+    ) -> None:
+        assert _ios_sim_manager is not None
+        await _ios_sim_manager.handle_capability_probe(c, msg)
+
+    async def _ios_sim_start_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
+        assert _ios_sim_manager is not None
+        await _ios_sim_manager.handle_start(c, msg)
+
+    async def _ios_sim_stop_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
+        assert _ios_sim_manager is not None
+        await _ios_sim_manager.handle_stop(c, msg)
+
+    async def _ios_sim_delete_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
+        assert _ios_sim_manager is not None
+        await _ios_sim_manager.handle_delete(c, msg)
+
     async def _start_mirror_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         await _handle_start_mirror(mirror_sup, msg)
 
@@ -2810,6 +3017,10 @@ def run(
     client.on(P.MSG_HARMONY_VM_START, _harmony_vm_start_handler)
     client.on(P.MSG_HARMONY_VM_STOP, _harmony_vm_stop_handler)
     client.on(P.MSG_HARMONY_VM_DELETE, _harmony_vm_delete_handler)
+    client.on(P.MSG_IOS_SIM_VM_CAPABILITY_PROBE, _ios_sim_capability_probe_handler)
+    client.on(P.MSG_IOS_SIM_VM_START, _ios_sim_start_handler)
+    client.on(P.MSG_IOS_SIM_VM_STOP, _ios_sim_stop_handler)
+    client.on(P.MSG_IOS_SIM_VM_DELETE, _ios_sim_delete_handler)
     client.on(P.MSG_START_MIRROR, _start_mirror_handler)
     client.on(P.MSG_STOP_MIRROR, _stop_mirror_handler)
     client.on(P.MSG_APP_INSTALL_START, handle_app_install_start)
@@ -2832,9 +3043,43 @@ def run(
     async def _readiness_send(msg):
         return await client.send(msg)
 
+    def _readiness_self_heal(serial: str, platform: str) -> bool:
+        """iOS 虚拟机卡死自愈：重启它的 WDA。返回是否真的动手了。
+
+        **只对 iOS 虚拟机生效。** 安卓、鸿蒙、iOS 真机一概跳过——真机尤其不能碰，
+        stable 策略明确要求「WDA 掉线不自动重启，等人工拔插」。
+
+        **只在这台设备空闲时动手。** 重启 WDA 会掐掉当前 session，正在跑的任务会
+        直接失败。设备被占用有两种形态，都要排除：
+          - 有 run 在跑（``supervisor.is_busy``）
+          - 有人在工作台看（``mirror_sup`` 里有会话）
+        两者都没有 = 没人会被打断，重启的代价是零。
+
+        背景：WDA 的 HTTP 服务是单队列的，一旦内部卡住（实测见过一次卡满 10 分钟
+        才自己缓过来），期间所有请求排队不动。设备虽然会被判未就绪而不再接新活，
+        但要白白等上几分钟；虚拟机重启 WDA 只要几秒，没有理由干等。
+        """
+        if platform != "ios_sim":
+            return False
+        if supervisor.is_busy(serial):
+            logger.debug("[self-heal] {} 正在跑 run，不重启 WDA", serial)
+            return False
+        if mirror_sup.get_session(serial) is not None:
+            logger.debug("[self-heal] {} 正在被工作台使用，不重启 WDA", serial)
+            return False
+        if _ios_sim_manager is None:
+            return False
+        logger.warning("[self-heal] iOS 虚拟机 {} 长时间探不通且空闲，重启其 WDA", serial)
+        try:
+            return bool(_ios_sim_manager.restart_wda_sync(serial))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[self-heal] 重启 {} 的 WDA 失败：{}", serial, exc)
+            return False
+
     readiness = ReadinessSupervisor(
         device_lister=_readiness_device_lister,
         send_message=_readiness_send,
+        self_heal=_readiness_self_heal,
     )
 
     async def _readiness_on_connect(_client: AgentWSClient) -> None:
@@ -2867,6 +3112,23 @@ def run(
             logger.warning("hello 前认领 Harmony VM 失败（不猜测认领）：{}", exc)
 
     client.on_pre_hello(_harmony_vm_reclaim_before_hello)
+
+    async def _ios_sim_reclaim_before_hello(_client: AgentWSClient) -> None:
+        # 必须在 hello 之前：认领会把仍在运行的受管虚拟机登记进纳管表，
+        # 而 list_ios_simulators 只上报纳管表里的 UDID。晚一步，首次 hello
+        # 的设备列表就会漏掉这些实例，前端卡片会闪一下才出现。
+        if _ios_sim_manager is None:
+            return
+        try:
+            reclaimed = await asyncio.to_thread(
+                _ios_sim_manager.reconcile_running_vms_sync
+            )
+            if reclaimed:
+                logger.info("hello 前已认领 iOS 虚拟机 {} 台", len(reclaimed))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("hello 前认领 iOS 虚拟机失败（忽略）：{}", exc)
+
+    client.on_pre_hello(_ios_sim_reclaim_before_hello)
 
     async def _vm_reclaim_on_connect(c: AgentWSClient) -> None:
         assert _android_vm_manager is not None
@@ -2912,6 +3174,29 @@ def run(
 
     client.on_connect(_harmony_vm_orphan_reconcile_on_connect)
 
+    async def _ios_sim_reclaim_on_connect(c: AgentWSClient) -> None:
+        if _ios_sim_manager is None:
+            return
+        try:
+            # rescan=False：上一步 on_pre_hello 刚扫过，不必再扫一遍
+            reclaimed = await _ios_sim_manager.report_reclaimed_vms(c, rescan=False)
+            if reclaimed:
+                logger.info("已认领恢复 iOS 虚拟机 {} 台", reclaimed)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("上报 iOS 虚拟机恢复状态失败：{}", exc)
+
+    client.on_connect(_ios_sim_reclaim_on_connect)
+
+    async def _ios_sim_orphan_reconcile_on_connect(c: AgentWSClient) -> None:
+        if _ios_sim_manager is None:
+            return
+        try:
+            await _ios_sim_manager.report_orphan_reconcile(c)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("上报 iOS 虚拟机孤儿对账失败：{}", exc)
+
+    client.on_connect(_ios_sim_orphan_reconcile_on_connect)
+
     async def _vm_warm_capability_on_connect(_client: AgentWSClient) -> None:
         assert _android_vm_manager is not None
         try:
@@ -2944,6 +3229,18 @@ def run(
             logger.debug("Harmony VM 存活巡检失败：{}", exc)
 
     client.on_rescan(_harmony_vm_liveness_sweep_on_rescan)
+
+    async def _ios_sim_liveness_sweep_on_rescan(
+        c: AgentWSClient, present_serials: set
+    ) -> None:
+        if _ios_sim_manager is None:
+            return
+        try:
+            await _ios_sim_manager.sweep_vanished_vms(c, present_serials)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("iOS 虚拟机存活巡检失败（忽略）：{}", exc)
+
+    client.on_rescan(_ios_sim_liveness_sweep_on_rescan)
 
     async def _reporter_on_connect(_client: AgentWSClient) -> None:
         # M3 可靠上报：WS（重）连成功后，确保 drain worker 已启动，并唤醒它立即从

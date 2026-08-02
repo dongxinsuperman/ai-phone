@@ -75,15 +75,15 @@ class Settings(BaseSettings):
     )
     android_vm_no_window: bool = Field(
         default=True,
-        description="模拟器是否无头运行（不弹宿主窗口，画面仍走投屏）。env: AI_PHONE_ANDROID_VM_NO_WINDOW",
+        description="虚拟机是否无头运行（不弹宿主窗口，画面仍走投屏）。env: AI_PHONE_ANDROID_VM_NO_WINDOW",
     )
     android_vm_boot_timeout_sec: int = Field(
         default=120,
-        description="模拟器开机等待上限秒数。env: AI_PHONE_ANDROID_VM_BOOT_TIMEOUT_SEC",
+        description="虚拟机开机等待上限秒数。env: AI_PHONE_ANDROID_VM_BOOT_TIMEOUT_SEC",
     )
     android_vm_density: int = Field(
         default=420,
-        description="模拟器默认显示密度（dpi）。env: AI_PHONE_ANDROID_VM_DENSITY",
+        description="虚拟机默认显示密度（dpi）。env: AI_PHONE_ANDROID_VM_DENSITY",
     )
     android_vm_kill_foreign: bool = Field(
         default=False,
@@ -108,6 +108,29 @@ class Settings(BaseSettings):
     android_vm_optimize_for_automation: bool = Field(
         default=True,
         description="开机后做自动化友好预置：关闭系统动画三件套 + 24 小时制。env: AI_PHONE_ANDROID_VM_OPTIMIZE_FOR_AUTOMATION",
+    )
+    # ── iOS 虚拟机行为参数 ──
+    # 语义与上面的 android_vm_* 一一对应。注意 iOS 虚拟机**不是虚拟机**、没有可
+    # 配置的 RAM 分配（方案 §6.5.3），所以没有 ram_mb 之类的对应项；容量只看
+    # 「每台实测开销 × 台数 vs 宿主剩余」。
+    ios_sim_max_instances: int = Field(
+        default=8,
+        description=(
+            "探查 details 里展示用的参考上限；与 Android 一致**不拦截**。"
+            "默认 8 是按单台实测约 1.5GB 对 16GB 机器的保守估计。"
+            "env: AI_PHONE_IOS_SIM_MAX_INSTANCES"
+        ),
+    )
+    ios_sim_min_free_mb: int = Field(
+        default=2048,
+        description=(
+            "软提示阈值：宿主可用内存低于「单台实测开销 + 此余量」时，探查仍可用"
+            "但附风险提醒（不拦截）。env: AI_PHONE_IOS_SIM_MIN_FREE_MB"
+        ),
+    )
+    ios_sim_boot_timeout_sec: int = Field(
+        default=180,
+        description="虚拟机开机等待上限秒数（含 simctl bootstatus）。env: AI_PHONE_IOS_SIM_BOOT_TIMEOUT_SEC",
     )
     # ── HarmonyOS 虚拟机（DevEco Emulator）行为参数 ──
     # 与 Android VM 同属 Server 强控制的下发集，但字段、端口池与生命周期实现完全独立。

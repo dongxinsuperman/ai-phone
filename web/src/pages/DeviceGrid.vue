@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DeviceCard from '../components/DeviceCard.vue'
 import { api, internal } from '../lib/api.js'
+import { platformLabel } from '../lib/platform.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -147,7 +148,10 @@ function openEdit(device) {
   dlg.error = ''
   dlg.vmInstanceId =
     device.extra?.device_kind === 'virtual' ? device.extra?.vm_instance_id || '' : ''
-  dlg.vmPlatform = device.extra?.vm_platform || device.platform || ''
+  // 用 device.platform 而不是 extra.vm_platform：后者是**产品归属**（iOS 虚拟机
+  // 报的是 'ios'，因为对外只有三端），而这里要决定的是「归哪个虚拟机子系统的接口管」，
+  // 那由 device.platform 决定（android / harmony / ios_sim）。
+  dlg.vmPlatform = device.platform || ''
   // 如果已经绑过，异步把 note 拉回来（别名表里存了备注）
   if (device.alias) {
     internal.deviceAliases
@@ -184,6 +188,8 @@ async function saveAlias() {
       // 虚拟机：回写 VM 配置别名（后端同步 name + DeviceAlias 映射）
       if (dlg.vmPlatform === 'harmony') {
         await internal.harmonyVms.patch(dlg.vmInstanceId, { alias })
+      } else if (dlg.vmPlatform === 'ios_sim') {
+        await internal.iosSimVms.patch(dlg.vmInstanceId, { alias })
       } else {
         await internal.androidVms.patch(dlg.vmInstanceId, { alias })
       }
@@ -317,7 +323,7 @@ function prettyErr(e) {
           <div class="field">
             <label>设备</label>
             <div class="readonly">
-              <span class="tag">{{ dlg.platform?.toUpperCase() || '??' }}</span>
+              <span class="tag">{{ platformLabel(dlg.platform) }}</span>
               <span class="readonly-model">{{ dlg.model }}</span>
             </div>
             <div class="serial-line" :title="dlg.serial">serial: {{ dlg.serial }}</div>

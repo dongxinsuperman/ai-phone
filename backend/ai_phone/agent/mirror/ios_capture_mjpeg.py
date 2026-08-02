@@ -38,7 +38,7 @@ import io
 import socket
 import threading
 import time
-from typing import Callable, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 import httpx
 from loguru import logger
@@ -245,24 +245,33 @@ class IosMjpegStreamer:
         self._forwarder = fwd
         self._mjpeg_local_port = local_port
 
-    def _push_wda_mjpeg_settings(self) -> None:
-        """把帧率 / 质量 / 缩放推给 WDA。**必须复用 driver 的 WdaClient**，
-        绝对不能自己 new 一个再 ``create_session`` —— WDA 是单 session 模型，
+    def _get_wda_client(self) -> Any:
+        """取 driver 常驻的那把 ``WdaClient``；拿不到返回 ``None``。
+
+        **绝不能自己 new 一个再 ``create_session``** —— WDA 是单 session 模型，
         后来的 POST /session 会把 driver 的 session 顶掉。顶掉后：
 
         - mjpeg server 没有 active screen，直接 HTTP 502（这个 bug 当场中过一次）
         - 手动 tap / swipe 等所有控制全部 404 fail
 
-        所以从 ``ios.py::_WDA_CLIENT_MAP`` 取 driver 常驻的那把 client，
-        调 ``update_appium_settings``，**不 close**（不碰 session 生命周期）。
-        取不到就跳过（WDA 会用 cap/工程默认参数跑 mjpeg）。
+        本类（真机）从 ``ios.py::_WDA_CLIENT_MAP`` 取。虚拟机子类覆盖这里，改从
+        自己的登记表取——两条链路的 client 表刻意分开，见
+        ``ios_simulator_driver._SIM_ENDPOINTS`` 的说明。
         """
         try:
             from ai_phone.agent.drivers.ios import _WDA_CLIENT_MAP  # noqa: PLC0415
         except Exception:  # noqa: BLE001
-            return
+            return None
+        return _WDA_CLIENT_MAP.get(self._serial)
 
-        wda = _WDA_CLIENT_MAP.get(self._serial)
+    def _push_wda_mjpeg_settings(self) -> None:
+        """把帧率 / 质量 / 缩放推给 WDA。
+
+        用 ``_get_wda_client()`` 拿 driver 那把 client，调
+        ``update_appium_settings``，**不 close**（不碰 session 生命周期）。
+        取不到就跳过（WDA 会用 cap/工程默认参数跑 mjpeg）。
+        """
+        wda = self._get_wda_client()
         if wda is None:
             logger.info(
                 "[{}] 跳过 mjpeg settings 下发：driver 还没就绪 / 未放入 _WDA_CLIENT_MAP，"
@@ -319,8 +328,7 @@ class IosMjpegStreamer:
             # 那边也有可能因为 WDA 未配置失败；这里就进不去分支，保持 WDA 默认参数）
             if not settings_pushed:
                 try:
-                    from ai_phone.agent.drivers.ios import _WDA_CLIENT_MAP  # noqa: PLC0415
-                    if self._wda_local_port and _WDA_CLIENT_MAP.get(self._serial):
+                    if self._wda_local_port and self._get_wda_client() is not None:
                         self._push_wda_mjpeg_settings()
                         settings_pushed = True
                 except Exception as exc:  # noqa: BLE001
@@ -450,8 +458,7 @@ class IosMjpegStreamer:
         poll_interval = 1.5
         while not self._stopped:
             try:
-                from ai_phone.agent.drivers.ios import _WDA_CLIENT_MAP  # noqa: PLC0415
-                wda = _WDA_CLIENT_MAP.get(self._serial)
+                wda = self._get_wda_client()
                 if wda is not None:
                     orient = (wda.orientation() or "").upper()
                     if self._last_orientation is None:

@@ -26,6 +26,7 @@ from .db import (
     init_db,
     init_engine,
     init_harmony_vm_db,
+    init_ios_sim_db,
 )
 from .hub import Hub
 from .lockstore import DeviceLockStore
@@ -43,6 +44,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_engine()
     core_db_ready = False
     app.state.harmony_vm_db_ready = False
+    app.state.ios_sim_db_ready = False
     try:
         await init_db()
         core_db_ready = True
@@ -56,6 +58,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             # Harmony feature DDL is deliberately isolated.  Existing Android
             # and core APIs continue to run even if these new tables fail.
             logger.warning("Harmony VM 数据表初始化失败，仅禁用该能力：{}", exc)
+        try:
+            await init_ios_sim_db()
+            app.state.ios_sim_db_ready = True
+        except Exception as exc:  # noqa: BLE001
+            # 同 Harmony：iOS 虚拟机的 DDL 完全隔离，失败只禁用这一项能力，
+            # Android / 鸿蒙 / 真机链路照常运行。
+            logger.warning("iOS 虚拟机数据表初始化失败，仅禁用该能力：{}", exc)
 
     # 设备列表是实时视图，server 重启后清空——等 agent hello 重新上报。
     # 没有 agent 在线的"幽灵设备"行没有任何意义（既不能控制也不能镜像）。
@@ -99,6 +108,27 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     )
         except Exception as exc:  # noqa: BLE001
             logger.warning("启动重置 Harmony VM 状态失败，仅影响 Harmony VM：{}", exc)
+
+    # iOS 虚拟机同上。用自己的就绪位而不是 core_db_ready——它的表是隔离建的，
+    # 建失败时只该跳过自己这一段。漏了这段的后果：Server 重启后页面上虚拟机
+    # 永远显示「运行中」，而 Agent 那边早就没了，按钮和真实状态对不上。
+    if getattr(app.state, "ios_sim_db_ready", False):
+        try:
+            from .ios_sim.service import reset_vm_states_on_startup as reset_ios_sim_vms
+
+            factory = get_session_factory()
+            async with factory() as s:
+                n = await reset_ios_sim_vms(s)
+                await s.commit()
+                if n:
+                    logger.info(
+                        "启动重置：{} 台 iOS 虚拟机标为 agent_offline，保留绑定待认领",
+                        n,
+                    )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "启动重置 iOS 虚拟机状态失败，仅影响 iOS 虚拟机：{}", exc
+            )
 
     app.state.lock_store = DeviceLockStore()
     app.state.hub = Hub()
