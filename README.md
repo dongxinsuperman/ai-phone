@@ -10,11 +10,11 @@
   <img src="./assets/hero/ai-phone-hero.gif" alt="ai-phone AI automation flow overview" width="100%">
 </p>
 
-**面向中小型公司的三端真机 AI 自动化中台** —— iOS / Android / HarmonyOS 同级原生支持，自然语言驱动的纯视觉决策，开箱即用的调度队列与多设备并发，执行器可插拔，一台 Mac 即可起完整链路。新 Mac 从 0 到 1 的完整部署见 [deployment-from-zero（从0到1部署指南）](./docs/deployment-from-zero（从0到1部署指南）.md)。
+**面向中小型公司的三端真机 + 三端虚拟机 AI 自动化中台** —— iOS / Android / HarmonyOS 真机与虚拟机同级纳管，自然语言驱动的纯视觉决策，开箱即用的调度队列与多设备并发，执行器可插拔，一台 Mac 即可起完整链路。新 Mac 从 0 到 1 的完整部署见 [deployment-from-zero（从0到1部署指南）](./docs/deployment-from-zero（从0到1部署指南）.md)。
 
 > **产品形态**：ai-phone 不是一个执行器 SDK，而是把"投递批次 → 设备池调度 → 自然语言执行 → 终态广播 + HTML 报告 + 大盘统计"做成 QA 团队 / 业务回归大盘开箱即用的中台能力。**执行器是其中一个可替换组件**：默认内置自研的 VLM 纯视觉决策循环，并在外层包了页面稳定、卡死检测、审判、断言、状态路标、瞬态 UI 处理等执行安全层；也可挂载第三方执行器作为额外引擎选项。
 
-> **产品边界与出发点**：ai-phone 不是孤立的“点手机工具”，也不是测试平台本身，而是 AI 测试链路里的真机执行层。上游可以由 Cursor、CI、内部平台或 AI 助手生成可消费测试 case，下游由 ai-phone 把这些自然语言 case 投递到真实 iOS / Android / HarmonyOS 设备上执行，并回传截图、日志、报告和终态结果。详细说明见 [product-boundaries（产品边界）](./docs/product-boundaries（产品边界）.md)。
+> **产品边界与出发点**：ai-phone 不是孤立的“点手机工具”，也不是测试平台本身，而是 AI 测试链路里的三端设备执行层。上游可以由 Cursor、CI、内部平台或 AI 助手生成可消费测试 case，下游由 ai-phone 把这些自然语言 case 投递到 iOS / Android / HarmonyOS 真机与虚拟机上执行，并回传截图、日志、报告和终态结果。详细说明见 [product-boundaries（产品边界）](./docs/product-boundaries（产品边界）.md)。
 
 ---
 
@@ -46,15 +46,23 @@
 
 ![运维大盘 · 吞吐 / 设备 / Token / 稳定性四象限 + AI 摘要](./assets/screenshots/analytics-overview.png)
 
-**6. Android / 鸿蒙虚拟机扩容（`main` 独有）** —— 「虚拟机」页提供相互隔离的 Android 与鸿蒙配置页：Android 按品牌 / 机型 / 系统 / 分辨率创建，鸿蒙按官方设备形态 / 机型 / 可用系统版本创建，并支持折叠屏初始形态。Server 统一保存配置、选择 Agent 下发并管理启停；虚拟机启动后带 `virtual` 标识进入设备池，与真机复用同一套调度、工作台和执行链路。当前鸿蒙采用 **Agent 承接的本地 GUI 模式**，这是官方本地 Emulator 尚无公开 Headless 入口下的阶段性形态；官方一旦提供真正无头能力，现有 Agent 链路将直接切换，业务逻辑与 Android 完全统一。集中式场景另规划 **Linux gRPC 无头资源池**：
+**6. iOS / Android / 鸿蒙三端虚拟机扩容（`main` 独有）** —— ai-phone 将三端真机与三端虚拟机纳入同一个设备池。虚拟机要解决的，不是怎么让一台设备跑得更快，而是怎么让设备供给跟上测试并发。
 
 ![虚拟机页 · Android 与鸿蒙独立配置并下发到 Agent](./assets/screenshots/virtual-machines.png)
 
-![设备总览 · Android 与鸿蒙真机、虚拟机同池纳管](./assets/screenshots/devices-overview-vm.png)
+**决定测试耗时的是并发，不是脚本效率。** 100 条 case 分到 100 台设备，墙钟时间接近其中耗时最长的一条，跟 case 总量无关。测试从一个随需求规模线性增长的环节，变成接近常数时间。
 
-当前形态、后续 Provider 规划和明确失败规则见 [harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）](./docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md)。
+并发成立的前提，是拥有足够多可以同时工作的设备。同一台真机一次只能承接一个任务，相同机型、相同系统和相同配置的真机也无法随时复制；虚拟机复制配置就能增加设备供给，让承接能力从靠采购增长，变成靠计算资源增长。
 
-**7. 应用分发（三端通用）** —— 上传 APK / HAP / IPA 包（Android / HarmonyOS / iOS 三端），按平台筛出可分发设备，一键批量安装到设备池，实时回传每台安装结果、支持失败重试：
+![iOS 虚拟机 · 左侧选择 Simulator 机型，右侧展示真实 iPad 实时画面](./assets/screenshots/ios-virtual-machines.png)
+
+**虚拟机没有引入新架构，只是让设备供给不再受限。** ai-phone 原本就是每台电脑运行一个 Agent，把手边的设备接入并聚合成共享池。虚拟机加入后，任务投递、设备占用、工作台、自然语言执行、日志、报告和结果回传都没有改变；变化的只是设备来源从“手上有几台手机”，扩展到“电脑还能运行多少台虚拟设备”。
+
+![设备总览 · iOS、Android、鸿蒙真机与虚拟机统一纳管](./assets/screenshots/devices-overview-vm-three-platform.png)
+
+三端真机与三端虚拟机进入同一个设备池、复用同一条任务执行链路，对外仍然只有 iOS、Android、HarmonyOS 三个平台。环境准备见 [Android 虚拟机 Agent 环境准备](./docs/agent-vm-env-setup（Agent虚拟机环境准备）.md)、[iOS 虚拟机 Agent 环境准备](./docs/agent-ios-sim-vm-env-setup（Agent iOS虚拟机环境准备）.md) 与 [鸿蒙虚拟机 Agent 环境准备](./docs/agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md)；鸿蒙当前形态与后续 Provider 规划见 [harmony-vm-architecture](./docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md)。
+
+**7. 应用分发（三端通用）** —— 上传 APK / HAP / IPA，以及 iOS Simulator 使用的 `.app` / `.zip` 产物，按平台和设备类型筛出可分发设备，一键批量安装到设备池，实时回传每台安装结果、支持失败重试：
 
 ![应用分发 · 三端上传包 → 选设备 → 批量安装 → 查看每台安装结果](./assets/screenshots/app-distribution.png)
 
@@ -72,8 +80,8 @@
 | **可监督轨迹缓存** | V1 固定动作回放、V2 状态路标对齐、V3 意图回放重定位；缓存复跑后仍走最终断言，失败会清理或标记可疑缓存；非业务瞬态弹窗可标记为 optional gate，当前没有同类弹窗时跳过，有同类弹窗时按需执行或修复 |
 | **三家协议自由组合** | 主 VLM 走 Doubao / Claude / GPT 三选一，辅助系统也可异家组合（如"主 Claude + 辅 Doubao 省成本"），全部走 env 切换、零代码改动 |
 | **执行器可插拔** | 默认内置自研 VLM 决策循环；前端"引擎"下拉框允许挂载第三方执行器作为额外选项，调度 / 报告 / 设备池 / 终态广播仍然走中台统一链路 |
-| **虚拟机（Android / HarmonyOS）** | Android 与鸿蒙使用独立配置页和数据链路，由 Server 统一配置并下发到 Agent；启动后带 `virtual` 标识进入统一设备池，复用真机的调度、工作台与执行链路。支持 Android 机型 / 镜像配置，以及鸿蒙官方机型 / 系统版本 / 折叠屏初始形态（`main` 独有能力） |
-| **应用分发（三端）** | 上传 APK / HAP / IPA 包（Android / HarmonyOS / iOS 三端），按平台自动筛出可分发设备，一键批量安装到设备池，实时回传每台安装结果，支持失败重试与超时兜底 |
+| **三端虚拟机** | iOS / Android / HarmonyOS 虚拟设备由 Server 统一配置并下发到 Agent；启动后带 `virtual` 标识进入统一设备池，复用真机的调度、工作台与执行链路（`main` 独有能力） |
+| **应用分发（三端）** | 上传 APK / HAP / IPA，以及 iOS Simulator 使用的 `.app` / `.zip` 产物，按平台和设备类型自动筛选并批量安装，实时回传每台安装结果，支持失败重试与超时兜底 |
 | **黑屏待机** | 三端支持空闲自然息屏省电，Run 前由 preflight 唤醒（Android `wake + dismiss-keyguard` / iOS `wda.unlock` / HarmonyOS `wake + 按需上滑`）；息屏态仍可派发 |
 | **快速部署** | 一台 Mac + Postgres + 一根数据线即可起完整链路；生产部署模板在 Roadmap 中持续补齐 |
 
@@ -89,7 +97,7 @@
 
 ai-phone 有两条同源、并行维护的架构线，底层架构区别在「VLM 决策执行脑放在哪」。两者**核心数据库 schema 与基础产品能力（三端 driver、调度队列、缓存 V1/V2/V3、报告、大盘、辅助安全层）兼容**；但**新增大功能优先（或仅）落地 `main`，两条线的功能完整度正在拉开** —— `main` 是推荐主线。
 
-> ⚠️ **两条线并非功能对等**：像 **Android / 鸿蒙虚拟机** 这类较新的大功能是 **`main` 独有、暂不同步 `next/server-brain`**。`next` 仍在维护、可继续使用，但会逐步落后于 `main`。**新接入请直接用 `main`。**
+> ⚠️ **两条线并非功能对等**：像 **iOS / Android / 鸿蒙三端虚拟机** 这类较新的大功能是 **`main` 独有、暂不同步 `next/server-brain`**。`next` 仍在维护、可继续使用，但会逐步落后于 `main`。**新接入请直接用 `main`。**
 
 | | `main`（默认主线） | `next/server-brain` |
 |---|---|---|
@@ -97,10 +105,10 @@ ai-phone 有两条同源、并行维护的架构线，底层架构区别在「VL
 | 执行脑 | VLM 决策循环在 **Agent 本地** 跑 | VLM 决策集中在 **Server** 跑 |
 | 配置 / 密钥 | Server 集中下发，Agent 不常驻模型密钥 | Server 集中持有 |
 | 缓存 V1/V2/V3 | Agent 本地回放 + 第一手归档回传，Server 薄存储 | Server 集中回放 + 归档 |
-| **独有大功能** | ✅ **Android / 鸿蒙虚拟机**，后续大功能优先落地 | ⚠️ 暂不同步 `main` 的新增大功能，逐步落后 |
+| **独有大功能** | ✅ **iOS / Android / 鸿蒙三端虚拟机**，后续大功能优先落地 | ⚠️ 暂不同步 `main` 的新增大功能，逐步落后 |
 | 适合 | 多 Agent 分布执行、就近决策、Agent 侧算力可用、**需要虚拟机扩容** | 合规要求 Agent 不得持有模型出口、强集中管控 / 审计 |
 
-> **怎么选**：默认用 `main`（分布式 Agent 大脑，最新主线）。需要 **Android / 鸿蒙虚拟机等 `main` 独有能力**时只能用 `main`。仅当合规要求"Agent 不得持有模型能力、一切决策与密钥集中在 Server"时才选 `next/server-brain`。两条线**二选一部署**。
+> **怎么选**：默认用 `main`（分布式 Agent 大脑，最新主线）。需要 **三端虚拟机等 `main` 独有能力**时只能用 `main`。仅当合规要求"Agent 不得持有模型能力、一切决策与密钥集中在 Server"时才选 `next/server-brain`。两条线**二选一部署**。
 
 > **怎么迁移（同库）**：两条线**数据库 schema 向前兼容**，`next/server-brain` 用户备份后可**同库增量升级**到 `main`，不需要新建库。**但同一时间只让一个架构连同一套库跑**（别让两个服务同时写一个库，会互相抢任务 / 覆盖设备池）。
 
@@ -193,7 +201,7 @@ AI PHONE 可以直接执行一句自然语言目标；但如果你要做业务�
 | VLM 决策循环 + 执行安全层（页面稳定 / 卡死 / 审判 / 断言 / 状态路标 / 瞬态 UI gate） | ✅ 完整 |
 | 多协议适配（Doubao / Claude / GPT 自由组合） | ✅ 完整 |
 | 执行器可插拔（内置 VLM + Midscene 桥接） | ✅ 完整 |
-| Android / 鸿蒙虚拟机接入 + 全生命周期管理（`main` 独有） | ✅ 完整 |
+| iOS / Android / 鸿蒙三端虚拟机接入 + 全生命周期管理（`main` 独有） | ✅ 完整 |
 | 应用分发（上传包 / 批量安装 / 失败重试 / 超时兜底） | ✅ 完整 |
 | 黑屏待机（三端空闲息屏 + Run 前唤醒，息屏态可派发） | ✅ 完整 |
 
@@ -212,7 +220,7 @@ AI PHONE 可以直接执行一句自然语言目标；但如果你要做业务�
 
 ## 维护与协作
 
-ai-phone 采用 **MIT License** 开源。Copyright (C) 2026 Dongxin and ai-phone contributors。官方默认主线是 `main`（分布式 Agent 大脑），新功能优先落地 `main`；`next/server-brain`（Server 大脑）作为并行架构线持续维护，但部分大功能（如 Android / 鸿蒙虚拟机）暂不同步。
+ai-phone 采用 **MIT License** 开源。Copyright (C) 2026 Dongxin and ai-phone contributors。官方默认主线是 `main`（分布式 Agent 大脑），新功能优先落地 `main`；`next/server-brain`（Server 大脑）作为并行架构线持续维护，但部分大功能（如 iOS / Android / 鸿蒙三端虚拟机）暂不同步。
 
 协作上优先使用 Issues / Discussions 交流问题、场景和设计取舍。Pull Request 可以提交，但不承诺 review、响应时效或合并；PR 更适合作为 bug 报告、设计参考或候选补丁。
 

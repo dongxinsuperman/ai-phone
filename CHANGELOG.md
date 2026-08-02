@@ -2,6 +2,61 @@
 
 本文只记录会影响部署、接入或排障口径的工程变化；细粒度代码历史仍以 Git commit 为准。
 
+## 0.7.0 - 2026-08-02
+
+### iOS 虚拟机（Simulator）完整接入（`main` 独有）
+
+- 新增与 iOS 真机完全隔离的「iOS 虚拟机」配置页、API、数据库表、Agent Manager、
+  端口域和生命周期状态机；启动后带 `virtual` 标识进入统一设备池，复用 iOS 真机的
+  工作台、镜像、调度、执行和报告链路。
+- 支持按设备类型（iPhone / iPad）、机型和官方支持的系统版本选择配置；支持 Agent
+  能力探查、下发、启动、停止、复制、删除、换 Agent、重连认领和孤儿实例对账。
+  生命周期语义与 Android 逐环节对齐。
+- 机型目录随 Server 内置发布，来自 Xcode 官方 `simctl` 导出，不依赖某台 Agent
+  当前装了什么；某台机器实际能起哪些组合由该 Agent 的能力探查确认。
+- 支持向 iOS 虚拟机分发应用：识别 `.zip` 内的 `.app` 包并经 `simctl install` 安装。
+  与真机 `.ipa` 是两条独立线路；**虚拟机不需要签名与开发者证书**。
+- **数据库迁移（部署需执行）**：`backend/migrations/ios_sim_v1.sql`。
+- Agent 宿主准备见
+  [`docs/agent-ios-sim-vm-env-setup（Agent iOS虚拟机环境准备）.md`](./docs/agent-ios-sim-vm-env-setup（Agent%20iOS虚拟机环境准备）.md)。
+
+### 平台标识：内部通道与对外平台分离
+
+- 引入两层模型：**内部通道** `platform`（`android` / `ios` / `ios_sim` / `harmony`）
+  与**对外平台** `platform_family`（`android` / `ios` / `harmony`）。iOS 虚拟机在
+  内部是独立通道，对外仍是 `ios`——**对外仍然只有三个端**。
+- **对外接口口径不变**：提交任务时 `platforms` 仍只接受 `android` / `ios` /
+  `harmony`；`GET /api/devices/available` 与 `/api/devices/statuses` 的 `platform`
+  字段也报对外平台。iOS 虚拟机只是以 `ios` 身份多出现在设备池里，别名池写法与真机
+  完全一致，**外部调用方无需任何改造**。
+- 一个 `platforms: ["ios"]` 的批次可以同时铺到 iOS 真机与虚拟机上并发执行。
+- 「这台是不是虚拟机」由 `extra.is_virtual` / `extra.vm_platform` 表达，不靠
+  `platform` 承载。工作台内部接口 `GET /api/devices` 保留内部通道值用于路由。
+
+### 就绪探针：失败退避与虚拟机 WDA 自愈
+
+- 就绪探针新增**失败退避**：设备连续探测失败到阈值后逐步拉长探测间隔（封顶 30 秒），
+  探通立刻恢复常速。健康设备零影响，阈值内的偶发失败仍按原频率快速重试。
+- 新增 **iOS 虚拟机 WDA 卡死自愈**：连续探不通约半分钟、**且该设备当前空闲**
+  （没有任务在跑、没有人在工作台）时，自动重启这台虚拟机的 WDA。
+- 自愈**只作用于 iOS 虚拟机**。Android / 鸿蒙没有可单独重起的等价控制通道；
+  iOS 真机沿用既有 stable 策略——**WDA 掉线不自动重启，等人工拔插**，本次未改动。
+
+### 三端虚拟机页面口径统一（以 Android 为基准）
+
+- 统一状态措辞：`agent_offline` 显示为「待恢复」（此前鸿蒙与 iOS 显示为
+  「Agent 离线」，像是故障，实际是等 Agent 重连认领的正常中间态）；`draft`、
+  `error` 同步对齐。
+- 可自动恢复的中间态不再渲染成红色错误行；真正的失败（`error` / `unavailable`）
+  仍然显示。
+- 卡片字段改为「名 + 值」同一行，与 Android 一致，卡片高度减半。
+- 新增自动检查，以 Android 页面为基准比对三端措辞与渲染，避免再次各说各话。
+
+### 版本号统一
+
+- 项目版本升级为 `0.7.0`；后端健康检查、右上角版本展示、Python 包元数据和 Web
+  包元数据同步更新。
+
 ## 0.6.0 - 2026-07-31
 
 ### HarmonyOS 虚拟机完整接入（`main` 独有）

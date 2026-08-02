@@ -10,7 +10,7 @@
   <img src="./assets/hero/ai-phone-hero.gif" alt="ai-phone AI automation flow overview" width="100%">
 </p>
 
-**ai-phone is an AI-driven mobile automation execution layer for real iOS, Android, and HarmonyOS devices.** It turns structured natural-language test cases into scheduled device runs, real-time execution logs, screenshots, self-contained HTML reports, and final callbacks.
+**ai-phone is an AI automation platform for physical and virtual devices across iOS, Android, and HarmonyOS.** It turns structured natural-language test cases into scheduled device runs, real-time execution logs, screenshots, self-contained HTML reports, and final callbacks.
 
 It is designed for QA teams and internal platforms that want to move from brittle step scripts to AI-consumable test cases while keeping device scheduling, observability, and reporting under control.
 
@@ -22,7 +22,7 @@ It is designed for QA teams and internal platforms that want to move from brittl
 - Adds guardrails around the model loop: page stability checks, stuck detection, audit model review, final assertion, trajectory cache, and transient UI gates.
 - Produces self-contained HTML reports with before/after screenshots, step logs, model thoughts, token usage, and final status.
 - Supports optional execution engines, including the bundled VLM runner and the Midscene bridge.
-- Manages Android and HarmonyOS virtual devices on `main`, so teams can scale device coverage without only relying on physical devices. HarmonyOS currently uses Agent-hosted local GUI emulators because the local official runtime has no verified public headless entry point. Once Huawei provides one, the existing Agent path will switch directly to headless without changing the server lifecycle. A separate Linux gRPC provider is also planned for centralized pools.
+- Manages iOS, Android, and HarmonyOS virtual devices on `main`, so teams can scale device supply without relying only on physical-device procurement.
 
 ## Why It Is Different
 
@@ -41,15 +41,33 @@ In practice, this means an upstream system can generate a test case like "Open S
 | Observability | Device dashboard, queue dashboard, analytics page, AI summary |
 | Stability | Page-stability waits, local stuck detection, audit model, final assertion |
 | Reuse | Trajectory cache modes `off`, `v1`, `v2`, `v3` |
-| Scaling | Android and HarmonyOS virtual-device lifecycle management on `main` |
-| Distribution | APK / HAP / IPA upload and batch install |
+| Scaling | iOS, Android, and HarmonyOS virtual-device lifecycle management on `main` |
+| Distribution | APK / HAP / IPA plus iOS Simulator `.app` / `.zip` artifacts, with batch install |
 | License | MIT License |
 
 ## Branches
 
-`main` is the recommended branch. It uses the Distributed Agent Brain architecture and receives new major features first, including Android and HarmonyOS virtual-device management.
+`main` is the recommended branch. It uses the Distributed Agent Brain architecture and receives new major features first, including virtual-device management across iOS, Android, and HarmonyOS.
 
 `next/server-brain` is still maintained for teams that require the model decision loop and model credentials to stay centralized on the server. It may not include every new feature from `main`.
+
+## Why Virtual Devices Matter
+
+ai-phone brings physical and virtual devices from iOS, Android, and HarmonyOS into the same device pool. Virtual devices are not about making one device execute faster. They are about making device supply scale with test concurrency.
+
+![Virtual-device management for Android and HarmonyOS, assigned to Agents](./assets/screenshots/virtual-machines.png)
+
+**Test duration is determined by concurrency, not script efficiency.** If 100 test cases are assigned to 100 devices, wall-clock time approaches the duration of the slowest case rather than the sum of all 100. A workload that used to grow linearly with demand becomes close to constant-time when device supply scales with it.
+
+Concurrency requires enough devices to run at the same time. One physical device can execute only one task at a time, and an identical physical model, OS version, and configuration cannot be copied on demand. A virtual-device configuration can be replicated, moving capacity growth from hardware procurement to available compute resources.
+
+![iOS virtual-device configuration on the left and a live iPad Simulator on the right](./assets/screenshots/ios-virtual-machines.png)
+
+**Virtual devices do not introduce a new architecture; they only remove the device-supply ceiling.** ai-phone already runs an Agent on each computer and aggregates attached devices into a shared pool. After virtual devices join, task submission, device locking, the workbench, natural-language execution, logs, reports, and result delivery remain unchanged. The only difference is that device supply expands from “how many phones are on hand” to “how many virtual devices the available computers can run.”
+
+![Unified device pool for physical and virtual devices across iOS, Android, and HarmonyOS](./assets/screenshots/devices-overview-vm-three-platform.png)
+
+Physical and virtual devices share the same execution path, while the external platform model remains iOS, Android, and HarmonyOS. Host preparation is documented in [Android virtual-device Agent setup](./docs/agent-vm-env-setup（Agent虚拟机环境准备）.md), [iOS virtual-device Agent setup](./docs/agent-ios-sim-vm-env-setup（Agent iOS虚拟机环境准备）.md), and [HarmonyOS virtual-device Agent setup](./docs/agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md).
 
 ## Quick Start
 
@@ -128,6 +146,7 @@ Most detailed documents are currently written in Chinese, but the file names and
 | [harmony-setup](./docs/harmony-setup（HarmonyOS接入指南）.md) | HarmonyOS setup |
 | [trajectory-cache-usage](./docs/trajectory-cache-usage（轨迹缓存使用文档）.md) | Trajectory cache modes and risk boundaries |
 | [agent-vm-env-setup](./docs/agent-vm-env-setup（Agent虚拟机环境准备）.md) | Android Emulator host preparation |
+| [agent-ios-sim-vm-env-setup](./docs/agent-ios-sim-vm-env-setup（Agent iOS虚拟机环境准备）.md) | iOS Simulator host preparation |
 | [agent-harmony-vm-env-setup](./docs/agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md) | HarmonyOS Emulator host preparation |
 | [harmony-vm-architecture](./docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md) | Current Agent GUI limits, direct migration to official headless, and the planned Linux gRPC pool |
 

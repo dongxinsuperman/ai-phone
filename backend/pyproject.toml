@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai_phone"
-version = "0.6.0"
+version = "0.7.0"
 description = "Lightweight VLM-driven mobile automation platform (Server + Agent)"
 requires-python = ">=3.11,<3.13"
 authors = [{ name = "ai-phone" }]
