@@ -460,17 +460,20 @@ function dispatchLabel(vm, agent) {
   if (!canDispatchTo(vm, agent)) return '需先确认停止'
   return '下发'
 }
+// 状态值与 Android 完全相同，措辞也必须一致：同一个状态在两个页面叫不同名字，
+// 会让人以为是两套机制。尤其 agent_offline 是可自动恢复的中间态，叫「Agent 离线」
+// 像故障，叫「待恢复」才符合它的实际含义（Agent 重连后会自动认领回来）。
 function stateLabel(state) {
   return {
-    draft: '待下发',
+    draft: '未下发',
     starting: '启动中',
     running: '运行中',
     stopping: '停止中',
     stopped: '已停止',
-    error: '错误',
+    error: '异常',
     unavailable: '不可用',
-    agent_offline: 'Agent 离线',
-  }[state] || state || '未知'
+    agent_offline: '待恢复',
+  }[state] || state || '-'
 }
 function stateClass(state) {
   if (state === 'running') return 'ok'
@@ -711,7 +714,14 @@ defineExpose({ refresh })
               <div><span>架构</span><b>{{ abiLabel(vm.abi) }}</b></div>
               <div><span>Agent</span><b :title="vm.assigned_agent_id || ''">{{ vm.assigned_agent_id || '未分配' }}</b></div>
               <div v-if="vm.hdc_serial"><span>Serial</span><b>{{ vm.hdc_serial }}</b></div>
-              <div v-if="vm.error_message" class="wide error-text"><span>错误</span><b>{{ vm.error_message }}</b></div>
+              <!-- agent_offline 是等待 Agent 重连认领的正常中间态，后端顺手写进
+                   error_message 只为留痕。把它标成红色「错误」会让人以为出了故障，
+                   Android 侧也从不展示这条。真正的失败（error / unavailable）仍然要显示，
+                   否则创建失败的原因就没地方看了。 -->
+              <div
+                v-if="vm.error_message && vm.state !== 'agent_offline'"
+                class="wide error-text"
+              ><span>错误</span><b>{{ vm.error_message }}</b></div>
             </div>
             <div class="actions">
               <button v-if="canProbe(vm)" type="button" :disabled="busyId === `probe:${vm.id}`" @click="probe(vm)">
@@ -840,9 +850,10 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .state.busy { background: #fef3c7; color: #a16207; }
 .state.bad { background: #fee2e2; color: #b91c1c; }
 .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 14px; margin-top: 12px; }
-.meta div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+/* 字段名与值同一行，与 Android 一致。竖排会让每个字段占两行，卡片高度翻倍。 */
+.meta div { min-width: 0; display: flex; gap: 6px; }
 .meta .wide { grid-column: 1 / -1; }
-.meta span { color: #94a3b8; font-size: 10px; text-transform: uppercase; }
+.meta span { flex: 0 0 auto; color: #94a3b8; font-size: 12px; }
 .meta b { overflow: hidden; color: #475569; font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .meta .error-text b { color: #b91c1c; white-space: normal; }
 .actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
