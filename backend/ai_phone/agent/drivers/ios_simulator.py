@@ -162,6 +162,15 @@ def list_ios_simulators(
     Returns:
         设备列表；simctl 不可用或扫描失败时返回 ``[]``。
     """
+    # 纳管表为空 → 结果必然是空列表，直接短路，**一次 simctl 都不能 fork**。
+    # 这条链路是 Android / iOS 真机 / Harmony 公用的，5 秒一轮；把过滤放在
+    # simctl 之后，等于给一台根本没有虚拟机的 Agent 每天凭空加约 1.7 万次
+    # subprocess 与 CoreSimulatorService XPC 往返。没有虚拟机的宿主必须与
+    # 本能力上线前完全等价。
+    allowed = managed_udids() if managed_only else None
+    if allowed is not None and not allowed:
+        return []
+
     try:
         sims = list_simulators()
     except Exception as exc:  # noqa: BLE001
@@ -169,8 +178,6 @@ def list_ios_simulators(
         # 冒泡到三端公用的扫描链路。
         logger.warning("iOS 虚拟机扫描出现未预期错误（本轮按无设备处理）：{}", exc)
         return []
-
-    allowed = managed_udids() if managed_only else None
 
     infos: List[DeviceInfo] = []
     for sim in sims:

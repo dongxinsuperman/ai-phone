@@ -2,9 +2,7 @@ import pytest
 
 from ai_phone.agent.health.probe import ProbeOutcome
 from ai_phone.agent.health.supervisor import (
-    _BACKOFF_MAX_SEC,
     ReadinessSupervisor,
-    _backoff_seconds,
     _State,
 )
 
@@ -113,36 +111,6 @@ async def test_readiness_same_state_is_resent_after_interval(monkeypatch):
     assert calls[1]["not_ready_reason"] == "adb_offline"
 
 
-# ---------------------------------------------------------------------------
-# 失败退避：连续失败到阈值后拉长探测间隔，避免固定频率探测放大 WDA 连接堆积
-# ---------------------------------------------------------------------------
-
-
-def test_backoff_silent_below_threshold():
-    """阈值内的偶发失败不退避——抖动恢复要快。"""
-    for fails in (0, 1, 2):
-        assert _backoff_seconds(fails, 5.0, 3) == 0.0
-
-
-def test_backoff_grows_then_caps():
-    assert _backoff_seconds(3, 5.0, 3) == 10.0
-    assert _backoff_seconds(4, 5.0, 3) == 20.0
-    # 封顶后不再增长，保证恢复最多晚 _BACKOFF_MAX_SEC 被发现
-    assert _backoff_seconds(5, 5.0, 3) == _BACKOFF_MAX_SEC
-    assert _backoff_seconds(50, 5.0, 3) == _BACKOFF_MAX_SEC
-
-
-def test_backoff_survives_long_outage():
-    """一台设备卡几小时也不能把退避算崩。
-
-    5 秒一探，失败计数一小时就过 700、一天过 17000。封顶若只作用在乘法结果上，
-    `2 ** steps` 先变成上千位的大整数，转 float 时抛 OverflowError，整轮 tick
-    连带被掀翻，其余设备的 readiness 全部停更。
-    """
-    for fails in (1024, 3173, 100_000):
-        assert _backoff_seconds(fails, 5.0, 3) == _BACKOFF_MAX_SEC
-
-
 class _StubProbe:
     def __init__(self, outcomes):
         self._outcomes = outcomes
@@ -170,110 +138,15 @@ def ios_scan_ok(monkeypatch):
     """让 iOS USB 扫描短路分支不触发。
 
     CI / 开发机没有 usbmuxd，was_last_ios_scan_ok() 恒为 False，会让 _tick_once
-    在 probe 之前就把 iOS 设备全部短路掉，测不到退避逻辑。
+    在 probe 之前就把 iOS 设备全部短路掉，测不到 probe 之后的逻辑。
     """
     monkeypatch.setattr(
         "ai_phone.agent.drivers.ios.was_last_ios_scan_ok", lambda: True
     )
 
 
-@pytest.mark.asyncio
-async def test_healthy_device_is_never_deferred(monkeypatch, ios_scan_ok):
-    """健康设备零影响——每轮都探。"""
-    probed: list[str] = []
-    clock = [1000.0]
-    _freeze_monotonic(monkeypatch, clock)
-    _install_stub_probe(monkeypatch, probed, lambda _s: ProbeOutcome(ready=True))
-
-    sup = ReadinessSupervisor(
-        device_lister=lambda: [("S1", "ios")],
-        send_message=lambda msg: _true(),
-    )
-    for _ in range(5):
-        await sup._tick_once()
-        clock[0] += 5.0
-
-    assert probed == ["S1"] * 5
-
-
 async def _true():
     return True
-
-
-@pytest.mark.asyncio
-async def test_failing_device_is_probed_less_often(monkeypatch, ios_scan_ok):
-    """连续失败到阈值后进入退避，后续轮次被跳过。"""
-    probed: list[str] = []
-    clock = [1000.0]
-    _freeze_monotonic(monkeypatch, clock)
-    _install_stub_probe(
-        monkeypatch,
-        probed,
-        lambda _s: ProbeOutcome(ready=False, not_ready_reason="driver_probe_failed"),
-    )
-
-    sup = ReadinessSupervisor(
-        device_lister=lambda: [("S1", "ios")],
-        send_message=lambda msg: _true(),
-    )
-    # 前 3 轮（阈值内）全速探测
-    for _ in range(3):
-        await sup._tick_once()
-        clock[0] += 5.0
-    assert len(probed) == 3
-
-    # 第 3 次失败后退避 10 秒；再走两个 5 秒 tick 只应命中一次
-    await sup._tick_once()  # t+15，退避到 t+20，跳过
-    assert len(probed) == 3
-    clock[0] += 5.0
-    await sup._tick_once()  # t+20，到点，探测
-    assert len(probed) == 4
-
-
-@pytest.mark.asyncio
-async def test_recovery_clears_backoff_immediately(monkeypatch, ios_scan_ok):
-    """探通立刻回到常速，不让退避拖慢已恢复设备。"""
-    probed: list[str] = []
-    clock = [1000.0]
-    _freeze_monotonic(monkeypatch, clock)
-    healthy = {"v": False}
-
-    def build(platform, serial, timeout_sec):  # noqa: ARG001
-        probed.append(serial)
-        if healthy["v"]:
-            return _StubProbe([ProbeOutcome(ready=True)])
-        return _StubProbe(
-            [ProbeOutcome(ready=False, not_ready_reason="driver_probe_failed")]
-        )
-
-    monkeypatch.setattr("ai_phone.agent.health.supervisor.build_probe_for", build)
-
-    sup = ReadinessSupervisor(
-        device_lister=lambda: [("S1", "ios")],
-        send_message=lambda msg: _true(),
-    )
-    for _ in range(4):
-        await sup._tick_once()
-        clock[0] += 5.0
-
-    state = sup._states[("S1", "ios")]
-    assert state.consecutive_fail >= 3
-    assert state.next_probe_at > 0.0
-
-    # 到点探通一次
-    clock[0] = state.next_probe_at
-    healthy["v"] = True
-    await sup._tick_once()
-
-    state = sup._states[("S1", "ios")]
-    assert state.consecutive_fail == 0
-    assert state.next_probe_at == 0.0
-
-    # 之后每轮都探
-    before = len(probed)
-    clock[0] += 5.0
-    await sup._tick_once()
-    assert len(probed) == before + 1
 
 
 # ---------------------------------------------------------------------------
@@ -316,8 +189,8 @@ async def test_self_heal_fires_once_at_threshold(monkeypatch, ios_scan_ok):
 
 
 @pytest.mark.asyncio
-async def test_self_heal_success_resets_backoff(monkeypatch, ios_scan_ok):
-    """自愈说「我处理了」→ 计数清零、立刻重探，别让退避把它压在 30 秒后。"""
+async def test_self_heal_success_resets_fail_count(monkeypatch, ios_scan_ok):
+    """自愈说「我处理了」→ 计数清零，从头开始攒，不会下一轮又触发一次。"""
     from ai_phone.agent.health import supervisor as sup_mod
 
     probed: list[str] = []
@@ -334,14 +207,12 @@ async def test_self_heal_success_resets_backoff(monkeypatch, ios_scan_ok):
         send_message=lambda msg: _true(),
         self_heal=lambda serial, platform: True,
     )
-    # 每轮推进 30 秒（退避封顶值），保证每轮都真的探测，跑满阈值那一次
     for _ in range(sup_mod._SELF_HEAL_AFTER_FAILS):
         await sup._tick_once()
-        clock[0] += 30.0
+        clock[0] += 5.0
 
     state = sup._states[("S1", "ios_sim")]
     assert state.consecutive_fail == 0, "自愈成功后计数没清零"
-    assert state.next_probe_at == 0.0, "自愈后仍在退避期，下一轮不会立即重探"
 
 
 @pytest.mark.asyncio
@@ -422,8 +293,8 @@ async def test_no_self_heal_callback_is_fine(monkeypatch, ios_scan_ok):
 
 
 @pytest.mark.asyncio
-async def test_backoff_is_per_device(monkeypatch, ios_scan_ok):
-    """一台设备退避不拖累同 Agent 上的其它设备（iPhone + iPad 共存场景）。"""
+async def test_every_device_is_probed_every_tick(monkeypatch, ios_scan_ok):
+    """一台设备探不通不影响同 Agent 上其它设备的探测节奏。"""
     probed: list[str] = []
     clock = [1000.0]
     _freeze_monotonic(monkeypatch, clock)
@@ -444,39 +315,4 @@ async def test_backoff_is_per_device(monkeypatch, ios_scan_ok):
         clock[0] += 5.0
 
     assert probed.count("GOOD") == 6
-    assert probed.count("BAD") < 6
-
-
-@pytest.mark.asyncio
-async def test_one_broken_device_does_not_freeze_the_others(monkeypatch, ios_scan_ok):
-    """单台设备状态更新抛异常，同轮其它设备照常上报。
-
-    状态更新是所有设备共用的一段代码，异常若逃到循环外，本轮排在后面的设备
-    全部停更——UI 上表现为一台机器卡住、整个 Agent 的设备状态一起陈旧。
-    """
-    clock = [1000.0]
-    _freeze_monotonic(monkeypatch, clock)
-    _install_stub_probe(monkeypatch, [], lambda _s: ProbeOutcome(ready=True))
-
-    sent: list[str] = []
-
-    async def sender(msg):
-        sent.append(msg["serial"])
-        return True
-
-    sup = ReadinessSupervisor(
-        device_lister=lambda: [("BOOM", "ios"), ("OK", "ios")],
-        send_message=sender,
-    )
-    original = sup._apply_outcome
-
-    async def explode_on_boom(key, outcome, fail_threshold):
-        if key[0] == "BOOM":
-            raise OverflowError("int too large to convert to float")
-        await original(key, outcome, fail_threshold)
-
-    monkeypatch.setattr(sup, "_apply_outcome", explode_on_boom)
-
-    await sup._tick_once()
-
-    assert sent == ["OK"]
+    assert probed.count("BAD") == 6

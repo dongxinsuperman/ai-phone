@@ -55,16 +55,10 @@ class _State:
         阈值（避免让"从未 ready 的新设备" 借防抖窗口冒充 ready）。
       - ``True``（已经 ready 过）：保持原"连续失败到阈值才降级"的稳态防刷语义。
 
-    ``consecutive_fail`` 是连续探测失败次数，用于"已 ready 设备的降级防抖"，
-    以及下面的失败退避。
-
-    ``next_probe_at`` 是本设备下一次允许探测的时刻（``time.monotonic()``）。
-    0 表示不受限。见 :func:`_backoff_seconds`。
+    ``consecutive_fail`` 是连续探测失败次数，仅用于"已 ready 设备的降级防抖"。
     """
 
-    __slots__ = (
-        "ready", "reason", "hint", "consecutive_fail", "ever_ready", "next_probe_at",
-    )
+    __slots__ = ("ready", "reason", "hint", "consecutive_fail", "ever_ready")
 
     def __init__(self) -> None:
         self.ready: bool = False
@@ -75,19 +69,7 @@ class _State:
         self.hint: str = ""
         self.consecutive_fail: int = 0
         self.ever_ready: bool = False
-        self.next_probe_at: float = 0.0
 
-
-# 失败退避的封顶间隔。设备已经不参与派单了，探得慢一点不损失什么；
-# 而恢复后最多晚这么久被发现，所以不能太大。
-_BACKOFF_MAX_SEC = 30.0
-
-# 翻倍步数的硬上限。封顶必须发生在 `2 ** steps` **之前**：一台设备卡上一个多
-# 小时，consecutive_fail 就能爬过 1024，`base_interval * (2 ** steps)` 会因为
-# 大整数转 float 抛 OverflowError——事后的 min() 根本来不及生效。
-# 32 步在任何合法 readiness_poll_sec（config 限定 >= 1.0s）下都远超封顶值，
-# 截断它不改变退避行为。
-_BACKOFF_MAX_STEPS = 32
 
 # 连续探不通多少次后尝试自愈。默认 5 秒一探、单次超时 3 秒，取 6 次 ≈ 半分钟
 # 探不通才动手。
@@ -95,40 +77,6 @@ _BACKOFF_MAX_STEPS = 32
 # 为什么不取更小：一条普通 WDA 指令只要一两百毫秒，探针 3 秒超时排在它后面绰绰
 # 有余；要连续半分钟都排不上队，那不是「忙」，是真卡住了。
 _SELF_HEAL_AFTER_FAILS = 6
-
-
-def _backoff_seconds(consecutive_fail: int, base_interval: float, threshold: int) -> float:
-    """连续失败到阈值之后，逐步拉长该设备的探测间隔。
-
-    **为什么需要退避**：WDA 内嵌的 HTTP 服务（CocoaHTTPServer）所有连接共用一个
-    串行队列。设备一旦卡住，``/status`` 会超时，客户端丢弃的连接在 WDA 侧堆成
-    ``CLOSE_WAIT``，把队列占得更满、更慢——**固定频率探测在这里是个放大器**：
-
-    ```text
-    设备卡住 → /status 超时 → 留下一个 CLOSE_WAIT
-           ↑                              ↓
-           ← 固定 5 秒后又探一次    ← 队列更堵
-    ```
-
-    实测（iPad 卡住时静置 60 秒，不做任何操作）：``CLOSE_WAIT`` 从 58 涨到 66，
-    每 15 秒涨 2~3 个，正好对应 5 秒一次的探测频率——**每次探测泄漏一个连接**。
-    同时段健康的 iPhone 恒为 0。
-
-    退避把泄漏速率降到 1/6，让系统有机会回收连接、队列疏通得更快。
-
-    **这是缓解不是治本**——最初让 WDA 变慢的根因尚未定位（疑与真机长期待机后
-    拔插、Agent 重启重新注入 WDA 有关，触发窗口很窄，未能稳定复现）。
-
-    退避**只作用于已经连续失败到阈值的设备**：
-    - 健康设备零影响
-    - 阈值内的偶发失败仍按原频率快速重试，不影响抖动恢复
-    - 探通立刻清零，恢复常速
-    """
-    if consecutive_fail < max(1, threshold):
-        return 0.0
-    # threshold 次时 2 倍，之后每次翻倍，封顶
-    steps = min(consecutive_fail - threshold + 1, _BACKOFF_MAX_STEPS)
-    return min(_BACKOFF_MAX_SEC, base_interval * (2 ** steps))
 
 
 class ReadinessSupervisor:
@@ -294,21 +242,6 @@ class ReadinessSupervisor:
                     len(ios_keys),
                 )
 
-        # 1.6) 失败退避：连续失败到阈值的设备降低探测频率，避免固定频率探测
-        # 放大 WDA 侧的连接堆积（见 _backoff_seconds 的说明）。放在 iOS 短路
-        # 之后，因为那条分支会整体重写 probe_targets。
-        now_mono = time.monotonic()
-        deferred = [
-            key
-            for key in probe_targets
-            if now_mono < (self._states.get(key) or _State()).next_probe_at
-        ]
-        if deferred:
-            probe_targets = [k for k in probe_targets if k not in set(deferred)]
-            logger.debug(
-                "[readiness] {} 台设备处于失败退避期，本轮跳过探测", len(deferred)
-            )
-
         # 2) 为每个设备建 probe 并并发执行
         async def _probe_one(key: DeviceKey) -> Tuple[DeviceKey, Optional[ProbeOutcome]]:
             serial, platform = key
@@ -327,73 +260,50 @@ class ReadinessSupervisor:
 
         # 3) 结合连续失败阈值，决定是否升/降级 + 是否上报
         #
-        # 每台设备单独兜异常：_apply_outcome 是**所有**设备状态的唯一出口，
-        # 在循环里抛出会让排在后面的设备本轮整体停更，一台坏设备就能把全局
-        # readiness 冻住。
+        # 防抖语义（v2，配合 §12.1 P1 修复）：
+        #   - 设备**从未**被 probe 证明为 ready（ever_ready=False）→ 单次 probe
+        #     失败立即广播 ready=False。新设备/agent 重启后 / 抖动恢复后第一轮
+        #     probe 失败不再借"未达阈值"窗口冒充 ready，调度器 _pick_device
+        #     不会被乐观默认骗到。
+        #   - 设备**曾经** ready 过（ever_ready=True）→ 沿用原"连续失败到阈值
+        #     才降级"的稳态防刷语义，避免一次偶发 probe 失败把已 ready 的设备
+        #     翻车，UI/调度器不会被抖动刷屏。
         for key, outcome in results:
             if outcome is None:
                 continue
-            try:
-                await self._apply_outcome(key, outcome, fail_threshold)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("[readiness] {} 状态更新异常（跳过本轮）：{}", key, exc)
+            state = self._states.setdefault(key, _State())
 
-    async def _apply_outcome(
-        self, key: DeviceKey, outcome: ProbeOutcome, fail_threshold: int
-    ) -> None:
-        """把单台设备的一次 probe 结果落到内存状态，必要时广播出去。
-
-        防抖语义（v2，配合 §12.1 P1 修复）：
-        - 设备**从未**被 probe 证明为 ready（ever_ready=False）→ 单次 probe
-          失败立即广播 ready=False。新设备 / agent 重启后 / 抖动恢复后第一轮
-          probe 失败不再借"未达阈值"窗口冒充 ready，调度器 _pick_device
-          不会被乐观默认骗到。
-        - 设备**曾经** ready 过（ever_ready=True）→ 沿用原"连续失败到阈值
-          才降级"的稳态防刷语义，避免一次偶发 probe 失败把已 ready 的设备
-          翻车，UI/调度器不会被抖动刷屏。
-        """
-        settings = get_settings()
-        state = self._states.setdefault(key, _State())
-
-        if outcome.ready:
-            state.consecutive_fail = 0
-            state.ever_ready = True
-            # 探通即刻恢复常速，不让退避拖慢已恢复设备的回归
-            state.next_probe_at = 0.0
-            new_ready = True
-            new_reason: Optional[str] = None
-            new_hint = ""
-        else:
-            state.consecutive_fail += 1
-            backoff = _backoff_seconds(
-                state.consecutive_fail,
-                float(settings.readiness_poll_sec),
-                fail_threshold,
-            )
-            state.next_probe_at = (time.monotonic() + backoff) if backoff else 0.0
-            self._maybe_self_heal(key, state)
-            # 首次盖章前 OR 累计失败到阈值 → 立刻降级；其它情况保持上次广播态。
-            if state.consecutive_fail >= fail_threshold or not state.ever_ready:
-                new_ready = False
-                new_reason = outcome.not_ready_reason
-                new_hint = outcome.hint
+            if outcome.ready:
+                state.consecutive_fail = 0
+                state.ever_ready = True
+                new_ready = True
+                new_reason: Optional[str] = None
+                new_hint = ""
             else:
-                new_ready = state.ready
-                new_reason = state.reason
-                new_hint = state.hint
+                state.consecutive_fail += 1
+                self._maybe_self_heal(key, state)
+                # 首次盖章前 OR 累计失败到阈值 → 立刻降级；其它情况保持上次广播态。
+                if state.consecutive_fail >= fail_threshold or not state.ever_ready:
+                    new_ready = False
+                    new_reason = outcome.not_ready_reason
+                    new_hint = outcome.hint
+                else:
+                    new_ready = state.ready
+                    new_reason = state.reason
+                    new_hint = state.hint
 
-        state.ready = new_ready
-        state.reason = new_reason
-        state.hint = new_hint
+            state.ready = new_ready
+            state.reason = new_reason
+            state.hint = new_hint
 
-        await self._maybe_send(key, state)
+            await self._maybe_send(key, state)
 
     def _maybe_self_heal(self, key: DeviceKey, state: _State) -> None:
         """连续探不通到阈值时，给自愈回调一次机会。
 
         **只在跨过阈值那一次调用**，不是每轮都调——自愈动作有代价（重装重启），
-        反复触发只会让一台本来就在恢复中的设备一直被打断。之后靠退避慢速重探；
-        真恢复了 ``consecutive_fail`` 清零，下次再卡还能再触发一次。
+        反复触发只会让一台本来就在恢复中的设备一直被打断。真恢复了
+        ``consecutive_fail`` 清零，下次再卡还能再触发一次。
         """
         if self._self_heal is None:
             return
@@ -406,9 +316,8 @@ class ReadinessSupervisor:
             logger.warning("[readiness] {} 自愈回调异常（忽略）：{}", serial, exc)
             return
         if handled:
-            # 给一次干净的重试机会：自愈刚做完，别让退避把它压在 30 秒后
+            # 给一次干净的重试机会：自愈刚做完，计数清零重新开始攒
             state.consecutive_fail = 0
-            state.next_probe_at = 0.0
             logger.info("[readiness] {}:{} 已尝试自愈，下一轮立即重探", platform, serial)
 
     async def _maybe_send(self, key: DeviceKey, state: _State) -> None:

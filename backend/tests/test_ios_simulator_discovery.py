@@ -223,3 +223,31 @@ def test_skips_single_bad_entry_but_keeps_others(monkeypatch):
 def test_empty_when_no_simulators(monkeypatch):
     _patch(monkeypatch, [])
     assert sim_mod.list_ios_simulators(managed_only=False) == []
+
+
+# --------------------------------------------------------------------------
+# 没有纳管实例的宿主：必须与本能力上线前完全等价，一次 simctl 都不许 fork
+# --------------------------------------------------------------------------
+def test_no_managed_instance_never_touches_simctl(monkeypatch):
+    """纳管表为空时结果必然是空列表，不该为此付出 subprocess 代价。
+
+    list_ios_simulators 挂在 Android / iOS 真机 / Harmony 公用的扫描链路上，
+    5 秒一轮。若把纳管过滤放在 simctl 之后，一台根本没有虚拟机的 Agent 每天
+    要凭空多跑约 1.7 万次 xcrun 与 CoreSimulatorService XPC 往返。
+    """
+    def _boom(*a, **k):
+        raise AssertionError("纳管表为空却仍然调用了 simctl")
+
+    monkeypatch.setattr(sim_mod, "list_simulators", _boom)
+    monkeypatch.setattr(sim_mod, "managed_udids", lambda: set())
+
+    assert sim_mod.list_ios_simulators() == []
+    assert sim_mod.list_ios_simulators(include_offline=True) == []
+
+
+def test_managed_instance_present_still_scans(monkeypatch):
+    """有纳管实例时短路必须失效，否则虚拟机自己就发现不了了。"""
+    _patch(monkeypatch, [_sim("U1"), _sim("U2")])
+    monkeypatch.setattr(sim_mod, "managed_udids", lambda: {"U2"})
+
+    assert [i.serial for i in sim_mod.list_ios_simulators()] == ["U2"]
