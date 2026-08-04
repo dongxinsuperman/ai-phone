@@ -132,6 +132,17 @@ def test_backoff_grows_then_caps():
     assert _backoff_seconds(50, 5.0, 3) == _BACKOFF_MAX_SEC
 
 
+def test_backoff_survives_long_outage():
+    """一台设备卡几小时也不能把退避算崩。
+
+    5 秒一探，失败计数一小时就过 700、一天过 17000。封顶若只作用在乘法结果上，
+    `2 ** steps` 先变成上千位的大整数，转 float 时抛 OverflowError，整轮 tick
+    连带被掀翻，其余设备的 readiness 全部停更。
+    """
+    for fails in (1024, 3173, 100_000):
+        assert _backoff_seconds(fails, 5.0, 3) == _BACKOFF_MAX_SEC
+
+
 class _StubProbe:
     def __init__(self, outcomes):
         self._outcomes = outcomes
@@ -434,3 +445,38 @@ async def test_backoff_is_per_device(monkeypatch, ios_scan_ok):
 
     assert probed.count("GOOD") == 6
     assert probed.count("BAD") < 6
+
+
+@pytest.mark.asyncio
+async def test_one_broken_device_does_not_freeze_the_others(monkeypatch, ios_scan_ok):
+    """单台设备状态更新抛异常，同轮其它设备照常上报。
+
+    状态更新是所有设备共用的一段代码，异常若逃到循环外，本轮排在后面的设备
+    全部停更——UI 上表现为一台机器卡住、整个 Agent 的设备状态一起陈旧。
+    """
+    clock = [1000.0]
+    _freeze_monotonic(monkeypatch, clock)
+    _install_stub_probe(monkeypatch, [], lambda _s: ProbeOutcome(ready=True))
+
+    sent: list[str] = []
+
+    async def sender(msg):
+        sent.append(msg["serial"])
+        return True
+
+    sup = ReadinessSupervisor(
+        device_lister=lambda: [("BOOM", "ios"), ("OK", "ios")],
+        send_message=sender,
+    )
+    original = sup._apply_outcome
+
+    async def explode_on_boom(key, outcome, fail_threshold):
+        if key[0] == "BOOM":
+            raise OverflowError("int too large to convert to float")
+        await original(key, outcome, fail_threshold)
+
+    monkeypatch.setattr(sup, "_apply_outcome", explode_on_boom)
+
+    await sup._tick_once()
+
+    assert sent == ["OK"]

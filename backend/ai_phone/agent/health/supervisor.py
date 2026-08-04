@@ -82,6 +82,13 @@ class _State:
 # 而恢复后最多晚这么久被发现，所以不能太大。
 _BACKOFF_MAX_SEC = 30.0
 
+# 翻倍步数的硬上限。封顶必须发生在 `2 ** steps` **之前**：一台设备卡上一个多
+# 小时，consecutive_fail 就能爬过 1024，`base_interval * (2 ** steps)` 会因为
+# 大整数转 float 抛 OverflowError——事后的 min() 根本来不及生效。
+# 32 步在任何合法 readiness_poll_sec（config 限定 >= 1.0s）下都远超封顶值，
+# 截断它不改变退避行为。
+_BACKOFF_MAX_STEPS = 32
+
 # 连续探不通多少次后尝试自愈。默认 5 秒一探、单次超时 3 秒，取 6 次 ≈ 半分钟
 # 探不通才动手。
 #
@@ -120,7 +127,7 @@ def _backoff_seconds(consecutive_fail: int, base_interval: float, threshold: int
     if consecutive_fail < max(1, threshold):
         return 0.0
     # threshold 次时 2 倍，之后每次翻倍，封顶
-    steps = consecutive_fail - threshold + 1
+    steps = min(consecutive_fail - threshold + 1, _BACKOFF_MAX_STEPS)
     return min(_BACKOFF_MAX_SEC, base_interval * (2 ** steps))
 
 
@@ -320,51 +327,66 @@ class ReadinessSupervisor:
 
         # 3) 结合连续失败阈值，决定是否升/降级 + 是否上报
         #
-        # 防抖语义（v2，配合 §12.1 P1 修复）：
-        #   - 设备**从未**被 probe 证明为 ready（ever_ready=False）→ 单次 probe
-        #     失败立即广播 ready=False。新设备/agent 重启后 / 抖动恢复后第一轮
-        #     probe 失败不再借"未达阈值"窗口冒充 ready，调度器 _pick_device
-        #     不会被乐观默认骗到。
-        #   - 设备**曾经** ready 过（ever_ready=True）→ 沿用原"连续失败到阈值
-        #     才降级"的稳态防刷语义，避免一次偶发 probe 失败把已 ready 的设备
-        #     翻车，UI/调度器不会被抖动刷屏。
+        # 每台设备单独兜异常：_apply_outcome 是**所有**设备状态的唯一出口，
+        # 在循环里抛出会让排在后面的设备本轮整体停更，一台坏设备就能把全局
+        # readiness 冻住。
         for key, outcome in results:
             if outcome is None:
                 continue
-            state = self._states.setdefault(key, _State())
+            try:
+                await self._apply_outcome(key, outcome, fail_threshold)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("[readiness] {} 状态更新异常（跳过本轮）：{}", key, exc)
 
-            if outcome.ready:
-                state.consecutive_fail = 0
-                state.ever_ready = True
-                # 探通即刻恢复常速，不让退避拖慢已恢复设备的回归
-                state.next_probe_at = 0.0
-                new_ready = True
-                new_reason: Optional[str] = None
-                new_hint = ""
+    async def _apply_outcome(
+        self, key: DeviceKey, outcome: ProbeOutcome, fail_threshold: int
+    ) -> None:
+        """把单台设备的一次 probe 结果落到内存状态，必要时广播出去。
+
+        防抖语义（v2，配合 §12.1 P1 修复）：
+        - 设备**从未**被 probe 证明为 ready（ever_ready=False）→ 单次 probe
+          失败立即广播 ready=False。新设备 / agent 重启后 / 抖动恢复后第一轮
+          probe 失败不再借"未达阈值"窗口冒充 ready，调度器 _pick_device
+          不会被乐观默认骗到。
+        - 设备**曾经** ready 过（ever_ready=True）→ 沿用原"连续失败到阈值
+          才降级"的稳态防刷语义，避免一次偶发 probe 失败把已 ready 的设备
+          翻车，UI/调度器不会被抖动刷屏。
+        """
+        settings = get_settings()
+        state = self._states.setdefault(key, _State())
+
+        if outcome.ready:
+            state.consecutive_fail = 0
+            state.ever_ready = True
+            # 探通即刻恢复常速，不让退避拖慢已恢复设备的回归
+            state.next_probe_at = 0.0
+            new_ready = True
+            new_reason: Optional[str] = None
+            new_hint = ""
+        else:
+            state.consecutive_fail += 1
+            backoff = _backoff_seconds(
+                state.consecutive_fail,
+                float(settings.readiness_poll_sec),
+                fail_threshold,
+            )
+            state.next_probe_at = (time.monotonic() + backoff) if backoff else 0.0
+            self._maybe_self_heal(key, state)
+            # 首次盖章前 OR 累计失败到阈值 → 立刻降级；其它情况保持上次广播态。
+            if state.consecutive_fail >= fail_threshold or not state.ever_ready:
+                new_ready = False
+                new_reason = outcome.not_ready_reason
+                new_hint = outcome.hint
             else:
-                state.consecutive_fail += 1
-                backoff = _backoff_seconds(
-                    state.consecutive_fail,
-                    float(settings.readiness_poll_sec),
-                    fail_threshold,
-                )
-                state.next_probe_at = (time.monotonic() + backoff) if backoff else 0.0
-                self._maybe_self_heal(key, state)
-                # 首次盖章前 OR 累计失败到阈值 → 立刻降级；其它情况保持上次广播态。
-                if state.consecutive_fail >= fail_threshold or not state.ever_ready:
-                    new_ready = False
-                    new_reason = outcome.not_ready_reason
-                    new_hint = outcome.hint
-                else:
-                    new_ready = state.ready
-                    new_reason = state.reason
-                    new_hint = state.hint
+                new_ready = state.ready
+                new_reason = state.reason
+                new_hint = state.hint
 
-            state.ready = new_ready
-            state.reason = new_reason
-            state.hint = new_hint
+        state.ready = new_ready
+        state.reason = new_reason
+        state.hint = new_hint
 
-            await self._maybe_send(key, state)
+        await self._maybe_send(key, state)
 
     def _maybe_self_heal(self, key: DeviceKey, state: _State) -> None:
         """连续探不通到阈值时，给自愈回调一次机会。
