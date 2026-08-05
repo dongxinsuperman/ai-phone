@@ -1023,14 +1023,11 @@ class VLMRunner:
 
         # —— 子步骤清单注入（结构化通道专属）——
         # 让 VLM 每轮都能看到"完整地图 + 还剩什么"，治本 VLM 单帧推理无状态导致
-        # 的跳步盲区。详见 _extract_struct_substeps。失败/不可用时不影响 Run，
-        # 仍按原 prompt 渲染。自由对话通道不跑，因为没有"操作步骤"段落可拆。
+        # 的跳步盲区。完整 goal 直接交给助手模型识别步骤，不依赖本地标题格式；
+        # 自由对话通道不跑。
         if self._is_structured:
             substeps_text = await self._extract_struct_substeps()
             if substeps_text:
-                line_count = sum(
-                    1 for line in substeps_text.splitlines() if line.strip()
-                )
                 self.vlm.system_prompt = build_system_prompt_for_backend(
                     self.goal,
                     substeps_text=substeps_text,
@@ -1041,7 +1038,7 @@ class VLMRunner:
                 await self._log(
                     1,
                     "子步骤清单 · 已注入",
-                    f"已把 case 操作步骤拆为 {line_count} 条有序子步骤，"
+                    "已把 case 操作步骤按原文无损切成有序清单，"
                     "贯穿全 Run 注入到 system prompt 顶部",
                 )
 
@@ -2435,43 +2432,24 @@ class VLMRunner:
         return first_line.upper().startswith("STRUCTURED")
 
     async def _extract_struct_substeps(self) -> Optional[str]:
-        """让助手模型把 case「操作步骤」按顿号 / 逗号 / 句号拆成有序编号清单。
-
-        返回 markdown 编号列表（每行一条 ``N. <子步骤>``）。失败 / 协议异常 /
-        模型输出 NONE → 返回 None，调用方按"清单不可用"渲染原 prompt。
-
-        设计目标：解决 VLM 单帧推理无状态的盲区——VLM 不内置"我做到第几步"的
-        进度，每轮都从一长串顿号串里临时拆解，成本高且容易直觉短路（看到显眼
-        按钮就跳）。把 case 在起跑线就拆好，常驻 system prompt 顶部，VLM 每轮
-        都能直观看到"完整地图"。
-        """
+        """让助手模型从完整 goal 识别操作步骤并输出原文切割后的编号清单。"""
         prompt = (
-            "你是测试用例解析器。请把下面用户输入的「操作步骤」段落，按"
-            "顿号「、」、逗号「，」、句号「。」分隔成有序编号清单。\n\n"
-            "【硬约束 · 必须严格执行】\n"
-            "1. 只拆「操作步骤」段落，**不要**拆「测试标题/前置条件/预期结果」\n"
-            "2. 保留原文措辞，不改写、不合并、不简化、不增删\n"
-            "3. **顿号「、」/ 逗号「，」/ 句号「。」都是子步骤的硬边界**——\n"
-            "   每遇到一个分隔符就必须断一行，禁止把多个动作合在一条里\n"
-            "4. 一条子步骤里**只允许有一个动作**（动词如 点击/切换/进入/拖拽/返回等）；\n"
-            "   如果你写出来的一条里出现了 2 个及以上动词，说明你忘了断行，必须再拆\n"
-            "5. 括号内的补充说明（如「（工具栏 3 秒后会消失）」）保留在所属子步骤里\n"
-            "6. 每行一个子步骤，格式严格为：N. <原文片段>\n"
-            "7. 整段「操作步骤」不存在 / 无法识别时，只输出一行：NONE\n\n"
-            "【正确拆解示例】\n"
-            "原文：『从底部 Tab 进入「我的」、点击顶部头像，"
-            "进入个人资料页。点击「账号安全」入口、下滑至底部点击「注销账号」』\n"
-            "正确输出：\n"
-            "1. 从底部 Tab 进入「我的」\n"
-            "2. 点击顶部头像\n"
-            "3. 进入个人资料页\n"
-            "4. 点击「账号安全」入口\n"
-            "5. 下滑至底部点击「注销账号」\n"
-            "（注意：5 个分隔符 → 5 条子步骤；每条只有一个动词；不允许合并）\n\n"
-            "【输出格式】\n"
-            "  仅输出编号清单（首行就是 1.）；或单独一行 NONE。\n"
-            "  禁止任何前置说明、Markdown 标题、引导语、结尾总结。\n\n"
-            "===== 用户输入 =====\n"
+            "你是测试用例子步骤整理器。请阅读下面的完整用户任务，自行识别其中的"
+            "操作步骤部分，并输出有序子步骤清单。\n\n"
+            "【识别规则】\n"
+            "- 操作步骤标题可能写成「操作步骤：」「测试步骤：」「[操作步骤]」"
+            "「【操作步骤】」，也可能直接表现为编号列表或连续动作段落。\n"
+            "- 只输出操作步骤，不要把测试标题、前置条件、预期结果混入清单。\n"
+            "- 综合自然段、换行、原有编号、标点和动作语义判断切分位置；"
+            "任何一种具体符号都不是必须切分的硬边界。\n\n"
+            "【原文规则】\n"
+            "- 拆解结果只能是操作步骤原文的切割，不得优化、润色、概括、改写、"
+            "新增或遗漏原有动作内容。\n"
+            "- 原文已有编号只用于识别步骤结构，输出时统一保留一层编号，"
+            "不要出现「1. 1.」这类双重编号。\n"
+            "- 每行一条，严格使用 `N. <原文子步骤>` 格式，从 1 开始连续编号。\n"
+            "- 只输出编号清单，不要输出标题、解释或总结。\n\n"
+            "===== 完整用户任务 =====\n"
             f"{self.goal}"
         )
         try:
@@ -2483,30 +2461,30 @@ class VLMRunner:
             await self._log(
                 2,
                 "子步骤清单 · 拆解失败",
-                f"调用异常：{exc}（不影响 Run 继续，按无清单模式渲染 prompt）",
+                f"调用异常：{exc}（主 VLM 仍保留完整原始 goal）",
             )
             return None
 
         text = raw.strip()
-        if not text or text.upper().startswith("NONE"):
-            await self._log(
-                1,
-                "子步骤清单 · 跳过",
-                "case 不含可识别的「操作步骤」段落，未注入清单",
-            )
-            return None
-
-        # 协议校验：第一行必须是 "1." 开头。模型抽风返回大段散文 / 加了引导语
-        # / 输出 markdown 标题时直接放弃注入，避免污染 system prompt 顶部。
-        first_line = text.splitlines()[0].strip()
-        if not first_line.startswith("1."):
+        if not text:
             await self._log(
                 2,
                 "子步骤清单 · 协议异常",
-                f"返回非编号清单（首行：{first_line[:40]}），未注入",
+                "模型返回空白内容，未注入子步骤清单",
             )
             return None
 
+        # 只保留最轻的结构准入：模型按约定直接给编号清单即可。这里不重拆、
+        # 不改写，也不校验每个字符；仅阻止代码围栏或“下面是结果”等说明文字
+        # 被塞进 system prompt 顶部。
+        first_line = text.splitlines()[0].strip()
+        if not re.match(r"^1\.\s+\S", first_line):
+            await self._log(
+                2,
+                "子步骤清单 · 协议异常",
+                f"首行不是 `1. <子步骤>`（收到：{first_line[:80]!r}），未注入清单",
+            )
+            return None
         return text
 
     async def _chat_text(

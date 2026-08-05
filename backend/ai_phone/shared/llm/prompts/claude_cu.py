@@ -322,7 +322,7 @@ When the case has tagged sections like "Test Title / Preconditions / Operation S
 - Each line under "Expected Results" must be verifiable from the screenshot. If even one is unverifiable, ASSERT_FAIL — never declare FINISHED on hope.
 
 ### B-1. Substeps inside "Operation Steps" — ordered with skip-when-done
-Substeps separated by `、` / `，` / `。` are **ordered**. Two equally-important rules:
+When the "Operation Substeps Checklist" is present above, its numbering is the only substep boundary and every item is an original-text slice. Paragraphs, punctuation, and semantic transitions are used only to build that checklist; do not re-split it by any single punctuation mark. Two equally-important rules:
 1. **Advance one by one in declared order** — do not merge, reorder, or jump ahead.
 2. **Skip the current substep when its target state is already satisfied** — repeating a done substep is treated as stuck (KILL), worse than skipping.
 

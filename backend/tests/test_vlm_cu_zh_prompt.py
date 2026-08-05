@@ -57,6 +57,20 @@ def test_zh_readable_flag_does_not_change_doubao_prompt() -> None:
     assert prompt_zh_flag == prompt_default
 
 
+@pytest.mark.parametrize("backend", ["doubao_responses", "claude_cu", "gpt_cu"])
+def test_substep_boundaries_follow_injected_checklist_not_fixed_punctuation(
+    backend: str,
+) -> None:
+    prompt = build_system_prompt_for_backend(
+        "操作步骤：点击共学，点击我的",
+        backend=backend,
+        substeps_text=_SUBSTEPS,
+    )
+
+    assert "only substep boundary" in prompt or "唯一子步骤边界" in prompt
+    assert "do not re-split" in prompt or "禁止再按某一种标点自行重拆" in prompt
+
+
 def test_doubao_prompt_injects_function_map_context_after_goal() -> None:
     prompt = build_system_prompt_for_backend(
         "进入我的页",

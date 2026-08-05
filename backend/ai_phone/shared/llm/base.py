@@ -31,7 +31,7 @@ Protocol 校验报错暴露出"漏实现"的事实。
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Protocol, Tuple
+from typing import List, Optional, Protocol
 
 # Decision / TokenCounter 复用现有定义，避免重复 dataclass 漂移。
 # Doubao Responses 客户端是历史"既成事实"——它定义了 Decision 的字段，
@@ -160,7 +160,7 @@ class BaseAssistant(Protocol):
 
         - "结构化分类"（通道判定）：``thinking=False``，返回 STRUCTURED/FREEFORM
         - "审判"（防偏移）：``thinking=True``，返回 OK / KILL:<reason>
-        - "子步骤拆解"（起跑线对 case 操作步骤分段）：``thinking=False``，返回编号清单或 NONE
+        - "子步骤拆解"（从完整 goal 识别操作步骤）：``thinking=False``，返回编号清单
 
         ``label`` 仅用于 token 统计分桶（在 ``counter.record(scene=label, ...)``
         里区分场景），不影响协议本身。
