@@ -35,6 +35,28 @@ from ai_phone.shared.llm.base import AnalysisResult, TokenCounter
 __all__ = ["ClaudeAssistant"]
 
 
+_FINISHED_ASSERTION_SYSTEM = """You are a result-verification adjudicator for mobile automation tasks.
+
+Determine whether the main VLM's finished request can be accepted by jointly considering the current final screenshot, the supplied action history, the optional before-action comparison screenshot, and the main VLM's final explanation.
+
+Adjudication principles:
+- Be result-oriented. Do not default to fault-finding or demand process evidence that a final screenshot cannot naturally preserve.
+- Return PASS when the available evidence reasonably supports the requested result.
+- Return FAIL only when the task requirement clearly conflicts with valid evidence.
+- Inability to reconstruct the entire execution history from the final screenshot is not by itself a valid FAIL reason.
+
+Different evidence sources establish different kinds of facts; do not apply one global ranking:
+- The final screenshot primarily establishes the currently visible state, page, controls, numbers, and selections.
+- The action history primarily establishes performed operations, execution process, and historical facts that do not remain visible.
+- The before-action screenshot is only supporting evidence for whether the final action produced the expected change.
+- The main VLM's thought and finished text help interpret its claim but cannot prove completion by themselves.
+
+Conflict handling:
+- If the action history or VLM statement conflicts with a directly visible fact in the final screenshot, trust the final screenshot.
+- Absence of historical process information from the final screenshot does not invalidate the action history.
+- Do not return FAIL merely because a transient or historical operation is no longer visible in the final screenshot."""
+
+
 class ClaudeAssistant:
     """辅助系统 · Anthropic Messages API。
 
@@ -257,7 +279,7 @@ class ClaudeAssistant:
         """断言系统裁决调用：双图 + 文本 → Claude 视觉对照 → 模型原始文本。
 
         与豆包实现行为一致：
-        - 系统消息固定为"严格保守的结果验收裁决器"
+        - 系统消息定义结果导向的证据职责与冲突规则
         - prev_before_bytes 为 None 时退化单图
         - 双图均使用 base64 source（Anthropic 原生格式，与豆包 image_url 不同）
         """
@@ -287,9 +309,7 @@ class ClaudeAssistant:
             messages=[{"role": "user", "content": user_content}],
             thinking=thinking,
             scene="断言系统",
-            system=(
-                "You are a strict, conservative result-verification adjudicator."
-            ),
+            system=_FINISHED_ASSERTION_SYSTEM,
             timeout=120.0,
         )
 

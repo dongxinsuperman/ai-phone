@@ -4,6 +4,30 @@
 
 ## Unreleased
 
+### 最终断言：按证据职责综合截图与动作历史
+
+- 豆包、Claude 和 OpenAI 辅助模型的断言 System 从“严格保守”改为结果导向：
+  有效证据能合理支持任务结果时 PASS，只有任务要求与证据明确矛盾时 FAIL。
+- 结构化与自由任务的断言 Prompt 均明确要求阅读动作历史；最终截图负责当前可见
+  状态，动作历史负责不会持续显示的操作过程，动作前截图只辅助判断最后一击变化，
+  主 VLM 自述不能单独证明完成。
+- 两图相同不再自动构成 FAIL；只有最后动作必须产生可见变化、执行记录声称变化已
+  发生且最终图仍无目标状态时，才可据此驳回。缓存回放断言同步采用相同证据边界。
+- PASS/FAIL 协议、API、图片传输和现有 SKIP 兜底不变：配置缺失、调用失败或协议
+  无法解析时，仍记录原因并采纳主 VLM 的 finished。
+
+### Final assertion: evaluate screenshots and action history by evidence role
+
+- Doubao, Claude, and OpenAI assertion systems are now result-oriented instead of
+  defaulting to strict conservatism: PASS when valid evidence reasonably supports the
+  result, and FAIL only on a clear conflict between the requirement and the evidence.
+- Assertion prompts must read action history. The final screenshot establishes visible
+  state, history establishes non-persistent process facts, the before-action image only
+  supports last-action change, and the main VLM's claim cannot prove completion alone.
+- Identical before/after images are no longer an automatic failure. Cache replay assertion
+  follows the same evidence boundaries. The existing PASS/FAIL protocol and SKIP fallback
+  remain unchanged.
+
 ### Function Map：从 System 指令降为首轮 User 业务执行上下文
 
 - `functionMapContext` 字段继续保持非必填；未提供时，主 VLM 仍完整依靠 Goal、

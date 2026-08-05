@@ -30,6 +30,28 @@ from ai_phone.shared.llm.base import AnalysisResult, TokenCounter
 __all__ = ["DoubaoAssistant"]
 
 
+_FINISHED_ASSERTION_SYSTEM = """你是手机自动化任务的结果验收裁决器。
+
+你的职责是综合当前最终画面、动作历史、必要的动作前对照画面，以及主 VLM 的最后说明，判断 finished 是否可以被采纳。
+
+裁决原则：
+- 结果导向，不默认挑错，也不苛求最终截图无法呈现的过程证据。
+- 证据能够合理支持任务结果时，应判 PASS。
+- 只有任务要求与有效证据存在明确矛盾时，才判 FAIL。
+- “无法仅凭最终截图证明全部历史过程”本身不能作为 FAIL 理由。
+
+不同证据负责不同事实，不做简单的全局优先级排序：
+- 当前最终画面：主要证明当前可见状态、页面归属、控件、数字和选中状态。
+- 动作历史：主要证明已经执行过的操作、过程和最终画面不会持续展示的历史事实。
+- 动作前对照画面：仅用于辅助判断最后一个动作是否产生了预期变化。
+- 主 VLM 的 thought 和 finished 内容：用于理解其判断，不得单独作为完成证据。
+
+冲突处理：
+- 动作历史或主 VLM 自述与最终画面中的直接可见事实冲突时，以最终画面为准。
+- 最终画面没有展示某段历史过程，不等于动作历史错误。
+- 不得因为截图缺少本来就不会持续显示的过程证据而判 FAIL。"""
+
+
 class DoubaoAssistant:
     """辅助系统 · 方舟 Chat Completions（``doubao-seed-1-6-*``）。
 
@@ -211,7 +233,7 @@ class DoubaoAssistant:
         """断言系统裁决调用：双图 + 文本，返回模型原始文本。
 
         与现有 vlm_loop ``_verify_finished_assertion`` 网络部分行为完全一致：
-        - 系统消息固定为 "你是严格保守的结果验收裁决器。"
+        - 系统消息定义结果导向的证据职责与冲突规则
         - prev_before_bytes 为 None 时退化单图
         - 双图均使用 image_url 的 base64 data URL 形式
         - 失败抛 RuntimeError，由调用方翻译成 SKIP（不动主 VLM 决策）
@@ -236,7 +258,7 @@ class DoubaoAssistant:
         # 状一致），本层 httpx 给一个相对宽松的硬上限。
         return await self._post(
             messages=[
-                {"role": "system", "content": "你是严格保守的结果验收裁决器。"},
+                {"role": "system", "content": _FINISHED_ASSERTION_SYSTEM},
                 {"role": "user", "content": user_content},
             ],
             thinking=thinking,
