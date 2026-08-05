@@ -108,6 +108,34 @@ def test_system_prompt_without_map_does_not_add_map_policy(backend: str) -> None
     assert "Function Map Usage Contract" not in prompt
 
 
+@pytest.mark.parametrize(
+    ("backend", "policy_heading", "completion_marker"),
+    [
+        ("doubao_responses", "## Function Map 使用契约", "⚠️ 完成铁律"),
+        ("claude_cu", "## Function Map Usage Contract", "Completion iron rule"),
+        ("gpt_cu", "## Function Map Usage Contract", "Completion iron rule"),
+    ],
+)
+def test_map_policy_follows_task_and_substeps_but_precedes_completion_rule(
+    backend: str,
+    policy_heading: str,
+    completion_marker: str,
+) -> None:
+    prompt = build_system_prompt_for_backend(
+        "进入我的页",
+        backend=backend,
+        substeps_text=_SUBSTEPS,
+        function_map_context="MAP_SENTINEL",
+    )
+
+    assert (
+        prompt.index("进入我的页")
+        < prompt.index(_SUBSTEPS)
+        < prompt.index(policy_heading)
+        < prompt.index(completion_marker)
+    )
+
+
 def test_settings_reads_vlm_cu_zh_prompt_enabled_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AI_PHONE_VLM_CU_ZH_PROMPT_ENABLED", "true")
 

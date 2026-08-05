@@ -156,10 +156,11 @@ def build_system_prompt(
 
 {language_policy}
 The UI may be in English, Korean, Japanese, Arabic, or other languages. Read the visible text carefully and act accordingly.
-{function_map_policy}
+
 ## Your Task
 {goal}
 {substeps_block}
+{function_map_policy}
 ⚠️ **Completion iron rule**: Before declaring `FINISHED`, you must see explicit visual evidence in the current screenshot proving the task is complete. "Probably done" / "should have sent" = NOT done; keep going.
 
 ⚠️ **Starting line**: If you join at step 3 or later (you'll see a hint like "starting-line already executed by system"), it means `close_app + open_app` has been done by the runtime in steps 1-2. **Do not** redo close_app / open_app — continue from the next pending substep.

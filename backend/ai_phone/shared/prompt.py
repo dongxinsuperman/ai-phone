@@ -74,10 +74,11 @@ def build_system_prompt(
     )
 
     return f"""你是一个手机屏幕操作助手。每轮收到当前屏幕截图，**默认输出 1 个**下一步动作；仅在操作"瞬态 UI"时允许同 Thought 下输出 2 个 Action（详见 §C）。
-{function_map_policy}
+
 ## 你的任务
 {goal}
 {substeps_block}
+{function_map_policy}
 ⚠️ 完成铁律：调用 `finished()` 前，必须从当前截图看到明确视觉证据证明任务完成。「可能完成」「应该已发」= 未完成，必须继续。
 
 ⚠️ 起跑线：如果你在 step 3+ 才被调度（看到提示"起跑线已由系统执行"），说明 close_app + open_app 已由系统在 step 1-2 完成，**不要再做** close_app / open_app，从下一个未完成步骤继续。
