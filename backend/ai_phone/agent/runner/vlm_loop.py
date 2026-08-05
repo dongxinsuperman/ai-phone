@@ -205,19 +205,6 @@ few-shot（抽象占位示意，不要照抄文案，按你看到的真实截图
 应输出：FAIL: 当前页面未呈现可见的提交类控件
 '''
 
-# 周期巡检：兜底"VLM 一鼓作气走通了错误路线"——这种走得很顺的偏离，本地探测
-# 器（同坐标反复点 / 屏幕重访 / 滚动震荡）抓不到，因为不存在"反复"模式。
-# 解决：每 N 步主动召唤一次审判，让它对照 case 操作步骤序列检查是否在按
-# 顺序推进；合法跳过（截图证明状态已满足）算 OK，不计 ALLOW 上限；偏离
-# （子步骤被跳但截图没"已满足"证据）则 KILL。
-#
-# 间隔历史：
-#   - v1: 5 → 起跑/Tab 切换/合法跳步阶段就被巡，误 KILL 高发
-#   - v2 (当前默认 30) → 让 VLM 进入主流程后再开始巡检，避开前期合法跳步密集区
-# env=0 可关闭周期巡检（仅靠 detector 触发审判）。
-STRUCT_AUDIT_PERIODIC_INTERVAL = _settings.audit_periodic_interval  # env: AI_PHONE_AUDIT_PERIODIC_INTERVAL
-PERIODIC_TRIGGER_PREFIX = "[周期巡检]"  # 协议常量：trigger 字符串前缀，区分 detector / periodic
-
 # ---- 结构化通道判定信号 ----
 # 默认只做标签准入：命中「测试标题/前置条件/操作步骤/预期结果」等标签才进结构化。
 # 严格度评分最高 7；默认阈值为 10，等于关闭评分入口。保留评分逻辑是为了
@@ -254,7 +241,6 @@ _RUN_TUNING_CONST_TO_FIELD = {
     "STRUCT_SCROLL_NOPROGRESS_TRIGGER": "audit_scroll_noprogress_trigger",
     "STRUCT_AUDIT_ALLOW_LIMIT": "audit_allow_limit",
     "STRUCT_AUDIT_TIMEOUT_SECONDS": "audit_timeout_sec",
-    "STRUCT_AUDIT_PERIODIC_INTERVAL": "audit_periodic_interval",
     "STRUCT_KEYWORD_HARD_HIT": "struct_keyword_hard_hit",
     "STRUCT_STRICTNESS_HARD_SCORE": "struct_strictness_hard_score",
     "STRUCT_STRICTNESS_AUDIT_SCORE": "struct_strictness_audit_score",
@@ -1658,27 +1644,6 @@ class VLMRunner:
                 before_bytes=screenshot_bytes, after_bytes=tail_bytes,
             )
 
-            # —— 周期巡检：每 N 步主动召唤一次审判 ——
-            # 兜底"VLM 走得很顺、但跳过了 case 子步骤"的盲区：本地探测器抓不到
-            # （没有"反复刨"特征），只能靠周期性把 case + 最近历史交给审判模型
-            # 做"步骤序列对齐"判断。详见 _supervisor_audit prompt 的"触发种类"段。
-            #
-            # 防抖：
-            # 1. 同一 step 已有 detector trigger → 不重复挂 periodic（detector 审判
-            #    会把同一份历史给到审判模型，再加一条 periodic 是 token 浪费）
-            # 2. step % N == 0 才挂；step=0 / step=N+1 都不挂
-            # 3. 同一 step 不重复审（_audit_called_steps 防抖）
-            if (
-                self._is_structured
-                and step > 0
-                and step % STRUCT_AUDIT_PERIODIC_INTERVAL == 0
-                and not self._pending_audit_triggers
-                and step not in self._audit_called_steps
-            ):
-                self._pending_audit_triggers.append(
-                    f"{PERIODIC_TRIGGER_PREFIX} 每 {STRUCT_AUDIT_PERIODIC_INTERVAL} 步主动审"
-                )
-
             if await self._maybe_audit(step):
                 return await self._raise_fatal(step, tail_bytes or screenshot_bytes)
 
@@ -2238,14 +2203,11 @@ class VLMRunner:
     # 审判通道：触发后由独立的轻量文本模型裁决"继续 vs KILL"
     # ------------------------------------------------------------------
     async def _maybe_audit(self, step: int) -> bool:
-        """如本步有审判触发原因（detector 或 periodic），发审判调用判定继续 / kill。
+        """如本步有 detector 审判触发原因，发审判调用判定继续 / kill。
         返回 True 表示应当 kill。
 
-        三种"立刻 kill"短路：
+        处理规则：
         1. 已被审判 ALLOW 上限次数（防止审判被反复骗）→ 直接 supervisor_exhausted
-           注意：仅 **detector** 触发的 ALLOW 计入上限；周期巡检 ALLOW 不计
-           （否则 30 步的 case 单是周期巡检 OK 就会把 ALLOW 配额耗尽，等到真正
-           的 detector 触发时无配额可用 → 误杀）。
         2. 审判返回 KILL → supervisor_kill
         3. 审判调用失败 / 超时 → 不 kill（保守 ALLOW，记 WARN）
 
@@ -2263,17 +2225,7 @@ class VLMRunner:
             return False
         self._audit_called_steps.add(step)
 
-        # 触发种类：全部都是周期巡检 → "巡检模式"；含任意 detector → "异常模式"
-        # detector 触发抓"反复刨"，周期巡检抓"走得很顺但跳步"，两种侧重不同
-        is_periodic_only = all(
-            t.startswith(PERIODIC_TRIGGER_PREFIX) for t in triggers
-        )
-
-        # ALLOW 上限：仅检查 detector 触发场景；周期巡检 OK 不该耗配额
-        if (
-            not is_periodic_only
-            and self._audit_allow_count >= STRUCT_AUDIT_ALLOW_LIMIT
-        ):
+        if self._audit_allow_count >= STRUCT_AUDIT_ALLOW_LIMIT:
             self._fatal_signal = (
                 "supervisor_exhausted",
                 f"审判已 ALLOW {self._audit_allow_count} 次（上限 {STRUCT_AUDIT_ALLOW_LIMIT}）"
@@ -2291,13 +2243,13 @@ class VLMRunner:
         trigger_text = " / ".join(triggers)
         await self._log(
             2,
-            "审判 · 巡检" if is_periodic_only else "审判 · 召唤",
+            "审判 · 召唤",
             f"触发原因：{trigger_text}",
             step=step,
         )
         try:
             verdict, reason = await asyncio.wait_for(
-                self._supervisor_audit(trigger_text, step, is_periodic_only),
+                self._supervisor_audit(trigger_text, step),
                 timeout=STRUCT_AUDIT_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError:
@@ -2327,18 +2279,6 @@ class VLMRunner:
             )
             return True
 
-        # OK 路径分流：
-        # - 周期巡检 OK：常态，巡检通过不该惩罚 VLM。不计 ALLOW、不重置探测器、不注入 hint
-        # - detector OK：本地探测器疑似抓到偏离但模型放行，要扣配额 + 重置探测器 + 注入提醒
-        if is_periodic_only:
-            await self._log(
-                1,
-                "审判 · 巡检通过",
-                f"周期巡检：步骤推进合规 | 理由：{reason}",
-                step=step,
-            )
-            return False
-
         self._audit_allow_count += 1
         await self._log(
             1,
@@ -2358,15 +2298,12 @@ class VLMRunner:
         return False
 
     async def _supervisor_audit(
-        self, trigger_text: str, step: int, is_periodic_only: bool = False
+        self, trigger_text: str, step: int
     ) -> Tuple[str, str]:
-        """独立的轻量文本模型审判：根据 case + 动作历史判定 OK / KILL。
+        """本地异常探测器召唤的轻量文本审判：判定继续或 KILL。
 
-        触发种类（``is_periodic_only``）：
-        - ``False``（默认）：本地探测器召唤——抓"反复刨"。审判主要看 a/b/c 标准
-        - ``True``：周期巡检（每 N 步主动审一次）——兜底"VLM 走得很顺、但跳过了
-          case 子步骤"。这种偏离本地探测器抓不到（没有反复模式），只能靠对照 case
-          操作步骤序列检查；判决重点切到标准 d（跳步）。
+        历史说明：固定步数周期巡检曾复用本入口并附加步骤序列对齐 prompt，现已
+        移除。本入口不会自行巡检，只处理本地异常探测器已经产生的 trigger。
 
         输出协议（极简化，让模型只做二选一）：
         - 第一行 ``OK`` 或 ``KILL:<理由>``
@@ -2375,54 +2312,17 @@ class VLMRunner:
         history = self._format_action_history(STRUCT_AUDIT_HISTORY_LIMIT)
         history_count = len(self._action_log[-STRUCT_AUDIT_HISTORY_LIMIT:])
 
-        # 巡检模式专用补充段：明确"按顿号顺序"+ "合法跳过 vs 违规跳过"边界。
-        # 关键设计：默认 OK——单凭"VLM 没显式说自己跳过了 X"不能 KILL，因为 VLM
-        # 可能确实做了步骤但 thought 没说全。KILL 必须举出 case 里的明确子步骤
-        # + VLM 实际执行的与之矛盾的动作 + 截图无"已满足"证据这三连。
-        periodic_block = ""
-        if is_periodic_only:
-            periodic_block = (
-                f"\n【⚠️ 本次为周期巡检模式（每 {STRUCT_AUDIT_PERIODIC_INTERVAL} 步主动审一次）】\n"
-                "周期巡检和 detector 召唤的差异：本次不是因为 VLM 反复刨，而是\n"
-                "系统主动来对照 case 操作步骤顺序检查 VLM 是否在按节奏推进。\n\n"
-                "【步骤序列对齐方法】\n"
-                "1. 把 case「操作步骤」段落用顿号「、」/逗号「，」/句号「。」拆成\n"
-                "   有序子步骤数组 S = [s1, s2, ..., sn]。\n"
-                "2. 把 VLM 最近 N 步的动作映射到 S 的某个 si。\n"
-                "3. 检查映射顺序是否单调推进；中间被跳过的 si 必须满足"
-                "「合法跳过」条件，否则属于偏离。\n\n"
-                "【合法跳过判定标准】（这些情况下子步骤被跳过 = 合法）\n"
-                "  ① 子步骤是条件式（如「如果未登录则登录」），且条件不成立\n"
-                "  ② 子步骤目标状态在跳过当时**已经满足**（例如「切换为 X」"
-                "时页签已是 X、「进入 X 页 / Tab」时 Tab 已高亮且页面已是 X）\n"
-                "  ③ VLM 的 Thought 明确说明「截图显示 X 已满足，跳过子步骤 Y」\n\n"
-                "【违规跳过判定标准】（满足任一即偏离 → KILL）\n"
-                "  ① VLM 直接执行了 si+k（k≥1），跳过 si，但 si 不是条件式\n"
-                "    且当时无证据显示 si 的目标状态已满足\n"
-                "  ② VLM 把前面的子步骤「延后」到后续页面里完成（即使后续页面\n"
-                "    确实有同样入口——case 没说从那入就不准从那入）\n"
-                "  ③ 多个子步骤被合并执行但顺序错位（顿号是有序的，不是无序集）\n\n"
-                "【KILL 输出要求（巡检模式）】\n"
-                "  必须举出：\n"
-                "    a. case 里被跳过的子步骤原文（顿号分隔的某一段）\n"
-                "    b. VLM 实际在哪一步做了什么动作（具体 step 号 + 动作）\n"
-                "    c. 为什么不构成「合法跳过」（截图无「已满足」证据 + thought 没说明）\n"
-            )
-
-        # 通用 prompt + 巡检模式增强段
         prompt = (
-            "你是测试用例执行裁判。VLM Agent 在执行结构化用例时被本地探测器或周期巡检召唤。\n"
+            "你是测试用例执行裁判。VLM Agent 在执行结构化用例时被本地异常探测器召唤。\n"
             "**召唤 ≠ 确凿偏离**——请严格保守判定。\n\n"
             "【判决优先级】\n"
             "  默认：OK（保守放行）\n"
-            "  例外：只有以下四种情况之一**且能在最近动作历史里举出具体步号 + 具体动作证据**\n"
+            "  例外：只有以下三种情况之一**且能在最近动作历史里举出具体步号 + 具体动作证据**\n"
             "  时，才能 KILL：\n"
             "    a) VLM 反复点击同一坐标桶——最近 N 步里 ≥ 6 次 click 落在同一区域\n"
             "       （坐标差距 < 50px），且页面没有任何推进；\n"
             "    b) VLM 进入了用例完全没有提及的入口/页面，且持续游离不回归；\n"
-            "    c) VLM 在同一弹窗/错误页反复进出 ≥ 6 次仍无法跳出；\n"
-            "    d) **跳步偏离**：VLM 跳过了 case 操作步骤里的某个子步骤，且不属于"
-            "「合法跳过」（详见周期巡检模式专项标准）。\n\n"
+            "    c) VLM 在同一弹窗/错误页反复进出 ≥ 6 次仍无法跳出。\n\n"
             "【禁止条款】（违反任意一条 → 你的输出会被判为无效，按 OK 处理）\n"
             "  - 禁止以「用例描述模糊/不严谨」作为唯一 KILL 理由。VLM 没真正卡住时，\n"
             "    case 写得粗一点完全无所谓，不构成 KILL 依据。\n"
@@ -2436,15 +2336,11 @@ class VLMRunner:
             "- VLM 关闭非业务弹窗 / 回退 / 等待 / 重新取焦输入框\n"
             "- VLM 切换分类 / 章节 / Tab 寻找符合 case 状态要求的资源（case 允许的兜底）\n"
             "- 子步骤目标状态在截图里已经满足，VLM 直接进入下一子步骤（合法跳过）\n\n"
-            f"{periodic_block}"
             "【输出格式】（只输出第一行，多余文字会被丢弃）\n"
             "  OK\n"
             "  或\n"
             "  KILL:<必须包含具体步号与具体动作。\n"
-            "        detector 例：「step 7、8、9 都在 (140,403) 附近点击同一图标 X，页面无任何推进」\n"
-            "        periodic 例：「case 子步骤『切换 X 为 Y、选择 Z』被跳过，"
-            "step 4 直接点了『下一级入口 W』，截图当前 X 仍是默认值 V 未切换，thought 也未声明"
-            "已满足跳过」>\n\n"
+            "        例：「step 7、8、9 都在 (140,403) 附近点击同一图标 X，页面无任何推进」>\n\n"
             f"=== 用户测试用例（原文）===\n{self.goal}\n\n"
             f"=== 本次审判触发原因 ===\n{trigger_text}\n\n"
             f"=== 最近 {history_count} 步思考与动作 ===\n{history}"

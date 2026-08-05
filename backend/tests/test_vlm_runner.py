@@ -548,18 +548,14 @@ class StructFakeDriver(FakeDriver):
 
 
 def _set_audit_thresholds(monkeypatch, *, keep: Optional[str] = None) -> None:
-    """单测只想验证一条召唤路径时，把其它三条阈值抬到测试里碰不到。
+    """单测只想验证一条 detector 召唤路径时，把其它阈值抬高。
 
-    keep ∈ {"click", "scroll_osc", "scroll_no_progress", "screen", "periodic", None}。
+    keep ∈ {"click", "scroll_osc", "scroll_no_progress", "screen", None}。
     None 表示全部默认，不动。
 
     被 keep 选中的通道会被**显式**设到一个测试可达的低阈值（3 或 2），不再
     依赖 settings 的运行时默认；这样后续 ops 调整 settings.default 时不会
     波及单测。其它通道一律抬到 999。
-
-    注意：默认会同步把"周期巡检"间隔抬到测试碰不到，避免 step % 5 == 0 时
-    多打一次 audit 让 detector 测试的 audit_log 计数错乱。要测周期巡检本身的
-    测试，传 ``keep="periodic"``。
     """
     monkeypatch.setattr(
         "ai_phone.agent.runner.vlm_loop.STRUCT_CLICK_BUCKET_TRIGGER",
@@ -581,10 +577,6 @@ def _set_audit_thresholds(monkeypatch, *, keep: Optional[str] = None) -> None:
         "ai_phone.agent.runner.vlm_loop.STRUCT_SCREEN_REVISIT_TRIGGER",
         3 if keep == "screen" else 999,
     )
-    if keep != "periodic":
-        monkeypatch.setattr(
-            "ai_phone.agent.runner.vlm_loop.STRUCT_AUDIT_PERIODIC_INTERVAL", 10**9
-        )
 
 
 def _patch_supervisor(
@@ -605,7 +597,7 @@ def _patch_supervisor(
 
     audit_call_idx = {"n": 0}
 
-    async def fake_audit(self, trigger_text, step, is_periodic_only=False):
+    async def fake_audit(self, trigger_text, step):
         if audit_log is not None:
             audit_log.append((trigger_text, step))
         if callable(audit_returns):
@@ -828,7 +820,7 @@ async def test_structured_audit_failure_falls_through_to_allow(monkeypatch):
 
     _set_audit_thresholds(monkeypatch, keep="click")
 
-    async def boom_audit(self, trigger_text, step, is_periodic_only=False):
+    async def boom_audit(self, trigger_text, step):
         raise RuntimeError("审判端点 500")
 
     async def fake_classify(self):

@@ -199,6 +199,16 @@ def test_execution_fields_are_distributed():
         assert exe in dl, f"{exe} 应在下发集"
 
 
+def test_periodic_audit_field_is_retained_only_for_legacy_agent_downlink():
+    """新版 Runner 不消费周期字段，但 Server 要继续把历史默认值发给旧 Agent。"""
+    import ai_phone.agent.runner.vlm_loop as vl
+
+    assert "audit_periodic_interval" in downlink_field_names()
+    snapshot = build_downlink_config(settings=_derived_doubao_settings())
+    assert snapshot["audit_periodic_interval"] == 30
+    assert "audit_periodic_interval" not in vl._RUN_TUNING_CONST_TO_FIELD.values()
+
+
 def test_sleep_after_run_is_server_downlink_execution_policy():
     """统一收尾电源策略既非 Agent 本机字段，也非 Server-only 字段。"""
     assert "sleep_after_run" not in AGENT_LOCAL_FIELDS

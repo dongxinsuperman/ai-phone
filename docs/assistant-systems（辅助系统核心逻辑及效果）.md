@@ -104,11 +104,10 @@ AI_PHONE_AUDIT_SCROLL_NOPROGRESS_TRIGGER=10
 ```env
 AI_PHONE_AUDIT_TIMEOUT_SEC=30
 AI_PHONE_AUDIT_ALLOW_LIMIT=30
-AI_PHONE_AUDIT_PERIODIC_INTERVAL=30
 AI_PHONE_ASSISTANT_THINKING_JUDGE=true
 ```
 
-`AI_PHONE_AUDIT_PERIODIC_INTERVAL` 控制主动抽查步频；阈值调大可减少误 kill，但会让异常链路多跑几步。
+审判不再按固定步数主动抽查，只在本地异常探测器发现同坐标反复点击、屏幕重访、滑动震荡或滑动无进展时触发。
 
 ## 7. 最终断言
 
@@ -192,9 +191,9 @@ AI_PHONE_ASSISTANT_MODEL=...
 
 ## 11. 调参建议
 
-- 误 kill 多：增大 `AI_PHONE_AUDIT_PERIODIC_INTERVAL` 和对应 trigger。
+- 误 kill 多：调高对应本地异常探测器的 trigger；如果是 `supervisor_exhausted`，再调高 `AI_PHONE_AUDIT_ALLOW_LIMIT`。
 - 卡死发现太晚：降低同坐标、同屏、滑动无进展触发阈值。
 - 断言过严：检查 runContent 是否写了可观测目标，避免让模型猜业务成功标准。
 - 缓存回放偏航：优先打开 V2 状态对齐；仍不稳时降低缓存使用范围，而不是强行提高阈值。
 - 弹窗导致复跑误点：只给高置信度非业务遮挡启用 optional gate，业务确认、权限、登录、安全、支付类弹窗不要标成可跳过。
-- token 压力大：保留本地卡死规则，减少周期性审判，辅助模型换更轻后端。
+- token 压力大：保留本地卡死规则，适当调高异常触发阈值，辅助模型换更轻后端。

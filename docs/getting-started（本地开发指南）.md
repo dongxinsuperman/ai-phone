@@ -144,7 +144,7 @@ psql "$AI_PHONE_DB_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 改 `backend/.env` 的 `AI_PHONE_PHONE_VLM_*` 和 `AI_PHONE_AUX_*` 两块。Claude 主循环仍走已验证的 Claude Computer Use；GPT 主循环走 OpenAI Computer Use；手机层单次辅助由系统内部派生。
 
 **Q：辅助系统的"卡死检测 / 审判 / 断言"误 kill 太多怎么办？**
-见 `backend/.env.full.example` 的高级阈值说明。常见做法：把 `AI_PHONE_AUDIT_PERIODIC_INTERVAL` 调大（默认 30 步主动召唤，可以调到 50 让 VLM 多跑几步再监督），或把 `AI_PHONE_AUDIT_ALLOW_LIMIT` 调到 50–100。
+见 `backend/.env.full.example` 的高级阈值说明。审判只由本地异常探测器触发：先调高对应探测器的 trigger；如果日志是 `supervisor_exhausted`，再把 `AI_PHONE_AUDIT_ALLOW_LIMIT` 调到 50–100。
 
 ---
 

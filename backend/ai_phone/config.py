@@ -1615,15 +1615,15 @@ class Settings(BaseSettings):
             "env: AI_PHONE_AUDIT_ALLOW_LIMIT"
         ),
     )
-    # 周期巡检间隔：每 N 步主动召唤一次审判，兜底"VLM 一鼓作气走错路"。
-    # 5 太频繁前期合法跳步常被误 KILL；30 给足 VLM 上下文再监督。
+    # 混合版本兼容字段：新版 Runner 已移除周期巡检，不再读取该值；字段仍由
+    # Server 下发，并保留历史默认 30，让尚未升级的旧 Agent 继续按旧逻辑运行。
+    # 待部署中的 Agent 全部升级后可再统一清理，不能先于 Agent 删除下发字段。
     audit_periodic_interval: int = Field(
         default=30,
         ge=0,
         le=200,
         description=(
-            "审判周期巡检间隔（步）。每 N 步主动召唤一次审判检查推进合理性。"
-            "0 = 关闭周期巡检（仅 detector 触发）；调大让 VLM 多跑几步再检查。"
+            "混合版本兼容字段：新版 Runner 不再读取；旧 Agent 仍按该间隔执行周期巡检。"
             "env: AI_PHONE_AUDIT_PERIODIC_INTERVAL"
         ),
     )

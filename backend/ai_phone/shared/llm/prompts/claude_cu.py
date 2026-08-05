@@ -40,14 +40,14 @@ translate button names, tab names, app names, product names, or page titles.
 _SKIP_DUTY_EN = (
     '**Skip duty**: When skipping, your reasoning must say "Screenshot shows'
     ' <state evidence> — substep N already satisfied; skipping." Without an'
-    " explicit reason the periodic supervisor will judge it as a deviation"
+    " explicit reason the supervisor will judge it as a deviation"
     " and KILL the run."
 )
 
 _SKIP_DUTY_ZH = (
     "**Skip duty**: When skipping, your reasoning must say "
     '"截图显示 <状态证据> 已满足子步骤 N，跳过". Without an explicit reason '
-    "the periodic supervisor will judge it as a deviation and KILL the run."
+    "the supervisor will judge it as a deviation and KILL the run."
 )
 
 _FORCED_VERDICT_REMINDER_EN = (
