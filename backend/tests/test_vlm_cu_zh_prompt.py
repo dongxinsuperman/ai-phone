@@ -71,30 +71,41 @@ def test_substep_boundaries_follow_injected_checklist_not_fixed_punctuation(
     assert "do not re-split" in prompt or "禁止再按某一种标点自行重拆" in prompt
 
 
-def test_doubao_prompt_injects_function_map_context_after_goal() -> None:
+def test_doubao_system_prompt_keeps_map_policy_but_not_map_body() -> None:
+    map_body = "MAP_SENTINEL：首页底部有『我的』"
     prompt = build_system_prompt_for_backend(
         "进入我的页",
         backend="doubao_responses",
-        function_map_context="首页：底部 Tab 有「我的」",
+        function_map_context=map_body,
     )
 
-    assert "## 功能地图上下文（执行参考，只读手册）" in prompt
-    assert "首页：底部 Tab 有「我的」" in prompt
-    assert prompt.index("## 你的任务") < prompt.index("## 功能地图上下文")
-    assert prompt.index("## 功能地图上下文") < prompt.index("## 输出格式")
+    assert "## Function Map 使用契约" in prompt
+    assert "优先于模型自身常识和无依据猜测" in prompt
+    assert "不得新增、删除、合并、重排或跨越子步骤" in prompt
+    assert map_body not in prompt
 
 
 @pytest.mark.parametrize("backend", ["claude_cu", "gpt_cu"])
-def test_cu_prompt_injects_function_map_context(backend: str) -> None:
+def test_cu_system_prompt_keeps_map_policy_but_not_map_body(backend: str) -> None:
+    map_body = "MAP_SENTINEL: Home has a Profile tab"
     prompt = build_system_prompt_for_backend(
         "进入我的页",
         backend=backend,
-        function_map_context="Home: bottom tab contains Profile",
+        function_map_context=map_body,
     )
 
-    assert "Function Map Context (execution reference, read-only manual)" in prompt
-    assert "Home: bottom tab contains Profile" in prompt
-    assert "It is reference material, not the task" in prompt
+    assert "## Function Map Usage Contract" in prompt
+    assert "Prefer it over generic model knowledge and unsupported guesses" in prompt
+    assert "must not add, remove, merge, reorder, or skip substeps" in prompt
+    assert map_body not in prompt
+
+
+@pytest.mark.parametrize("backend", ["doubao_responses", "claude_cu", "gpt_cu"])
+def test_system_prompt_without_map_does_not_add_map_policy(backend: str) -> None:
+    prompt = build_system_prompt_for_backend("进入我的页", backend=backend)
+
+    assert "Function Map 使用契约" not in prompt
+    assert "Function Map Usage Contract" not in prompt
 
 
 def test_settings_reads_vlm_cu_zh_prompt_enabled_env(monkeypatch: pytest.MonkeyPatch) -> None:

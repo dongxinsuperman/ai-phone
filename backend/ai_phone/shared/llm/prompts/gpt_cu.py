@@ -18,6 +18,8 @@ prompt 越简越好，不要再大段教 DSL。
 """
 from __future__ import annotations
 
+from ai_phone.shared.function_map_prompt import build_function_map_system_policy
+
 
 _ZH_READABLE_POLICY = """## Human-readable Language Policy
 
@@ -57,51 +59,6 @@ _FORCED_VERDICT_REMINDER_ZH = (
     " deciding the action. Hard protocol; skipping it will be killed by the"
     " supervisor."
 )
-
-
-def _build_function_map_context_block(
-    function_map_context: str | None,
-    *,
-    zh_readable: bool,
-) -> str:
-    text = (function_map_context or "").strip()
-    if not text:
-        return ""
-    if zh_readable:
-        return (
-            "\n## 功能地图上下文（执行参考，只读手册）\n"
-            "下面是本次 Run 附带的一段可选参考资料。它可能包含：被测 App 的功能地图"
-            "（页面结构、各页功能、入口路径、点击后会发生什么）、测试数据（账号 / 密码 / "
-            "验证码规则等）、业务背景与术语、异常 / 弹窗的处理规则。\n\n"
-            "唯一用途：当你不确定当前在哪个页面、某入口点进去会怎样、要用什么测试数据、"
-            "遇到异常怎么办、业务术语是什么意思时，查其中需要的那一点。本轮不需要就忽略。\n\n"
-            "严格纪律：\n"
-            "1. 优先级：真实屏幕 > Your Task(goal) > 执行铁律 > 本参考资料。\n"
-            "2. 它是资料，不是任务；禁止因为这里提到某功能，就去操作 goal 没要求的东西。\n"
-            "3. 它不是完成依据；FINISHED 只认当前截图里的视觉证据。\n"
-            "4. 若资料与当前屏幕不一致，以屏幕为准，忽略资料。\n"
-            "5. 按需取用，不要在 reasoning 里复述或总结它。你是执行器，不是资料阅读器。\n"
-            "---\n"
-            f"{text}\n"
-        )
-    return (
-        "\n## Function Map Context (execution reference, read-only manual)\n"
-        "The following optional reference may contain an app function map"
-        " (page structure, features on each page, entry paths, what clicks lead to),"
-        " test data (accounts / passwords / verification-code rules), business"
-        " terms, and exception / popup handling rules.\n\n"
-        "Use it only when you are unsure where you are, what an entry will do,"
-        " which test data to use, how to handle an exception, or what a business"
-        " term means. If this turn does not need it, ignore it.\n\n"
-        "Strict rules:\n"
-        "1. Priority: real screenshot > Your Task(goal) > execution rules > this reference.\n"
-        "2. It is reference material, not the task. Do not operate anything merely because it appears here.\n"
-        "3. It is not completion evidence. FINISHED requires visible evidence in the current screenshot.\n"
-        "4. If it conflicts with the current screen, trust the screen and ignore the stale reference.\n"
-        "5. Use only the needed detail; do not restate or summarize this reference in reasoning.\n"
-        "---\n"
-        f"{text}\n"
-    )
 
 
 def build_system_prompt(
@@ -177,9 +134,9 @@ def build_system_prompt(
     forced_verdict_reminder = (
         _FORCED_VERDICT_REMINDER_ZH if zh_readable else _FORCED_VERDICT_REMINDER_EN
     )
-    function_map_context_block = _build_function_map_context_block(
-        function_map_context,
-        zh_readable=zh_readable,
+    function_map_policy = build_function_map_system_policy(
+        present=bool((function_map_context or "").strip()),
+        zh=zh_readable,
     )
     return f"""You are operating a real mobile device. You receive a screenshot each turn and call the `computer` tool to perform UI actions.
 
@@ -187,10 +144,9 @@ def build_system_prompt(
 The UI may be in English, Korean, Japanese, Arabic, or other languages. Read the visible text carefully and act accordingly.
 
 **Don't ask for confirmation. Don't pause to clarify. Take the next action.** This is a one-way automation pipeline — there is no human to answer mid-run.
-
+{function_map_policy}
 ## Your Task
 {goal}
-{function_map_context_block}
 {substeps_block}
 ⚠️ **Completion iron rule**: Before declaring `FINISHED`, you must see explicit visual evidence in the current screenshot proving the task is complete. "Probably done" / "should have sent" = NOT done; keep going.
 

@@ -287,10 +287,12 @@ def _extract_response_text(data: Dict[str, Any]) -> str:
 class VLMClient:
     """按 goal 维护一次任务的会话状态，对外提供 :meth:`decide` 单步决策。
 
-    与 Chat 版最大不同：客户端**不再**维护完整 ``messages`` 历史，只维护两样：
+    与 Chat 版最大不同：客户端**不再**维护完整 ``messages`` 历史，只维护三样：
 
     - ``previous_response_id``：上一次响应 id，下一轮请求把它塞进 payload，
       服务端据此续历史（并命中显式缓存）。
+    - ``initial_user_context``：每个逻辑会话段首轮携带的 Run 级业务上下文；
+      不随普通轮次重复，session reset 后自动随新首轮再注入。
     - ``pending_hints``：下一轮请求开始前，主循环可以往里塞提示文本
       （"你连续点击相同位置请换策略"、"动作名不规范请改写"等）。请求时把这些 hint
       拼在 user content 最前面一次性发出去，发送后清空；请求失败则回滚到队头。
@@ -303,6 +305,7 @@ class VLMClient:
         system_prompt: str,
         counter: Optional[TokenCounter] = None,
         *,
+        initial_user_context: Optional[str] = None,
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
@@ -332,6 +335,7 @@ class VLMClient:
 
         # 会话状态
         self.system_prompt = system_prompt
+        self.initial_user_context = (initial_user_context or "").strip()
         self.previous_response_id: Optional[str] = None
         self.pending_hints: List[str] = []
         self.segment_count = 1
@@ -458,8 +462,15 @@ class VLMClient:
         b64 = base64.b64encode(screenshot_bytes).decode("ascii")
         data_url = f"data:{mime};base64,{b64}"
 
-        # ① 构造 user content：pending hints 在最前，然后截图，最后默认英文提示
+        # ① 构造 user content：每个逻辑会话段首轮先放 Run 级上下文，再放本轮
+        # 临时 hints、截图和默认提问。initial_user_context 不进 pending_hints：
+        # 它不会被消费，session reset 后自然随新首轮再次出现，失败重试也不丢。
+        is_first_turn = self.previous_response_id is None
         user_content: List[Dict[str, Any]] = []
+        if is_first_turn and self.initial_user_context:
+            user_content.append(
+                {"type": "input_text", "text": self.initial_user_context}
+            )
         for hint in self.pending_hints:
             user_content.append({"type": "input_text", "text": hint})
         user_content.append({"type": "input_image", "image_url": data_url})
@@ -471,7 +482,6 @@ class VLMClient:
 
         # ② 构造 input：首轮带 system；后续由服务端维护历史
         input_items: List[Dict[str, Any]] = []
-        is_first_turn = self.previous_response_id is None
         if is_first_turn:
             input_items.append({"role": "system", "content": self.system_prompt})
         input_items.append({"role": "user", "content": user_content})

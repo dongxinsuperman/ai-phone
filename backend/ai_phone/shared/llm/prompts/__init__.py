@@ -12,8 +12,9 @@ confirmation" 等约束。同一份 case prompt 在三家身上效果差异巨�
 
 对外只暴露一个 :func:`build_system_prompt_for_backend` 工厂——调用方
 （``vlm_loop.py``）把 ``settings.vlm_backend`` 传进来，自动分派。三家模板
-内部签名统一 ``(goal, substeps_text=None, function_map_context=None) -> str``，
-便于未来扩家。
+内部签名统一 ``(goal, substeps_text=None, function_map_context=None) -> str``。
+``function_map_context`` 在这里仅用于判断是否渲染 System 级使用契约，正文由
+主 VLM 客户端放进每个逻辑会话段的首条 User 消息，不再拼入 System。
 
 历史版本注释里说"P1 阶段本目录除 __init__.py 外为空，待 P2/P5/P7 逐步落
 地"——三个模板已落地，本 __init__.py 同步从"占位"升级为"工厂"。漏掉
@@ -50,6 +51,9 @@ def build_system_prompt_for_backend(
     - ``doubao_responses``（默认）：豆包 ``Thought:/Action:`` 文本 DSL
     - ``claude_cu``：Claude Computer Use ``computer`` tool + ``FINISHED:`` 关键字
     - ``gpt_cu``：OpenAI computer-use-preview + "Don't ask for confirmation"
+
+    ``function_map_context`` 正文不会进入返回值；非空只会启用不含正文的 Map
+    使用契约。保留该关键字参数，兼容既有内部/外部调用方。
 
     ``backend`` 取值无效 / 为空时回退豆包版（向后兼容老调用 + 单测无 settings 场景）。
     """

@@ -34,6 +34,7 @@ from ai_phone.agent.drivers.base import AlbumSaveResult, BaseDriver
 from ai_phone.config import get_settings
 from ai_phone.shared import actions as A
 from ai_phone.shared import protocol as P
+from ai_phone.shared.function_map_prompt import build_function_map_user_context
 from ai_phone.shared.llm import (
     BaseAssistant,
     BaseMainVLM,
@@ -806,9 +807,19 @@ class VLMRunner:
             backend=self._settings.vlm_backend,
             zh_readable=self._vlm_cu_zh_prompt_enabled,
         )
+        backend_name = (self._settings.vlm_backend or "doubao_responses").strip().lower()
+        map_user_context = build_function_map_user_context(
+            self._function_map_context or None,
+            zh=(
+                backend_name == "doubao_responses"
+                or self._vlm_cu_zh_prompt_enabled
+            ),
+        )
         self.counter = TokenCounter()
         self.vlm = vlm_client or create_main_vlm(
-            system_prompt=system_prompt, counter=self.counter
+            system_prompt=system_prompt,
+            initial_user_context=map_user_context or None,
+            counter=self.counter,
         )
         # 辅助系统：完全独立于主 VLM 的开关，工厂按 ``settings.assistant_backend``
         # 分派（doubao_chat / claude / openai）。共享同一份 counter 让 token 大盘
@@ -918,7 +929,9 @@ class VLMRunner:
             await self._log(
                 1,
                 "功能地图上下文 · 已注入",
-                f"已注入 {len(self._function_map_context)} 字符，只读参考，按需取用。",
+                f"已注入 {len(self._function_map_context)} 字符，作为本次 Run 的业务执行上下文；"
+                "在页面、对象、路径、测试数据和业务术语范围内高权重参考，"
+                "不改变任务、子步骤顺序或完成条件。",
             )
         elif self._function_map_context_raw:
             await self._log(

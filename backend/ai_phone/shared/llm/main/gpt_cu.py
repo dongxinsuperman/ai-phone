@@ -109,6 +109,7 @@ class GPTComputerUseClient:
         system_prompt: str,
         counter: Optional[TokenCounter] = None,
         *,
+        initial_user_context: Optional[str] = None,
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
@@ -135,6 +136,7 @@ class GPTComputerUseClient:
         self.timeout = timeout_seconds
         self.counter = counter or TokenCounter()
         self.system_prompt = system_prompt
+        self.initial_user_context = (initial_user_context or "").strip()
 
         # 服务端会话 id；首轮请求带 system，之后只带 previous_response_id 续历史
         self.previous_response_id: Optional[str] = None
@@ -263,6 +265,7 @@ class GPTComputerUseClient:
         # ① 构造 input：本轮 user 的 content 列表
         b64 = base64.b64encode(screenshot_bytes).decode("ascii")
         data_url = f"data:{mime};base64,{b64}"
+        is_first_turn = self.previous_response_id is None
 
         # 上一次 computer_call 的 ack（OpenAI 协议要求）：每个新 user input 之
         # 前要回传 computer_call_output（携带最新截图作为执行后状态）。这层在
@@ -288,6 +291,10 @@ class GPTComputerUseClient:
         # 当前 user：文本 hints + 截图（首轮时；非首轮的截图已在 ack 里给过，
         # 但模型仍然偶尔会问"current state"，多一份截图不会被惩罚）
         user_content: List[Dict[str, Any]] = []
+        if is_first_turn and self.initial_user_context:
+            user_content.append(
+                {"type": "input_text", "text": self.initial_user_context}
+            )
         for hint in self.pending_hints:
             user_content.append({"type": "input_text", "text": hint})
         user_content.append({"type": "input_image", "image_url": data_url})
@@ -322,7 +329,7 @@ class GPTComputerUseClient:
             # 默认 medium 平衡速度和准确度。
             "reasoning": {"effort": self._reasoning_effort},
         }
-        if self.previous_response_id is None:
+        if is_first_turn:
             # 首轮带 instructions（OpenAI Responses API 等价于 system prompt）
             payload["instructions"] = self.system_prompt
         else:
@@ -337,7 +344,7 @@ class GPTComputerUseClient:
         # 归零）服务端无法命中显式缓存，整个 instructions 前缀 + 续接 hint 都
         # 要重新推理，单次耗时显著拉长。给 timeout 翻倍兜底，避免 ReadTimeout
         # 把这个本来能正常响应的请求误杀。与 VLMClient 同款策略。
-        is_first_turn_local = self.previous_response_id is None
+        is_first_turn_local = is_first_turn
         turn_timeout = float(self.timeout)
         if is_first_turn_local and self.segment_count > 1:
             turn_timeout = max(turn_timeout, float(self.timeout) * 2)

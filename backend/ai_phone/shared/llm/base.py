@@ -77,6 +77,7 @@ class BaseMainVLM(Protocol):
 
     counter: TokenCounter
     system_prompt: str
+    initial_user_context: str
 
     @property
     def last_prompt_tokens(self) -> int:

@@ -126,6 +126,13 @@ curl -X POST http://localhost:8000/api/submissions \
   }'
 ```
 
+`functionMapContext` is optional: without it, the agent still executes through the full
+task + substeps + current-screenshot path. When supplied, it is treated as caller-selected,
+high-weight business execution context for page relationships, concrete objects, paths,
+test data, and business terms. The raw Map is injected once in the first User message of
+each logical model session segment—not in the System prompt or HTML report—and it cannot
+add tasks, skip substeps, or change completion conditions.
+
 Full API details are in:
 
 - [external-api](./docs/external-api（对外调用清单）.md)

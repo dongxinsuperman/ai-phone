@@ -178,6 +178,12 @@ curl -X POST http://localhost:8000/api/submissions \
   }'
 ```
 
+`functionMapContext` 非必填：不传时，Agent 仍完整依靠任务、子步骤和当前截图执行。
+一旦提供，它会作为调用方为本次 Run 选定的高权重业务执行上下文，帮助模型更准确地
+识别页面、对象、入口、路径、测试数据和业务术语。Map 正文只在每个模型会话段的首条
+User 消息注入一次，不进入 System Prompt，也不进入 HTML 报告；它不能新增任务、跨越
+子步骤或改变完成条件。
+
 完整字段、错误码、Kafka / Webhook 回调格式见 [对外调用清单](./docs/external-api（对外调用清单）.md)。
 
 ### 让 case 跑得更稳

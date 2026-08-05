@@ -55,12 +55,15 @@ SUPPORTED_ASSISTANT_BACKENDS = ("doubao_chat", "claude", "openai")
 def create_main_vlm(
     system_prompt: str,
     *,
+    initial_user_context: Optional[str] = None,
     counter: Optional[TokenCounter] = None,
     settings: Optional[Settings] = None,
 ) -> BaseMainVLM:
     """实例化主 VLM 客户端，按 ``settings.vlm_backend`` 分派。
 
-    ``settings`` 留参便于测试时注入隔离的 Settings；生产路径走默认全局缓存。
+    ``initial_user_context`` 是每个逻辑会话段首轮携带的 Run 级上下文；三家
+    客户端各自根据会话状态注入，普通轮次不重复。``settings`` 留参便于测试时
+    注入隔离的 Settings；生产路径走默认全局缓存。
 
     错误处理：未知后端 / 缺三方包 / 配置缺失（API key / URL / model）都在
     本函数里以友好提示抛出，避免 vlm_loop 启动期跳到一堆栈底层（httpx /
@@ -73,7 +76,11 @@ def create_main_vlm(
         # 默认路径：复用现有 VLMClient（方舟 Responses API），不做任何包装
         from ai_phone.shared.vlm import VLMClient
 
-        return VLMClient(system_prompt=system_prompt, counter=counter)
+        return VLMClient(
+            system_prompt=system_prompt,
+            initial_user_context=initial_user_context,
+            counter=counter,
+        )
 
     if backend == "claude_cu":
         try:
@@ -83,7 +90,11 @@ def create_main_vlm(
                 "vlm_backend=claude_cu 但 Claude 主 VLM 实现未安装/不可用："
                 f"{exc}。请确认 ai_phone/shared/llm/main/claude_cu.py 存在且依赖完整。"
             ) from exc
-        return ClaudeComputerUseClient(system_prompt=system_prompt, counter=counter)
+        return ClaudeComputerUseClient(
+            system_prompt=system_prompt,
+            initial_user_context=initial_user_context,
+            counter=counter,
+        )
 
     if backend == "gpt_cu":
         try:
@@ -93,7 +104,11 @@ def create_main_vlm(
                 "vlm_backend=gpt_cu 但 GPT 主 VLM 实现未安装/不可用："
                 f"{exc}。请确认 ai_phone/shared/llm/main/gpt_cu.py 存在且依赖完整。"
             ) from exc
-        return GPTComputerUseClient(system_prompt=system_prompt, counter=counter)
+        return GPTComputerUseClient(
+            system_prompt=system_prompt,
+            initial_user_context=initial_user_context,
+            counter=counter,
+        )
 
     raise RuntimeError(
         f"未知的 vlm_backend={backend!r}，"

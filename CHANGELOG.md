@@ -4,6 +4,31 @@
 
 ## Unreleased
 
+### Function Map：从 System 指令降为首轮 User 业务执行上下文
+
+- `functionMapContext` 字段继续保持非必填；未提供时，主 VLM 仍完整依靠 Goal、
+  子步骤与当前截图执行，不触发降级或另一套兜底逻辑。
+- 提供 Map 时，正文不再进入 System Prompt，而是在每个逻辑会话段的首条 User
+  消息中注入一次；正常轮次不重复，豆包会话熔断重置后自动重新注入。
+- System 只保留 Map 使用契约：Map 在页面关系、对象、路径、测试数据、业务术语与
+  异常处理范围内高权重参考，优先于模型常识和无依据猜测；但不能新增任务、跨越或
+  重排子步骤、替换明确测试对象、改变预期结果或充当完成证据。
+- 豆包、Claude Computer Use 与 GPT Computer Use 均使用独立首轮上下文字段，
+  不复用临时纠偏 hints；外部 API、数据库、WS、包名匹配、审判、最终断言与报告
+  数据结构保持不变。Map 原文仍不进入 RunLog、RunStep 或 HTML 报告。
+
+### Function Map: move the body from System to first-turn User context
+
+- `functionMapContext` remains optional. Runs without a Map keep the complete Goal +
+  substeps + screenshot execution path, with no hidden fallback or degraded mode.
+- When supplied, the Map body is injected once in the first User message of each logical
+  session segment, and is re-injected after a session reset instead of being repeated every turn.
+- The System prompt now contains only the usage contract: give the Map substantial weight
+  for business execution knowledge, while preventing it from changing the task, substep order,
+  explicit test object, expected result, or completion evidence.
+- API/storage/reporting compatibility is unchanged, and the raw Map remains excluded from
+  RunLog, RunStep, and generated HTML reports.
+
 ### 结构化用例：子步骤按完整任务语义拆解
 
 - 子步骤模型直接读取完整 goal，自行识别「操作步骤：」「[操作步骤]」、编号列表等

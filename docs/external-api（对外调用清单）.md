@@ -153,7 +153,7 @@ Content-Type: application/json
 | `callbackUrl` | 否 | 每条 item 终态 POST 一次 `submission.item.terminal`，批次全部收口后再 POST 一次 `submission.terminal`；只支持 `http://` / `https://` |
 | `cacheMode` | 否 | 批次默认轨迹缓存模式，取值 `off` / `v1` / `v2` / `v3`；单 item 可覆盖。使用边界见 [trajectory-cache-usage（轨迹缓存使用文档）](./trajectory-cache-usage（轨迹缓存使用文档）.md) |
 | `retryMax` | 否 | 本批重跑上限；还会受服务端 `AI_PHONE_RUN_RETRY_*` 限制 |
-| `functionMapContext` | 否 | 批次级执行参考，默认不做产品层长度拦截；如服务端把 `AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS` 配成正整数，则按该值拒绝超长输入。可放整批共用的功能地图、测试数据、业务背景、异常处理；只作为只读参考，不会改变 `runContent` 的任务范围 |
+| `functionMapContext` | 否 | 批次级业务执行上下文，默认不做产品层长度拦截；如服务端把 `AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS` 配成正整数，则按该值拒绝超长输入。字段可缺省；一旦提供，模型会在功能地图、对象、路径、测试数据、业务术语和异常处理范围内高权重参考，但不能改变 `runContent`、子步骤顺序或完成条件 |
 | `items` | 是 | 非空数组 |
 | `caseId` | 是 | 调用方业务主键；同一批次内 `caseId + platform` 唯一 |
 | `caseName` | 否 | 展示名；缺省回落到 `caseId` |
@@ -168,6 +168,10 @@ Content-Type: application/json
 - 只传 `items[].functionMapContext`：只有该 raw item 展开的执行单元拿到 item 文本。
 - 两层都传：最终注入内容为“顶层文本 + item 文本”。
 - 一条 raw item 同时选择 Android/iOS/HarmonyOS 时，item 级文本会被这些平台共享；当前不做平台维度 map。
+- 合并后的 Map 正文仅在每个主 VLM 逻辑会话段的首条 User 消息中注入一次；正常轮次
+  不重复，会话重置后再次注入。System Prompt 只携带 Map 的使用范围与权限边界。
+- 不传 Map 时执行链路保持完整，不触发降级或失败。Map 原文默认不进入查询返回、广播、
+  webhook、RunLog、RunStep 或 HTML 报告。
 
 别名池语义：
 

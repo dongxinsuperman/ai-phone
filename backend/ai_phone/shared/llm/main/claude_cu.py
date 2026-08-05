@@ -118,6 +118,7 @@ class ClaudeComputerUseClient:
         system_prompt: str,
         counter: Optional[TokenCounter] = None,
         *,
+        initial_user_context: Optional[str] = None,
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
@@ -146,6 +147,7 @@ class ClaudeComputerUseClient:
         self.timeout = timeout_seconds
         self.counter = counter or TokenCounter()
         self.system_prompt = system_prompt
+        self.initial_user_context = (initial_user_context or "").strip()
 
         # 客户端累积消息历史；Claude 没有服务端续历史，每轮全发。
         # 长任务用 _trimmed_messages 在请求时裁剪到滑窗内。
@@ -307,6 +309,10 @@ class ClaudeComputerUseClient:
         prev_tool_use_ids = self._extract_prev_tool_use_ids()
 
         user_blocks: List[Dict[str, Any]] = []
+        # Claude 的本地 messages 为空即代表新逻辑会话。Run 级上下文只放首轮；
+        # _trimmed_messages 会保留首组 user/assistant，reset 清空后会自动再注入。
+        if not self.messages and self.initial_user_context:
+            user_blocks.append({"type": "text", "text": self.initial_user_context})
         for idx, tu_id in enumerate(prev_tool_use_ids):
             if idx == 0:
                 user_blocks.append(

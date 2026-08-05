@@ -83,6 +83,11 @@ POST /api/submissions
   -> submission 汇总报告、整批终态广播 / webhook
 ```
 
+主 VLM 的基础执行闭环始终是 `Goal + 子步骤 + 当前截图`。合并后的
+`functionMapContext` 非必填；提供时作为本次 Run 的高权重业务执行上下文，在每个
+逻辑会话段首轮 User 中注入一次。System 只定义它可影响页面、对象、路径、测试数据、
+术语与异常处理，不能让它改变任务、跨越子步骤或充当完成证据。Map 原文不进入执行报告。
+
 `/api/runs` 仍保留 GET 和手工调试 POST，但对外新接入应只用 `/api/submissions`。
 
 ## 3. 调度与设备池
