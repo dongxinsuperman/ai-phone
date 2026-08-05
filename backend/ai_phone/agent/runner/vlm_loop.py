@@ -166,7 +166,7 @@ STRUCTURED_ASSERTION_TWO_LAYER_BLOCK = '''裁决两层流程（必须严格按�
 - 先判断每条预期结果属于哪一种事实，并按本提示词定义的证据职责取证：
   * 当前可见状态：主要根据附图 2 判断
   * 最后一个动作造成的状态变化：根据附图 2，并在存在附图 1 时结合附图 1 判断
-  * 不会持续显示的历史操作或过程：根据动作历史 / 回放摘要判断
+  * 不会持续显示的历史操作或过程：动作历史 / 回放摘要只能证明其中明确记录的动作与 Runtime 状态，不能单独证明 UI 业务结果
   * 主 VLM 的 thought、finished 内容或首次成功语义锚点：只辅助理解，不能单独证明成立
 - 对文案和界面表达做语义等价匹配，下列情况一律视为成立：
   * 同义/近义文案（如「功能列表」≈「全部功能」≈「功能中心」；「详情」≈「了解更多」≈「查看更多」）
@@ -184,7 +184,7 @@ STRUCTURED_ASSERTION_TWO_LAYER_BLOCK = '''裁决两层流程（必须严格按�
   * 关键控件存在性（"应该有 X 入口"——X 必须能从截图里看到对应的可视元素，不论文案怎么写）
   * 页面归属（已经进入 X 模块/页面）——用 tab 选中态、页面标题、面包屑等任一可视证据即可，不必逐字
 - 当前可见的客观事实必须由附图 2 支持；动作历史 / 回放摘要不能证明附图 2 中并不存在的可见控件、数字或页面状态。
-- 已经发生但不会持续显示的历史操作或过程，可以由动作历史 / 回放摘要支持，不要求必须继续显示在附图 2 中。
+- 对“是否请求 / 尝试 / 完成一次 Runtime 调用”，可以采用动作历史 / 回放摘要中明确记录的状态；对“调用是否产生预期业务结果”，仍需截图、前后变化或明确的 Runtime 结果，不能由模型自述证明。
 - 只有有效证据与预期结果明确矛盾时，才允许 FAIL。
 
 裁决冲突解决：
@@ -1346,11 +1346,18 @@ class VLMRunner:
             # 把这一步思考+动作压入审判用的动作历史。即便后续是终止动作也压一条，
             # 方便审判看到"VLM 是怎么决定 finished/assert_fail 的"。链式时整段
             # 字符串一起入历史，让审判能看出"这是 1 步 2 击"。
-            self._action_log.append({
+            action_log_row: Dict[str, Any] = {
                 "step": step,
                 "thought": thought,
                 "action_str": display_action,
-            })
+                "action_type": action_type,
+                "runtime_status": (
+                    "terminal_declaration"
+                    if action_type in {A.ACTION_FINISHED, A.ACTION_ASSERT_FAIL}
+                    else "pending"
+                ),
+            }
+            self._action_log.append(action_log_row)
             # 不主动裁剪：每条 dict 约 1KB，1000 步累积 ~1MB，对内存可忽略；
             # 过去裁剪是为了"省内存"的折衷，已按"效果优先"原则解除——审判随时
             # 可调出全 Run 任意片段，不再因裁剪丢失早期偏离证据。
@@ -1506,6 +1513,7 @@ class VLMRunner:
                         parsed_i, step=step, settle_ms=settle_ms,
                     )
                 except Exception as exc:  # noqa: BLE001
+                    action_log_row["runtime_status"] = "execution_error"
                     await self._log(
                         3,
                         "执行失败",
@@ -1524,6 +1532,9 @@ class VLMRunner:
                 "unknown": unknown_in_chain,
                 "chain_len": chain_count,
             }
+            action_log_row["runtime_status"] = (
+                "unknown" if unknown_in_chain else "completed_without_exception"
+            )
             await self._emit_event(
                 make_event(EVT_EXEC_RESULT, self.run_id, step=step, **exec_log)
             )
@@ -2408,6 +2419,48 @@ class VLMRunner:
             lines.append(f"step {row['step']:>3} 思考:{thought} 动作:{action}")
         return "\n".join(lines)
 
+    def _format_finished_assertion_history(self, limit: int) -> str:
+        """为 finished 二次断言拆分客观动作请求与主 VLM 自述。
+
+        ``_action_log`` 先记录主 VLM 的决定，再由执行链回填 Runtime 状态。即使
+        状态是 ``completed_without_exception``，也只证明驱动调用完成且没有抛异常，
+        不能证明 UI 已产生预期业务结果。thought 是模型当时的判断，证据属性与最后
+        的 thought / finished 自述相同。
+
+        当前 ``finished`` 行不再重复放进历史：它是本次待审的终态申请，已经通过
+        ``thought`` / ``finish_msg`` 单独传入，不是手机操作证据。
+        """
+        if not self._action_log:
+            return "(无可作为执行记录的非终态动作)"
+        rows = self._action_log[-limit:]
+        lines: List[str] = []
+        for row in rows:
+            action = (row.get("action_str") or "").strip().replace("\n", " ")
+            action_type = str(row.get("action_type") or "").strip().lower()
+            action_lower = action.lower()
+            if action_type in {A.ACTION_FINISHED, A.ACTION_ASSERT_FAIL} or action_lower.startswith(
+                ("finished(", "assert_fail(")
+            ):
+                continue
+            thought = (row.get("thought") or "").strip().replace("\n", " ")
+            runtime_status = str(row.get("runtime_status") or "not_recorded")
+            status_text = {
+                "completed_without_exception": "Runtime 调用完成且无异常",
+                "execution_error": "Runtime 调用报错",
+                "unknown": "Runtime 未识别或未完成动作",
+                "pending": "仅记录到动作请求",
+                "not_recorded": "历史记录未标注执行状态",
+            }.get(runtime_status, runtime_status)
+            lines.append(
+                f"step {row['step']:>3} Runtime 动作记录"
+                f"（{status_text}；不证明 UI 产生预期结果）:{action}"
+            )
+            lines.append(
+                "         模型当时判断"
+                f"（主 VLM 自述；不得单独作证）:{thought or '(无)'}"
+            )
+        return "\n".join(lines) if lines else "(无可作为执行记录的非终态动作)"
+
     async def _classify_structured_via_supervisor(self) -> bool:
         """中等档严格度 + 关键字弱时，借审判模型一次性分类 goal 是否走结构化通道。
 
@@ -2650,7 +2703,9 @@ class VLMRunner:
         - 结构化 case：以"预期结果"为验收中心，必须阅读动作历史
         - 自由对话：验收用户最终要求，历史过程与当前可见结果分工取证
         """
-        history = self._format_action_history(STRUCT_AUDIT_HISTORY_LIMIT)
+        history = self._format_finished_assertion_history(
+            STRUCT_AUDIT_HISTORY_LIMIT
+        )
         img_index_intro = (
             "本提示词附带两张图（按消息顺序）：\n"
             "- 附图 1：主 VLM **最后一个动作之前**看到的画面（动作前对照帧）\n"
@@ -2668,25 +2723,19 @@ class VLMRunner:
             "- 附图 1 只是最后一个动作之前的画面，两图之间只跨越最后一个实际动作。\n"
             "- 当最后一个动作本应造成可见变化时，可以用两图差异验证该变化是否发生，"
             "例如返回页面、关闭弹窗、切换页签、拖动进度或改变选中状态。\n"
-            "- **两图相同本身不能直接判 FAIL。** 只有同时满足以下三项才允许据此 FAIL："
-            "最后一个动作按任务语义必须造成可见变化；动作历史或主 VLM 明确声称变化已经发生；"
-            "附图 2 也没有显示任务要求的目标状态。\n"
+            "- **两图相同本身不能直接判 FAIL。** 但如果最后一个非终态动作按任务语义必须"
+            "造成可见变化，而附图 2 没有显示该动作对应的目标状态，则可以判 FAIL；"
+            "不需要主 VLM 先声称变化已经发生。\n"
             "- 对等待、截图保存、保持当前状态，或者操作前目标状态已经成立的情况，两图相同不构成失败。\n"
             "- 双图只辅助判断最后一个动作，不替代对预期结果和动作历史的综合验收。\n\n"
         ) if has_prev else ""
 
         evidence_block = (
-            "证据使用规则：\n"
-            "1. 当前最终画面：主要证明当前可见状态。页面归属、控件存在性、数字、"
-            "选中态和开关状态等，应直接查看最终画面。\n"
-            "2. 最近动作历史：**必须阅读**。它用于证明实际执行过的操作、最终画面"
-            "不会持续展示的历史过程，并在最终画面有歧义时辅助理解业务状态。\n"
-            "3. 动作前对照画面：只描述最后一个动作之前的状态，仅辅助判断最后一个动作"
-            "是否造成预期变化，不代表整个任务的起始状态。\n"
-            "4. 主 VLM 最后思考和 finished 内容：只帮助理解其完成声明，必须与截图和"
-            "动作历史相互印证，不能单独证明完成。\n\n"
-            "冲突处理：动作历史或主 VLM 自述与最终画面中的直接可见事实冲突时，以最终画面为准；"
-            "最终画面没有展示某段历史过程，不等于该过程没有发生。\n\n"
+            "本次输入字段说明（证据权限与冲突规则以 System 为唯一准则）：\n"
+            "- 【最近动作历史】必须阅读。每步已拆成两类：『Runtime 动作记录』包含"
+            "动作与执行状态，但不证明 UI 业务结果；『模型当时判断』是主 VLM 自述，不得单独作证。\n"
+            "- 【附图 2 / 当前附图】是最终画面；【附图 1】如存在，只是最后一个非终态动作前的对照画面。\n"
+            "- 【主 VLM 最后思考】与【finished 内容】都是本次待审自述，不是独立证据。\n\n"
         )
 
         if self._is_structured:
@@ -2696,8 +2745,6 @@ class VLMRunner:
                 f"{img_index_intro}\n\n"
                 "当前是结构化测试用例。验收中心仍然是用户输入中的「预期结果」，"
                 "但你必须阅读本提示词提供的「最近动作历史」，不能把它当成无关信息。\n"
-                "动作历史用于理解任务如何到达当前状态、证明最终画面不会持续展示的操作，"
-                "以及判断主 VLM 的完成声明是否与真实执行记录一致。\n"
                 "前置条件和操作过程只有在用户明确把它们写成验收要求时，才可以直接影响 PASS/FAIL；"
                 "否则只作为理解最终结果的上下文。不得因为某一步措辞不完全相同，或用户没有明确要求的"
                 "顺序差异而判 FAIL。\n\n"
@@ -2705,9 +2752,6 @@ class VLMRunner:
                 f"{cmp_block_struct}"
                 f"{STRUCTURED_ASSERTION_TWO_LAYER_BLOCK}\n"
                 "额外约束：\n"
-                "- 必须实际阅读最近动作历史，并在需要判断过程事实时使用它。\n"
-                "- 如果动作历史或主 VLM 自述与附图 2 的直接可见事实矛盾，以附图 2 为准。\n"
-                "- 如果附图 2 只是没有展示此前发生的过程，不能把「没有展示」当成「没有发生」。\n"
                 "- 不得因为无法仅凭最终截图还原全部点击过程、执行顺序或中间页面而判 FAIL。\n"
                 "- 用户明确要求的过程或顺序，可以根据动作历史验收；用户没有明确要求时，不得主动扩大检查范围。\n"
                 "- 如果判 FAIL，必须指出具体是哪条任务要求与哪项有效证据明确矛盾。\n"
@@ -2727,8 +2771,8 @@ class VLMRunner:
         cmp_block_free = (
             "双图对照规则（仅在存在两张图时启用）：\n"
             "- 附图 2 是当前最终画面；附图 1 只辅助判断最后一个动作是否造成预期变化。\n"
-            "- 两图相同本身不能直接判 FAIL。只有最后一个动作必须造成可见变化、历史或主 VLM "
-            "声称变化已经发生、且附图 2 也没有目标状态时，才允许据此 FAIL。\n"
+            "- 两图相同本身不能直接判 FAIL。但如果最后一个非终态动作按任务语义必须造成"
+            "可见变化，而附图 2 没有该动作对应的目标状态，则可以判 FAIL；不依赖主 VLM 自述。\n"
             "- 等待、截图保存、保持当前状态或操作前目标状态已成立时，两图相同不构成失败。\n\n"
         ) if has_prev else ""
 
@@ -2736,21 +2780,22 @@ class VLMRunner:
             "你是手机自动化任务的最终断言系统，只负责裁决主 VLM 的 finished 是否可被采纳。"
             "你不能继续执行步骤，也不能把本次 finished 改写成新的动作建议。\n\n"
             f"{img_index_intro}\n\n"
-            "当前是自由任务。你要判断用户最终要求是否已经达成。必须先阅读用户目标和"
-            "最近动作历史，识别用户真正要求的最终结果、最后一个实际动作，以及哪些事实"
-            "应由最终画面证明、哪些事实只能由动作历史证明。\n\n"
+            "当前是自由任务。验收范围保持为用户最后一个 action 步骤对应的结果；如果用户"
+            "直接描述的是最终状态，则验收该最终状态。你必须阅读最近动作历史来识别最后一个"
+            "非终态动作和理解结果，但不能把历史自动扩展成逐步验收清单。\n"
+            "除非用户明确把前面的某个动作或执行顺序写成验收条件，否则不单独检查前面的动作"
+            "是否执行过，也不检查其顺序。\n\n"
             f"{evidence_block}"
             f"{cmp_block_free}"
             "裁决规则：\n"
             "1. 当前可见结果以附图 2 为主要证据。\n"
             "2. 最后一个动作是否造成变化，可以使用附图 1 和附图 2 对照判断。\n"
-            "3. 已发生但不会持续显示的过程，可以由动作历史证明。\n"
-            "4. 除非用户明确把操作顺序作为要求，否则不额外审查前面动作的顺序。\n"
-            "5. 动作历史与附图 2 的直接可见事实冲突时，以附图 2 为准。\n"
-            "6. 附图 2 没有展示历史过程，不代表该过程没有发生。\n"
+            "3. Runtime 动作记录只证明明确写出的执行状态，不证明 UI 业务结果；模型当时判断不得单独作证。\n"
+            "4. 用户未明确要求时，不检查前面动作是否执行过，也不检查其顺序。\n"
+            "5. 只有最后动作/最终状态要求与有效证据明确矛盾时，才允许 FAIL。\n"
+            "6. 最终图没有展示不会持续存在的历史过程，不等于该过程没有发生。\n"
             "7. 主 VLM 的 thought 和 finished 内容不能单独证明完成。\n"
-            "8. 只有用户最终要求与有效证据明确矛盾时，才允许 FAIL。\n"
-            "9. 不允许输出 UNSURE，也不允许建议继续执行；只能做最终裁决。\n\n"
+            "8. 不允许输出 UNSURE，也不允许建议继续执行；只能做最终裁决。\n\n"
             "输出协议：只输出第一行，且只能是以下两种之一：\n"
             "PASS: <一句话原因>\n"
             "FAIL: <一句话原因>\n\n"

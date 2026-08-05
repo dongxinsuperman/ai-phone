@@ -8,11 +8,13 @@
 
 - 豆包、Claude 和 OpenAI 辅助模型的断言 System 从“严格保守”改为结果导向：
   有效证据能合理支持任务结果时 PASS，只有任务要求与证据明确矛盾时 FAIL。
-- 结构化与自由任务的断言 Prompt 均明确要求阅读动作历史；最终截图负责当前可见
-  状态，动作历史负责不会持续显示的操作过程，动作前截图只辅助判断最后一击变化，
-  主 VLM 自述不能单独证明完成。
-- 两图相同不再自动构成 FAIL；只有最后动作必须产生可见变化、执行记录声称变化已
-  发生且最终图仍无目标状态时，才可据此驳回。缓存回放断言同步采用相同证据边界。
+- 结构化断言明确拆分动作历史：Runtime 动作记录只证明明确写出的调用状态，不证明
+  UI 业务结果；历史 thought、最后 thought 与 finished 均属主 VLM 自述，不能作证。
+- 三家辅助模型共用一套中英双语 System 证据契约；User Prompt 只保留本次字段说明和
+  任务类型规则，避免两层重复维护后口径漂移。
+- 两图相同不再自动构成 FAIL；最后动作必须产生可见变化但最终图仍无目标状态时，
+  可直接驳回，不再依赖主 VLM 自述。自由模板恢复只验最后动作/最终状态，缓存回放
+  同步采用相同证据边界。
 - PASS/FAIL 协议、API、图片传输和现有 SKIP 兜底不变：配置缺失、调用失败或协议
   无法解析时，仍记录原因并采纳主 VLM 的 finished。
 
@@ -21,12 +23,14 @@
 - Doubao, Claude, and OpenAI assertion systems are now result-oriented instead of
   defaulting to strict conservatism: PASS when valid evidence reasonably supports the
   result, and FAIL only on a clear conflict between the requirement and the evidence.
-- Assertion prompts must read action history. The final screenshot establishes visible
-  state, history establishes non-persistent process facts, the before-action image only
-  supports last-action change, and the main VLM's claim cannot prove completion alone.
-- Identical before/after images are no longer an automatic failure. Cache replay assertion
-  follows the same evidence boundaries. The existing PASS/FAIL protocol and SKIP fallback
-  remain unchanged.
+- Assertion history now separates Runtime action records from VLM statements. Runtime
+  records establish only their explicit call status, not a successful UI outcome; historical
+  thoughts, final thought, and finished text are all non-evidentiary VLM statements.
+- All three assistant providers now share one bilingual System evidence contract. The User
+  prompt keeps only field mapping and task-specific rules to prevent policy drift.
+- Identical before/after images are not an automatic failure, and visible-change failure no
+  longer depends on a VLM success claim. Freeform templates remain scoped to the last action
+  or final state. Cache replay follows the same boundary; the existing SKIP fallback remains.
 
 ### Function Map：从 System 指令降为首轮 User 业务执行上下文
 

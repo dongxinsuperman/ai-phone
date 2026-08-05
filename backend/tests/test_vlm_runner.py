@@ -321,6 +321,34 @@ async def test_click_then_finished_executes_driver():
     assert result.steps == 2
     # (500,500) 在 1000 归一化系统下，对应绝对像素 (540, 960)
     assert ("click", (540, 960)) in driver.calls
+    assert runner._action_log[0]["runtime_status"] == "completed_without_exception"
+    assert runner._action_log[1]["runtime_status"] == "terminal_declaration"
+
+
+@pytest.mark.asyncio
+async def test_action_history_records_runtime_execution_error():
+    class FailingClickDriver(FakeDriver):
+        def click(self, x, y):
+            raise RuntimeError("driver click failed")
+
+    driver = FailingClickDriver()
+    vlm = ScriptedVLMClient([
+        ScriptedStep("尝试点击", "click(point='<point>500 500</point>')"),
+    ])
+    _events, emit = _collect_events()
+    runner = VLMRunner(
+        run_id="R-runtime-error",
+        driver=driver,
+        goal="点中间",
+        emit=emit,
+        vlm_client=vlm,
+    )
+
+    result = await runner.run()
+
+    assert result.ok is False
+    assert "execute_error" in result.reason
+    assert runner._action_log[0]["runtime_status"] == "execution_error"
 
 
 @pytest.mark.asyncio
