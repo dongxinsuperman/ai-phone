@@ -144,6 +144,57 @@ async def test_head_of_line_blocked_item_does_not_stall_followers(_test_engine):
 
 
 @pytest.mark.asyncio
+async def test_device_released_mid_pass_waits_for_next_head_scan(_test_engine):
+    """同池设备在扫描越过 A 后才释放，本轮不能被后面的 B 拿走。
+
+    S_OTHER 是池外的空闲 Android，它会让平台级扫描启动；A/B 都只能用
+    起初被锁的 S_TARGET。扫描完 A 后释放 S_TARGET，验证它不会在同一轮
+    被 B 观察到，而是下一轮从队首重扫时交给 A。
+    """
+    factory = db_module.get_session_factory()
+    await _seed_device(factory, "S_TARGET")
+    await _seed_device(factory, "S_OTHER")
+    await _seed_alias(factory, "aTarget", "S_TARGET")
+    await _seed_item(factory, item_id="A", submission_id="subA", pool=["aTarget"])
+    await _seed_item(factory, item_id="B", submission_id="subB", pool=["aTarget"])
+
+    sched, lock_store, hub, dispatch = _make_scheduler(factory)
+    _mark_ready(hub, "S_TARGET", "agent1")
+    _mark_ready(hub, "S_OTHER", "agent1")
+    target_lock = await lock_store.acquire(
+        "S_TARGET", holder="running-A", holder_type="auto", ttl_seconds=600, meta={}
+    )
+    sched._queues["android"] = ["A", "B"]
+
+    original_try_dispatch = sched._try_dispatch
+
+    async def _release_target_after_a(platform, item_id, **kwargs):
+        result = await original_try_dispatch(platform, item_id, **kwargs)
+        if item_id == "A":
+            await lock_store.release("S_TARGET", target_lock.token)
+        return result
+
+    sched._try_dispatch = _release_target_after_a  # type: ignore[method-assign]
+    await sched._drain_once()
+
+    assert dispatch.calls == []
+    assert sched._queues["android"] == ["A", "B"]
+
+    # 下一轮从队首重新建立空闲快照，最早的同池 item A 先拿 S_TARGET。
+    sched._try_dispatch = original_try_dispatch  # type: ignore[method-assign]
+    await sched._drain_once()
+
+    assert dispatch.dispatched_serials == ["S_TARGET"]
+    assert sched._queues["android"] == ["B"]
+    async with factory() as s:
+        a = await s.get(SubmissionItem, "A")
+        b = await s.get(SubmissionItem, "B")
+        assert a.state == "running"
+        assert a.device_serial == "S_TARGET"
+        assert b.state == "queued"
+
+
+@pytest.mark.asyncio
 async def test_no_available_device_short_circuits_without_dispatch(_test_engine):
     """该平台一台可用设备都没有：整段短路，谁都不派、全部保持 queued。"""
     factory = db_module.get_session_factory()

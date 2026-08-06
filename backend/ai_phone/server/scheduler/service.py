@@ -1041,13 +1041,14 @@ class SubmissionScheduler:
         占用』时才继续排队**；只要还能给它找到一台可用设备就立刻派出去，一条派不
         出去绝不阻塞它后面的 item。这修掉了 ``device_alias_pool`` 粒度下的队头阻塞。
 
-        单趟扫描：每条 item 本轮**最多试一次**。能派的派出（移出队列），派不出去的
+        单趟扫描：先冻结一份「本轮开始时已空闲」的设备快照，每条 item
+        本轮**最多试一次**。能派的派出（移出队列），派不出去的
         ——无论是『设备忙』还是『已选到设备但发 Agent 失败回滚』——一律保持排队、
         等下一次 tick/kick 重试，本轮不再重抓。理由：
 
-        - 一趟 drain 内设备只会被我们越锁越多、不会有设备被释放（释放发生在
-          ``on_run_done``，且它释放后会再 ``kick`` 一次触发新的一趟）。所以本轮开头
-          派不出去的 item，本轮结尾也不可能突然派得出去——「重抓重试」没有收益；
+        - ``on_run_done`` / readiness 变化可以与 drain 并发发生。快照让本轮看不到
+          扫描途中才释放或才变 ready 的设备；这些设备由已有 ``kick`` 触发的
+          下一轮从队首重新分配，避免扫描指针已越过早到 item 后被队尾拿走；
         - 而对『发 Agent 失败』那条，本轮重抓只会重复建 ``dispatch_failed`` 的失败
           Run、重复给 Agent 发，纯有害。等下一次 tick 重试才对。
 
@@ -1058,17 +1059,24 @@ class SubmissionScheduler:
         for platform in ALLOWED_PLATFORMS:
             if not self._queues[platform]:
                 continue
-            if not await self._has_available_device(platform):
+            available_serials = await self._available_device_serials(platform)
+            if not available_serials:
                 continue
             consumed: set[str] = set()
             # 快照遍历：派发过程有 await，并发的 submit/cancel/timeout 可能动 queue，
             # 我们只按本趟结果记下「已消费」的 id，循环结束后再按它从 live 列表剔除。
             for item_id in list(self._queues[platform]):
-                result = await self._try_dispatch(platform, item_id)
+                result = await self._try_dispatch(
+                    platform,
+                    item_id,
+                    available_serials=available_serials,
+                )
                 if result is True or result is None:
                     # True=已派发；None=已不是 queued（取消/超时）——都移出队列
                     consumed.add(item_id)
                 # False=本轮没派成（设备忙 / 发 Agent 失败）：保持排队，不重抓
+                if not available_serials:
+                    break
             if consumed:
                 # 读当前 live 列表（已含并发期间新入队的 item、也已反映并发取消/超时
                 # 的删改），过滤掉 consumed 后整体替换。其间无 await，对 asyncio 原子。
@@ -1076,7 +1084,13 @@ class SubmissionScheduler:
                     i for i in self._queues[platform] if i not in consumed
                 ]
 
-    async def _try_dispatch(self, platform: str, item_id: str) -> Optional[bool]:
+    async def _try_dispatch(
+        self,
+        platform: str,
+        item_id: str,
+        *,
+        available_serials: Optional[set[str]] = None,
+    ) -> Optional[bool]:
         """尝试派发单条 item。
 
         返回：
@@ -1105,7 +1119,11 @@ class SubmissionScheduler:
             )
 
             # 1) 找候选设备：platform 匹配 + online + ready + 无锁
-            candidate = await self._pick_device(session, item)
+            candidate = await self._pick_device(
+                session,
+                item,
+                available_serials=available_serials,
+            )
             if candidate is None:
                 return False
             serial, agent_id = candidate
@@ -1246,6 +1264,8 @@ class SubmissionScheduler:
         self,
         session: AsyncSession,
         item: SubmissionItem,
+        *,
+        available_serials: Optional[set[str]] = None,
     ) -> Optional[Tuple[str, str]]:
         """选一台 (serial, agent_id) 给这条 item 用；找不到返回 None。
 
@@ -1256,13 +1276,21 @@ class SubmissionScheduler:
         - ``None`` / 空 list → 全平台池任挑（候选 = 该端所有 online 设备）
         - 长度 1（如 ["A1"]）→ 锁单台（候选 = 1 台）
         - 长度 N（如 ["A1","B1"]）→ 子集池：候选 = 池中能反查到 serial 的那 N 台。
-          **派发瞬间才挑哪台**——哪台先 ready 就被哪台拿走，自然形成"快机多
-          跑、慢机少跑、坏机不跑"的负载分担。
+          **每轮开始时才挑哪台**——哪台先 ready 就进入本轮快照，自然形成
+          "快机多跑、慢机少跑、坏机不跑"的负载分担。
+
+        ``available_serials`` 是 ``_drain_once`` 在本轮开始时冻结的可用集合。
+        选中或发现快照设备已变为不可用时都会从集合移除，不让它在同一轮
+        稍后重新可用时被更靠后的 item 拿走。传 ``None`` 仅保留给直接调用方的
+        旧式「实时挑选」语义；正常 drain 路径始终传快照。
 
         准入阶段 :meth:`submit` 已经把池里别名都校验过；真走到"别名表里有、
         可是对应 serial 当下没 online / 没 ready"是合法临时态——返回 None 等下
         一轮 tick 重试即可。
         """
+        if available_serials is not None and not available_serials:
+            return None
+
         pool = list(item.device_alias_pool or [])
         if pool:
             # 子集池：把池里所有 alias 反查 serial，serial.in_(...) 一次查所有候选。
@@ -1278,6 +1306,10 @@ class SubmissionScheduler:
             if not pool_serials:
                 # 池里别名全被运维中途删了或还没绑 serial：等兜底超时
                 return None
+            if available_serials is not None:
+                pool_serials = [s for s in pool_serials if s in available_serials]
+                if not pool_serials:
+                    return None
             res = await session.execute(
                 select(Device).where(
                     Device.serial.in_(pool_serials),
@@ -1286,35 +1318,47 @@ class SubmissionScheduler:
                 )
             )
         else:
-            res = await session.execute(
-                select(Device).where(
-                    Device.platform.in_(device_platforms_for(item.platform)),
-                    Device.status == "online",
-                )
+            query = select(Device).where(
+                Device.platform.in_(device_platforms_for(item.platform)),
+                Device.status == "online",
             )
+            if available_serials is not None:
+                query = query.where(Device.serial.in_(available_serials))
+            res = await session.execute(query)
         candidates: List[Device] = list(res.scalars().all())
 
         for dev in candidates:
+            # 快照创建后可能有手动锁 / readiness / Agent 变化。实时复核
+            # 失败就把该 serial 从本轮剔除；即使它稍后又恢复，也等下一轮。
             extra = self._hub.get_device_extra(dev.serial)
             readiness = extra.get("readiness") or {}
             # readiness 未上报的设备视作"不确定"——v1 策略：不挑它，等 probe
             # 先盖章。这与第 1 梯队的约定一致（readiness_enabled 默认开）。
             if not readiness.get("ready"):
+                if available_serials is not None:
+                    available_serials.discard(dev.serial)
                 continue
             if self._lock_store.peek(dev.serial) is not None:
+                if available_serials is not None:
+                    available_serials.discard(dev.serial)
                 continue
             agent_id = self._hub.agent_id_for_serial(dev.serial)
             if agent_id is None:
+                if available_serials is not None:
+                    available_serials.discard(dev.serial)
                 continue
+            if available_serials is not None:
+                # 本轮的设备名额在尝试抢锁前就消费；后续抢锁 / 发 Agent
+                # 失败也不交给队尾重试，统一留到下一轮。
+                available_serials.discard(dev.serial)
             return dev.serial, agent_id
         return None
 
-    async def _has_available_device(self, platform: str) -> bool:
-        """该平台当前是否存在至少一台可用设备（online + ready + 无锁 + 有 agent）。
+    async def _available_device_serials(self, platform: str) -> set[str]:
+        """冻结该平台本轮可使用的设备 serial 快照。
 
-        ``_drain_once`` 的整段短路用：判定与 :meth:`_pick_device` 的"一台可用"
-        完全一致，但不关心是哪一台。指定池只是该平台设备的子集，所以平台级
-        "一台都没有"必然意味着池子里也没有——可以安全跳过整条队列。
+        本轮只能消费这个集合里的设备。扫描途中新释放 / 新 ready 的设备
+        不动态加入，由变化事件的 ``kick`` 在下一轮从队首重新分配。
         """
         async with self._session_factory() as session:
             res = await session.execute(
@@ -1324,6 +1368,7 @@ class SubmissionScheduler:
                 )
             )
             serials = [str(s) for s in res.scalars().all()]
+        available: set[str] = set()
         for serial in serials:
             extra = self._hub.get_device_extra(serial)
             if not (extra.get("readiness") or {}).get("ready"):
@@ -1332,8 +1377,13 @@ class SubmissionScheduler:
                 continue
             if self._hub.agent_id_for_serial(serial) is None:
                 continue
-            return True
-        return False
+            available.add(serial)
+        return available
+
+    async def _has_available_device(self, platform: str) -> bool:
+        """兼容旧调用：该平台快照里是否存在至少一台可用设备。"""
+
+        return bool(await self._available_device_serials(platform))
 
     # ------------------------------------------------------------------
     # 终态统一广播路径（给 on_run_done / cancel / submission_timeout 三处复用）
