@@ -4,6 +4,17 @@
 
 ## Unreleased
 
+### 批次单 Case 超时：补齐 Agent 已无 Run 时的自动收口
+
+- 沿用 `AI_PHONE_ITEM_TTL_SEC`（默认 1 小时）作为 SubmissionItem 的硬上限；
+  到期先标记 `run_timeout`，再向 Agent 下发停止，不新增第二套超时口径。
+- 断线导致 run 路由丢失时，仅对 scheduler 批次任务按 `Run.agent_id` 补投停止；
+  Agent 本地已无该 Run 时通过既有可靠队列回 `run_done(cancelled)`，不再沉默挂起。
+- `run_timeout` 成为显式禁止重试的终态分支，不依赖 Agent 的结果字符串；若真实成功
+  结果先到则仍保留成功，后到的“不存在”回复由既有幂等逻辑跳过。
+- 不改工作台/API 手动任务的一小时规则和浏览器锁。旧 Agent 不回“不存在”终态时
+  Server 不会无确认强制释放，残留继续显式暴露。
+
 ### 最终断言：按证据职责综合截图与动作历史
 
 - 豆包、Claude 和 OpenAI 辅助模型的断言 System 从“严格保守”改为结果导向：

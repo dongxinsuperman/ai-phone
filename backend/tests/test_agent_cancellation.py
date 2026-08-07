@@ -162,3 +162,48 @@ async def test_start_run_requires_explicit_sleep_policy() -> None:
         }
     ]
     assert supervisor.get("run-policy-missing") is None
+
+
+@pytest.mark.asyncio
+async def test_stop_missing_run_reports_cancelled_via_reliable_queue() -> None:
+    """Server 要求停止、但 Agent 已无该 Run 时也必须回终态，不能保持沉默。"""
+
+    class _Reporter:
+        def __init__(self) -> None:
+            self.messages: List[Dict[str, Any]] = []
+
+        async def enqueue(self, message: Dict[str, Any]) -> None:
+            self.messages.append(dict(message))
+
+    class _Client:
+        def __init__(self) -> None:
+            self.sent: List[Dict[str, Any]] = []
+
+        async def send(self, message: Dict[str, Any]) -> bool:
+            self.sent.append(dict(message))
+            return True
+
+    supervisor = agent_main._RunSupervisor()
+    reporter = _Reporter()
+    supervisor.reporter = reporter  # type: ignore[assignment]
+    client = _Client()
+
+    await agent_main._handle_stop_run(
+        client,  # type: ignore[arg-type]
+        supervisor,
+        {"type": "stop_run", "run_id": "run-already-gone"},
+    )
+
+    assert client.sent == []
+    assert reporter.messages == [
+        {
+            "type": "run_done",
+            "run_id": "run-already-gone",
+            "attempt": 1,
+            "result": "cancelled",
+            "message": "stop_run_not_found",
+            "steps": 0,
+            "elapsed_ms": 0,
+            "token_stats": {},
+        }
+    ]

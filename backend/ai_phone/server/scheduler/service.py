@@ -14,8 +14,8 @@ Scheduler 只做三件事：
 
 超时 & 取消：
 
-- 每条 item 1h 硬上限，到点直接 cancelled(reason=item_timeout)；已 running 的发
-  MSG_STOP_RUN，没跑起来的直接踢出队列
+- 每条 item 按 ``AI_PHONE_ITEM_TTL_SEC`` 设硬上限；已 running 的先标记
+  ``run_timeout`` 再发 MSG_STOP_RUN，由 Agent 的停止/不存在终态完成收口
 - 每 submission 3h 硬上限，到点把仍 queued 的 item 全部踢出（走
   submission_timeout），已 running 的交给 item 超时处理
 - ``cancel_item`` / ``cancel_submission`` 只对 ``queued`` 生效；``running`` 的
@@ -1997,6 +1997,8 @@ class SubmissionScheduler:
                 attempt = self._attempt_from_done_msg(msg, run=run_obj, item=item)
                 item.attempts = max(int(item.attempts or 0), attempt)
                 cancel_requested = item.status_reason == "cancelled_by_request"
+                timeout_requested = item.status_reason == "run_timeout"
+                result_is_success = self._run_result_is_success(result)
                 if run_obj is not None:
                     run_obj.last_attempt = max(int(run_obj.last_attempt or 1), attempt)
                     run_obj.attempts = max(int(run_obj.attempts or 1), attempt)
@@ -2006,9 +2008,17 @@ class SubmissionScheduler:
                         run_obj.status = "stopped"
                         run_obj.reason = "cancelled_by_request"
                         run_obj.finished_at = datetime.now(timezone.utc)
+                    elif timeout_requested and not result_is_success:
+                        # item TTL 是硬终态：Agent 的“不存在”回执、取消回执甚至未来
+                        # 新增的结果字符串都不得重新触发 retry。真实 success 若已先到
+                        # 仍保留成功，避免超时扫描与完成消息并发时误覆盖。
+                        run_obj.status = "stopped"
+                        run_obj.reason = "run_timeout"
+                        run_obj.finished_at = datetime.now(timezone.utc)
                 if (
                     not cancel_requested
-                    and not self._run_result_is_success(result)
+                    and not timeout_requested
+                    and not result_is_success
                     and not self._run_result_is_cancelled(result)
                     and attempt <= int(item.effective_retry_max or 0)
                 ):
@@ -2028,7 +2038,7 @@ class SubmissionScheduler:
                     retry_payload = (item, retry_track, attempt, raw_message)
                 else:
                     retry_max = int(item.effective_retry_max or 0)
-                    if self._run_result_is_success(result) and attempt > 1:
+                    if result_is_success and attempt > 1:
                         total = total_attempts_for_retry_max(retry_max)
                         session.add(
                             RunLog(
@@ -2042,7 +2052,7 @@ class SubmissionScheduler:
                                 ),
                             )
                         )
-                    elif not self._run_result_is_success(result) and retry_max:
+                    elif not timeout_requested and not result_is_success and retry_max:
                         total = total_attempts_for_retry_max(retry_max)
                         session.add(
                             RunLog(
@@ -2058,9 +2068,14 @@ class SubmissionScheduler:
                     if cancel_requested:
                         item.state = "cancelled"
                         item.status_reason = "cancelled_by_request"
-                    elif result in ("finished", "pass"):
+                    elif result_is_success:
                         item.state = "success"
                         item.status_reason = "completed"
+                    elif timeout_requested:
+                        # 和 cancel_requested 对等的显式终态分支：不依赖 Agent
+                        # result 必须精确拼成 "cancelled" 才能挡住重试。
+                        item.state = "cancelled"
+                        item.status_reason = "run_timeout"
                     elif result == "assert_fail":
                         item.state = "failed"
                         item.status_reason = "assert_failed"
@@ -2289,30 +2304,87 @@ class SubmissionScheduler:
                 self._queues[pid] = [i for i in q if i not in dropped_ids]
             logger.warning("[scheduler] {} items 被 submission_timeout 踢出", len(dropped_ids))
 
-        # 2) item running 级过期：只给 agent 发 stop_run；终态由 on_run_done 落位
+        # 2) item running 级过期：先落 run_timeout，再给 agent 发 stop_run；
+        # 终态由 on_run_done 落位。先落原因是为了让快速回流的“不存在”回执也
+        # 稳定进入超时终态分支、绝不触发 retry。
         to_stop: List[str] = []
         for run_id, track in list(self._runs.items()):
             if (now_mono - track.started_at_mono) > DEFAULT_ITEM_TTL_SEC:
                 to_stop.append(run_id)
         for run_id in to_stop:
-            logger.warning("[scheduler] run={} 超过 1h，发送 stop_run", run_id)
-            await self._stop_run(run_id)
-            # 顺手把 statusReason 预写进 item，on_run_done 看到 status_reason 非空
-            # 就不会再覆盖
+            logger.warning(
+                "[scheduler] run={} 超过 item_ttl_sec={}，发送 stop_run",
+                run_id,
+                DEFAULT_ITEM_TTL_SEC,
+            )
             track = self._runs.get(run_id)
-            if track:
-                try:
-                    async with self._session_factory() as session:
-                        it = await session.get(SubmissionItem, track.item_id)
-                        if it is not None and not it.status_reason:
-                            it.status_reason = "run_timeout"
-                            await session.commit()
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("[scheduler] 预写 run_timeout 失败: {}", exc)
+            if track is None:
+                continue
+            safe_to_stop = False
+            try:
+                async with self._session_factory() as session:
+                    it = await session.get(SubmissionItem, track.item_id)
+                    if it is None:
+                        logger.error(
+                            "[scheduler] 超时 item 不存在，拒绝发送 stop_run "
+                            "run={} item={}",
+                            run_id,
+                            track.item_id,
+                        )
+                    elif not it.status_reason:
+                        it.status_reason = "run_timeout"
+                        await session.commit()
+                        safe_to_stop = True
+                    elif it.status_reason in ("run_timeout", "cancelled_by_request"):
+                        # 重复扫描，或用户取消与超时并发：两者都有显式禁止重试分支。
+                        safe_to_stop = True
+                    else:
+                        logger.error(
+                            "[scheduler] 超时 item 已有未知原因，拒绝发送 stop_run "
+                            "run={} item={} reason={}",
+                            run_id,
+                            track.item_id,
+                            it.status_reason,
+                        )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[scheduler] 预写 run_timeout 失败: {}", exc)
+                # 没有终态标记就不能安全发送 stop：否则 Agent 快速回 error
+                # 可能走普通失败重试，让一个可能已成功的 case 再执行一次。
+                continue
+            if not safe_to_stop:
+                continue
+            await self._stop_run(run_id)
 
     async def _stop_run(self, run_id: str) -> bool:
-        """停止调度器派发的 run：下发 MSG_STOP_RUN，由 Agent 本地收口。"""
-        return await self._dispatch_service.stop(run_id)
+        """停止调度器派发的 run；路由丢失时按 Run.agent_id 补投。"""
+        if await self._dispatch_service.stop(run_id):
+            return True
+
+        # Agent 断连会清掉 Hub 的 run→agent 内存路由；同 Agent 重连后 Run 行仍
+        # 保存当前 agent_id。这里只由 scheduler 调用，故补投仍严格限定在批次任务，
+        # 不扫描/触碰工作台 API Run，也不处理它们的浏览器锁。
+        agent_id: Optional[str] = None
+        try:
+            async with self._session_factory() as session:
+                run = await session.get(Run, run_id)
+                if run is not None:
+                    agent_id = str(run.agent_id or "").strip() or None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[scheduler] 查询 stop_run 兜底 Agent 失败 run={} err={}", run_id, exc)
+            return False
+        if agent_id is None:
+            return False
+        sent = await self._hub.send_to_agent(
+            agent_id,
+            {"type": P.MSG_STOP_RUN, "run_id": run_id},
+        )
+        if sent:
+            logger.info(
+                "[scheduler] run 路由缺失，已按 Run.agent_id 补投 stop_run run={} agent={}",
+                run_id,
+                agent_id,
+            )
+        return sent
 
     async def _stop_run_and_wait(self, run_id: str) -> bool:
         """下发停止并等到 item 终态、设备锁释放；返回是否确认完成。"""

@@ -1550,9 +1550,31 @@ async def _handle_stop_run(
     msg: Dict[str, Any],
 ) -> None:
     run_id = str(msg.get("run_id") or "").strip()
+    if not run_id:
+        logger.warning("stop_run 缺少 run_id，忽略")
+        return
     entry = supervisor.get(run_id)
     if entry is None:
-        logger.info("stop_run 未找到 | run_id={}", run_id)
+        # Server 的 item TTL / 人工取消都依赖 stop_run 后的 run_done 才能真正
+        # 收口。任务若早已结束、但原 run_done 丢失，此处保持沉默会让 Server
+        # 永久停在 running。沿用既有 run_done(cancelled) 回一张明确的“不存在”
+        # 回执；走同一个可靠 FIFO，若真实完成单仍在队列里，它天然先到、成功优先。
+        missing_done: Dict[str, Any] = {
+            "type": P.MSG_RUN_DONE,
+            "run_id": run_id,
+            "attempt": max(1, int(msg.get("attempt") or 1)),
+            "result": "cancelled",
+            "message": "stop_run_not_found",
+            "steps": 0,
+            "elapsed_ms": 0,
+            "token_stats": {},
+        }
+        if supervisor.reporter is not None:
+            await supervisor.reporter.enqueue(missing_done)
+        else:
+            # 仅测试/退化启动可能没有 reporter；生产路径始终走上面的可靠队列。
+            await client.send(missing_done)
+        logger.info("stop_run 未找到，已回终态 | run_id={}", run_id)
         return
     task: asyncio.Task = entry["task"]
     logger.info("收到 stop_run，取消任务 | run_id={}", run_id)
