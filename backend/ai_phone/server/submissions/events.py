@@ -11,7 +11,9 @@ item 终态事件（``submission.item.terminal``）字段一览：
 - ``engine``: 实际跑这条 item 的执行引擎（``vlm`` / ``midscene``）；
   没绑 Run 时为 ``null``
 - ``state`` / ``statusReason``: 终态结果（详见 scheduler 11 项 statusReason）
-- ``runId`` / ``deviceSerial``: 实际派发结果；queued 阶段被收尾时为 ``null``
+- ``failureReason``: 失败摘要，直接来自现有 Run.reason
+- ``runId`` / ``deviceSerial`` / ``deviceAlias``: 实际派发结果；
+  queued 阶段被收尾时为 ``null``
 - ``deviceAliasPool``: 投递时声明的别名池（v1.7 池语义）
 - ``enqueuedAt``: 入队时刻，永远有值
 - ``startedAt`` / ``finishedAt`` / ``elapsedMs``: 执行时段；未启动时三者均 None
@@ -49,6 +51,7 @@ def build_terminal_event(
     item: SubmissionItem,
     submission: Optional[Submission] = None,
     run: Optional[Run] = None,
+    device_alias: Optional[str] = None,
     report_url: Optional[str] = None,
     now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
@@ -82,6 +85,14 @@ def build_terminal_event(
     if run is not None:
         engine = run.engine or "vlm"
 
+    failure_reason: Optional[str] = None
+    if item.state != "success":
+        failure_reason = (
+            (str(run.reason or "").strip() if run is not None else "")
+            or str(item.status_reason or "").strip()
+            or None
+        )
+
     return {
         "event": SCHEMA_EVENT,
         "version": SCHEMA_VERSION,
@@ -95,8 +106,10 @@ def build_terminal_event(
         "engine": engine,
         "state": item.state,
         "statusReason": item.status_reason or None,
+        "failureReason": failure_reason,
         "runId": item.run_id or None,
         "deviceSerial": item.device_serial or None,
+        "deviceAlias": device_alias or None,
         "deviceAliasPool": list(item.device_alias_pool or []) or None,
         "retryMax": item.effective_retry_max or 0,
         "attempts": item.attempts or (run.attempts if run is not None else 0),

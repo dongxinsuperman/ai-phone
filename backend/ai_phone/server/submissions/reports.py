@@ -15,6 +15,7 @@
     tooltip / 副标），右侧切到所选执行单元的"流式视图"（与单 case 同模板）。
   - 顶栏所有标签全部中文化（用例 / 平台 / 设备 / 步数 / 耗时 / 开始 / 结束 /
     Run ID / 状态原因 / 来源 ...）。
+* v1.3：失败/取消用例在顶部直接展示已有 ``Run.reason`` 终态摘要。
 
 设计要点
 --------
@@ -50,7 +51,6 @@ from ai_phone.config import get_settings
 
 from ..models import DeviceAlias, Run, RunLog, RunStep, Submission, SubmissionItem
 from .paths import (
-    SUMMARY_FILENAME,
     item_report_rel_path,
     item_report_url,
     submission_summary_rel_path,
@@ -58,7 +58,7 @@ from .paths import (
 )
 
 
-REPORT_VERSION = "1.2"
+REPORT_VERSION = "1.3"
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +313,15 @@ code { font-family: ui-monospace, Menlo, monospace; color: #a5f3fc; }
   padding: 12px 14px;
   font-size: 13px;
   color: #cbd5e1;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.failure-summary {
+  background: #450a0a;
+  border: 1px solid #b91c1c;
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: #fecaca;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -919,6 +928,21 @@ def _render_case_inner(
         f'</div>'
     )
 
+    # ---- 失败摘要：直接复用 Agent 终态上报，不二次生成、不改写 ----
+    failure_html = ""
+    if item.state in ("failed", "cancelled"):
+        failure_reason = (
+            (str(run.reason or "").strip() if run is not None else "")
+            or _status_reason_zh(item.status_reason)
+        )
+        failure_html = (
+            '<div class="section">'
+            '<div class="section-title">失败摘要'
+            '  <span class="hint">来自执行终态</span></div>'
+            f'<div class="failure-summary">{_esc(failure_reason)}</div>'
+            '</div>'
+        )
+
     # ---- runContent ----
     rc_html = (
         '<div class="section">'
@@ -943,7 +967,7 @@ def _render_case_inner(
         '</div>'
     )
 
-    return head_html + rc_html + timeline_section
+    return head_html + failure_html + rc_html + timeline_section
 
 
 # ---------------------------------------------------------------------------

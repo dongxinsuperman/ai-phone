@@ -154,7 +154,11 @@ async def create_submission(
     """匿名受理一批 item。"""
     sched = _scheduler(request)
     try:
-        payload = await sched.submit(body, origin="external")
+        payload = await sched.submit(
+            body,
+            origin="external",
+            public_base_url=str(request.base_url),
+        )
     except AdmissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -251,7 +255,7 @@ async def get_submission_item(
                 .where(RunLog.run_id == item.run_id)
                 .order_by(RunLog.ts.asc(), RunLog.id.asc())
             )
-            logs = [l.to_dict() for l in logs_res.scalars().all()]
+            logs = [log.to_dict() for log in logs_res.scalars().all()]
 
     return {
         "submission_id": sub_id,

@@ -87,6 +87,7 @@ SchedulerDep = Depends(_scheduler)
 
 @router.post("/submissions", status_code=status.HTTP_201_CREATED, dependencies=[RequireBearer])
 async def create_submission(
+    request: Request,
     body: Any = Body(...),
     sched: SubmissionScheduler = SchedulerDep,
 ) -> Dict[str, Any]:
@@ -112,7 +113,11 @@ async def create_submission(
     详见 :func:`ai_phone.server.scheduler.service.parse_and_validate`。
     """
     try:
-        payload = await sched.submit(body, origin="internal")
+        payload = await sched.submit(
+            body,
+            origin="internal",
+            public_base_url=str(request.base_url),
+        )
     except AdmissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

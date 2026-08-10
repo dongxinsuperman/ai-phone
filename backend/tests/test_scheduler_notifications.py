@@ -9,7 +9,7 @@ import pytest
 from ai_phone.server import db as db_module
 from ai_phone.server.hub import Hub
 from ai_phone.server.lockstore import DeviceLockStore
-from ai_phone.server.models import Submission, SubmissionItem
+from ai_phone.server.models import DeviceAlias, Run, Submission, SubmissionItem
 from ai_phone.server.scheduler.service import SubmissionScheduler
 from ai_phone.server.submissions import ResultPublisher
 
@@ -117,6 +117,55 @@ async def _seed_two_items(factory, *, callback_url: str = "http://case-flow/call
         await s.commit()
 
 
+async def _seed_failed_item_with_public_origin(factory) -> None:
+    async with factory() as s:
+        now = datetime.now(timezone.utc)
+        s.add(
+            Submission(
+                id="sub-public",
+                state="accepted",
+                origin="external",
+                submission_name="public-result",
+                raw_body={"_aiPhonePublicBaseUrl": "https://enterprise.example"},
+                accepted_at=now,
+                expire_at=now,
+            )
+        )
+        s.add(
+            Run(
+                id="run-public",
+                device_serial="serial-public",
+                case_id="C-public",
+                goal="goal",
+                status="failed",
+                reason="期望看到教师查看提示，实际卡在听筒遮挡页",
+                steps=2,
+                elapsed_ms=1_500,
+                started_at=now,
+                finished_at=now,
+            )
+        )
+        s.add(
+            SubmissionItem(
+                id="item-public",
+                submission_id="sub-public",
+                case_id="C-public",
+                case_name="public case",
+                platform="android",
+                run_content="rc",
+                state="failed",
+                status_reason="assert_failed",
+                run_id="run-public",
+                device_serial="serial-public",
+                enqueued_at=now,
+                started_at=now,
+                finished_at=now,
+            )
+        )
+        s.add(DeviceAlias(serial="serial-public", alias="智课专用"))
+        await s.commit()
+
+
 def _make_scheduler(factory, publisher: ResultPublisher) -> SubmissionScheduler:
     return SubmissionScheduler(
         hub=Hub(),
@@ -124,6 +173,54 @@ def _make_scheduler(factory, publisher: ResultPublisher) -> SubmissionScheduler:
         session_factory=factory,
         publisher=publisher,
     )
+
+
+@pytest.mark.asyncio
+async def test_terminal_events_have_full_report_urls_alias_and_failure_summary(
+    _test_engine,
+):
+    factory = db_module.get_session_factory()
+    await _seed_failed_item_with_public_origin(factory)
+
+    publisher = _CollectingPublisher()
+    sched = _make_scheduler(factory, publisher)
+    sched._start_notification_workers()  # noqa: SLF001
+    try:
+        async with factory() as s:
+            item = await s.get(SubmissionItem, "item-public")
+            run = await s.get(Run, "run-public")
+            assert item is not None and run is not None
+            await sched._finalize_and_publish(s, item, run=run)  # noqa: SLF001
+
+        await asyncio.wait_for(sched._publisher_queue.join(), timeout=1.0)  # noqa: SLF001
+        assert [event["event"] for event in publisher.events] == [
+            "submission.item.terminal",
+            "submission.terminal",
+        ]
+
+        item_event, submission_event = publisher.events
+        assert item_event["deviceAlias"] == "智课专用"
+        assert item_event["failureReason"] == "期望看到教师查看提示，实际卡在听筒遮挡页"
+        assert item_event["reportUrl"].startswith(
+            "https://enterprise.example/files/reports/"
+        )
+        assert submission_event["summaryReportUrl"] == (
+            "https://enterprise.example/files/reports/sub-public/_summary.html"
+        )
+
+        from ai_phone.config import get_settings
+
+        report_path = (
+            get_settings().storage_dir
+            / "reports"
+            / "sub-public"
+            / "_summary.html"
+        )
+        html = report_path.read_text(encoding="utf-8")
+        assert "失败摘要" in html
+        assert "期望看到教师查看提示，实际卡在听筒遮挡页" in html
+    finally:
+        await sched._stop_notification_workers()  # noqa: SLF001
 
 
 @pytest.mark.asyncio

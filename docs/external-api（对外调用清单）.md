@@ -322,15 +322,17 @@ item 终态事件 `submission.item.terminal`：
   "engine": "vlm",
   "state": "success",
   "statusReason": "run_success",
+  "failureReason": null,
   "runId": "9abc123",
   "deviceSerial": "00008150-...",
+  "deviceAlias": "iPhone-1",
   "deviceAliasPool": ["iPhone-1"],
   "retryMax": 1,
   "attempts": 1,
   "elapsedMs": 62000,
   "steps": 8,
   "tokenStats": {},
-  "reportUrl": "/files/reports/7f1a2b3c4d5e/demo_001__ios.html",
+  "reportUrl": "https://ai-phone.example.com/files/reports/7f1a2b3c4d5e/demo_001__ios.html",
   "origin": "external"
 }
 ```
@@ -349,9 +351,14 @@ item 终态事件 `submission.item.terminal`：
   "counts": {"success": 2, "failed": 1},
   "platformCounts": {"android": 1, "ios": 1, "harmony": 1},
   "platformStateCounts": {"ios": {"success": 1}},
-  "summaryReportUrl": "/files/reports/7f1a2b3c4d5e/_summary.html"
+  "summaryReportUrl": "https://ai-phone.example.com/files/reports/7f1a2b3c4d5e/_summary.html"
 }
 ```
+
+报告 URL 会自动使用本次提交请求的 scheme + host 补全，不需要企业版或
+个人版单独配置域名。``deviceAlias`` 是最终真正执行设备的别名；
+``deviceAliasPool`` 仍只表示投递时的候选设备池。``failureReason`` 是现有
+Run 终态原因，失败时通常就是最后一条 ``assert_fail`` 内容，成功时为 ``null``。
 
 如果投递时带了 `callbackUrl`，scheduler 会把同一份终态事件旁路 POST 到该 URL：每条执行单元结束时发送 `submission.item.terminal`，批次收口后发送 `submission.terminal`。Webhook 与 Kafka 互不依赖，均为 best-effort 通知；Webhook 不重试、不签名、5 秒超时，失败只记日志，不影响主流程。
 

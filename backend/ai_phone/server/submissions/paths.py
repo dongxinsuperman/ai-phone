@@ -11,6 +11,9 @@
 
 from __future__ import annotations
 
+from typing import Optional
+from urllib.parse import urlsplit
+
 
 def safe_name(raw: str) -> str:
     """把任意字符串压成文件名安全形式；与 reports._safe_name 等价。"""
@@ -48,11 +51,30 @@ def submission_summary_url(submission_id: str) -> str:
     return f"/files/reports/{submission_summary_rel_path(submission_id)}"
 
 
+def absolute_report_url(
+    public_base_url: Optional[str], report_url: Optional[str]
+) -> Optional[str]:
+    """把报告相对路径补成外部可直接打开的 URL。
+
+    ``public_base_url`` 来自提交请求自己的 scheme + host，因此企业版、
+    个人版和本地环境共用一套逻辑，不硬编码任何部署域名。
+    """
+    if not report_url:
+        return None
+    if urlsplit(report_url).scheme in ("http", "https"):
+        return report_url
+    base = str(public_base_url or "").strip().rstrip("/")
+    if not base:
+        return report_url
+    return f"{base}/{report_url.lstrip('/')}"
+
+
 __all__ = [
     "safe_name",
     "item_report_rel_path",
     "item_report_url",
     "submission_summary_rel_path",
     "submission_summary_url",
+    "absolute_report_url",
     "SUMMARY_FILENAME",
 ]

@@ -48,7 +48,7 @@ from ..function_map_context import (
     FunctionMapContextValidationError,
     normalize_function_map_context_text,
 )
-from ..models import Device, Run, RunLog, Submission, SubmissionItem
+from ..models import Device, DeviceAlias, Run, RunLog, Submission, SubmissionItem
 from ..runner.dispatch import RunDispatchService
 from ..trajectory_cache.mode import normalize_requested_cache_mode, resolve_effective_cache_mode
 from ..trajectory_cache import (
@@ -65,6 +65,7 @@ from ..submissions import (
     build_submission_terminal_event,
     build_terminal_event,
 )
+from ..submissions.paths import absolute_report_url
 
 # v1 硬边界（项目内部冻结约定）
 # 模块加载时一次性从 settings 拍下；运维改 .env 后重启 server 生效。
@@ -79,6 +80,9 @@ SCHEDULER_TICK_SEC = _settings.scheduler_tick_sec
 # 对外取消保持原接口，但 running 必须等 Agent 回终态后才算 stoppedRunning。
 # 正常 task.cancel 路径应在毫秒~秒级完成；上限只用于避免 HTTP 请求永久挂住。
 CANCEL_STOP_WAIT_SEC = 10.0
+
+# 外部提交请求的公网访问根地址；存在既有 raw_body JSON 里避免加表字段。
+_PUBLIC_BASE_URL_KEY = "_aiPhonePublicBaseUrl"
 
 _WebhookJob: TypeAlias = Tuple[str, Dict[str, Any]]
 
@@ -840,6 +844,7 @@ class SubmissionScheduler:
         raw_body: Any,
         *,
         origin: str = "internal",
+        public_base_url: Optional[str] = None,
     ) -> Dict[str, Any]:
         """落库 + 入队。抛 :class:`AdmissionError` 则整批拒绝，未写库。
 
@@ -925,10 +930,17 @@ class SubmissionScheduler:
         from datetime import timedelta
         expire_at = now + timedelta(seconds=DEFAULT_SUBMISSION_TTL_SEC)
 
-        # raw_body 原样落盘：list（老）或 dict（新 wrapper）。raw_body 的字段是
-        # JSON 类型，dict / list 都能直接吃。
-        if isinstance(raw_body, (list, dict)):
-            raw_body_to_store: Any = raw_body
+        # raw_body 落盘：list（老）保持原样；dict（新 wrapper）浅拷贝后
+        # 额外记录 Server 自己观测到的公网根地址，供异步终态补全报告 URL。
+        if isinstance(raw_body, dict):
+            raw_body_to_store: Any = dict(raw_body)
+            # 保留字段只允许 Server 从真实请求写入，不信任调用方同名字段。
+            raw_body_to_store.pop(_PUBLIC_BASE_URL_KEY, None)
+            normalized_base_url = str(public_base_url or "").strip().rstrip("/")
+            if normalized_base_url:
+                raw_body_to_store[_PUBLIC_BASE_URL_KEY] = normalized_base_url
+        elif isinstance(raw_body, list):
+            raw_body_to_store = raw_body
         else:
             raw_body_to_store = []
 
@@ -1424,11 +1436,30 @@ class SubmissionScheduler:
             sub = submission
             if sub is None:
                 sub = await session.get(Submission, item.submission_id)
+            public_base_url = ""
+            if sub is not None and isinstance(sub.raw_body, dict):
+                public_base_url = str(sub.raw_body.get(_PUBLIC_BASE_URL_KEY) or "")
+            device_alias: Optional[str] = None
+            if item.device_serial:
+                try:
+                    alias_row = await session.get(DeviceAlias, item.device_serial)
+                    if alias_row is not None:
+                        device_alias = alias_row.alias or None
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "[scheduler] 读取设备别名失败，按 null 广播 "
+                        "submission={} item={} serial={} err={}",
+                        item.submission_id,
+                        item.id,
+                        item.device_serial,
+                        exc,
+                    )
             event = build_terminal_event(
                 item=item,
                 submission=sub,
                 run=run,
-                report_url=report_url,
+                device_alias=device_alias,
+                report_url=absolute_report_url(public_base_url, report_url),
             )
             self._enqueue_publisher_event(event)
             self._enqueue_webhook_event(sub, event)
@@ -1508,7 +1539,12 @@ class SubmissionScheduler:
             event = build_submission_terminal_event(
                 submission=sub,
                 items=items,
-                summary_report_url=summary_url,
+                summary_report_url=absolute_report_url(
+                    str(sub.raw_body.get(_PUBLIC_BASE_URL_KEY) or "")
+                    if isinstance(sub.raw_body, dict)
+                    else "",
+                    summary_url,
+                ),
             )
             self._enqueue_publisher_event(event)
             self._enqueue_webhook_event(sub, event)
