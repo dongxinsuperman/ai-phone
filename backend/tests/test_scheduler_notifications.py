@@ -199,6 +199,7 @@ async def test_terminal_events_have_full_report_urls_alias_and_failure_summary(
         ]
 
         item_event, submission_event = publisher.events
+        assert item_event["goal"] == "rc"
         assert item_event["deviceAlias"] == "智课专用"
         assert item_event["failureReason"] == "期望看到教师查看提示，实际卡在听筒遮挡页"
         assert item_event["reportUrl"].startswith(

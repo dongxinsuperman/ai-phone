@@ -10,6 +10,7 @@ item 终态事件（``submission.item.terminal``）字段一览：
 - ``caseId`` / ``caseName`` / ``platform``: case 维度
 - ``engine``: 实际跑这条 item 的执行引擎（``vlm`` / ``midscene``）；
   没绑 Run 时为 ``null``
+- ``goal``: 用户提交的完整执行指令（即请求中的 ``runContent``）
 - ``state`` / ``statusReason``: 终态结果（详见 scheduler 11 项 statusReason）
 - ``failureReason``: 失败摘要，直接来自现有 Run.reason
 - ``runId`` / ``deviceSerial`` / ``deviceAlias``: 实际派发结果；
@@ -104,6 +105,7 @@ def build_terminal_event(
         "caseName": (item.case_name or item.case_id),
         "platform": item.platform,
         "engine": engine,
+        "goal": item.run_content,
         "state": item.state,
         "statusReason": item.status_reason or None,
         "failureReason": failure_reason,

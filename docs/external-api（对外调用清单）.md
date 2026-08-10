@@ -320,6 +320,7 @@ item 终态事件 `submission.item.terminal`：
   "caseName": "进入关于本机",
   "platform": "ios",
   "engine": "vlm",
+  "goal": "打开设置，进入关于本机，确认系统版本",
   "state": "success",
   "statusReason": "run_success",
   "failureReason": null,
@@ -359,6 +360,7 @@ item 终态事件 `submission.item.terminal`：
 个人版单独配置域名。``deviceAlias`` 是最终真正执行设备的别名；
 ``deviceAliasPool`` 仍只表示投递时的候选设备池。``failureReason`` 是现有
 Run 终态原因，失败时通常就是最后一条 ``assert_fail`` 内容，成功时为 ``null``。
+``goal`` 是用户提交的完整 ``runContent``，不做摘要或二次改写。
 
 如果投递时带了 `callbackUrl`，scheduler 会把同一份终态事件旁路 POST 到该 URL：每条执行单元结束时发送 `submission.item.terminal`，批次收口后发送 `submission.terminal`。Webhook 与 Kafka 互不依赖，均为 best-effort 通知；Webhook 不重试、不签名、5 秒超时，失败只记日志，不影响主流程。
 
