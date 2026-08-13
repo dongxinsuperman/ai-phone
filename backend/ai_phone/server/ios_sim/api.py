@@ -206,7 +206,11 @@ async def patch_instance(
         vm = await get_vm_or_404(session, vm_id)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="实例不存在") from exc
-    if vm.state in ACTIVE_STATES:
+    patch = body.model_dump(exclude_unset=True)
+    # 别名只是调度与展示身份，运行中可安全更新；机型、系统和其他配置仍要求先停止。
+    # 与 Android / 鸿蒙虚拟机保持一致，避免设备明明空闲却无法改名。
+    alias_only = set(patch).issubset({"alias"})
+    if vm.state in ACTIVE_STATES and not alias_only:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail=f"实例处于 {vm.state} 状态，请先停止再修改配置",

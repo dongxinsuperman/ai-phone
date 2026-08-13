@@ -258,7 +258,7 @@ async def test_patch_alias_and_name(client):
 
 
 @pytest.mark.asyncio
-async def test_patch_rejected_while_running(client, session):
+async def test_non_alias_patch_rejected_while_running(client, session):
     from ai_phone.server.ios_sim.models import IosSimVmInstance
 
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
@@ -266,7 +266,7 @@ async def test_patch_rejected_while_running(client, session):
     row.state = "running"
     await session.commit()
     r = await client.patch(
-        f"{_BASE}/instances/{vm['id']}", json={"alias": "x"}, headers=AUTH
+        f"{_BASE}/instances/{vm['id']}", json={"config_json": {"x": 1}}, headers=AUTH
     )
     assert r.status_code == 409
     assert "先停止" in r.json()["detail"]
@@ -1008,18 +1008,12 @@ async def test_rename_while_running_keeps_alias_on_udid(client, session):
         "agent-1",
         {"vm_id": vm["id"], "state": "running", "ok": True, "udid": "UDID-RUN"},
     )
-    # 运行态禁止改配置，先停下来再改名
-    await handle_vm_status(
-        "agent-1",
-        {"vm_id": vm["id"], "state": "stopped", "ok": True, "udid": "UDID-RUN"},
-    )
-    await client.patch(
+    renamed = await client.patch(
         f"{_BASE}/instances/{vm['id']}", json={"alias": "sim-renamed"}, headers=AUTH
     )
-    await handle_vm_status(
-        "agent-1",
-        {"vm_id": vm["id"], "state": "running", "ok": True, "udid": "UDID-RUN"},
-    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["state"] == "running"
+    assert renamed.json()["alias"] == "sim-renamed"
     assert await _alias_rows(session) == {"UDID-RUN": "sim-renamed"}
 
 
