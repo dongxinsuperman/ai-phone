@@ -242,7 +242,10 @@ class ReadinessSupervisor:
                     len(ios_keys),
                 )
 
-        # 2) 为每个设备建 probe 并并发执行
+        # 2) 为每个设备建 probe。Android / iOS 仍按原语义并发；
+        # Harmony 在同一 Agent 内串行。hdc server 是全局单例，两台鸿蒙
+        # 同时跑 readiness 会和 5s rescan 争用 hdc，此处串行只限于
+        # Harmony readiness，不改任务执行、镜像或其他平台的并发语义。
         async def _probe_one(key: DeviceKey) -> Tuple[DeviceKey, Optional[ProbeOutcome]]:
             serial, platform = key
             probe: Optional[BaseProbe] = build_probe_for(
@@ -254,9 +257,16 @@ class ReadinessSupervisor:
             outcome = await probe.probe()
             return key, outcome
 
-        results = await asyncio.gather(
-            *[_probe_one(k) for k in probe_targets], return_exceptions=False
+        harmony_targets = [k for k in probe_targets if k[1] == "harmony"]
+        parallel_targets = [k for k in probe_targets if k[1] != "harmony"]
+        results = list(
+            await asyncio.gather(
+                *[_probe_one(k) for k in parallel_targets],
+                return_exceptions=False,
+            )
         )
+        for key in harmony_targets:
+            results.append(await _probe_one(key))
 
         # 3) 结合连续失败阈值，决定是否升/降级 + 是否上报
         #

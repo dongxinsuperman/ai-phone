@@ -779,11 +779,20 @@ def _maybe_preload_ios(infos: List[Any]) -> None:
 # 修复策略：在 _device_provider 内做一层"iOS 快照保鲜"——
 #   * was_last_ios_scan_ok() == True ：把本次 iOS 部分写入快照（覆盖式更新）
 #   * was_last_ios_scan_ok() == False：把本次 iOS 部分撤掉，用快照补回去
-# Android / Harmony 部分完全不动；它们各自扫描有独立逻辑，跟 usbmuxd 抖动
-# 无关。修补后的 infos 再喂下游 _record_serial_platform /
+# 这一层只处理 iOS，Android / Harmony 原样透传；Harmony 自身的 hdc
+# 短暂漏扫防抖由紧随其后的 ``_apply_harmony_snapshot_debounce`` 独立处理。
+# 修补后的 infos 再喂下游 _record_serial_platform /
 # _emit_ios_disconnect_events / _maybe_preload_ios，保证"agent 内部状态"与
 # "上报给 server 的真相"完全一致。
 _last_good_ios_snapshot: List[Any] = []
+# Harmony 的 hdc 全局扫描偶发返空时，不能立即把设备从 rehello
+# 里删掉：Server 会连同 readiness 快照一起清空，下一轮重新扫到后
+# 前端就会先显示“等待探活”。仅对 Harmony 做 serial 粒度的短防抖：
+# 连续 3 轮（默认约 15s）都缺失才认为真拔线；期间 readiness 仍会
+# 按 serial 定向探测，不会把不通的设备继续当成可派单。
+_HARMONY_SCAN_MISS_THRESHOLD = 3
+_last_harmony_snapshot: Dict[str, Any] = {}
+_harmony_scan_misses: Dict[str, int] = {}
 _android_vm_manager: Optional[Any] = None
 _harmony_vm_manager: Optional[Any] = None
 _ios_sim_manager: Optional[Any] = None
@@ -838,6 +847,7 @@ def _device_provider() -> List[Dict[str, Any]]:
         except Exception as exc:  # noqa: BLE001
             logger.warning("iOS 虚拟机设备标记失败（忽略，不影响其他平台）：{}", exc)
     infos = _apply_ios_snapshot_freshness(infos)
+    infos = _apply_harmony_snapshot_debounce(infos)
     _record_serial_platform(infos)
     _emit_ios_disconnect_events(infos)
     _maybe_preload_ios(infos)
@@ -886,6 +896,55 @@ def _reset_ios_snapshot_for_tests() -> None:
     """测试钩子：清空 iOS 快照状态。仅供单测使用。"""
     global _last_good_ios_snapshot
     _last_good_ios_snapshot = []
+
+
+def _apply_harmony_snapshot_debounce(infos: List[Any]) -> List[Any]:
+    """Harmony 设备单轮缺失防抖，避免 rehello 误删 readiness。
+
+    不使用一整份“最后快照”覆盖当前结果，而是按 serial 独立计数：
+    两台设备中只漏一台时，不会把另一台的新数据也回滚。真拔线
+    连续达到阈值后仍会被正常摘除，这不是永久伪装 online 的兜底。
+    """
+    non_harmony = [i for i in infos if getattr(i, "platform", None) != "harmony"]
+    current = {
+        str(getattr(info, "serial", "") or ""): info
+        for info in infos
+        if getattr(info, "platform", None) == "harmony"
+        and str(getattr(info, "serial", "") or "")
+    }
+
+    for serial, info in current.items():
+        _last_harmony_snapshot[serial] = info
+        _harmony_scan_misses[serial] = 0
+
+    for serial in list(_last_harmony_snapshot):
+        if serial in current:
+            continue
+        misses = _harmony_scan_misses.get(serial, 0) + 1
+        if misses >= _HARMONY_SCAN_MISS_THRESHOLD:
+            _last_harmony_snapshot.pop(serial, None)
+            _harmony_scan_misses.pop(serial, None)
+            logger.info(
+                "Harmony 设备连续 {} 轮扫描缺失，确认移出 serial={}",
+                misses,
+                serial,
+            )
+            continue
+        _harmony_scan_misses[serial] = misses
+        logger.debug(
+            "Harmony 设备本轮扫描缺失，暂保留快照 serial={} miss={}/{}",
+            serial,
+            misses,
+            _HARMONY_SCAN_MISS_THRESHOLD,
+        )
+
+    return non_harmony + list(_last_harmony_snapshot.values())
+
+
+def _reset_harmony_snapshot_for_tests() -> None:
+    """测试钩子：清空 Harmony 扫描防抖状态。仅供单测使用。"""
+    _last_harmony_snapshot.clear()
+    _harmony_scan_misses.clear()
 
 
 def _emit_ios_disconnect_events(infos: List[Any]) -> None:
@@ -2771,18 +2830,35 @@ class _MirrorSupervisor:
         existing = self._sessions.get(serial)
         if existing is not None and not getattr(existing, "_stopped", False):
             platform = _serial_platform.get(serial, "android")
-            if platform == "harmony" and get_settings().harmony_wake_on_enter:
-                try:
-                    _wake_harmony_on_enter(serial)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "harmony mirror 复用前 wake 失败 serial={}: {}",
-                        serial,
-                        exc,
-                    )
-            # 幂等：会话还在跑，但要把缓存的 init segment 重广播一次。
-            existing.replay_init()
-            return
+            # 死会话替换：streamer 连续失败退出后 is_alive=False，但 _stopped 仍是
+            # False（它没被主动 stop 过）。此时绝不能 replay_init 复用——那会一直盯着
+            # 已死的流，表现为持续黑屏（鸿蒙控制通道换端口后尤其常见）。丢弃它，
+            # 落到下面的新建分支重开一个会话。严格只作用于 Harmony：Android
+            # scrcpy / iOS WDA 都有异步启动窗口，不能用瞬时 is_alive=False 判死。
+            if platform != "harmony" or getattr(existing, "is_alive", True):
+                if platform == "harmony" and get_settings().harmony_wake_on_enter:
+                    try:
+                        _wake_harmony_on_enter(serial)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "harmony mirror 复用前 wake 失败 serial={}: {}",
+                            serial,
+                            exc,
+                        )
+                # 幂等：会话还在跑，把缓存的 init segment 重广播一次即可。
+                existing.replay_init()
+                return
+            logger.warning(
+                "mirror 会话已死（is_alive=False）但未标记停止，替换重建 serial={}",
+                serial,
+            )
+            try:
+                existing.stop()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "替换死 mirror 会话 stop 异常（忽略）serial={}: {}", serial, exc
+                )
+            self._sessions.pop(serial, None)
         platform = _serial_platform.get(serial, "android")
         if platform == "ios":
             session: Any = _IosMirrorSession(serial, self._ws, self._get_loop())

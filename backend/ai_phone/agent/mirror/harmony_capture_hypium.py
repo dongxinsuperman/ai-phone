@@ -56,8 +56,13 @@ class HarmonyHypiumStreamer:
 
     Args:
         serial: 设备 udid，用于日志
-        local_port: 当前 ``HarmonyDriver`` 已建立的精确本地 fport
+        local_port: 当前 ``HarmonyDriver`` 已建立的精确本地 fport（首次连接用）
         on_jpeg: 每帧回调，签名 ``(jpeg_bytes, width, height) -> None``
+        port_provider: 可选。每次（重）连接前回调，取控制通道**当前** fport。
+            控制侧自愈（L2/L3）重建 Driver 会换 fport（16556→16557），旧端口
+            随即失效；若镜像仍死连构造时的旧端口，会连续失败直至线程退出、黑屏。
+            传入 ``driver.current_fport`` 后，每次重连都刷成最新端口，实现镜像
+            跟随控制通道自愈。为 None 时退化为固定端口（老行为）。
         log_tag: 日志前缀
     """
 
@@ -67,12 +72,14 @@ class HarmonyHypiumStreamer:
         local_port: int,
         on_jpeg: Callable[[bytes, int, int], None],
         *,
+        port_provider: Optional[Callable[[], Optional[int]]] = None,
         log_tag: str = "hm-hypium",
     ) -> None:
         self._serial = serial
         self._on_jpeg = on_jpeg
         self._log_tag = log_tag
         self._local_port = int(local_port)
+        self._port_provider = port_provider
         if not 1 <= self._local_port <= 65535:
             raise ValueError(f"invalid Harmony mirror local_port: {local_port}")
 
@@ -80,6 +87,10 @@ class HarmonyHypiumStreamer:
         self._thread: Optional[threading.Thread] = None
         self._sock: Optional[socket.socket] = None
         self._last_size: Optional[Tuple[int, int]] = None
+        # 每次连接是否已经产出过有效帧。只有“连上但一帧都没有”的失败
+        # 才应连续累计；一条已经恢复出帧的链路日后再断，应从第 1 次
+        # 重新计数，不能把整个 streamer 生命周期的断流累加起来。
+        self._attempt_had_frame = False
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -123,10 +134,17 @@ class HarmonyHypiumStreamer:
         """
         consecutive_fail = 0
         while not self._stopped:
+            self._attempt_had_frame = False
             try:
                 self._connect_and_pump()
                 consecutive_fail = 0  # 主循环正常退出（被 stop）才会到这
             except Exception as exc:  # noqa: BLE001
+                if self._stopped:
+                    return
+                # 上一条连接已收到过有效 JPEG，证明它确实恢复过。
+                # 这次断流是新的第 1 次，不与历史已恢复故障累加。
+                if self._attempt_had_frame:
+                    consecutive_fail = 0
                 consecutive_fail += 1
                 logger.warning(
                     "[{}] 流中断（第 {} 次）: {}",
@@ -144,6 +162,24 @@ class HarmonyHypiumStreamer:
 
     def _connect_and_pump(self) -> None:
         """连接精确 Driver fport → startCaptureScreen → 读流，直到出错或 stop。"""
+
+        # 每次（重）连接前都从 driver 的锁内对账入口取端口。对账失败时本轮重连
+        # 必须 fail-closed，不能沿用旧端口；否则旧 fport 被其它映射复用时可能串流。
+        if self._port_provider is not None:
+            try:
+                fresh = self._port_provider()
+                if fresh is None or not 1 <= int(fresh) <= 65535:
+                    raise ValueError(f"invalid fport: {fresh}")
+                if int(fresh) != self._local_port:
+                    logger.info(
+                        "[{}] 控制通道 fport 变化，镜像跟随 {} → {}",
+                        self._log_tag, self._local_port, int(fresh),
+                    )
+                    self._local_port = int(fresh)
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError(
+                    f"harmony_mirror_fport_reconcile_failed:serial={self._serial}:{exc}"
+                ) from exc
 
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.settimeout(_SOCKET_RECV_TIMEOUT)
@@ -213,6 +249,9 @@ class HarmonyHypiumStreamer:
                 del buf[: e_idx + 2]
 
                 w, h = self._peek_size(jpeg)
+                # 解析到完整 JPEG 才算本次连接健康；只完成 TCP/协议握手
+                # 但一帧都拿不到，仍属于连续失败，不能被偷偷清零。
+                self._attempt_had_frame = True
                 if (w, h) != self._last_size and self._last_size is not None:
                     logger.info(
                         "[{}] 画面尺寸变化 {} → {}（旋转/分辨率切换）",

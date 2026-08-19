@@ -225,26 +225,38 @@ def test_android_non_secure_keyguard_requires_wake_before_run(monkeypatch):
 
 
 def test_harmony_screen_off_can_be_dispatchable_by_env(monkeypatch):
-    def fake_hdc_run(*args, **_kwargs):
-        assert args == ("list", "targets")
-        return "H1"
-
     def fake_hdc_shell(serial, cmd, **_kwargs):
         assert serial == "H1"
-        assert cmd == "hidumper -s PowerManagerService -a -s"
-        return "Current State: INACTIVE"
+        assert cmd == (
+            "echo __AIPHONE_HDC_READY__; "
+            "hidumper -s PowerManagerService -a -s"
+        )
+        return "__AIPHONE_HDC_READY__\nCurrent State: INACTIVE"
 
     monkeypatch.setattr(
         probe_mod,
         "get_settings",
         lambda: SimpleNamespace(harmony_screen_off_dispatchable=True),
     )
-    monkeypatch.setattr("ai_phone.agent.drivers.hdc.hdc_run", fake_hdc_run)
     monkeypatch.setattr("ai_phone.agent.drivers.hdc.hdc_shell", fake_hdc_shell)
 
     outcome = probe_mod.HarmonyProbe("H1")._probe_sync()
 
     assert outcome.ready is True
+
+
+def test_harmony_probe_requires_targeted_shell_marker(monkeypatch):
+    """hdc 返回空/噪声但 rc=0 时不得误判 ready。"""
+    monkeypatch.setattr(
+        "ai_phone.agent.drivers.hdc.hdc_shell",
+        lambda *_a, **_k: "Current State: AWAKE",
+    )
+
+    outcome = probe_mod.HarmonyProbe("H1")._probe_sync()
+
+    assert outcome.ready is False
+    assert outcome.not_ready_reason == "driver_probe_failed"
+    assert "探活标记" in outcome.hint
 
 
 def test_ios_screen_locked_can_be_dispatchable_by_env(monkeypatch):

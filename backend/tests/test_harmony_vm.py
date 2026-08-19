@@ -21,7 +21,9 @@ from ai_phone.agent.harmony_vm.manager import (
     _apply_instance_uuid,
 )
 from ai_phone.agent.harmony_vm.registry import (
+    managed_fport,
     register_managed_serial,
+    set_managed_fport,
     unregister_managed_serial,
 )
 from ai_phone.config import AGENT_LOCAL_FIELDS, downlink_field_names
@@ -1547,17 +1549,19 @@ def test_harmony_mirror_binds_each_device_to_its_exact_driver_fport(
     monkeypatch.setattr(config_module, "get_settings", lambda: settings)
 
     class FakeDriver:
-        def __init__(self, local_port):
-            self.raw = SimpleNamespace(
-                _client=SimpleNamespace(local_port=local_port)
-            )
+        def __init__(self, serial, local_port):
+            self.serial = serial
+            self.local_port = local_port
 
-        def get_raw_driver(self):
-            return self.raw
+        def reconcile_managed_fport(self):
+            is_managed, old = managed_fport(self.serial)
+            if is_managed and old != self.local_port:
+                set_managed_fport(self.serial, self.local_port)
+            return self.local_port
 
     real = build_harmony_streamer(
         serial="REAL-HARMONY-001",
-        driver=FakeDriver(16557),
+        driver=FakeDriver("REAL-HARMONY-001", 16557),
         on_jpeg=lambda *_args: None,
         log_tag="real",
     )
@@ -1566,7 +1570,7 @@ def test_harmony_mirror_binds_each_device_to_its_exact_driver_fport(
     try:
         virtual = build_harmony_streamer(
             serial=vm_serial,
-            driver=FakeDriver(16559),
+            driver=FakeDriver(vm_serial, 16559),
             on_jpeg=lambda *_args: None,
             log_tag="virtual",
         )
@@ -1577,32 +1581,60 @@ def test_harmony_mirror_binds_each_device_to_its_exact_driver_fport(
     assert virtual._local_port == 16559  # noqa: SLF001
 
 
-def test_managed_harmony_mirror_rejects_cross_device_fport(monkeypatch):
+def test_managed_harmony_mirror_repairs_stale_registry_before_start(monkeypatch):
     import ai_phone.config as config_module
     from ai_phone.agent.mirror import build_harmony_streamer
 
     settings = SimpleNamespace(harmony_mirror_backend="hypium")
     monkeypatch.setattr(config_module, "get_settings", lambda: settings)
     vm_serial = "127.0.0.1:10001"
-    driver = SimpleNamespace(
-        get_raw_driver=lambda: SimpleNamespace(
-            _client=SimpleNamespace(local_port=16557)
-        )
-    )
+    calls = []
+
+    def reconcile():
+        calls.append("reconcile")
+        set_managed_fport(vm_serial, 16557)
+        return 16557
+
+    driver = SimpleNamespace(serial=vm_serial, reconcile_managed_fport=reconcile)
     register_managed_serial(vm_serial, 16559)
     try:
-        with pytest.raises(
-            RuntimeError,
-            match="managed_harmony_vm_fport_mismatch",
-        ):
-            build_harmony_streamer(
-                serial=vm_serial,
-                driver=driver,
-                on_jpeg=lambda *_args: None,
-                log_tag="cross-device",
-            )
+        streamer = build_harmony_streamer(
+            serial=vm_serial,
+            driver=driver,
+            on_jpeg=lambda *_args: None,
+            log_tag="stale-registry",
+        )
+        assert streamer._local_port == 16557  # noqa: SLF001
+        assert managed_fport(vm_serial) == (True, 16557)
+        assert calls == ["reconcile"]
     finally:
         unregister_managed_serial(vm_serial)
+
+
+def test_harmony_mirror_rejects_driver_of_another_device(monkeypatch):
+    """传错设备的 driver 必须在对账之前就拒绝，避免视频流串到别的设备。"""
+    import ai_phone.config as config_module
+    from ai_phone.agent.mirror import build_harmony_streamer
+
+    settings = SimpleNamespace(harmony_mirror_backend="hypium")
+    monkeypatch.setattr(config_module, "get_settings", lambda: settings)
+    calls = []
+
+    def reconcile():
+        calls.append("reconcile")
+        return 16559
+
+    driver = SimpleNamespace(
+        serial="127.0.0.1:10002", reconcile_managed_fport=reconcile
+    )
+    with pytest.raises(RuntimeError, match="harmony_mirror_driver_serial_mismatch"):
+        build_harmony_streamer(
+            serial="127.0.0.1:10001",
+            driver=driver,
+            on_jpeg=lambda *_args: None,
+            log_tag="cross-device",
+        )
+    assert calls == []
 
 
 def test_harmony_foldable_custom_screen_passes_unfolded_and_folded_groups(

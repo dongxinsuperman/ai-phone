@@ -357,8 +357,8 @@ class HarmonyProbe(BaseProbe):
     """HarmonyOS readiness 判据（v1 简化版）：
 
     - ``ready`` 增量：
-        * ``hdc list targets`` 能看到该 serial
-        * ``hdc shell hidumper -s PowerManagerService -a -s`` 里能解出"屏幕亮"
+        * 按 serial 定向的 ``hdc shell`` 能返回探活标记
+        * 同一条 shell 里的 PowerManagerService 输出能解出屏幕状态
           （"Current State: AWAKE" 或 "Screen On: true"）
 
     v1 暂不主动 probe hmdriver2 socket —— 那条通路握手代价较高，且在执行时会
@@ -373,29 +373,26 @@ class HarmonyProbe(BaseProbe):
 
     def _probe_sync(self) -> ProbeOutcome:
         try:
-            from ai_phone.agent.drivers.hdc import hdc_run, hdc_shell  # noqa: PLC0415
+            from ai_phone.agent.drivers.hdc import hdc_shell  # noqa: PLC0415
         except Exception as exc:  # noqa: BLE001
             return _fail("driver_probe_failed", f"hdc 模块未启用：{exc}")
 
-        # 1) hdc list targets 确认设备还在线
-        try:
-            targets = hdc_run("list", "targets", timeout=self.timeout_sec)
-        except Exception as exc:  # noqa: BLE001
-            return _fail("driver_probe_failed", f"hdc list targets 失败：{exc}")
-        if self.serial not in (targets or ""):
-            # 真正拔线时上层 device_provider 自己会发 hello 把设备摘掉；
-            # 这里走到只可能是 hdc 短暂抖动
-            return _fail("driver_probe_failed", "hdc list targets 未见该 serial")
-
-        # 2) 屏幕状态：hidumper 输出里一般有 "Current State: AWAKE/INACTIVE/..."
+        # 不再每台设备并发调全局 ``hdc list targets``。两台鸿蒙设备
+        # 会把同一 hdc server 的全局列表命令和 rescan 撞在一起，超时后
+        # readiness 和设备扫描会一起抖。改成一条按 serial 定向的 shell：
+        # 标记证明 shell 通路活着，后半段同时拿屏幕状态，每台每轮只起
+        # 一个 hdc 子进程。
+        marker = "__AIPHONE_HDC_READY__"
         try:
             out = hdc_shell(
                 self.serial,
-                "hidumper -s PowerManagerService -a -s",
+                f"echo {marker}; hidumper -s PowerManagerService -a -s",
                 timeout=self.timeout_sec,
             )
         except Exception as exc:  # noqa: BLE001
             return _fail("driver_probe_failed", f"hidumper 失败：{exc}")
+        if marker not in (out or ""):
+            return _fail("driver_probe_failed", "hdc shell 未返回探活标记")
         if out and _harmony_screen_is_off(out):
             if get_settings().harmony_screen_off_dispatchable:
                 logger.debug(

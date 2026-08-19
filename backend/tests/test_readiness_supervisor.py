@@ -119,6 +119,41 @@ class _StubProbe:
         return self._outcomes.pop(0) if len(self._outcomes) > 1 else self._outcomes[0]
 
 
+@pytest.mark.asyncio
+async def test_harmony_probes_are_serialized_within_one_tick(monkeypatch):
+    """两台 Harmony 共用同一 hdc server，readiness 不得并发打 hdc。"""
+    active = 0
+    overlap = False
+    completed = []
+
+    class TrackingProbe:
+        def __init__(self, serial):
+            self.serial = serial
+
+        async def probe(self):
+            nonlocal active, overlap
+            active += 1
+            overlap = overlap or active > 1
+            await __import__("asyncio").sleep(0.01)
+            completed.append(self.serial)
+            active -= 1
+            return ProbeOutcome(ready=True)
+
+    monkeypatch.setattr(
+        "ai_phone.agent.health.supervisor.build_probe_for",
+        lambda _platform, serial, timeout_sec: TrackingProbe(serial),  # noqa: ARG005
+    )
+
+    sup = ReadinessSupervisor(
+        device_lister=lambda: [("H1", "harmony"), ("H2", "harmony")],
+        send_message=lambda _msg: _true(),
+    )
+    await sup._tick_once()
+
+    assert overlap is False
+    assert completed == ["H1", "H2"]
+
+
 def _install_stub_probe(monkeypatch, probed, outcome_factory):
     def build(platform, serial, timeout_sec):  # noqa: ARG001
         probed.append(serial)

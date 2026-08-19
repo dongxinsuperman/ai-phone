@@ -57,11 +57,13 @@ _HM_SCREENSHOT_SETTLE_SEC = 2.0
 
 # hmdriver2 是可选 extras，没装不应让本模块 import 失败；真正用到才抛。
 try:  # pragma: no cover
+    from hmdriver2._client import HmClient  # type: ignore
     from hmdriver2.driver import Driver as HmDriver  # type: ignore
     from hmdriver2.proto import KeyCode as HmKeyCode  # type: ignore
     _HMDRIVER2_AVAILABLE = True
     _HMDRIVER2_IMPORT_ERROR: Optional[str] = None
 except Exception as _exc:  # noqa: BLE001
+    HmClient = None  # type: ignore[assignment]
     HmDriver = None  # type: ignore[assignment]
     HmKeyCode = None  # type: ignore[assignment]
     _HMDRIVER2_AVAILABLE = False
@@ -133,6 +135,83 @@ _STAY_AWAKE_LAST_AT: dict = {}
 _STAY_AWAKE_REFRESH_SEC = 600.0  # 10 min，远小于鸿蒙最长 timeout 15 分钟
 
 
+# ----------------------------------------------------------------------
+# 按 serial 的全局共享状态（并发根因修复）
+# ----------------------------------------------------------------------
+# hmdriver2.Driver 是「按 serial 的 singleton」，同一台设备的所有 HarmonyDriver
+# 实例必须共享**同一个 raw + 同一条 uitest socket + 同一把锁**。只共享锁仍不够：
+# 任一 wrapper 完成 L2/L3 后若只替换自己的 ``self._raw``，其它 wrapper 会继续
+# 持有已经 release 的旧 raw，再触发一轮无意义自愈。
+#
+# 此前每个 HarmonyDriver 各自 new 一把 ``threading.RLock()`` 当 _heal_lock：
+#   - rescan_loop 每 5s ``new HarmonyDriver`` 探活（自己一把锁）
+#   - vlm_loop 用 _driver_cache 里的缓存 driver 点击/滑动（另一把锁）
+# 两把锁互不相识 → 两个线程同时 ``sendall`` / ``recv`` 同一条 socket →
+# 响应粘包（``Extra data: line 1 column 16``）/ ``Disallow concurrent use`` →
+# 被误判成 socket 故障 → 并发 L2/L3 重建 → 新 fport(16557) 与 registry(16556)
+# 不一致 → 镜像 fail-closed 永久黑屏。
+#
+# 根治：按 serial 共享状态，wrapper 的 ``_raw`` 属性只是 state.raw 的视图；任一
+# wrapper 重建后，其它 wrapper 立即看到同一个新 raw。RLock 可重入，允许外层
+# _call_with_reconnect 与下层 HmClient.invoke 的真实 socket 边界使用同一把锁。
+class _SerialDriverState:
+    def __init__(self) -> None:
+        self.lock = threading.RLock()
+        self.raw: Any = None
+
+
+_SERIAL_STATES_GUARD = threading.Lock()
+_SERIAL_STATES: Dict[str, _SerialDriverState] = {}
+
+
+def _serial_state(serial: str) -> _SerialDriverState:
+    """取（或惰性创建）某 serial 的进程内唯一 driver 状态。"""
+    with _SERIAL_STATES_GUARD:
+        state = _SERIAL_STATES.get(serial)
+        if state is None:
+            state = _SerialDriverState()
+            _SERIAL_STATES[serial] = state
+        return state
+
+
+def _serial_lock(serial: str) -> "threading.RLock":
+    """兼容内部调用：返回该 serial 共享状态中的唯一控制锁。"""
+    return _serial_state(serial).lock
+
+
+def _serialize_hmclient_invokes_once() -> None:
+    """在 hmdriver2 真正的 send→recv 边界按 serial 串行化。
+
+    ``get_raw_driver()`` 是公开能力，XPath/UiObject 会绕过 HarmonyDriver 的包装
+    方法，但最终都落到 HmClient.invoke。锁放在这里才能覆盖所有调用入口。
+    """
+    if not _HMDRIVER2_AVAILABLE or HmClient is None:
+        return
+    for method_name in ("invoke", "invoke_captures"):
+        original = getattr(HmClient, method_name, None)
+        if original is None or getattr(original, "__aiphone_serialized__", False):
+            continue
+
+        def _serialized(
+            self: Any,
+            *args: Any,
+            __original: Any = original,
+            **kwargs: Any,
+        ) -> Any:
+            serial = str(getattr(getattr(self, "hdc", None), "serial", "") or "")
+            if not serial:
+                return __original(self, *args, **kwargs)
+            with _serial_lock(serial):
+                return __original(self, *args, **kwargs)
+
+        _serialized.__aiphone_serialized__ = True  # type: ignore[attr-defined]
+        _serialized.__name__ = getattr(original, "__name__", method_name)
+        setattr(HmClient, method_name, _serialized)
+
+
+_serialize_hmclient_invokes_once()
+
+
 def _require_hmdriver2() -> None:
     """真正用到 hmdriver2 时才抛；查设备列表这一步不抛（允许只有 hdc 没装 Python 库）。"""
     if not _HMDRIVER2_AVAILABLE:
@@ -153,49 +232,60 @@ class HarmonyDriver(BaseDriver):
 
     platform = "harmony"
 
+    @property
+    def _raw(self) -> Any:
+        """同 serial 所有 wrapper 共享的唯一 hmdriver2.Driver。"""
+        return self._state.raw
+
+    @_raw.setter
+    def _raw(self, value: Any) -> None:
+        self._state.raw = value
+
     def __init__(self, serial: str, *, setup_power: bool = True):
         _require_hmdriver2()
         self.serial = serial
-        # hmdriver2.Driver 是 singleton（按 serial 缓存），首次创建会：
-        # 1) 启 HmClient（hdc fport 到设备 uitest socket）
-        # 2) 自动在设备上下发 hypium-agent.hap（第一次会稍慢，秒级）
-        # 3) invoke "Driver#0" 句柄
-        # 失败通常意味着：uitest 服务没起来 / 设备未授权 / hdc 不通
-        try:
-            self._raw: Any = HmDriver(serial)  # type: ignore[misc]
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(
-                f"hmdriver2.Driver({serial}) 初始化失败：{exc}。"
-                "排查顺序：1) hdc list targets 看到设备且 Connected；"
-                "2) 设备已开发者模式 + USB 调试；"
-                "3) 首次连接 PC 时手机是否信任过；"
-                "4) 试 hdc shell \"aa start -a com.ohos.uitest.ServiceAbility -b com.ohos.uitest\""
-            ) from exc
+        # 同 serial 的 wrapper 共享完整状态，而不只共享锁。L2/L3 替换 state.raw
+        # 后，rescan / VLM / VM manager 持有的所有 wrapper 会立即看到同一新对象。
+        self._state = _serial_state(serial)
+        self._heal_lock = self._state.lock
 
-        # 自愈路径串行化：rescan_loop 线程（5s 周期探活）与 input handler 线程
-        # （用户点击/滑动）都会进 ``_call_with_reconnect``，若同时进 L2/L3
-        # 重建，一方在 ``_release_hmclient_quietly`` 把 sock 置 None 的中间态里，
-        # 另一方 sendMsg 就会炸 ``AttributeError: 'NoneType' object has no attribute 'sendall'``
-        # （2026-04-22 真机日志 [17:46:36] 是一份完整复现）。RLock 保证同一时刻
-        # 只有一个线程跑自愈，其他线程先等这把锁再决定是否还需要跑。
-        self._heal_lock = threading.RLock()
+        # 构造本身也走 uitest socket（HmClient.start → _connect_sock + Driver.create
+        # invoke），必须与其它线程的 invoke / 自愈互斥，否则 rescan 的临时实例
+        # 与运行中实例并发构造会撞 _UITestService.init()（杀 daemon + 推 agent.so）。
+        with self._heal_lock:
+            # hmdriver2.Driver 是 singleton（按 serial 缓存），首次创建会：
+            # 1) 启 HmClient（hdc fport 到设备 uitest socket）
+            # 2) 自动在设备上下发 hypium-agent.hap（第一次会稍慢，秒级）
+            # 3) invoke "Driver#0" 句柄
+            # 失败通常意味着：uitest 服务没起来 / 设备未授权 / hdc 不通
+            try:
+                if self._raw is None:
+                    self._raw = HmDriver(serial)  # type: ignore[misc]
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError(
+                    f"hmdriver2.Driver({serial}) 初始化失败：{exc}。"
+                    "排查顺序：1) hdc list targets 看到设备且 Connected；"
+                    "2) 设备已开发者模式 + USB 调试；"
+                    "3) 首次连接 PC 时手机是否信任过；"
+                    "4) 试 hdc shell \"aa start -a com.ohos.uitest.ServiceAbility -b com.ohos.uitest\""
+                ) from exc
 
-        # 禁自动息屏：HarmonyOS 设置里最长 15 分钟，排队期/长任务里会自己锁屏
-        # → uitest daemon 一并挂，再恢复要过 L2/L3 自愈。这里用 hdc 命令提前把
-        # 超时关掉，彻底规避问题。
-        # 续约策略：rescan_loop 每 5s 都会走这条构造器，距离上次成功打超过
-        # _STAY_AWAKE_REFRESH_SEC 才会真正再打一次 hdc shell；中间所有 rescan
-        # 都直接跳过，零开销。设备拔插 / agent 重启会因为 dict 里没有时间戳而
-        # 立即重打第一次。
-        if setup_power:
-            last = _STAY_AWAKE_LAST_AT.get(self.serial, 0.0)
-            now = time.monotonic()
-            is_first = last == 0.0
-            if is_first or (now - last) >= _STAY_AWAKE_REFRESH_SEC:
-                # 不管 _setup_stay_awake 内部成败都更新时间戳——失败大概率是 hdc
-                # 不通 / 设备短暂掉线，5s 后立刻重试也是徒劳，等下个续约窗口再试就行
-                self._setup_stay_awake(first=is_first)
-                _STAY_AWAKE_LAST_AT[self.serial] = now
+            # 禁自动息屏：HarmonyOS 设置里最长 15 分钟，排队期/长任务里会自己锁屏
+            # → uitest daemon 一并挂，再恢复要过 L2/L3 自愈。这里用 hdc 命令提前把
+            # 超时关掉，彻底规避问题。
+            # 续约策略：rescan_loop 每 5s 都会走这条构造器，距离上次成功打超过
+            # _STAY_AWAKE_REFRESH_SEC 才会真正再打一次 hdc shell；中间所有 rescan
+            # 都直接跳过，零开销。设备拔插 / agent 重启会因为 dict 里没有时间戳而
+            # 立即重打第一次。
+            if setup_power:
+                last = _STAY_AWAKE_LAST_AT.get(self.serial, 0.0)
+                now = time.monotonic()
+                is_first = last == 0.0
+                if is_first or (now - last) >= _STAY_AWAKE_REFRESH_SEC:
+                    # 不管 _setup_stay_awake 内部成败都更新时间戳——失败大概率是 hdc
+                    # 不通 / 设备短暂掉线，5s 后立刻重试也是徒劳，等下个续约窗口再试
+                    self._setup_stay_awake(first=is_first)
+                    _STAY_AWAKE_LAST_AT[self.serial] = now
 
     # ------------------------------------------------------------------
     # 息屏策略
@@ -335,6 +425,33 @@ class HarmonyDriver(BaseDriver):
         except Exception:  # noqa: BLE001
             pass
 
+    def _refresh_raw_from_singleton(self) -> None:
+        """让临时 wrapper 跟随同 serial 的最新 hmdriver2 单例。
+
+        ``HarmonyDriver`` 本身不是单例：VM manager、driver cache、rescan_loop
+        可以各持一个 wrapper；它们虽然共享 serial 锁，``self._raw`` 却仍是各自
+        的普通引用。某个 wrapper 完成 L2/L3 后会替换 hmdriver2 单例，其他
+        wrapper 若继续使用旧 raw，就会在下一次调用看到旧 client 的 ``sock=None``
+        并多触发一轮 L1。
+
+        因此每次在 serial 锁内调用前，都从上游单例表同步一次最新 raw。只接纳
+        已完成初始化的实例，避免构造失败留下的半初始化对象污染正常 wrapper。
+        """
+        try:
+            cache = getattr(HmDriver, "_instance", None)
+            current = cache.get(self.serial) if isinstance(cache, dict) else None
+            if (
+                current is not None
+                and current is not getattr(self, "_raw", None)
+                and bool(getattr(current, "_initialized", False))
+            ):
+                self._raw = current
+                logger.debug(
+                    "harmony serial={} wrapper 已同步到最新 Driver 单例", self.serial
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
     def _release_hmclient_quietly(self) -> None:
         """优雅关 HmClient：关 socket + rm fport；失败都吞掉，L3 路径不能因为
         "清理失败"阻塞恢复动作。
@@ -350,6 +467,77 @@ class HarmonyDriver(BaseDriver):
                 pass
         except Exception:  # noqa: BLE001
             pass
+
+    # ----- fport 同步：自愈换端口后回写 registry（否则镜像 fail-closed）------
+
+    def _current_local_port(self) -> Optional[int]:
+        """当前 HmClient 实际使用的本地 fport；拿不到返回 None。"""
+        try:
+            raw = getattr(self, "_raw", None)
+            client = getattr(raw, "_client", None) if raw is not None else None
+            if client is None:
+                return None
+            port = int(client.local_port)
+            return port if 1 <= port <= 65535 else None
+        except Exception:  # noqa: BLE001
+            return None
+
+    def current_fport(self) -> Optional[int]:
+        """对外（镜像重连用）：取当前控制通道 fport，持锁读，避免读到重建中间态。"""
+        with self._heal_lock:
+            self._refresh_raw_from_singleton()
+            return self._current_local_port()
+
+    def reconcile_managed_fport(self) -> int:
+        """锁内对齐当前 raw 与 managed registry，并返回唯一可信端口。
+
+        registry 以同一个 HDC serial 为键；当前 raw 也由该 serial 构造，因此这里
+        可以安全回写同键端口。无法读取、写回或二次校验失败时直接报错，镜像继续
+        fail-closed，绝不扫描其它设备的 fport。
+        """
+        with self._heal_lock:
+            self._refresh_raw_from_singleton()
+            port = self._current_local_port()
+            if port is None:
+                raise RuntimeError(
+                    f"harmony_driver_fport_unavailable:serial={self.serial}"
+                )
+
+            from ai_phone.agent.harmony_vm.registry import (  # noqa: PLC0415
+                managed_fport,
+                set_managed_fport,
+            )
+
+            is_managed, old = managed_fport(self.serial)
+            if is_managed and old != port:
+                set_managed_fport(self.serial, port)
+                logger.info(
+                    "harmony serial={} fport 锁内对账：{} → {}",
+                    self.serial, old, port,
+                )
+            if is_managed and managed_fport(self.serial) != (True, port):
+                raise RuntimeError(
+                    "managed_harmony_vm_fport_reconcile_failed:"
+                    f"serial={self.serial}:actual={port}"
+                )
+            return port
+
+    def _sync_managed_fport(self) -> None:
+        """L2/L3 重建后 fport 可能变（旧映射未被 __del__ 主动回收，新实例拿下一个
+        号），把新端口回写受管 VM registry，否则 registry 仍记旧端口，镜像工厂
+        ``expected != actual`` 永久 fail-closed（黑屏）。
+
+        registry 内部只对「已登记的受管 serial」生效（``set_managed_fport`` 自带
+        ``if serial in _MANAGED_FPORTS`` 守卫），非受管设备（真机）写入自动忽略。
+        惰性导入避免 drivers → harmony_vm 的潜在环。
+        """
+        try:
+            self.reconcile_managed_fport()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "harmony serial={} 自愈后 fport 回写失败（镜像可能需下次重建才恢复）：{}",
+                self.serial, exc,
+            )
 
     # ----- L1：socket 级重连 -----------------------------------------
 
@@ -381,6 +569,7 @@ class HarmonyDriver(BaseDriver):
         self._release_hmclient_quietly()
         self._invalidate_hmdriver_singleton(self.serial)
         self._raw = HmDriver(self.serial)  # type: ignore[misc]
+        self._sync_managed_fport()
         logger.info("harmony serial={} L2 Driver 已重建", self.serial)
 
     # ----- L3：设备端 daemon 级重拉 ----------------------------------
@@ -433,6 +622,7 @@ class HarmonyDriver(BaseDriver):
         # 重建实例：hmdriver2 构造函数 → HmClient.start() → _UITestService.init()
         # 会把 daemon 整个重拉起来，包括 agent.so 重推（md5 一致时跳过）
         self._raw = HmDriver(self.serial)  # type: ignore[misc]
+        self._sync_managed_fport()
         logger.warning(
             "harmony serial={} L3 daemon 重拉 + Driver 重建完成（如仍不通请物理重启手机）",
             self.serial,
@@ -443,10 +633,13 @@ class HarmonyDriver(BaseDriver):
     def _call_with_reconnect(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         """跑 ``fn(*args, **kwargs)``；按 L1 → L2 → L3 顺序升级自愈。
 
-        **并发串行化**：``_heal_lock`` 保证同一时刻只有一个线程在修车。rescan_loop
-        和 input handler 两个线程都会从这里穿过，如果不加锁，L2 ``_release_hmclient_quietly``
-        把 sock 置 None 的中间态会让另一个线程的 ``sock.sendall`` 立刻 NPE。
-        拿到锁之后，其他线程走到"首次 fn()"已经是修完的状态，大概率直接成功返回。
+        **并发串行化（根因修复）**：整个 ``send→recv`` 都在 ``_heal_lock``
+        （按 serial 全局共享）之下。这是本次修复的核心——此前 L0「首次尝试」
+        在锁外走乐观路径，rescan_loop 的临时 driver 与 vlm_loop 的缓存 driver
+        会同时 ``sendall`` / ``recv`` 同一条 uitest socket，导致响应粘包被误判成
+        socket 故障、进而并发自愈重建、端口漂移。现在锁覆盖 L0，就从源头杜绝了
+        并发使用 socket；uitest 本就「同时只服务一个客户端」，这里只是把代码
+        行为和设备真实约束对齐（控制通道串行；MJPEG 视频是独立 socket，不受此锁影响）。
 
         调用方需传 lambda / 顶层函数（内部引用 ``self._raw``），这样 L2/L3 重建后
         lambda 里的 ``self._raw`` 能自动绑到新对象。典型用法：
@@ -455,15 +648,14 @@ class HarmonyDriver(BaseDriver):
 
             return self._call_with_reconnect(lambda: self._raw.click(x, y))
 
-        失败路径分叉：
+        失败路径分叉（全程持锁）：
         - L0 首次 fn 成功 → 返回（绝大多数路径）
-        - L0 抛 socket 异常 → 拿锁 → 再试一次（别的线程可能已修好）
-        - 再失败 → L1 重连 socket 并重试
+        - L0 抛 socket 异常 → L1 重连 socket 并重试
         - L1 失败 → L2 重建 Driver 并重试
         - L2 失败 → L3 杀 daemon + 重建 并重试
         - L3 仍失败 → 把最后这次异常原样抛给调用方，supervisor 据此下线设备
 
-        **L0+ 非 socket 异常的轻量重试**（hypium daemon 抖动兜底）：
+        **L0 非 socket 异常的轻量重试**（hypium daemon 抖动兜底）：
         L0 抛非 socket 异常时（如 ``display_rotation get failed`` /
         ``display_size get failed``，常见于 hypium daemon 在 hdc shell 多端
         并发下的瞬态卡顿），等 50ms 重试一次再决定是否抛回——这类异常 90%
@@ -471,28 +663,25 @@ class HarmonyDriver(BaseDriver):
         会拖几秒），轻量重试是性价比最高的修法。仍失败才把原异常抛给调用
         方，避免吞掉真正的业务错误。
         """
-        # L0：首次尝试。不拿锁，乐观路径零开销
-        try:
-            return fn(*args, **kwargs)
-        except self._SOCKET_DEAD_ERRORS as exc_l0:
-            first_exc: BaseException = exc_l0
-        except Exception as exc_l0_business:  # noqa: BLE001
-            # hypium daemon 偶发的非 socket 异常（如 display_rotation/size get
-            # failed）：50ms 退避重试 1 次，仍异常照原样抛出（保持业务语义）
-            logger.debug(
-                "harmony serial={} L0 非 socket 异常 ({}: {})，50ms 后重试 1 次",
-                self.serial, exc_l0_business.__class__.__name__, exc_l0_business,
-            )
-            time.sleep(0.05)
-            return fn(*args, **kwargs)
-
-        # 进入自愈：串行化
+        # 全程持锁：L0 起就串行化，从源头杜绝并发使用同一条 uitest socket
         with self._heal_lock:
-            # 拿到锁后再试一次——有可能别的线程已经修好了
+            # 别的 wrapper 可能刚完成 L2/L3；先跟随最新 singleton，避免继续调用
+            # 已 release（sock=None）的旧 raw 再触发一轮冗余自愈。
+            self._refresh_raw_from_singleton()
+            # L0：首次尝试
             try:
                 return fn(*args, **kwargs)
-            except self._SOCKET_DEAD_ERRORS:
-                pass
+            except self._SOCKET_DEAD_ERRORS as exc_l0:
+                first_exc: BaseException = exc_l0
+            except Exception as exc_l0_business:  # noqa: BLE001
+                # hypium daemon 偶发的非 socket 异常（如 display_rotation/size get
+                # failed）：50ms 退避重试 1 次，仍异常照原样抛出（保持业务语义）
+                logger.debug(
+                    "harmony serial={} L0 非 socket 异常 ({}: {})，50ms 后重试 1 次",
+                    self.serial, exc_l0_business.__class__.__name__, exc_l0_business,
+                )
+                time.sleep(0.05)
+                return fn(*args, **kwargs)
 
             logger.warning(
                 "harmony serial={} L0 socket 异常 ({})，L1 重连后重试",
@@ -551,7 +740,9 @@ class HarmonyDriver(BaseDriver):
 
         ai-phone 不包装任何 hmdriver2 功能，保留生态完整性。
         """
-        return self._raw
+        with self._heal_lock:
+            self._refresh_raw_from_singleton()
+            return self._raw
 
     # ------------------------------------------------------------------
     # 屏幕信息
@@ -894,9 +1085,15 @@ class HarmonyDriver(BaseDriver):
         hmdriver2.Driver.__del__ 会自己 release HmClient；我们这里主动 release
         一次避免 TCP 挂很久，并清 singleton，下次 ``open_harmony_driver`` 才能
         真正 new 一个 fresh 实例（缓存字段是单数 ``_instance``，见 ``_respawn_daemon`` 注释）。
+
+        持 serial 锁：close 会把 sock 置 None + 清 singleton，必须与其它线程
+        在飞的 invoke / 自愈互斥，否则重演「sock=None 被别人先看到」的 NPE。
         """
-        self._release_hmclient_quietly()
-        self._invalidate_hmdriver_singleton(self.serial)
+        with self._heal_lock:
+            self._refresh_raw_from_singleton()
+            self._release_hmclient_quietly()
+            self._invalidate_hmdriver_singleton(self.serial)
+            self._raw = None
 
 
 def prepare_harmony_for_run(

@@ -139,11 +139,23 @@ def build_harmony_streamer(
 
     if backend == "hypium":
         from .harmony_capture_hypium import HarmonyHypiumStreamer  # noqa: PLC0415
-        from ai_phone.agent.harmony_vm.registry import managed_fport  # noqa: PLC0415
+
+        # fport 全部由 driver 按它自己的 serial 对账得出。一旦传进来的 driver 属于
+        # 另一台设备，拿到的就是别人的端口，视频流会串到别的设备上，因此这里必须
+        # 先卡死设备身份，不能等到 reconcile 之后再看端口对不对。
+        driver_serial = getattr(driver, "serial", None)
+        if driver_serial != serial:
+            raise RuntimeError(
+                "harmony_mirror_driver_serial_mismatch:"
+                f"serial={serial}:driver_serial={driver_serial}"
+            )
 
         try:
-            raw_driver = driver.get_raw_driver()
-            local_port = int(raw_driver._client.local_port)  # noqa: SLF001
+            # 在 driver 的 serial 锁内读取当前 raw、同步 managed registry 并二次
+            # 校验。首次建流与后续重连走同一入口，不留“registry 旧值先 mismatch”
+            # 的启动死角，也不扫描/猜测其它设备端口。
+            port_provider = driver.reconcile_managed_fport
+            local_port = int(port_provider())
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError(
                 f"harmony_mirror_driver_fport_unavailable:serial={serial}:{exc}"
@@ -154,25 +166,11 @@ def build_harmony_streamer(
                 f"serial={serial}:port={local_port}"
             )
 
-        # VM manager 在 Driver 握手成功后记录这台受管 VM 的精确 fport。
-        # 跨 Agent 的 HDC serial 由 Server 全局租约保证唯一；同一 Agent 内的视频
-        # 端口则必须与当前 Driver 和 VM registry 三者完全一致，任何不一致都
-        # fail-closed，绝不扫描/猜测/复用其它设备的 8012 映射。
-        is_managed, expected_port = managed_fport(serial)
-        if is_managed and expected_port is None:
-            raise RuntimeError(
-                f"managed_harmony_vm_fport_missing:serial={serial}"
-            )
-        if is_managed and int(expected_port) != local_port:
-            raise RuntimeError(
-                "managed_harmony_vm_fport_mismatch:"
-                f"serial={serial}:expected={expected_port}:actual={local_port}"
-            )
-
         return HarmonyHypiumStreamer(
             serial=serial,
             local_port=local_port,
             on_jpeg=on_jpeg,
+            port_provider=port_provider,
             log_tag=log_tag.replace("hm-shot", "hm-hypium"),
         )
 
