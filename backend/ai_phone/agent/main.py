@@ -793,6 +793,10 @@ _last_good_ios_snapshot: List[Any] = []
 _HARMONY_SCAN_MISS_THRESHOLD = 3
 _last_harmony_snapshot: Dict[str, Any] = {}
 _harmony_scan_misses: Dict[str, int] = {}
+# 设备仍靠上次快照保留在 UI 里，但本轮 hdc 扫描已经没看到它。
+# readiness 用这个集合区分「正常在线设备的偶发 probe 失败」与「缓存设备
+# 的定向 probe 失败」：后者必须立即停止派单，不能再等三次失败阈值。
+_stale_harmony_snapshot_serials: Set[str] = set()
 _android_vm_manager: Optional[Any] = None
 _harmony_vm_manager: Optional[Any] = None
 _ios_sim_manager: Optional[Any] = None
@@ -916,6 +920,7 @@ def _apply_harmony_snapshot_debounce(infos: List[Any]) -> List[Any]:
     for serial, info in current.items():
         _last_harmony_snapshot[serial] = info
         _harmony_scan_misses[serial] = 0
+        _stale_harmony_snapshot_serials.discard(serial)
 
     for serial in list(_last_harmony_snapshot):
         if serial in current:
@@ -924,6 +929,7 @@ def _apply_harmony_snapshot_debounce(infos: List[Any]) -> List[Any]:
         if misses >= _HARMONY_SCAN_MISS_THRESHOLD:
             _last_harmony_snapshot.pop(serial, None)
             _harmony_scan_misses.pop(serial, None)
+            _stale_harmony_snapshot_serials.discard(serial)
             logger.info(
                 "Harmony 设备连续 {} 轮扫描缺失，确认移出 serial={}",
                 misses,
@@ -931,6 +937,7 @@ def _apply_harmony_snapshot_debounce(infos: List[Any]) -> List[Any]:
             )
             continue
         _harmony_scan_misses[serial] = misses
+        _stale_harmony_snapshot_serials.add(serial)
         logger.debug(
             "Harmony 设备本轮扫描缺失，暂保留快照 serial={} miss={}/{}",
             serial,
@@ -941,10 +948,16 @@ def _apply_harmony_snapshot_debounce(infos: List[Any]) -> List[Any]:
     return non_harmony + list(_last_harmony_snapshot.values())
 
 
+def _is_harmony_snapshot_stale(serial: str) -> bool:
+    """返回该设备是否只因扫描防抖而暂留在快照中。"""
+    return str(serial or "") in _stale_harmony_snapshot_serials
+
+
 def _reset_harmony_snapshot_for_tests() -> None:
     """测试钩子：清空 Harmony 扫描防抖状态。仅供单测使用。"""
     _last_harmony_snapshot.clear()
     _harmony_scan_misses.clear()
+    _stale_harmony_snapshot_serials.clear()
 
 
 def _emit_ios_disconnect_events(infos: List[Any]) -> None:
@@ -3138,6 +3151,11 @@ def run(
         # 直接当作权威快照即可。拷贝一下，避免迭代时被其他线程改。
         return list(_serial_platform.items())
 
+    def _readiness_scan_stale(serial: str, platform: str) -> bool:
+        # 仅 Harmony 有这层快照防抖。快照可以保住设备卡片，但不能
+        # 保住派单资格；若稍后定向 probe 成功，readiness 会正常恢复。
+        return platform == "harmony" and _is_harmony_snapshot_stale(serial)
+
     async def _readiness_send(msg):
         return await client.send(msg)
 
@@ -3178,6 +3196,7 @@ def run(
         device_lister=_readiness_device_lister,
         send_message=_readiness_send,
         self_heal=_readiness_self_heal,
+        scan_stale=_readiness_scan_stale,
     )
 
     async def _readiness_on_connect(_client: AgentWSClient) -> None:

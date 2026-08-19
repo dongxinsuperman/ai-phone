@@ -40,6 +40,10 @@ DeviceLister = Callable[[], Iterable[Tuple[str, str]]]
 # async：内部走 ws_client.send，返回本次是否真正写入 WS。
 MessageSender = Callable[[Dict], Awaitable[bool]]
 
+# 注入的「设备是否只靠扫描快照暂留」判定。它不代替 probe，只决定
+# 定向 probe 失败后能否继续使用通用的「连续 N 次才降级」防抖。
+ScanStaleChecker = Callable[[str, str], bool]
+
 
 class _State:
     """每个设备的内存状态。
@@ -87,6 +91,7 @@ class ReadinessSupervisor:
         send_message: MessageSender,
         resend_interval_sec: float = 30.0,
         self_heal: Optional[Callable[[str, str], bool]] = None,
+        scan_stale: Optional[ScanStaleChecker] = None,
     ) -> None:
         """
         Args:
@@ -94,10 +99,14 @@ class ReadinessSupervisor:
                 设备连续探不通到 :data:`_SELF_HEAL_AFTER_FAILS` 次时调用一次。
                 **回调自己负责判断该不该动手**（平台是否支持、设备是否空闲），
                 supervisor 只负责在合适的时机通知它。
+            scan_stale: 可选回调，判定设备是否本轮扫描缺失、仅靠快照
+                暂时保留。这类设备若定向 probe 也失败，立即降级，避免真拔线
+                期间仍被派单。
         """
         self._device_lister = device_lister
         self._send = send_message
         self._self_heal = self_heal
+        self._scan_stale = scan_stale
         self._resend_interval_sec = max(1.0, float(resend_interval_sec))
         self._task: Optional[asyncio.Task] = None
         self._stop = asyncio.Event()
@@ -292,8 +301,27 @@ class ReadinessSupervisor:
             else:
                 state.consecutive_fail += 1
                 self._maybe_self_heal(key, state)
-                # 首次盖章前 OR 累计失败到阈值 → 立刻降级；其它情况保持上次广播态。
-                if state.consecutive_fail >= fail_threshold or not state.ever_ready:
+                # 首次盖章前 OR 累计失败到阈值 OR 只靠扫描快照保留
+                # → 立刻降级；其它情况保持上次广播态。
+                scan_stale = False
+                if self._scan_stale is not None:
+                    try:
+                        scan_stale = bool(self._scan_stale(*key))
+                    except Exception as exc:  # noqa: BLE001
+                        # 判定器本身异常时安全优先：本次 probe 已经失败，
+                        # 不能再依赖无法确认的防抖状态继续派单。
+                        scan_stale = True
+                        logger.warning(
+                            "[readiness] 扫描快照状态判定异常 key={}，"
+                            "本次 probe 失败按 fail-closed 降级：{}",
+                            key,
+                            exc,
+                        )
+                if (
+                    scan_stale
+                    or state.consecutive_fail >= fail_threshold
+                    or not state.ever_ready
+                ):
                     new_ready = False
                     new_reason = outcome.not_ready_reason
                     new_hint = outcome.hint
