@@ -18,7 +18,10 @@ prompt 越简越好，不要再大段教 DSL。
 """
 from __future__ import annotations
 
-from ai_phone.shared.function_map_prompt import build_function_map_system_policy
+from ai_phone.shared.function_map_prompt import (
+    build_execution_priority_system_policy,
+    build_function_map_system_policy,
+)
 
 
 _ZH_READABLE_POLICY = """## Human-readable Language Policy
@@ -86,7 +89,17 @@ def build_system_prompt(
                 "跳过；下一步是 N+1\"。**不要为子步骤 N 发动作。** The action"
                 " call should target substep N+1 (or run another verdict line"
                 " for N+1 first to decide).\n"
-                "- **[未满足]** -> 正常推理，然后为子步骤 N 发动作。\n\n"
+                "- **[未满足]** -> 若本次提供了 Function Map，Thought 第二句**必须**是 Map 判读句，固定模板二选一："
+                "「Function Map：命中可解决当前子步骤无法直接推进之阻碍的处理方式『<具体规则名称或处理方式>』，"
+                "依据：<Map 原文与截图事实>。」或「Function Map：未命中可解决当前子步骤阻碍的处理方式，"
+                "依据：<已检查的相关内容>。」禁止只写「命中」而不写具体处理方式。"
+                "Map 判读必须采用与当前截图事实最具体的匹配；引导、弹窗、异常状态等场景规则优先于普通页面导航规则。"
+                "Map 判读必须先覆盖当前截图的前景层；存在引导、弹窗、遮罩等前景层时，"
+                "禁止仅按背景页面命中普通导航规则。"
+                "命中处理方式时 Action 必须按该方式执行；未命中时 Action 再按原子步骤执行。"
+                "Map 产生的所有动作都属于当前子步骤 N，N 保持不变；下一轮继续对 N 进行二选一判读。"
+                "未完成 Map 判读，或命中后仍无理由忽略匹配信息发出原动作 → 违反硬协议 → KILL。"
+                "未提供 Function Map 时按原流程执行。\n\n"
                 "**Most common failure (auto-KILL)**: the screenshot clearly"
                 " shows the tab is already highlighted / option already selected"
                 " / page is already the target page, but you still click that"
@@ -114,8 +127,26 @@ def build_system_prompt(
                 " N+1\". **Do NOT issue an action for substep N.** The action"
                 " call should target substep N+1 (or run another verdict line"
                 " for N+1 first to decide).\n"
-                "- **[NOT SATISFIED]** -> proceed with normal reasoning then"
-                " issue an action for substep N.\n\n"
+                "- **[NOT SATISFIED]** -> if Function Map was provided, the"
+                " **second sentence** must use one fixed form: \"Function Map:"
+                " matched a method that resolves the current substep's obstacle:"
+                " '<specific rule name or method>', evidence: <Map text and"
+                " screenshot facts>.\" Or: \"Function Map: no method matched that"
+                " resolves the current substep's obstacle, evidence: <relevant"
+                " content checked>.\" Writing only MATCH without the specific"
+                " method is forbidden. A matched method must"
+                " use the most specific match to the screenshot facts; guidance,"
+                " popup, and abnormal-state rules take priority over ordinary"
+                " page-navigation rules. The Map verdict must cover the screenshot"
+                " foreground first; when guidance, popup, or overlay foreground"
+                " exists, matching an ordinary navigation rule from the background"
+                " page alone is forbidden. The action must"
+                " follow the named method; when no method matches, use the original"
+                " substep. Every Map action belongs to the current substep N; N"
+                " stays unchanged and the next turn repeats the two-way verdict"
+                " for N. Missing this Map verdict, or ignoring a MATCH without"
+                " reason and issuing the original action = hard-protocol violation"
+                " = KILL. If no Function Map was provided, follow the original flow.\n\n"
                 "**Most common failure (auto-KILL)**: the screenshot clearly"
                 " shows the tab is already highlighted / option already selected"
                 " / page is already the target page, but you still click that"
@@ -138,6 +169,9 @@ def build_system_prompt(
         present=bool((function_map_context or "").strip()),
         zh=zh_readable,
     )
+    execution_priority_policy = build_execution_priority_system_policy(
+        zh=zh_readable,
+    )
     return f"""You are operating a real mobile device. You receive a screenshot each turn and call the `computer` tool to perform UI actions.
 
 {language_policy}
@@ -149,6 +183,7 @@ The UI may be in English, Korean, Japanese, Arabic, or other languages. Read the
 {goal}
 {substeps_block}
 {function_map_policy}
+{execution_priority_policy}
 ⚠️ **Completion iron rule**: Before declaring `FINISHED`, you must see explicit visual evidence in the current screenshot proving the task is complete. "Probably done" / "should have sent" = NOT done; keep going.
 
 ⚠️ **Starting line**: If you join at step 3 or later (you'll see a hint like "starting-line already executed by system"), it means `close_app + open_app` has been done by the runtime in steps 1-2. Do not redo close_app / open_app — continue from the next pending substep.

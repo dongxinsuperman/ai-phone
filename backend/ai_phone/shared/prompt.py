@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from ai_phone.shared.function_map_prompt import (
+    build_execution_priority_system_policy,
     build_function_map_system_policy,
 )
 
@@ -58,7 +59,17 @@ def build_system_prompt(
             "- **[已满足]** → Thought 后续直接写"
             "「跳过子步骤 N，下一条是 N+1」，**禁止再发动作**；"
             "Action 直接给下一条子步骤的动作（或继续判读 N+1 决定是否再跳）\n"
-            "- **[未满足]** → Thought 后续给本轮分析，Action 给本子步骤的动作\n\n"
+            "- **[未满足]** → 若本次提供了 Function Map，Thought 第二句**必须**是 Map 判读句，固定模板二选一："
+            "「Function Map：命中可解决当前子步骤无法直接推进之阻碍的处理方式『<具体规则名称或处理方式>』，"
+            "依据：<Map 原文与截图事实>。」或「Function Map：未命中可解决当前子步骤阻碍的处理方式，"
+            "依据：<已检查的相关内容>。」禁止只写「命中」而不写具体处理方式。"
+            "Map 判读必须采用与当前截图事实最具体的匹配；引导、弹窗、异常状态等场景规则优先于普通页面导航规则。"
+            "Map 判读必须先覆盖当前截图的前景层；存在引导、弹窗、遮罩等前景层时，"
+            "禁止仅按背景页面命中普通导航规则。"
+            "命中处理方式时 Action 必须按该方式执行；未命中时 Action 再按原子步骤执行。"
+            "Map 产生的所有动作都属于当前子步骤 N，N 保持不变；下一轮继续对 N 进行二选一判读。"
+            "未完成 Map 判读，或命中后仍无理由忽略匹配信息发出原动作 → 违反硬协议 → KILL。"
+            "未提供 Function Map 时按原流程执行。\n\n"
             "**最常见错例**（直接 KILL）：截图明显显示 Tab/页签已高亮、按钮已选中、"
             "页面已是目标页 → 仍点击该位置触发动作。这就是"
             "「死磕已达成的子步骤」，比跳错还糟。\n\n"
@@ -72,6 +83,7 @@ def build_system_prompt(
         present=bool((function_map_context or "").strip()),
         zh=True,
     )
+    execution_priority_policy = build_execution_priority_system_policy(zh=True)
 
     return f"""你是一个手机屏幕操作助手。每轮收到当前屏幕截图，**默认输出 1 个**下一步动作；仅在操作"瞬态 UI"时允许同 Thought 下输出 2 个 Action（详见 §C）。
 
@@ -79,6 +91,7 @@ def build_system_prompt(
 {goal}
 {substeps_block}
 {function_map_policy}
+{execution_priority_policy}
 ⚠️ 完成铁律：调用 `finished()` 前，必须从当前截图看到明确视觉证据证明任务完成。「可能完成」「应该已发」= 未完成，必须继续。
 
 ⚠️ 起跑线：如果你在 step 3+ 才被调度（看到提示"起跑线已由系统执行"），说明 close_app + open_app 已由系统在 step 1-2 完成，**不要再做** close_app / open_app，从下一个未完成步骤继续。

@@ -107,6 +107,7 @@ def test_runner_without_map_has_no_initial_user_context(
     )
 
     assert captured["initial_user_context"] is None
+    assert "## 5. 场景权重与调用（始终生效）" in captured["system_prompt"]
     assert "Function Map 使用契约" not in captured["system_prompt"]
     assert "Function Map Usage Contract" not in captured["system_prompt"]
 
