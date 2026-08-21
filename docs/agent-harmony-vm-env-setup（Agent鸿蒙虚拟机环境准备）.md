@@ -128,6 +128,19 @@ AI_PHONE_AGENT_TOKEN=<管理员提供的Agent token>
 AI_PHONE_AGENT_NAME=<这台Mac的唯一名称>
 ```
 
+DevEco 可能在 `Emulator -start` 阶段再次询问 HarmonyOS Software
+Service Agreement。如果该 Agent 由 LaunchAgent 非交互运行，并且本机运维者
+已确认获得代为接受协议的授权，在该 Agent 本机的 `.env.local` 显式开启：
+
+```env
+AI_PHONE_HARMONY_AUTO_ACCEPT_AGREEMENTS=true
+```
+
+该开关默认关闭，只在目标 Agent 本机生效，Server 不会下发或覆盖。
+开启后 Agent 只在真正的 Harmony `Emulator -start` 进程上写入一次 `y`，
+不修改或锁定 `.emu_config`。它不代替 DevEco Studio 首次 GUI 初始化中的
+其他账号、镜像或系统内协议步骤。
+
 启动：
 
 ```bash
@@ -203,6 +216,8 @@ backend/.data/storage/harmony_vm_runtime/logs/<vm-id>/emulator.log
 | --- | --- |
 | `hdc` 不在 PATH | Agent 自动检查 DevEco/SDK 默认目录 |
 | DevEco 在线镜像列表不可用 | Agent 只读检查默认目录中已经完整下载的本地镜像 |
+| 协议自动确认开关未开启 | 保持现有行为；遇到交互询问时启动失败，不代表用户接受 |
+| 开关已开启但 stdin 管道提前关闭 | Agent 记录明确警告，继续以进程、HDC 和 Driver 就绪结果判定，不切换其他启动方式 |
 | 共享 UUID 留空 | Agent 不注入，按 DevEco 实例配置启动 |
 | 共享 UUID 已配置但写入失败 | 本次虚拟机启动失败，不回退到随机 UUID |
 | 缺镜像、ABI 不匹配、无 GUI 会话、协议未确认、端口不一致 | 直接失败，不换设备、不换镜像、不切其他端口 |

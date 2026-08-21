@@ -52,6 +52,71 @@ FOLD_VERIFY_ATTEMPTS = 6
 FOLD_VERIFY_INTERVAL_SEC = 1.0
 
 
+def _spawn_harmony_emulator(
+    args: List[str],
+    log_file: Any,
+    *,
+    auto_accept_agreements: bool,
+    vm_id: str,
+) -> subprocess.Popen:
+    """Start DevEco and optionally answer its agreement prompt once."""
+    if not auto_accept_agreements:
+        return subprocess.Popen(
+            args,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+        )
+
+    process = subprocess.Popen(
+        args,
+        stdin=subprocess.PIPE,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+    )
+    stream = process.stdin
+    if stream is None:
+        logger.warning(
+            "Harmony VM 协议自动确认已开启，但 Emulator stdin 不可用 "
+            "vm_id={}",
+            vm_id,
+        )
+        return process
+
+    sent = False
+    try:
+        stream.write(b"y\n")
+        stream.flush()
+        sent = True
+    except (OSError, ValueError) as exc:
+        # BrokenPipeError is an OSError. A version that does not prompt may
+        # close stdin immediately and still boot normally, so keep tracking
+        # the real process and let the existing process/HDC/driver gates decide.
+        logger.warning(
+            "Harmony VM 向 Emulator 写入协议确认失败 "
+            "vm_id={} error={}:{}",
+            vm_id,
+            type(exc).__name__,
+            exc,
+        )
+    finally:
+        try:
+            stream.close()
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "Harmony VM 关闭 Emulator stdin 失败 "
+                "vm_id={} error={}:{}",
+                vm_id,
+                type(exc).__name__,
+                exc,
+            )
+    if sent:
+        logger.info(
+            "Harmony VM 已向 Emulator stdin 发送一次协议确认 vm_id={}",
+            vm_id,
+        )
+    return process
+
+
 @dataclass
 class HarmonyVmRuntime:
     vm_id: str
@@ -524,8 +589,13 @@ class HarmonyVmManager:
                     _boot_mode(str(msg.get("boot_mode") or "cold")),
                 ]
             )
-            runtime.process = subprocess.Popen(
-                args, stdout=log_file, stderr=subprocess.STDOUT
+            runtime.process = _spawn_harmony_emulator(
+                args,
+                log_file,
+                auto_accept_agreements=bool(
+                    get_settings().harmony_auto_accept_agreements
+                ),
+                vm_id=runtime.vm_id,
             )
             boot_deadline = time.monotonic() + self.boot_timeout_sec
             self._wait_hdc(runtime, deadline=boot_deadline)

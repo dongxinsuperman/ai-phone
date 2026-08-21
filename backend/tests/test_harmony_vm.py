@@ -19,6 +19,7 @@ from ai_phone.agent.harmony_vm.manager import (
     HarmonyVmManager,
     HarmonyVmRuntime,
     _apply_instance_uuid,
+    _spawn_harmony_emulator,
 )
 from ai_phone.agent.harmony_vm.registry import (
     managed_fport,
@@ -26,7 +27,7 @@ from ai_phone.agent.harmony_vm.registry import (
     set_managed_fport,
     unregister_managed_serial,
 )
-from ai_phone.config import AGENT_LOCAL_FIELDS, downlink_field_names
+from ai_phone.config import AGENT_LOCAL_FIELDS, Settings, downlink_field_names
 from ai_phone.server.db import init_harmony_vm_db
 from ai_phone.server.harmony_vm.catalog import (
     load_bundled_manifest,
@@ -193,6 +194,140 @@ def test_harmony_runtime_settings_are_the_only_four_downlinked_fields():
     assert {
         name for name in names if name.startswith("harmony_vm_")
     } == runtime_fields
+
+
+def test_harmony_agreement_acceptance_is_local_and_default_off():
+    field = Settings.model_fields["harmony_auto_accept_agreements"]
+    assert field.default is False
+    assert "harmony_auto_accept_agreements" in AGENT_LOCAL_FIELDS
+    assert "harmony_auto_accept_agreements" not in downlink_field_names()
+
+
+def test_harmony_emulator_spawn_without_acceptance_keeps_original_stdio(
+    monkeypatch,
+):
+    import ai_phone.agent.harmony_vm.manager as manager_module
+
+    sentinel = object()
+    calls = []
+
+    def fake_popen(args, **kwargs):
+        calls.append((args, kwargs))
+        return sentinel
+
+    monkeypatch.setattr(manager_module.subprocess, "Popen", fake_popen)
+    process = _spawn_harmony_emulator(
+        ["/fake/Emulator", "-start", "vm"],
+        "log-file",
+        auto_accept_agreements=False,
+        vm_id="vm",
+    )
+
+    assert process is sentinel
+    assert calls == [
+        (
+            ["/fake/Emulator", "-start", "vm"],
+            {
+                "stdout": "log-file",
+                "stderr": manager_module.subprocess.STDOUT,
+            },
+        )
+    ]
+
+
+def test_harmony_emulator_spawn_accepts_once_and_tracks_real_process(
+    monkeypatch,
+):
+    import ai_phone.agent.harmony_vm.manager as manager_module
+
+    events = []
+
+    class FakeStdin:
+        def write(self, value):
+            events.append(("write", value))
+
+        def flush(self):
+            events.append(("flush", None))
+
+        def close(self):
+            events.append(("close", None))
+
+    real_process = SimpleNamespace(stdin=FakeStdin())
+    calls = []
+
+    def fake_popen(args, **kwargs):
+        calls.append((args, kwargs))
+        return real_process
+
+    monkeypatch.setattr(manager_module.subprocess, "Popen", fake_popen)
+    process = _spawn_harmony_emulator(
+        ["/fake/Emulator", "-start", "vm"],
+        "log-file",
+        auto_accept_agreements=True,
+        vm_id="vm",
+    )
+
+    assert process is real_process
+    assert calls[0][1] == {
+        "stdin": manager_module.subprocess.PIPE,
+        "stdout": "log-file",
+        "stderr": manager_module.subprocess.STDOUT,
+    }
+    assert events == [
+        ("write", b"y\n"),
+        ("flush", None),
+        ("close", None),
+    ]
+
+
+@pytest.mark.parametrize("failure_stage", ["write", "flush", "close"])
+def test_harmony_emulator_spawn_keeps_process_when_stdin_pipe_breaks(
+    monkeypatch,
+    failure_stage,
+):
+    import ai_phone.agent.harmony_vm.manager as manager_module
+
+    events = []
+    warnings = []
+
+    class FakeStdin:
+        def write(self, value):
+            events.append(("write", value))
+            if failure_stage == "write":
+                raise BrokenPipeError("write closed")
+
+        def flush(self):
+            events.append(("flush", None))
+            if failure_stage == "flush":
+                raise BrokenPipeError("flush closed")
+
+        def close(self):
+            events.append(("close", None))
+            if failure_stage == "close":
+                raise BrokenPipeError("close closed")
+
+    real_process = SimpleNamespace(stdin=FakeStdin())
+    monkeypatch.setattr(
+        manager_module.subprocess,
+        "Popen",
+        lambda _args, **_kwargs: real_process,
+    )
+    monkeypatch.setattr(
+        manager_module.logger,
+        "warning",
+        lambda message, *args: warnings.append((message, args)),
+    )
+
+    process = _spawn_harmony_emulator(
+        ["/fake/Emulator", "-start", "vm"],
+        "log-file",
+        auto_accept_agreements=True,
+        vm_id="vm",
+    )
+
+    assert process is real_process
+    assert events[-1] == ("close", None)
+    assert warnings
 
 
 def test_harmony_shared_uuid_is_written_to_every_instance(tmp_path):

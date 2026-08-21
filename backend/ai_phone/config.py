@@ -151,6 +151,14 @@ class Settings(BaseSettings):
         default=True,
         description="Agent 重连时是否上报本机受管鸿蒙实例做孤儿对账。env: AI_PHONE_HARMONY_VM_ORPHAN_CLEANUP",
     )
+    harmony_auto_accept_agreements: bool = Field(
+        default=False,
+        description=(
+            "Agent 本机是否在 DevEco Emulator -start 时通过 stdin 显式确认"
+            "HarmonyOS 协议；涉及法律授权，默认关闭且不由 Server 下发。"
+            "env: AI_PHONE_HARMONY_AUTO_ACCEPT_AGREEMENTS"
+        ),
+    )
     android_setup_stay_awake: bool = Field(
         default=True,
         description=(
@@ -1856,6 +1864,9 @@ AGENT_LOCAL_FIELDS: frozenset[str] = frozenset({
     "server_http_base",
     "agent_token",
     "agent_name",
+    # 法律协议必须由每台 Harmony Agent 的运维者在本机明确授权，
+    # 不允许 Server 下发值覆盖。
+    "harmony_auto_accept_agreements",
     # iOS WDA 本机签名 / 工程 / 端口（每台 Mac 客观不同，Server 无法统一）
     "wda_project_dir",
     "wda_scheme",
