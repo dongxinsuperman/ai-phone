@@ -240,6 +240,17 @@ class TestExtractThoughtAction:
         assert extract_thought(text) == "第一行\n第二行"
         assert extract_action(text) == "press_back()"
 
+    def test_missing_thought_prefix_uses_text_before_action(self):
+        text = (
+            "子步骤 1：当前截图未满足，需要点击登录。\n"
+            "Action: click(point='<point>500 900</point>')"
+        )
+        assert extract_thought(text) == "子步骤 1：当前截图未满足，需要点击登录。"
+        assert extract_action(text) == "click(point='<point>500 900</point>')"
+
+    def test_missing_thought_and_action_keeps_thought_empty(self):
+        assert extract_thought("无法识别的模型输出") == ""
+
     def test_missing_action_falls_back_to_assert_fail(self):
         """VLM 漏写 Action 行 → 兜底必须是 assert_fail，绝不能是 finished
         （否则 Run 被静悄悄判为成功）。"""

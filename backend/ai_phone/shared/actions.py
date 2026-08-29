@@ -228,7 +228,12 @@ def extract_thought(content: str) -> str:
     if not content:
         return ""
     m = _THOUGHT_RE.search(content)
-    return m.group(1).strip() if m else ""
+    if m:
+        return m.group(1).strip()
+
+    # 兼容省略 ``Thought:`` 前缀、但仍在 Action 前返回完整分析的模型。
+    action_line = _ACTION_LINE_RE.search(content)
+    return content[:action_line.start()].strip() if action_line else ""
 
 
 def extract_action(content: str) -> str:
