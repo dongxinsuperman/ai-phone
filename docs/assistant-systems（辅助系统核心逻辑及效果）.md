@@ -141,7 +141,7 @@ AI_PHONE_ASSISTANT_THINKING_JUDGE=true
 
 ```env
 AI_PHONE_ASSISTANT_THINKING_ASSERTION=true
-AI_PHONE_ASSERTION_TIMEOUT_SEC=60
+AI_PHONE_ASSERTION_TIMEOUT_SEC=120
 ```
 
 断言模型可与主 VLM 使用不同后端，常见部署是主 VLM 用强视觉模型，辅助系统用更便宜的 chat / vision 能力。配置缺失、调用失败或返回内容不符合协议时，实时执行链路会记录 `SKIP` 原因并采纳主 VLM 的 finished；这是保留的显式兜底，不是隐藏降级。

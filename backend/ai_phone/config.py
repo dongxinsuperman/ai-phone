@@ -1602,7 +1602,7 @@ class Settings(BaseSettings):
     )
     # 断言系统终局裁决超时；超时按 SKIP 处理（回退采纳主 VLM 结果）。
     assertion_timeout_sec: float = Field(
-        default=60.0,
+        default=120.0,
         ge=10.0,
         le=600.0,
         description=(

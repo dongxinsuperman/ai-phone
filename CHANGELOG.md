@@ -4,6 +4,22 @@
 
 ## Unreleased
 
+### 最终断言：默认等待时间延长至 120 秒
+
+- `AI_PHONE_ASSERTION_TIMEOUT_SEC` 的公开默认值由 60 秒调整为 120 秒，
+  避免开启 thinking 的断言模型在正常长推理时被编排层提前取消。
+- 超时后按 `SKIP` 回退主 VLM 的行为保持不变；Server 继续通过现有运行时
+  配置通道向 Agent 下发该值，不增加新的协议或部署字段。
+
+### Final assertion: extend the default wait to 120 seconds
+
+- Raise the public `AI_PHONE_ASSERTION_TIMEOUT_SEC` default from 60 to 120 seconds
+  so assertions with thinking enabled can finish normally instead of being cancelled by
+  the orchestration layer during legitimate long reasoning.
+- Keep the existing `SKIP` fallback unchanged. The Server continues to distribute the
+  value through the existing runtime configuration channel, with no new protocol or
+  deployment field.
+
 ### 批次单 Case 超时：补齐 Agent 已无 Run 时的自动收口
 
 - 沿用 `AI_PHONE_ITEM_TTL_SEC`（默认 1 小时）作为 SubmissionItem 的硬上限；

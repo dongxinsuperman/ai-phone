@@ -169,6 +169,7 @@ def test_env_defaults_contains_only_public_runtime_defaults():
     assert active["AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_ENABLED"] == "true"
     assert active["AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_ENABLED"] == "true"
     assert active["AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_ACTION_ENABLED"] == "true"
+    assert active["AI_PHONE_ASSERTION_TIMEOUT_SEC"] == "120"
     assert active["AI_PHONE_STRUCT_STRICTNESS_HARD_SCORE"] == "10"
     assert active["AI_PHONE_STRUCT_STRICTNESS_AUDIT_SCORE"] == "10"
     assert active["AI_PHONE_SLEEP_AFTER_RUN"] == "true"
@@ -181,6 +182,7 @@ def test_code_defaults_match_project_runtime_policy():
     assert s.function_map_context_max_chars == 0
     assert s.struct_strictness_hard_score == 10
     assert s.struct_strictness_audit_score == 10
+    assert s.assertion_timeout_sec == 120
     assert s.sleep_after_run is True
 
 
@@ -192,6 +194,7 @@ def test_execution_fields_are_distributed():
         "vlm_api_key",
         "run_max_steps",
         "audit_allow_limit",
+        "assertion_timeout_sec",
         "mirror_max_width",
         "transient_ui_enabled",
         "sleep_after_run",
@@ -691,7 +694,11 @@ def test_vlm_loop_thresholds_refresh_on_override():
 
     saved = {
         name: getattr(vl, name)
-        for name in ("SAFETY_MAX_STEPS", "CLICK_STUCK_THRESHOLD")
+        for name in (
+            "SAFETY_MAX_STEPS",
+            "CLICK_STUCK_THRESHOLD",
+            "ASSERTION_SYSTEM_TIMEOUT_SECONDS",
+        )
     }
     try:
         # 无 override 时刷新应不改动（保持本机/monkeypatch 值）
@@ -702,10 +709,12 @@ def test_vlm_loop_thresholds_refresh_on_override():
         snap = dict(build_downlink_config(settings=_derived_doubao_settings(run_max_steps=base_steps)))
         snap["run_max_steps"] = base_steps + 5
         snap["click_stuck_threshold"] = 9
+        snap["assertion_timeout_sec"] = 123
         set_runtime_override(snap)
         vl._refresh_run_tuning_from_settings()
         assert vl.SAFETY_MAX_STEPS == base_steps + 5
         assert vl.CLICK_STUCK_THRESHOLD == 9
+        assert vl.ASSERTION_SYSTEM_TIMEOUT_SECONDS == 123
 
         # 清除 override 后刷新守卫不再改动（直接 return）
         clear_runtime_override()

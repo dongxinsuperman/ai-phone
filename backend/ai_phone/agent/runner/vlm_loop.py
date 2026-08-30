@@ -107,7 +107,7 @@ _CHAIN_ALLOWED_ACTIONS = frozenset({
 # ---- 断言系统（finished 终局裁决）调用超时 ----
 # 主 VLM 输出 finished() 后，系统会再调用一次 VLM 做终局裁决（带最终截图 +
 # 主 VLM 的 thought / finish_msg），仅返回 PASS/FAIL/SKIP 三态。这一次属于
-# "走完末班车"，不能因为网络抖动卡死整个 Run，给一个偏宽松的默认 60s 超时；
+# "走完末班车"，不能因为网络抖动卡死整个 Run，给一个偏宽松的默认 120s 超时；
 # 超时会按 SKIP 处理（回退采纳主 VLM 结果），不会阻塞 Run 收尾。
 ASSERTION_SYSTEM_TIMEOUT_SECONDS = _settings.assertion_timeout_sec  # env: AI_PHONE_ASSERTION_TIMEOUT_SEC
 
