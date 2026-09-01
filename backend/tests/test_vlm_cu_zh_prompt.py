@@ -78,6 +78,23 @@ def test_zh_readable_flag_does_not_change_doubao_prompt() -> None:
     assert "未提供 Function Map 时按原流程执行" in prompt_default
 
 
+def test_doubao_substeps_start_at_one_and_advance_only_by_contiguous_verdicts() -> None:
+    prompt = build_system_prompt_for_backend(
+        "点击共学，点击我的",
+        backend="doubao_responses",
+        substeps_text=_SUBSTEPS,
+    )
+
+    assert "首轮必须从子步骤 1 开始" in prompt
+    assert "当前截图只能用于判断当前子步骤的完整原文" in prompt
+    assert "Thought 必须继续按同一模板判读 N+1" in prompt
+    assert "Action 只能服务于本轮最后一条[未满足]的子步骤" in prompt
+    assert "截图符合后续子步骤不能作为跳过当前项的依据" in prompt
+    assert "只属于排除当前子步骤的阻碍" in prompt
+    assert "Action 直接给下一条子步骤的动作" not in prompt
+    assert "wait(1)" not in prompt
+
+
 @pytest.mark.parametrize("backend", ["doubao_responses", "claude_cu", "gpt_cu"])
 def test_substep_boundaries_follow_injected_checklist_not_fixed_punctuation(
     backend: str,
