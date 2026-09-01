@@ -95,6 +95,37 @@ def test_doubao_substeps_start_at_one_and_advance_only_by_contiguous_verdicts() 
     assert "wait(1)" not in prompt
 
 
+@pytest.mark.parametrize("backend", ["claude_cu", "gpt_cu"])
+@pytest.mark.parametrize("zh_readable", [False, True])
+def test_overseas_substeps_match_contiguous_progression_contract(
+    backend: str,
+    zh_readable: bool,
+) -> None:
+    prompt = build_system_prompt_for_backend(
+        "点击共学，点击我的",
+        backend=backend,
+        substeps_text=_SUBSTEPS,
+        zh_readable=zh_readable,
+    )
+
+    if zh_readable:
+        assert "首轮必须从子步骤 1 开始" in prompt
+        assert "当前截图只能用于判断当前子步骤的完整原文" in prompt
+        assert "必须继续按同一模板判读 N+1" in prompt
+        assert "Action 只能服务于本轮最后一条[未满足]的子步骤" in prompt
+    else:
+        assert "first decision must start at substep 1" in prompt
+        assert "current screenshot may judge only the complete original text" in prompt
+        assert "continue with the same verdict template for N+1" in prompt
+        assert "action may serve only the final [NOT SATISFIED] substep" in prompt
+
+    assert "A screenshot match for a later substep cannot justify skipping" in prompt
+    assert "After a skip, the next verdict may only be N+1" in prompt
+    assert "autonomously dismiss a system popup, guide, or overlay" in prompt
+    assert "action call should target substep N+1" not in prompt
+    assert "wait(1)" not in prompt
+
+
 @pytest.mark.parametrize("backend", ["doubao_responses", "claude_cu", "gpt_cu"])
 def test_substep_boundaries_follow_injected_checklist_not_fixed_punctuation(
     backend: str,
@@ -200,6 +231,24 @@ def test_settings_reads_vlm_cu_zh_prompt_enabled_env(monkeypatch: pytest.MonkeyP
     settings = Settings(_env_file=None)
 
     assert settings.vlm_cu_zh_prompt_enabled is True
+
+
+def test_session_reset_threshold_defaults_to_240k(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AI_PHONE_VLM_SESSION_RESET_PROMPT_THRESHOLD", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.vlm_session_reset_prompt_threshold == 240000
+
+
+def test_session_reset_threshold_remains_overridable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AI_PHONE_VLM_SESSION_RESET_PROMPT_THRESHOLD", "30000")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.vlm_session_reset_prompt_threshold == 30000
 
 
 def test_settings_reads_function_map_context_env(monkeypatch: pytest.MonkeyPatch) -> None:

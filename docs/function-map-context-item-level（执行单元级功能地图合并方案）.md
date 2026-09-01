@@ -258,7 +258,7 @@ def merge_function_map_context(batch_text: str | None, item_text: str | None) ->
 | `backend/ai_phone/agent/trajectory_cache/v3_replay.py` | V3 轨迹缓存 locator 输出预算 | `max_tokens: 8192` | 不改。和本功能无关 |
 | `backend/ai_phone/agent/trajectory_cache/ephemeral.py` | 瞬态 UI 判定输出预算 | `max_tokens: 8192` | 不改。和本功能无关 |
 | `backend/ai_phone/config.py` | Claude thinking 预算配置 | `vlm_main_thinking_budget default=1024, le=8192` | 不改。不是 function map 字段限制 |
-| `backend/ai_phone/config.py` | 主 VLM 会话分段阈值 | `vlm_session_reset_prompt_threshold default=30000` | 不改。它控制长任务会话切段，不是 function map 字符准入 |
+| `backend/ai_phone/config.py` | 主 VLM 会话分段阈值 | `vlm_session_reset_prompt_threshold default=240000` | 不改。它控制长任务会话切段，不是 function map 字符准入 |
 | `backend/ai_phone/shared/llm/main/gpt_cu.py` | GPT Responses 历史截断策略 | `truncation: "auto"` | 不改。不是本功能的字段处理逻辑 |
 | `backend/ai_phone/shared/vlm.py` | Doubao Responses 主链路请求 | 未发现显式 `max_tokens` | 不改。当前没有仓库侧输出 token 上限字段 |
 

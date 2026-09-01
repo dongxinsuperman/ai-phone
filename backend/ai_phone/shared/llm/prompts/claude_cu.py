@@ -92,17 +92,22 @@ def build_system_prompt(
         # 病。代价：thinking 长 30-50 token / 轮，远小于一次卡死的成本。
         if zh_readable:
             substeps_block = (
-                "\n## Operation Substeps Checklist (active throughout the run)\n"
+                "\n## 子步骤推进铁律（最高优先级）\n"
+                "首轮必须从子步骤 1 开始；此后必须从尚未被逐项明确判定为已满足的最小编号开始。"
+                "当前截图只能用于判断当前子步骤的完整原文；"
+                "即使截图符合后续子步骤，也禁止选择、推测或跨越后续编号。\n\n"
+                "## Operation Substeps Checklist (active throughout the run)\n"
                 f"{substeps_text.strip()}\n\n"
-                "### 每轮强制判读句（违反 = KILL）\n"
-                "你的 reasoning / thinking block 第一句必须使用这个固定模板：\n"
+                "### 每轮强制判读流程（违反 = KILL）\n"
+                "你的 reasoning / thinking block 第一句必须从当前子步骤开始判读，"
+                "首轮固定为子步骤 1：\n"
                 "  \"子步骤 N「<原始片段>」→ 目标状态：<把动作转成状态>。"
                 "当前截图：[已满足 / 未满足]，依据：<具体视觉证据>。\"\n\n"
                 "按判定分支：\n"
-                "- **[已满足]** -> 下一句写：\"截图显示 <状态证据> 已满足子步骤 N，"
-                "跳过；下一步是 N+1\"。**不要为子步骤 N 发动作。** action call"
-                " should target substep N+1 (or run another verdict line for"
-                " N+1 first to decide whether to skip again).\n"
+                "- **[已满足]** -> 必须写明证据并跳过子步骤 N；如仍有后续步骤，"
+                "必须继续按同一模板判读 N+1，禁止省略中间编号。"
+                "Action 只能服务于本轮最后一条[未满足]的子步骤；"
+                "连续判读至最后一项均已满足时，才可 `FINISHED`。\n"
                 "- **[未满足]** -> 若本次提供了 Function Map，Thought 第二句**必须**是 Map 判读句，固定模板二选一："
                 "「Function Map：命中可解决当前子步骤无法直接推进之阻碍的处理方式『<具体规则名称或处理方式>』，"
                 "依据：<Map 原文与截图事实>。」或「Function Map：未命中可解决当前子步骤阻碍的处理方式，"
@@ -119,28 +124,37 @@ def build_system_prompt(
                 " / page is already the target page, but you still click that"
                 " location. That is \"hammering an already-done substep\" — worse"
                 " than skipping the wrong one.\n\n"
-                "**Two equally-important iron rules**:\n"
-                "1. Advance through substeps in order — no merging, reordering,"
-                " or premature drilling.\n"
+                "**双向铁律（同等重要）**：\n"
+                "1. 每轮必须从当前子步骤开始，后续只能按 N、N+1、N+2 连续判读；"
+                "禁止首条选择后续编号，禁止跳号、合并、重排或提前下钻。\n"
                 "2. Skip when the target state is already satisfied — repeated"
                 " clicks on a satisfied state = stuck = supervisor KILL.\n"
                 "Detailed rules in §B-1.\n"
             )
         else:
             substeps_block = (
-                "\n## Operation Substeps Checklist (active throughout the run)\n"
+                "\n## Substep Progression Iron Rule (highest priority)\n"
+                "The run's first decision must start at substep 1. Thereafter,"
+                " start at the smallest-numbered substep not explicitly judged"
+                " satisfied one by one. The current screenshot may judge only the"
+                " complete original text of the current substep. Even if it matches"
+                " a later substep, never select, infer, or cross into a later number.\n\n"
+                "## Operation Substeps Checklist (active throughout the run)\n"
                 f"{substeps_text.strip()}\n\n"
-                "### Forced verdict line every turn (violations = KILL)\n"
+                "### Forced verdict flow every turn (violations = KILL)\n"
                 "The **first sentence** of your reasoning (thinking block) must"
-                " follow this exact template:\n"
+                " judge the current substep; the run's first turn is fixed at"
+                " substep 1. Follow this exact template:\n"
                 "  \"Substep N '<original phrase>' -> target state: <verb"
                 " translated to state>. Current screenshot: [SATISFIED / NOT"
                 " SATISFIED], evidence: <concrete visual feature>.\"\n\n"
                 "Branch on the verdict:\n"
-                "- **[SATISFIED]** -> next sentence: \"skip substep N, next is"
-                " N+1\". **Do NOT issue an action for substep N.** The action"
-                " call should target substep N+1 (or run another verdict line for"
-                " N+1 first to decide whether to skip again).\n"
+                "- **[SATISFIED]** -> state the evidence and skip substep N. If"
+                " another substep remains, continue with the same verdict template"
+                " for N+1; no intermediate number may be omitted. An action may"
+                " serve only the final [NOT SATISFIED] substep judged in this turn."
+                " Declare `FINISHED` only when this contiguous verdict process has"
+                " judged every remaining item through the final substep satisfied.\n"
                 "- **[NOT SATISFIED]** -> if Function Map was provided, the"
                 " **second sentence** must use one fixed form: \"Function Map:"
                 " matched a method that resolves the current substep's obstacle:"
@@ -167,8 +181,9 @@ def build_system_prompt(
                 " location. That is \"hammering an already-done substep\" — worse"
                 " than skipping the wrong one.\n\n"
                 "**Two equally-important iron rules**:\n"
-                "1. Advance through substeps in order — no merging, reordering,"
-                " or premature drilling.\n"
+                "1. Begin every turn at the current substep, then judge only N,"
+                " N+1, N+2 in contiguous order. Never choose a later number first;"
+                " do not skip, merge, reorder, or drill ahead.\n"
                 "2. Skip when the target state is already satisfied — repeated"
                 " clicks on a satisfied state = stuck = supervisor KILL.\n"
                 "Detailed rules in §B-1.\n"
@@ -315,8 +330,8 @@ When the case has tagged sections like "Test Title / Preconditions / Operation S
 
 ### B-1. Substeps inside "Operation Steps" — ordered with skip-when-done
 When the "Operation Substeps Checklist" is present above, its numbering is the only substep boundary and every item is an original-text slice. Paragraphs, punctuation, and semantic transitions are used only to build that checklist; do not re-split it by any single punctuation mark. Two equally-important rules:
-1. **Advance one by one in declared order** — do not merge, reorder, or jump ahead.
-2. **Skip the current substep when its target state is already satisfied** — repeating a done substep is treated as stuck (KILL), worse than skipping.
+1. **Begin at substep 1, then advance one by one in declared order**. On later turns, begin at the smallest-numbered item not explicitly judged satisfied. Never select a later number first.
+2. **Skip only when the complete target state of the current substep is satisfied**. A screenshot match for a later substep cannot justify skipping the current item. Repeating a done substep is treated as stuck (KILL), worse than skipping.
 
 **Has-target-state-been-met checklist** (verb → state mapping vs. the screenshot):
 
@@ -329,6 +344,10 @@ When the "Operation Substeps Checklist" is present above, its numbering is the o
 | Type X | Field contains X | Input shows X |
 
 {skip_duty}
+
+After a skip, the next verdict may only be N+1. Continue the same verdict template without omitting intermediate numbers; an action may serve only the final [NOT SATISFIED] item judged in that turn.
+
+**Obstacle handling**: If the goal does not explicitly forbid it, autonomously dismiss a system popup, guide, or overlay that blocks the current operation. This only clears an obstacle for current substep N; it does not satisfy N, and N stays unchanged.
 
 {forced_verdict_reminder}
 

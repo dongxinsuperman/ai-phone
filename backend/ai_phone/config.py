@@ -349,11 +349,11 @@ class Settings(BaseSettings):
     )
     vlm_api_key: str = Field(default="", description="VLM 服务 API key")
     vlm_model: str = Field(default="doubao-seed-1-6-vision-250815")
-    # Responses API 会话分段阈值：上一轮 prompt_tokens ≥ 此值时，下一轮请求前
-    # 自动重置 previous_response_id（方舟视觉模型 ≤32K 一档、>32K 二档 ×2 计费）。
-    # 30000 = 32000(一档上限) - 2000(单步增量 buffer)；<=0 关闭分段（纯 Cache 行为）。
+    # Responses API 会话容量安全阈值：上一轮 prompt_tokens ≥ 此值时，
+    # 下一轮请求前重置 previous_response_id。默认 240K 为 256K 上下文保留 16K 缓冲；
+    # 存在分段计费或更小上下文限制的模型可通过 env 自行调低；<=0 关闭分段。
     vlm_session_reset_prompt_threshold: int = Field(
-        default=30000,
+        default=240000,
         description="上一轮 prompt ≥ 该 tokens 触发分段重置 previous_response_id；<=0 禁用",
     )
     # --- 主 VLM 协议后端开关（多协议适配层）---

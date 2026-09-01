@@ -14,9 +14,9 @@ logTokenSummary。与老实现的关键差异：
 4. Token 统计兼容 Responses 返回的 ``input_tokens / output_tokens``，并区分
    ``cached_tokens``（豆包式 prompt 子集）与 ``cache_read/write_tokens``
    （Claude prompt caching 的独立读写口径）。
-5. 新增 :meth:`reset_session`：prompt_tokens 逼近单价跨档阈值时，外层可以主动
-   归零 ``previous_response_id`` 把任务"切段"，后续每段重新从 system 前缀起步，
-   避免整体被拉进 ×2 / ×3 档。
+5. 新增 :meth:`reset_session`：prompt_tokens 逼近模型上下文安全阈值时，
+   外层可以主动归零 ``previous_response_id`` 把任务"切段"，后续每段
+   重新从 system 前缀起步。阈值仍可按模型的计费档位或上下文限制调整。
 """
 from __future__ import annotations
 

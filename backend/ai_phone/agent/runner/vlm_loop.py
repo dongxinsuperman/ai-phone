@@ -1135,10 +1135,10 @@ class VLMRunner:
             )
 
             # ⓪ 会话分段重置判定：
-            #    - 上一轮 prompt ≥ 阈值（默认 30000）→ 预判下一轮将跨入二档（>32K, ×2）
+            #    - 上一轮 prompt ≥ 阈值（默认 240000）→ 进入上下文安全缓冲区
             #    - 重置 previous_response_id 让服务端重新从更短的前缀起步
             #    - 注入"已完成 X 步"续接提示，避免模型完全失忆
-            #    - 单段内仍享受显式缓存红利；跨段切多段，每段都留在一档
+            #    - 存在分段计费或较小上下文的模型可通过 env 自行调低阈值
             if self.vlm.should_reset_session():
                 resume_hint = (
                     f"【会话续接】这是任务的第 {self.vlm.segment_count + 1} 段，"

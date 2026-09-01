@@ -42,7 +42,7 @@ cp .env.example .env
 | `AI_PHONE_PHONE_VLM_PROVIDER` | 切换主 VLM：`doubao` / `claude` / `openai` |
 | `AI_PHONE_AUX_PROVIDER` | 切换辅助模型：`doubao` / `claude` / `openai` |
 | `AI_PHONE_MIRROR_*` | Android 画质 / 延迟参数（详见 `.env.example` §8） |
-| `AI_PHONE_VLM_SESSION_RESET_PROMPT_THRESHOLD` | Doubao Responses 超阈值自动切段（默认 30000，≤0 关闭） |
+| `AI_PHONE_VLM_SESSION_RESET_PROMPT_THRESHOLD` | Doubao Responses 超阈值自动切段（默认 240000，分段计费或较小上下文模型可调低，≤0 关闭） |
 | `AI_PHONE_WDA_PROJECT_DIR` | iOS 接入入口，留空走"手动 Xcode + iproxy"过渡态 |
 | `AI_PHONE_IOS_WDA_LIFECYCLE_MODE` | iOS WDA 生命周期；部署推荐 `stable`，详见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md) |
 | `AI_PHONE_ANDROID_*WAKE*` / `AI_PHONE_HARMONY_*WAKE*` | Android / HarmonyOS 黑屏待机与 Run 前唤醒策略，详见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md) |
