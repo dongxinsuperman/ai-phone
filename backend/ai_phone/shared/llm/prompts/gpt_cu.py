@@ -64,6 +64,42 @@ _FORCED_VERDICT_REMINDER_ZH = (
 )
 
 
+_SUBSTEP_EVIDENCE_IRON_RULE_ZH = (
+    "\n### ⚠️ Thought 判读铁律（最高优先级，违反 = KILL）\n"
+    "reasoning 只允许输出从当前 N 开始的连续判读句和必要的 Map 判读句；"
+    "同一编号在同一 reasoning 内最多出现一次。禁止自问自答、反复猜测、"
+    "历史复盘、步骤总览和完成总结；证据不足时必须一次判定[未满足]并立即停止。\n"
+    "### ⚠️ 子步骤满足证据铁律（最高优先级，违反 = KILL）\n"
+    "[已满足] 必须证明当前 N 完整原文描述的事实，不得只证明后续状态与 N 兼容。"
+    "可由当前状态直接验证的事实，必须由当前截图直接显示。"
+    "若 N 的完整语义要求某个动作、过程或转移真实发生，只有两类合法证据："
+    "本 Run 在 N 为当前子步骤时的执行或观测记录直接证明它已发生；或当前截图显示"
+    "不可能在该事实未发生时成立的专属完成标志。"
+    "禁止从当前状态反推未被本 Run 证明的历史过程；元素缺失、可能自动完成、"
+    "已处于后续/最终状态或结果与 N 兼容，都不能单独证明该历史事实。"
+    "合法证据不足时必须判定当前 N [未满足]并停止；若已无法执行或恢复，"
+    "只能 `ASSERT_FAIL`，禁止继续 N+1 或 `FINISHED`。\n"
+)
+
+_SUBSTEP_EVIDENCE_IRON_RULE_EN = (
+    "\n### ⚠️ Thought Verdict Iron Rule (highest priority; violation = KILL)\n"
+    "Reasoning may contain only contiguous verdict sentences starting at current N and the required Map verdict. "
+    "Each substep number may appear at most once in one reasoning turn. No self-questioning, repeated speculation, "
+    "history recap, step overview, or completion summary. If evidence is insufficient, emit one [NOT SATISFIED] "
+    "verdict and stop immediately.\n"
+    "### ⚠️ Substep Completion-Evidence Iron Rule (highest priority; violation = KILL)\n"
+    "[SATISFIED] must prove the fact described by the complete original text of current N, not merely that a later "
+    "state is compatible with N. A fact directly verifiable from current state must be directly visible in the current "
+    "screenshot. If N's complete meaning requires an action, process, or transition to have actually occurred, only two "
+    "evidence types are valid: this Run's execution or observation record while N was current directly proves it occurred; "
+    "or the current screenshot shows an exclusive completion marker that could not hold if it had not occurred. "
+    "Never infer unproved history from current state. A missing element, possible auto-completion, being in a later/final "
+    "state, or mere compatibility with N cannot by itself prove the required historical fact. When valid evidence is "
+    "insufficient, current N is [NOT SATISFIED] and verdicts stop; if N can no longer be executed or restored, only "
+    "`ASSERT_FAIL` is allowed, never N+1 or `FINISHED`.\n"
+)
+
+
 def build_system_prompt(
     goal: str,
     substeps_text: str | None = None,
@@ -76,10 +112,18 @@ def build_system_prompt(
     if substeps_text and substeps_text.strip():
         # 与豆包版同步加入"forced verdict line"协议：每轮 reasoning 第一句
         # 必须是固定句式的判读结论。详见 shared/prompt.py 的设计动机注释。
+        evidence_iron_rule = (
+            _SUBSTEP_EVIDENCE_IRON_RULE_ZH
+            if zh_readable
+            else _SUBSTEP_EVIDENCE_IRON_RULE_EN
+        )
         if zh_readable:
             substeps_block = (
                 "\n## 子步骤推进铁律（最高优先级）\n"
-                "首轮必须从子步骤 1 开始；此后必须从尚未被逐项明确判定为已满足的最小编号开始。"
+                "子步骤规则仅在前置条件完成、进入「操作步骤」阶段后生效。"
+                "进入该阶段的首轮必须从子步骤 1 开始。上一轮 Action 服务于子步骤 N 时，"
+                "本轮仍必须从同一 N 开始；早于 N 的子步骤均已归档，"
+                "reasoning 禁止再次输出、概括或重新判定，也禁止写「1 到 N-1 已完成」式摘要。"
                 "当前截图只能用于判断当前子步骤的完整原文；"
                 "即使截图符合后续子步骤，也禁止选择、推测或跨越后续编号。\n\n"
                 "## Operation Substeps Checklist (active throughout the run)\n"
@@ -93,6 +137,7 @@ def build_system_prompt(
                 "必须继续按同一模板判读 N+1，禁止省略中间编号。"
                 "Action 只能服务于本轮最后一条[未满足]的子步骤；"
                 "连续判读至最后一项均已满足时，才可 `FINISHED`。\n"
+                f"{evidence_iron_rule}"
                 "- **[未满足]** -> 若本次提供了 Function Map，Thought 第二句**必须**是 Map 判读句，固定模板二选一："
                 "「Function Map：命中可解决当前子步骤无法直接推进之阻碍的处理方式『<具体规则名称或处理方式>』，"
                 "依据：<Map 原文与截图事实>。」或「Function Map：未命中可解决当前子步骤阻碍的处理方式，"
@@ -119,9 +164,13 @@ def build_system_prompt(
         else:
             substeps_block = (
                 "\n## Substep Progression Iron Rule (highest priority)\n"
-                "The run's first decision must start at substep 1. Thereafter,"
-                " start at the smallest-numbered substep not explicitly judged"
-                " satisfied one by one. The current screenshot may judge only the"
+                "Substep rules apply only after all Preconditions are complete and"
+                " the run has entered Operation Steps. The first decision in that"
+                " stage must start at substep 1. If the previous"
+                " turn's action served substep N, this turn must start at the same"
+                " N and judge it again. Substeps earlier than N are archived: never"
+                " output, summarize, or re-judge them, including summaries such as"
+                " 'substeps 1 through N-1 are complete.' The current screenshot may judge only the"
                 " complete original text of the current substep. Even if it matches"
                 " a later substep, never select, infer, or cross into a later number.\n\n"
                 "## Operation Substeps Checklist (active throughout the run)\n"
@@ -140,6 +189,7 @@ def build_system_prompt(
                 " serve only the final [NOT SATISFIED] substep judged in this turn."
                 " Declare `FINISHED` only when this contiguous verdict process has"
                 " judged every remaining item through the final substep satisfied.\n"
+                f"{evidence_iron_rule}"
                 "- **[NOT SATISFIED]** -> if Function Map was provided, the"
                 " **second sentence** must use one fixed form: \"Function Map:"
                 " matched a method that resolves the current substep's obstacle:"
@@ -283,11 +333,12 @@ The runtime will detect these phrases and stop the run.
 ### B. Structured-channel ordering
 When the case has tagged sections like "Test Title / Preconditions / Operation Steps / Expected Results":
 - Section order: Preconditions → Operation Steps → Assert against Expected Results. Do not skip sections.
+- While any precondition remains incomplete, it is the current execution anchor: do not start substep verdicts or execute Operation Steps. Begin substep 1 only after all Preconditions are complete.
 - Each line under "Expected Results" must be verifiable from the screenshot. If even one is unverifiable, ASSERT_FAIL — never declare FINISHED on hope.
 
 ### B-1. Substeps inside "Operation Steps" — ordered with skip-when-done
 When the "Operation Substeps Checklist" is present above, its numbering is the only substep boundary and every item is an original-text slice. Paragraphs, punctuation, and semantic transitions are used only to build that checklist; do not re-split it by any single punctuation mark. Two equally-important rules:
-1. **Begin at substep 1, then advance one by one in declared order**. On later turns, begin at the smallest-numbered item not explicitly judged satisfied. Never select a later number first.
+1. **After Preconditions are complete, begin Operation Steps at substep 1, then advance one by one in declared order**. On later turns, begin at the same N served by the previous turn's action. Never select a later number first.
 2. **Skip only when the complete target state of the current substep is satisfied**. A screenshot match for a later substep cannot justify skipping the current item. Repeating a done substep is treated as stuck (KILL).
 
 Has-target-state-been-met checklist (verb → state → screenshot evidence):
@@ -300,6 +351,8 @@ Has-target-state-been-met checklist (verb → state → screenshot evidence):
 {skip_duty}
 
 After a skip, the next verdict may only be N+1. Continue the same verdict template without omitting intermediate numbers; an action may serve only the final [NOT SATISFIED] item judged in that turn.
+
+**Cross-turn deduplication**: If the previous turn's action served substep N, the next turn starts at N. Earlier archived substeps must not appear in the reasoning again, either item by item or as a summary.
 
 **Obstacle handling**: If the goal does not explicitly forbid it, autonomously dismiss a system popup, guide, or overlay that blocks the current operation. This only clears an obstacle for current substep N; it does not satisfy N, and N stays unchanged.
 
