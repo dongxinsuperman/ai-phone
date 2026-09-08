@@ -9,21 +9,31 @@
 """
 from __future__ import annotations
 
+import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, status
+from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.shared import protocol as P
 
+from ..app_uninstall import (
+    AppUninstallDispatchError,
+    AppUninstallTimeoutError,
+    get_app_uninstall_waiter,
+)
 from ..hub import Hub
 from ..lockstore import BadToken, DeviceLockStore, LockConflict, LockNotFound
 from ..models import Device, DeviceAlias
 from ._deps import DBSession, HubDep, LockStoreDep
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
+
+APP_UNINSTALL_TIMEOUT_SEC = 60.0
+APP_UNINSTALL_RESPONSE_TIMEOUT_SEC = 70.0
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +63,16 @@ class InputReq(BaseModel):
     )
     params: Optional[Dict[str, Any]] = None
     lock_token: str = Field(..., description="调用方持有的设备锁 token")
+
+
+class AppUninstallReq(BaseModel):
+    package_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$",
+        description="App 精确包名（Android/Harmony）或 Bundle ID（iOS）",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +218,122 @@ async def get_device(
     if dev is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="device not found")
     return await _merge_lock_into(dev.to_dict(), store, hub)
+
+
+# ---------------------------------------------------------------------------
+# 同步 App 卸载
+# ---------------------------------------------------------------------------
+@router.post("/{serial}/apps/uninstall")
+async def uninstall_app(
+    serial: str,
+    body: AppUninstallReq,
+    session: AsyncSession = DBSession,
+    store: DeviceLockStore = LockStoreDep,
+    hub: Hub = HubDep,
+) -> Dict[str, Any]:
+    """按设备 serial + 精确包名同步卸载 App。
+
+    HTTP 请求会等待 Agent 完成「查询存在→卸载→再查询确认不存在」。
+    本接口只返回卸载结果，不创建异步任务或修改应用分发记录。
+    """
+    dev = await session.get(Device, serial)
+    if dev is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "DEVICE_NOT_FOUND", "message": "无法找到对应的设备"},
+        )
+    if dev.status != "online":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "DEVICE_NOT_READY",
+                "message": f"设备当前状态为 {dev.status}，不能卸载 App",
+            },
+        )
+
+    readiness = (hub.get_device_extra(serial) or {}).get("readiness") or {}
+    if not readiness.get("ready"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "DEVICE_NOT_READY",
+                "message": str(readiness.get("hint") or "设备尚未就绪"),
+            },
+        )
+    if hub.agent_id_for_serial(serial) is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "AGENT_UNAVAILABLE", "message": "设备所属 Agent 不在线"},
+        )
+
+    request_id = uuid.uuid4().hex[:16]
+    holder = f"app-uninstall:{request_id}"
+    try:
+        lock = await store.acquire(
+            serial,
+            holder=holder,
+            holder_type="job",
+            ttl_seconds=APP_UNINSTALL_RESPONSE_TIMEOUT_SEC + 5,
+            meta={"action": "app_uninstall", "package_name": body.package_name},
+        )
+    except LockConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "DEVICE_BUSY", "message": str(exc)},
+        ) from exc
+
+    try:
+        result = await get_app_uninstall_waiter().request(
+            hub=hub,
+            request_id=request_id,
+            serial=serial,
+            platform=dev.platform,
+            package_name=body.package_name,
+            timeout_sec=APP_UNINSTALL_TIMEOUT_SEC,
+            wait_timeout_sec=APP_UNINSTALL_RESPONSE_TIMEOUT_SEC,
+        )
+    except AppUninstallDispatchError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "AGENT_UNAVAILABLE", "message": str(exc)},
+        ) from exc
+    except AppUninstallTimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail={"code": "UNINSTALL_TIMEOUT", "message": str(exc)},
+        ) from exc
+    finally:
+        try:
+            await store.release(serial, token=lock.token)
+        except BadToken:
+            # 超时期间若被管理员强制解锁/换锁，不要用清理异常覆盖真实卸载结果。
+            logger.warning(
+                "app_uninstall release lock token mismatch request_id={} serial={}",
+                request_id,
+                serial,
+            )
+
+    if bool(result.get("success")):
+        return {
+            "success": True,
+            "serial": serial,
+            "platform": P.platform_family(dev.platform),
+            "package_name": body.package_name,
+            "message": str(result.get("message") or "卸载成功"),
+        }
+
+    reason = str(result.get("reason") or "uninstall_failed").strip().lower()
+    message = str(result.get("message") or "卸载失败")
+    if reason == "timeout":
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail={"code": "UNINSTALL_TIMEOUT", "message": message},
+        )
+    code = "APP_NOT_FOUND" if reason == "app_not_found" else "UNINSTALL_FAILED"
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={"code": code, "message": message},
+    )
 
 
 # ---------------------------------------------------------------------------

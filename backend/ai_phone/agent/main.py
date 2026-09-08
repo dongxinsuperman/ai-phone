@@ -37,6 +37,7 @@ from loguru import logger
 
 from ai_phone.agent.async_utils import run_blocking
 from ai_phone.agent.app_install import handle_app_install_start
+from ai_phone.agent.app_uninstall import handle_app_uninstall_start
 from ai_phone.agent.drivers import (
     list_all_devices,
     open_driver as _open_driver_by_platform,
@@ -3135,6 +3136,7 @@ def run(
     client.on(P.MSG_START_MIRROR, _start_mirror_handler)
     client.on(P.MSG_STOP_MIRROR, _stop_mirror_handler)
     client.on(P.MSG_APP_INSTALL_START, handle_app_install_start)
+    client.on(P.MSG_APP_UNINSTALL_START, handle_app_uninstall_start)
     client.on(P.MSG_AGENT_CONFIG, _agent_config_handler)
 
     # 暴露给 _maybe_preload_ios 使用：必须在 ws loop 起来前绑定 ref；

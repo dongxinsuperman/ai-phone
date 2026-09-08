@@ -14,6 +14,7 @@
 |---|---|---|---|
 | 对外投递 | `/api/submissions` | 匿名 | 面向外部 CI / 回归平台；依赖网络隔离、防火墙或上游网关 |
 | 设备状态查询 | `/api/devices/statuses`、`/api/devices/available` | 匿名 | 面向外部调度前查询；`/statuses` 与当前全量设备状态模型等价 |
+| App 同步卸载 | `/api/devices/{serial}/apps/uninstall` | 当前本地中台接口 | 破坏性操作；生产外放前必须放在内网或有认证的上游网关后 |
 | 内部投递 | `/api/internal/submissions` | `Authorization: Bearer <token>` | Web 队列页和内部调试使用 |
 | 本地中台 | `/api/devices`、`/api/runs`、`/api/cases` | 当前本地中台接口 | Web 工作台使用；生产外放前建议放在内网或网关后 |
 
@@ -85,6 +86,47 @@ GET /api/devices/available
 ```
 
 该接口只返回 agent 在线、设备 ready、锁空闲的设备，字段比 `/api/devices/statuses` 更少，适合简单随机派发前筛选。
+
+### 2.1 同步卸载 App
+
+```http
+POST /api/devices/{serial}/apps/uninstall
+Content-Type: application/json
+
+{
+  "package_name": "com.example.demo"
+}
+```
+
+调用方只传设备 `serial` 和精确包名（iOS 为 Bundle ID），不传平台。Server 会按该
+`serial` 的内部设备类型自动选择 Android ADB、Harmony HDC、iOS 真机
+InstallationProxy 或 iOS Simulator `simctl` 通道。Android/Harmony 真机与虚拟机共用各自平台的命令通道。
+
+该请求是同步的：Agent 会先精确查询包名，再执行卸载，最后重新查询确认 App
+已不存在。只有三步都成立才返回 `200`：
+
+```json
+{
+  "success": true,
+  "serial": "R58M1234ABC",
+  "platform": "android",
+  "package_name": "com.example.demo",
+  "message": "卸载成功"
+}
+```
+
+业务失败统一返回 `400`：
+
+| 场景 | HTTP | `detail.code` |
+|---|---:|---|
+| 设备中没有该精确包名 | 400 | `APP_NOT_FOUND` |
+| 卸载命令失败，或卸载后重新查询仍存在 | 400 | `UNINSTALL_FAILED` |
+| 设备忙或未就绪 | 409 | `DEVICE_BUSY` / `DEVICE_NOT_READY` |
+| 设备所属 Agent 不可用 | 503 | `AGENT_UNAVAILABLE` |
+| 等待卸载结果超时 | 504 | `UNINSTALL_TIMEOUT` |
+
+`package_name` 不接受空格、分号或 shell 表达式；格式无效时由请求校验返回 `422`。
+卸载期间会独占设备锁，请求结束或超时后自动释放；本接口不创建异步任务、不写应用分发任务表。
 
 ## 3. 投递批次
 

@@ -57,6 +57,8 @@ MSG_PONG = "pong"
 MSG_DEVICE_STATUS = "device_status"
 # 应用分发安装结果。Agent 只回命令执行结果，不做二次包名校验。
 MSG_APP_INSTALL_RESULT = "app_install_result"
+# 同步应用卸载结果。Server 通过 request_id 唤醒对应 HTTP 请求。
+MSG_APP_UNINSTALL_RESULT = "app_uninstall_result"
 # Android VM：Agent 回传能力探查结果与生命周期状态。
 MSG_VM_CAPABILITY = "vm_capability"
 MSG_VM_STATUS = "vm_status"
@@ -87,6 +89,8 @@ MSG_STOP_MIRROR = "stop_mirror"
 MSG_PING = "ping"
 # Server 通知 Agent 对本机管辖设备执行应用安装。Agent 必须后台执行，不能阻塞 WS 收包。
 MSG_APP_INSTALL_START = "app_install_start"
+# Server 通知 Agent 对指定设备同步卸载应用。Agent 仍需后台执行，结果按 request_id 回传。
+MSG_APP_UNINSTALL_START = "app_uninstall_start"
 # Android VM：Server 下发能力探查与生命周期控制命令。
 MSG_VM_CAPABILITY_PROBE = "vm_capability_probe"
 # MSG_VM_START 载荷新增端口字段（Server 全局统一分配 emulator 端口，堵死跨机器 serial 撞号串台）：
@@ -490,6 +494,17 @@ class AppInstallResultMsg(TypedDict, total=False):
     message: str
 
 
+class AppUninstallResultMsg(TypedDict, total=False):
+    type: Literal["app_uninstall_result"]
+    request_id: str
+    serial: str
+    platform: str
+    package_name: str
+    success: bool
+    reason: str
+    message: str
+
+
 # Readiness Gate（v1 第 1 梯队）：把"online 却不能跑"的情况显式抽出来。
 # 与 DeviceStatus(WDA 启动进度) 并行存在、互不覆盖——WDA 启动是 iOS 专属的上线动
 # 作；readiness 是所有平台稳态下的 "是否可被派单" 的持续探活结果。
@@ -716,6 +731,15 @@ class AppInstallStartMsg(TypedDict, total=False):
     timeout_sec: int
 
 
+class AppUninstallStartMsg(TypedDict, total=False):
+    type: Literal["app_uninstall_start"]
+    request_id: str
+    serial: str
+    platform: str
+    package_name: str
+    timeout_sec: int
+
+
 class AgentConfigMsg(TypedDict, total=False):
     """Server → Agent：执行配置下发包（配置集中分发，全局一份，非 per-run 快照）。
 
@@ -745,6 +769,7 @@ AgentToServer = Union[
     PongMsg,
     DeviceStatusMsg,
     AppInstallResultMsg,
+    AppUninstallResultMsg,
     VmCapabilityMsg,
     VmStatusMsg,
     VmReconcileMsg,  # 孤儿 AVD 对账：Agent 上报本机受管 AVD 清单
@@ -760,6 +785,7 @@ ServerToAgent = Union[
     StopMirrorMsg,
     PingMsg,
     AppInstallStartMsg,
+    AppUninstallStartMsg,
     VmCapabilityProbeMsg,
     VmStartMsg,
     VmStopMsg,

@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.config import get_settings
 from ai_phone.server.app_install.service import handle_result as handle_app_install_result
+from ai_phone.server.app_uninstall import get_app_uninstall_waiter
 from ai_phone.server.retry import current_attempt
 from ai_phone.shared import protocol as P
 
@@ -320,6 +321,10 @@ async def _dispatch(
             await handle_app_install_result(session, msg)
 
         await _with_session(op)
+        return
+
+    if t == P.MSG_APP_UNINSTALL_RESULT:
+        get_app_uninstall_waiter().resolve(msg)
         return
 
     if t == P.MSG_VM_CAPABILITY:
