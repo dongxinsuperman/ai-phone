@@ -29,15 +29,15 @@
     "yauzl": "3.2.1"
   },
   "dependencies": {
-    "@midscene/android": "^1.7.6",
-    "@midscene/core": "^1.7.6",
-    "@midscene/shared": "^1.7.6",
+    "@midscene/android": "1.12.8",
+    "@midscene/core": "1.12.8",
+    "@midscene/shared": "1.12.8",
     "@types/js-yaml": "^4.0.9",
     "dotenv": "^16.4.5",
     "js-yaml": "^4.1.1"
   },
   "devDependencies": {
-    "@midscene/cli": "^1.7.6",
+    "@midscene/cli": "1.12.8",
     "@types/node": "^20.11.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.0"
