@@ -55,6 +55,7 @@ class HarmonyScreenshotStreamer:
         driver: Any,  # HarmonyDriver，类型注解避免 circular import
         on_jpeg: Callable[[bytes, int, int], None],
         *,
+        owner_check: Optional[Callable[[], bool]] = None,
         target_fps: int = 8,
         jpeg_quality: int = 55,
         long_edge: int = 720,
@@ -63,6 +64,7 @@ class HarmonyScreenshotStreamer:
         self._serial = serial
         self._driver = driver
         self._on_jpeg = on_jpeg
+        self._owner_check = owner_check
         self._target_fps = max(1, min(30, int(target_fps)))
         self._jpeg_quality = max(10, min(100, int(jpeg_quality)))
         self._long_edge = max(0, int(long_edge))
@@ -182,6 +184,8 @@ class HarmonyScreenshotStreamer:
 
         返空意味着驱动临时不可用（大概率是 uitest daemon 抽风），调用方会 sleep 重试。
         """
+        if self._owner_check is not None and not self._owner_check():
+            raise RuntimeError("managed_harmony_vm_not_current")
         try:
             return self._driver.screenshot_jpeg(
                 quality=self._jpeg_quality,

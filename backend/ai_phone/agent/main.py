@@ -272,8 +272,16 @@ def _get_or_open_driver(
     （compiling / need_unlock / ready / error）主动推到 web 提示条。
     Android 会静默忽略。
     """
+    if serial.startswith("harmony-vm:"):
+        from ai_phone.agent.harmony_vm.registry import resolve_harmony_serial
+
+        current_hdc = resolve_harmony_serial(serial)
+    else:
+        current_hdc = ""
     cached = _driver_cache.get(serial)
     if cached is not None:
+        if current_hdc and getattr(cached, "serial", None) != current_hdc:
+            raise RuntimeError(f"managed_harmony_vm_driver_not_current:{serial}")
         # 已经开过；通知上层"已就绪"，让 web 提示条直接闭合
         if callable(on_status):
             try:
@@ -800,11 +808,14 @@ _harmony_scan_misses: Dict[str, int] = {}
 _stale_harmony_snapshot_serials: Set[str] = set()
 _android_vm_manager: Optional[Any] = None
 _harmony_vm_manager: Optional[Any] = None
+_harmony_vm_mirror_supervisor: Optional[Any] = None
 _ios_sim_manager: Optional[Any] = None
 
 
 def _drop_harmony_vm_driver_cache(serial: str) -> None:
     """VM 回收前关闭并摘掉通用 Harmony driver，避免遗留 FPort/socket。"""
+    if _harmony_vm_mirror_supervisor is not None:
+        _harmony_vm_mirror_supervisor.stop(serial)
     drv = _driver_cache.pop(serial, None)
     if drv is None:
         return
@@ -853,6 +864,16 @@ def _device_provider() -> List[Dict[str, Any]]:
             logger.warning("iOS 虚拟机设备标记失败（忽略，不影响其他平台）：{}", exc)
     infos = _apply_ios_snapshot_freshness(infos)
     infos = _apply_harmony_snapshot_debounce(infos)
+    if _harmony_vm_manager is not None:
+        # Harmony scan debounce may retain a stopped A for a few ticks after
+        # B takes the same HDC port. Keep only active managed VM identities.
+        from ai_phone.agent.harmony_vm.registry import is_managed_vm_identity_active
+
+        infos = [
+            info for info in infos
+            if not str(getattr(info, "serial", "")).startswith("harmony-vm:")
+            or is_managed_vm_identity_active(str(info.serial))
+        ]
     _record_serial_platform(infos)
     _emit_ios_disconnect_events(infos)
     _maybe_preload_ios(infos)
@@ -3020,6 +3041,8 @@ def run(
         device_provider=_device_provider,
     )
     mirror_sup = _MirrorSupervisor(client)
+    global _harmony_vm_mirror_supervisor
+    _harmony_vm_mirror_supervisor = mirror_sup
 
     # M3 可靠上报：进程级"统一收发室"。所有 run 的日志 / 步骤 / 终态都经它串行发送，
     # 断线留存、重连补发、跨 run 存活（run 结束也不丢终态）。出口绑定 client.send。

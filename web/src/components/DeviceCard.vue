@@ -17,14 +17,19 @@ const readiness = computed(() => props.device.extra?.readiness || null)
 const isVirtual = computed(() => (
   props.device.extra?.is_virtual === true || props.device.extra?.device_kind === 'virtual'
 ))
-// 真机：serial 即唯一身份（芯片序列号）。虚拟机：emulator-5554 只是 adb 端口地址、不唯一，
-// 唯一身份是 vm_id（extra.vm_instance_id）——主行显示它，adb 地址降为副行。
+// 真机：serial 即设备身份。虚拟机主行显示 vm_id；运行中的受管鸿蒙 VM
+// 以 harmony-vm:<vm_id> 为设备身份，HDC 连接地址单独显示在副行。
 const primaryId = computed(() => {
   if (isVirtual.value) return props.device.extra?.vm_instance_id || props.device.serial
   return props.device.serial
 })
 const showTransportSubline = computed(() => (
   isVirtual.value && !!props.device.extra?.vm_instance_id
+))
+const transportSerial = computed(() => (
+  props.device.extra?.vm_platform === 'harmony'
+    ? props.device.extra?.hdc_serial || props.device.serial
+    : props.device.serial
 ))
 const transportLabel = computed(() => transportLabelOf(props.device.platform))
 const platformLabel = computed(() => platformLabelOf(props.device))
@@ -167,8 +172,8 @@ const agentLabel = computed(() => (
       </button>
     </div>
     <div class="serial" :title="primaryId">{{ primaryId }}</div>
-    <div v-if="showTransportSubline" class="sub-serial" :title="device.serial">
-      {{ transportLabel }}：{{ device.serial }}
+    <div v-if="showTransportSubline" class="sub-serial" :title="transportSerial">
+      {{ transportLabel }}：{{ transportSerial }}
     </div>
     <div class="model">{{ device.brand || '-' }} {{ device.model || '' }}</div>
     <div class="meta">

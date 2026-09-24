@@ -309,7 +309,7 @@ async def _dispatch(
     if t == P.MSG_DEVICE_UPDATE:
         serial = msg.get("serial")
         dev_status = msg.get("status", "online")
-        if serial:
+        if serial and _current_managed_harmony_route(hub, agent_id, str(serial)):
             await _update_device_status(str(serial), dev_status, agent_id)
             await hub.broadcast_to_serial(
                 str(serial), {"type": "device_update", "serial": serial, "status": dev_status}
@@ -365,6 +365,19 @@ async def _dispatch(
 
     # 以下都可能带 run_id / serial / step
     serial = _resolve_serial(hub, msg)
+    if (
+        serial
+        and t in {
+            P.MSG_FRAME,
+            P.MSG_DEVICE_STATUS,
+            P.MSG_DEVICE_READINESS,
+            P.MSG_MIRROR_JPEG,
+            P.MSG_VIDEO_INIT,
+            P.MSG_VIDEO_SEGMENT,
+        }
+        and not _current_managed_harmony_route(hub, agent_id, serial)
+    ):
+        return
 
     if t == P.MSG_LOG:
         # 体验优化：先广播给浏览器（web 实时回显），落库丢后台保序 worker；recv 循环
@@ -583,6 +596,39 @@ def _resolve_serial(hub: Hub, msg: Dict[str, Any]) -> Optional[str]:
         # 这里用同步 DB 查成本太高；订阅方应用 run_id 过滤。返回 None 广播就跳过
         return None
     return None
+
+
+def _current_managed_harmony_route(hub: Hub, agent_id: str, serial: str) -> bool:
+    """Ignore late device telemetry after a managed VM's route was removed.
+
+    Other platforms and ordinary Harmony serials keep their existing path.
+    Run log/step/done processing is deliberately outside this device-state
+    guard so a Run can still finish after its device disconnects.
+    """
+    if serial.startswith("127.0.0.1:"):
+        # A previous VM's physical-keyed telemetry may arrive after the port
+        # has been reused.  Block it only when this very Agent currently owns
+        # a managed Harmony identity at that HDC address.  A matching address
+        # on another Agent does not affect this Agent's ordinary devices.
+        for identity in hub.serials_for_agent(agent_id):
+            if not identity.startswith("harmony-vm:"):
+                continue
+            extra = hub.get_device_extra(identity)
+            if (
+                extra.get("hdc_serial") == serial
+                and extra.get("vm_instance_id") == identity.removeprefix("harmony-vm:")
+            ):
+                return False
+        return True
+    if not serial.startswith("harmony-vm:"):
+        return True
+    vm_id = serial.removeprefix("harmony-vm:")
+    extra = hub.get_device_extra(serial)
+    return (
+        bool(vm_id)
+        and hub.agent_id_for_serial(serial) == agent_id
+        and str(extra.get("vm_instance_id") or "").strip() == vm_id
+    )
 
 
 # ---------------------------------------------------------------------------

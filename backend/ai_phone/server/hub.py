@@ -230,6 +230,11 @@ class Hub:
     def agent_id_for_serial(self, serial: str) -> Optional[str]:
         return self._serial_to_agent.get(serial)
 
+    def serials_for_agent(self, agent_id: str) -> Set[str]:
+        """Return a snapshot of this Agent's current device routes."""
+        conn = self._agents.get(agent_id)
+        return set(conn.serials) if conn is not None else set()
+
     def agent_id_for_run(self, run_id: str) -> Optional[str]:
         return self._run_to_agent.get(run_id)
 

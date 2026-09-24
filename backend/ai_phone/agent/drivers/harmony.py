@@ -241,9 +241,12 @@ class HarmonyDriver(BaseDriver):
     def _raw(self, value: Any) -> None:
         self._state.raw = value
 
-    def __init__(self, serial: str, *, setup_power: bool = True):
+    def __init__(
+        self, serial: str, *, setup_power: bool = True, logical_identity: str = ""
+    ):
         _require_hmdriver2()
         self.serial = serial
+        self._logical_identity = logical_identity
         # 同 serial 的 wrapper 共享完整状态，而不只共享锁。L2/L3 替换 state.raw
         # 后，rescan / VLM / VM manager 持有的所有 wrapper 会立即看到同一新对象。
         self._state = _serial_state(serial)
@@ -287,11 +290,22 @@ class HarmonyDriver(BaseDriver):
                     self._setup_stay_awake(first=is_first)
                     _STAY_AWAKE_LAST_AT[self.serial] = now
 
+    def _assert_current_identity(self) -> None:
+        if not self._logical_identity:
+            return
+        from ai_phone.agent.harmony_vm.registry import resolve_harmony_serial
+
+        if resolve_harmony_serial(self._logical_identity) != self.serial:
+            raise RuntimeError(
+                f"managed_harmony_vm_driver_not_current:{self._logical_identity}"
+            )
+
     # ------------------------------------------------------------------
     # 息屏策略
     # ------------------------------------------------------------------
     def prepare_for_run(self, *, wake_policy: Optional[Dict[str, bool]] = None) -> None:
         """Run 前用纯 hdc 唤醒 HarmonyOS 并进入可操作态。"""
+        self._assert_current_identity()
         prepare_harmony_for_run(
             self.serial,
             swipe=bool((wake_policy or {}).get("wake_swipe")),
@@ -300,6 +314,16 @@ class HarmonyDriver(BaseDriver):
     def sleep_after_run(self) -> None:
         """让 HarmonyOS 熄屏，不覆盖设备自身的自动熄屏设置。"""
         try:
+            self._assert_current_identity()
+            folded_width = None
+            if self._logical_identity:
+                from ai_phone.agent.harmony_vm.registry import (  # noqa: PLC0415
+                    managed_folded_screen_width,
+                )
+
+                folded_width = managed_folded_screen_width(
+                    self._logical_identity, self.serial
+                )
             out = hdc_shell(
                 self.serial,
                 "power-shell suspend",
@@ -309,6 +333,47 @@ class HarmonyDriver(BaseDriver):
             if out:
                 logger.debug("设备 {} HarmonyOS suspend 输出：{}", self.serial, out[:160])
             logger.info("设备 {} Run 后熄屏：power-shell suspend", self.serial)
+
+            if folded_width is None:
+                return
+
+            # DevEco 的 Foldable 在 suspend 后可能从外屏切回内屏。不能用
+            # DisplayManagerService 的最后一次尺寸事件判定：它会保留旧外屏尺寸。
+            # window_size 每次会清 hmdriver2 显示尺寸缓存，且这里仅对当前租约下
+            # 明确选择 folded 的受管 VM 执行，不改变真机和其它虚拟机的息屏逻辑。
+            needs_restore = False
+            for _ in range(3):
+                time.sleep(0.5)
+                self._assert_current_identity()
+                width, _height = self.window_size()
+                if width != folded_width:
+                    needs_restore = True
+
+            if needs_restore:
+                self._assert_current_identity()
+                hdc_shell(
+                    self.serial,
+                    "hidumper -s DisplayManagerService -a -m",
+                    timeout=15.0,
+                    check=False,
+                )
+
+            # -m 只能通过实际窗口宽度确认生效；同时确保操作没有重新亮屏。
+            for _ in range(3):
+                time.sleep(0.5)
+                self._assert_current_identity()
+                width, _height = self.window_size()
+                lit = _harmony_screen_is_lit(self.serial)
+                if width != folded_width or lit is not False:
+                    raise RuntimeError(
+                        "managed_folded_harmony_vm_sleep_state_mismatch:"
+                        f"width={width}, expected={folded_width}, lit={lit}"
+                    )
+            logger.info(
+                "受管折叠鸿蒙 VM {} 息屏后仍为外屏：width={}",
+                self._logical_identity,
+                folded_width,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("设备 {} Run 后熄屏失败：{}", self.serial, exc)
 
@@ -335,6 +400,8 @@ class HarmonyDriver(BaseDriver):
         避免每 10 分钟一条 INFO 刷屏；任何异常仍按 WARN 抛出。
         """
         _SCREEN_OFF_MAX_MS = 86400000  # 24h
+
+        self._assert_current_identity()
 
         try:
             out = (hdc_shell(
@@ -665,6 +732,7 @@ class HarmonyDriver(BaseDriver):
         """
         # 全程持锁：L0 起就串行化，从源头杜绝并发使用同一条 uitest socket
         with self._heal_lock:
+            self._assert_current_identity()
             # 别的 wrapper 可能刚完成 L2/L3；先跟随最新 singleton，避免继续调用
             # 已 release（sock=None）的旧 raw 再触发一轮冗余自愈。
             self._refresh_raw_from_singleton()
@@ -741,6 +809,7 @@ class HarmonyDriver(BaseDriver):
         ai-phone 不包装任何 hmdriver2 功能，保留生态完整性。
         """
         with self._heal_lock:
+            self._assert_current_identity()
             self._refresh_raw_from_singleton()
             return self._raw
 
@@ -869,6 +938,7 @@ class HarmonyDriver(BaseDriver):
         成功判据与局限：以 ``aa start`` 返回 "start ability successfully" 为成功；
         能否真正落盘依赖系统截图服务（HarmonyOS 侧无法回读图库做二次确认）。
         """
+        self._assert_current_identity()
         try:
             out = (
                 hdc_shell(
@@ -975,6 +1045,7 @@ class HarmonyDriver(BaseDriver):
         return self._list_apps(include_system=True)
 
     def _list_apps(self, *, include_system: bool) -> List[str]:
+        self._assert_current_identity()
         try:
             return list(self._raw.list_apps(include_system_apps=include_system))
         except Exception as exc:  # noqa: BLE001
@@ -987,6 +1058,7 @@ class HarmonyDriver(BaseDriver):
             return []
 
     def activate_app(self, package_name: str) -> None:
+        self._assert_current_identity()
         # hmdriver2.start_app 会自动推断 main ability；传空 page_name 它会先 get_app_main_ability
         try:
             self._raw.start_app(package_name)
@@ -1006,6 +1078,7 @@ class HarmonyDriver(BaseDriver):
                 ) from exc2
 
     def terminate_app(self, package_name: str) -> None:
+        self._assert_current_identity()
         try:
             self._raw.stop_app(package_name)
         except Exception as exc:  # noqa: BLE001
@@ -1016,6 +1089,7 @@ class HarmonyDriver(BaseDriver):
                 pass
 
     def current_app(self) -> str:
+        self._assert_current_identity()
         # hmdriver2.current_app 返 (pkg, page)；我们只拿 pkg
         try:
             pkg, _page = self._raw.current_app()
@@ -1032,6 +1106,7 @@ class HarmonyDriver(BaseDriver):
         hmdriver2.device_info 是 @cached_property，首次访问触发一批 hdc shell：
         param get / ifconfig / ohos.buildinfo 等。之后不再更新。
         """
+        self._assert_current_identity()
         width, height = self.window_size()
         brand = ""
         model = ""
@@ -1361,9 +1436,15 @@ def open_harmony_driver(serial: str, **_kwargs: Any) -> HarmonyDriver:
     ``**_kwargs`` 当前没用，只是和 iOS 的签名对齐（``on_status`` 未来可用于
     上报 hmdriver2 首次连接进度 / hypium-agent.hap 下发进度到 web 提示条）。
     """
+    logical_identity = serial if serial.startswith("harmony-vm:") else ""
+    if logical_identity:
+        from ai_phone.agent.harmony_vm.registry import resolve_harmony_serial
+
+        serial = resolve_harmony_serial(serial)
     return HarmonyDriver(
         serial,
         setup_power=bool(get_settings().harmony_setup_stay_awake),
+        **({"logical_identity": logical_identity} if logical_identity else {}),
     )
 
 

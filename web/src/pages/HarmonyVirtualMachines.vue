@@ -22,6 +22,15 @@ const catalog = reactive({
   stats: {},
 })
 const copyDlg = reactive({ open: false, vm: null, alias: '', busy: false, error: '' })
+const releaseDlg = reactive({
+  open: false,
+  vm: null,
+  processStopped: false,
+  hdcCleared: false,
+  reason: '',
+  busy: false,
+  error: '',
+})
 let pollTimer = null
 
 const form = reactive(defaultForm())
@@ -375,12 +384,74 @@ async function stopVm(vm) {
   busyId.value = `stop:${vm.id}`
   err.value = ''
   try {
-    await internal.harmonyVms.stop(vm.id)
+    const result = await internal.harmonyVms.stop(vm.id)
     await loadInstances({ quiet: true })
+    if (!result.sent && cleanupPending(result.instance || vm)) {
+      err.value = '旧 Agent 未在线，停止请求未送达。请先核实旧宿主实例和 HDC 连接，再人工确认释放旧占用。'
+    }
   } catch (e) {
     err.value = prettyErr(e)
   } finally {
     busyId.value = ''
+  }
+}
+
+function openReleaseDialog(vm) {
+  if (!canForceRelease(vm)) return
+  Object.assign(releaseDlg, {
+    open: true,
+    vm,
+    processStopped: false,
+    hdcCleared: false,
+    reason: '',
+    busy: false,
+    error: '',
+  })
+}
+
+function closeReleaseDialog() {
+  if (releaseDlg.busy) return
+  releaseDlg.open = false
+  releaseDlg.vm = null
+  releaseDlg.error = ''
+}
+
+async function confirmForceRelease() {
+  const vm = releaseDlg.vm
+  if (!vm || !releaseDlg.processStopped || !releaseDlg.hdcCleared) {
+    releaseDlg.error = '请先核实旧宿主上的实例进程和 HDC 连接均已停止'
+    return
+  }
+  const reason = releaseDlg.reason.trim()
+  if (reason.length < 8) {
+    releaseDlg.error = '请填写至少 8 个字的核验记录'
+    return
+  }
+  releaseDlg.busy = true
+  releaseDlg.error = ''
+  try {
+    // 页面每 3 秒刷新；提交前再次核对，避免对话框打开期间 VM 恢复或端口变化。
+    const latest = await internal.harmonyVms.list()
+    instances.value = latest
+    const current = latest.find((item) => item.id === vm.id)
+    if (!current || !canForceRelease(current)
+      || current.hdc_serial !== vm.hdc_serial
+      || current.hdc_port !== vm.hdc_port
+      || current.cleanup_pending !== vm.cleanup_pending
+      || current.assigned_agent_id !== vm.assigned_agent_id
+      || current.state !== vm.state
+      || current.updated_at !== vm.updated_at) {
+      throw new Error('虚拟机状态或占用信息已变化，请重新核实后操作')
+    }
+    await internal.harmonyVms.forceRelease(vm.id, { confirmed: true, reason })
+    releaseDlg.busy = false
+    closeReleaseDialog()
+    if (candidateVmId.value === vm.id) closeCandidates()
+    await loadInstances({ quiet: true })
+  } catch (e) {
+    releaseDlg.error = prettyErr(e)
+  } finally {
+    releaseDlg.busy = false
   }
 }
 
@@ -441,23 +512,36 @@ async function confirmCopy() {
 function canProbe(vm) {
   return !['starting', 'running', 'stopping', 'dispatching'].includes(vm.state)
 }
+function cleanupPending(vm) {
+  return Boolean(vm.cleanup_pending || vm.hdc_serial || vm.hdc_port != null)
+}
 function canStart(vm) {
-  return !!vm.assigned_agent_id && ['stopped', 'error', 'unavailable', 'agent_offline'].includes(vm.state)
+  return !!vm.assigned_agent_id && !cleanupPending(vm)
+    && ['stopped', 'error', 'unavailable', 'agent_offline'].includes(vm.state)
 }
 function canStop(vm) {
   return ['starting', 'running'].includes(vm.state)
+    || (Boolean(cleanupPending(vm) && vm.assigned_agent_id)
+      && ['stopping', 'stopped', 'error', 'unavailable', 'agent_offline'].includes(vm.state))
+}
+function hasOldPort(vm) {
+  return cleanupPending(vm)
+    && ['stopped', 'error', 'unavailable', 'agent_offline'].includes(vm.state)
+}
+function canForceRelease(vm) {
+  return hasOldPort(vm)
 }
 function canDelete(vm) {
-  return !['starting', 'running', 'stopping'].includes(vm.state)
+  // 先确认释放旧占用再删除配置；否则 Server 会隔离端口并删掉本页的确认入口。
+  return !cleanupPending(vm) && !['starting', 'running', 'stopping'].includes(vm.state)
 }
 function canDispatchTo(vm, agent) {
   if (!agent.ok) return false
-  if (!vm.hdc_serial || !vm.assigned_agent_id) return true
-  return agent.agent_id === vm.assigned_agent_id
+  return !cleanupPending(vm)
 }
 function dispatchLabel(vm, agent) {
   if (!agent.ok) return '不可用'
-  if (!canDispatchTo(vm, agent)) return '需先确认停止'
+  if (!canDispatchTo(vm, agent)) return '需处理旧占用'
   return '下发'
 }
 // 状态值与 Android 完全相同，措辞也必须一致：同一个状态在两个页面叫不同名字，
@@ -731,11 +815,20 @@ defineExpose({ refresh })
                 {{ busyId === `start:${vm.id}` ? '启动中…' : '启动' }}
               </button>
               <button v-if="canStop(vm)" type="button" :disabled="busyId === `stop:${vm.id}`" @click="stopVm(vm)">
-                {{ busyId === `stop:${vm.id}` ? '停止中…' : '停止' }}
+                {{ busyId === `stop:${vm.id}` ? '停止中…' : (['starting', 'running'].includes(vm.state) ? '停止' : '重试停止') }}
+              </button>
+              <button v-if="canForceRelease(vm)" type="button" class="danger" @click="openReleaseDialog(vm)">
+                人工确认释放旧占用
               </button>
               <button type="button" @click="copyConfig(vm)">复制配置</button>
               <button v-if="canDelete(vm)" type="button" class="danger" :disabled="busyId === `delete:${vm.id}`" @click="removeVm(vm)">删除</button>
             </div>
+            <p v-if="hasOldPort(vm)" class="lease-notice">
+              {{ vm.hdc_serial || (vm.hdc_port != null ? `HDC 端口 ${vm.hdc_port}` : '旧实例') }} 仍有旧占用，换 Agent 前需完成停止确认。旧 Agent 可用时先点“重试停止”；若无法送达，请在旧宿主核实 DevEco 实例进程和该 HDC 连接都已结束，再人工确认释放。
+            </p>
+            <p v-else-if="vm.state === 'stopping' && cleanupPending(vm)" class="lease-notice">
+              停止请求尚待旧 Agent 确认；长时间无响应可点“重试停止”。
+            </p>
 
             <div v-if="candidateVmId === vm.id" :ref="(el) => setCandidatesRef(vm.id, el)" class="candidates">
               <div class="candidate-head">
@@ -793,6 +886,45 @@ defineExpose({ refresh })
           <button type="button" class="primary" :disabled="copyDlg.busy" @click="confirmCopy">
             {{ copyDlg.busy ? '复制中…' : '复制创建' }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="releaseDlg.open" class="copy-mask" @click.self="closeReleaseDialog">
+      <div class="copy-modal" role="dialog" aria-modal="true" aria-labelledby="release-title">
+        <div class="copy-modal-hd">
+          <strong id="release-title">人工确认释放旧占用</strong>
+          <button type="button" class="copy-x" :disabled="releaseDlg.busy" @click="closeReleaseDialog">×</button>
+        </div>
+        <p class="copy-src">
+          {{ releaseDlg.vm?.alias || releaseDlg.vm?.name || releaseDlg.vm?.id }}
+          · 旧 Agent：{{ releaseDlg.vm?.assigned_agent_id || '未记录' }}
+          · HDC：{{ releaseDlg.vm?.hdc_serial || releaseDlg.vm?.hdc_port || '未记录' }}
+        </p>
+        <p class="copy-tip">
+          此操作只解除 Server 对旧端口的占用，不会停止旧宿主上的实例。请先在旧宿主核实以下两项；未确认时不能释放或改派。
+        </p>
+        <label class="release-check">
+          <input v-model="releaseDlg.processStopped" type="checkbox" :disabled="releaseDlg.busy" />
+          <span>已核实旧宿主上的 DevEco 实例进程已停止</span>
+        </label>
+        <label class="release-check">
+          <input v-model="releaseDlg.hdcCleared" type="checkbox" :disabled="releaseDlg.busy" />
+          <span>已核实该 HDC 地址不再连接旧实例</span>
+        </label>
+        <label class="copy-field">
+          <span>核验记录（至少 8 个字）</span>
+          <input v-model="releaseDlg.reason" placeholder="例如：旧宿主进程和 HDC 连接均已核实停止" :disabled="releaseDlg.busy" />
+        </label>
+        <p v-if="releaseDlg.error" class="copy-err">{{ releaseDlg.error }}</p>
+        <div class="copy-modal-ft">
+          <button type="button" :disabled="releaseDlg.busy" @click="closeReleaseDialog">取消</button>
+          <button
+            type="button"
+            class="danger"
+            :disabled="releaseDlg.busy || !releaseDlg.processStopped || !releaseDlg.hdcCleared || releaseDlg.reason.trim().length < 8"
+            @click="confirmForceRelease"
+          >{{ releaseDlg.busy ? '释放中…' : '确认释放旧占用' }}</button>
         </div>
       </div>
     </div>
@@ -857,6 +989,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .meta b { overflow: hidden; color: #475569; font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .meta .error-text b { color: #b91c1c; white-space: normal; }
 .actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.lease-notice { margin: 10px 0 0; border-radius: 6px; background: #fffbeb; color: #92400e; padding: 9px 10px; font-size: 11px; line-height: 1.5; }
 .candidates { border-top: 1px solid #e5e7eb; margin-top: 12px; padding-top: 12px; }
 .candidate-head .spacer { flex: 1; }
 .candidate { display: flex; justify-content: space-between; gap: 10px; border: 1px solid #e5e7eb; border-radius: 7px; margin-top: 8px; padding: 10px; }
@@ -871,6 +1004,8 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .copy-src { margin: 0 0 4px; color: #374151; font-size: 13px; }
 .copy-tip { margin: 0 0 12px; color: #6b7280; font-size: 12px; }
 .copy-field input { box-sizing: border-box; width: 100%; }
+.release-check { flex-direction: row; align-items: flex-start; gap: 8px; margin: 8px 0; line-height: 1.4; }
+.release-check input { margin: 2px 0 0; }
 .copy-err { margin: 8px 0 0; color: #dc2626; font-size: 12px; }
 .copy-modal-ft { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 @media (max-width: 1180px) {

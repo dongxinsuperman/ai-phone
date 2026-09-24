@@ -112,7 +112,9 @@ async def ensure_alias_available(
     if exclude_vm_id:
         vm = await session.get(HarmonyVmInstance, exclude_vm_id)
         owned = {placeholder_serial(exclude_vm_id)}
-        if vm and vm.hdc_serial:
+        # An HDC port is reusable.  It only represents this VM's legacy alias
+        # while the requested name is still the VM's current name.
+        if vm and vm.hdc_serial and vm.alias == normalized:
             owned.add(vm.hdc_serial)
         if row.serial in owned:
             return
@@ -120,34 +122,33 @@ async def ensure_alias_available(
 
 
 async def reserve_placeholder_alias(session: AsyncSession, vm: HarmonyVmInstance) -> None:
+    """Keep the alias on the VM identity in both stopped and running states."""
     alias = (vm.alias or vm.name or "").strip()
     if not alias:
         return
-    await _replace_owned_alias(session, vm, placeholder_serial(vm.id), alias)
-
-
-async def point_alias_to_runtime(
-    session: AsyncSession, vm: HarmonyVmInstance, serial: str
-) -> None:
-    await _replace_owned_alias(session, vm, serial, vm.alias)
+    await _replace_owned_alias(session, vm, alias)
 
 
 async def _replace_owned_alias(
     session: AsyncSession,
     vm: HarmonyVmInstance,
-    target_serial: str,
     target_alias: str,
 ) -> None:
     alias = (target_alias or "").strip()
-    serial = (target_serial or "").strip()
-    if not alias or not serial:
+    if not alias:
         return
+    serial = placeholder_serial(vm.id)
     by_alias = (
         await session.execute(select(DeviceAlias).where(DeviceAlias.alias == alias))
     ).scalar_one_or_none()
     owned_serials = {placeholder_serial(vm.id)}
+    # Migrate an existing running VM's old HDC-keyed alias only when its name
+    # matches this VM.  Never treat an arbitrary alias on a reused port as
+    # owned by the new VM.
     if vm.hdc_serial:
-        owned_serials.add(vm.hdc_serial)
+        legacy = await session.get(DeviceAlias, vm.hdc_serial)
+        if legacy is not None and legacy.alias == alias:
+            owned_serials.add(vm.hdc_serial)
     if by_alias is not None and by_alias.serial not in owned_serials:
         raise ValueError("alias_conflict")
 
@@ -196,7 +197,10 @@ async def allocate_port_lease(
         )
     ).scalar_one_or_none()
     if existing is not None:
-        return existing
+        # A new dispatch must never inherit a previous attempt's port/token.
+        # Normal stop has removed the lease; an existing row means cleanup is
+        # incomplete or the VM row and lease table have drifted apart.
+        raise RuntimeError("harmony_vm_previous_port_lease_not_released")
 
     excluded = {
         int(port)
@@ -350,67 +354,122 @@ async def mark_agent_vms_offline(agent_id: str) -> int:
 async def filter_managed_devices_for_agent(
     agent_id: str, devices: list[Dict[str, Any]]
 ) -> list[Dict[str, Any]]:
-    """Reject a managed Harmony serial reported by any non-owner Agent.
+    """Accept only the current VM lease under its stable logical identity.
 
-    Hub serial routing is global.  Without this guard, two hosts both exposing
-    ``127.0.0.1:10000`` would make the latest hello silently steal the route.
-    Real-device reporting is untouched; this function only recognizes devices
-    carrying the managed VM identity tag.
+    The HDC serial is a connection address, and can be reused by another VM.
+    A managed device therefore enters Device, Hub, and readiness only as
+    ``harmony-vm:<vm_id>``.  An untagged report on the *same Agent's* leased
+    HDC address is rejected too, so an old rescan cannot recreate the legacy
+    physical-keyed device.  Other Agents' ordinary Harmony devices are not
+    affected by this local-address check.
     """
-    managed = []
+    tagged: list[tuple[Dict[str, Any], str, Dict[str, Any]]] = []
+    untagged_hdc: set[str] = set()
     for device in devices:
+        if str(device.get("platform") or "").strip().lower() != "harmony":
+            continue
         extra = device.get("extra") if isinstance(device.get("extra"), dict) else {}
         vm_id = str(extra.get("vm_instance_id") or "").strip()
-        platform_name = str(device.get("platform") or "").strip().lower()
-        if vm_id and platform_name == "harmony":
-            managed.append((device, vm_id))
-    if not managed:
+        serial = str(device.get("serial") or "").strip()
+        if vm_id or serial.startswith("harmony-vm:"):
+            tagged.append((device, vm_id, extra))
+        elif serial.startswith("127.0.0.1:"):
+            untagged_hdc.add(serial)
+    if not tagged and not untagged_hdc:
         return devices
 
+    accepted: dict[int, Dict[str, Any]] = {}
+    tagged_ids = {id(device) for device, _, _ in tagged}
+    blocked_hdc: set[str] = set()
     factory = get_session_factory()
-    accepted_ids: set[int] = set()
     try:
         async with factory() as session:
-            for device, vm_id in managed:
-                vm = await session.get(HarmonyVmInstance, vm_id)
+            for device, vm_id, extra in tagged:
                 serial = str(device.get("serial") or "").strip()
+                vm = await session.get(HarmonyVmInstance, vm_id) if vm_id else None
+                lease = (
+                    await session.get(HarmonyVmPortLease, vm.hdc_port)
+                    if vm is not None and vm.hdc_port is not None
+                    else None
+                )
+                hdc_serial = str(extra.get("hdc_serial") or "").strip()
+                token = str(extra.get("lease_token") or "").strip()
                 if (
                     vm is not None
+                    and lease is not None
+                    and serial == placeholder_serial(vm_id)
+                    and hdc_serial == vm.hdc_serial == serial_for_port(lease.port)
+                    and token
+                    and token == vm.lease_token == lease.lease_token
                     and (vm.assigned_agent_id or "") == agent_id
-                    and (vm.hdc_serial or "") == serial
+                    and (lease.agent_id or "") == agent_id
+                    and lease.vm_id == vm_id
+                    and lease.state in {"reserved", "active"}
                     and vm.state in ACTIVE_STATES
                 ):
-                    accepted_ids.add(id(device))
+                    # lease_token is an internal authority credential.  Device
+                    # extra is exposed by public device-list endpoints.
+                    public_extra = {k: v for k, v in extra.items() if k != "lease_token"}
+                    accepted[id(device)] = {**device, "extra": public_extra}
                     continue
                 logger.error(
-                    "拒绝非租约持有者上报受管 Harmony VM：agent={} vm_id={} serial={}",
+                    "拒绝无当前租约的受管 Harmony VM 设备上报：agent={} vm_id={} serial={}",
                     agent_id,
                     vm_id,
                     serial,
                 )
+
+            if untagged_hdc:
+                rows = (
+                    await session.execute(
+                        select(HarmonyVmInstance).where(
+                            HarmonyVmInstance.assigned_agent_id == agent_id,
+                            HarmonyVmInstance.hdc_serial.in_(untagged_hdc),
+                            HarmonyVmInstance.state.in_(ACTIVE_STATES),
+                        )
+                    )
+                ).scalars().all()
+                for vm in rows:
+                    if vm.hdc_port is None or not vm.lease_token:
+                        continue
+                    lease = await session.get(HarmonyVmPortLease, vm.hdc_port)
+                    if (
+                        lease is not None
+                        and lease.vm_id == vm.id
+                        and lease.agent_id == agent_id
+                        and lease.lease_token == vm.lease_token
+                        and lease.state in {"reserved", "active"}
+                        and vm.hdc_serial == serial_for_port(lease.port)
+                    ):
+                        blocked_hdc.add(vm.hdc_serial)
     except SQLAlchemyError:
-        # 新表不可用时 fail-closed 地摘掉受管 VM，但保留同一次 hello 中的
-        # Android/iOS/鸿蒙真机，不能让可选能力拖断整条 Agent 连接。
+        # Missing optional Harmony tables fail closed for tagged VM reports,
+        # without disconnecting Android, iOS, or Harmony real devices.
         logger.exception(
             "Harmony VM 身份表不可用：拒绝本次受管 VM 上报，保留普通设备 agent={}",
             agent_id,
         )
-    return [
-        device
-        for device in devices
-        if not (
+        accepted.clear()
+
+    result: list[Dict[str, Any]] = []
+    for device in devices:
+        serial = str(device.get("serial") or "").strip()
+        if id(device) in accepted:
+            result.append(accepted[id(device)])
+        elif id(device) in tagged_ids:
+            continue
+        elif (
             str(device.get("platform") or "").strip().lower() == "harmony"
-            and str(
-                (
-                    device.get("extra")
-                    if isinstance(device.get("extra"), dict)
-                    else {}
-                ).get("vm_instance_id")
-                or ""
-            ).strip()
-            and id(device) not in accepted_ids
-        )
-    ]
+            and serial in blocked_hdc
+        ):
+            logger.warning(
+                "拒绝当前受管 Harmony VM HDC 地址的未标记旁路上报：agent={} serial={}",
+                agent_id,
+                serial,
+            )
+        else:
+            result.append(device)
+    return result
 
 
 async def reset_vm_states_on_startup(session: AsyncSession) -> int:
@@ -525,7 +584,7 @@ async def handle_vm_status(
             vm.hdc_serial = expected_serial
             vm.started_at = vm.started_at or now_utc()
             vm.stopped_at = None
-            await point_alias_to_runtime(session, vm, expected_serial)
+            await reserve_placeholder_alias(session, vm)
         elif state == "stopped":
             await reserve_placeholder_alias(session, vm)
             await release_port_lease(session, vm, reason="stopped")

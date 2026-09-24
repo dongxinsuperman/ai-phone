@@ -285,6 +285,12 @@ def hdc_run(
     Raises:
         HdcError: 非零返回码 / 超时 / 二进制找不到
     """
+    if serial and serial.startswith("harmony-vm:"):
+        # Only managed Harmony VMs have a logical device key. Physical HDC
+        # targets (including Harmony phones) retain their original behavior.
+        from ai_phone.agent.harmony_vm.registry import resolve_harmony_serial
+
+        serial = resolve_harmony_serial(serial)
     hdc_bin = _resolve_hdc_binary()
     if hdc_bin is None:
         raise HdcError(

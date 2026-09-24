@@ -23,8 +23,11 @@ from ai_phone.agent.harmony_vm.manager import (
 )
 from ai_phone.agent.harmony_vm.registry import (
     managed_fport,
+    managed_folded_screen_width,
     register_managed_serial,
+    register_managed_vm,
     set_managed_fport,
+    unregister_managed_vm,
     unregister_managed_serial,
 )
 from ai_phone.config import AGENT_LOCAL_FIELDS, Settings, downlink_field_names
@@ -766,6 +769,70 @@ async def test_harmony_vm_fold_state_only_on_foldable(client):
     assert "fold" not in default.json()["config_json"]
 
 
+def test_harmony_fold_ready_uses_live_window_size_not_dms_history(
+    monkeypatch, tmp_path
+):
+    import ai_phone.agent.drivers.hdc as hdc_module
+    import ai_phone.agent.harmony_vm.manager as manager_module
+
+    manager = HarmonyVmManager(runtime_dir=tmp_path)
+    serial = "127.0.0.1:10004"
+    runtime = HarmonyVmRuntime(
+        vm_id="fold-verify",
+        name="外屏验证",
+        instance_name="aiphone_harmony_fold_verify",
+        instance_path=str(tmp_path / "instances"),
+        image_root="",
+        hdc_port=10004,
+        hdc_serial=serial,
+        lease_token="fold-verify-lease",
+    )
+    msg = {
+        "device_type": "Foldable",
+        "config_json": {
+            "fold": {"initial_state": "folded"},
+            "folded_screen": {"width": 1080},
+        },
+    }
+    monkeypatch.setattr(manager_module, "FOLD_VERIFY_INTERVAL_SEC", 0)
+    commands = []
+    monkeypatch.setattr(
+        hdc_module,
+        "hdc_shell",
+        lambda _serial, command, **_kwargs: (
+            commands.append(command) or "width: 1080 height: 2504"
+        ),
+    )
+
+    # The command output contains an outer-screen width, but the live driver
+    # still sees the inner display.  This must not mark the VM ready.
+    runtime.driver = SimpleNamespace(window_size=lambda: (2224, 2496))
+    with pytest.raises(RuntimeError, match="harmony_fold_state_not_applied:folded"):
+        manager._apply_fold_state(runtime, msg)  # noqa: SLF001
+    assert commands == ["hidumper -s DisplayManagerService -a -m"]
+
+    # A transient outer frame is not enough.  Two consecutive fresh reads
+    # after the last inner frame are required.
+    sizes = iter(
+        [
+            (1080, 2504),
+            RuntimeError("uitest reconnect"),
+            (2224, 2496),
+            (1080, 2504),
+            (1080, 2504),
+        ]
+    )
+
+    def fresh_size():
+        result = next(sizes)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    runtime.driver = SimpleNamespace(window_size=fresh_size)
+    manager._apply_fold_state(runtime, msg)  # noqa: SLF001
+
+
 async def test_harmony_vm_create_is_independent_and_reserves_alias(client, session):
     response = await client.post(
         "/api/internal/harmony-vm/instances",
@@ -1231,9 +1298,13 @@ async def test_missing_harmony_vm_table_filters_only_managed_vm(session):
         {"serial": "android-1", "platform": "android", "extra": {}},
         {"serial": "harmony-real", "platform": "harmony", "extra": {}},
         {
-            "serial": "127.0.0.1:10000",
+            "serial": "harmony-vm:managed-vm",
             "platform": "harmony",
-            "extra": {"vm_instance_id": "managed-vm"},
+            "extra": {
+                "vm_instance_id": "managed-vm",
+                "hdc_serial": "127.0.0.1:10000",
+                "lease_token": "managed-token",
+            },
         },
     ]
     filtered = await filter_managed_devices_for_agent("agent-a", devices)
@@ -1300,14 +1371,44 @@ async def test_managed_harmony_serial_only_accepts_lease_owner(session):
         lease_token="token",
     )
     session.add(vm)
+    await session.flush()
+    session.add(HarmonyVmPortLease(
+        port=10000,
+        vm_id=vm.id,
+        agent_id="owner",
+        lease_token="token",
+        state="active",
+    ))
     await session.commit()
     device = {
+        "serial": f"harmony-vm:{vm.id}",
+        "platform": "harmony",
+        "extra": {
+            "is_virtual": True,
+            "vm_instance_id": vm.id,
+            "hdc_serial": "127.0.0.1:10000",
+            "lease_token": "token",
+        },
+    }
+    accepted = await filter_managed_devices_for_agent("owner", [device])
+    assert [row["serial"] for row in accepted] == [f"harmony-vm:{vm.id}"]
+    assert "lease_token" not in accepted[0]["extra"]
+    assert await filter_managed_devices_for_agent("other", [device]) == []
+    assert await filter_managed_devices_for_agent(
+        "owner", [{**device, "serial": "127.0.0.1:10000"}]
+    ) == []
+    assert await filter_managed_devices_for_agent(
+        "owner", [{**device, "extra": {**device["extra"], "lease_token": "wrong"}}]
+    ) == []
+    untagged_hdc = {
         "serial": "127.0.0.1:10000",
         "platform": "harmony",
-        "extra": {"is_virtual": True, "vm_instance_id": vm.id},
+        "extra": {},
     }
-    assert await filter_managed_devices_for_agent("owner", [device]) == [device]
-    assert await filter_managed_devices_for_agent("other", [device]) == []
+    assert await filter_managed_devices_for_agent("owner", [untagged_hdc]) == []
+    assert await filter_managed_devices_for_agent("other", [untagged_hdc]) == [
+        untagged_hdc
+    ]
 
 
 def test_harmony_vm_device_tag_matches_generic_device_contract(tmp_path):
@@ -1325,15 +1426,22 @@ def test_harmony_vm_device_tag_matches_generic_device_contract(tmp_path):
     )
     manager._runtimes[runtime.vm_id] = runtime  # noqa: SLF001
     info = DeviceInfo(serial=runtime.hdc_serial, platform="harmony")
-    result = manager.decorate_devices([info])
-    assert result[0].extra == {
-        "device_kind": "virtual",
-        "is_virtual": True,
-        "vm_platform": "harmony",
-        "vm_instance_id": "abc",
-        "vm_name": "鸿蒙机",
-    }
-    assert "vm_lease_token" not in result[0].extra
+    register_managed_vm("abc", runtime.hdc_serial, "token")
+    try:
+        result = manager.decorate_devices([info])
+        assert result[0].serial == "harmony-vm:abc"
+        assert result[0].extra == {
+            "device_kind": "virtual",
+            "is_virtual": True,
+            "vm_platform": "harmony",
+            "vm_instance_id": "abc",
+            "vm_name": "鸿蒙机",
+            "hdc_serial": "127.0.0.1:10000",
+            "lease_token": "token",
+        }
+        assert "vm_lease_token" not in result[0].extra
+    finally:
+        unregister_managed_vm("abc", "token")
 
 
 def test_harmony_reconcile_does_not_adopt_stopped_vm_when_port_is_reused(
@@ -1384,6 +1492,11 @@ def test_harmony_reconcile_does_not_adopt_stopped_vm_when_port_is_reused(
         return FakeDriver()
 
     monkeypatch.setattr(manager_module, "open_harmony_driver", fake_open)
+    monkeypatch.setattr(
+        manager,
+        "_active_instance_serial",
+        lambda vm_id, _known: shared_serial if vm_id == "current-running" else "",
+    )
     try:
         adopted = manager.reconcile_running_vms_sync()
         assert [runtime.vm_id for runtime in adopted] == ["current-running"]
@@ -1391,7 +1504,98 @@ def test_harmony_reconcile_does_not_adopt_stopped_vm_when_port_is_reused(
         assert manager._last_reclaimed_ids == {"current-running"}  # noqa: SLF001
         assert opened == [shared_serial]
     finally:
+        unregister_managed_vm("current-running", "current-token")
         unregister_managed_serial(shared_serial)
+
+
+def test_harmony_fold_target_is_scoped_to_current_vm_lease():
+    serial = "127.0.0.1:19998"
+    first = "harmony-vm:fold-first"
+    second = "harmony-vm:fold-second"
+    try:
+        register_managed_vm(
+            "fold-first", serial, "first-lease", folded_screen_width=1080
+        )
+        assert managed_folded_screen_width(first, serial) == 1080
+        assert managed_folded_screen_width(first, "127.0.0.1:19997") is None
+
+        # The same HDC address now belongs to another VM.  The old setting
+        # cannot migrate with the port, and its late unregister is harmless.
+        register_managed_vm("fold-second", serial, "second-lease")
+        assert managed_folded_screen_width(first, serial) is None
+        assert managed_folded_screen_width(second, serial) is None
+        unregister_managed_vm("fold-first", "first-lease")
+
+        register_managed_vm(
+            "fold-second", serial, "new-lease", folded_screen_width=1090
+        )
+        unregister_managed_vm("fold-second", "second-lease")
+        assert managed_folded_screen_width(second, serial) == 1090
+        unregister_managed_vm("fold-second", "new-lease")
+        assert managed_folded_screen_width(second, serial) is None
+    finally:
+        unregister_managed_vm("fold-first", "first-lease")
+        unregister_managed_vm("fold-second", "second-lease")
+        unregister_managed_vm("fold-second", "new-lease")
+
+
+def test_harmony_reconcile_restores_folded_target_before_ready(monkeypatch, tmp_path):
+    import ai_phone.agent.drivers.hdc as hdc_module
+    import ai_phone.agent.harmony_vm.manager as manager_module
+
+    manager = HarmonyVmManager(runtime_dir=tmp_path)
+    serial = "127.0.0.1:10003"
+    config = {
+        "device_type": "Foldable",
+        "config_json": {
+            "fold": {"initial_state": "folded"},
+            "folded_screen": {"width": 1080},
+        },
+    }
+    manager._known = {  # noqa: SLF001
+        "fold-reclaimed": {
+            "vm_id": "fold-reclaimed",
+            "name": "外屏机",
+            "instance_name": "aiphone_harmony_fold_reclaimed",
+            "instance_path": str(tmp_path / "instances"),
+            "hdc_port": 10003,
+            "hdc_serial": serial,
+            "lease_token": "fold-lease",
+            "ready": True,
+            "last_config": config,
+        }
+    }
+    monkeypatch.setattr(
+        manager_module,
+        "hdc_list_targets",
+        lambda: [SimpleNamespace(serial=serial, status="Connected")],
+    )
+    monkeypatch.setattr(manager, "_active_instance_serial", lambda *_args: serial)
+    monkeypatch.setattr(manager_module, "FOLD_VERIFY_INTERVAL_SEC", 0)
+    commands = []
+    monkeypatch.setattr(
+        hdc_module,
+        "hdc_shell",
+        lambda _serial, command, **_kwargs: commands.append(command) or "",
+    )
+    sizes = iter([(2224, 2496), (1080, 2504), (1080, 2504)])
+
+    class FakeDriver:
+        def get_raw_driver(self):
+            return SimpleNamespace(_client=SimpleNamespace(local_port=16557))
+
+        def window_size(self):
+            return next(sizes)
+
+    monkeypatch.setattr(manager_module, "open_harmony_driver", lambda _serial: FakeDriver())
+    try:
+        adopted = manager.reconcile_running_vms_sync()
+        assert [runtime.vm_id for runtime in adopted] == ["fold-reclaimed"]
+        assert commands == ["hidumper -s DisplayManagerService -a -m"]
+        assert managed_folded_screen_width("harmony-vm:fold-reclaimed", serial) == 1080
+    finally:
+        unregister_managed_vm("fold-reclaimed", "fold-lease")
+        unregister_managed_serial(serial)
 
 
 async def test_harmony_orphan_reconcile_reports_only_existing_managed_instances(
@@ -1482,8 +1686,25 @@ def test_harmony_vm_acceleration_is_evidence_based(tmp_path):
     assert unknown["acceleration_evidence"] == []
 
 
-def test_harmony_vm_start_uses_server_assigned_hdc_port(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ("device_type", "config_json", "expected_folded_width"),
+    [
+        ("Phone", {}, None),
+        (
+            "Foldable",
+            {
+                "fold": {"initial_state": "folded"},
+                "folded_screen": {"width": 1080},
+            },
+            1080,
+        ),
+    ],
+)
+def test_harmony_vm_start_uses_server_assigned_hdc_port(
+    monkeypatch, tmp_path, device_type, config_json, expected_folded_width
+):
     import ai_phone.agent.harmony_vm.manager as manager_module
+    import ai_phone.agent.drivers.hdc as hdc_module
     from ai_phone.agent.harmony_vm.capability import HarmonyVmTools
 
     manager = HarmonyVmManager(runtime_dir=tmp_path)
@@ -1495,6 +1716,8 @@ def test_harmony_vm_start_uses_server_assigned_hdc_port(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(manager, "_port_conflict", lambda _port, _serial: "")
     monkeypatch.setattr(manager, "_resolve_image_root", lambda _msg: "/host/deveco-images")
+    monkeypatch.setattr(manager_module, "FOLD_VERIFY_INTERVAL_SEC", 0)
+    monkeypatch.setattr(hdc_module, "hdc_shell", lambda *_args, **_kwargs: "")
 
     def _fake_create(_emulator, runtime, _msg):
         config = (
@@ -1543,6 +1766,8 @@ def test_harmony_vm_start_uses_server_assigned_hdc_port(monkeypatch, tmp_path):
             "alias": "端口测试",
             "assigned_port": 12345,
             "lease_token": "server-lease",
+            "device_type": device_type,
+            "config_json": config_json,
             "os_version": "6.0.0",
             "api_version": "20",
             "instance_uuid": "45d5504d-4143-0415-24d0-0123456789ab",
@@ -1561,6 +1786,10 @@ def test_harmony_vm_start_uses_server_assigned_hdc_port(monkeypatch, tmp_path):
             == "coldboot_no_save"
         )
         assert runtime.driver_fport_port == 16556
+        assert (
+            managed_folded_screen_width("harmony-vm:vm-port-test", runtime.hdc_serial)
+            == expected_folded_width
+        )
         assert result["details"]["resolved_abi"] in {"arm64", "x86_64"}
         instance_config = (
             Path(runtime.instance_path)
@@ -1574,6 +1803,7 @@ def test_harmony_vm_start_uses_server_assigned_hdc_port(monkeypatch, tmp_path):
     finally:
         if runtime.log_file is not None:
             runtime.log_file.close()
+        unregister_managed_vm("vm-port-test", "server-lease")
         unregister_managed_serial(runtime.hdc_serial)
 
 
@@ -1859,6 +2089,31 @@ def test_harmony_official_default_screen_omits_screen_cli_args(
     assert "-screenProfile" not in calls[0]
 
 
+def test_harmony_capability_dry_run_uses_server_display_mode(monkeypatch):
+    """Capability probing must send the same screen args as the real start."""
+    import ai_phone.agent.harmony_vm.capability as capability_module
+
+    commands = []
+
+    def fake_run(args, **_kwargs):
+        commands.append(args)
+        return (0, "Device create success")
+
+    monkeypatch.setattr(capability_module, "_run", fake_run)
+    ok, reason = capability_module.dry_run_create(
+        capability_module.HarmonyVmTools(emulator="/fake/Emulator"),
+        {
+            "device_type": "Phone",
+            "os_version": "HarmonyOS 6.0.31(23)",
+            "api_version": "23",
+            "screen_profile": "Default Phone",
+            "config_json": {"display": {"mode": "official_default"}},
+        },
+    )
+    assert ok is True, reason
+    assert "-screenProfile" not in commands[0]
+
+
 def test_harmony_capability_waiter_drops_disconnected_agent_port_evidence():
     waiter = HarmonyVmCapabilityWaiter()
     resolved = waiter.resolve(
@@ -1966,7 +2221,7 @@ class _FakeWs:
 async def test_managed_harmony_vm_rejects_mismatched_hap_before_dispatch(
     client, app, session, tmp_path
 ):
-    serial = "127.0.0.1:10000"
+    serial = "harmony-vm:vm-harmony-app"
     hub = Hub()
     app.state.hub = hub
     ws = _FakeWs()
@@ -1999,7 +2254,7 @@ async def test_managed_harmony_vm_rejects_mismatched_hap_before_dispatch(
         state="running",
         assigned_agent_id="agent-harmony",
         hdc_port=10000,
-        hdc_serial=serial,
+        hdc_serial="127.0.0.1:10000",
         runtime={
             "last_status": {
                 "details": {"resolved_abi": "x86_64"},

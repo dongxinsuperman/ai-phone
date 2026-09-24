@@ -384,6 +384,9 @@ def dry_run_create(
     device_type = str(requirement.get("device_type") or "Phone").strip()
     screen_profile = str(requirement.get("screen_profile") or "").strip()
     display = requirement.get("display")
+    if not isinstance(display, dict):
+        config = requirement.get("config_json")
+        display = config.get("display") if isinstance(config, dict) else None
     # 机型不可选的组合走官方默认机型，此时绝不能传 -screenProfile，否则必然被拒。
     if isinstance(display, dict) and str(display.get("mode") or "") == "official_default":
         screen_profile = ""

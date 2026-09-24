@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.shared import protocol as P
@@ -15,6 +15,7 @@ from ai_phone.shared import protocol as P
 from ..api._deps import DBSession, HubDep
 from ..api.submissions import RequireBearer
 from ..hub import Hub
+from ..models import Device
 from .catalog import normalize_manifest
 from .models import (
     HarmonyVmCatalogSnapshot,
@@ -38,9 +39,9 @@ from .service import (
     get_vm_or_404,
     normalize_abi,
     now_utc,
-    point_alias_to_runtime,
     quarantine_current_lease,
     release_port_lease,
+    placeholder_serial,
     reserve_placeholder_alias,
     vm_payload,
 )
@@ -52,6 +53,15 @@ def _require_harmony_vm_db(request: Request) -> None:
             status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Harmony VM 数据表初始化失败；现有设备与 Android 链路不受影响",
         )
+
+
+async def _forget_vm_device(hub: Hub, vm_id: str) -> None:
+    """Remove only the deleted VM's route and transient device state."""
+    identity = placeholder_serial(vm_id)
+    owner = hub.agent_id_for_serial(identity)
+    if owner:
+        await hub.detach_device(owner, identity)
+    hub.clear_device_extra({identity})
 
 
 router = APIRouter(
@@ -66,6 +76,9 @@ catalog_router = APIRouter(
 )
 
 REDISPATCH_REQUIRED = "assigned agent offline; please probe and dispatch again"
+LEASE_CLEANUP_REQUIRED = (
+    "旧鸿蒙虚拟机尚未确认停止；请先重试停止，或核实旧宿主机实例已关闭后确认释放占用"
+)
 
 # 创建时按官方目录校验并写死的字段，之后一律不可改。
 CATALOG_LOCKED_FIELDS = (
@@ -542,9 +555,7 @@ async def patch_instance(
             await delete_owned_alias(session, vm)
             vm.alias = alias
             vm.name = alias
-            if alias and vm.hdc_serial:
-                await point_alias_to_runtime(session, vm, vm.hdc_serial)
-            elif alias:
+            if alias:
                 await reserve_placeholder_alias(session, vm)
     # 机型、镜像和屏幕是创建时按官方目录校验并锁定的。允许在这里改等于绕过整套
     # 兼容校验，能改出一台 CLI 拒绝创建的配置，且直到下发才暴露。要换配置就重新
@@ -591,6 +602,8 @@ async def delete_instance(
     if vm.state in ACTIVE_STATES:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="active vm cannot be deleted")
     old_agent = vm.assigned_agent_id or ""
+    old_hdc_serial = vm.hdc_serial or ""
+    old_lease_token = vm.lease_token or ""
     quarantined_port: Optional[int] = None
     if vm.lease_token:
         # 非活动态却仍持租约，只可能是 agent_offline / error / unavailable ——
@@ -607,14 +620,22 @@ async def delete_instance(
             details={"deleted_vm_id": vm_id, "agent_id": old_agent},
         )
     await delete_owned_alias(session, vm)
+    # A stopped VM may still have a stale Agent hello row while asynchronous
+    # local cleanup is pending.  Remove only this VM's logical Device row.
+    await session.execute(
+        delete(Device).where(Device.serial == placeholder_serial(vm_id))
+    )
     await session.delete(vm)
     await session.commit()
+    await _forget_vm_device(hub, vm_id)
     cleanup_sent = False
     if old_agent:
         cleanup_sent = await hub.send_to_agent(old_agent, {
             "type": P.MSG_HARMONY_VM_DELETE,
             "request_id": _request_id(),
             "vm_id": vm_id,
+            "hdc_serial": old_hdc_serial,
+            "lease_token": old_lease_token,
         })
     return {
         "id": vm_id,
@@ -629,6 +650,7 @@ async def force_release_instance_lease(
     body: HarmonyVmForceReleaseReq,
     vm_id: str = Path(..., min_length=1, max_length=64),
     session: AsyncSession = DBSession,
+    hub: Hub = HubDep,
 ) -> Dict[str, Any]:
     """Explicit operator escape hatch; never called automatically."""
     try:
@@ -640,25 +662,35 @@ async def force_release_instance_lease(
             status.HTTP_400_BAD_REQUEST,
             detail="confirmed=true is required for force release",
         )
+    reason = body.reason.strip()
+    if len(reason) < 8:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="force release reason must contain at least 8 non-space characters",
+        )
     if vm.state in ACTIVE_STATES:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail="active harmony vm cannot be force released",
         )
-    if vm.lease_token:
+    if vm.lease_token or vm.hdc_port is not None or vm.hdc_serial:
         await reserve_placeholder_alias(session, vm)
         await release_port_lease(
             session,
             vm,
-            reason=f"force_release:{body.reason.strip()}",
+            reason=f"force_release:{reason}",
         )
+    await session.execute(
+        delete(Device).where(Device.serial == placeholder_serial(vm_id))
+    )
     vm.assigned_agent_id = None
     vm.state = "stopped"
     vm.error_code = "lease_force_released"
-    vm.error_message = body.reason.strip()
+    vm.error_message = reason
     vm.stopped_at = now_utc()
     await session.commit()
     await session.refresh(vm)
+    await _forget_vm_device(hub, vm_id)
     return {
         "released": True,
         "warning": (
@@ -707,6 +739,8 @@ async def start_instance(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="harmony vm not found")
     agent_id = (vm.assigned_agent_id or "").strip()
     if not agent_id or not hub.has_agent(agent_id):
+        if vm.lease_token or vm.hdc_port is not None or vm.hdc_serial:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail=LEASE_CLEANUP_REQUIRED)
         vm.assigned_agent_id = None
         vm.state = "stopped"
         vm.error_code = "redispatch_required"
@@ -726,12 +760,14 @@ async def stop_instance(
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="harmony vm not found")
-    if not vm.assigned_agent_id or not vm.lease_token:
+    if not vm.assigned_agent_id and (vm.lease_token or vm.hdc_port is not None or vm.hdc_serial):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=LEASE_CLEANUP_REQUIRED)
+    if not vm.lease_token:
+        if vm.hdc_port is not None or vm.hdc_serial:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail=LEASE_CLEANUP_REQUIRED)
         vm.state = "stopped"
         vm.stopped_at = now_utc()
         await reserve_placeholder_alias(session, vm)
-        if vm.lease_token:
-            await release_port_lease(session, vm, reason="stopped_without_agent")
         await session.commit()
         await session.refresh(vm)
         return {"sent": False, "instance": vm.to_dict()}
@@ -763,6 +799,8 @@ async def _send_start(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="harmony vm not found")
     if vm.state in ACTIVE_STATES:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="active vm cannot be dispatched")
+    if vm.lease_token or vm.hdc_port is not None or vm.hdc_serial:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=LEASE_CLEANUP_REQUIRED)
     old_agent = (vm.assigned_agent_id or "").strip()
     if old_agent and old_agent != agent_id:
         return await _switch_agent(
@@ -843,13 +881,10 @@ async def _switch_agent(
     old_agent = (vm.assigned_agent_id or "").strip()
     old_vm_id = vm.id
     old_serial = (vm.hdc_serial or "").strip()
-    if vm.lease_token:
+    if vm.lease_token or vm.hdc_port is not None or vm.hdc_serial:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail=(
-                "old harmony vm cleanup is not confirmed; stop it before "
-                "switching Agent"
-            ),
+            detail=LEASE_CLEANUP_REQUIRED,
         )
     capability_waiter = get_capability_waiter()
     live_capability = await capability_waiter.probe_agent(
@@ -892,6 +927,9 @@ async def _switch_agent(
         "config_json": dict(vm.config_json or {}),
     }
     await delete_owned_alias(session, vm)
+    await session.execute(
+        delete(Device).where(Device.serial == placeholder_serial(old_vm_id))
+    )
     await session.delete(vm)
     await session.flush()
 
@@ -924,6 +962,7 @@ async def _switch_agent(
     new_vm.stopped_at = None
     await session.commit()
     await session.refresh(new_vm)
+    await _forget_vm_device(hub, old_vm_id)
 
     sent = await hub.send_to_agent(new_agent_id, payload)
     if not sent:

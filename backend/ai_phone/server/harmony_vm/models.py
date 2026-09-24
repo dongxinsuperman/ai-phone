@@ -97,6 +97,9 @@ class HarmonyVmInstance(Base):
             "assigned_agent_id": self.assigned_agent_id,
             "hdc_port": self.hdc_port,
             "hdc_serial": self.hdc_serial,
+            "cleanup_pending": bool(
+                self.lease_token or self.hdc_port is not None or self.hdc_serial
+            ),
             "runtime": runtime,
             "error_code": self.error_code,
             "error_message": self.error_message,

@@ -136,6 +136,32 @@ def build_harmony_streamer(
 
     s = get_settings()
     backend = (s.harmony_mirror_backend or "screenshot").strip().lower()
+    physical_serial = serial
+    owner_check = None
+    if serial.startswith("harmony-vm:"):
+        from ai_phone.agent.harmony_vm.registry import resolve_harmony_serial
+
+        physical_serial = resolve_harmony_serial(serial)
+
+        def owner_check() -> bool:
+            try:
+                return resolve_harmony_serial(serial) == physical_serial
+            except RuntimeError:
+                return False
+
+        if getattr(driver, "serial", None) != physical_serial:
+            raise RuntimeError(
+                "harmony_mirror_driver_serial_mismatch:"
+                f"serial={serial}:driver_serial={getattr(driver, 'serial', None)}"
+            )
+
+        send_jpeg = on_jpeg
+
+        def on_jpeg(jpeg: bytes, width: int, height: int) -> None:
+            # An old A session must never publish frames captured after its HDC
+            # port has been rebound to B.
+            if owner_check():
+                send_jpeg(jpeg, width, height)
 
     if backend == "hypium":
         from .harmony_capture_hypium import HarmonyHypiumStreamer  # noqa: PLC0415
@@ -144,17 +170,23 @@ def build_harmony_streamer(
         # 另一台设备，拿到的就是别人的端口，视频流会串到别的设备上，因此这里必须
         # 先卡死设备身份，不能等到 reconcile 之后再看端口对不对。
         driver_serial = getattr(driver, "serial", None)
-        if driver_serial != serial:
+        if driver_serial != physical_serial:
             raise RuntimeError(
                 "harmony_mirror_driver_serial_mismatch:"
-                f"serial={serial}:driver_serial={driver_serial}"
+                f"serial={physical_serial}:driver_serial={driver_serial}"
             )
 
         try:
             # 在 driver 的 serial 锁内读取当前 raw、同步 managed registry 并二次
             # 校验。首次建流与后续重连走同一入口，不留“registry 旧值先 mismatch”
             # 的启动死角，也不扫描/猜测其它设备端口。
-            port_provider = driver.reconcile_managed_fport
+            raw_port_provider = driver.reconcile_managed_fport
+
+            def port_provider() -> int:
+                if owner_check is not None and not owner_check():
+                    raise RuntimeError(f"managed_harmony_vm_not_current:{serial}")
+                return int(raw_port_provider())
+
             local_port = int(port_provider())
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError(
@@ -167,7 +199,7 @@ def build_harmony_streamer(
             )
 
         return HarmonyHypiumStreamer(
-            serial=serial,
+            serial=physical_serial,
             local_port=local_port,
             on_jpeg=on_jpeg,
             port_provider=port_provider,
@@ -178,9 +210,10 @@ def build_harmony_streamer(
     from .harmony_capture import HarmonyScreenshotStreamer  # noqa: PLC0415
 
     return HarmonyScreenshotStreamer(
-        serial=serial,
+        serial=physical_serial,
         driver=driver,
         on_jpeg=on_jpeg,
+        owner_check=owner_check,
         target_fps=int(s.harmony_mirror_fps),
         jpeg_quality=int(s.harmony_mirror_jpeg_quality),
         long_edge=int(s.harmony_mirror_long_edge),

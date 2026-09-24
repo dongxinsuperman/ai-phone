@@ -36,9 +36,13 @@ from .capability import (
     scan_downloaded_images,
 )
 from .registry import (
+    managed_vm_owner,
     register_managed_serial,
+    register_managed_vm,
     set_managed_fport,
     unregister_managed_serial,
+    unregister_managed_vm,
+    vm_device_identity,
 )
 
 
@@ -130,6 +134,7 @@ class HarmonyVmRuntime:
     process: Optional[subprocess.Popen] = field(default=None, repr=False)
     driver: Optional[BaseDriver] = field(default=None, repr=False)
     log_file: Optional[Any] = field(default=None, repr=False)
+    log_start_offset: int = 0
     driver_fport_port: Optional[int] = None
     started_at: float = 0.0
     ready: bool = False
@@ -203,7 +208,10 @@ class HarmonyVmManager:
         serial_to_runtime = {
             runtime.hdc_serial: runtime
             for runtime in self._runtimes.values()
-            if runtime.ready and runtime.hdc_serial
+            if runtime.ready
+            and runtime.hdc_serial
+            and managed_vm_owner(runtime.hdc_serial)
+            == (runtime.vm_id, runtime.lease_token)
         }
         known_managed_serials = {
             str(row.get("hdc_serial") or "")
@@ -229,8 +237,11 @@ class HarmonyVmManager:
                     "vm_platform": "harmony",
                     "vm_instance_id": runtime.vm_id,
                     "vm_name": runtime.name,
+                    "hdc_serial": runtime.hdc_serial,
+                    "lease_token": runtime.lease_token,
                 }
             )
+            info.serial = vm_device_identity(runtime.vm_id)
             info.extra = extra
             out.append(info)
         return out
@@ -359,6 +370,7 @@ class HarmonyVmManager:
                 self.stop_sync,
                 str(msg.get("vm_id") or ""),
                 str(msg.get("hdc_serial") or ""),
+                str(msg.get("lease_token") or ""),
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("Harmony VM 停止收口异常 vm_id={}", msg.get("vm_id"))
@@ -389,6 +401,7 @@ class HarmonyVmManager:
                 self.delete_sync,
                 str(msg.get("vm_id") or ""),
                 str(msg.get("hdc_serial") or ""),
+                str(msg.get("lease_token") or ""),
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("Harmony VM 删除收口异常 vm_id={}", msg.get("vm_id"))
@@ -478,6 +491,12 @@ class HarmonyVmManager:
                 started_at=time.time(),
             )
             self._runtimes[vm_id] = runtime
+            register_managed_vm(
+                vm_id,
+                serial,
+                lease_token,
+                folded_screen_width=_managed_folded_screen_width(msg),
+            )
             register_managed_serial(serial)
 
         try:
@@ -572,6 +591,7 @@ class HarmonyVmManager:
             log_dir.mkdir(parents=True, exist_ok=True)
             log_file = open(log_dir / "emulator.log", "ab")  # noqa: SIM115
             runtime.log_file = log_file
+            runtime.log_start_offset = log_file.tell()
             args = [
                 tools.emulator,
                 "-start",
@@ -671,12 +691,34 @@ class HarmonyVmManager:
             timeout=15.0,
             check=False,
         )
-        # dump 开关不返回结果，只能回读显示尺寸确认：折叠后宽度等于外屏宽度，
-        # 展开后不等于。对不上说明这一版镜像不支持该开关，必须报错。
+        # dump 输出和 DMS 的历史尺寸都不能证明当前活动屏幕的形态。
+        # window_size 每次清掉 hmdriver2 的 display_size 缓存，连续两次回读
+        # 当前可操作屏宽，避免把一次短暂切换误报为已稳定就绪。
+        if runtime.driver is None:
+            raise RuntimeError("harmony_fold_state_driver_unavailable")
+        confirmed = 0
         for _ in range(FOLD_VERIFY_ATTEMPTS):
             time.sleep(FOLD_VERIFY_INTERVAL_SEC)
-            reported = _last_display_size(runtime.hdc_serial)
-            if reported and (reported[0] == folded_width) == folded:
+            try:
+                reported = runtime.driver.window_size()
+            except Exception as exc:  # noqa: BLE001
+                # 形态切换时 uitest 可短暂重连；留在有限确认窗口内重试。
+                confirmed = 0
+                logger.debug(
+                    "harmony vm {} 折叠形态实时尺寸暂不可读：{}",
+                    runtime.vm_id,
+                    exc,
+                )
+                continue
+            if (
+                reported[0] > 0
+                and reported[1] > 0
+                and (reported[0] == folded_width) == folded
+            ):
+                confirmed += 1
+            else:
+                confirmed = 0
+            if confirmed >= 2:
                 logger.info(
                     "harmony vm {} 折叠形态已确认为 {}（{}x{}）",
                     runtime.vm_id,
@@ -802,6 +844,11 @@ class HarmonyVmManager:
         last_error = ""
         while time.monotonic() < deadline:
             if runtime.process is not None and runtime.process.poll() is not None:
+                if self._emulator_agreement_required(runtime):
+                    raise RuntimeError(
+                        "harmony_vm_agreement_required: DevEco Emulator "
+                        "requires local agreement confirmation"
+                    )
                 raise RuntimeError(
                     f"emulator exited during boot: {runtime.process.returncode}"
                 )
@@ -842,6 +889,19 @@ class HarmonyVmManager:
         raise TimeoutError(
             f"harmony_vm_boot_timeout:{runtime.hdc_serial}:{last_error}"
         )
+
+    def _emulator_agreement_required(self, runtime: HarmonyVmRuntime) -> bool:
+        path = self.runtime_dir / "logs" / runtime.vm_id / "emulator.log"
+        try:
+            if runtime.log_file is not None:
+                runtime.log_file.flush()
+            with path.open("rb") as stream:
+                stream.seek(0, os.SEEK_END)
+                stream.seek(max(runtime.log_start_offset, stream.tell() - 16 * 1024))
+                tail = stream.read().decode("utf-8", errors="replace").lower()
+        except OSError:
+            return False
+        return "please agree to the agreement first" in tail
 
     def _wait_driver(
         self,
@@ -899,7 +959,9 @@ class HarmonyVmManager:
             f"{runtime.hdc_serial}:attempts={attempts}:{last_error}"
         )
 
-    def stop_sync(self, vm_id: str, hdc_serial: str = "") -> Dict[str, Any]:
+    def stop_sync(
+        self, vm_id: str, hdc_serial: str = "", lease_token: str = ""
+    ) -> Dict[str, Any]:
         vm_id = (vm_id or "").strip()
         if not vm_id:
             return {
@@ -912,25 +974,105 @@ class HarmonyVmManager:
             runtime = self._runtimes.get(vm_id)
             if runtime is None:
                 known = self._known.get(vm_id) or {}
-                serial = hdc_serial or str(known.get("hdc_serial") or "")
-                if not serial:
+                known_token = str(known.get("lease_token") or "")
+                known_serial = str(known.get("hdc_serial") or "")
+                if lease_token and lease_token != known_token:
+                    return self._stop_rejected("lease_mismatch", known_serial)
+                if hdc_serial and known_serial and hdc_serial != known_serial:
+                    return self._stop_rejected("hdc_mismatch", known_serial)
+                if not bool(known.get("ready")) and not bool(
+                    known.get("cleanup_pending")
+                ):
+                    crash_clean, crash_errors = self._cleanup_crash_service(
+                        vm_id, known
+                    )
+                    if not crash_clean:
+                        logger.warning(
+                            "Harmony VM crash-service 清理未确认 vm_id={} errors={}",
+                            vm_id,
+                            crash_errors,
+                        )
+                    unregister_managed_vm(vm_id, known_token)
                     return {
                         "ok": True,
                         "reason": "not_running",
-                        "hdc_serial": "",
+                        "hdc_serial": known_serial,
                         "details": {"cleanup_confirmed": True},
                     }
+                serial = self._active_instance_serial(vm_id, known)
+                if serial is None:
+                    return self._stop_rejected("instance_owner_unverified", known_serial)
+                if not serial:
+                    owner = managed_vm_owner(known_serial)
+                    port = _serial_port(known_serial)
+                    if owner is None:
+                        connected = {
+                            target.serial for target in hdc_list_targets()
+                            if target.status.lower() == "connected"
+                        }
+                        if known_serial in connected or (port and not self._port_is_free(port)):
+                            return self._stop_rejected(
+                                "instance_absence_unconfirmed", known_serial
+                            )
+                    crash_clean, crash_errors = self._cleanup_crash_service(
+                        vm_id, known
+                    )
+                    if not crash_clean:
+                        logger.warning(
+                            "Harmony VM crash-service 清理未确认 vm_id={} errors={}",
+                            vm_id,
+                            crash_errors,
+                        )
+                    self._known[vm_id] = {
+                        **known,
+                        "ready": False,
+                        "cleanup_pending": False,
+                    }
+                    self._save_registry()
+                    unregister_managed_vm(vm_id, known_token)
+                    return {
+                        "ok": True,
+                        "reason": "not_running",
+                        "hdc_serial": known_serial,
+                        "details": {"cleanup_confirmed": True},
+                    }
+                if serial != known_serial:
+                    return self._stop_rejected("instance_hdc_mismatch", known_serial)
                 runtime = self._runtime_from_known(vm_id, known, serial)
+            elif lease_token and lease_token != runtime.lease_token:
+                return self._stop_rejected("lease_mismatch", runtime.hdc_serial)
+            elif hdc_serial and hdc_serial != runtime.hdc_serial:
+                return self._stop_rejected("hdc_mismatch", runtime.hdc_serial)
             return self._stop_runtime(runtime, keep_instance=True)
 
     def _stop_runtime(
         self, runtime: HarmonyVmRuntime, *, keep_instance: bool
     ) -> Dict[str, Any]:
+        with self._start_lock:
+            return self._stop_runtime_locked(runtime, keep_instance=keep_instance)
+
+    @staticmethod
+    def _stop_rejected(reason: str, hdc_serial: str) -> Dict[str, Any]:
+        return {
+            "ok": False,
+            "reason": reason,
+            "error": reason,
+            "hdc_serial": hdc_serial,
+            "details": {"cleanup_confirmed": False},
+        }
+
+    def _stop_runtime_locked(
+        self, runtime: HarmonyVmRuntime, *, keep_instance: bool
+    ) -> Dict[str, Any]:
+        owner = managed_vm_owner(runtime.hdc_serial)
+        if owner is not None and owner != (runtime.vm_id, runtime.lease_token):
+            return self._stop_rejected("hdc_owned_by_another_vm", runtime.hdc_serial)
         self._runtimes.pop(runtime.vm_id, None)
         self._last_reclaimed_ids.discard(runtime.vm_id)
+        unregister_managed_vm(runtime.vm_id, runtime.lease_token)
         if self._drop_driver_cache is not None:
             try:
-                self._drop_driver_cache(runtime.hdc_serial)
+                self._drop_driver_cache(vm_device_identity(runtime.vm_id))
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "清理 Harmony VM 通用 driver cache 失败 serial={}: {}",
@@ -997,12 +1139,30 @@ class HarmonyVmManager:
             runtime.hdc_serial,
             runtime.hdc_port,
         )
+        crash_clean, crash_errors = self._cleanup_crash_service(
+            runtime.vm_id, runtime.persistent_dict()
+        )
+        stop_errors.extend(crash_errors)
+        if not crash_clean:
+            logger.warning(
+                "Harmony VM crash-service 清理未确认 vm_id={} errors={}",
+                runtime.vm_id,
+                crash_errors,
+            )
         unregister_managed_serial(runtime.hdc_serial)
-        if keep_instance and runtime.vm_id in self._known:
+        if keep_instance:
+            # A failed stop has already dropped the live driver and VM route,
+            # but the old process/HDC address may still be present. Persist a
+            # separate pending bit even when startup failed before this VM was
+            # first written to the registry. A retry must recheck ownership
+            # and port absence instead of treating ready=False as proof that
+            # cleanup finished.
             self._known[runtime.vm_id] = {
-                **self._known[runtime.vm_id],
+                **(self._known.get(runtime.vm_id) or {}),
+                **runtime.persistent_dict(),
                 "ready": False,
                 "driver_fport_port": None,
+                "cleanup_pending": not cleanup_confirmed,
             }
             self._save_registry()
         # 清理后的事实是停止成功的判据。HDC 若保留已离线 TCP target，
@@ -1024,11 +1184,14 @@ class HarmonyVmManager:
                     else ""
                 ),
                 "stop_errors": stop_errors,
+                "crash_service_cleanup_confirmed": crash_clean,
                 "hdc_port": runtime.hdc_port,
             },
         }
 
-    def delete_sync(self, vm_id: str, hdc_serial: str = "") -> Dict[str, Any]:
+    def delete_sync(
+        self, vm_id: str, hdc_serial: str = "", lease_token: str = ""
+    ) -> Dict[str, Any]:
         vm_id = (vm_id or "").strip()
         if not vm_id:
             return {
@@ -1039,7 +1202,7 @@ class HarmonyVmManager:
             }
         with self._vm_lock(vm_id):
             known = self._known.get(vm_id) or {}
-            stop = self.stop_sync(vm_id, hdc_serial)
+            stop = self.stop_sync(vm_id, hdc_serial, lease_token)
             if not stop.get("ok"):
                 return stop
             tools, missing = find_harmony_tools()
@@ -1052,6 +1215,13 @@ class HarmonyVmManager:
                 }
             instance_name = str(known.get("instance_name") or _safe_instance_name(vm_id))
             instance_path = str(known.get("instance_path") or self.instance_path)
+            if instance_name != _safe_instance_name(vm_id):
+                return {
+                    "ok": False,
+                    "reason": "instance_owner_mismatch",
+                    "error": f"registry instance does not belong to {vm_id}",
+                    "details": {"cleanup_confirmed": False},
+                }
             # -delete 会交互询问 "do you really want to delete this device folder?"，
             # 非交互环境下不处理就会挂住或删不掉。这里用两道保险：
             #   -force  实测有效（跳过询问、目录确实清空），但官方 -help 未列出该
@@ -1085,14 +1255,35 @@ class HarmonyVmManager:
                     "ok": False,
                     "reason": "delete_failed",
                     "error": output[-2000:],
-                    "details": {"cleanup_confirmed": True},
+                    "details": {"cleanup_confirmed": False},
                 }
+            instance_dir = Path(instance_path) / instance_name
+            if instance_dir.exists():
+                return {
+                    "ok": False,
+                    "reason": "delete_unconfirmed",
+                    "error": f"instance directory still exists: {instance_dir}",
+                    "details": {"cleanup_confirmed": False},
+                }
+            crash_clean, crash_errors = self._cleanup_crash_service(vm_id, known)
+            if not crash_clean:
+                logger.warning(
+                    "Harmony VM 删除后 crash-service 清理未确认 vm_id={} errors={}",
+                    vm_id,
+                    crash_errors,
+                )
             self._known.pop(vm_id, None)
             self._save_registry()
             return {
                 "ok": True,
                 "reason": "deleted",
-                "details": {"cleanup_confirmed": True, "instance_name": instance_name},
+                "details": {
+                    "cleanup_confirmed": True,
+                    "crash_service_cleanup_confirmed": crash_clean,
+                    "crash_service_cleanup_errors": crash_errors,
+                    "instance_name": instance_name,
+                    "instance_directory_absent": True,
+                },
             }
 
     def _delete_instance_definition(
@@ -1141,6 +1332,10 @@ class HarmonyVmManager:
             )
 
     def reconcile_running_vms_sync(self) -> List[HarmonyVmRuntime]:
+        with self._start_lock:
+            return self._reconcile_running_vms_sync_locked()
+
+    def _reconcile_running_vms_sync_locked(self) -> List[HarmonyVmRuntime]:
         connected = {
             target.serial
             for target in hdc_list_targets()
@@ -1159,6 +1354,15 @@ class HarmonyVmManager:
             token = str(known.get("lease_token") or "")
             if not serial or not token or serial not in connected:
                 continue
+            if self._active_instance_serial(vm_id, known) != serial:
+                logger.warning(
+                    "Harmony VM 不凭复用 HDC 端口认领：实例进程未核实 "
+                    "vm_id={} serial={}", vm_id, serial,
+                )
+                continue
+            owner = managed_vm_owner(serial)
+            if owner is not None and owner != (vm_id, token):
+                continue
             runtime = self._runtime_from_known(vm_id, known, serial)
             register_managed_serial(serial)
             try:
@@ -1167,7 +1371,19 @@ class HarmonyVmManager:
                 runtime.driver_fport_port = int(raw._client.local_port)  # noqa: SLF001
                 set_managed_fport(serial, runtime.driver_fport_port)
                 runtime.driver.window_size()
+                fold_config = known.get("last_config")
+                folded_width = _managed_folded_screen_width(fold_config)
+                if folded_width:
+                    # 只对有可信旧配置的受管 Foldable 外屏重验。Agent 重启期间
+                    # 屏幕可能已被系统电源状态改回内屏，不能凭旧 ready 标志认领。
+                    self._apply_fold_state(runtime, fold_config)
                 runtime.ready = True
+                register_managed_vm(
+                    vm_id,
+                    serial,
+                    token,
+                    folded_screen_width=folded_width,
+                )
                 self._runtimes[vm_id] = runtime
                 self._known[vm_id] = {
                     **known,
@@ -1175,7 +1391,8 @@ class HarmonyVmManager:
                 }
                 adopted.append(runtime)
             except Exception as exc:  # noqa: BLE001
-                unregister_managed_serial(serial)
+                if managed_vm_owner(serial) is None:
+                    unregister_managed_serial(serial)
                 logger.error(
                     "Harmony VM 重连握手失败，不认领也不作为真机上报 vm_id={} serial={}: {}",
                     vm_id,
@@ -1226,6 +1443,17 @@ class HarmonyVmManager:
             return 0
         rows = []
         for vm_id, known in self._known.items():
+            if bool(known.get("cleanup_pending")):
+                # A stop retry must verify the old process/HDC address first;
+                # a lease-free orphan report cannot establish that cleanup.
+                continue
+            if bool(known.get("ready")) and vm_id not in self._runtimes:
+                # Process/HDC ownership was not proved during reclaim. Do not
+                # report this as stopped and accidentally release its lease.
+                logger.warning(
+                    "跳过归属未核实的 Harmony VM 对账 vm_id={}", vm_id
+                )
+                continue
             instance_name = str(known.get("instance_name") or "")
             instance_path = str(known.get("instance_path") or "")
             instance_config = (
@@ -1275,7 +1503,7 @@ class HarmonyVmManager:
         for vm_id, runtime in list(self._runtimes.items()):
             if not runtime.ready:
                 continue
-            if runtime.hdc_serial in present_serials:
+            if vm_device_identity(vm_id) in present_serials:
                 runtime.missing_ticks = 0
                 continue
             runtime.missing_ticks += 1
@@ -1405,6 +1633,131 @@ class HarmonyVmManager:
             ready=bool(known.get("ready")),
         )
 
+    def _active_instance_serial(
+        self, vm_id: str, known: Dict[str, Any]
+    ) -> Optional[str]:
+        """Read the live DevEco process; never infer ownership from HDC alone.
+
+        Empty string means the exact instance is absent. None means process
+        inspection was unavailable and callers must leave the lease isolated.
+        """
+        try:
+            import psutil  # noqa: PLC0415
+
+            processes = psutil.process_iter(["name", "cmdline"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Harmony VM 进程归属不可查 vm_id={}: {}", vm_id, exc)
+            return None
+        expected_name = _safe_instance_name(vm_id)
+        expected_path = Path(str(known.get("instance_path") or self.instance_path))
+        expected_port = _int_value(known.get("hdc_port"), 0)
+        uncertain = False
+        try:
+            for process in processes:
+                try:
+                    args = [str(part) for part in (process.info.get("cmdline") or [])]
+                except Exception:  # noqa: BLE001
+                    uncertain = True
+                    continue
+                if not args or Path(args[0]).name.lower() not in {"emulator", "emulator.exe"}:
+                    continue
+                lower_args = [part.lower() for part in args]
+
+                def value_after(flag: str) -> str:
+                    try:
+                        index = lower_args.index(flag.lower())
+                        return args[index + 1]
+                    except (ValueError, IndexError):
+                        return ""
+
+                if value_after("-start") != expected_name:
+                    continue
+                path = value_after("-instancePath")
+                port = _int_value(value_after("-hdcPort"), 0)
+                if not path or not port:
+                    return None
+                if Path(path).resolve() != expected_path.resolve() or port != expected_port:
+                    return None
+                return f"127.0.0.1:{port}"
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Harmony VM 进程归属不可查 vm_id={}: {}", vm_id, exc)
+            return None
+        return None if uncertain else ""
+
+    def _cleanup_crash_service(
+        self, vm_id: str, known: Dict[str, Any]
+    ) -> tuple[bool, list[str]]:
+        """Terminate only this VM's DevEco crash helper after stop/delete.
+
+        The helper may outlive Emulator and be reparented. A process basename
+        alone is not ownership evidence: both its socket and data directory
+        must exactly identify this managed instance.
+        """
+        instance_name = str(known.get("instance_name") or "")
+        instance_path = str(known.get("instance_path") or "")
+        if not instance_name and not instance_path:
+            # Unknown/idempotent stop: there is no instance to identify.
+            return True, []
+        if instance_name != _safe_instance_name(vm_id) or not instance_path:
+            return False, ["crash service instance identity is incomplete"]
+        expected_socket = f"{instance_name}_crash"
+        expected_dir = (Path(instance_path) / instance_name).resolve()
+
+        def flag_value(args: list[str], flag: str) -> str:
+            values: list[str] = []
+            for index, arg in enumerate(args[1:], start=1):
+                if arg == flag and index + 1 < len(args):
+                    values.append(args[index + 1])
+                elif arg.startswith(f"{flag}="):
+                    values.append(arg[len(flag) + 1 :])
+            return values[0] if len(values) == 1 else ""
+
+        try:
+            import psutil  # noqa: PLC0415
+
+            processes = psutil.process_iter(["name", "cmdline"])
+        except Exception as exc:  # noqa: BLE001
+            return False, [f"crash service process scan unavailable: {exc}"]
+
+        errors: list[str] = []
+        try:
+            for process in processes:
+                try:
+                    info = process.info
+                    args = [str(part) for part in (info.get("cmdline") or [])]
+                except Exception as exc:  # noqa: BLE001
+                    # Without argv, ownership cannot be proved. Never kill it.
+                    if str(getattr(process, "info", {}).get("name") or "") == "emulator-crash-service":
+                        errors.append(f"crash service pid={process.pid} argv unavailable: {exc}")
+                    continue
+                if not args and str(info.get("name") or "") == "emulator-crash-service":
+                    errors.append(f"crash service pid={process.pid} argv unavailable")
+                if not args or Path(args[0]).name != "emulator-crash-service":
+                    continue
+                if flag_value(args, "-socket") != expected_socket:
+                    continue
+                data_dir = flag_value(args, "-data-dir")
+                if not data_dir or Path(data_dir).resolve() != expected_dir:
+                    continue
+                try:
+                    process.terminate()
+                    process.wait(timeout=3)
+                except psutil.NoSuchProcess:
+                    continue
+                except psutil.TimeoutExpired:
+                    try:
+                        process.kill()
+                        process.wait(timeout=2)
+                    except psutil.NoSuchProcess:
+                        continue
+                    except Exception as exc:  # noqa: BLE001
+                        errors.append(f"crash service pid={process.pid}: {exc}")
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"crash service pid={process.pid}: {exc}")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"crash service process scan failed: {exc}")
+        return not errors, errors
+
     def _remove_fport(self, runtime: HarmonyVmRuntime) -> None:
         ports: set[int] = set()
         if runtime.driver_fport_port:
@@ -1467,6 +1820,9 @@ class HarmonyVmManager:
         return False, "unconfirmed"
 
     def _port_conflict(self, port: int, expected_serial: str) -> str:
+        owner = managed_vm_owner(expected_serial)
+        if owner is not None:
+            return f"managed VM already owns HDC target:{owner[0]}"
         # 判据必须与能力探查完全一致：只认 Connected。
         # hdc 会长期保留已消失实例的 Offline target（官方 tconn -remove 删不掉），
         # 但实测这些端口没有任何进程监听，是陈旧记账而非真实占用。若这里把 Offline
@@ -1564,6 +1920,22 @@ def _persistent_message_config(msg: Dict[str, Any]) -> Dict[str, Any]:
         "config_json",
     )
     return {key: msg.get(key) for key in keys}
+
+
+def _managed_folded_screen_width(msg: Any) -> int:
+    """Return the outer width only for a managed Foldable's folded choice."""
+    if not isinstance(msg, dict) or str(msg.get("device_type") or "") != "Foldable":
+        return 0
+    config = msg.get("config_json")
+    if not isinstance(config, dict):
+        return 0
+    fold = config.get("fold")
+    if not isinstance(fold, dict) or fold.get("initial_state") != "folded":
+        return 0
+    folded_screen = config.get("folded_screen")
+    if not isinstance(folded_screen, dict):
+        return 0
+    return max(0, _int_value(folded_screen.get("width"), 0))
 
 
 def _safe_instance_name(vm_id: str) -> str:
@@ -1666,27 +2038,6 @@ def _apply_instance_uuid(
     if not match or match.group(1).strip().lower() != value:
         raise RuntimeError(f"harmony_instance_uuid_verify_failed:{config_path}")
     logger.info("harmony 实例 UUID 已设置为 {}", value)
-
-
-def _last_display_size(serial: str) -> Optional[tuple[int, int]]:
-    """读回 DisplayManagerService 最近一次上报的显示尺寸。
-
-    折叠开关是 dump 命令，没有返回值，只能从 DMS 自己的事件记录里回读确认。
-    """
-    from ai_phone.agent.drivers.hdc import hdc_shell  # noqa: PLC0415
-
-    try:
-        out = hdc_shell(
-            serial,
-            "hidumper -s DisplayManagerService -a -a",
-            timeout=10.0,
-            check=False,
-        ) or ""
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("读取鸿蒙显示尺寸失败 {}", exc)
-        return None
-    found = re.findall(r"width:\s*(\d+)\s+height:\s*(\d+)", out)
-    return (int(found[-1][0]), int(found[-1][1])) if found else None
 
 
 def _int_value(value: Any, default: int) -> int:
