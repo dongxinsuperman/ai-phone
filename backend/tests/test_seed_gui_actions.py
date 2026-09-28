@@ -1,0 +1,112 @@
+from ai_phone.shared import actions as A
+from ai_phone.shared.prompt import build_system_prompt
+from ai_phone.shared.seed_gui_actions import (
+    ACTION_SCHEMAS,
+    extract_thought,
+    parse_actions,
+    schemas_prompt_text,
+)
+
+
+def test_seed_xml_preserves_thought_and_maps_action() -> None:
+    raw = """Thought: 子步骤1未满足，依据是目标仍在下方。
+<seed:tool_call><function name="scroll"><parameter name="point" string="true"><point>500 800</point></parameter><parameter name="direction" string="true">down</parameter></function></seed:tool_call>"""
+    parsed = parse_actions(raw)
+    assert extract_thought(raw).startswith("子步骤1未满足")
+    assert len(parsed) == 1
+    assert parsed[0].action == A.ACTION_SCROLL
+    assert parsed[0].point == [500, 800]
+    assert parsed[0].direction == "down"
+    assert parsed[0].raw == "scroll(point='<point>500 800</point>', direction='down')"
+
+
+def test_seed_xml_supports_aiphone_extensions_and_multiple_functions() -> None:
+    raw = """判断完成。
+<seed:tool_call><function name="open_app"><parameter name="app_name" string="true">洋葱学园</parameter></function><function name="finished"><parameter name="content" string="true">完成</parameter></function></seed:tool_call>"""
+    parsed = parse_actions(raw)
+    assert extract_thought(raw) == "判断完成。"
+    assert [item.action for item in parsed] == [A.ACTION_OPEN_APP, A.ACTION_FINISHED]
+    assert parsed[0].name == "洋葱学园"
+    assert parsed[1].content == "完成"
+
+
+def test_seed_xml_without_literal_thought_prefix_keeps_decision_text() -> None:
+    raw = """子步骤2『打开目标』 → 当前截图：[未满足]，依据：按钮仍可见。
+<seed:tool_call><function name="click"><parameter name="point" string="true"><point>320 640</point></parameter></function></seed:tool_call>"""
+    parsed = parse_actions(raw)
+    assert extract_thought(raw).startswith("子步骤2")
+    assert parsed[0].to_dict() == {"action": "click", "point": [320, 640]}
+
+
+def test_seed_xml_rejects_missing_required_parameters() -> None:
+    raw = """Thought: 继续滚动。
+<seed:tool_call><function name="scroll"><parameter name="direction" string="true">down</parameter></function></seed:tool_call>"""
+    assert parse_actions(raw) == []
+
+
+def test_seed_xml_contains_unknown_function_without_crashing() -> None:
+    raw = '<seed:tool_call><function name="right_single"><parameter name="point" string="true"><point>1 2</point></parameter></function></seed:tool_call>'
+    assert parse_actions(raw) == []
+
+
+def test_seed_xml_rejects_bad_json_parameter_without_crashing() -> None:
+    raw = '<seed:tool_call><function name="scroll"><parameter name="point" string="true"><point>1 2</point></parameter><parameter name="direction" string="false">down</parameter></function></seed:tool_call>'
+    assert parse_actions(raw) == []
+
+
+def test_seed_xml_rejects_empty_terminal_and_type_content() -> None:
+    for name in ("type", "finished", "assert_fail"):
+        raw = f'<seed:tool_call><function name="{name}"><parameter name="content" string="true"></parameter></function></seed:tool_call>'
+        assert parse_actions(raw) == []
+
+
+def test_seed_xml_rejects_invalid_amount_and_boolean_string() -> None:
+    amount = '<seed:tool_call><function name="scroll"><parameter name="point" string="true"><point>1 2</point></parameter><parameter name="direction" string="true">down</parameter><parameter name="amount" string="false">0</parameter></function></seed:tool_call>'
+    boolean = '<seed:tool_call><function name="take_screenshot"><parameter name="save_to_album" string="true">false</parameter></function></seed:tool_call>'
+    assert parse_actions(amount) == []
+    assert parse_actions(boolean) == []
+
+
+def test_seed_xml_prompt_contains_copyable_official_examples() -> None:
+    prompt = build_system_prompt("点击目标")
+    assert 'string="true|false"' not in prompt
+    assert (
+        '<function name="click"><parameter name="point" string="true">'
+        '<point>500 800</point></parameter></function>'
+    ) in prompt
+    assert '<parameter name="seconds" string="false">3</parameter>' in prompt
+    assert '<function name="wait" seconds="3">' in prompt
+    assert "禁止" in prompt
+
+
+def test_seed_xml_prompt_preserves_action_behavior_rules() -> None:
+    prompt = build_system_prompt("测试滚动、等待和截图")
+    assert "amount=1约滚动60%屏幕" in prompt
+    assert "下一帧仍未看到目标时必须立即降回amount=1" in prompt
+    assert "一次等待完成，不要拆成多次wait" in prompt
+    assert "不要再点击系统截图按钮" in prompt
+    assert "long_press 长按约1秒" in prompt
+
+
+def test_seed_xml_rejects_out_of_range_points_and_waits() -> None:
+    bad_point = '<seed:tool_call><function name="click"><parameter name="point" string="true"><point>1001 2</point></parameter></function></seed:tool_call>'
+    wait_zero = '<seed:tool_call><function name="wait"><parameter name="seconds" string="false">0</parameter></function></seed:tool_call>'
+    wait_too_long = '<seed:tool_call><function name="wait"><parameter name="seconds" string="false">61</parameter></function></seed:tool_call>'
+    assert parse_actions(bad_point) == []
+    assert parse_actions(wait_zero) == []
+    assert parse_actions(wait_too_long) == []
+
+
+def test_seed_xml_key_event_is_internal_only() -> None:
+    assert "key_event" not in {schema["name"] for schema in ACTION_SCHEMAS}
+    assert '"name": "key_event"' not in schemas_prompt_text()
+    legacy_internal = '<seed:tool_call><function name="key_event"><parameter name="keycode" string="false">66</parameter></function></seed:tool_call>'
+    assert parse_actions(legacy_internal) == []
+    parsed = parse_actions(legacy_internal, allow_internal_actions=True)
+    assert parsed[0].action == A.ACTION_KEY_EVENT
+    assert parsed[0].keycode == 66
+
+
+def test_seed_xml_rejects_function_attribute_shortcut() -> None:
+    malformed = '<seed:tool_call><function name="wait" seconds="3"></function></seed:tool_call>'
+    assert parse_actions(malformed) == []

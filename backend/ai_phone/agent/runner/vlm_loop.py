@@ -804,7 +804,7 @@ class VLMRunner:
         # 主 VLM 客户端：通过 ``create_main_vlm`` 工厂按 ``settings.vlm_backend`` 分派
         # （doubao_responses / claude_cu / gpt_cu）。测试时可以传 ``vlm_client``
         # 参数注入 mock，绕过工厂。
-        # System prompt 同样按 backend 分家：豆包走文本 DSL 模板，Claude 走
+        # System prompt 同样按 backend 分家：豆包走 Thought + Seed GUI XML，Claude 走
         # ``computer`` tool + ``FINISHED:`` 关键字模板，GPT 走 computer-use-
         # preview 模板——三家协议输出形态完全不同，共用一份模板会让 Claude/
         # GPT 退化成"忠实输出豆包文本 DSL"，runner 的 tool_use 解析全部 miss。
@@ -1144,7 +1144,8 @@ class VLMRunner:
                     f"【会话续接】这是任务的第 {self.vlm.segment_count + 1} 段，"
                     f"此前已完成 {step - 1} 步操作（详细历史已归档）。"
                     "请根据当前截图分析剩余进度，继续推进任务。"
-                    "如果当前页面已满足完成条件，请直接执行 finished()。"
+                    "如果当前页面已满足完成条件，请按当前 backend 的终态协议申请完成；"
+                    "豆包 XML 路径应输出 finished function。"
                 )
                 old_id = self.vlm.reset_session(resume_hint)
                 await self._log(
@@ -1223,10 +1224,10 @@ class VLMRunner:
                 # 个 Action。这里把所有 Action 一次性解析为 ParsedAction 列表，
                 # 后面分别做"长度截断 / 白名单过滤 / 顺序执行"。
                 #
-                # 多协议适配：豆包系输出文本 DSL，走 parse_action 文本解析；Claude/GPT
-                # 通过 tool_use / computer_call 已经给出结构化字段，会在 client 内直接
-                # 构造 ParsedAction 列表挂到 decision.parsed_actions。优先消费结构化
-                # 字段，没有再 fallback 到文本解析。
+                # 多协议适配：豆包 Seed GUI XML 与 Claude/GPT tool_use / computer_call
+                # 都在各自 client 内转换成 ParsedAction 列表挂到
+                # decision.parsed_actions。优先消费结构化字段；仅测试 mock / 历史兼容
+                # 路径没有该字段时，才 fallback 到旧文本解析。
                 if decision.parsed_actions:
                     parsed_chain = list(decision.parsed_actions)
                 else:
@@ -1239,17 +1240,25 @@ class VLMRunner:
                 if parser_fallback and not parse_retry_used:
                     parse_retry_used = True
                     bad = (parsed_chain[0].content or parsed_chain[0].raw or "")[:180]
-                    self.vlm.add_hint(
-                        "⚠️ 上一轮输出无法被系统解析，本轮请基于同一张截图重新决策一次。"
-                        "必须输出 Thought 和单独一行 Action；Action 行只写一个合法动作调用，"
-                        "例如 click(...), scroll(...), type(...), wait(...), finished(...), "
-                        "assert_fail(...)。不要把 Action 写进自然语言句子里，不要加 markdown "
-                        "代码块、编号、冒号解释或尾部注释。"
-                    )
+                    if backend == "doubao_responses":
+                        self.vlm.add_hint(
+                            "⚠️ 上一轮输出无法被系统解析，本轮请基于同一张截图重新决策一次。"
+                            "保留规范 Thought，并严格输出一个 <seed:tool_call> XML动作块；"
+                            "function/parameter 必须符合 System Prompt 的 JSON Schema。"
+                            "不要输出 Action: 行、JSON、markdown代码块或尾部注释。"
+                        )
+                    else:
+                        self.vlm.add_hint(
+                            "⚠️ 上一轮输出无法被系统解析，本轮请基于同一张截图重新决策一次。"
+                            "必须输出 Thought 和单独一行 Action；Action 行只写一个合法动作调用，"
+                            "例如 click(...), scroll(...), type(...), wait(...), finished(...), "
+                            "assert_fail(...)。不要把 Action 写进自然语言句子里，不要加 markdown "
+                            "代码块、编号、冒号解释或尾部注释。"
+                        )
                     await self._log(
                         2,
                         "VLM 输出解析失败",
-                        f"已要求模型按 Action DSL 重试一次 | {bad}",
+                        f"已要求模型按 Seed GUI XML 重试一次 | {bad}",
                         step=step,
                     )
                     continue
@@ -1259,20 +1268,29 @@ class VLMRunner:
             if len(parsed_chain) > CHAIN_MAX_ACTIONS:
                 truncated_count = len(parsed_chain)
                 parsed_chain = parsed_chain[:CHAIN_MAX_ACTIONS]
-                self.vlm.add_hint(
-                    f"⚠️ 你本步输出了 {truncated_count} 个 Action，超过单步上限 "
-                    f"{CHAIN_MAX_ACTIONS} 个。系统已截断保留前 {CHAIN_MAX_ACTIONS} 个。"
-                    "除瞬态 UI（视频播放工具栏 / Toast / 半透明菜单等会自动隐藏的浮层）"
-                    "外，请每步只输出 1 个 Action，看清反馈再决定下一步。"
-                )
+                if backend == "doubao_responses":
+                    self.vlm.add_hint(
+                        f"⚠️ 你在 seed:tool_call XML块中输出了 {truncated_count} 个 function，"
+                        f"超过单步上限 {CHAIN_MAX_ACTIONS} 个。系统已截断保留前 "
+                        f"{CHAIN_MAX_ACTIONS} 个。除瞬态 UI（视频播放工具栏 / Toast / "
+                        "半透明菜单等会自动隐藏的浮层）外，每轮只输出 1 个 function，"
+                        "看清反馈再决定下一步。"
+                    )
+                else:
+                    self.vlm.add_hint(
+                        f"⚠️ 你本步输出了 {truncated_count} 个 Action，超过单步上限 "
+                        f"{CHAIN_MAX_ACTIONS} 个。系统已截断保留前 {CHAIN_MAX_ACTIONS} 个。"
+                        "除瞬态 UI（视频播放工具栏 / Toast / 半透明菜单等会自动隐藏的浮层）"
+                        "外，请每步只输出 1 个 Action，看清反馈再决定下一步。"
+                    )
                 await self._log(
                     2, "动作链截断",
                     f"{truncated_count} → {CHAIN_MAX_ACTIONS} 个", step=step,
                 )
 
-            # 链内动作白名单：只允许 click / long_press / double_tap 这种"瞬时点击"
-            # 串联；type / scroll / drag / wait / open_app / close_app / finished /
-            # assert_fail 都需要看反馈再决定下一步，强制单独一行。
+            # 链内动作白名单：只允许 click / long_press / double_tap / drag 这类
+            # 已能从当前截图确定完整坐标的动作；type / scroll / wait / open_app /
+            # close_app / finished / assert_fail 都需要看反馈再决定下一步。
             if len(parsed_chain) > 1:
                 bad = [
                     p for p in parsed_chain
@@ -1281,13 +1299,22 @@ class VLMRunner:
                 if bad:
                     bad_names = ",".join(sorted({(p.action or "?") for p in bad}))
                     parsed_chain = parsed_chain[:1]
-                    self.vlm.add_hint(
-                        f"⚠️ 你输出了链式 Action 但其中含非点击类动作（{bad_names}）。"
-                        "动作链只允许 click / long_press / double_tap 这几种瞬时点击；"
-                        "其他动作（type / scroll / drag / wait / open_app / close_app / "
-                        "finished / assert_fail）必须单独成行——它们都需要看反馈再决定"
-                        "下一步。本步已只执行第 1 个 Action。"
-                    )
+                    if backend == "doubao_responses":
+                        self.vlm.add_hint(
+                            f"⚠️ 你输出的 seed:tool_call XML块含有非点击类动作"
+                            f"（function: {bad_names}）。同一块中的动作链只允许 click / long_press / "
+                            "double_tap / drag；type / scroll / wait / open_app / close_app / "
+                            "finished / assert_fail 都需要先看执行反馈，必须在各自后续轮次"
+                            "单独输出。本步已只执行第 1 个 function。"
+                        )
+                    else:
+                        self.vlm.add_hint(
+                            f"⚠️ 你输出了链式 Action 但其中含非点击类动作（{bad_names}）。"
+                            "动作链只允许 click / long_press / double_tap / drag；"
+                            "其他动作（type / scroll / wait / open_app / close_app / "
+                            "finished / assert_fail）必须单独成行——它们都需要看反馈再决定"
+                            "下一步。本步已只执行第 1 个 Action。"
+                        )
                     await self._log(
                         2, "动作链不合规",
                         f"含非点击动作 {bad_names}，已只执行第 1 个", step=step,
@@ -2047,11 +2074,22 @@ class VLMRunner:
                     "**该子步骤的目标状态可能已经达成**——比如「进入 X 页」时 Tab 已高亮、"
                     "「切换为 X」时页签已显示 X，这种情况下根本不需要再点，应该直接"
                     "跳到下一条子步骤（Thought 写明「截图显示 X 已满足，跳过子步骤 N」）。"
-                    "若确认尚未达成，再考虑：①目标元素是否唤起后短时间内会自动消失"
-                    "（自动隐藏的控件 / 浮层）——这种情况请按 §C 用链式动作（同 Thought 下"
-                    "连写 2 个 Action：先唤起，再立即点击/拖动目标）；②滑动页面查找目标 / "
-                    "点击元素的不同区域 / 检查是否有弹窗遮挡。"
                 )
+                if (self._settings.vlm_backend or "").strip().lower() == "doubao_responses":
+                    msg += (
+                        "若确认尚未达成，再考虑：①目标元素是否唤起后短时间内会自动消失"
+                        "（自动隐藏的控件 / 浮层）——这种情况请按 System Prompt 的"
+                        "「瞬态 UI 动作协议」，在同一个 seed:tool_call XML块中连续输出"
+                        "2 个点击类 function：先唤起，再立即操作目标；②滑动页面查找目标 / "
+                        "点击元素的不同区域 / 检查是否有弹窗遮挡。"
+                    )
+                else:
+                    msg += (
+                        "若确认尚未达成，再考虑：①目标元素是否唤起后短时间内会自动消失"
+                        "（自动隐藏的控件 / 浮层）——这种情况请按对应 backend 的瞬态 UI"
+                        "动作协议先唤起，再立即操作目标；②滑动页面查找目标 / "
+                        "点击元素的不同区域 / 检查是否有弹窗遮挡。"
+                    )
                 self.vlm.add_hint(msg)
                 asyncio.create_task(
                     self._log(

@@ -32,12 +32,36 @@ from ai_phone.agent.trajectory_cache._overseas_chat import (
     overseas_cu_to_chat_config,
 )
 from ai_phone.shared import actions as A
+from ai_phone.shared.seed_gui_actions import extract_thought as extract_seed_thought
+from ai_phone.shared.seed_gui_actions import parse_actions as parse_seed_actions
+from ai_phone.shared.seed_gui_actions import schemas_prompt_text
 
 
 VERDICT_CONTINUE = "CONTINUE_REPLAY"
 VERDICT_WAIT_MORE = "WAIT_MORE"
 VERDICT_ASSERT_FAIL = "ASSERT_FAIL"
 VERDICT_REPAIR_ACTION = "REPAIR_ACTION"
+
+ACTION_PROTOCOL_SEED_XML = "seed_xml"
+ACTION_PROTOCOL_LEGACY = "legacy"
+ACTION_PROTOCOL_AUTO = "auto"
+
+_RECOVERY_XML_ACTION_NAMES = {
+    "click",
+    "long_press",
+    "double_tap",
+    "left_double",
+    "type",
+    "scroll",
+    "drag",
+    "open_app",
+    "close_app",
+    "press_home",
+    "press_back",
+    "wait",
+    "finished",
+    "assert_fail",
+}
 
 
 @dataclass
@@ -85,6 +109,10 @@ class CacheReplayRecoveryVerifier:
         # 而不准；豆包系按 prompt 指令稳定输出 0-1000，所以让 recovery prompt 跟
         # 主 VLM 训练习惯走，三家都拿到自己最稳的形式。
         self._main_vlm_backend: str = (main_vlm_backend or "").strip().lower()
+        # Doubao Responses recovery 在同一缓存 action 的连续修复轮次内复用
+        # previous_response_id；切到下一个缓存 action 时重置，避免跨 action 污染。
+        self._responses_previous_response_id: Optional[str] = None
+        self._responses_session_key: str = ""
 
     # ------------------------------------------------------------------
     # 配置 / 可用性
@@ -211,6 +239,22 @@ class CacheReplayRecoveryVerifier:
             )
 
         coord_space = self.coord_space
+        recovery_backend = (self._resolve_chat_config()[0] or "").strip().lower()
+        action_protocol = (
+            ACTION_PROTOCOL_SEED_XML
+            if recovery_backend == "doubao_responses"
+            else ACTION_PROTOCOL_LEGACY
+        )
+        if action_protocol == ACTION_PROTOCOL_SEED_XML:
+            session_key = _recovery_action_session_key(action)
+            if session_key is None:
+                # 缺少稳定身份的动作禁止复用 recovery 会话；否则多个匿名动作会
+                # 错误共享同一组路标图和历史输出。
+                self._responses_previous_response_id = None
+                self._responses_session_key = ""
+            elif session_key != self._responses_session_key:
+                self._responses_previous_response_id = None
+                self._responses_session_key = session_key
         prompt = build_recovery_prompt(
             goal=goal,
             trajectory=trajectory,
@@ -221,6 +265,13 @@ class CacheReplayRecoveryVerifier:
             max_wait_ms=max_wait_ms,
             default_wait_ms=self.default_wait_ms,
             coord_space=coord_space,
+            action_protocol=action_protocol,
+        )
+        followup_prompt = build_recovery_followup_prompt(
+            action=action,
+            metrics=metrics,
+            elapsed_ms=elapsed_ms,
+            max_wait_ms=max_wait_ms,
         )
 
         loop = asyncio.get_event_loop()
@@ -229,6 +280,7 @@ class CacheReplayRecoveryVerifier:
             text = await asyncio.wait_for(
                 self._chat_double_image(
                     prompt=prompt,
+                    followup_prompt=followup_prompt,
                     landmark_bytes=landmark_bytes,
                     current_bytes=current_bytes,
                 ),
@@ -260,7 +312,50 @@ class CacheReplayRecoveryVerifier:
             text,
             default_wait_ms=self.default_wait_ms,
             coord_space=coord_space,
+            action_protocol=action_protocol,
         )
+        if (
+            action_protocol == ACTION_PROTOCOL_SEED_XML
+            and decision.error == "protocol_violation"
+        ):
+            retry_prompt = (
+                prompt
+                + "\n\n【协议纠正】上一轮没有产出合法 Seed GUI XML。"
+                "请基于同一组截图重新决策；保留 Thought，并且只输出一个"
+                "<seed:tool_call> XML块。所有参数必须放在 <parameter> 节点中。"
+            )
+            try:
+                text = await asyncio.wait_for(
+                self._chat_double_image(
+                        prompt=retry_prompt,
+                        followup_prompt=(
+                            followup_prompt
+                            + "\n【协议纠正】上一轮输出不合法。保留Thought，并且只输出"
+                            "一个seed:tool_call XML块；所有参数放在parameter节点中。"
+                        ),
+                        landmark_bytes=landmark_bytes,
+                        current_bytes=current_bytes,
+                    ),
+                    timeout=float(
+                        self.settings.trajectory_cache_recovery_vlm_timeout_sec
+                    ),
+                )
+                decision = parse_recovery_response(
+                    text,
+                    default_wait_ms=self.default_wait_ms,
+                    coord_space=coord_space,
+                    action_protocol=action_protocol,
+                )
+            except Exception as exc:  # noqa: BLE001
+                decision = _recovery_call_failure_fallback(
+                    reason=(
+                        "recovery_vlm XML纠正重试失败："
+                        f"{type(exc).__name__}: {str(exc)[:160]}"
+                    ),
+                    wait_ms=self.default_wait_ms,
+                    elapsed_ms=int((loop.time() - started_at) * 1000),
+                    error=type(exc).__name__,
+                )
         decision.elapsed_ms = int((loop.time() - started_at) * 1000)
         return decision
 
@@ -271,6 +366,7 @@ class CacheReplayRecoveryVerifier:
         self,
         *,
         prompt: str,
+        followup_prompt: str = "",
         landmark_bytes: bytes,
         current_bytes: bytes,
     ) -> str:
@@ -289,6 +385,7 @@ class CacheReplayRecoveryVerifier:
         if backend == "doubao_responses":
             return await self._responses_double_image(
                 prompt=prompt,
+                followup_prompt=followup_prompt,
                 landmark_bytes=landmark_bytes,
                 current_bytes=current_bytes,
                 api_url=api_url,
@@ -401,6 +498,7 @@ class CacheReplayRecoveryVerifier:
         self,
         *,
         prompt: str,
+        followup_prompt: str = "",
         landmark_bytes: bytes,
         current_bytes: bytes,
         api_url: str,
@@ -408,36 +506,57 @@ class CacheReplayRecoveryVerifier:
         model: str,
         timeout_sec: float,
     ) -> str:
-        landmark_b64 = base64.b64encode(landmark_bytes).decode("ascii")
         current_b64 = base64.b64encode(current_bytes).decode("ascii")
-        user_content: List[Dict[str, Any]] = [
-            {"type": "input_text", "text": prompt},
-            {
-                "type": "input_image",
-                "image_url": f"data:image/jpeg;base64,{landmark_b64}",
-            },
-            {
-                "type": "input_image",
-                "image_url": f"data:image/jpeg;base64,{current_b64}",
-            },
-        ]
-        payload: Dict[str, Any] = {
-            "model": model,
-            "input": [
+        if self._responses_previous_response_id is None:
+            landmark_b64 = base64.b64encode(landmark_bytes).decode("ascii")
+            user_content: List[Dict[str, Any]] = [
+                {"type": "input_text", "text": prompt},
+                {
+                    "type": "input_image",
+                    "image_url": f"data:image/jpeg;base64,{landmark_b64}",
+                },
+                {
+                    "type": "input_image",
+                    "image_url": f"data:image/jpeg;base64,{current_b64}",
+                },
+            ]
+        else:
+            user_content = [
+                {
+                    "type": "input_text",
+                    "text": followup_prompt or (
+                        "【同一缓存动作后续轮次】沿用本会话首轮的固定handoff路标图。"
+                        "本消息唯一图片是最新当前截图；只根据最新截图重新判断。"
+                    ),
+                },
+                {
+                    "type": "input_image",
+                    "image_url": f"data:image/jpeg;base64,{current_b64}",
+                },
+            ]
+        input_items: List[Dict[str, Any]] = []
+        if self._responses_previous_response_id is None:
+            input_items.append(
                 {
                     "role": "system",
                     "content": (
                         "你是轨迹缓存回放的局部恢复 VLM。"
-                        "必须使用 Thought/Action 格式输出一个局部恢复动作、"
-                        "wait、finished 或 assert_fail。"
+                        "必须保留规范 Thought，并在 message.content 中使用"
+                        "<seed:tool_call> XML输出一个局部恢复、wait、finished 或"
+                        "assert_fail function。不要输出 Action: 行或 JSON。"
                     ),
-                },
-                {"role": "user", "content": user_content},
-            ],
+                }
+            )
+        input_items.append({"role": "user", "content": user_content})
+        payload: Dict[str, Any] = {
+            "model": model,
+            "input": input_items,
             "store": True,
             "caching": {"type": "enabled"},
             "thinking": {"type": "disabled"},
         }
+        if self._responses_previous_response_id is not None:
+            payload["previous_response_id"] = self._responses_previous_response_id
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -451,7 +570,11 @@ class CacheReplayRecoveryVerifier:
                 f"recovery_vlm responses 失败: status={resp.status_code} "
                 f"body={resp.text[:200]}"
             )
-        text = _extract_responses_text(resp.json())
+        data = resp.json()
+        response_id = data.get("id")
+        if isinstance(response_id, str) and response_id:
+            self._responses_previous_response_id = response_id
+        text = _extract_responses_text(data)
         if not text:
             raise RuntimeError("recovery_vlm 未返回可解析文本")
         return text
@@ -641,11 +764,15 @@ def parse_recovery_response(
     *,
     default_wait_ms: int = 1500,
     coord_space: str = "normalized",
+    action_protocol: str = ACTION_PROTOCOL_AUTO,
 ) -> RecoveryDecision:
     """recovery VLM 输出解析。
 
-    doubao 系新协议复用主 VLM DSL：``Thought: ...`` + ``Action: ...``。
-    为兼容旧测试和灰度现场，也保留旧三态纯文本协议：
+    - Doubao Responses：``Thought + <seed:tool_call>``，与主执行链一致。
+    - Claude/GPT/旧兼容链：``Thought:`` + ``Action:`` 文本 DSL。
+    - ``auto``：优先识别 XML，再兼容旧 DSL 和旧三态纯文本协议。
+
+    旧三态协议仍用于灰度/历史兼容：
 
         CONTINUE_REPLAY: <一句话原因>
         WAIT_MORE: <ms>: <一句话原因>
@@ -656,69 +783,70 @@ def parse_recovery_response(
     起来），这些会让 ``A.extract_actions`` 的行首正则失配。入口先做一次预清洗
     剥掉装饰，再走原解析路径，保证三家 backend 解析行为一致。
     """
+    protocol = (action_protocol or ACTION_PROTOCOL_AUTO).strip().lower()
+    if protocol not in {
+        ACTION_PROTOCOL_AUTO,
+        ACTION_PROTOCOL_SEED_XML,
+        ACTION_PROTOCOL_LEGACY,
+    }:
+        protocol = ACTION_PROTOCOL_AUTO
+
     raw_original = text or ""
+    normalized_coord_space = (coord_space or "normalized").strip().lower()
+    if normalized_coord_space not in ("normalized", "absolute"):
+        normalized_coord_space = "normalized"
+
+    if protocol in {ACTION_PROTOCOL_AUTO, ACTION_PROTOCOL_SEED_XML} and (
+        protocol == ACTION_PROTOCOL_SEED_XML or "<seed:tool_call>" in raw_original
+    ):
+        parsed_actions = parse_seed_actions(raw_original)
+        if len(parsed_actions) == 1:
+            if parsed_actions[0].action not in _RECOVERY_XML_ACTION_NAMES:
+                return RecoveryDecision(
+                    verdict=VERDICT_ASSERT_FAIL,
+                    reason=(
+                        "recovery_vlm 输出了未向恢复链公开的function："
+                        f"{parsed_actions[0].action}"
+                    ),
+                    raw=raw_original,
+                    error="protocol_violation",
+                )
+            parsed_actions[0].coord_space = normalized_coord_space
+            return _recovery_decision_from_parsed(
+                parsed_actions=parsed_actions,
+                thought=extract_seed_thought(raw_original),
+                raw=raw_original,
+                action_text=parsed_actions[0].raw or parsed_actions[0].action,
+            )
+        if protocol == ACTION_PROTOCOL_SEED_XML or "<seed:tool_call>" in raw_original:
+            return RecoveryDecision(
+                verdict=VERDICT_ASSERT_FAIL,
+                reason=(
+                    "recovery_vlm Seed GUI XML必须且只能包含一个合法function"
+                ),
+                raw=raw_original,
+                error="protocol_violation",
+            )
+
     raw = _strip_markdown_decorations(raw_original)
     action_texts = A.extract_actions(raw) if "Action:" in raw else []
     if action_texts:
         parsed_actions = [A.parse_action(item) for item in action_texts]
-        # 关键：A.parse_action 默认输出 coord_space="normalized"（豆包系约定）。
-        # recovery 走海外 backend（claude_cu / gpt_cu）时模型按 prompt 指令输出
-        # 的是图像绝对像素，必须显式覆写为 "absolute"，否则下游
-        # ReplayRunner._parsed_point_to_abs 会把它当 0-1000 反算，坐标全错。
-        normalized_coord_space = (coord_space or "normalized").strip().lower()
-        if normalized_coord_space not in ("normalized", "absolute"):
-            normalized_coord_space = "normalized"
-        for pa in parsed_actions:
-            pa.coord_space = normalized_coord_space
-        parsed = parsed_actions[0]
-        thought = A.extract_thought(raw)
-        reason = parsed.content or thought or parsed.raw or ""
-        if parsed.action == A.ACTION_FINISHED:
-            return RecoveryDecision(
-                verdict=VERDICT_CONTINUE,
-                reason=reason or "recovery_vlm 判断当前差异可接受，继续回放",
-                raw=raw,
-                thought=thought,
-                action_text=action_texts[0],
-                parsed_actions=parsed_actions,
-            )
-        if parsed.action == A.ACTION_WAIT:
-            wait_ms = max(100, min(10_000, int(parsed.seconds or 1) * 1000))
-            return RecoveryDecision(
-                verdict=VERDICT_WAIT_MORE,
-                reason=reason or "recovery_vlm 判断页面仍可能在加载",
-                wait_ms=wait_ms,
-                raw=raw,
-                thought=thought,
-                action_text=action_texts[0],
-                parsed_actions=parsed_actions,
-            )
-        if parsed.action == A.ACTION_ASSERT_FAIL:
-            return RecoveryDecision(
-                verdict=VERDICT_ASSERT_FAIL,
-                reason=reason or "recovery_vlm 判断轨迹已偏航或功能不可达",
-                raw=raw,
-                thought=thought,
-                action_text=action_texts[0],
-                parsed_actions=parsed_actions,
-            )
-        if parsed.is_known:
-            return RecoveryDecision(
-                verdict=VERDICT_REPAIR_ACTION,
-                reason=thought or f"执行局部修复动作 {parsed.action}",
-                raw=raw,
-                thought=thought,
-                action_text=action_texts[0],
-                parsed_actions=parsed_actions[:1],
-            )
+        for parsed in parsed_actions:
+            parsed.coord_space = normalized_coord_space
+        return _recovery_decision_from_parsed(
+            parsed_actions=parsed_actions,
+            thought=A.extract_thought(raw),
+            raw=raw,
+            action_text=action_texts[0],
+        )
+
+    if protocol == ACTION_PROTOCOL_SEED_XML:
         return RecoveryDecision(
             verdict=VERDICT_ASSERT_FAIL,
-            reason=f"recovery_vlm 输出未知动作：{parsed.action}",
-            raw=raw,
-            thought=thought,
-            action_text=action_texts[0],
-            parsed_actions=parsed_actions,
-            error="unknown_action",
+            reason="recovery_vlm 未返回 Seed GUI XML动作块",
+            raw=raw_original,
+            error="protocol_violation",
         )
 
     first_line = ""
@@ -776,6 +904,64 @@ def parse_recovery_response(
         reason=f"recovery_vlm 返回非协议内容：{first_line[:80] or '(空)'}",
         raw=raw,
         error="protocol_violation",
+    )
+
+
+def _recovery_decision_from_parsed(
+    *,
+    parsed_actions: List[A.ParsedAction],
+    thought: str,
+    raw: str,
+    action_text: str,
+) -> RecoveryDecision:
+    parsed = parsed_actions[0]
+    reason = parsed.content or thought or parsed.raw or ""
+    if parsed.action == A.ACTION_FINISHED:
+        return RecoveryDecision(
+            verdict=VERDICT_CONTINUE,
+            reason=reason or "recovery_vlm 判断当前差异可接受，继续回放",
+            raw=raw,
+            thought=thought,
+            action_text=action_text,
+            parsed_actions=parsed_actions,
+        )
+    if parsed.action == A.ACTION_WAIT:
+        wait_ms = max(100, min(10_000, int(parsed.seconds or 1) * 1000))
+        return RecoveryDecision(
+            verdict=VERDICT_WAIT_MORE,
+            reason=reason or "recovery_vlm 判断页面仍可能在加载",
+            wait_ms=wait_ms,
+            raw=raw,
+            thought=thought,
+            action_text=action_text,
+            parsed_actions=parsed_actions,
+        )
+    if parsed.action == A.ACTION_ASSERT_FAIL:
+        return RecoveryDecision(
+            verdict=VERDICT_ASSERT_FAIL,
+            reason=reason or "recovery_vlm 判断轨迹已偏航或功能不可达",
+            raw=raw,
+            thought=thought,
+            action_text=action_text,
+            parsed_actions=parsed_actions,
+        )
+    if parsed.is_known:
+        return RecoveryDecision(
+            verdict=VERDICT_REPAIR_ACTION,
+            reason=thought or f"执行局部修复动作 {parsed.action}",
+            raw=raw,
+            thought=thought,
+            action_text=action_text,
+            parsed_actions=parsed_actions[:1],
+        )
+    return RecoveryDecision(
+        verdict=VERDICT_ASSERT_FAIL,
+        reason=f"recovery_vlm 输出未知动作：{parsed.action}",
+        raw=raw,
+        thought=thought,
+        action_text=action_text,
+        parsed_actions=parsed_actions,
+        error="unknown_action",
     )
 
 
@@ -848,6 +1034,36 @@ def _recovery_call_failure_fallback(
     )
 
 
+def _recovery_action_session_key(action: Dict[str, Any]) -> Optional[str]:
+    """返回可安全复用 Responses 会话的稳定缓存动作身份。"""
+    action_id = action.get("action_id")
+    if action_id is not None and str(action_id).strip():
+        return f"action_id:{str(action_id).strip()}"
+    index = action.get("index")
+    if index is not None:
+        return f"index:{index}"
+    return None
+
+
+def build_recovery_followup_prompt(
+    *,
+    action: Dict[str, Any],
+    metrics: Dict[str, Any],
+    elapsed_ms: int,
+    max_wait_ms: int,
+) -> str:
+    """同一缓存动作后续轮次只发送变化量，不重复旧路标图和完整规则。"""
+    return (
+        "【同一缓存动作后续轮次】沿用本会话首轮的完整恢复规则和固定handoff"
+        "路标图。上一轮的当前截图已经过期，禁止继续依据旧截图判断。\n"
+        "本消息唯一图片是本轮最新当前截图；请用它与首轮固定handoff图比较，"
+        "并按Seed GUI XML协议重新输出一个function。\n"
+        f"当前action：{_compact(action)}\n"
+        f"本轮最新对齐指标：{_compact(metrics)}\n"
+        f"elapsed_ms={elapsed_ms}, max_wait_ms={max_wait_ms}"
+    )
+
+
 def build_recovery_prompt(
     *,
     goal: str,
@@ -859,6 +1075,7 @@ def build_recovery_prompt(
     max_wait_ms: int,
     default_wait_ms: int,
     coord_space: str = "normalized",
+    action_protocol: str = ACTION_PROTOCOL_LEGACY,
 ) -> str:
     # 坐标系说明跟随主 VLM backend：豆包 normalized；claude_cu / gpt_cu absolute。
     # 海外 CU 系训练就是按图像像素输出坐标的，强行让它们输出 0-1000 归一化反而
@@ -876,6 +1093,44 @@ def build_recovery_prompt(
             "【坐标系说明】\n"
             "<point>x y</point> 中的 x y 是 0-1000 归一化坐标，"
             "0/0 表示左上角，1000/1000 表示右下角，相对【附图 2（当前截图）】。\n\n"
+        )
+    protocol = (action_protocol or ACTION_PROTOCOL_LEGACY).strip().lower()
+    if protocol == ACTION_PROTOCOL_SEED_XML:
+        output_protocol_block = (
+            "输出格式必须与豆包主执行 VLM 一致，不要输出 Action: 行或 JSON：\n"
+            "Thought: <中文描述当前画面分析与局部恢复计划>\n"
+            "<seed:tool_call><function name=\"click\"><parameter name=\"point\" "
+            "string=\"true\"><point>500 600</point></parameter></function>"
+            "</seed:tool_call>\n\n"
+            "以下 JSON Schema 是本恢复链允许的完整动作集合：\n"
+            f"{schemas_prompt_text(_RECOVERY_XML_ACTION_NAMES)}\n\n"
+            "XML规则：所有必填参数必须显式放在 <parameter> 节点中；字符串使用"
+            "string=\"true\"，整数和布尔值使用string=\"false\"；禁止把参数写成"
+            "function标签属性；每次必须且只能输出一个function。\n"
+            "终态示例：\n"
+            "<seed:tool_call><function name=\"finished\"><parameter name=\"content\" "
+            "string=\"true\">当前handoff可继续</parameter></function></seed:tool_call>\n"
+            "等待示例：\n"
+            "<seed:tool_call><function name=\"wait\"><parameter name=\"seconds\" "
+            "string=\"false\">2</parameter></function></seed:tool_call>\n\n"
+            "输出含义：finished function 表示当前差异可接受并继续缓存回放；"
+            "wait function 表示页面仍在加载；assert_fail function 表示无法恢复；"
+            "其他function表示执行一个局部修复动作后重新对比handoff。\n\n"
+        )
+    else:
+        output_protocol_block = (
+            "输出格式必须与当前海外/兼容链保持一致，不要输出 JSON：\n"
+            "Thought: <中文描述当前画面分析与局部恢复计划>\n"
+            "Action: <一个动作调用>\n\n"
+            "Action 行只能写一个动作调用，禁止尾部加注释 / 装饰；解释一律写到 Thought。\n"
+            "禁止用 markdown 加粗、反引号、代码块、JSON、YAML 或 list 包装"
+            "Thought / Action 行。\n"
+            "可用动作：click / long_press / type / scroll / drag / open_app / "
+            "close_app / press_home / press_back / double_tap / wait / finished / "
+            "assert_fail。\n"
+            "finished(content='放行原因') 表示继续缓存回放；wait(seconds=N) 表示"
+            "等待后重比；assert_fail(content='失败原因') 表示无法恢复；"
+            "其他action表示局部修复。\n\n"
         )
     return (
         "你是轨迹缓存回放的局部恢复 VLM。\n"
@@ -904,7 +1159,7 @@ def build_recovery_prompt(
         "   - 起跑线不同是缓存回放常见问题，不能因为第一步 handoff 不一致就立刻 assert_fail。\n"
         "   - 只有当无法判断如何回到起跑状态，或回到起跑状态后仍无法执行 action_i，才 assert_fail。\n"
         "3. 如果当前 action_i 已经达成，且当前页面已经满足 handoff 语义：\n"
-        "   - 输出 finished(content='放行原因')，表示放行继续缓存回放。\n"
+        "   - 输出 finished 终态动作，并在content中说明放行原因，表示继续缓存回放。\n"
         "   - finished 只表示“当前 handoff 可衔接”，不是完成整个用户 goal。\n"
         "4. 如果附图 1（handoff 路标图）本身就是加载中、进度条、骨架屏、动画、"
         "跳转、刷新、数据渲染、异步请求等过渡态：\n"
@@ -913,14 +1168,14 @@ def build_recovery_prompt(
         "   - 此时不要继续要求附图 2 与附图 1 完全一致；应降级判断附图 2 的"
         "当前页面状态是否仍可衔接下一条缓存 action。\n"
         "   - 如果附图 2 也是同类加载/过渡态，或已经进入比附图 1 更靠后的可衔接页面，"
-        "输出 finished(content='放行原因')，让系统继续执行下一条缓存 action。\n"
-        "   - 特别是下一条缓存 action 很可能就是 wait(seconds=N)：这时必须优先"
-        "finished 放行，让缓存里的 wait 自己执行；不要在当前 recovery 中再输出 wait。\n"
+        "输出 finished 终态动作，让系统继续执行下一条缓存 action。\n"
+        "   - 特别是下一条缓存 action 很可能就是 wait：这时必须优先"
+        "finished 放行，让缓存里的 wait 自己执行；不要在当前 recovery 中再等待。\n"
         "   - 只有当附图 2 明显跑到无关页面、错误页面、或无法衔接下一条缓存 action 时，"
         "才按修复 action 或 assert_fail 处理。\n"
         "5. 如果附图 1 是稳定业务页面，但附图 2 像是在加载、动画、跳转、刷新、"
         "数据渲染、异步请求中：\n"
-        "   - 输出 wait(seconds=N)，等待后系统会重新截图并再次对齐。\n"
+        "   - 输出 wait 动作并显式提供seconds，等待后系统会重新截图并再次对齐。\n"
         "6. 只有在以下情况下才输出 assert_fail：\n"
         "   - action_i 的目标功能/入口/控件确实不存在；\n"
         "   - 当前页面和本 case 路径明显无关，无法通过少量操作恢复；\n"
@@ -950,35 +1205,9 @@ def build_recovery_prompt(
         "如果只是动态内容变化，且稳定上下文一致、后续 action 仍可执行，应输出 finished 放行。\n"
         "但不要把稳定上下文变化误判为动态内容。\n"
         "如果动态内容遮挡或隐藏了后续控件，但可以通过少量 action 恢复，应执行修复 action。\n\n"
-        "输出格式必须与主执行 VLM 保持一致，不要输出 JSON：\n"
-        "Thought: <中文描述当前画面分析与局部恢复计划>\n"
-        "Action: <一个动作调用>\n\n"
-        "Action 行只能写一个动作调用，禁止尾部加注释 / 装饰；解释一律写到 Thought。\n"
-        "**严格约束（针对 Claude / GPT 系模型常见误用）**：\n"
-        "- 禁止用 markdown 加粗（如 **Action:**、**Thought:**），直接写纯文本前缀。\n"
-        "- 禁止用反引号或代码块（` 或 ```python ... ```）包装 Action 行；\n"
-        "  Action 行必须是裸文本，例如：``Action: click(point='<point>540 1024</point>')``。\n"
-        "- 禁止把 Thought / Action 写在 JSON / YAML / list 里。\n"
-        "- 动作名（click / type / scroll / wait / finished / assert_fail 等）保持英文。\n\n"
-        + coord_block +
-        "可用动作：\n"
-        "1. click(point='<point>x y</point>')\n"
-        "2. long_press(point='<point>x y</point>')\n"
-        "3. type(content='文本')\n"
-        "4. scroll(point='<point>x y</point>', direction='up|down|left|right')\n"
-        "5. drag(start_point='<point>x1 y1</point>', end_point='<point>x2 y2</point>')\n"
-        "6. open_app(app_name='应用名') / close_app(name='应用名')\n"
-        "7. press_home() / press_back()\n"
-        "8. double_tap(point='<point>x y</point>')\n"
-        "9. wait(seconds=N)\n"
-        "10. finished(content='放行原因')\n"
-        "11. assert_fail(content='失败原因')\n\n"
-        "输出含义：\n"
-        "- finished(content=...)：当前差异可接受，缓存回放可以继续。\n"
-        "- wait(seconds=...)：页面可能还在加载或过渡，等待后重新截图对比。\n"
-        "- assert_fail(content=...)：功能不可用、路径偏离过大、case 不健康、或无法恢复。\n"
-        "- 其他 action：执行一个局部修复动作。系统会执行后重新截图，并再次与 handoff 页面比对。\n\n"
-        "重要约束：\n"
+        + coord_block
+        + output_protocol_block
+        + "重要约束：\n"
         "- 不要重跑完整 case。\n"
         "- 不要为了完成最终 goal 而跳过缓存轨迹。\n"
         "- 不要连续规划很多步；每次只输出一个最合适的 action 或终止动作。\n"

@@ -30,7 +30,9 @@ import httpx
 from loguru import logger
 
 from ai_phone.config import get_settings
-from ai_phone.shared.actions import extract_action, extract_actions, extract_thought
+from ai_phone.shared import actions as A
+from ai_phone.shared.seed_gui_actions import extract_thought as extract_seed_thought
+from ai_phone.shared.seed_gui_actions import parse_actions as parse_seed_actions
 
 
 # 网络/超时类异常 → 自动重试 1 次（豆包视觉服务偶发 ReadTimeout / 5xx 网关
@@ -534,14 +536,23 @@ class VLMClient:
                 short_pid,
             )
 
-            all_actions = extract_actions(content)
-            primary_action = all_actions[0] if all_actions else extract_action(content)
+            parsed_actions = parse_seed_actions(content)
+            if not parsed_actions:
+                parsed_actions = [
+                    A.ParsedAction(
+                        action=A.ACTION_ASSERT_FAIL,
+                        content=f"无法解析决策输出: Seed GUI XML缺失或非法: {content[:100]}",
+                        raw="assert_fail(content='无法解析决策输出: Seed GUI XML缺失或非法')",
+                    )
+                ]
+            action_strs = [item.raw or item.action for item in parsed_actions]
             return Decision(
-                thought=extract_thought(content),
-                action_str=primary_action,
-                action_strs=all_actions,
+                thought=extract_seed_thought(content),
+                action_str=action_strs[0],
+                action_strs=action_strs,
                 elapsed_ms=elapsed_ms,
                 raw_content=content,
+                parsed_actions=parsed_actions,
             )
         except Exception as exc:
             # 请求失败：把注入的 hints 退回队列头，避免丢提示

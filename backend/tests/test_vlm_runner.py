@@ -469,6 +469,8 @@ async def test_click_stuck_injects_hint():
         if "连续" in hint and "几乎相同的位置" in hint
     ]
     assert injected, f"点击卡死提示未注入，pending_hints={vlm.pending_hints}"
+    assert "seed:tool_call XML块" in injected[0]
+    assert "§C" not in injected[0]
 
 
 @pytest.mark.asyncio
@@ -1078,6 +1080,7 @@ async def test_chain_three_actions_truncated_to_two():
     assert len(click_calls) == 2  # 第 3 个被截断
     # 注入了截断提示
     assert any("超过单步上限" in h for h in vlm.pending_hints)
+    assert any("function" in h and "seed:tool_call" in h for h in vlm.pending_hints)
 
 
 @pytest.mark.asyncio
@@ -1103,6 +1106,7 @@ async def test_chain_with_disallowed_action_falls_back_to_first():
     assert [c[0] for c in driver.calls] == ["click"]
     # 注入了不合规提示
     assert any("非点击类动作" in h for h in vlm.pending_hints)
+    assert any("后续轮次" in h and "function" in h for h in vlm.pending_hints)
 
 
 @pytest.mark.asyncio

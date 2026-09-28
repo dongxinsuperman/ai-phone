@@ -48,7 +48,7 @@ def build_system_prompt_for_backend(
 ) -> str:
     """按 ``vlm_backend`` 分派到对应家的 system prompt 模板。
 
-    - ``doubao_responses``（默认）：豆包 ``Thought:/Action:`` 文本 DSL
+    - ``doubao_responses``（默认）：豆包 ``Thought + seed:tool_call`` 文本协议
     - ``claude_cu``：Claude Computer Use ``computer`` tool + ``FINISHED:`` 关键字
     - ``gpt_cu``：OpenAI computer-use-preview + "Don't ask for confirmation"
 
@@ -90,9 +90,9 @@ _UNKNOWN_ACTION_HINT_DOUBAO = (
     "⚠️ 你上一步输出的动作名「{action}」不在规范动作集合里，未被执行。"
     "请严格使用以下动作名之一：click / long_press / type / scroll / drag / "
     "open_app / press_home / press_back / finished / double_tap / wait / "
-    "close_app / assert_fail。"
-    "例如点击请写 click(point='<point>x y</point>')；打开应用写 "
-    "open_app(app_name='XXX')；等待写 wait(seconds=N)。"
+    "close_app / take_screenshot / assert_fail。"
+    "动作必须放在 <seed:tool_call> 中，function name 使用上述动作名，"
+    "parameter 必须符合 System Prompt 中的 JSON Schema；不要输出 Action: 行。"
     "请基于当前页面重新决策并输出规范动作。"
 )
 

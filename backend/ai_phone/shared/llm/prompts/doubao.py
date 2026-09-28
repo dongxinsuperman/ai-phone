@@ -1,8 +1,7 @@
 """Prompt · Doubao 主 VLM 专用模板（facade）。
 
-历史源 ``shared/prompt.py``。豆包系（doubao-seed-1-6-vision-*）执行
-``Action: click(point="<point>x y</point>")`` 这套严格 DSL，且坐标默认
-归一化 0-1000，``build_system_prompt`` 已经按此设计。
+历史源 ``shared/prompt.py``。豆包系执行 ``Thought + seed:tool_call`` 文本
+协议，且坐标默认归一化 0-1000；外部 Case / Map / Runner 契约不变。
 
 为对齐多协议层"每家自己一个 prompts/<backend>.py"的约定，本文件做 facade
 导出，不重复维护。

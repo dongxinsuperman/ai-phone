@@ -348,7 +348,7 @@ class Settings(BaseSettings):
         description="包名匹配等单次纯文本调用走的 Chat API 端点",
     )
     vlm_api_key: str = Field(default="", description="VLM 服务 API key")
-    vlm_model: str = Field(default="doubao-seed-1-6-vision-250815")
+    vlm_model: str = Field(default="doubao-seed-2-1-lite-260915")
     # Responses API 会话容量安全阈值：上一轮 prompt_tokens ≥ 此值时，
     # 下一轮请求前重置 previous_response_id。默认 240K 为 256K 上下文保留 16K 缓冲；
     # 存在分段计费或更小上下文限制的模型可通过 env 自行调低；<=0 关闭分段。
@@ -361,7 +361,7 @@ class Settings(BaseSettings):
     # 三家协议差异较大（方舟 Responses / Anthropic Messages-tools / OpenAI Responses-computer_use_preview），
     # 走"高冗余、低耦合"——每家在 ai_phone/shared/llm/main/ 下独立一个文件，互不影响。
     # 切换后 vlm_api_url / vlm_api_key / vlm_model 三个字段含义会跟随协议变化：
-    #   - doubao_responses（默认）：方舟 Responses API，model 用 doubao-seed-1-6-vision-*
+    #   - doubao_responses（默认）：方舟 Responses API，model 用 doubao-seed-2-1-*
     #   - claude_cu：Anthropic Messages API + computer 工具，model 用 claude-*-claude-*-sonnet-*
     #   - gpt_cu：OpenAI Responses API + computer_use_preview 工具，model 用 computer-use-preview / gpt-*
     # 注：辅助系统协议由 assistant_backend 单独控制，二者可自由组合（比如 主用 Claude + 辅用 Doubao）。
@@ -469,17 +469,17 @@ class Settings(BaseSettings):
     # 的能力，再用 vlm_model 既贵又慢，且断言系统会出现"主 VLM 自验主 VLM"的
     # 左手验右手问题。
     #
-    # 设计：所有非主决策的 LLM 辅助调用统一走 1.6 通用版（doubao-seed-1-6-250615），
-    # 该模型同样支持图像输入，断言系统看图能力不丢；包名匹配 / 通道判定 / 审判
-    # 这些纯文本任务则不传图，享受文本档计费 + 更快推理。
+    # 设计：所有非主决策的 LLM 辅助调用统一走 2.1 Turbo。该模型同样支持图像
+    # 输入，断言系统看图能力不丢；包名匹配 / 通道判定 / 审判这些纯文本任务则
+    # 不传图，避免占用主 Lite 的手机决策会话。
     #
     # 卡死检测、瞬态 UI 检测/接管 是本地纯算法（pHash + 计数器），不调 LLM，
     # 不在本配置块的辖区。
     assistant_model: str = Field(
-        default="doubao-seed-1-6-250615",
+        default="doubao-seed-2-1-turbo-260628",
         description=(
             "辅助系统统一模型：起跑线包名匹配 / 通道判定 / 审判 / 断言系统都走它。"
-            "默认 1.6 通用版（同时支持文本 + 图像，但比 vision 专版便宜快一档）"
+            "默认 2.1 Turbo（同时支持文本与图像，独立承担判断和终局裁决）"
         ),
     )
     assistant_api_url: str = Field(
@@ -490,7 +490,7 @@ class Settings(BaseSettings):
         default="",
         description="辅助系统 API key；留空时回退使用 vlm_api_key（多数情况下两者同一个 key）",
     )
-    # 1.6 通用版是混合推理模型，通过 ``thinking`` 字段切两种模式：
+    # 豆包辅助模型通过 ``thinking`` 字段切两种模式：
     #   - disabled：直接给答案，~1s 出结果——适合字符串匹配 / 标签分类等"一眼出"
     #   - enabled：内部先生成 chain-of-thought 再下结论，~5-15s——适合视觉细察 /
     #     多约束验证 / 终局裁决这类容错率低的判断密集任务
@@ -519,7 +519,7 @@ class Settings(BaseSettings):
     # 4 个辅助调用（包名匹配 / 通道判定 / 审判 / 断言）走哪家协议。和 vlm_backend
     # 完全解耦：可以"主 VLM 走 Claude，辅助走 Doubao（成本低）" 这种组合。
     # 各家在 ai_phone/shared/llm/assistants/ 下独立文件实现，确保零交叉。
-    #   - doubao_chat（默认）：方舟 Chat Completions，model 用 doubao-seed-1-6-*
+    #   - doubao_chat（默认）：方舟 Chat Completions，model 用 doubao-seed-2-1-*
     #   - claude：Anthropic Messages API，model 用 claude-*-sonnet-*
     #   - openai：OpenAI Chat Completions，model 用 gpt-4o / gpt-4.1 等
     # 切换后 assistant_api_url / assistant_api_key / assistant_model 含义跟随协议变化。
@@ -537,16 +537,16 @@ class Settings(BaseSettings):
 
     # ── 新版统一模型配置（两块连接身份 · 必填 · 不再回退 legacy）────────
     # 对外只暴露两块连接身份，详见 backend/.env.example：
-    #   1) phone_vlm_*：碰手机的 VLM（主决策 + 辅助恢复 / 定位 / 门控），vision 专版。
-    #      系统内部自动拆协议——主决策走 /responses 主动式缓存续接；辅助恢复 / 定位 /
-    #      门控走 /chat/completions 单次。用户不需要、也不应该手填这两个端点。
+    #   1) phone_vlm_*：碰手机的 VLM（主决策 + 恢复 / 定位 / 门控）。豆包路径统一
+    #      走 /responses：主决策与恢复动作使用主动缓存续接；定位和门控仍保持各自的
+    #      坐标/JSON内部结果。用户只填根地址，不需要手填派生端点。
     #   2) aux_*：辅助模型（包名 / 通道 / 审判 / 断言 / 瞬态分类 / 大盘分析），通用版，
     #      单次判断，不碰手机；必须显式配置，不能跟随主模型。
     # 生效规则：phone_vlm_* 四项和 aux_* 四项都必填；
     # 由 _derive_new_model_config() 自动派生并覆盖下方内部 vlm_* / assistant_* /
     # trajectory_cache_*_vlm_* 连接字段。缺项直接报配置错误，不再回退旧式 VLM_*。
     # provider 决定内部执行链路：
-    #   - doubao：主决策走方舟 Responses，手机层单次走方舟 Chat。
+    #   - doubao：主决策、轨迹恢复、定位与门控统一走方舟 Responses。
     #   - claude：主决策走已验证的 claude_cu，手机层单次走 claude_messages。
     #   - openai/gpt：主决策走 gpt_cu，手机层单次走 OpenAI Responses。
     # 重要约束：doubao 主执行必须在火山方舟控制台**手动开启“上下文缓存 /
@@ -560,7 +560,7 @@ class Settings(BaseSettings):
     )
     phone_vlm_model: str = Field(
         default="",
-        description="碰手机 VLM 模型（vision 专版，如 doubao-seed-1-6-vision-*）。env: AI_PHONE_PHONE_VLM_MODEL",
+        description="碰手机 VLM 模型（如 doubao-seed-2-1-lite-260915）。env: AI_PHONE_PHONE_VLM_MODEL",
     )
     phone_vlm_api_key: str = Field(
         default="",
@@ -2079,7 +2079,8 @@ def _derive_new_model_config(settings: "Settings") -> "Settings":
 
     新模式对外只暴露 PHONE_VLM / AUX 两块，内部按 provider 和“形态”自动拆协议：
 
-    - doubao：主决策 ``doubao_responses``；手机层单次 ``openai_compatible``。
+    - doubao：主决策与轨迹恢复动作统一走 ``doubao_responses``；其它手机层
+      单次定位/裁决复用同一 Responses 配置，但保留各自的坐标/JSON内部协议。
     - claude：主决策保持已验证的 ``claude_cu``；手机层单次 ``claude_messages``。
     - openai/gpt：主决策 ``gpt_cu``；手机层单次 ``openai_responses``。
     - AUX：按 ``aux_provider`` 分发到 ``doubao_chat`` / ``claude`` / ``openai``；
@@ -2116,16 +2117,19 @@ def _derive_new_model_config(settings: "Settings") -> "Settings":
     if provider == "doubao":
         base = _strip_endpoint_suffix(raw_base)
         chat_url = f"{base}/chat/completions"
+        responses_url = f"{base}/responses"
         update = {
             # 形态 1 · 主 VLM（碰手机 · responses 续接 + 主动缓存）
             "vlm_backend": "doubao_responses",
-            "vlm_api_url": f"{base}/responses",
+            "vlm_api_url": responses_url,
             "vlm_chat_api_url": chat_url,
             "vlm_api_key": key,
             "vlm_model": model,
-            # 形态 2 · 辅 VLM 恢复（碰手机 · chat 单次）；v3 / gate 跟随它
-            "trajectory_cache_recovery_vlm_backend": "openai_compatible",
-            "trajectory_cache_recovery_vlm_api_url": chat_url,
+            # 形态 2 · 轨迹恢复（碰手机 · Responses + Seed GUI XML）；
+            # v3 locator / rescue / ephemeral gate 复用同一连接配置，但仍输出
+            # 各自既有的坐标或 JSON 内部结果，不改变其消费者接口。
+            "trajectory_cache_recovery_vlm_backend": "doubao_responses",
+            "trajectory_cache_recovery_vlm_api_url": responses_url,
             "trajectory_cache_recovery_vlm_api_key": key,
             "trajectory_cache_recovery_vlm_model": model,
             "trajectory_cache_v3_coord_use_recovery_vlm_config": True,

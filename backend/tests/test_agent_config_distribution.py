@@ -52,11 +52,11 @@ def _new_doubao_settings(**overrides) -> Settings:
         "phone_vlm_provider": "doubao",
         "phone_vlm_base_url": "https://ark.cn-beijing.volces.com/api/v3",
         "phone_vlm_api_key": "server-phone-key",
-        "phone_vlm_model": "doubao-seed-1-6-vision-250815",
+        "phone_vlm_model": "doubao-seed-2-1-lite-260915",
         "aux_provider": "doubao",
         "aux_base_url": "https://ark.cn-beijing.volces.com/api/v3",
         "aux_api_key": "server-aux-key",
-        "aux_model": "doubao-seed-1-6-250615",
+        "aux_model": "doubao-seed-2-1-turbo-260628",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -251,7 +251,7 @@ def test_new_model_env_fields_are_distributed_with_explicit_aux_config():
     assert snap["aux_provider"] == "doubao"
     assert snap["aux_base_url"] == "https://ark.cn-beijing.volces.com/api/v3"
     assert snap["aux_api_key"] == "server-aux-key"
-    assert snap["aux_model"] == "doubao-seed-1-6-250615"
+    assert snap["aux_model"] == "doubao-seed-2-1-turbo-260628"
 
 
 def test_downlink_rejects_missing_phone_vlm_config():
@@ -294,6 +294,8 @@ def test_runtime_override_new_phone_config_overrides_local_legacy_residue(monkey
         "run_max_steps": 99,
     })
     assert eff.vlm_backend == "doubao_responses"
+    assert eff.trajectory_cache_recovery_vlm_backend == "doubao_responses"
+    assert eff.trajectory_cache_recovery_vlm_api_url.endswith("/responses")
     assert eff.vlm_api_key == "server-phone-key"
     assert eff.vlm_model == "server-phone-model"
     assert eff.assistant_api_key == "server-aux-key"
@@ -379,11 +381,11 @@ def test_runtime_override_can_switch_local_doubao_to_server_claude(monkeypatch):
         phone_vlm_provider="doubao",
         phone_vlm_base_url="https://ark.cn-beijing.volces.com/api/v3",
         phone_vlm_api_key="local-doubao",
-        phone_vlm_model="doubao-seed-1-6-vision-250815",
+        phone_vlm_model="doubao-seed-2-1-lite-260915",
         aux_provider="doubao",
         aux_base_url="https://ark.cn-beijing.volces.com/api/v3",
         aux_api_key="local-doubao",
-        aux_model="doubao-seed-1-6-250615",
+        aux_model="doubao-seed-2-1-turbo-260628",
     ))
     monkeypatch.setattr(cfg, "_base_settings", lambda: local)
 

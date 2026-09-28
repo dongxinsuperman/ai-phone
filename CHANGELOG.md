@@ -4,6 +4,60 @@
 
 ## Unreleased
 
+### 豆包 GUI Agent：主执行与缓存恢复统一为 Seed XML 协议
+
+- 豆包主 VLM 的动作输出由历史 `Thought: / Action:` 调用式 DSL 升级为
+  `Thought + <seed:tool_call>` 文本 XML；请求仍使用 Responses API 且不传
+  `tools`，动作由官方 `ui-tars==0.5.1` 解析后转换为项目统一的
+  `ParsedAction`。Case、Function Map、Driver、Submission、数据库、WS、报告与
+  回调接口均不变，外部调用方无需修改代码。
+- System Prompt 现在提供可直接复制的官方 XML、`parameter`、`string=true/false`
+  与 0-1000 坐标示例，同时保留滚动步幅、等待、截图保存、长按和终态证据等
+  ai-phone 行为规则。坐标、等待范围、必填参数、单 function 和动作白名单均在
+  解析层再次校验；非法输出只在同一截图纠正重试一次，不执行半截动作。
+- 豆包轨迹缓存 recovery 与主执行统一使用 Responses + Seed XML。一次缓存 action
+  的首轮携带完整恢复规则、固定 handoff 图和当前图；后续通过
+  `previous_response_id` 只发送最新当前截图和本轮变化，并明确旧当前图已失效。
+  action 变化或缺少稳定身份时自动切断 recovery 会话，避免路标和截图串线。
+- Recovery XML 仍转换成既有 `ParsedAction` 后交给 ReplayRunner；现有缓存记录、
+  回放动作、可读日志和报告中的 `click(...)` 等兼容格式保持不变。V3 定位继续输出
+  坐标标签，V3 救援和瞬态弹窗 gate 继续输出内部 JSON，未被强制改成动作 XML。
+- 豆包开源示例默认模型更新为主执行 `doubao-seed-2-1-lite-260915`、辅助系统
+  `doubao-seed-2-1-turbo-260628`。主执行、recovery、V3 定位和门控均从同一
+  `PHONE_VLM` 配置派生到 `/responses`；辅助判断仍从独立 `AUX` 配置派生。
+- 新增 `ui-tars==0.5.1` 运行依赖。升级后按原方式安装
+  `backend/requirements.txt` 或项目依赖即可；豆包用户仍需在方舟控制台为模型开启
+  上下文缓存，项目不会新增提交字段或部署端口。
+
+### Doubao GUI Agent: unify main execution and cache recovery on Seed XML
+
+- Replace the legacy Doubao `Thought: / Action:` call-style DSL with textual
+  `Thought + <seed:tool_call>` XML. Requests still use the Responses API without
+  the `tools` parameter. Official `ui-tars==0.5.1` parsing is adapted into the
+  existing `ParsedAction` contract, so Cases, Function Maps, Drivers, Submissions,
+  storage, WebSocket events, reports, and callbacks remain source-compatible.
+- Add copyable XML, parameter typing, and normalized-coordinate examples while
+  retaining ai-phone behavior rules for scrolling, waiting, screenshots, long press,
+  and completion evidence. Runtime validation enforces coordinates, wait bounds,
+  required parameters, the one-function recovery contract, and model-visible action
+  allowlists. Invalid output receives one same-frame correction retry and is never
+  partially executed.
+- Move Doubao trajectory-cache recovery to Responses + Seed XML as well. The first
+  turn for one cached action sends the full policy, fixed handoff image, and current
+  image. Follow-up turns reuse `previous_response_id` but send only the latest current
+  image and changed evidence, explicitly invalidating the previous current image.
+  Changing actions—or lacking a stable action identity—resets the recovery session.
+- Keep external cache and replay contracts unchanged: recovery XML becomes the same
+  `ParsedAction` consumed by ReplayRunner, while stored actions and human-readable
+  reports retain their compatible `click(...)` form. V3 locating remains coordinate
+  output; V3 rescue and ephemeral gates remain internal JSON protocols.
+- Update open-source Doubao examples to `doubao-seed-2-1-lite-260915` for phone
+  execution and `doubao-seed-2-1-turbo-260628` for auxiliary judgments. Phone-side
+  execution, recovery, V3 locating, and gates derive from one `PHONE_VLM` Responses
+  connection; non-device judgments continue to use the independent `AUX` connection.
+- Add the `ui-tars==0.5.1` runtime dependency. Normal dependency installation is
+  sufficient; no new submission fields, ports, or client changes are required.
+
 ### 最终断言：默认等待时间延长至 120 秒
 
 - `AI_PHONE_ASSERTION_TIMEOUT_SEC` 的公开默认值由 60 秒调整为 120 秒，

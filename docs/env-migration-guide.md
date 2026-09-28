@@ -95,12 +95,12 @@ Doubao:
 
 ```env
 AI_PHONE_PHONE_VLM_PROVIDER=doubao
-AI_PHONE_PHONE_VLM_MODEL=doubao-seed-1-6-vision-250815
+AI_PHONE_PHONE_VLM_MODEL=doubao-seed-2-1-lite-260915
 AI_PHONE_PHONE_VLM_API_KEY=<volcengine-ark-api-key>
 AI_PHONE_PHONE_VLM_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 
 AI_PHONE_AUX_PROVIDER=doubao
-AI_PHONE_AUX_MODEL=doubao-seed-1-6-250615
+AI_PHONE_AUX_MODEL=doubao-seed-2-1-turbo-260628
 AI_PHONE_AUX_API_KEY=<volcengine-ark-api-key>
 AI_PHONE_AUX_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 ```
@@ -170,4 +170,3 @@ AUX       = 不碰手机的辅助判断模型
 新用户复制 `.env.example` 填。老用户拉代码后，本机 `.env` 不会被 git 自动改，所以
 要手动加上 `AI_PHONE_PHONE_VLM_*` 和 `AI_PHONE_AUX_*` 八行，并把旧的
 `AI_PHONE_VLM_* / AI_PHONE_ASSISTANT_*` 连接项从 `.env` 里清掉，避免后续排查时看错。
-

@@ -64,6 +64,7 @@ from ai_phone.agent.trajectory_cache.archive import build_v3_plan_cleaner_prompt
 from ai_phone.agent.trajectory_cache.recovery import (
     _extract_messages_text,
     _extract_responses_text,
+    _recovery_action_session_key,
 )
 from ai_phone.agent.trajectory_cache.v3_replay import V3LocatorMiss
 from ai_phone.server.trajectory_cache import (
@@ -3071,6 +3072,68 @@ def test_parse_recovery_response_doubao_click_maps_to_repair_action():
     assert decision.parsed_actions[0].point == [500, 600]
 
 
+def test_parse_recovery_response_seed_xml_finished_maps_to_continue():
+    decision = parse_recovery_response(
+        "Thought: 页面结构一致，可以继续缓存回放。\n"
+        '<seed:tool_call><function name="finished"><parameter name="content" '
+        'string="true">当前handoff可继续</parameter></function></seed:tool_call>',
+        action_protocol="seed_xml",
+    )
+    assert decision.verdict == VERDICT_CONTINUE
+    assert decision.reason == "当前handoff可继续"
+    assert decision.thought == "页面结构一致，可以继续缓存回放。"
+
+
+def test_parse_recovery_response_seed_xml_click_maps_to_repair_action():
+    decision = parse_recovery_response(
+        "Thought: 入口位置变化，重新定位后点击。\n"
+        '<seed:tool_call><function name="click"><parameter name="point" '
+        'string="true"><point>500 600</point></parameter></function></seed:tool_call>',
+        action_protocol="seed_xml",
+    )
+    assert decision.verdict == VERDICT_REPAIR_ACTION
+    assert decision.parsed_actions[0].point == [500, 600]
+    assert decision.action_text == "click(point='<point>500 600</point>')"
+
+
+def test_parse_recovery_response_seed_xml_rejects_legacy_and_multi_function():
+    legacy = parse_recovery_response(
+        "Thought: retry\nAction: click(point='<point>1 2</point>')",
+        action_protocol="seed_xml",
+    )
+    multi = parse_recovery_response(
+        '<seed:tool_call><function name="click"><parameter name="point" '
+        'string="true"><point>1 2</point></parameter></function>'
+        '<function name="wait"><parameter name="seconds" string="false">2'
+        '</parameter></function></seed:tool_call>',
+        action_protocol="seed_xml",
+    )
+    assert legacy.error == "protocol_violation"
+    assert multi.error == "protocol_violation"
+
+
+def test_parse_recovery_response_seed_xml_rejects_unexposed_actions():
+    screenshot = parse_recovery_response(
+        '<seed:tool_call><function name="take_screenshot"><parameter '
+        'name="save_to_album" string="false">true</parameter></function>'
+        '</seed:tool_call>',
+        action_protocol="seed_xml",
+    )
+    key_event = parse_recovery_response(
+        '<seed:tool_call><function name="key_event"><parameter name="keycode" '
+        'string="false">66</parameter></function></seed:tool_call>',
+        action_protocol="seed_xml",
+    )
+    assert screenshot.error == "protocol_violation"
+    assert key_event.error == "protocol_violation"
+
+
+def test_recovery_action_session_key_handles_zero_and_anonymous_actions():
+    assert _recovery_action_session_key({"index": 0}) == "index:0"
+    assert _recovery_action_session_key({"action_id": "a0", "index": 0}) == "action_id:a0"
+    assert _recovery_action_session_key({}) is None
+
+
 def test_parse_recovery_response_strips_claude_markdown_bold():
     """Claude 偶发会用 markdown 加粗 ``**Action:**``，预清洗后应能命中。"""
     decision = parse_recovery_response(
@@ -3243,6 +3306,25 @@ def test_build_recovery_prompt_forbids_actions_and_lists_three_verbs():
     assert "assert_fail(content='失败原因')" in prompt
 
 
+def test_build_recovery_prompt_seed_xml_has_no_action_line():
+    prompt = build_recovery_prompt(
+        goal="点击我的，点击学习",
+        trajectory={"actions": []},
+        action={"action_id": "a001", "type": "click"},
+        landmark={"action_id": "a001"},
+        metrics={"global_diff": 0.5},
+        elapsed_ms=1300,
+        max_wait_ms=1300,
+        default_wait_ms=1500,
+        action_protocol="seed_xml",
+    )
+    assert "<seed:tool_call>" in prompt
+    assert '<function name="click">' in prompt
+    assert 'string="true"><point>500 600</point>' in prompt
+    assert "Action: <一个动作调用>" not in prompt
+    assert "每次必须且只能输出一个function" in prompt
+
+
 @pytest.mark.asyncio
 async def test_recovery_verifier_disabled_returns_assert_fail():
     settings = Settings(trajectory_cache_recovery_vlm_enabled=False)
@@ -3347,7 +3429,12 @@ async def test_recovery_verifier_supports_doubao_responses_backend(monkeypatch):
     verifier = CacheReplayRecoveryVerifier(settings=settings)
 
     async def _fake_responses(**kwargs):
-        return "CONTINUE_REPLAY: 页面主结构一致，仅资源位变化"
+        return (
+            "Thought: 页面主结构一致，仅资源位变化。\n"
+            '<seed:tool_call><function name="finished"><parameter name="content" '
+            'string="true">页面主结构一致，仅资源位变化</parameter>'
+            '</function></seed:tool_call>'
+        )
 
     monkeypatch.setattr(verifier, "_responses_double_image", _fake_responses)
 
@@ -3365,6 +3452,136 @@ async def test_recovery_verifier_supports_doubao_responses_backend(monkeypatch):
 
     assert decision.verdict == VERDICT_CONTINUE
     assert "资源位变化" in decision.reason
+
+
+@pytest.mark.asyncio
+async def test_recovery_doubao_xml_protocol_retries_once_on_same_images(monkeypatch):
+    settings = Settings(
+        trajectory_cache_recovery_vlm_enabled=True,
+        trajectory_cache_recovery_vlm_backend="doubao_responses",
+        trajectory_cache_recovery_vlm_api_url="https://example.test/responses",
+        trajectory_cache_recovery_vlm_api_key="key",
+        trajectory_cache_recovery_vlm_model="vlm-x",
+    )
+    verifier = CacheReplayRecoveryVerifier(
+        settings=settings, main_vlm_backend="doubao_responses"
+    )
+    replies = [
+        "Thought: retry\nAction: click(point='<point>1 2</point>')",
+        (
+            "Thought: 改用XML重试。\n"
+            '<seed:tool_call><function name="click"><parameter name="point" '
+            'string="true"><point>500 600</point></parameter></function>'
+            '</seed:tool_call>'
+        ),
+    ]
+    calls = []
+
+    async def _fake_responses(**kwargs):
+        calls.append(kwargs)
+        return replies.pop(0)
+
+    monkeypatch.setattr(verifier, "_responses_double_image", _fake_responses)
+    decision = await verifier.verify_alignment_miss(
+        goal="g",
+        trajectory={"actions": []},
+        action={"action_id": "a001", "type": "click"},
+        landmark={"action_id": "a001"},
+        current_bytes=b"same-current",
+        landmark_bytes=b"same-landmark",
+        metrics={"global_diff": 0.5},
+        elapsed_ms=2000,
+        max_wait_ms=1500,
+    )
+
+    assert len(calls) == 2
+    assert calls[0]["current_bytes"] == calls[1]["current_bytes"]
+    assert calls[0]["landmark_bytes"] == calls[1]["landmark_bytes"]
+    assert "协议纠正" in calls[1]["prompt"]
+    assert decision.verdict == VERDICT_REPAIR_ACTION
+    assert decision.parsed_actions[0].point == [500, 600]
+
+
+@pytest.mark.asyncio
+async def test_recovery_doubao_responses_reuses_session_cache(monkeypatch):
+    from ai_phone.agent.trajectory_cache import recovery as recovery_module
+
+    payloads = []
+
+    class FakeResponse:
+        status_code = 200
+        text = "{}"
+
+        def __init__(self, response_id):
+            self.response_id = response_id
+
+        def json(self):
+            return {
+                "id": self.response_id,
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": (
+                                    "Thought: 等待页面稳定。\n"
+                                    '<seed:tool_call><function name="wait">'
+                                    '<parameter name="seconds" string="false">2'
+                                    '</parameter></function></seed:tool_call>'
+                                ),
+                            }
+                        ],
+                    }
+                ],
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, api_url, json, headers):
+            payloads.append(json)
+            return FakeResponse(f"resp-{len(payloads)}")
+
+    monkeypatch.setattr(recovery_module.httpx, "AsyncClient", FakeAsyncClient)
+    verifier = CacheReplayRecoveryVerifier(
+        settings=Settings(_env_file=None), main_vlm_backend="doubao_responses"
+    )
+    kwargs = {
+        "prompt": "recover",
+        "landmark_bytes": _test_jpeg(20, 30, (10, 10, 10)),
+        "current_bytes": _test_jpeg(20, 30, (20, 20, 20)),
+        "api_url": "https://example.test/responses",
+        "api_key": "key",
+        "model": "doubao-seed-2-1-lite-260915",
+        "timeout_sec": 14,
+    }
+    await verifier._responses_double_image(**kwargs)
+    await verifier._responses_double_image(**kwargs)
+
+    assert payloads[0]["store"] is True
+    assert payloads[0]["caching"] == {"type": "enabled"}
+    assert "previous_response_id" not in payloads[0]
+    assert payloads[0]["input"][0]["role"] == "system"
+    assert payloads[1]["previous_response_id"] == "resp-1"
+    assert [item["role"] for item in payloads[1]["input"]] == ["user"]
+    assert [item["type"] for item in payloads[0]["input"][-1]["content"]] == [
+        "input_text",
+        "input_image",
+        "input_image",
+    ]
+    assert [item["type"] for item in payloads[1]["input"][0]["content"]] == [
+        "input_text",
+        "input_image",
+    ]
+    assert "本消息唯一图片是最新当前截图" in payloads[1]["input"][0]["content"][0]["text"]
 
 
 def test_recovery_extract_messages_text_concatenates_text_blocks():
@@ -3793,7 +4010,10 @@ async def test_replay_runner_recovery_repair_action_then_match(monkeypatch):
         [
             parse_recovery_response(
                 "Thought: 当前目标位置变化，重新点击当前步骤目标。\n"
-                "Action: click(point='<point>500 600</point>')"
+                '<seed:tool_call><function name="click"><parameter name="point" '
+                'string="true"><point>500 600</point></parameter></function>'
+                '</seed:tool_call>',
+                action_protocol="seed_xml",
             )
         ]
     )
