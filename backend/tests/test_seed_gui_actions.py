@@ -20,6 +20,52 @@ def test_seed_xml_preserves_thought_and_maps_action() -> None:
     assert parsed[0].raw == "scroll(point='<point>500 800</point>', direction='down')"
 
 
+def test_seed_xml_preserves_model_scroll_direction_for_next_frame_feedback() -> None:
+    raw = """Thought: 目标卡片在当前视野下方，手指向上滑动以显示下方更多内容。
+<seed:tool_call><function name="scroll"><parameter name="point" string="true"><point>620 600</point></parameter><parameter name="direction" string="true">up</parameter></function></seed:tool_call>"""
+    parsed = parse_actions(raw)
+    assert parsed[0].direction == "up"
+    assert parsed[0].raw == "scroll(point='<point>620 600</point>', direction='up')"
+    assert parsed[0].extra == {}
+
+
+def test_seed_xml_never_rewrites_drag_endpoints() -> None:
+    cases = (
+        (
+            "下一步显示列表下方更多内容。",
+            [500, 250],
+            [500, 750],
+        ),
+        (
+            "下一步返回列表顶部。",
+            [620, 850],
+            [620, 300],
+        ),
+        (
+            "把当前卡片拖到下方区域完成排序。",
+            [500, 250],
+            [500, 750],
+        ),
+        (
+            "查看列表下方更多内容。",
+            [800, 500],
+            [200, 500],
+        ),
+        (
+            "返回列表顶部。",
+            [500, 500],
+            [500, 550],
+        ),
+    )
+    for thought, start, end in cases:
+        raw = f"""Thought: {thought}
+<seed:tool_call><function name="drag"><parameter name="start_point" string="true"><point>{start[0]} {start[1]}</point></parameter><parameter name="end_point" string="true"><point>{end[0]} {end[1]}</point></parameter></function></seed:tool_call>"""
+        parsed = parse_actions(raw)[0]
+        assert parsed.start_point == start, thought
+        assert parsed.end_point == end, thought
+        assert parsed.extra == {}, thought
+
+
 def test_seed_xml_supports_aiphone_extensions_and_multiple_functions() -> None:
     raw = """判断完成。
 <seed:tool_call><function name="open_app"><parameter name="app_name" string="true">洋葱学园</parameter></function><function name="finished"><parameter name="content" string="true">完成</parameter></function></seed:tool_call>"""
@@ -81,6 +127,11 @@ def test_seed_xml_prompt_contains_copyable_official_examples() -> None:
 
 def test_seed_xml_prompt_preserves_action_behavior_rules() -> None:
     prompt = build_system_prompt("测试滚动、等待和截图")
+    assert "禁止按手指移动方向填写 direction" in prompt
+    assert "scroll 只用于浏览页面或列表" in prompt
+    assert "drag 用于把具体对象" in prompt
+    assert "根据下一帧截图判断结果" in prompt
+    assert "禁止不看反馈原样重复" in prompt
     assert "amount=1约滚动60%屏幕" in prompt
     assert "下一帧仍未看到目标时必须立即降回amount=1" in prompt
     assert "一次等待完成，不要拆成多次wait" in prompt

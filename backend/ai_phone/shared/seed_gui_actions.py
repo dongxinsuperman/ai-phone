@@ -27,7 +27,7 @@ ACTION_SCHEMAS: list[dict[str, Any]] = [
     {"name": "double_tap", "parameters": {"type": "object", "properties": {"point": _POINT_SCHEMA}, "required": ["point"]}},
     {"name": "left_double", "parameters": {"type": "object", "properties": {"point": _POINT_SCHEMA}, "required": ["point"]}},
     {"name": "type", "parameters": {"type": "object", "properties": {"content": {"type": "string"}}, "required": ["content"]}},
-    {"name": "scroll", "parameters": {"type": "object", "properties": {"point": _POINT_SCHEMA, "direction": {"type": "string", "enum": ["up", "down", "left", "right"]}, "amount": {"type": "integer", "minimum": 1, "maximum": 10}}, "required": ["point", "direction"]}},
+    {"name": "scroll", "parameters": {"type": "object", "properties": {"point": _POINT_SCHEMA, "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Content browsing direction, not finger movement: down reveals lower content; up reveals upper content or returns to top; right reveals content on the right; left reveals content on the left."}, "amount": {"type": "integer", "minimum": 1, "maximum": 10}}, "required": ["point", "direction"]}},
     {"name": "drag", "parameters": {"type": "object", "properties": {"start_point": _POINT_SCHEMA, "end_point": _POINT_SCHEMA}, "required": ["start_point", "end_point"]}},
     {"name": "open_app", "parameters": {"type": "object", "properties": {"app_name": {"type": "string"}}, "required": ["app_name"]}},
     {"name": "close_app", "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},

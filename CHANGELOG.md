@@ -28,6 +28,10 @@
 - 新增 `ui-tars==0.5.1` 运行依赖。升级后按原方式安装
   `backend/requirements.txt` 或项目依赖即可；豆包用户仍需在方舟控制台为模型开启
   上下文缓存，项目不会新增提交字段或部署端口。
+- 明确移动端动作语义但不重写模型决策：`scroll.direction` 表示想浏览的内容方向，
+  `down` 看下方、`up` 看上方或回顶；`drag` 仅表示把具体对象从起点拖到终点。
+  执行层按模型返回的原始方向与坐标操作，下一轮由模型根据新截图自行调整方向、落点
+  或动作类型。没有新增安全区硬编码，也不改变 Driver、Case、Function Map 或外部接口。
 
 ### Doubao GUI Agent: unify main execution and cache recovery on Seed XML
 
@@ -57,6 +61,12 @@
   connection; non-device judgments continue to use the independent `AUX` connection.
 - Add the `ui-tars==0.5.1` runtime dependency. Normal dependency installation is
   sufficient; no new submission fields, ports, or client changes are required.
+- Clarify mobile action semantics without rewriting model decisions:
+  `scroll.direction` expresses the content browsing direction (`down` reveals lower content;
+  `up` reveals upper content or returns to the top), while `drag` moves a concrete object
+  between explicit endpoints. Runtime executes the model's original direction and coordinates;
+  the model uses the next screenshot to adjust its direction, point, or action type. No safe-zone
+  constants, Driver changes, Case/Function Map changes, or client API changes are introduced.
 
 ### 最终断言：默认等待时间延长至 120 秒
 
