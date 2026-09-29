@@ -22,7 +22,7 @@
 - Recovery XML 仍转换成既有 `ParsedAction` 后交给 ReplayRunner；现有缓存记录、
   回放动作、可读日志和报告中的 `click(...)` 等兼容格式保持不变。V3 定位继续输出
   坐标标签，V3 救援和瞬态弹窗 gate 继续输出内部 JSON，未被强制改成动作 XML。
-- 豆包开源示例默认模型更新为主执行 `doubao-seed-2-1-lite-260915`、辅助系统
+- 豆包开源示例默认模型更新为主执行 `doubao-seed-evolving`、辅助系统
   `doubao-seed-2-1-turbo-260628`。主执行、recovery、V3 定位和门控均从同一
   `PHONE_VLM` 配置派生到 `/responses`；辅助判断仍从独立 `AUX` 配置派生。
 - 新增 `ui-tars==0.5.1` 运行依赖。升级后按原方式安装
@@ -55,7 +55,7 @@
   `ParsedAction` consumed by ReplayRunner, while stored actions and human-readable
   reports retain their compatible `click(...)` form. V3 locating remains coordinate
   output; V3 rescue and ephemeral gates remain internal JSON protocols.
-- Update open-source Doubao examples to `doubao-seed-2-1-lite-260915` for phone
+- Update open-source Doubao examples to `doubao-seed-evolving` for phone
   execution and `doubao-seed-2-1-turbo-260628` for auxiliary judgments. Phone-side
   execution, recovery, V3 locating, and gates derive from one `PHONE_VLM` Responses
   connection; non-device judgments continue to use the independent `AUX` connection.

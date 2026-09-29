@@ -155,7 +155,7 @@ AI_PHONE_SERVER_WS_URL=ws://127.0.0.1:8000/ws/agent
 AI_PHONE_SERVER_HTTP_BASE=http://127.0.0.1:8000
 
 AI_PHONE_PHONE_VLM_PROVIDER=doubao
-AI_PHONE_PHONE_VLM_MODEL=doubao-seed-2-1-lite-260915
+AI_PHONE_PHONE_VLM_MODEL=doubao-seed-evolving
 AI_PHONE_PHONE_VLM_API_KEY=<你的主VLM Key>
 AI_PHONE_PHONE_VLM_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 

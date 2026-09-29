@@ -95,7 +95,7 @@ Doubao:
 
 ```env
 AI_PHONE_PHONE_VLM_PROVIDER=doubao
-AI_PHONE_PHONE_VLM_MODEL=doubao-seed-2-1-lite-260915
+AI_PHONE_PHONE_VLM_MODEL=doubao-seed-evolving
 AI_PHONE_PHONE_VLM_API_KEY=<volcengine-ark-api-key>
 AI_PHONE_PHONE_VLM_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 

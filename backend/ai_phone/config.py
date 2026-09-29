@@ -348,7 +348,7 @@ class Settings(BaseSettings):
         description="包名匹配等单次纯文本调用走的 Chat API 端点",
     )
     vlm_api_key: str = Field(default="", description="VLM 服务 API key")
-    vlm_model: str = Field(default="doubao-seed-2-1-lite-260915")
+    vlm_model: str = Field(default="doubao-seed-evolving")
     # Responses API 会话容量安全阈值：上一轮 prompt_tokens ≥ 此值时，
     # 下一轮请求前重置 previous_response_id。默认 240K 为 256K 上下文保留 16K 缓冲；
     # 存在分段计费或更小上下文限制的模型可通过 env 自行调低；<=0 关闭分段。
@@ -471,7 +471,7 @@ class Settings(BaseSettings):
     #
     # 设计：所有非主决策的 LLM 辅助调用统一走 2.1 Turbo。该模型同样支持图像
     # 输入，断言系统看图能力不丢；包名匹配 / 通道判定 / 审判这些纯文本任务则
-    # 不传图，避免占用主 Lite 的手机决策会话。
+    # 不传图，避免占用主 VLM 的手机决策会话。
     #
     # 卡死检测、瞬态 UI 检测/接管 是本地纯算法（pHash + 计数器），不调 LLM，
     # 不在本配置块的辖区。
@@ -560,7 +560,7 @@ class Settings(BaseSettings):
     )
     phone_vlm_model: str = Field(
         default="",
-        description="碰手机 VLM 模型（如 doubao-seed-2-1-lite-260915）。env: AI_PHONE_PHONE_VLM_MODEL",
+        description="碰手机 VLM 模型（如 doubao-seed-evolving）。env: AI_PHONE_PHONE_VLM_MODEL",
     )
     phone_vlm_api_key: str = Field(
         default="",
