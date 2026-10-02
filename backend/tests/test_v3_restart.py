@@ -343,3 +343,64 @@ async def test_agent_uses_actual_first_run_executor_with_a_fresh_model_session(m
     assert steps[0]["step"] == 4
     assert steps[0]["actions"][0]["action"] == "press_home"
     assert all("旧缓存" not in row.get("thought", "") for row in steps)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cache_mode", [None, "off", "v1", "v2", "v3"])
+async def test_actual_agent_cache_miss_enters_first_run_for_every_cache_mode(monkeypatch, cache_mode):
+    """走真实 start_run/执行器；不能用缓存命中或重跑替身掩盖首跑入口的作用域错误。"""
+    from ai_phone.agent import main as agent_main
+    from ai_phone.agent.runner import vlm_loop
+    from ai_phone.config import Settings
+    from tests.test_vlm_runner import FakeDriver, ScriptedStep, ScriptedVLMClient
+
+    bridge, scheduled, models = Bridge(), [], []
+    driver = FakeDriver()
+    settings = Settings(_env_file=None, android_wake_before_run=False,
+                        vlm_page_stable_enabled=False, transient_ui_enabled=False)
+
+    class Client:
+        server_http_base = "http://unit.invalid"
+
+        async def send(self, message):
+            return True
+
+    def model(**kwargs):
+        client = ScriptedVLMClient([
+            ScriptedStep("返回桌面", "press_home()"),
+            ScriptedStep("已到桌面", "finished(content='完成')"),
+        ])
+        models.append(client)
+        return client
+
+    async def unexpected_replay(**kwargs):
+        pytest.fail("未命中缓存的任务不应进入回放")
+
+    for name in ("run_v1_replay", "run_v2_replay", "run_v3_replay"):
+        monkeypatch.setattr(orchestrate, name, unexpected_replay)
+    monkeypatch.setattr(agent_main, "RunnerBridge", lambda **kwargs: bridge)
+    monkeypatch.setattr(agent_main, "has_runtime_override", lambda: True)
+    monkeypatch.setattr(agent_main, "get_settings", lambda: settings)
+    monkeypatch.setattr(agent_main, "_get_or_open_driver", lambda serial: driver)
+    monkeypatch.setattr(vlm_loop, "get_settings", lambda: settings)
+    monkeypatch.setattr(vlm_loop, "create_main_vlm", model)
+    monkeypatch.setattr(agent_main, "_schedule_cache_archive", lambda **kwargs: scheduled.append(kwargs))
+    supervisor = agent_main._RunSupervisor()
+    message = {
+        "run_id": "unit", "device_serial": "unit-device", "goal": "按Home回到桌面",
+        "function_map_context": "原始Map不变", "should_sleep_after_run": False,
+    }
+    if cache_mode is not None:
+        message["cache_mode"] = cache_mode
+    await agent_main._handle_start_run(Client(), supervisor, message)
+    await supervisor.get("unit")["task"]
+    assert len(models) == 1 and len(models[0].received_screenshots) == 2
+    assert any(call[0] == "press_home" for call in driver.calls)
+    assert len(bridge.done) == 1 and bridge.done[0]["ok"]
+    assert bridge.done[0]["steps"] == 2
+    assert bridge.closed and supervisor.get("unit") is None
+    assert len(scheduled) == (1 if cache_mode in {"v1", "v2", "v3"} else 0)
+    if scheduled:
+        assert scheduled[0]["cache_mode"] == cache_mode
+        assert scheduled[0]["goal"] == message["goal"]
+        assert scheduled[0]["recorder"].steps()[0]["step"] == 1

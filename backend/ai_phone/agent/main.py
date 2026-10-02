@@ -1349,6 +1349,7 @@ async def _handle_start_run(
     )
 
     async def _run_task_body() -> None:
+        nonlocal cache_mode
         # 外接引擎（如 midscene）不需要 ai-phone 自己的 driver 缓存：它们自带 ADB
         # 客户端，由 bridge 子进程操作设备。这里跳过 _get_or_open_driver 既省时间，
         # 也避免在不需要时把 iOS WDA / scrcpy 这类副作用带起来。

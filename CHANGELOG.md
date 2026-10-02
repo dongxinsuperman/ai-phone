@@ -4,6 +4,24 @@
 
 ## Unreleased
 
+### 修复正常 VLM 首跑入口的缓存模式作用域错误
+
+- V3 完整重跑分支给 `cache_mode` 赋值时误将其遮蔽为内层局部变量，导致未命中
+  缓存的普通 VLM 首跑（包括关闭缓存）在进入模型前触发 `UnboundLocalError`。
+  纠正为读取/更新本次任务外层的缓存模式，不改变首跑动作、模型、协议或缓存策略。
+- 补充真实 Agent `start_run` → 主执行器的未命中入口回归，覆盖旧请求未提供
+  `cache_mode` 与 `off/v1/v2/v3`，验证正常执行、单次终态及原归档模式。
+  更新并重启空闲 Agent 后生效；Server、提交方和数据库无需调整。
+
+### Fix cache-mode scope in the normal VLM first-run entry
+
+- Correct the nested task's cache-mode binding introduced by the V3 restart branch.
+  Cache misses and cache-off Runs can start the model instead of failing before execution.
+  Preserve first-run semantics, models, protocols, and cache policies.
+- Add actual Agent start-run/executor integration coverage for absent and off/v1/v2/v3
+  cache modes, including terminal and archive behavior. Requires an idle Agent update/restart;
+  no Server, caller, or database changes.
+
 ### V3 缓存共享：平台族 + Case 原文哈希
 
 - 新 V3 成品由 Server 按平台族与 Case 原文哈希统一生成共享 key，同端不同设备
