@@ -170,6 +170,89 @@ def test_cache_freeform_does_not_expand_into_intermediate_step_audit() -> None:
     assert "不单独检查前面的动作是否执行过，也不检查其顺序" in prompt
 
 
+@pytest.mark.parametrize("structured", [False, True])
+@pytest.mark.parametrize("has_prev", [False, True])
+def test_v3_assertion_uses_only_current_evidence_and_describes_real_image_span(structured, has_prev):
+    from copy import deepcopy
+    from ai_phone.agent.runner.vlm_loop import STRUCTURED_ASSERTION_TWO_LAYER_BLOCK
+
+    goal = "[预期结果]\n显示正确账号的列表页" if structured else "返回正确账号的列表页"
+    trajectory = {"cache_mode": "v3", "source_completion": {
+        "run_reason": "旧终态唯一标识", "task_done": "旧完成说明唯一标识",
+        "final_thought": "旧思考唯一标识", "assertion_pass": "旧通过理由唯一标识",
+    }}
+    original = deepcopy(trajectory)
+    history = [{"sequence": 1, "index": 1, "source": "rescue_repair",
+                "runtime_status": "completed_without_exception", "action": {"type": "press_back"}}]
+    prompt = build_cache_assertion_prompt(
+        goal=goal, trajectory=trajectory, has_prev=has_prev, is_structured=structured,
+        execution_history=history,
+    )
+    assert goal in prompt
+    assert "历史通过结论不能证明本轮成功" in prompt
+    assert "优先采纳锚点" not in prompt
+    assert "优先采用首次成功" not in prompt
+    assert "【首次成功语义锚点】" not in prompt
+    assert "首次成功语义锚点说明：" not in prompt
+    assert all(value not in prompt for value in trajectory["source_completion"].values())
+    assert "source=rescue_repair" in prompt
+    assert "只跨越缓存回放的最后一个动作" not in prompt
+    if has_prev:
+        assert "最后一个缓存步骤开始前" in prompt
+        assert "可能包含局部修复、等待、该缓存动作或跳过" in prompt
+    else:
+        assert "唯一最终截图" in prompt
+    if structured:
+        assert STRUCTURED_ASSERTION_TWO_LAYER_BLOCK in prompt  # 首跑核心规则仍为同一原文。
+    else:
+        assert "不能把摘要自动扩展成逐步验收清单" in prompt
+    assert trajectory == original  # 只移除断言输入里的旧说明，不改已有缓存数据。
+
+
+@pytest.mark.parametrize("mode", ["v1", "v2"])
+def test_legacy_cache_assertion_keeps_original_history_and_anchor(mode):
+    prompt = build_cache_assertion_prompt(
+        goal="返回列表", has_prev=True, is_structured=False,
+        trajectory={"cache_mode": mode, "actions": [
+            {"index": step, "type": "press_back"} for step in range(1, 22)
+        ], "source_completion": {"assertion_pass": "旧缓存的历史语义解释"}},
+    )
+    assert "step 1:" not in prompt
+    assert "step 2:" in prompt
+    assert "首次成功语义锚点" in prompt
+    assert "旧缓存的历史语义解释" in prompt
+    assert "两张图之间只跨越缓存回放的最后一个动作" in prompt
+
+
+def test_v3_under_hundred_steps_retains_early_required_operation():
+    history = [{"sequence": i, "index": i, "source": "cache",
+                "runtime_status": "completed_without_exception",
+                "action": {"type": "click", "plan_intent": "清空旧账号数据" if i == 1 else "正常步骤"}}
+               for i in range(1, 101)]
+    prompt = build_cache_assertion_prompt(
+        goal="先清空旧账号数据，最终显示正确账号", trajectory={}, has_prev=True,
+        execution_history=history,
+    )
+    assert "record 1 step 1:" in prompt
+    assert "plan_intent=清空旧账号数据" in prompt
+    assert "record 100 step 100:" in prompt
+    assert "前面还有" not in prompt
+
+
+@pytest.mark.parametrize("identity", [{"cache_mode": "v3"}, {"schema_version": 3}])
+def test_old_v3_internal_call_without_runtime_history_is_not_execution_proof(identity):
+    prompt = build_cache_assertion_prompt(
+        goal="返回列表", has_prev=True, is_structured=False,
+        trajectory={**identity, "actions": [{"index": i, "type": "press_back"} for i in range(1, 102)],
+                    "source_completion": {"assertion_pass": "旧 PASS 唯一标识"}},
+    )
+    assert "step 1:" not in prompt
+    assert "step 2:" in prompt
+    assert "step 101:" in prompt
+    assert "旧 PASS 唯一标识" not in prompt
+    assert "不证明这些动作本轮已经执行" in prompt
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("assistant", "language"),

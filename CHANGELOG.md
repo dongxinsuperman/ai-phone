@@ -4,6 +4,34 @@
 
 ## Unreleased
 
+### V3 最终断言：单向对齐首跑的证据语义
+
+- 首跑断言代码、System、核心两层规则、模型与思考强度保持不变。V3 本轮摘要
+  使用首跑现有的 100 步覆盖上限，按最后 100 个缓存步骤分组保留全部已记录的
+  缓存动作、救援、等待、跳过与异常，不把 100 步误作 100 行。
+- V3 断言不再传入首跑历史完成日志、最后思考和通过理由，也不再优先采用历史
+  成功解释；本轮仍按原始用户目标与当前有效证据裁决。仅移除断言输入中的旧说明，
+  缓存数据本身与 schema 不变，旧缓存仍可读取。
+- 纠正 V3 图片说明：前图是最后缓存步骤开始前、后图是回放结束后的画面，期间
+  可能包含局部修复、等待、原动作或跳过，不能假定只跨一个物理动作；单图模式
+  明确其为唯一最终画面。只改变证据说明，不改变图片采集或回放执行。
+- V1/V2 的既有摘要窗口和提示词保持不变；PASS/FAIL/SKIP 协议、异常收尾、
+  缓存删除策略与超时配置不变。本次规则对齐不代表已经验证与首跑同等准确率。
+
+### V3 final assertion: align evidence semantics with the unchanged first-run baseline
+
+- Keep first-run assertion code, System, shared two-layer rules, models, and reasoning
+  unchanged. Apply its existing 100-step coverage limit to V3 cache-step groups, retaining
+  all recorded cached actions, repairs, waits, skips, and errors within those steps.
+- Exclude historical first-run completion claims/thoughts/PASS reasons and their priority
+  from V3 assertion input. Judge the original goal against current evidence; stored cache
+  data and schema remain compatible and unchanged.
+- Describe the before image as the start of the final cache step and the final image as
+  replay completion. The interval can contain multiple operations or a skipped action;
+  clarify single-image mode without changing image capture or execution.
+- Preserve V1/V2 prompts/windows, result protocols, failure handling, cache-deletion policy,
+  and timeouts. Semantic alignment alone is not proof of equivalent real-world accuracy.
+
 ### V3 可选弹窗动作：接通首跑标记与回放证据
 
 - V3 首跑后台归档复用 V2 的保守弹窗分类器，仅将高置信度、低风险、非业务必需
@@ -73,7 +101,7 @@
   60 秒，而使用首跑已有的 `run_max_wait_sec` 上限；V1/V2 仍保持原等待上限。
 - 最终断言原本已重新调用模型，本次修正的是证据来源：V3 传入本轮重新定位后的
   动作、救援、等待、跳过和异常状态，不再把缓存计划当作执行事实。
-  保留最后 20 个缓存步骤及这些步骤中的全部已记录操作；无异常只证明调用完成，
+  保留最后 100 个缓存步骤及这些步骤中的全部已记录操作；无异常只证明调用完成，
   不证明 UI 业务成功。当前截图仍是当前结果证据，非 PASS 的处理策略不变。
 - V3 缓存 schema 和外部接口不变，旧缓存仍可读取；旧记录里漏掉的信息不会被
   自动补造，新首跑归档才会写入补齐的信息。无需数据库迁移或客户端代码调整；
@@ -90,7 +118,7 @@
   first-run `run_max_wait_sec` limit instead of an additional 60-second cap; V1/V2 keep
   their previous wait limit.
 - Final assertion was already fresh. Replace its cached-plan summary with current-run
-  relocated actions, repairs, waits, skips, and execution states, retaining the last 20
+  relocated actions, repairs, waits, skips, and execution states, retaining the last 100
   cache steps and their recorded operations. A completed call does not prove UI success;
   current screenshots remain current-state evidence and non-PASS handling is unchanged.
 - Cache schema and external interfaces stay compatible. Missing historical information

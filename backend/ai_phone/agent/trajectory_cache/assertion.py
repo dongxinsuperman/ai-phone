@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from ai_phone.agent.runner.vlm_loop import (
+    STRUCT_AUDIT_HISTORY_LIMIT,
     STRUCTURED_ASSERTION_TWO_LAYER_BLOCK,
     _classify_structured_local,
     _compute_structured_signal,
@@ -120,6 +121,12 @@ def build_cache_assertion_prompt(
     is_structured: Optional[bool] = None,
     execution_history: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
+    # V3 单向对齐首跑验收；V1/V2 继续保留原提示词与摘要窗口。
+    is_v3 = (
+        execution_history is not None
+        or str(trajectory.get("cache_mode") or "") == "v3"
+        or trajectory.get("schema_version") == 3
+    )
     img_index_intro = (
         "本提示词附带两张图（按消息顺序）：\n"
         "- 附图 1：缓存回放最后一个动作之前的画面（动作前对照帧）\n"
@@ -130,23 +137,79 @@ def build_cache_assertion_prompt(
         "- 附图：当前最终落点画面（断言要验收的对象）\n"
         "本次没有动作前对照帧，请综合该图、缓存回放摘要与用户目标判断。"
     )
+    if is_v3:
+        img_index_intro = (
+            "本提示词附带两张图（按消息顺序）：\n"
+            "- 附图 1：最后一个缓存步骤开始前的画面（步骤前对照帧）\n"
+            "- 附图 2：回放结束后的当前最终落点画面（断言要验收的对象）\n"
+            "两图之间可能包含局部修复、等待、该缓存动作或跳过；"
+            "必须结合本轮 Runtime 记录理解跨度，不能假定只跨一个物理动作，"
+            "也不能把画面变化全部归因于原缓存动作。"
+        ) if has_prev else (
+            "本提示词附带一张图：\n"
+            "- 附图：回放结束后的当前最终落点画面（断言要验收的对象）\n"
+            "本次没有步骤前对照帧，请综合该图、本轮 Runtime 记录与用户目标判断；"
+            "下文的『附图 2』均指这张唯一最终截图。"
+        )
     replay_summary = (
         _format_execution_history(execution_history)
-        if execution_history is not None else _format_replay_summary(trajectory)
+        if execution_history is not None else _format_replay_summary(
+            trajectory, limit=STRUCT_AUDIT_HISTORY_LIMIT if is_v3 else 20,
+        )
     )
     runtime_note = (
         "- 本摘要来自本轮实际回放记录，包括重新定位后的动作、局部修复、等待和跳过。\n"
         "- skipped 表示该缓存动作本轮没有执行；pending/interrupted/execution_error 不表示执行完成。\n"
         "- completed_without_exception 只表示 Runtime 调用完成且无异常，不单独证明 UI 业务结果。\n"
     ) if execution_history is not None else ""
-    runtime_description = (
-        "- replay action 摘要是本轮 Runtime 记录，只证明条目中明确标注的调用、跳过和执行状态，"
-        "不单独证明 UI 产生了预期业务结果。\n"
-    ) if execution_history is not None else (
-        "- replay action 摘要是本次回放动作序列的 Runtime 记录，只证明这些动作"
-        "进入并完成了回放调用，不单独证明 UI 产生了预期业务结果。\n"
+    if execution_history is not None:
+        runtime_description = (
+            "- replay action 摘要是本轮 Runtime 记录，只证明条目中明确标注的调用、跳过和执行状态，"
+            "不单独证明 UI 产生了预期业务结果。\n"
+        )
+    elif is_v3:
+        runtime_description = (
+            "- 本次没有本轮 Runtime 记录，摘要仅来自历史缓存计划，用于理解动作意图，"
+            "不证明这些动作本轮已经执行或产生了预期业务结果。\n"
+        )
+    else:
+        runtime_description = (
+            "- replay action 摘要是本次回放动作序列的 Runtime 记录，只证明这些动作"
+            "进入并完成了回放调用，不单独证明 UI 产生了预期业务结果。\n"
+        )
+    # 首跑历史完成声明仍存于缓存中，但不再送入 V3 本轮断言，避免历史 PASS 改写目标。
+    source_completion = _format_source_completion(trajectory) if not is_v3 else ""
+    source_section = (
+        f"\n\n【首次成功语义锚点】\n{source_completion}\n"
+        if not is_v3 else ""
     )
-    source_completion = _format_source_completion(trajectory)
+    current_evidence_note = (
+        "本轮验收只依据原始用户目标与本轮有效证据；历史通过结论不能证明本轮成功，"
+        "也不能改写本轮目标或降低验收要求。\n\n"
+    )
+    source_note_structured = current_evidence_note if is_v3 else (
+        "首次成功语义锚点说明：\n"
+        "- 这部分来自生成缓存的成功 Run，可用于理解业务别名、页面别名和"
+        "首跑对用户目标的解释；遇到口语歧义时优先采纳锚点的解释，避免"
+        "因口语称呼与页面文案对不上而误判。\n"
+        "- 它不能替代当前截图证据；最终仍必须由附图 2 支持。\n\n"
+    )
+    source_note_free = current_evidence_note if is_v3 else (
+        "首次成功语义锚点说明：\n"
+        "- 这部分来自生成缓存的成功 Run，可用于理解用户目标里的业务别名、"
+        "页面别名和首跑对目标的解释。\n"
+        "- 它不能替代当前截图证据；最终仍必须由附图 2 支持。\n"
+        "- 如果用户目标存在口语歧义，应优先采用首次成功语义锚点中的解释。"
+        "只要附图 2 显示的最终落点与首跑语义锚点中的目标解释一致，就不应"
+        "因为页面文案未逐字等于用户目标中的口语称呼而 FAIL。\n\n"
+    )
+    comparison_rule = (
+        "2. 如果存在两张图，只用两图差异辅助判断最后缓存步骤的状态变化，"
+        "并结合本轮实际记录区分修复与原缓存动作；两图相同本身不能直接判 FAIL。\n"
+    ) if is_v3 else (
+        "2. 如果存在附图 1 / 附图 2，只用两图差异辅助判断最后一个动作结果；"
+        "两图相同本身不能直接判 FAIL。\n"
+    )
     structured = is_structured_goal(goal) if is_structured is None else is_structured
     if structured:
         return (
@@ -163,11 +226,7 @@ def build_cache_assertion_prompt(
             "- 当前可见状态仍必须由附图 2 支持；回放摘要不能推翻截图里的直接可见事实。\n"
             "- 附图 2 没有展示某段历史过程，不等于该过程没有发生。\n\n"
             f"{runtime_note}"
-            "首次成功语义锚点说明：\n"
-            "- 这部分来自生成缓存的成功 Run，可用于理解业务别名、页面别名和"
-            "首跑对用户目标的解释；遇到口语歧义时优先采纳锚点的解释，避免"
-            "因口语称呼与页面文案对不上而误判。\n"
-            "- 它不能替代当前截图证据；最终仍必须由附图 2 支持。\n\n"
+            f"{source_note_structured}"
             f"{STRUCTURED_ASSERTION_TWO_LAYER_BLOCK}\n"
             "额外约束（缓存通道独有）：\n"
             "- 如果 replay 摘要与附图 2 的直接可见事实明显矛盾（如摘要声称已进入目标页，"
@@ -182,7 +241,7 @@ def build_cache_assertion_prompt(
             "禁止以「文案不一致 / 看起来不像 / 不能 100% 确认」作为 FAIL 理由。\n\n"
             f"【用户目标】\n{goal.strip()}\n\n"
             f"【缓存回放摘要】\n{replay_summary}\n"
-            f"\n\n【首次成功语义锚点】\n{source_completion}\n"
+            f"{source_section}"
         )
 
     return (
@@ -196,13 +255,7 @@ def build_cache_assertion_prompt(
         "- 当前可见状态仍必须由最终截图支持；回放摘要不能推翻截图里的直接可见事实。\n"
         "- 最终截图没有展示某段历史过程，不等于该过程没有发生。\n\n"
         f"{runtime_note}"
-        "首次成功语义锚点说明：\n"
-        "- 这部分来自生成缓存的成功 Run，可用于理解用户目标里的业务别名、"
-        "页面别名和首跑对目标的解释。\n"
-        "- 它不能替代当前截图证据；最终仍必须由附图 2 支持。\n"
-        "- 如果用户目标存在口语歧义，应优先采用首次成功语义锚点中的解释。"
-        "只要附图 2 显示的最终落点与首跑语义锚点中的目标解释一致，就不应"
-        "因为页面文案未逐字等于用户目标中的口语称呼而 FAIL。\n\n"
+        f"{source_note_free}"
         "自由任务验收范围：\n"
         "- 只验用户最后一个 action 步骤对应的结果；如果用户直接描述最终状态，则验收该最终状态。\n"
         "- 必须阅读回放摘要来识别最后一个动作，但不能把摘要自动扩展成逐步验收清单。\n"
@@ -211,8 +264,7 @@ def build_cache_assertion_prompt(
         "裁决规则：\n"
         "1. 从用户目标与回放摘要中识别最后一个动作或最终状态，再判断附图 2 是否支持"
         "这个结果已经成立。\n"
-        "2. 如果存在附图 1 / 附图 2，只用两图差异辅助判断最后一个动作结果；"
-        "两图相同本身不能直接判 FAIL。\n"
+        f"{comparison_rule}"
         "3. 回放摘要只证明 Runtime 动作序列及其回放状态，不单独证明 UI 业务结果。\n"
         "4. 用户未明确要求时，不检查前面动作是否执行过，也不检查其顺序。\n"
         "5. 页面标题/模块名不必逐字等于按钮文案。只要截图显示已进入该按钮对应"
@@ -228,24 +280,24 @@ def build_cache_assertion_prompt(
         "FAIL 时必须说明是哪一条目标/预期没有被截图可靠支持。\n\n"
         f"【用户目标】\n{goal.strip()}\n\n"
         f"【缓存回放摘要】\n{replay_summary}\n"
-        f"\n\n【首次成功语义锚点】\n{source_completion}\n"
+        f"{source_section}"
     )
 
 
-def _format_replay_summary(trajectory: Dict[str, Any]) -> str:
+def _format_replay_summary(trajectory: Dict[str, Any], *, limit: int = 20) -> str:
     actions = list(trajectory.get("actions") or [])
     if not actions:
         return "(无 action 摘要)"
     lines: List[str] = []
-    for action in actions[-20:]:
+    for action in actions[-limit:]:
         index = action.get("index")
         action_type = action.get("type")
         detail = _action_detail(action)
         intent = action.get("intent") or action.get("label") or ""
         intent_text = f" intent={intent}" if intent else ""
         lines.append(f"step {index}: {action_type}{intent_text}{detail}")
-    if len(actions) > 20:
-        lines.insert(0, f"... 前面还有 {len(actions) - 20} 个 action")
+    if len(actions) > limit:
+        lines.insert(0, f"... 前面还有 {len(actions) - limit} 个 action")
     return "\n".join(lines)
 
 
@@ -253,9 +305,9 @@ def _format_execution_history(history: List[Dict[str, Any]]) -> str:
     """V3 本轮事实摘要；不把缓存计划或历史首跑坐标冒充执行记录。"""
     if not history:
         return "(本轮无已记录的回放操作；不以缓存计划替代执行记录)"
-    # 保持原 V3 最后 20 个缓存步骤的范围；修复/等待不能挤掉该步骤的其它操作。
+    # 使用首跑现有的 100 步覆盖上限；按缓存步骤分组，修复/等待不能挤掉该步其它操作。
     steps = list(dict.fromkeys(row.get("index") for row in history))
-    kept_steps = set(steps[-20:])
+    kept_steps = set(steps[-STRUCT_AUDIT_HISTORY_LIMIT:])
     rows = [row for row in history if row.get("index") in kept_steps]
     lines: List[str] = []
     for row in rows:
@@ -277,8 +329,8 @@ def _format_execution_history(history: List[Dict[str, Any]]) -> str:
         if row.get("error"):
             line += f" error={row['error']}"
         lines.append(line)
-    if len(steps) > 20:
-        lines.insert(0, f"... 前面还有 {len(steps) - 20} 个缓存步骤的 {len(history) - len(rows)} 条本轮 Runtime 记录")
+    if len(steps) > STRUCT_AUDIT_HISTORY_LIMIT:
+        lines.insert(0, f"... 前面还有 {len(steps) - STRUCT_AUDIT_HISTORY_LIMIT} 个缓存步骤的 {len(history) - len(rows)} 条本轮 Runtime 记录")
     return "\n".join(lines)
 
 

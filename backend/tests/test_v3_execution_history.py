@@ -435,10 +435,10 @@ def test_v3_empty_runtime_history_never_falls_back_to_cached_plan():
     assert "{'x': 999, 'y': 888}" not in prompt
 
 
-def test_v3_history_window_keeps_all_operations_in_last_twenty_cache_steps():
+def test_v3_history_window_keeps_all_operations_in_last_hundred_cache_steps():
     history = []
-    for step in range(1, 22):
-        for source in ("input_focus", "cache"):
+    for step in range(1, 102):
+        for source in ("rescue_repair", "cache"):
             history.append({
                 "sequence": len(history) + 1, "index": step, "source": source,
                 "runtime_status": "completed_without_exception", "action": {"type": "press_home"},
@@ -448,7 +448,7 @@ def test_v3_history_window_keeps_all_operations_in_last_twenty_cache_steps():
     )
     assert "record 1 step 1:" not in prompt
     assert "record 3 step 2:" in prompt
-    assert "record 42 step 21:" in prompt
+    assert "record 202 step 101:" in prompt
     assert "前面还有 1 个缓存步骤的 2 条本轮 Runtime 记录" in prompt
 
 
@@ -468,7 +468,7 @@ async def test_v3_history_records_ephemeral_gate_repair_not_original_action(make
 
 
 @pytest.mark.asyncio
-async def test_v3_verifier_passes_real_history_and_keeps_images_thinking_and_anchor():
+async def test_v3_verifier_keeps_images_thinking_but_excludes_historical_success():
     received = {}
 
     class Assistant:
@@ -490,7 +490,8 @@ async def test_v3_verifier_passes_real_history_and_keeps_images_thinking_and_anc
     assert result.passed
     assert "{'x': 100, 'y': 200}" in received["prompt"]
     assert "{'x': 999, 'y': 888}" not in received["prompt"]
-    assert "历史语义锚点" in received["prompt"]
+    assert "历史语义锚点" not in received["prompt"]
+    assert "首次成功语义锚点" not in received["prompt"]
     assert received["final_bytes"] == b"new-final"
     assert received["prev_before_bytes"] == b"new-before"
     assert received["thinking"] is True
