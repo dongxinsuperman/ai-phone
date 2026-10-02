@@ -4,6 +4,29 @@
 
 ## Unreleased
 
+### V3 救援输出：对齐已有执行能力
+
+- 用同一份动作契约生成救援提示中的完整 JSON 动作 schema，并在解析与执行前
+  校验。只声明既有 `click/double_tap/long_press/drag/wait/press_back/press_home`，
+  明确移动端滑动应输出 `drag` 的 `start/end`，不使用未约定的 `swipe/scroll/tap`。
+- 模型仍根据当前截图自主选择动作与坐标；不固定方向、位置或百分比，不静默将
+  未支持动作改名，也不补缺失参数。非法提案记为协议错误，不当成有效放弃裁决；
+  原救援预算、失败策略、首跑降级条件、主模型与 V1/V2 行为不变。
+- 日志区分尚未执行的原始救援提案与实际下发动作，便于查明名称/字段不匹配。
+  旧内部 `action` 名和数组点位保留兼容。无新配置、依赖、数据库或对外字段，
+  更新并重启空闲 Agent 后生效。
+
+### V3 rescue output: align with existing execution capabilities
+
+- Generate explicit JSON repair schemas from the same contract used by parsing/execution
+  checks. Declare the seven existing local operations; scrolling uses drag start/end,
+  not undeclared swipe/scroll/tap names.
+- Keep model-selected gestures/coordinates, budgets, failure/restart policies, first runs,
+  and V1/V2 unchanged. Do not rename unsupported proposals or invent parameters.
+- Log unexecuted proposals separately from executed operations. Preserve legacy internal
+  action-name/array-point input compatibility; no new settings, dependencies, or wire fields.
+  Requires an idle Agent update/restart.
+
 ### 修复正常 VLM 首跑入口的缓存模式作用域错误
 
 - V3 完整重跑分支给 `cache_mode` 赋值时误将其遮蔽为内层局部变量，导致未命中

@@ -91,6 +91,78 @@ V3_RESCUE_REPAIR_ACTION = "REPAIR_ACTION"
 V3_RESCUE_CONTINUE_REPLAY = "CONTINUE_REPLAY"
 V3_RESCUE_GIVE_UP = "GIVE_UP"
 
+# V3 救援独立于主执行的完整动作目录：只列执行器已有的安全局部动作。
+# 提示词、响应检查和执行前检查共用此表，不接受 swipe 等未约定别名。
+_V3_REPAIR_ACTION_FIELDS = {
+    A.ACTION_CLICK: ("point",),
+    A.ACTION_DOUBLE_TAP: ("point",),
+    A.ACTION_LONG_PRESS: ("point",),
+    A.ACTION_DRAG: ("start", "end"),
+    A.ACTION_WAIT: ("seconds",),
+    A.ACTION_PRESS_BACK: (),
+    A.ACTION_PRESS_HOME: (),
+}
+
+
+def _v3_repair_action_schemas() -> List[Dict[str, Any]]:
+    point = {"type": "object", "required": ["x", "y"],
+             "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}}}
+    schemas = []
+    for name, fields in _V3_REPAIR_ACTION_FIELDS.items():
+        properties = {"type": {"const": name}}
+        properties.update({field: point if field != "seconds" else {"type": "integer"}
+                           for field in fields})
+        if name in {A.ACTION_LONG_PRESS, A.ACTION_DRAG}:
+            properties["duration_ms"] = {
+                "type": "integer", "minimum": 1,
+                "default": 1000 if name == A.ACTION_LONG_PRESS else 500,
+            }
+        schemas.append({"type": "object", "required": ["type", *fields], "properties": properties})
+    return schemas
+
+
+def _v3_repair_protocol_error(raw: Dict[str, Any]) -> str:
+    # action 名与数组点位是既有内部 JSON 的兼容输入；新提示只教 type + {x,y}。
+    name = str(raw.get("type") or raw.get("action") or "")
+    fields = _V3_REPAIR_ACTION_FIELDS.get(name)
+    if fields is None:
+        return f"unsupported v3_rescue repair action type: {name!r}"
+    for field in fields:
+        if field in {"point", "start", "end"}:
+            value = raw.get(field)
+            if isinstance(value, dict) and "x" in value and "y" in value:
+                values = [value["x"], value["y"]]
+            elif isinstance(value, (list, tuple)) and len(value) >= 2:
+                values = value[:2]
+            else:
+                return f"{name} 缺少有效 {field} 坐标"
+            # 保留既有整数数字串/数组兼容；拒绝 bool 或小数被 int() 静默改成另一落点。
+            try:
+                for axis in values:
+                    number = int(axis)
+                    if isinstance(axis, bool) or (isinstance(axis, float) and axis != number):
+                        raise ValueError
+            except (ValueError, TypeError, OverflowError):
+                return f"{name}.{field} 必须包含整数坐标"
+        elif field not in raw:
+            return f"{name} 缺少 {field}"
+    integer_fields = ("seconds",) if name == A.ACTION_WAIT else (
+        ("duration_ms",) if name in {A.ACTION_LONG_PRESS, A.ACTION_DRAG} else ()
+    )
+    for field in integer_fields:
+        if field not in raw:
+            continue
+        value = raw[field]
+        try:
+            number = int(value)
+            if isinstance(value, bool) or (isinstance(value, float) and value != number):
+                raise ValueError
+            if field == "duration_ms" and number <= 0:
+                raise ValueError
+        except (ValueError, TypeError, OverflowError):
+            return f"{name}.{field} 必须是有效整数"
+    return ""
+
 
 class V3PlanLocator:
     """把 V3 ``plan_intent`` 定位成可执行坐标 action。"""
@@ -1514,6 +1586,10 @@ class V3ReplayRunner:
         intent: str = "",
     ) -> Dict[str, Any]:
         raw = dict(raw_action or {})
+        if source == "v3_rescue":
+            error = _v3_repair_protocol_error(raw)
+            if error:
+                raise ReplayActionError(error)
         action_type = str(raw.get("type") or raw.get("action") or A.ACTION_CLICK)
         out: Dict[str, Any] = {
             "index": index,
@@ -1572,6 +1648,13 @@ class V3ReplayRunner:
         action: Dict[str, Any],
         decision: V3RescueDecision,
     ) -> None:
+        if decision.repair_action is not None:
+            await self._log(
+                1, "V3局部辅助提案",
+                "尚未执行的模型提案 " + json.dumps({
+                    "coord_space": decision.coord_space, "repair_action": decision.repair_action,
+                }, ensure_ascii=False),
+            )
         await self._log(
             1
             if decision.verdict
@@ -1830,6 +1913,15 @@ def build_v3_rescue_prompt(
         '  "wait_ms": 800,\n'
         '  "repair_action": {"type":"click","point":{"x":500,"y":500}}\n'
         "}\n"
+        "repair_action 必须是下面 oneOf 中一个动作对象；type、必要参数必须完整，"
+        "一次只返回一个动作，不返回动作数组：\n"
+        f"{json.dumps({'oneOf': _v3_repair_action_schemas()}, ensure_ascii=False)}\n"
+        "移动端滑动/翻页用 drag，并按当前截图提供 start 与 end；"
+        "不要输出 swipe、scroll、tap、click(...)、Action: 或 Seed XML。"
+        "动作名与参数直接按上述 JSON schema 写，不能自创别名。\n"
+        "坐标由你根据当前截图与意图决定，不固定方向、落点或百分比。"
+        "duration_ms 是毫秒，long_press 默认1000、drag 默认500；"
+        "wait.seconds 是秒，沿用执行器的1到60秒范围。\n"
         "规则：页面可能还在加载则 WAIT，并给出等待毫秒数；"
         "有明显可关闭遮挡层则 POPUP_CLOSE 并给关闭动作；"
         "需要一个安全局部动作才能回到缓存路线则 REPAIR_ACTION；"
@@ -1944,6 +2036,14 @@ def parse_v3_rescue_response(text: str, *, coord_space: str = "normalized") -> V
             error="missing_repair_action",
             coord_space=coord_space,
         )
+    if verdict in {V3_RESCUE_POPUP_CLOSE, V3_RESCUE_REPAIR_ACTION}:
+        error = _v3_repair_protocol_error(repair_action)
+        if error:
+            return V3RescueDecision(
+                verdict=V3_RESCUE_GIVE_UP, reason=f"V3救援动作协议错误：{error}",
+                repair_action=repair_action, raw=text, error="invalid_repair_action",
+                coord_space=coord_space,
+            )
     return V3RescueDecision(
         verdict=verdict,
         reason=str(data.get("reason") or raw[:160] or verdict),
