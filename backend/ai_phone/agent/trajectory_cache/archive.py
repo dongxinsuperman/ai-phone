@@ -7,12 +7,15 @@
 
 ``plan_intent`` 生成逻辑（``_plan_intent_for_action`` 等）从旧 ``server.trajectory_cache.
 v3_service`` 整段迁来——纯文本加工、不依赖 DB，只换数据来源（DB 反推 → 执行第一手）。
-模型清洗（旧 V3PlanIntentCleaner）暂不接入，先用规则兜底（与 next 未配 cleaner 时一致）。
+模型清洗由 V3PlanIntentCleaner 整批请求，独立结构校验与有限修正后合回描述；
+未配置时保留规则候选，模型结构最终不合规时不回传本次缓存，执行字段保持不变。
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import time
+from copy import deepcopy
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from loguru import logger
@@ -27,10 +30,15 @@ from .ephemeral import (
     EphemeralClassification,
     _assistant_backend_to_ephemeral_backend,
     _call_vlm_with_images,
-    _extract_json_object,
-    _json_dumps_compact,
 )
 from .text_norm import normalize_run_semantic
+from .batch_plan_cleaner import (
+    MAX_BATCH_MODEL_CALLS,
+    BatchPlanValidationError,
+    batch_action_ids,
+    build_batch_plan_prompt,
+    validate_batch_plan_output,
+)
 
 V3_CACHE_SCHEMA_VERSION = 3
 
@@ -139,9 +147,8 @@ async def build_v3_archive(
             "plan_intent_cleaner": "rule",
         },
     }
-    # 模型清洗 plan_intent（next 默认启用、复用 .env classifier 配置）：覆盖规则候选，
-    # 提升 locator 定位语义质量。在归档后台 task 内 await（不阻塞 case 完成）；未配置 /
-    # 调用失败 / 输出冲突时回退保留规则候选。
+    # 整批模型清洗：结构先完整校验，再按原候选接受规则合回描述；最终结构不合规
+    # 则停止本次归档。仍在后台 task 内 await，不阻塞已结束的 case。
     await _clean_v3_plan_intents(payload=payload, goal=goal)
     return payload
 
@@ -864,8 +871,8 @@ def _clean_text(value: Any) -> str:
 
 # ---------------------------------------------------------------------------
 # plan_intent 模型清洗（自 server.trajectory_cache.v3_service 迁来，Agent 直连 VLM）。
-# next 默认启用（.env 实配 ephemeral_classifier=doubao-seed-1-6）；本侧在归档后台 task
-# 内 await，不阻塞 case 完成。未配置 / 调用失败 / 与规则候选冲突时回退保留规则候选。
+# 在归档后台 task 内 await，不阻塞 case 完成。整批结构校验失败时反馈模型修正；
+# 有限修正后仍失败则停止本次归档，不把不合规的模型输出写成有效缓存。
 # ---------------------------------------------------------------------------
 async def _clean_v3_plan_intents(*, payload: Dict[str, Any], goal: str) -> None:
     cleaner = V3PlanIntentCleaner()
@@ -875,20 +882,16 @@ async def _clean_v3_plan_intents(*, payload: Dict[str, Any], goal: str) -> None:
         )
         return
     actions = list(payload.get("actions") or [])
+    if not actions:
+        return
+    result = await cleaner.clean_actions(actions=actions, goal=goal)
+    # clean_actions 已按原始 ID 校验并重排；校验完成前没有修改任何缓存动作。
+    results = result["actions"]
     cleaned = 0
     rejected = 0
-    for action in actions:
+    for action, item in zip(actions, results):
         rule_plan_intent = _clean_text(action.get("plan_intent") or "")
-        try:
-            result = await cleaner.clean_action(action=action, goal=goal)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "V3 plan cleaner 调用失败，规则兜底 action_id={}: {}",
-                action.get("action_id"),
-                exc,
-            )
-            continue
-        plan_intent = _clean_text(result.get("plan_intent") or "")
+        plan_intent = _clean_text(item.get("plan_intent") or "")
         if not plan_intent:
             continue
         if not _should_accept_cleaned_plan_intent(action, plan_intent, rule_plan_intent):
@@ -896,19 +899,22 @@ async def _clean_v3_plan_intents(*, payload: Dict[str, Any], goal: str) -> None:
                 "source": "v3_plan_cleaner_rejected",
                 "rejected_plan_intent": plan_intent[:120],
                 "kept_plan_intent": rule_plan_intent[:120],
-                "reason": str(result.get("reason") or "")[:300],
-                "confidence": _safe_float(result.get("confidence"), default=0.0),
+                "reason": str(item.get("reason") or "")[:300],
+                "confidence": _safe_float(item.get("confidence"), default=0.0),
             }
             rejected += 1
             continue
         action["plan_intent"] = plan_intent[:120]
         action["plan_intent_meta"] = {
             "source": "v3_plan_cleaner",
-            "reason": str(result.get("reason") or "")[:300],
-            "confidence": _safe_float(result.get("confidence"), default=0.0),
+            "reason": str(item.get("reason") or "")[:300],
+            "confidence": _safe_float(item.get("confidence"), default=0.0),
         }
         cleaned += 1
     meta = payload.setdefault("meta", {})
+    meta["plan_intent_cleaner_mode"] = "batch"
+    meta["plan_intent_batch_model_calls"] = result["model_calls"]
+    meta["plan_intent_batch_repair_rounds"] = result["repair_rounds"]
     if cleaned:
         meta["plan_intent_cleaner"] = "model"
         meta["plan_intent_cleaned_actions"] = cleaned
@@ -960,37 +966,64 @@ class V3PlanIntentCleaner:
             missing.append("model")
         return f"plan cleaner 配置缺失：{','.join(missing)}" if missing else ""
 
-    async def clean_action(self, *, action: Dict[str, Any], goal: str = "") -> Dict[str, Any]:
-        backend, api_url, api_key, model, timeout_sec = self._config()
+    async def clean_actions(
+        self, *, actions: List[Dict[str, Any]], goal: str = "",
+    ) -> Dict[str, Any]:
+        """整批生成 + 明确错误反馈修正；单次/总耗时均有上限，执行参数不由模型生成。"""
+        source_actions = deepcopy(actions)
+        ids = batch_action_ids(source_actions)
         started = time.monotonic()
-        text = await _call_vlm_with_images(
-            backend=backend,
-            api_url=api_url,
-            api_key=api_key,
-            model=model,
-            timeout_sec=timeout_sec,
-            system="你是 V3 轨迹缓存的动作语义清洗器。只输出 JSON，不要 markdown。",
-            prompt=build_v3_plan_cleaner_prompt(action=action, goal=goal),
-            images=[],
-        )
-        data = _extract_json_object(text)
-        if not isinstance(data, dict):
-            raise ValueError(f"plan cleaner 输出不是 JSON: {text[:160]}")
-        data["elapsed_ms"] = int((time.monotonic() - started) * 1000)
-        return data
+        if not ids:
+            return {"actions": [], "model_calls": 0, "repair_rounds": 0, "elapsed_ms": 0}
+        backend, api_url, api_key, model, timeout_sec = self._config()
+        # 保持既有单次超时设置；首次生成 + 2次修正的总预算最多为该设置的3倍。
+        deadline = started + timeout_sec * MAX_BATCH_MODEL_CALLS
+        action_inputs = [{"action_id": a["action_id"], **_v3_action_brief(a)} for a in source_actions]
+        previous_output = ""
+        errors: List[str] = []
+        for attempt in range(1, MAX_BATCH_MODEL_CALLS + 1):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                errors.append("整批清洗总等待预算已耗尽")
+                break
+            call_timeout = min(timeout_sec, remaining)
+            prompt = build_batch_plan_prompt(
+                goal=goal, action_inputs=action_inputs, rules=_v3_plan_cleaner_rules(),
+                previous_output=previous_output, errors=errors,
+            )
+            try:
+                previous_output = await asyncio.wait_for(
+                    _call_vlm_with_images(
+                        backend=backend, api_url=api_url, api_key=api_key, model=model,
+                        timeout_sec=call_timeout,
+                        system="你是 V3 轨迹缓存的动作语义清洗器。只输出 JSON，不要 markdown。",
+                        prompt=prompt, images=[], aux_reasoning_effort=self.settings.aux_reasoning_effort,
+                    ),
+                    timeout=call_timeout,
+                )
+                rows = validate_batch_plan_output(previous_output, ids)
+            except BatchPlanValidationError as exc:
+                errors = exc.errors
+            except Exception as exc:  # 请求失败也不直接放弃，有限次数重试同一任务。
+                errors = [f"上次请求未成功：{type(exc).__name__}: {str(exc)[:200]}"]
+            else:
+                return {
+                    "actions": rows, "model_calls": attempt, "repair_rounds": attempt - 1,
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                }
+            logger.warning(
+                "V3 整批清洗未通过，第 {}/{} 次请求：{}",
+                attempt, MAX_BATCH_MODEL_CALLS, "; ".join(errors)[:800],
+            )
+        raise BatchPlanValidationError(["整批清洗有限修正后仍未通过，本次不归档", *errors])
 
 
-def build_v3_plan_cleaner_prompt(*, action: Dict[str, Any], goal: str = "") -> str:
-    """V3 cleaner 极简 prompt（自 next 迁来，逐字保留以对齐清洗效果）。"""
-    goal_text = (goal or "").strip() or "（未提供，按 thought 自身决定泛化粒度）"
+def _v3_plan_cleaner_rules() -> str:
+    """整批清洗逐条应用的语义规则，保留原有业务含义，不存在旧调用路径。"""
     return (
-        "请把一次成功轨迹中的当前 action 清洗成 V3 回放用的 plan_intent。\n"
-        "plan_intent 是下次回放时给定位模型使用的目标短语，定位模型会拿当前截图 + 这条短语去找控件。\n"
-        "因此 plan_intent 只描述「当前 action 这一步真正在做什么」，不写下一步、不写业务结果、不写页面状态。\n\n"
-        f"用户原始目标：{goal_text}\n"
-        f"当前 action：{_json_dumps_compact(_v3_action_brief(action))}\n\n"
-        "生成规则：\n"
-        "1. plan_intent 必须以中文动词开头：点击 / 输入 / 关闭 / 打开 / 选择 / 切换 / 滑动 / 长按 / 双击 / 返回 / 等待。\n"
+        "1. plan_intent 必须以中文动词开头：点击 / 输入 / 关闭 / 打开 / 选择 / 切换 / 滑动 / 拖拽 / 长按 / 双击 / 返回 / 按键 / 截图 / 等待。\n"
+        "   中文动词是行为描述，不是新的动作 type；click 可描述为选择/切换，drag 描述为拖拽，"
+        "scroll 描述为滑动，take_screenshot 描述为截图，press_home/press_back/key_event 可描述为返回/按键。\n"
         "2. thought 是英文时必须翻译为中文动词短语，禁止把英文整句照搬到 plan_intent。\n"
         "3. 截图上稳定可见的 UI 原文（按钮文字、标签名、输入框 placeholder、菜单项、品牌/产品名）\n"
         "   无论中英文都按原文照写，不翻译、不意译、不大小写改写，以便定位模型逐字符搜索。\n"
@@ -1025,12 +1058,6 @@ def build_v3_plan_cleaner_prompt(*, action: Dict[str, Any], goal: str = "") -> s
         "7. 不输出下一步、不输出业务结果、不输出原因分析、不输出页面状态、不输出坐标。\n"
         "8. 不确定时按 thought 里能识别到的「控件类型 + 大致位置」保守输出，不要加戏；\n"
         "   thought 完全无法识别任何控件信息时返回空字符串，由系统兜底，禁止凭空捏造或输出占位短语。\n\n"
-        "只输出 JSON：\n"
-        "{\n"
-        '  "plan_intent": "目标控件短语",\n'
-        '  "confidence": 0.0,\n'
-        '  "reason": "一句话说明为什么这样洗"\n'
-        "}\n"
     )
 
 

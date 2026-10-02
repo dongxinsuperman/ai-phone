@@ -4,6 +4,36 @@
 
 ## Unreleased
 
+### V3 缓存生成：整批语义清洗与完整性校验
+
+- 将每个动作分别请求模型的清洗流程改为整批生成 `plan_intent`；每条仍独立描述
+  首跑真实行为，不重新规划、合并或优化路线。执行类型、顺序、输入内容、包名和
+  其他执行参数由程序保留，模型只返回原动作 ID、描述、置信度与理由。
+- 程序校验 JSON 结构、字段、动作 ID 的完整性与唯一性，并按首跑 ID 顺序合回；
+  缺项、重复、未知 ID、重复 JSON 键等错误反馈模型修正。最多首次生成加两次
+  修正请求，每次沿用既有超时设置；默认单次上限 300 秒，总预算最多 900 秒。
+- 校验全部通过后再合回描述；空描述或与既有规则冲突时仍保留原规则候选。
+  最终结构不合规时不上传本次新缓存，不改变已完成 Case 的结论。
+  未配置清洗模型时仍使用规则候选；旧逐条模型调用入口已移除。
+- 清洗仍在首跑结束后的后台归档中执行，不把缓存生成耗时算成手机执行提速。
+  V3 缓存 schema 仍为 3，现有缓存无需清空，外部 Case/Map/Submission 接口不变。
+
+### V3 cache generation: batch semantic cleaning with integrity validation
+
+- Replace serial per-action model calls with batch `plan_intent` generation. Describe
+  each actual first-run action independently without replanning or optimizing the route.
+  Runtime retains action types, order, input contents, packages, and execution parameters;
+  model output contains only original action IDs, descriptions, confidence, and reasons.
+- Validate JSON structure, fields, complete/unique IDs, and duplicate JSON keys before
+  merging in source order. Feed errors back for at most two corrective calls after the
+  initial request. Existing per-call limits apply: 300 seconds by default, at most 900
+  seconds for the entire generation/repair budget.
+- Preserve rule candidates for empty or rejected descriptions. Invalid final structure
+  prevents uploading this new cache without changing the completed Case verdict.
+  Unconfigured cleaners still use rule candidates; the serial model entry point is removed.
+- Generation remains asynchronous after first-run completion. Cache schema stays at 3;
+  existing caches and external Case/Map/Submission interfaces remain compatible.
+
 ### 豆包 GUI Agent：主执行与缓存恢复统一为 Seed XML 协议
 
 - 豆包主 VLM 的动作输出由历史 `Thought: / Action:` 调用式 DSL 升级为

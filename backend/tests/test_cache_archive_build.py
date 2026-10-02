@@ -13,7 +13,7 @@
 
 注：``.env`` 实配了 plan cleaner（classifier=doubao），故默认 autouse fixture 把
 ``is_configured`` 短路成 False（走规则兜底、不真打外网）；单独的 cleaner 用例显式
-打开并 mock ``clean_action``，验证模型清洗覆盖规则的路径。
+打开并 mock ``clean_actions``，验证整批模型清洗覆盖规则的路径。
 """
 from __future__ import annotations
 
@@ -220,10 +220,12 @@ async def test_v3_archive_model_cleaner_overrides_rule(monkeypatch):
         archive_mod.V3PlanIntentCleaner, "is_configured", lambda self: True
     )
 
-    async def _fake_clean(self, *, action, goal=""):
-        return {"plan_intent": "点击顶部搜索框", "confidence": 0.95, "reason": "test"}
+    async def _fake_clean(self, *, actions, goal=""):
+        return {"actions": [{"action_id": a["action_id"], "plan_intent": "点击顶部搜索框",
+                             "confidence": 0.95, "reason": "test"} for a in actions],
+                "model_calls": 1, "repair_rounds": 0}
 
-    monkeypatch.setattr(archive_mod.V3PlanIntentCleaner, "clean_action", _fake_clean)
+    monkeypatch.setattr(archive_mod.V3PlanIntentCleaner, "clean_actions", _fake_clean)
 
     rec = TrajectoryRecorder("rcl")
     _feed_step(

@@ -60,7 +60,8 @@ from ai_phone.agent.trajectory_cache import (
     parse_v3_rescue_response,
 )
 from ai_phone.agent.trajectory_cache import ephemeral as ephemeral_module
-from ai_phone.agent.trajectory_cache.archive import build_v3_plan_cleaner_prompt
+from ai_phone.agent.trajectory_cache.archive import _v3_action_brief, _v3_plan_cleaner_rules
+from ai_phone.agent.trajectory_cache.batch_plan_cleaner import build_batch_plan_prompt
 from ai_phone.agent.trajectory_cache.recovery import (
     _extract_messages_text,
     _extract_responses_text,
@@ -75,6 +76,14 @@ from ai_phone.server.trajectory_cache import (
     normalize_requested_cache_mode,
     resolve_effective_cache_mode,
 )
+
+
+def _build_v3_batch_prompt(*, action, goal):
+    """测试正式整批提示词（仅一条测试数据），不恢复旧单条调用入口。"""
+    return build_batch_plan_prompt(
+        goal=goal, action_inputs=[{"action_id":"test-action", **_v3_action_brief(action)}],
+        rules=_v3_plan_cleaner_rules(),
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -243,7 +252,7 @@ def test_build_v3_plan_cleaner_prompt_classifies_text_stability_in_three_tiers()
     又不至于把"应用自带稳定 UI 锚点"也一刀泛化掉（导致海外 VLM 定位失语境）。
     """
 
-    prompt = build_v3_plan_cleaner_prompt(
+    prompt = _build_v3_batch_prompt(
         action={"type": "click", "thought": "占位 thought"},
         goal="占位 goal",
     )
@@ -253,7 +262,7 @@ def test_build_v3_plan_cleaner_prompt_classifies_text_stability_in_three_tiers()
 
 
 def test_build_v3_plan_cleaner_prompt_keeps_stable_ui_anchor_categories():
-    prompt = build_v3_plan_cleaner_prompt(
+    prompt = _build_v3_batch_prompt(
         action={"type": "click", "thought": "占位 thought"},
         goal="占位 goal",
     )
@@ -265,7 +274,7 @@ def test_build_v3_plan_cleaner_prompt_keeps_stable_ui_anchor_categories():
 
 
 def test_build_v3_plan_cleaner_prompt_generalizes_dynamic_screen_content():
-    prompt = build_v3_plan_cleaner_prompt(
+    prompt = _build_v3_batch_prompt(
         action={"type": "click", "thought": "占位 thought"},
         goal="占位 goal",
     )
@@ -280,7 +289,7 @@ def test_build_v3_plan_cleaner_prompt_generalizes_dynamic_screen_content():
 def test_build_v3_plan_cleaner_prompt_stays_business_neutral():
     """规则正文不应带任何业务专有名词，避免污染通用性。"""
 
-    prompt = build_v3_plan_cleaner_prompt(
+    prompt = _build_v3_batch_prompt(
         action={"type": "click", "thought": "占位 thought"},
         goal="占位 goal",
     )
