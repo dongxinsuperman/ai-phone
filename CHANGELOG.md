@@ -4,6 +4,38 @@
 
 ## Unreleased
 
+### V3 归档：整批语义清洗同时标记瞬态清障
+
+- V3 在既有整批描述清洗请求中同时返回每条动作的瞬态清障分类，不再调用 V2
+  逐条前后图片 classifier，也不上传新 V3 的弹窗对照图片。保留原动作 ID、顺序、
+  执行参数和 Thought；结构错误仍在同一批内有限修正，校验完成前不写入部分结果。
+- 仅对高置信、低风险且明确非业务的清障动作标记 `optional_ephemeral`；业务确认、
+  登录/权限/安全、Case 要求及不确定分类保留 `business_required`。分类和原动作
+  描述分别合回；同一首跑步骤的多动作共用 Thought 时不冒险标记可跳过。
+- V3 使用独立的 `v3_ephemeral.py` 规则、gate 提示词和解析器，由 V2 逻辑复制后
+  独立维护，而非共用 V2 业务函数。新标记以当前回放截图确认弹窗是否缺席及后续
+  是否可衔接，不能凭历史标签直接跳过；旧 V3 缓存的前后图路径与缺图保守行为保留。
+- 明确救援模型的通用救援身份：定位失败时恢复可续接缓存的状态，不机械重复动作，
+  不重规划完整 Case。不增加业务专用路线、坐标规则或模型调用次数。
+- 沿用既有开关、模型、推理强度、超时和救援预算；V1/V2、首跑与最终断言不变。
+  无新增依赖、数据库迁移或外部请求字段。新语义标记存于既有 `ephemeral_meta`，
+  更新并重启空闲 Agent 后生效；旧 Agent 缺对照图时仍走原动作重定位保守路径。
+
+### V3 archive: combine intent cleaning and semantic popup tagging
+
+- Classify incidental popup cleanup in the existing batch text-cleaning request. Remove
+  V3's per-action image classifier calls and new popup-image uploads; preserve action IDs,
+  order, parameters and Thought, with the same bounded whole-batch validation/repair.
+- Keep risky, ambiguous and Case-required operations mandatory. V3 owns copied popup
+  acceptance rules, gate prompts and parsing independently of V2 business implementations;
+  only the existing low-level model transport/configuration is reused.
+- New semantic tags require current-frame gate evidence before skipping. Keep legacy V3
+  image-based cache handling and conservative missing-image behavior. Clarify the generic
+  rescue role without adding business-specific navigation or fixed gestures.
+- No new settings, dependencies, database migrations or external request fields. Preserve
+  V1/V2, first runs, final assertions, models and budgets. Requires an idle Agent update/restart;
+  older Agents conservatively relocate the original action when comparison images are absent.
+
 ### V3 救援输出：对齐已有执行能力
 
 - 用同一份动作契约生成救援提示中的完整 JSON 动作 schema，并在解析与执行前

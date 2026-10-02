@@ -39,6 +39,7 @@ def batch_action_ids(actions: List[Dict[str, Any]]) -> List[str]:
 def build_batch_plan_prompt(
     *, goal: str, action_inputs: List[Dict[str, Any]], rules: str,
     previous_output: str = "", errors: List[str] | None = None,
+    classify_ephemeral: bool = False, min_confidence: float = 0.85,
 ) -> str:
     """正式整批提示词；语义规则和每条原始事实由归档层提供。"""
     prompt = (
@@ -59,12 +60,40 @@ def build_batch_plan_prompt(
         f"用户原始目标：{goal.strip() or '（未提供，按 thought 自身决定泛化粒度）'}\n"
         f"全部 action：{json.dumps(action_inputs, ensure_ascii=False, separators=(',', ':'))}\n\n"
         f"生成规则（对每条动作独立适用）：\n{rules}"
-        "只输出完整 JSON 对象，顶层只允许 actions。每条必须且只能具有：\n"
+        "只输出完整 JSON 对象，顶层只允许 actions。每条必须包含以下基础字段；"
+        "未启用同批瞬态标记时只允许这些字段，启用时还必须包含下文的 ephemeral：\n"
         "action_id（原始字符串 ID）、plan_intent（字符串，最多120字）、"
         "confidence（0到1的数字）、reason（字符串，一句解释，最多300字）。\n"
         '{"actions":[{"action_id":"原始ID","plan_intent":"目标控件短语",'
         '"confidence":0.9,"reason":"一句解释"}]}\n'
     )
+    if classify_ephemeral:
+        prompt += (
+            "\n【同批任务：瞬态清障标记】\n"
+            "在同一个 actions 数组的每条结果中增加 ephemeral 对象，不另起请求。"
+            "依据完整 Case、各条原始 thought 与前后动作语义判断；本次没有附图，"
+            "不得声称已经核验图片。plan_intent 的独立动作描述规则仍不变。\n"
+            "只有 thought 明确说明非业务弹窗/浮层阻挡原业务，需要清障后继续，"
+            "且该清障不属于 Case 要求，才可标 optional_ephemeral。"
+            "不能只因动作是关闭/取消、或 Case 没提弹窗就标可跳过。\n"
+            "交易、支付、提交、保存、授权、登录、安全、验证码、权限、业务确认、"
+            "二次确认及 Case 要求的引导/弹窗均为 business_required。"
+            "信息不足或分类不确定也必须 business_required。\n"
+            f"optional_ephemeral 必须低风险、skip_if_absent=true、confidence>={min_confidence:.2f}；"
+            "只用于 click/double_tap/long_press/press_back 清障动作。"
+            "此标记不是直接跳过许可，回放仍需当前截图确认弹窗缺席且后续可衔接。\n"
+            "ephemeral 必须且只能包含 role、category、confidence、skip_if_absent、"
+            "business_risk、reason；role 为 business_required 或 optional_ephemeral；"
+            "category 为 marketing_popup/upgrade_popup/system_notice/eye_protection/"
+            "guide_overlay/non_business_blocker/business_required_modal/confirm_modal/"
+            "payment_or_trade_confirm/login_or_security/permission_required/case_goal_related/uncertain；"
+            "confidence 为0到1数字，skip_if_absent 为布尔值，business_risk 为low/medium/high，"
+            "reason 为最多300字的一句理由。\n"
+            '完整单条示例：{"action_id":"原始ID","plan_intent":"点击取消升级提示",'
+            '"confidence":0.9,"reason":"原动作描述","ephemeral":'
+            '{"role":"optional_ephemeral","category":"upgrade_popup","confidence":0.95,'
+            '"skip_if_absent":true,"business_risk":"low","reason":"升级提示清障后继续业务"}}\n'
+        )
     if errors:
         prompt += (
             "\n【修正本次输出】\n上一版尚未通过程序校验，不能保存。"
@@ -76,7 +105,9 @@ def build_batch_plan_prompt(
     return prompt
 
 
-def validate_batch_plan_output(text: str, expected_ids: List[str]) -> List[Dict[str, Any]]:
+def validate_batch_plan_output(
+    text: str, expected_ids: List[str], *, classify_ephemeral: bool = False,
+) -> List[Dict[str, Any]]:
     """严格检查完整结构；只重排已有合法条目，不补条、不猜描述、不改执行字段。"""
     try:
         data = json.loads(text, object_pairs_hook=_unique_json_object)
@@ -103,8 +134,9 @@ def validate_batch_plan_output(text: str, expected_ids: List[str]) -> List[Dict[
         else:
             ids.append(action_id)
             by_id[action_id] = row
-        missing = _OUTPUT_FIELDS - set(row)
-        extra = set(row) - _OUTPUT_FIELDS
+        fields = _OUTPUT_FIELDS | {"ephemeral"} if classify_ephemeral else _OUTPUT_FIELDS
+        missing = fields - set(row)
+        extra = set(row) - fields
         if missing:
             errors.append(f"{label}：缺少字段 {sorted(missing)}")
         if extra:
@@ -119,6 +151,9 @@ def validate_batch_plan_output(text: str, expected_ids: List[str]) -> List[Dict[
         if (isinstance(confidence, bool) or not isinstance(confidence, (int, float))
                 or not 0 <= confidence <= 1 or not math.isfinite(confidence)):
             errors.append(f"{label}：confidence 必须是0到1的有限数字")
+        if classify_ephemeral:
+            from .v3_ephemeral import validate_batch_ephemeral_fields
+            errors.extend(f"{label}：{error}" for error in validate_batch_ephemeral_fields(row.get("ephemeral")))
     duplicates = [i for i, count in Counter(ids).items() if count > 1]
     if duplicates:
         errors.append(f"重复 action_id：{duplicates}")

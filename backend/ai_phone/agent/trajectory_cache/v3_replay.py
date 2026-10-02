@@ -33,17 +33,17 @@ from ai_phone.agent.trajectory_cache._overseas_chat import (
     main_vlm_is_overseas_cu,
     overseas_cu_to_chat_config,
 )
-from ai_phone.agent.trajectory_cache.ephemeral import (
+from ai_phone.agent.trajectory_cache.v3_ephemeral import (
     GATE_ASSERT_FAIL,
     GATE_ESCALATE,
     GATE_EXECUTE_ORIGINAL,
     GATE_EXECUTE_REPAIR,
     GATE_SKIP,
     ROLE_OPTIONAL_EPHEMERAL,
-    CacheEphemeralGateVerifier,
+    V3EphemeralGateVerifier as CacheEphemeralGateVerifier,
     EphemeralGateDecision,
-    _call_vlm_with_images,
 )
+from ai_phone.agent.trajectory_cache.ephemeral import _call_vlm_with_images
 from ai_phone.agent.trajectory_cache.recovery import (
     _extract_messages_text,
     _extract_responses_text,
@@ -709,7 +709,10 @@ class V3RescueVerifier:
                     timeout_sec=timeout_sec,
                     system=(
                         "你是缓存回放的局部恢复模型。"
-                        "只判断当前页面如何衔接缓存动作，并输出 JSON。"
+                        "你正在执行救援任务，不是常规执行、坐标定位或重新规划整个 Case。"
+                        "职责是理解定位失败后如何恢复可继续回放的状态；结合整体目标、"
+                        "当前缓存动作、最新截图和已执行救援记录选择恢复方式。"
+                        "只输出本轮恢复裁决 JSON。"
                     ),
                     prompt=prompt,
                     images=[("current_replay", current_bytes)],
@@ -1497,7 +1500,8 @@ class V3ReplayRunner:
             )
         popup_before = self._ephemeral_meta_image_bytes(meta, "cached_popup_before")
         cached_after = self._ephemeral_meta_image_bytes(meta, "cached_after")
-        if not popup_before or not cached_after:
+        semantic_only = meta.get("classification_source") == "v3_batch_semantic"
+        if not semantic_only and (not popup_before or not cached_after):
             await self._log_v3_stage(
                 index,
                 "辅助",
@@ -1887,7 +1891,14 @@ def build_v3_rescue_prompt(
     coord_hint = "截图实际像素坐标" if coord_space == "absolute" else "0-1000 归一化坐标"
     return (
         "缓存回放中，当前步骤的目标没有在截图中定位到。\n"
-        "请做局部恢复裁决，只输出 JSON，不要 markdown。\n\n"
+        "你的身份是救援模型：本次因定位失败而介入，不是在执行普通缓存动作。\n"
+        "你的使命是恢复到能够继续当前或后续缓存步骤的状态，而不是机械重复原动作，"
+        "也不是从头执行整个 Case。以整体目标约束恢复，不改变原始业务要求。\n"
+        "每轮只裁决一次局部恢复；已执行动作仍未使目标可定位时，重新评估恢复方式，"
+        "不要把动作调用完成当成恢复成功，也不要仅因已尝试过就继续同样的尝试。\n"
+        "当前目标重新可定位后，由回放执行器续接；若当前步骤已满足且能衔接后续，"
+        "可返回 CONTINUE_REPLAY；确认局部无法恢复才 GIVE_UP。\n"
+        "只输出 JSON，不要 markdown。\n\n"
         f"整体目标：{goal}\n"
         "整体目标是本次 Run 的完整原始语义，缓存步骤不能替代它。\n"
         f"本次原始 Function Map（业务上下文）：\n{function_map_context or '（未提供）'}\n\n"
@@ -1926,7 +1937,8 @@ def build_v3_rescue_prompt(
         "有明显可关闭遮挡层则 POPUP_CLOSE 并给关闭动作；"
         "需要一个安全局部动作才能回到缓存路线则 REPAIR_ACTION；"
         "如果当前步骤已完成、页面已经能衔接下一条缓存动作，则 CONTINUE_REPLAY；"
-        "页面不对、目标不存在或不确定则 GIVE_UP。不要重跑完整任务。"
+        "确认无法通过安全局部恢复衔接缓存则 GIVE_UP；信息不确定时不能冒险执行或放行。"
+        "不要重跑完整任务。"
     )
 
 

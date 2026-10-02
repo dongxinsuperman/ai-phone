@@ -40,6 +40,7 @@ from .batch_plan_cleaner import (
     build_batch_plan_prompt,
     validate_batch_plan_output,
 )
+from .v3_ephemeral import batch_ephemeral_metadata
 
 V3_CACHE_SCHEMA_VERSION = 3
 
@@ -131,13 +132,8 @@ async def build_v3_archive(
         _normalize_v3_action(action, source_vlm_backend=source_vlm_backend)
         for action in raw_actions
     ]
-    # V3 复用 V2 的保守分类，但只保存弹窗前/后证据，不生成截图对齐路标。
-    # 旧内部调用未提供上传能力时，保持 business_required，不生成缺图的可跳过动作。
-    if upload_image is not None:
-        await _classify_ephemeral_actions(
-            actions, steps, [], goal=goal, upload_image=upload_image,
-            require_complete_evidence=True,
-        )
+    # V3 弹窗角色与描述在同一次整批文本请求中生成，不调用 V2 逐条图片分类。
+    # upload_image 参数保留给旧调用方兼容；V3 新归档不上传弹窗对照图。
     payload: Dict[str, Any] = {
         "cache_mode": "v3",
         "device_code": device_serial,
@@ -909,7 +905,21 @@ async def _clean_v3_plan_intents(*, payload: Dict[str, Any], goal: str) -> None:
     results = result["actions"]
     cleaned = 0
     rejected = 0
+    optional_actions = 0
+    source_step_counts = Counter(a.get("source_step") for a in actions if a.get("source_step") is not None)
     for action, item in zip(actions, results):
+        if result.get("classify_ephemeral"):
+            popup_meta = batch_ephemeral_metadata(
+                action, item["ephemeral"], min_confidence=result["ephemeral_min_confidence"],
+            )
+            # 同一首跑步骤的多个动作共用 thought，无法明确归属清障意图时不标可跳过。
+            if source_step_counts[action.get("source_step")] > 1:
+                popup_meta = None
+            action["role"] = ROLE_OPTIONAL_EPHEMERAL if popup_meta else ROLE_BUSINESS_REQUIRED
+            action.pop("ephemeral_meta", None)
+            if popup_meta:
+                action["ephemeral_meta"] = popup_meta
+                optional_actions += 1
         rule_plan_intent = _clean_text(action.get("plan_intent") or "")
         plan_intent = _clean_text(item.get("plan_intent") or "")
         if not plan_intent:
@@ -935,6 +945,10 @@ async def _clean_v3_plan_intents(*, payload: Dict[str, Any], goal: str) -> None:
     meta["plan_intent_cleaner_mode"] = "batch"
     meta["plan_intent_batch_model_calls"] = result["model_calls"]
     meta["plan_intent_batch_repair_rounds"] = result["repair_rounds"]
+    meta["plan_intent_batch_elapsed_ms"] = result["elapsed_ms"]
+    if result.get("classify_ephemeral"):
+        meta["ephemeral_classifier_mode"] = "v3_batch_semantic"
+        meta["ephemeral_optional_actions"] = optional_actions
     if cleaned:
         meta["plan_intent_cleaner"] = "model"
         meta["plan_intent_cleaned_actions"] = cleaned
@@ -999,6 +1013,11 @@ class V3PlanIntentCleaner:
         # 保持既有单次超时设置；首次生成 + 2次修正的总预算最多为该设置的3倍。
         deadline = started + timeout_sec * MAX_BATCH_MODEL_CALLS
         action_inputs = [{"action_id": a["action_id"], **_v3_action_brief(a)} for a in source_actions]
+        classify_ephemeral = bool(
+            self.settings.trajectory_cache_ephemeral_action_enabled
+            and self.settings.trajectory_cache_ephemeral_classify_enabled
+        )
+        min_confidence = float(self.settings.trajectory_cache_ephemeral_classify_min_confidence)
         previous_output = ""
         errors: List[str] = []
         for attempt in range(1, MAX_BATCH_MODEL_CALLS + 1):
@@ -1010,18 +1029,20 @@ class V3PlanIntentCleaner:
             prompt = build_batch_plan_prompt(
                 goal=goal, action_inputs=action_inputs, rules=_v3_plan_cleaner_rules(),
                 previous_output=previous_output, errors=errors,
+                classify_ephemeral=classify_ephemeral, min_confidence=min_confidence,
             )
             try:
                 previous_output = await asyncio.wait_for(
                     _call_vlm_with_images(
                         backend=backend, api_url=api_url, api_key=api_key, model=model,
                         timeout_sec=call_timeout,
-                        system="你是 V3 轨迹缓存的动作语义清洗器。只输出 JSON，不要 markdown。",
+                        system=("你是 V3 轨迹缓存的整批动作语义清洗器。"
+                                "按请求同时整理描述与清障角色，不执行动作。只输出 JSON，不要 markdown。"),
                         prompt=prompt, images=[], aux_reasoning_effort=self.settings.aux_reasoning_effort,
                     ),
                     timeout=call_timeout,
                 )
-                rows = validate_batch_plan_output(previous_output, ids)
+                rows = validate_batch_plan_output(previous_output, ids, classify_ephemeral=classify_ephemeral)
             except BatchPlanValidationError as exc:
                 errors = exc.errors
             except Exception as exc:  # 请求失败也不直接放弃，有限次数重试同一任务。
@@ -1030,6 +1051,8 @@ class V3PlanIntentCleaner:
                 return {
                     "actions": rows, "model_calls": attempt, "repair_rounds": attempt - 1,
                     "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    "classify_ephemeral": classify_ephemeral,
+                    "ephemeral_min_confidence": min_confidence,
                 }
             logger.warning(
                 "V3 整批清洗未通过，第 {}/{} 次请求：{}",

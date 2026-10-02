@@ -258,7 +258,7 @@ async def test_v3_archive_model_cleaner_overrides_rule(monkeypatch):
     async def _fake_clean(self, *, actions, goal=""):
         return {"actions": [{"action_id": a["action_id"], "plan_intent": "点击顶部搜索框",
                              "confidence": 0.95, "reason": "test"} for a in actions],
-                "model_calls": 1, "repair_rounds": 0}
+                "model_calls": 1, "repair_rounds": 0, "elapsed_ms": 0}
 
     monkeypatch.setattr(archive_mod.V3PlanIntentCleaner, "clean_actions", _fake_clean)
 
@@ -495,16 +495,27 @@ def v3_popup_source(monkeypatch):
         trajectory_cache_ephemeral_classifier_model="unit-model",
     )
     monkeypatch.setattr(archive_mod, "get_settings", lambda: settings)
-    monkeypatch.setattr(ephemeral, "get_settings", lambda: settings)
+    monkeypatch.setattr(archive_mod.V3PlanIntentCleaner, "is_configured", lambda self: True)
+    monkeypatch.setattr(archive_mod.V3PlanIntentCleaner, "_config", lambda self: (
+        "openai_compatible", "https://unit.invalid/chat/completions", "unit-key", "unit-model", 300.0,
+    ))
     output = {"role": "optional_ephemeral", "category": "marketing_popup", "confidence": 0.95,
               "skip_if_absent": True, "business_risk": "low", "reason": "偶现推荐弹窗清障"}
     calls = []
 
     async def classify(**kwargs):
         calls.append(kwargs)
-        return json.dumps(output, ensure_ascii=False)
+        assert kwargs["images"] == []
+        inputs = json.loads(kwargs["prompt"].split("全部 action：", 1)[1].split("\n", 1)[0])
+        return json.dumps({"actions": [{"action_id": a["action_id"],
+            "plan_intent": "点击推荐弹窗的关闭按钮", "confidence": 0.95, "reason": "描述原动作",
+            **({"ephemeral": output} if "【同批任务：瞬态清障标记】" in kwargs["prompt"] else {})}
+            for a in inputs]}, ensure_ascii=False)
 
-    monkeypatch.setattr(ephemeral, "_call_vlm_with_images", classify)
+    monkeypatch.setattr(archive_mod, "_call_vlm_with_images", classify)
+    async def forbidden_v2_call(**kwargs):
+        pytest.fail("V3 不应请求 V2 的逐条图片分类模型")
+    monkeypatch.setattr(ephemeral, "_call_vlm_with_images", forbidden_v2_call)
     steps = [{"step": 1, "thought": "关闭推荐弹窗", "actions": [
         {"action": "click", "point": [100, 200]},
     ], "before_bytes": _jpeg_bytes((20, 40, 60)), "after_bytes": _jpeg_bytes((60, 40, 20))}]
@@ -512,7 +523,7 @@ def v3_popup_source(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_v3_archive_marks_optional_popup_with_both_images_and_no_landmarks(v3_popup_source):
+async def test_v3_archive_marks_popup_in_same_batch_without_images_or_uploads(v3_popup_source):
     settings, output, calls, steps = v3_popup_source
     uploaded = []
 
@@ -520,18 +531,22 @@ async def test_v3_archive_marks_optional_popup_with_both_images_and_no_landmarks
         uploaded.append(data)
         return f"/files/eph/{len(uploaded)}.jpg"
 
+    settings.trajectory_cache_ephemeral_classify_enabled = False
     baseline = await build_v3_archive(goal="进入首页", device_serial="unit-device", source_run_id="r",
                                       screen_size=(1000, 2000), steps=steps)
+    settings.trajectory_cache_ephemeral_classify_enabled = True
+    calls.clear()
     result = await build_v3_archive(goal="进入首页", device_serial="unit-device", source_run_id="r",
                                    screen_size=(1000, 2000), steps=steps, upload_image=upload)
     original, marked = baseline["actions"][0], result["actions"][0]
     assert marked["role"] == "optional_ephemeral"
-    assert marked["ephemeral_meta"]["cached_popup_before_snapshot"] == "/files/eph/1.jpg"
-    assert marked["ephemeral_meta"]["cached_after_snapshot"] == "/files/eph/2.jpg"
-    assert uploaded == [steps[0]["before_bytes"], steps[0]["after_bytes"]]
+    assert marked["ephemeral_meta"]["classification_source"] == "v3_batch_semantic"
+    assert not any("snapshot" in k for k in marked["ephemeral_meta"])
+    assert uploaded == []
     assert len(calls) == 1
     assert "state_landmarks" not in result
     assert result["meta"]["source_schema_version"] == 3
+    assert result["meta"]["plan_intent_batch_model_calls"] == 1
     assert {k: v for k, v in marked.items() if k not in {"role", "ephemeral_meta"}} == {
         k: v for k, v in original.items() if k != "role"
     }
@@ -539,25 +554,17 @@ async def test_v3_archive_marks_optional_popup_with_both_images_and_no_landmarks
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("condition", [
-    "disabled", "no_uploader", "missing_before", "missing_after", "action_chain",
-    "classifier_error", "business_modal", "low_confidence", "high_risk", "not_skippable",
-    "before_upload_empty", "after_upload_empty", "after_upload_error",
+    "disabled", "classify_disabled", "action_chain",
+    "business_modal", "low_confidence", "high_risk", "not_skippable",
 ])
 async def test_v3_archive_keeps_required_when_optional_evidence_is_not_safe(v3_popup_source, monkeypatch, condition):
     settings, output, calls, steps = v3_popup_source
     if condition == "disabled":
         settings.trajectory_cache_ephemeral_action_enabled = False
-    elif condition.startswith("missing_"):
-        steps[0].pop(condition.replace("missing_", "") + "_bytes")
+    elif condition == "classify_disabled":
+        settings.trajectory_cache_ephemeral_classify_enabled = False
     elif condition == "action_chain":
         steps[0]["actions"].append({"action": "click", "point": [300, 400]})
-    elif condition == "classifier_error":
-        from ai_phone.agent.trajectory_cache import ephemeral
-
-        async def fail(**kwargs):
-            raise RuntimeError("unit failure")
-
-        monkeypatch.setattr(ephemeral, "_call_vlm_with_images", fail)
     elif condition == "business_modal":
         output["category"] = "payment_or_trade_confirm"
     elif condition == "low_confidence":
@@ -570,24 +577,16 @@ async def test_v3_archive_keeps_required_when_optional_evidence_is_not_safe(v3_p
 
     async def upload(data):
         uploads.append(data)
-        if condition == "before_upload_empty":
-            return ""
-        if len(uploads) == 2:
-            if condition == "after_upload_empty":
-                return ""
-            if condition == "after_upload_error":
-                raise RuntimeError("unit upload failure")
         return f"/files/eph/{len(uploads)}.jpg"
 
     result = await build_v3_archive(
         goal="进入首页", device_serial="unit-device", source_run_id="r", steps=steps,
-        upload_image=None if condition == "no_uploader" else upload,
+        upload_image=upload,
     )
     assert len(result["actions"]) == len(steps[0]["actions"])
     assert all(a["role"] == "business_required" and "ephemeral_meta" not in a for a in result["actions"])
-    if condition in {"disabled", "no_uploader", "missing_before", "missing_after", "action_chain"}:
-        assert calls == []
-        assert uploads == []
+    assert len(calls) == 1  # 描述清洗和分类始终同批，没有额外分类请求。
+    assert uploads == []
 
 
 @pytest.mark.asyncio
@@ -597,7 +596,7 @@ async def test_v3_archive_keeps_required_when_optional_evidence_is_not_safe(v3_p
     ("EXECUTE_REPAIR", [("back",)], 0, 1),
     ("fetch_failure", [("click", 111, 222)], 1, 0),
 ])
-async def test_generated_v3_popup_cache_prefetches_evidence_and_uses_gate(
+async def test_generated_v3_semantic_popup_uses_current_frame_and_legacy_cache_still_falls_back(
     v3_popup_source, monkeypatch, tmp_path, mode, expected_calls, locator_calls, gate_calls,
 ):
     """真实归档/预取/回放代码联通；模型和设备是假件，不冒充真机验收。"""
@@ -606,7 +605,7 @@ async def test_generated_v3_popup_cache_prefetches_evidence_and_uses_gate(
     import httpx
     import tempfile
     from ai_phone.agent.trajectory_cache import orchestrate, v3_replay, assertion
-    from ai_phone.agent.trajectory_cache.ephemeral import EphemeralGateDecision
+    from ai_phone.agent.trajectory_cache.v3_ephemeral import EphemeralGateDecision
 
     settings, output, classifier_calls, steps = v3_popup_source
     settings.trajectory_cache_page_stable_enabled = False
@@ -623,6 +622,14 @@ async def test_generated_v3_popup_cache_prefetches_evidence_and_uses_gate(
         screen_size=(1000, 2000), steps=steps, upload_image=upload,
     )
     snapshot["cache_key"] = "unit-v3-popup"
+    if mode == "fetch_failure":
+        # 旧缓存仍要求其已有图片可读；缺图不能冒充新语义模式跳过。
+        meta = snapshot["actions"][0]["ephemeral_meta"]
+        meta.pop("classification_source")
+        meta["cached_popup_before_snapshot"] = "/files/eph/1.jpg"
+        meta["cached_after_snapshot"] = "/files/eph/2.jpg"
+        remote_images.update({"/files/eph/1.jpg": steps[0]["before_bytes"],
+                              "/files/eph/2.jpg": steps[0]["after_bytes"]})
     # V3 即使收到旧快照里的路标，也不能因为预取证据而重新接入 V2 对齐。
     snapshot["state_landmarks"] = [{"image_url": "/files/unused-landmark.jpg"}]
     original = deepcopy(snapshot)
@@ -677,8 +684,8 @@ async def test_generated_v3_popup_cache_prefetches_evidence_and_uses_gate(
 
         async def decide(self, **kwargs):
             gated.append(kwargs)
-            assert kwargs["cached_popup_before_bytes"] == steps[0]["before_bytes"]
-            assert kwargs["cached_after_bytes"] == steps[0]["after_bytes"]
+            assert kwargs["cached_popup_before_bytes"] is None
+            assert kwargs["cached_after_bytes"] is None
             assert kwargs["current_bytes"] == steps[0]["after_bytes"]
             return EphemeralGateDecision(verdict=mode, reason="unit gate",
                                          repair_action={"type": "press_back"})

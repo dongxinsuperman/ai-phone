@@ -32,7 +32,13 @@ def cleaner():
         trajectory_cache_ephemeral_classifier_api_url="",
         trajectory_cache_ephemeral_classifier_model="",
         trajectory_cache_ephemeral_classifier_timeout_sec=300,
+        trajectory_cache_ephemeral_action_enabled=False,
     ))
+
+
+@pytest.fixture(autouse=True)
+def isolated_settings(monkeypatch):
+    monkeypatch.setattr(archive, "get_settings", lambda: cleaner().settings)
 
 
 def test_batch_keeps_original_rules_and_independent_action_facts():
