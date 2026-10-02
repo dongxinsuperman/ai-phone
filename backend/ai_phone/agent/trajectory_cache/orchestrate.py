@@ -53,6 +53,7 @@ async def run_v3_replay(
     bridge: RunnerBridge,
     snapshot: Dict[str, Any],
     settings: Any,
+    function_map_context: Optional[str] = None,
 ) -> None:
     """命中 V3 缓存 → Agent 本地回放 → 断言 → run_done（缓存通道）。
 
@@ -103,6 +104,7 @@ async def run_v3_replay(
         capture_after_each_action=True,
         goal=goal,
         main_vlm_backend=source_backend,
+        function_map_context=function_map_context,
     )
     replay_result = await runner.run()
 

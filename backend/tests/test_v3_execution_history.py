@@ -37,23 +37,103 @@ class Rescue:
 
     def __init__(self, decision):
         self.decision = decision
+        self.calls = []
 
     def is_configured(self):
         return True
 
     async def decide(self, **kwargs):
+        self.calls.append(deepcopy(kwargs))
         return self.decision
+
+
+@pytest.mark.asyncio
+async def test_rescue_request_contains_full_context_and_only_latest_image(monkeypatch):
+    from ai_phone.agent.trajectory_cache import v3_replay as module
+
+    goal = "完整 Case 原文\n前置、操作过程和预期结果均保留"
+    map_text = "  Map 开头\n" + "场景说明" * 1200 + "\nMap 结尾  "
+    history = [{"sequence": 1, "index": 7, "source": "rescue_repair",
+                "runtime_status": "completed_without_exception",
+                "action": {"type": "drag", "start": {"x": 500, "y": 1500},
+                           "end": {"x": 500, "y": 500}}, "reason": "向下找按钮"}]
+    original = deepcopy(history)
+    captured = {}
+
+    async def call(**kwargs):
+        captured.update(kwargs)
+        return '{"verdict":"WAIT","reason":"列表加载中","wait_ms":100}'
+
+    verifier = module.V3RescueVerifier(settings=Settings(_env_file=None))
+    monkeypatch.setattr(verifier, "is_configured", lambda: True)
+    monkeypatch.setattr(verifier, "_config", lambda: (
+        "openai_compatible", "https://unit.invalid/chat/completions", "unit-key", "unit-model", 300,
+    ))
+    monkeypatch.setattr(module, "_call_vlm_with_images", call)
+    decision = await verifier.decide(
+        goal=goal, trajectory={"run_semantic_text": "历史缓存语义不能替代完整原文"},
+        action=action(7), previous_action=action(6), next_action=action(8),
+        current_bytes=b"latest-image", miss_reason="第二次仍未找到按钮",
+        function_map_context=map_text, rescue_history=history,
+    )
+    assert decision.verdict == "WAIT"
+    assert goal in captured["prompt"]
+    assert map_text in captured["prompt"]
+    assert "第二次仍未找到按钮" in captured["prompt"]
+    assert '"source": "rescue_repair"' in captured["prompt"]
+    assert '"y": 1500' in captured["prompt"]
+    assert "设备像素" in captured["prompt"]
+    assert captured["images"] == [("current_replay", b"latest-image")]
+    assert history == original
+
+
+def test_rescue_prompt_accepts_legacy_call_without_map_or_history():
+    from ai_phone.agent.trajectory_cache.v3_replay import build_v3_rescue_prompt
+
+    prompt = build_v3_rescue_prompt(
+        goal="原目标", trajectory={}, action=action(), previous_action=None,
+        next_action=None, miss_reason="无", coord_space="normalized",
+    )
+    assert "整体目标：原目标" in prompt
+    assert "（未提供）" in prompt
+    assert "空列表表示尚未救援" in prompt
+    assert "CONTINUE_REPLAY | GIVE_UP" in prompt
+
+
+def test_v3_rescue_map_respects_existing_disable_switch(monkeypatch):
+    from ai_phone.agent.trajectory_cache import v3_replay as module
+
+    settings = Settings(_env_file=None, function_map_context_enabled=False)
+    monkeypatch.setattr(module, "get_settings", lambda: settings)
+    runner = module.V3ReplayRunner(
+        driver=Driver(), trajectory={"actions": []}, function_map_context="不应发送的Map",
+    )
+    assert runner.function_map_context is None
+
+
+@pytest.mark.parametrize("explicit_limit,expected", [(None, 10), (3, 3), (0, 0)])
+def test_v3_rescue_default_is_ten_and_explicit_limits_still_win(monkeypatch, explicit_limit, expected):
+    from ai_phone.agent.trajectory_cache import v3_replay as module
+
+    overrides = {} if explicit_limit is None else {
+        "trajectory_cache_v3_rescue_max_calls_per_replay": explicit_limit,
+    }
+    settings = Settings(_env_file=None, **overrides)
+    monkeypatch.setattr(module, "get_settings", lambda: settings)
+    runner = module.V3ReplayRunner(driver=Driver(), trajectory={"actions": []})
+    assert runner._v3_rescue_max_calls == expected
 
 
 @pytest.fixture
 def make_runner(monkeypatch):
-    def create(actions, *, dispatcher=None, rescue=None):
+    def create(actions, *, dispatcher=None, rescue=None, goal=None, function_map_context=None):
         stream = BytesIO()
         Image.new("RGB", (64, 128), "white").save(stream, "JPEG")
         frame = stream.getvalue()
         runner = V3ReplayRunner(
             driver=Driver(), trajectory={"actions": deepcopy(actions)},
             dispatcher=dispatcher or Dispatcher(), rescue_verifier=rescue,
+            goal=goal, function_map_context=function_map_context,
         )
 
         async def stable(*args, **kwargs):
@@ -69,6 +149,95 @@ def make_runner(monkeypatch):
         return runner
 
     return create
+
+
+@pytest.mark.asyncio
+async def test_rescue_receives_map_and_previous_repairs_without_cross_action_leak(make_runner, monkeypatch):
+    rescue = Rescue(V3RescueDecision(
+        verdict="REPAIR_ACTION", reason="向下浏览寻找当前按钮",
+        repair_action={"type": "drag", "start": {"x": 500, "y": 750},
+                       "end": {"x": 500, "y": 250}},
+    ))
+    goal = "完整原文：进入列表，选择指定卡片，再打开详情"
+    map_text = "新版列表的目标卡片在底部\n" + "业务解释" * 1200 + "\nMap尾部"
+    runner = make_runner([action(), action(2)], rescue=rescue, goal=goal,
+                         function_map_context=map_text)
+    original = deepcopy(runner.trajectory)
+    attempts = {}
+
+    async def locate(a, frame):
+        index = a["index"]
+        attempts[index] = attempts.get(index, 0) + 1
+        if attempts[index] <= (2 if index == 1 else 1):
+            raise V3LocatorMiss(f"目标{index}在本轮截图中仍不可见")
+        return {**a, "point": {"x": 100, "y": 200}}
+
+    monkeypatch.setattr(runner, "_locate_action", locate)
+    assert (await runner.run()).success
+    assert len(rescue.calls) == 3  # 本测试显式限制为 3，仍可按原配额工作。
+    first, second, next_target = rescue.calls
+    assert all(c["goal"] == goal and c["function_map_context"] == map_text for c in rescue.calls)
+    assert first["rescue_history"] == []
+    previous_repair = second["rescue_history"][0]
+    assert previous_repair["source"] == "rescue_repair"
+    assert previous_repair["action"]["type"] == "drag"
+    assert previous_repair["action"]["start"] == {"x": 500, "y": 1500}
+    assert previous_repair["runtime_status"] == "completed_without_exception"
+    assert second["miss_reason"] == "目标1在本轮截图中仍不可见"
+    assert next_target["rescue_history"] == []
+    assert runner.trajectory == original
+    # 传入模型的历史是独立快照，不能随本轮后续操作变化。
+    assert len(second["rescue_history"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_ten_rescue_calls_are_shared_across_steps_and_never_execute_eleventh(make_runner, monkeypatch):
+    rescue = Rescue(V3RescueDecision(
+        verdict="REPAIR_ACTION", reason="局部修复",
+        repair_action={"type": "press_back"},
+    ))
+    runner = make_runner([action(), action(2)], rescue=rescue)
+    runner._v3_rescue_max_calls = Settings(_env_file=None).trajectory_cache_v3_rescue_max_calls_per_replay
+    attempts = {}
+
+    async def locate(a, frame):
+        index = a["index"]
+        attempts[index] = attempts.get(index, 0) + 1
+        if index == 1 and attempts[index] > 4:
+            return {**a, "point": {"x": 100, "y": 200}}
+        raise V3LocatorMiss("仍需修复")
+
+    monkeypatch.setattr(runner, "_locate_action", locate)
+    result = await runner.run()
+    assert not result.success
+    assert "v3_rescue_limit_exceeded limit=10" in result.error
+    assert [c["action"]["index"] for c in rescue.calls] == [1] * 4 + [2] * 6
+    assert len([a for a in runner.dispatcher.calls if a["type"] == "press_back"]) == 10
+    assert result.actions_executed == 1  # 第一个目标在第4次修复后接回缓存；第二个未完成。
+
+
+@pytest.mark.asyncio
+async def test_rescue_receives_previous_wait_when_target_still_missing(make_runner, monkeypatch):
+    rescue = Rescue(V3RescueDecision(verdict="WAIT", reason="等待列表加载", wait_ms=100))
+    runner = make_runner([action()], rescue=rescue)
+    attempts = 0
+
+    async def locate(a, frame):
+        nonlocal attempts
+        attempts += 1
+        if attempts <= 2:
+            raise V3LocatorMiss("列表仍未加载目标")
+        return {**a, "point": {"x": 100, "y": 200}}
+
+    monkeypatch.setattr(runner, "_locate_action", locate)
+    assert (await runner.run()).success
+    first, second = rescue.calls
+    assert first["function_map_context"] is None
+    assert first["rescue_history"] == []
+    wait = second["rescue_history"][0]
+    assert wait["action"] == {"type": "wait", "wait_ms": 100}
+    assert wait["reason"] == "等待列表加载"
+    assert wait["runtime_status"] == "completed_without_exception"
 
 
 def action(index=1, **extra):

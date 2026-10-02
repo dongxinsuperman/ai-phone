@@ -4,6 +4,38 @@
 
 ## Unreleased
 
+### V3 局部救援：承接本次业务上下文与连续修复记录
+
+- 将现有 `trajectory_cache_v3_rescue_max_calls_per_replay` 的默认值由 3 提高为
+  10，公开默认配置与完整配置示例同步。整条回放共用调用预算，一次仍最多执行
+  一个修复动作；等待裁决同样计数，显式配置优先，不修改 V1/V2 或 gate 配额。
+- 沿用已有 Run 的完整目标与 `function_map_context` / `functionMapContext` 字段，
+  将本次 Map 传给 V3 救援模型；保留既有 Map 开关，不新增外部提交字段、配置或
+  缓存 schema。旧调用或旧消息没有 Map 时仍可运行。
+- 连续救援携带当前缓存步骤内已经执行的修复动作、等待、调用状态和理由，
+  同时提供最新截图与最新定位失败原因；换到另一缓存步骤后重新开始局部历史。
+  历史坐标明确标为设备像素，不作为当前落点照搬；调用完成不等于业务成功。
+- 复用已有本轮执行记录，不新增会话存储或历史截图续接。Map 不写回缓存，也不
+  注入常规定位或最终断言；不调整模型配置、接管策略或成功后缓存重建。
+
+### V3 local rescue: carry current business context and repair history
+
+- Raise the existing per-replay rescue-call default from 3 to 10 and align public
+  defaults/configuration examples. The entire replay shares the budget; each call still
+  produces at most one repair action, and wait decisions also count. Explicit settings
+  take precedence; V1/V2 and ephemeral-gate budgets remain unchanged.
+- Forward the existing Run goal and Map to V3 rescue, honoring the existing Map switch.
+  No external submission fields, settings, or cache schema changes are introduced;
+  older callers/messages without a Map still work.
+- Include executed repairs/waits, call states, and reasons for the current cache step,
+  with the latest screenshot and locating failure. Reset local history for the next step.
+  Mark historical coordinates as device pixels, not reusable current targets; completed
+  calls do not by themselves prove business success.
+- Reuse current-run records without adding session storage or chained historical images.
+  Do not persist the Map in caches or inject it into regular locating/final assertion.
+  Model configuration, takeover policy, and successful-replay cache reuse
+  remain unchanged.
+
 ### V3 回放：动作承接一致性与本轮断言证据
 
 - V3 保持语义重定位机制：需要坐标的动作在当前截图上定位，并保留源动作的

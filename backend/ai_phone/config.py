@@ -1463,7 +1463,7 @@ class Settings(BaseSettings):
         ),
     )
     trajectory_cache_v3_rescue_max_calls_per_replay: int = Field(
-        default=3,
+        default=10,
         ge=0,
         le=20,
         description=(

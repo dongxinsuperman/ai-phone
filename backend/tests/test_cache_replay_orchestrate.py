@@ -106,6 +106,88 @@ async def test_v3_replay_success_then_assertion_pass(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_v3_replay_forwards_current_goal_and_map_without_mutating_cache(monkeypatch):
+    from copy import deepcopy
+
+    original = deepcopy(_SNAPSHOT)
+    received = {}
+    fake_runner = _make_runner(ReplayResult(success=True, actions_total=1, actions_executed=1))
+
+    class Runner(fake_runner):
+        def __init__(self, **kwargs):
+            received.update(kwargs)
+            super().__init__(**kwargs)
+
+    monkeypatch.setattr("ai_phone.agent.trajectory_cache.v3_replay.V3ReplayRunner", Runner)
+    monkeypatch.setattr("ai_phone.agent.trajectory_cache.assertion.CacheReplayAssertionVerifier",
+                        _make_verifier(CacheAssertionResult("PASS", "达到目标")))
+    goal = "前置：已登录\n步骤：打开列表并选择目标\n预期：进入详情"
+    map_text = "  业务上下文：新版目标按钮在列表底部。\n保留结尾  "
+    await orchestrate.run_v3_replay(
+        run_id="context", serial="S1", goal=goal, attempt=1, driver=object(),
+        bridge=_FakeBridge(), snapshot=_SNAPSHOT, settings=_Settings(),
+        function_map_context=map_text,
+    )
+    assert received["goal"] == goal
+    assert received["function_map_context"] == map_text
+    assert _SNAPSHOT == original
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("map_key", ["function_map_context", "functionMapContext", None])
+async def test_agent_cache_hit_forwards_existing_map_field_to_v3(monkeypatch, map_key):
+    from types import SimpleNamespace
+    from ai_phone.agent import main as agent_main
+
+    received = {}
+
+    class Client:
+        server_http_base = "http://unit.invalid"
+
+        async def send(self, message):
+            return True
+
+    class Bridge(_FakeBridge):
+        async def send_run_done(self, payload):
+            self.run_done.append(payload)
+
+        async def aclose(self):
+            pass
+
+    async def replay(**kwargs):
+        received.update(kwargs)
+
+    settings = SimpleNamespace(android_wake_before_run=False)
+    monkeypatch.setattr(agent_main, "get_settings", lambda: settings)
+    monkeypatch.setattr(agent_main, "has_runtime_override", lambda: True)
+    monkeypatch.setattr(agent_main, "_get_or_open_driver", lambda serial: SimpleNamespace(platform="android"))
+    monkeypatch.setattr(agent_main, "RunnerBridge", lambda **kwargs: Bridge())
+    monkeypatch.setattr(orchestrate, "run_v3_replay", replay)
+
+    def unexpected_archive(**kwargs):
+        pytest.fail("缓存回放不应因补上下文而重建缓存")
+
+    monkeypatch.setattr(agent_main, "_schedule_cache_archive", unexpected_archive)
+    supervisor = agent_main._RunSupervisor()
+    goal = "完整原文\n前置：已登录\n步骤：进入列表\n预期：打开详情"
+    map_text = "原始业务上下文\n新版按钮位置说明"
+    message = {
+        "run_id": "v3-map-route", "device_serial": "unit-device", "goal": goal,
+        "engine": "vlm", "cache_snapshot": _SNAPSHOT, "cache_mode": "v3",
+        "should_sleep_after_run": False,
+    }
+    if map_key is not None:
+        message[map_key] = map_text
+    await agent_main._handle_start_run(Client(), supervisor, message)
+    entry = supervisor.get("v3-map-route")
+    assert entry is not None
+    await entry["task"]
+    assert received["goal"] == goal
+    assert received["function_map_context"] == (map_text if map_key else "")
+    assert supervisor.get("v3-map-route") is None
+
+
+@pytest.mark.asyncio
 async def test_v3_assertion_receives_this_runs_history_separately_from_cached_plan(monkeypatch):
     history = [{"sequence": 1, "index": 1, "source": "rescue_repair",
                 "runtime_status": "completed_without_exception",

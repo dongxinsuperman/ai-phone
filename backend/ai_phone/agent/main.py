@@ -1469,6 +1469,7 @@ async def _handle_start_run(
                     bridge=bridge,
                     snapshot=cache_snapshot,
                     settings=get_settings(),
+                    function_map_context=function_map_context,
                 )
             elif is_v2_cache_hit(cache_snapshot):
                 replay_coro = run_v2_replay(

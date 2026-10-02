@@ -604,6 +604,8 @@ class V3RescueVerifier:
         previous_action: Optional[Dict[str, Any]] = None,
         next_action: Optional[Dict[str, Any]] = None,
         miss_reason: str = "",
+        function_map_context: Optional[str] = None,
+        rescue_history: Optional[List[Dict[str, Any]]] = None,
     ) -> V3RescueDecision:
         if not self.is_configured():
             return V3RescueDecision(
@@ -621,6 +623,8 @@ class V3RescueVerifier:
             next_action=next_action,
             miss_reason=miss_reason,
             coord_space=self.coord_space,
+            function_map_context=function_map_context,
+            rescue_history=rescue_history,
         )
         started = time.monotonic()
         try:
@@ -678,6 +682,7 @@ class V3ReplayRunner:
         ephemeral_gate_verifier: Optional[CacheEphemeralGateVerifier] = None,
         goal: Optional[str] = None,
         main_vlm_backend: Optional[str] = None,
+        function_map_context: Optional[str] = None,
     ) -> None:
         self.driver = driver
         self.trajectory = trajectory
@@ -708,6 +713,11 @@ class V3ReplayRunner:
         # 缓存 settings 供 _screenshot_jpeg 等运行期方法读 vlm_backend；其他派
         # 生字段已就地解到具体属性上，本字段只承担"运行期读 backend"职责。
         self._settings = settings
+        # 只承接本次 Run 已有的完整 Map，遵守原 Map 开关；不写缓存或注入定位/断言。
+        self.function_map_context = (
+            function_map_context
+            if bool(getattr(settings, "function_map_context_enabled", True)) else None
+        )
         self._ephemeral_gate_calls_used = 0
         self._ephemeral_gate_max_calls = int(settings.trajectory_cache_ephemeral_gate_max_calls or 0)
         self._v3_rescue_calls_used = 0
@@ -1241,6 +1251,8 @@ class V3ReplayRunner:
             raise ReplayActionError(f"v3 coord 未定位且 rescue 不可用: {problem}; {miss_reason}")
 
         latest = screenshot_bytes
+        # 本次目标的局部救援记录；不把其他缓存步骤的修复误当成本目标的历史。
+        history_start = len(self._execution_history)
         while True:
             if self._v3_rescue_calls_used >= self._v3_rescue_max_calls:
                 raise ReplayActionError(
@@ -1255,6 +1267,8 @@ class V3ReplayRunner:
                 previous_action=previous_action,
                 next_action=next_action,
                 miss_reason=miss_reason,
+                function_map_context=self.function_map_context,
+                rescue_history=deepcopy(self._execution_history[history_start:]),
             )
             await self._record_rescue_decision(action=action, decision=decision)
 
@@ -1754,17 +1768,30 @@ def build_v3_rescue_prompt(
     next_action: Optional[Dict[str, Any]],
     miss_reason: str,
     coord_space: str,
+    function_map_context: Optional[str] = None,
+    rescue_history: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     coord_hint = "截图实际像素坐标" if coord_space == "absolute" else "0-1000 归一化坐标"
     return (
         "缓存回放中，当前步骤的目标没有在截图中定位到。\n"
         "请做局部恢复裁决，只输出 JSON，不要 markdown。\n\n"
         f"整体目标：{goal}\n"
+        "整体目标是本次 Run 的完整原始语义，缓存步骤不能替代它。\n"
+        f"本次原始 Function Map（业务上下文）：\n{function_map_context or '（未提供）'}\n\n"
+        "Map 用于解释业务场景与目标，不是另一个待执行任务，不需要遍历全部 Map。\n"
         f"缓存语义：{trajectory.get('run_semantic_text') or ''}\n"
         f"当前步骤：{_action_brief(action)}\n"
         f"上一缓存步骤：{_action_brief(previous_action) if previous_action else '无'}\n"
         f"下一缓存步骤：{_action_brief(next_action) if next_action else '无'}\n"
         f"定位失败原因：{miss_reason}\n"
+        "本次目标的已执行救援记录（按发生顺序，空列表表示尚未救援）：\n"
+        f"{json.dumps(rescue_history or [], ensure_ascii=False)}\n"
+        "记录中的动作已被调用，不能当成待执行计划；completed_without_exception "
+        "仅表示调用完成，不证明 UI 达到目标。请结合最新截图和最新定位失败原因"
+        "判断修复效果，再决定继续、调整或放弃；不要因没有历史而反复从头处理。"
+        "历史坐标不作为当前落点，必要时按当前截图重新判断。\n"
+        "历史动作坐标是实际下发的设备像素，不能当作当前截图坐标或归一化坐标照搬；"
+        "新的修复动作仍遵守下面的坐标要求。\n"
         f"修复动作坐标要求：{coord_hint}。\n\n"
         "输出 schema：\n"
         "{\n"
