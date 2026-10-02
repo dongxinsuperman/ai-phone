@@ -1135,13 +1135,13 @@ async def _archive_and_report(
             completion_logs=recorder.completion_logs,
             steps=recorder.steps(),
         )
+        async def _upload(data: bytes) -> str:
+            return await _upload_cache_image(server_http_base, data)
+
         if cache_mode == "v3":
-            archive = await build_v3_archive(**common)
+            archive = await build_v3_archive(**common, upload_image=_upload)
             has_actions = bool(archive.get("actions"))
         elif cache_mode == "v2":
-            async def _upload(data: bytes) -> str:
-                return await _upload_cache_image(server_http_base, data)
-
             archive = await build_v2_archive(**common, upload_image=_upload)
             has_actions = bool((archive.get("trajectory_json") or {}).get("actions"))
         elif cache_mode == "v1":
@@ -1470,6 +1470,7 @@ async def _handle_start_run(
                     snapshot=cache_snapshot,
                     settings=get_settings(),
                     function_map_context=function_map_context,
+                    server_http_base=client.server_http_base or get_settings().server_http_base,
                 )
             elif is_v2_cache_hit(cache_snapshot):
                 replay_coro = run_v2_replay(

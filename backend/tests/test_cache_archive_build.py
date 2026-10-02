@@ -478,3 +478,238 @@ async def test_build_v2_archive_ephemeral_classification(monkeypatch):
     assert meta["category"] == "popup"
     assert meta["skip_if_absent"] is True
     assert meta["cached_popup_before_snapshot"].startswith("/files/eph/")
+
+
+@pytest.fixture
+def v3_popup_source(monkeypatch):
+    import json
+    from ai_phone.config import Settings
+    from ai_phone.agent.trajectory_cache import ephemeral
+
+    settings = Settings(
+        _env_file=None, trajectory_cache_ephemeral_action_enabled=True,
+        trajectory_cache_ephemeral_classify_enabled=True,
+        trajectory_cache_ephemeral_classifier_backend="openai_compatible",
+        trajectory_cache_ephemeral_classifier_api_url="https://unit.invalid/chat/completions",
+        trajectory_cache_ephemeral_classifier_api_key="unit-key",
+        trajectory_cache_ephemeral_classifier_model="unit-model",
+    )
+    monkeypatch.setattr(archive_mod, "get_settings", lambda: settings)
+    monkeypatch.setattr(ephemeral, "get_settings", lambda: settings)
+    output = {"role": "optional_ephemeral", "category": "marketing_popup", "confidence": 0.95,
+              "skip_if_absent": True, "business_risk": "low", "reason": "偶现推荐弹窗清障"}
+    calls = []
+
+    async def classify(**kwargs):
+        calls.append(kwargs)
+        return json.dumps(output, ensure_ascii=False)
+
+    monkeypatch.setattr(ephemeral, "_call_vlm_with_images", classify)
+    steps = [{"step": 1, "thought": "关闭推荐弹窗", "actions": [
+        {"action": "click", "point": [100, 200]},
+    ], "before_bytes": _jpeg_bytes((20, 40, 60)), "after_bytes": _jpeg_bytes((60, 40, 20))}]
+    return settings, output, calls, steps
+
+
+@pytest.mark.asyncio
+async def test_v3_archive_marks_optional_popup_with_both_images_and_no_landmarks(v3_popup_source):
+    settings, output, calls, steps = v3_popup_source
+    uploaded = []
+
+    async def upload(data):
+        uploaded.append(data)
+        return f"/files/eph/{len(uploaded)}.jpg"
+
+    baseline = await build_v3_archive(goal="进入首页", device_serial="unit-device", source_run_id="r",
+                                      screen_size=(1000, 2000), steps=steps)
+    result = await build_v3_archive(goal="进入首页", device_serial="unit-device", source_run_id="r",
+                                   screen_size=(1000, 2000), steps=steps, upload_image=upload)
+    original, marked = baseline["actions"][0], result["actions"][0]
+    assert marked["role"] == "optional_ephemeral"
+    assert marked["ephemeral_meta"]["cached_popup_before_snapshot"] == "/files/eph/1.jpg"
+    assert marked["ephemeral_meta"]["cached_after_snapshot"] == "/files/eph/2.jpg"
+    assert uploaded == [steps[0]["before_bytes"], steps[0]["after_bytes"]]
+    assert len(calls) == 1
+    assert "state_landmarks" not in result
+    assert result["meta"]["source_schema_version"] == 3
+    assert {k: v for k, v in marked.items() if k not in {"role", "ephemeral_meta"}} == {
+        k: v for k, v in original.items() if k != "role"
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("condition", [
+    "disabled", "no_uploader", "missing_before", "missing_after", "action_chain",
+    "classifier_error", "business_modal", "low_confidence", "high_risk", "not_skippable",
+    "before_upload_empty", "after_upload_empty", "after_upload_error",
+])
+async def test_v3_archive_keeps_required_when_optional_evidence_is_not_safe(v3_popup_source, monkeypatch, condition):
+    settings, output, calls, steps = v3_popup_source
+    if condition == "disabled":
+        settings.trajectory_cache_ephemeral_action_enabled = False
+    elif condition.startswith("missing_"):
+        steps[0].pop(condition.replace("missing_", "") + "_bytes")
+    elif condition == "action_chain":
+        steps[0]["actions"].append({"action": "click", "point": [300, 400]})
+    elif condition == "classifier_error":
+        from ai_phone.agent.trajectory_cache import ephemeral
+
+        async def fail(**kwargs):
+            raise RuntimeError("unit failure")
+
+        monkeypatch.setattr(ephemeral, "_call_vlm_with_images", fail)
+    elif condition == "business_modal":
+        output["category"] = "payment_or_trade_confirm"
+    elif condition == "low_confidence":
+        output["confidence"] = 0.1
+    elif condition == "high_risk":
+        output["business_risk"] = "high"
+    elif condition == "not_skippable":
+        output["skip_if_absent"] = False
+    uploads = []
+
+    async def upload(data):
+        uploads.append(data)
+        if condition == "before_upload_empty":
+            return ""
+        if len(uploads) == 2:
+            if condition == "after_upload_empty":
+                return ""
+            if condition == "after_upload_error":
+                raise RuntimeError("unit upload failure")
+        return f"/files/eph/{len(uploads)}.jpg"
+
+    result = await build_v3_archive(
+        goal="进入首页", device_serial="unit-device", source_run_id="r", steps=steps,
+        upload_image=None if condition == "no_uploader" else upload,
+    )
+    assert len(result["actions"]) == len(steps[0]["actions"])
+    assert all(a["role"] == "business_required" and "ephemeral_meta" not in a for a in result["actions"])
+    if condition in {"disabled", "no_uploader", "missing_before", "missing_after", "action_chain"}:
+        assert calls == []
+        assert uploads == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode,expected_calls,locator_calls,gate_calls", [
+    ("SKIP", [], 0, 1),
+    ("EXECUTE_ORIGINAL", [("click", 111, 222)], 1, 1),
+    ("EXECUTE_REPAIR", [("back",)], 0, 1),
+    ("fetch_failure", [("click", 111, 222)], 1, 0),
+])
+async def test_generated_v3_popup_cache_prefetches_evidence_and_uses_gate(
+    v3_popup_source, monkeypatch, tmp_path, mode, expected_calls, locator_calls, gate_calls,
+):
+    """真实归档/预取/回放代码联通；模型和设备是假件，不冒充真机验收。"""
+    from copy import deepcopy
+    from types import SimpleNamespace
+    import httpx
+    import tempfile
+    from ai_phone.agent.trajectory_cache import orchestrate, v3_replay, assertion
+    from ai_phone.agent.trajectory_cache.ephemeral import EphemeralGateDecision
+
+    settings, output, classifier_calls, steps = v3_popup_source
+    settings.trajectory_cache_page_stable_enabled = False
+    settings.trajectory_cache_observe_delay_ms = 0
+    remote_images = {}
+
+    async def upload(data):
+        url = f"/files/eph/{len(remote_images) + 1}.jpg"
+        remote_images[url] = data
+        return url
+
+    snapshot = await build_v3_archive(
+        goal="进入首页", device_serial="unit-device", source_run_id="r",
+        screen_size=(1000, 2000), steps=steps, upload_image=upload,
+    )
+    snapshot["cache_key"] = "unit-v3-popup"
+    # V3 即使收到旧快照里的路标，也不能因为预取证据而重新接入 V2 对齐。
+    snapshot["state_landmarks"] = [{"image_url": "/files/unused-landmark.jpg"}]
+    original = deepcopy(snapshot)
+    fetched = []
+
+    class HTTP:
+        def __init__(self, **kwargs):
+            assert kwargs["base_url"] == "http://unit.invalid"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def get(self, url):
+            fetched.append(url)
+            if mode == "fetch_failure":
+                raise RuntimeError("unit fetch failure")
+            return SimpleNamespace(content=remote_images[url], raise_for_status=lambda: None)
+
+    monkeypatch.setattr(httpx, "AsyncClient", HTTP)
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(v3_replay, "get_settings", lambda: settings)
+    driver_calls, located, gated = [], [], []
+
+    class Driver:
+        def window_size(self):
+            return 1000, 2000
+
+        def screenshot_jpeg(self, *args, **kwargs):
+            return steps[0]["after_bytes"]
+
+        def click(self, x, y):
+            driver_calls.append(("click", x, y))
+
+        def press_back(self):
+            driver_calls.append(("back",))
+
+    class Locator:
+        async def locate_action(self, **kwargs):
+            located.append(kwargs)
+            return v3_replay.V3LocateResult(
+                action={**kwargs["action"], "point": {"x": 111, "y": 222}}, reason="unit target",
+            )
+
+    class Gate:
+        coord_space = "normalized"
+
+        def is_configured(self):
+            return True
+
+        async def decide(self, **kwargs):
+            gated.append(kwargs)
+            assert kwargs["cached_popup_before_bytes"] == steps[0]["before_bytes"]
+            assert kwargs["cached_after_bytes"] == steps[0]["after_bytes"]
+            assert kwargs["current_bytes"] == steps[0]["after_bytes"]
+            return EphemeralGateDecision(verdict=mode, reason="unit gate",
+                                         repair_action={"type": "press_back"})
+
+    class Verifier:
+        async def verify(self, **kwargs):
+            return assertion.CacheAssertionResult("PASS", "unit assertion")
+
+    monkeypatch.setattr(v3_replay, "V3PlanLocator", lambda **kwargs: Locator())
+    monkeypatch.setattr(v3_replay, "CacheEphemeralGateVerifier", lambda **kwargs: Gate())
+    monkeypatch.setattr(assertion, "CacheReplayAssertionVerifier", lambda **kwargs: Verifier())
+    done = []
+
+    class Bridge:
+        def emit(self, event):
+            pass
+
+        async def send_run_done(self, payload):
+            done.append(payload)
+
+        async def send_cache_suspect(self, payload):
+            pytest.fail("unit replay should finish")
+
+    await orchestrate.run_v3_replay(
+        run_id="r-gate", serial="unit-device", goal="进入首页", attempt=1,
+        driver=Driver(), bridge=Bridge(), snapshot=snapshot, settings=settings,
+        server_http_base="http://unit.invalid",
+    )
+    assert fetched == list(remote_images)
+    assert driver_calls == expected_calls
+    assert len(located) == locator_calls
+    assert len(gated) == gate_calls
+    assert done[0]["result"] == "pass"
+    assert snapshot == original  # 临时本地路径不能污染原缓存快照。

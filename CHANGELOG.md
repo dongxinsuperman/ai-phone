@@ -4,6 +4,33 @@
 
 ## Unreleased
 
+### V3 可选弹窗动作：接通首跑标记与回放证据
+
+- V3 首跑后台归档复用 V2 的保守弹窗分类器，仅将高置信度、低风险、非业务必需
+  的清障动作标为 `optional_ephemeral`。支付、登录安全、必要权限或用例目标相关
+  动作仍按既有分类规则保留为必执行动作，不更改动作类型、参数或顺序。
+- 仅为被标记动作上传首跑前后两张证据图；不生成 V2 路标或引入 pHash 对齐。
+  缺截图、分类不可用、上传失败或同一步包含多个无法独立归属的动作时，保留
+  `business_required`。分类仍在首跑结束后的后台执行，不增加手机动作。
+- V3 回放复用现有图片预取和 gate：由模型结合当前图及首跑两张证据图判断跳过、
+  执行原动作或局部修复，不要求新旧截图相同。取图失败沿用原 gate 的缺图降级。
+- 复用原开关、模型与 gate 预算，不增加客户端字段、数据库迁移或缓存 schema。
+  旧缓存仍可读取，但不会自动补造缺失标签或图片；需新首跑归档才能得到新标记。
+
+### V3 optional popup actions: connect first-run tags and replay evidence
+
+- Reuse V2's conservative classifier during asynchronous V3 first-run archival. Only
+  high-confidence, low-risk, non-business cleanup actions may become `optional_ephemeral`;
+  existing business/security/permission/Case-related veto rules still apply.
+- Upload before/after evidence only for marked actions, without V2 landmarks or pHash
+  alignment. Missing evidence, unavailable classification/upload, and ambiguous multi-action
+  frames retain `business_required`; runtime action types, parameters, and order do not change.
+- Reuse image prefetch and the existing gate to judge skip/original/repair from current and
+  historical popup evidence, not pixel equality. Keep existing missing-image fallback.
+- Reuse existing switches, models, and gate budgets; no client fields, database migration,
+  or cache schema change. Old caches stay readable, but tags/evidence require a new first-run
+  archive rather than fabricated historical data.
+
 ### V3 局部救援：承接本次业务上下文与连续修复记录
 
 - 将现有 `trajectory_cache_v3_rescue_max_calls_per_replay` 的默认值由 3 提高为

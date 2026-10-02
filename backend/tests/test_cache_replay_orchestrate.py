@@ -184,7 +184,43 @@ async def test_agent_cache_hit_forwards_existing_map_field_to_v3(monkeypatch, ma
     await entry["task"]
     assert received["goal"] == goal
     assert received["function_map_context"] == (map_text if map_key else "")
+    assert received["server_http_base"] == "http://unit.invalid"
     assert supervisor.get("v3-map-route") is None
+
+
+@pytest.mark.asyncio
+async def test_agent_v3_archive_supplies_existing_image_uploader(monkeypatch):
+    from types import SimpleNamespace
+    from ai_phone.agent import main as agent_main
+    from ai_phone.agent.trajectory_cache import archive as archive_module
+
+    received, uploaded, reported = {}, [], []
+
+    async def upload(base, data):
+        uploaded.append((base, data))
+        return "/files/unit-popup.jpg"
+
+    async def build(**kwargs):
+        received.update(kwargs)
+        assert await kwargs["upload_image"](b"popup-evidence") == "/files/unit-popup.jpg"
+        return {"cache_mode": "v3", "actions": [{"type": "click"}]}
+
+    async def enqueue(message):
+        reported.append(message)
+
+    monkeypatch.setattr(agent_main, "_upload_cache_image", upload)
+    monkeypatch.setattr(archive_module, "build_v3_archive", build)
+    monkeypatch.setattr(agent_main, "get_settings", lambda: SimpleNamespace(vlm_backend="doubao_responses"))
+    await agent_main._archive_and_report(
+        client=object(), reporter=SimpleNamespace(enqueue=enqueue),
+        driver=SimpleNamespace(window_size=lambda: (1000, 2000)),
+        run_id="unit-archive", serial="unit-device", goal="原始任务", attempt=1,
+        recorder=SimpleNamespace(finish_reason="finished", completion_logs={}, steps=lambda: []),
+        cache_mode="v3", server_http_base="http://unit.invalid",
+    )
+    assert received["goal"] == "原始任务"
+    assert uploaded == [("http://unit.invalid", b"popup-evidence")]
+    assert reported[0]["archive"]["cache_mode"] == "v3"
 
 
 @pytest.mark.asyncio

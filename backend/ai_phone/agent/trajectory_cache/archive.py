@@ -16,6 +16,7 @@ import asyncio
 import re
 import time
 from copy import deepcopy
+from collections import Counter
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from loguru import logger
@@ -115,6 +116,7 @@ async def build_v3_archive(
     run_reason: str = "",
     completion_logs: Optional[Dict[str, str]] = None,
     steps: List[Dict[str, Any]],
+    upload_image=None,
 ) -> Dict[str, Any]:
     """从首跑 recorder 的每步第一手数据整理 V3 成品（archive 格式，喂 repository）。
 
@@ -129,6 +131,13 @@ async def build_v3_archive(
         _normalize_v3_action(action, source_vlm_backend=source_vlm_backend)
         for action in raw_actions
     ]
+    # V3 复用 V2 的保守分类，但只保存弹窗前/后证据，不生成截图对齐路标。
+    # 旧内部调用未提供上传能力时，保持 business_required，不生成缺图的可跳过动作。
+    if upload_image is not None:
+        await _classify_ephemeral_actions(
+            actions, steps, [], goal=goal, upload_image=upload_image,
+            require_complete_evidence=True,
+        )
     payload: Dict[str, Any] = {
         "cache_mode": "v3",
         "device_code": device_serial,
@@ -275,12 +284,15 @@ async def _classify_ephemeral_actions(
     *,
     goal: str,
     upload_image,
+    require_complete_evidence: bool = False,
 ) -> None:
-    """给 V2 action 补 role / ephemeral_meta（自 next service 迁来，Agent 直连 VLM）。
+    """给 V2/V3 action 补 role / ephemeral_meta（复用同一保守分类器）。
 
     用每步第一手 before/after 截图调 classifier；判为 optional_ephemeral 的动作上传
     popup_before 证据图（cached_after 复用 state_landmark 已上传的 url），写 ephemeral_meta
     供回放 gate。总开关/配置缺失 / 证据缺失时按 business_required（不影响回放正确性）。
+    V3 无路标，require_complete_evidence=True 时单独上传 after 图；同一步多动作
+    无法把 before/after 归属到单个动作，保留 business_required。
     """
     settings = get_settings()
     if not bool(getattr(settings, "trajectory_cache_ephemeral_action_enabled", False)):
@@ -298,10 +310,13 @@ async def _classify_ephemeral_actions(
         for lm in state_landmarks
         if str(lm.get("action_id") or "")
     }
+    source_step_counts = Counter(action.get("source_step") for action in actions)
     for idx, action in enumerate(actions):
         if not _is_ephemeral_candidate_action(action):
             continue
         cur_step = action.get("source_step")
+        if require_complete_evidence and source_step_counts[cur_step] > 1:
+            continue
         step_data = steps_by_no.get(int(cur_step)) if cur_step is not None else None
         before_bytes = step_data.get("before_bytes") if step_data else None
         after_bytes = step_data.get("after_bytes") if step_data else None
@@ -323,12 +338,15 @@ async def _classify_ephemeral_actions(
             continue
         try:
             popup_url = await upload_image(before_bytes)
+            after_url = landmark_url_by_id.get(str(action.get("action_id")), "")
+            if require_complete_evidence and popup_url and not after_url:
+                after_url = await upload_image(after_bytes)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "ephemeral popup_before 上传失败 action_id={}: {}", action.get("action_id"), exc
+                "ephemeral evidence 上传失败 action_id={}: {}", action.get("action_id"), exc
             )
             continue
-        if not popup_url:
+        if not popup_url or (require_complete_evidence and not after_url):
             continue
         action["role"] = ROLE_OPTIONAL_EPHEMERAL
         action["ephemeral_meta"] = {
@@ -339,7 +357,7 @@ async def _classify_ephemeral_actions(
             "reason": result.reason,
             "business_risk": result.business_risk or "low",
             "cached_popup_before_snapshot": popup_url,
-            "cached_after_snapshot": landmark_url_by_id.get(str(action.get("action_id")), ""),
+            "cached_after_snapshot": after_url,
         }
 
 

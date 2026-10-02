@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from copy import deepcopy
 from typing import Any, Dict, Optional
 
 from loguru import logger
@@ -54,6 +55,7 @@ async def run_v3_replay(
     snapshot: Dict[str, Any],
     settings: Any,
     function_map_context: Optional[str] = None,
+    server_http_base: str = "",
 ) -> None:
     """命中 V3 缓存 → Agent 本地回放 → 断言 → run_done（缓存通道）。
 
@@ -86,7 +88,12 @@ async def run_v3_replay(
         bridge.emit(log_event(run_id, level, title, content, step=step))
 
     cache_key = str(snapshot.get("cache_key") or "")
-    trajectory = dict(snapshot)
+    trajectory = deepcopy(snapshot)
+    if server_http_base:
+        # 只接通 V3 gate 的弹窗证据图；不预取/使用 V2 对齐路标。
+        await _prefetch_artifacts(
+            trajectory, server_http_base=server_http_base, log=_log, include_landmarks=False,
+        )
     # snapshot 顶层无 run_semantic_text → 回放 / 断言用传入 goal；source_vlm_backend
     # 由 Server 下发（片1 带），缺失用本机 settings 兜底（单 backend 部署等价）。
     source_backend = str(snapshot.get("source_vlm_backend") or "") or getattr(
@@ -333,7 +340,9 @@ async def run_v2_replay(
         )
 
 
-async def _prefetch_artifacts(trajectory: Dict[str, Any], *, server_http_base: str, log) -> None:
+async def _prefetch_artifacts(
+    trajectory: Dict[str, Any], *, server_http_base: str, log, include_landmarks: bool = True,
+) -> None:
     """从 Server ``/files`` 预取回放所需证据图到本地：state_landmark 图（phash 对齐用）+
     ephemeral 瞬态证据图（gate 用 cached_popup_before / cached_after），写入对应 ``*_path``。
 
@@ -346,7 +355,7 @@ async def _prefetch_artifacts(trajectory: Dict[str, Any], *, server_http_base: s
     import httpx
 
     targets: list = []  # (url, 目标 dict, 写入的 path 字段)
-    for lm in trajectory.get("state_landmarks") or []:
+    for lm in (trajectory.get("state_landmarks") or []) if include_landmarks else []:
         if isinstance(lm, dict) and str(lm.get("image_url") or "") and not lm.get("image_path"):
             targets.append((str(lm["image_url"]), lm, "image_path"))
     for action in trajectory.get("actions") or []:
