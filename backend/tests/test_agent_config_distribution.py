@@ -169,7 +169,7 @@ def test_env_defaults_contains_only_public_runtime_defaults():
     assert active["AI_PHONE_TRAJECTORY_CACHE_ALIGNMENT_ENABLED"] == "true"
     assert active["AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_ENABLED"] == "true"
     assert active["AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_ACTION_ENABLED"] == "true"
-    assert active["AI_PHONE_ASSERTION_TIMEOUT_SEC"] == "120"
+    assert active["AI_PHONE_ASSERTION_TIMEOUT_SEC"] == "300"
     assert active["AI_PHONE_STRUCT_STRICTNESS_HARD_SCORE"] == "10"
     assert active["AI_PHONE_STRUCT_STRICTNESS_AUDIT_SCORE"] == "10"
     assert active["AI_PHONE_SLEEP_AFTER_RUN"] == "true"
@@ -182,7 +182,7 @@ def test_code_defaults_match_project_runtime_policy():
     assert s.function_map_context_max_chars == 0
     assert s.struct_strictness_hard_score == 10
     assert s.struct_strictness_audit_score == 10
-    assert s.assertion_timeout_sec == 120
+    assert s.assertion_timeout_sec == 300
     assert s.sleep_after_run is True
 
 
@@ -258,6 +258,38 @@ def test_downlink_rejects_missing_phone_vlm_config():
     """Server 没配新版 PHONE_VLM 时，不再生成旧式 legacy 下发包。"""
     with pytest.raises(RuntimeError, match="AI_PHONE_PHONE_VLM_API_KEY"):
         build_downlink_config(settings=_new_doubao_settings(phone_vlm_api_key=""))
+
+
+def test_aux_reasoning_effort_is_distributed_without_changing_model_identity():
+    settings = _derived_doubao_settings(aux_reasoning_effort="low")
+    snapshot = build_downlink_config(settings=settings)
+    assert snapshot["aux_reasoning_effort"] == "low"
+    applied = set_runtime_override(snapshot)
+    assert applied.aux_reasoning_effort == "low"
+    assert applied.aux_model == settings.aux_model
+    assert applied.phone_vlm_model == settings.phone_vlm_model
+
+
+def test_new_agent_accepts_previous_server_without_aux_effort(monkeypatch):
+    import ai_phone.config as current
+
+    snapshot = build_downlink_config(settings=_derived_doubao_settings())
+    snapshot.pop("aux_reasoning_effort")  # 旧 Server 的下发包没有这个可选字段。
+    assert "aux_reasoning_effort" not in snapshot
+    monkeypatch.setattr(current, "_base_settings", lambda: _new_doubao_settings())
+    applied = current.set_runtime_override(snapshot)
+    assert applied.aux_reasoning_effort == "high"
+    assert applied.phone_vlm_model == snapshot["phone_vlm_model"]
+    assert applied.aux_model == snapshot["aux_model"]
+
+
+def test_agent_filters_unknown_optional_fields_from_newer_server():
+    snapshot = build_downlink_config(settings=_derived_doubao_settings(aux_reasoning_effort="high"))
+    snapshot["future_optional_aux_setting"] = "high"
+    applied = set_runtime_override(snapshot)
+    assert not hasattr(applied, "future_optional_aux_setting")
+    assert applied.phone_vlm_model == snapshot["phone_vlm_model"]
+    assert applied.aux_model == snapshot["aux_model"]
 
 
 def test_downlink_rejects_missing_aux_config():

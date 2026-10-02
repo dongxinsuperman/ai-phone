@@ -50,15 +50,14 @@ class DoubaoAssistant:
         messages: List[Dict[str, Any]],
         thinking: bool,
         scene: str,
-        timeout: float = 60.0,
+        timeout: float = 300.0,
     ) -> str:
         """发送 messages → 返回 assistant 文本。
 
         ``scene`` 仅用于 token 统计分桶（counter.record(scene=scene, ...)）。
 
         thinking 在豆包的体现是 ``payload.thinking.type = enabled/disabled``。
-        历史用过 ``reasoning_effort`` 是 OpenAI o1/GPT-5 风格 API，方舟会
-        静默吞掉——已废弃，不要回潮。
+        开启 thinking 时可用既有 Settings 的 aux_reasoning_effort 显式选择 2.1 档位。
         """
         settings = get_settings()
         model = settings.assistant_model
@@ -78,6 +77,8 @@ class DoubaoAssistant:
             "messages": messages,
             "thinking": {"type": thinking_type},
         }
+        if thinking and settings.aux_reasoning_effort:
+            payload["reasoning_effort"] = settings.aux_reasoning_effort
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -233,8 +234,7 @@ class DoubaoAssistant:
                 "image_url": {"url": f"data:image/jpeg;base64,{final_b64}"},
             }
         )
-        # 断言系统的 timeout 由调用方通过 asyncio.wait_for 在外层控制（与现
-        # 状一致），本层 httpx 给一个相对宽松的硬上限。
+        # 内外层使用同一个既有超时设置，避免 HTTP 层先于外层提前结束。
         return await self._post(
             messages=[
                 {"role": "system", "content": FINISHED_ASSERTION_SYSTEM_ZH},
@@ -242,7 +242,7 @@ class DoubaoAssistant:
             ],
             thinking=thinking,
             scene="断言系统",
-            timeout=120.0,
+            timeout=float(get_settings().assertion_timeout_sec),
         )
 
     # ------------------------------------------------------------------
@@ -256,7 +256,7 @@ class DoubaoAssistant:
         label: str = "AI 分析",
         thinking: bool = False,
         temperature: float = 0.2,
-        timeout: float = 60.0,
+        timeout: float = 300.0,
     ) -> AnalysisResult:
         """大盘 AI 分析专用：system + user 两条消息，返回 ``AnalysisResult``。
 
@@ -285,6 +285,8 @@ class DoubaoAssistant:
             ],
             "thinking": {"type": thinking_type},
         }
+        if thinking and settings.aux_reasoning_effort:
+            payload["reasoning_effort"] = settings.aux_reasoning_effort
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",

@@ -56,7 +56,7 @@ class ClaudeAssistant:
         thinking: bool,
         scene: str,
         system: Optional[str] = None,
-        timeout: float = 60.0,
+        timeout: float = 300.0,
     ) -> str:
         """发送 messages → 拼接 text blocks → 返回字符串。
 
@@ -289,7 +289,7 @@ class ClaudeAssistant:
             thinking=thinking,
             scene="断言系统",
             system=FINISHED_ASSERTION_SYSTEM_EN,
-            timeout=120.0,
+            timeout=float(get_settings().assertion_timeout_sec),
         )
 
     # ------------------------------------------------------------------
@@ -303,7 +303,7 @@ class ClaudeAssistant:
         label: str = "AI 分析",
         thinking: bool = False,
         temperature: float = 0.2,
-        timeout: float = 60.0,
+        timeout: float = 300.0,
     ) -> AnalysisResult:
         """大盘 AI 分析专用：system 走 payload.system 字段、user 走 messages[0]。
 

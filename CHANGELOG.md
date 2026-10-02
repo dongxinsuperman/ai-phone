@@ -68,21 +68,33 @@
   the model uses the next screenshot to adjust its direction, point, or action type. No safe-zone
   constants, Driver changes, Case/Function Map changes, or client API changes are introduced.
 
-### 最终断言：默认等待时间延长至 120 秒
+### 辅助模型：统一默认超时与豆包推理强度配置
 
-- `AI_PHONE_ASSERTION_TIMEOUT_SEC` 的公开默认值由 60 秒调整为 120 秒，
-  避免开启 thinking 的断言模型在正常长推理时被编排层提前取消。
-- 超时后按 `SKIP` 回退主 VLM 的行为保持不变；Server 继续通过现有运行时
-  配置通道向 Agent 下发该值，不增加新的协议或部署字段。
+- 最终断言默认超时由 120 秒延长为 300 秒；审判、缓存恢复、V3 定位与救援、
+  瞬态分类与 gate，以及辅助分析的默认请求超时也统一为 300 秒。最终断言的
+  HTTP 层读取同一个既有超时字段，避免外层允许等待、内层却提前超时。
+  显式配置仍优先；延长的是等待上限，不是强制每次等待 5 分钟。
+- 新增可选 Settings 字段 `aux_reasoning_effort`，默认 `high`，支持
+  `low` / `medium` / `high`，空值表示继承模型默认。仅在豆包 AUX 请求已开启
+  thinking 时发送档位；不改变原思考开关、主 VLM 或海外模型推理策略。
+- 沿用现有 Server → Agent 配置下发机制；新 Agent 接收旧配置时使用默认值，
+  旧 Agent 忽略未知可选字段。不新增数据库迁移、依赖或必填客户端字段。
+  首跑断言超时后的 `SKIP` 回退及缓存回放非 PASS 的处理策略保持不变。
 
-### Final assertion: extend the default wait to 120 seconds
+### Auxiliary models: align timeout defaults and Doubao reasoning configuration
 
-- Raise the public `AI_PHONE_ASSERTION_TIMEOUT_SEC` default from 60 to 120 seconds
-  so assertions with thinking enabled can finish normally instead of being cancelled by
-  the orchestration layer during legitimate long reasoning.
-- Keep the existing `SKIP` fallback unchanged. The Server continues to distribute the
-  value through the existing runtime configuration channel, with no new protocol or
-  deployment field.
+- Increase the final assertion default from 120 to 300 seconds, and align auxiliary
+  analysis, audit, cache recovery, V3 locating/rescue, and ephemeral classification/gate
+  defaults to 300 seconds. Assertion HTTP calls use the existing outer timeout setting.
+  Explicit settings still win; this raises the limit rather than forcing a five-minute wait.
+- Add optional `aux_reasoning_effort` to Settings, defaulting to `high`, with
+  `low`/`medium`/`high` and an empty value for the model default. Apply it only to
+  Doubao AUX calls whose existing thinking switch is enabled. Main VLM thinking
+  and overseas-provider reasoning policies are unchanged.
+- Reuse runtime configuration distribution: new Agents default the missing field,
+  and older Agents ignore unknown optional fields. No database migration, dependency,
+  or required client field is added. Existing first-run assertion `SKIP` fallback and
+  non-PASS cache-replay handling remain unchanged.
 
 ### 批次单 Case 超时：补齐 Agent 已无 Run 时的自动收口
 

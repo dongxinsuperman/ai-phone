@@ -499,8 +499,16 @@ class Settings(BaseSettings):
     # 换一次准确裁决完全划算。包名匹配 / 通道判定 / 子步骤拆解 / 主 VLM 因为是
     # 高频或轻任务，保持 disabled 跑得动 + 跑得快。
     #
-    # 历史包袱：之前用过 reasoning_effort 参数，那是 OpenAI o1/GPT-5 风格 API，
-    # 方舟会静默吞掉不报错也不生效——已废弃删除。
+    # 思考开关与思考档位分开：2.1 Chat 支持 reasoning_effort，默认使用 high。
+    # 现有各场景是否思考仍由调用方/下方 thinking 开关决定，不因设置档位而强制开启。
+    aux_reasoning_effort: str = Field(
+        default="high",
+        pattern=r"^(|low|medium|high)$",
+        description=(
+            "豆包 AUX 统一推理强度：默认 high，可选 low/medium/high；空=继承模型默认。"
+            "仅在辅助请求开启 thinking 时传入；不改变主 VLM 或海外推理策略。"
+        ),
+    )
     assistant_thinking_judge: bool = Field(
         default=True,
         description=(
@@ -1249,7 +1257,7 @@ class Settings(BaseSettings):
         ),
     )
     trajectory_cache_recovery_vlm_timeout_sec: float = Field(
-        default=30.0,
+        default=300.0,
         ge=5.0,
         le=300.0,
         description=(
@@ -1349,7 +1357,7 @@ class Settings(BaseSettings):
         ),
     )
     trajectory_cache_v3_coord_timeout_sec: float = Field(
-        default=30.0,
+        default=300.0,
         ge=5.0,
         le=300.0,
         description=(
@@ -1446,7 +1454,7 @@ class Settings(BaseSettings):
         ),
     )
     trajectory_cache_v3_rescue_timeout_sec: float = Field(
-        default=30.0,
+        default=300.0,
         ge=5.0,
         le=300.0,
         description=(
@@ -1510,7 +1518,7 @@ class Settings(BaseSettings):
         ),
     )
     trajectory_cache_ephemeral_classifier_timeout_sec: float = Field(
-        default=30.0,
+        default=300.0,
         ge=5.0,
         le=300.0,
         description=(
@@ -1572,7 +1580,7 @@ class Settings(BaseSettings):
         ),
     )
     trajectory_cache_ephemeral_gate_timeout_sec: float = Field(
-        default=30.0,
+        default=300.0,
         ge=5.0,
         le=300.0,
         description=(
@@ -1591,7 +1599,7 @@ class Settings(BaseSettings):
     )
     # 审判系统单次调用超时；超时按 ALLOW 处理（不阻塞 Run 收尾）。
     audit_timeout_sec: float = Field(
-        default=30.0,
+        default=300.0,
         ge=5.0,
         le=300.0,
         description=(
@@ -1602,7 +1610,7 @@ class Settings(BaseSettings):
     )
     # 断言系统终局裁决超时；超时按 SKIP 处理（回退采纳主 VLM 结果）。
     assertion_timeout_sec: float = Field(
-        default=120.0,
+        default=300.0,
         ge=10.0,
         le=600.0,
         description=(

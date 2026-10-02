@@ -199,7 +199,7 @@ class AnalyticsAIClient:
         self,
         *,
         assistant: Optional[Any] = None,
-        timeout_seconds: float = 60.0,
+        timeout_seconds: float = 300.0,
     ) -> None:
         # 依赖注入支持：单测可以传 mock 实例进来；正常路径不传，按 backend 切
         self._assistant = assistant or create_assistant()

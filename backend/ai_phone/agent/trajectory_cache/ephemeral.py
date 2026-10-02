@@ -197,6 +197,7 @@ class CacheEphemeralActionClassifier:
             ),
             prompt=prompt,
             images=[("action_before", before_bytes), ("action_after", after_bytes)],
+            aux_reasoning_effort=self.settings.aux_reasoning_effort,
         )
         return parse_ephemeral_classification_response(
             text,
@@ -597,6 +598,7 @@ async def _call_vlm_with_images(
     system: str,
     prompt: str,
     images: Sequence[Tuple[str, bytes]],
+    aux_reasoning_effort: Optional[str] = None,
 ) -> str:
     normalized_backend = (backend or "doubao_responses").strip().lower()
     if normalized_backend == "doubao_responses":
@@ -618,6 +620,7 @@ async def _call_vlm_with_images(
             system=system,
             prompt=prompt,
             images=images,
+            aux_reasoning_effort=aux_reasoning_effort,
         )
     if normalized_backend == "openai_responses":
         return await _openai_responses_images(
@@ -689,6 +692,7 @@ async def _chat_completions_images(
     system: str,
     prompt: str,
     images: Sequence[Tuple[str, bytes]],
+    aux_reasoning_effort: Optional[str] = None,
 ) -> str:
     content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
     for _label, data in images:
@@ -714,6 +718,9 @@ async def _chat_completions_images(
     # - 其它 OpenAI-compatible 代理：不强塞私有字段，避免 400 后降级。
     if _is_doubao_chat_url(api_url):
         payload["thinking"] = {"type": "enabled"}
+        # 仅 AUX 调用方显式传入档位；手机层救援/门控共用此 helper，但不跟随 AUX 档位。
+        if aux_reasoning_effort:
+            payload["reasoning_effort"] = aux_reasoning_effort
     elif _is_openai_chat_url(api_url):
         payload["reasoning_effort"] = "medium"
     data = await _post_json(api_url, api_key, payload, timeout_sec)

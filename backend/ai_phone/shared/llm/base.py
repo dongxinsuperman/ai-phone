@@ -199,7 +199,7 @@ class BaseAssistant(Protocol):
         label: str = "AI 分析",
         thinking: bool = False,
         temperature: float = 0.2,
-        timeout: float = 60.0,
+        timeout: float = 300.0,
     ) -> AnalysisResult:
         """高级文本分析：system + user 两条消息，返回带 usage 的结构化结果。
 

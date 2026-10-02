@@ -59,7 +59,7 @@ class OpenAIAssistant:
         messages: List[Dict[str, Any]],
         thinking: bool,
         scene: str,
-        timeout: float = 60.0,
+        timeout: float = 300.0,
     ) -> str:
         """发送 messages → 抽 choices[0].message.content → 返回字符串。
 
@@ -249,7 +249,7 @@ class OpenAIAssistant:
             ],
             thinking=thinking,
             scene="断言系统",
-            timeout=120.0,
+            timeout=float(get_settings().assertion_timeout_sec),
         )
 
     # ------------------------------------------------------------------
@@ -263,7 +263,7 @@ class OpenAIAssistant:
         label: str = "AI 分析",
         thinking: bool = False,
         temperature: float = 0.2,
-        timeout: float = 60.0,
+        timeout: float = 300.0,
     ) -> AnalysisResult:
         """大盘 AI 分析专用：messages = [system, user]，OpenAI 标准两条消息。
 
