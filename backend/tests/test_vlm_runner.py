@@ -516,6 +516,38 @@ async def test_wait_uses_action_seconds(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_wait_archive_records_actual_clipped_seconds(monkeypatch):
+    from ai_phone.agent.trajectory_cache.archive import _actions_from_steps
+    from ai_phone.agent.trajectory_cache.recorder import TrajectoryRecorder
+
+    real_sleep = asyncio.sleep
+    sleeps = []
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+        await real_sleep(0)
+
+    monkeypatch.setattr("ai_phone.agent.runner.vlm_loop.MAX_WAIT_SECONDS", 3)
+    monkeypatch.setattr("ai_phone.agent.runner.vlm_loop.asyncio.sleep", fake_sleep)
+    events, emit = _collect_events()
+    runner = VLMRunner(
+        run_id="wait-actual", driver=FakeDriver(), goal="等待后结束", emit=emit,
+        vlm_client=ScriptedVLMClient([
+            ScriptedStep("等待 8 秒", "wait(seconds=8)"),
+            ScriptedStep("完成", "finished()"),
+        ]),
+    )
+    assert (await runner.run()).ok
+    rec = TrajectoryRecorder("wait-actual")
+    for event in events:
+        rec.feed(event)
+    actions = _actions_from_steps(rec.steps(), screen_size=(1080, 1920))
+    assert [(a["type"], a["seconds"]) for a in actions] == [("wait", 3)]
+    assert 3 in sleeps
+    assert 8 not in sleeps
+
+
+@pytest.mark.asyncio
 async def test_empty_goal_raises():
     driver = FakeDriver()
     with pytest.raises(ValueError):
@@ -1193,7 +1225,7 @@ class _SeqShotsDriver(FakeDriver):
 
 
 @pytest.mark.asyncio
-async def test_transient_ui_takeover_full_flow():
+async def test_transient_ui_takeover_full_flow(monkeypatch):
     """完整接管链路：检测命中 → 缓存 → 下一步用缓存帧 → chain 重唤起 + 目标点击。
 
     场景模拟视频播放时的"点中央唤起工具栏 → 点倍速按钮"：
@@ -1239,8 +1271,10 @@ async def test_transient_ui_takeover_full_flow():
         vlm_client=vlm,
     )
     # 测试场景必须强制启用瞬态 UI 检测——生产默认通过 env 总开关控制（默认关），
-    # 单测里直接覆写 armed 就够，不必去碰 settings 单例。
+    # 固定本测试依赖的采帧模式，不受本地 .env 关闭 page_stable 的影响。
     runner._transient_ui_armed = True
+    test_settings = runner._settings.model_copy(update={"vlm_page_stable_enabled": True})
+    monkeypatch.setattr("ai_phone.agent.runner.stability.get_settings", lambda: test_settings)
     result = await runner.run()
     assert result.ok is True, f"期望 finished，实际 reason={result.reason}"
     assert result.steps == 3
@@ -1254,6 +1288,21 @@ async def test_transient_ui_takeover_full_flow():
     assert click_calls[1] == ("click", (540, 960))
     # step 2 接管 chain 目标点击：(800/1000*1080, 80/1000*1920) = (864, 153)
     assert click_calls[2] == ("click", (864, 153))
+
+    # 旁路轨迹包含三次真实点击；重唤起不能被目标按钮的语义覆盖。
+    from ai_phone.agent.trajectory_cache.archive import _actions_from_steps
+    from ai_phone.agent.trajectory_cache.recorder import TrajectoryRecorder
+
+    rec = TrajectoryRecorder("R-transient-takeover")
+    for event in _events:
+        rec.feed(event)
+    source_actions = _actions_from_steps(rec.steps(), screen_size=(1080, 1920))
+    assert [a["type"] for a in source_actions] == ["click", "click", "click"]
+    assert source_actions[1]["point"] == {"x": 540, "y": 960}
+    assert source_actions[1]["thought"] == "点中央唤起工具栏"
+    assert source_actions[1]["source"] == "agent_system_retrigger"
+    assert source_actions[1]["raw"] == "click(point='<point>540 960</point>')"
+    assert source_actions[2]["thought"] == "看到工具栏，点倍速按钮"
 
     # —— VLM 第 2 步收到的 screenshot 必须是缓存的 visible_frame=B ——
     # received_screenshots 索引：0=step1, 1=step2, 2=step3

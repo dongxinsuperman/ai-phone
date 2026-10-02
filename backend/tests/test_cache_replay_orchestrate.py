@@ -30,10 +30,11 @@ class _FakeBridge:
         self.suspects.append(dict(payload))
 
 
-def _make_runner(result, *, final_frame=b"\xff\xd8final"):
+def _make_runner(result, *, final_frame=b"\xff\xd8final", execution_history=None):
     class _FakeRunner:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
+            self.execution_history = execution_history if execution_history is not None else []
 
         async def run(self):
             return result
@@ -102,6 +103,37 @@ async def test_v3_replay_success_then_assertion_pass(monkeypatch):
     assert done["message"].startswith("trajectory_cache_v3_pass:")
     assert done["steps"] == 1
     assert bridge.suspects == []  # 成功不标 suspect
+
+
+@pytest.mark.asyncio
+async def test_v3_assertion_receives_this_runs_history_separately_from_cached_plan(monkeypatch):
+    history = [{"sequence": 1, "index": 1, "source": "rescue_repair",
+                "runtime_status": "completed_without_exception",
+                "action": {"type": "press_back"}}]
+    received = {}
+
+    class Verifier:
+        def __init__(self, **kwargs):
+            pass
+
+        async def verify(self, **kwargs):
+            received.update(kwargs)
+            return CacheAssertionResult("PASS", "看到目标")
+
+    monkeypatch.setattr(
+        "ai_phone.agent.trajectory_cache.v3_replay.V3ReplayRunner",
+        _make_runner(ReplayResult(success=True, actions_total=1, actions_executed=1),
+                     execution_history=history),
+    )
+    monkeypatch.setattr(
+        "ai_phone.agent.trajectory_cache.assertion.CacheReplayAssertionVerifier", Verifier,
+    )
+    await orchestrate.run_v3_replay(
+        run_id="r-history", serial="S1", goal="打开页面", attempt=1,
+        driver=object(), bridge=_FakeBridge(), snapshot=_SNAPSHOT, settings=_Settings(),
+    )
+    assert received["execution_history"] == history
+    assert received["trajectory"]["actions"] == _SNAPSHOT["actions"]
 
 
 @pytest.mark.asyncio

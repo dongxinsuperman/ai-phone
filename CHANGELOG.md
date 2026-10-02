@@ -4,6 +4,41 @@
 
 ## Unreleased
 
+### V3 回放：动作承接一致性与本轮断言证据
+
+- V3 保持语义重定位机制：需要坐标的动作在当前截图上定位，并保留源动作的
+  非坐标参数。输入确认目标可见后直接承接已激活输入框，不再隐式增加聚焦点击；
+  原轨迹显式点击仍保留。弹窗 gate 和救援策略、预算与衔接规则不变。
+- 首跑归档补齐实际发生的瞬态工具栏重唤起点击，使用触发目标自己的语义与
+  设备坐标；等待记录实际执行秒数，并保留截图参数。V3 长等待不再额外截为
+  60 秒，而使用首跑已有的 `run_max_wait_sec` 上限；V1/V2 仍保持原等待上限。
+- 最终断言原本已重新调用模型，本次修正的是证据来源：V3 传入本轮重新定位后的
+  动作、救援、等待、跳过和异常状态，不再把缓存计划当作执行事实。
+  保留最后 20 个缓存步骤及这些步骤中的全部已记录操作；无异常只证明调用完成，
+  不证明 UI 业务成功。当前截图仍是当前结果证据，非 PASS 的处理策略不变。
+- V3 缓存 schema 和外部接口不变，旧缓存仍可读取；旧记录里漏掉的信息不会被
+  自动补造，新首跑归档才会写入补齐的信息。无需数据库迁移或客户端代码调整；
+  已运行的相关 Agent 需更新代码并在合适时机重启，才能使用新的归档与回放逻辑。
+
+### V3 replay: preserve source actions and use current-run assertion evidence
+
+- Keep semantic relocation on current screenshots and preserve non-coordinate source
+  parameters. Input confirms the target is visible and types into the already active
+  field without adding an implicit focus tap; explicit source taps remain. Ephemeral
+  gates, rescue budgets, and handoff policies are unchanged.
+- Record actual first-run transient-toolbar retrigger taps with their own semantics and
+  native coordinates, actual wait seconds, and screenshot parameters. V3 uses the existing
+  first-run `run_max_wait_sec` limit instead of an additional 60-second cap; V1/V2 keep
+  their previous wait limit.
+- Final assertion was already fresh. Replace its cached-plan summary with current-run
+  relocated actions, repairs, waits, skips, and execution states, retaining the last 20
+  cache steps and their recorded operations. A completed call does not prove UI success;
+  current screenshots remain current-state evidence and non-PASS handling is unchanged.
+- Cache schema and external interfaces stay compatible. Missing historical information
+  is not fabricated; complete new records require a new first-run archive. No database
+  migration or client changes are needed. Update and safely restart relevant Agents to
+  activate the new archive/replay behavior.
+
 ### V3 缓存生成：整批语义清洗与完整性校验
 
 - 将每个动作分别请求模型的清洗流程改为整批生成 `plan_intent`；每条仍独立描述

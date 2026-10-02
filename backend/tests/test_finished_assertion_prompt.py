@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 from typing import Any
+from pathlib import Path
 
 import pytest
 
 from ai_phone.agent.runner.vlm_loop import VLMRunner
 from ai_phone.agent.trajectory_cache.assertion import build_cache_assertion_prompt
+from ai_phone.config import Settings
 from ai_phone.shared.llm.assertion_policy import (
     FINISHED_ASSERTION_SYSTEM_EN,
     FINISHED_ASSERTION_SYSTEM_ZH,
@@ -216,3 +218,30 @@ async def test_assistant_system_is_result_oriented_and_evidence_aware(
         assert "model judgment at the time" in system
         assert "must not self-corroborate" in system
         assert "strict, conservative" not in system
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("timeout", [300.0, 240.0])
+async def test_doubao_finished_assertion_http_timeout_matches_existing_setting(monkeypatch, timeout):
+    settings = Settings(_env_file=None, assertion_timeout_sec=timeout)
+    monkeypatch.setattr("ai_phone.shared.llm.assistants.doubao.get_settings", lambda: settings)
+    captured = {}
+
+    async def post(**kwargs):
+        captured.update(kwargs)
+        return "PASS: ok"
+
+    assistant = DoubaoAssistant()
+    monkeypatch.setattr(assistant, "_post", post)
+    await assistant.verify_finished(
+        prompt="原断言内容", prev_before_bytes=b"before", final_bytes=b"final", thinking=True,
+    )
+    assert captured["timeout"] == timeout
+    assert captured["thinking"] is True
+    assert captured["scene"] == "断言系统"
+
+
+def test_finished_assertion_timeout_default_is_five_minutes():
+    assert Settings.model_fields["assertion_timeout_sec"].default == 300.0
+    defaults = Path(__file__).resolve().parents[1] / ".env.defaults"
+    assert Settings(_env_file=defaults).assertion_timeout_sec == 300.0

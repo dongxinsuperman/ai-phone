@@ -135,6 +135,7 @@ async def run_v3_replay(
         final_bytes=final_frame,
         trajectory=trajectory,
         prev_before_bytes=replay_result.final_before_bytes,
+        execution_history=runner.execution_history,
     )
     await _log(
         1 if assertion.verdict == "PASS" else 3,

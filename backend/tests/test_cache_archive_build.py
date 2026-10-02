@@ -82,6 +82,41 @@ def test_recorder_failure_not_success():
     assert rec.success is False
 
 
+@pytest.mark.parametrize("action_type", sorted(
+    archive_mod.A.KNOWN_ACTIONS - {"finished", "assert_fail"}
+))
+def test_archive_supports_every_first_run_executable_action(action_type):
+    # 动作全集随首跑增长时自动暴露归档遗漏，不靠手写第二份类型表。
+    raw = {
+        "action": action_type, "point": [100, 200],
+        "start_point": [200, 300], "end_point": [200, 700],
+        "content": "1111", "direction": "up", "scroll_amount": 3,
+        "name": "com.example.app", "seconds": 7, "keycode": 66,
+        "save_to_album": False,
+    }
+    actions = archive_mod._actions_from_steps([
+        {"step": 1, "thought": "首跑行为", "actions": [raw]},
+    ], screen_size=(1000, 2000))
+    assert len(actions) == 1
+    assert actions[0]["type"] == action_type
+    if action_type == "take_screenshot":
+        assert actions[0]["save_to_album"] is False
+
+
+def test_system_retrigger_uses_own_semantics_and_native_coordinates():
+    actions = archive_mod._actions_from_steps([{
+        "step": 2, "thought": "点击工具栏按钮", "vlm_screenshot_size": (540, 960),
+        "actions": [
+            {"action": "click", "point": [540, 960], "coord_space": "absolute",
+             "vlm_screenshot_size": None, "thought": "点击中央唤起工具栏",
+             "source": "agent_system_retrigger"},
+            {"action": "click", "point": [400, 80], "coord_space": "absolute"},
+        ],
+    }], screen_size=(1080, 1920))
+    assert [a["point"] for a in actions] == [{"x": 540, "y": 960}, {"x": 800, "y": 160}]
+    assert [a["thought"] for a in actions] == ["点击中央唤起工具栏", "点击工具栏按钮"]
+
+
 @pytest.mark.asyncio
 async def test_build_v3_archive_from_first_hand_steps():
     rec = TrajectoryRecorder("r3")

@@ -495,12 +495,12 @@ def _actions_from_steps(
                 parsed=parsed,
                 raw=parsed.raw,
                 screen_size=screen_size,
-                vlm_screenshot_size=vlm_screenshot_size,
-                source="agent_first_hand",
+                vlm_screenshot_size=parsed_dict.get("vlm_screenshot_size", vlm_screenshot_size),
+                source=str(parsed_dict.get("source") or "agent_first_hand"),
             )
             if action is None:  # 终止 / 未知动作不入缓存
                 continue
-            action["thought"] = thought
+            action["thought"] = str(parsed_dict.get("thought") or thought)
             action["action_id"] = f"a{s.get('step')}_{len(out) + 1}"
             action["source_step"] = s.get("step")  # V2 state_landmark 映射 after 截图用
             out.append(action)
@@ -523,6 +523,7 @@ def _rebuild_parsed(d: Dict[str, Any], *, raw: str = "") -> A.ParsedAction:
         name=d.get("name"),
         seconds=d.get("seconds"),
         keycode=d.get("keycode"),
+        save_to_album=bool(d.get("save_to_album", True)),
         scroll_amount=int(d.get("scroll_amount") or 1),
         raw=str(d.get("raw") or raw or ""),
         coord_space=str(d.get("coord_space") or "normalized"),

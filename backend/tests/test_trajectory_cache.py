@@ -1841,7 +1841,7 @@ async def test_v3_replay_runner_locates_type_input_before_typing(monkeypatch):
 
     assert result.success is True
     assert locator.calls[0]["action"]["type"] == "click"
-    assert ("click", 111, 222) in driver.calls
+    assert ("click", 111, 222) not in driver.calls
     assert ("type_text", "咖啡") in driver.calls
 
 

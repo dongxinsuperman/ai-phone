@@ -11,6 +11,7 @@ import io
 import json
 import re
 import time
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -684,7 +685,9 @@ class V3ReplayRunner:
         self.log = log
         self.emit = emit
         self.capture_after_each_action = capture_after_each_action
-        self.dispatcher = dispatcher or ReplayActionDispatcher(driver)
+        self.dispatcher = dispatcher or ReplayActionDispatcher(
+            driver, max_wait_seconds=getattr(get_settings(), "run_max_wait_sec", 1800),
+        )
         self.locator = locator or V3PlanLocator(
             main_vlm_backend=main_vlm_backend
             or str(trajectory.get("source_vlm_backend") or "")
@@ -720,6 +723,56 @@ class V3ReplayRunner:
         # 倒置。新设计：过程日志一律实时流，单步只保留 status。详见
         # 内部缓存回放步骤化日志约定。
         self._current_step_status: str = ""
+        # 本轮事实记录，与缓存计划分离；只供最终断言，不修改缓存或执行策略。
+        self._execution_history: List[Dict[str, Any]] = []
+        self._step_action_source = "cache"
+
+    @property
+    def execution_history(self) -> List[Dict[str, Any]]:
+        return deepcopy(self._execution_history)
+
+    def _record_runtime_action(
+        self, action: Dict[str, Any], *, index: int, source: str,
+        status: str, action_id: str = "", reason: str = "",
+    ) -> Dict[str, Any]:
+        fields = (
+            "type", "point", "center", "start", "end", "direction", "amount",
+            "seconds", "wait_ms", "app_name", "name", "app", "bundle_id", "content", "text",
+            "keycode", "duration_ms", "interval_ms", "save_to_album", "plan_intent",
+        )
+        row = {
+            "sequence": len(self._execution_history) + 1,
+            "index": index, "action_id": action_id, "source": source,
+            "runtime_status": status,
+            "action": deepcopy({key: action[key] for key in fields if key in action}),
+        }
+        if reason:
+            row["reason"] = reason
+        self._execution_history.append(row)
+        return row
+
+    async def _execute_recorded_action(
+        self, action: Dict[str, Any], *, index: int, source: str,
+        action_id: str = "", reason: str = "",
+    ) -> None:
+        row = self._record_runtime_action(
+            action, index=index, source=source, status="pending",
+            action_id=action_id, reason=reason,
+        )
+        started = time.monotonic()
+        try:
+            await self.dispatcher.execute(action)
+        except asyncio.CancelledError:
+            row["runtime_status"] = "interrupted"
+            raise
+        except Exception as exc:
+            row["runtime_status"] = "execution_error"
+            row["error"] = f"{type(exc).__name__}: {str(exc)[:240]}"
+            raise
+        else:
+            row["runtime_status"] = "completed_without_exception"
+        finally:
+            row["elapsed_ms"] = int((time.monotonic() - started) * 1000)
 
     async def run(self) -> ReplayResult:
         actions = list(self.trajectory.get("actions") or [])
@@ -731,6 +784,7 @@ class V3ReplayRunner:
             step_started_at = time.monotonic()
             await self._emit_step_start(index)
             self._current_step_status = ""
+            self._step_action_source = "cache"
             try:
                 await self._log_v3_step_start(
                     index=index,
@@ -770,6 +824,12 @@ class V3ReplayRunner:
                         "辅助",
                         "当前页面已可衔接后续缓存动作，跳过本动作",
                     )
+                    self._record_runtime_action(
+                        {"type": action.get("type"), "plan_intent": _v3_target_text(action)},
+                        index=index, source="cache", status="skipped",
+                        action_id=str(action.get("action_id") or ""),
+                        reason=self._v3_step_status(),
+                    )
                     self._last_frame = before_bytes
                     self._reuse_next_before_frame = True
                     self._final_after_bytes = before_bytes
@@ -789,33 +849,15 @@ class V3ReplayRunner:
                         elapsed_ms=elapsed_ms,
                     )
                     continue
-                if (
-                    str(execution_action.get("type") or "") == A.ACTION_TYPE
-                    and execution_action.get("point")
-                ):
-                    focus_action = {
-                        "type": A.ACTION_CLICK,
-                        "point": execution_action["point"],
-                        "plan_intent": "聚焦输入框",
-                    }
-                    await self.dispatcher.execute(focus_action)
-                    executed += 1
-                    await self._log_v3_stage(
-                        index,
-                        "动作",
-                        f"先聚焦输入框：{_format_v3_action_log(focus_action)}",
-                    )
-                    await self._log_v3_stage(
-                        index,
-                        "执行",
-                        _v3_executed_action_message(focus_action),
-                    )
                 await self._log_v3_stage(
                     index,
                     "动作",
                     f"执行缓存动作：{_format_v3_action_log(execution_action)}",
                 )
-                await self.dispatcher.execute(execution_action)
+                await self._execute_recorded_action(
+                    execution_action, index=index, source=self._step_action_source,
+                    action_id=str(action.get("action_id") or ""),
+                )
                 executed += 1
                 # take_screenshot 非致命失败：写进 Run 时间线（不杀 case），与首跑
                 # 可见性一致，避免 UI 只显示"完成"。用 level=2（警告/黄色）而非默认
@@ -1024,6 +1066,7 @@ class V3ReplayRunner:
                 self._set_v3_step_status("已跳过(瞬态)")
                 return None
             if gate_outcome["mode"] == "execute_repair":
+                self._step_action_source = "ephemeral_gate_repair"
                 self._set_v3_step_status("局部修复成功")
                 await self._log_v3_stage(
                     index,
@@ -1037,7 +1080,7 @@ class V3ReplayRunner:
             await self._log_v3_stage(
                 index,
                 "定位",
-                "输入类动作先重新定位输入框，再复用缓存输入内容",
+                "输入类动作确认目标输入框可见后，按首跑语义向已激活框输入；不隐式新增聚焦点击",
             )
             locator_action = _type_locator_action(action)
             located_action = await self._locate_with_retry_and_rescue(
@@ -1048,9 +1091,9 @@ class V3ReplayRunner:
             )
             if located_action is None:
                 return None
-            out = _non_locator_action(action)
-            out["point"] = located_action["point"]
-            return out
+            # 首跑 type 不执行点击；焦点由原轨迹中显式点击或页面初始状态提供。
+            # 本轮定位只确认目标可见，不能把新坐标变成源轨迹没有的额外 click。
+            return _non_locator_action(action)
         if action_type in {A.ACTION_CLICK, A.ACTION_DOUBLE_TAP, A.ACTION_LONG_PRESS, A.ACTION_DRAG}:
             await self._log_v3_stage(
                 index,
@@ -1236,7 +1279,22 @@ class V3ReplayRunner:
                     "稳定",
                     f"辅助 VLM 判断=等待页面，等待 {wait_ms}ms 后重新定位",
                 )
-                await asyncio.sleep(wait_ms / 1000)
+                wait_started = time.monotonic()
+                wait_record = self._record_runtime_action(
+                    {"type": A.ACTION_WAIT, "wait_ms": wait_ms},
+                    index=int(action.get("index") or 0), source="rescue_wait",
+                    status="pending", action_id=str(action.get("action_id") or ""),
+                    reason=decision.reason,
+                )
+                try:
+                    await asyncio.sleep(wait_ms / 1000)
+                except asyncio.CancelledError:
+                    wait_record["runtime_status"] = "interrupted"
+                    raise
+                else:
+                    wait_record["runtime_status"] = "completed_without_exception"
+                finally:
+                    wait_record["elapsed_ms"] = int((time.monotonic() - wait_started) * 1000)
                 latest = await self._wait_stable_for_step(
                     int(action.get("index") or 0),
                     phase="辅助等待后",
@@ -1264,7 +1322,10 @@ class V3ReplayRunner:
                     coord_space=decision.coord_space,
                     image_size=_decode_image_size(latest),
                 )
-                await self.dispatcher.execute(repair_action)
+                await self._execute_recorded_action(
+                    repair_action, index=int(action.get("index") or 0), source="rescue_repair",
+                    action_id=str(action.get("action_id") or ""), reason=decision.reason,
+                )
                 await self._log_v3_stage(
                     int(action.get("index") or 0),
                     "修复",
@@ -1841,6 +1902,8 @@ def _replay_action_from_parsed(
     window_size: Tuple[int, int],
 ) -> Dict[str, Any]:
     out: Dict[str, Any] = {
+        # 定位只替换坐标；保留首跑动作的其余参数（含双击间隔等）。
+        **source_action,
         "index": source_action.get("index"),
         "action_id": source_action.get("action_id"),
         "type": parsed.action,
@@ -1870,7 +1933,7 @@ def _non_locator_action(action: Dict[str, Any]) -> Dict[str, Any]:
         out.setdefault("direction", "down")
         out.setdefault("amount", 1)
     if action_type == A.ACTION_WAIT:
-        out["seconds"] = max(1, min(60, int(action.get("seconds") or 1)))
+        out["seconds"] = max(1, int(action.get("seconds") or 1))
     return out
 
 

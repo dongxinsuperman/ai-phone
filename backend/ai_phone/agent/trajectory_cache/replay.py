@@ -103,8 +103,10 @@ class ReplayActionDispatcher:
     三端差异优先放在 BaseDriver 子类里；这里保持统一 action schema。
     """
 
-    def __init__(self, driver: BaseDriver):
+    def __init__(self, driver: BaseDriver, *, max_wait_seconds: int = 60):
         self.driver = driver
+        # V1/V2 保持旧上限；V3 由调用方传入首跑同一配置，避免长等待被静默缩短。
+        self.max_wait_seconds = max(1, int(max_wait_seconds))
         # take_screenshot 非致命失败时在此暂存原因，供调用方（回放循环）读取后
         # 写进 Run 时间线；每次 execute() 开头清空，读"最近一次动作"的结果。
         self.last_screenshot_error: Optional[str] = None
@@ -130,7 +132,7 @@ class ReplayActionDispatcher:
             await run_blocking(self.driver.type_text, str(action.get("content") or ""))
             return
         if action_type == A.ACTION_WAIT:
-            seconds = max(0, min(60, int(action.get("seconds") or 1)))
+            seconds = max(0, min(self.max_wait_seconds, int(action.get("seconds") or 1)))
             await asyncio.sleep(seconds)
             return
         if action_type == A.ACTION_SCROLL:

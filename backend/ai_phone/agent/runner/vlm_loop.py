@@ -1521,6 +1521,24 @@ class VLMRunner:
                         step=step,
                     )
                 else:
+                    # 重唤起是实际发生的点击，也必须进入首跑轨迹；使用触发目标的
+                    # 原语义，不能误挂本步“目标按钮”的 Thought。设备像素不再缩放。
+                    trigger_click = A.ParsedAction(
+                        action=A.ACTION_CLICK, point=[rcx, rcy], coord_space="absolute",
+                        raw=f"click(point='<point>{rcx} {rcy}</point>')",
+                    ).to_dict()
+                    trigger_click.update(
+                        raw=f"click(point='<point>{rcx} {rcy}</point>')",
+                        thought=takeover.extra.get("trigger_thought", "点击唤起瞬态工具栏"),
+                        vlm_screenshot_size=None,
+                        source="agent_system_retrigger",
+                    )
+                    await self._emit_event(make_event(
+                        EVT_ACTION, self.run_id, step=step, text=display_action,
+                        action_type=action_type,
+                        actions=[trigger_click, *[p.to_dict() for p in parsed_chain]],
+                        vlm_screenshot_size=self._last_vlm_screenshot_size,
+                    ))
                     await asyncio.sleep(TRANSIENT_TAKEOVER_WAIT_MS / 1000.0)
             # 用完即清，绝不跨步保留
             self._transient_snapshot = None
@@ -1674,6 +1692,7 @@ class VLMRunner:
                     ),
                 )
                 if snapshot is not None:
+                    snapshot.extra["trigger_thought"] = thought
                     self._transient_snapshot = snapshot
                     # 用 late_frame 替换 tail —— 它才是"瞬态 UI 自隐后"的稳定
                     # 画面，下一步若**不**走接管（例如外部 stop 或终止动作）也
@@ -1850,6 +1869,12 @@ class VLMRunner:
                 detail = f"等待 {secs['seconds']} 秒（{secs['source']}）"
             await self._log(1, "等待", detail, step=step)
             await asyncio.sleep(secs["seconds"])
+            # 只更新旁路记录，不新增手机动作：缓存承接实际等待值，而非被裁剪的申请值。
+            actual_wait = A.ParsedAction(action=A.ACTION_WAIT, seconds=int(secs["seconds"]))
+            await self._emit_event(make_event(
+                EVT_ACTION, self.run_id, step=step, text=actual_wait.raw or f"wait(seconds={actual_wait.seconds})",
+                action_type=A.ACTION_WAIT, actions=[actual_wait.to_dict()],
+            ))
 
         elif action == A.ACTION_OPEN_APP:
             app_name = parsed.name or ""

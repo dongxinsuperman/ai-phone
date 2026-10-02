@@ -59,6 +59,7 @@ class CacheReplayAssertionVerifier:
         final_bytes: bytes,
         trajectory: Optional[Dict[str, Any]] = None,
         prev_before_bytes: Optional[bytes] = None,
+        execution_history: Optional[List[Dict[str, Any]]] = None,
     ) -> CacheAssertionResult:
         if not final_bytes:
             return CacheAssertionResult("FAIL", "缓存断言缺少最终截图")
@@ -70,6 +71,7 @@ class CacheReplayAssertionVerifier:
             trajectory=trajectory or {},
             has_prev=prev_before_bytes is not None,
             is_structured=is_structured_goal(goal),
+            execution_history=execution_history,
         )
         try:
             text = await asyncio.wait_for(
@@ -116,6 +118,7 @@ def build_cache_assertion_prompt(
     trajectory: Dict[str, Any],
     has_prev: bool,
     is_structured: Optional[bool] = None,
+    execution_history: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     img_index_intro = (
         "本提示词附带两张图（按消息顺序）：\n"
@@ -127,7 +130,22 @@ def build_cache_assertion_prompt(
         "- 附图：当前最终落点画面（断言要验收的对象）\n"
         "本次没有动作前对照帧，请综合该图、缓存回放摘要与用户目标判断。"
     )
-    replay_summary = _format_replay_summary(trajectory)
+    replay_summary = (
+        _format_execution_history(execution_history)
+        if execution_history is not None else _format_replay_summary(trajectory)
+    )
+    runtime_note = (
+        "- 本摘要来自本轮实际回放记录，包括重新定位后的动作、局部修复、等待和跳过。\n"
+        "- skipped 表示该缓存动作本轮没有执行；pending/interrupted/execution_error 不表示执行完成。\n"
+        "- completed_without_exception 只表示 Runtime 调用完成且无异常，不单独证明 UI 业务结果。\n"
+    ) if execution_history is not None else ""
+    runtime_description = (
+        "- replay action 摘要是本轮 Runtime 记录，只证明条目中明确标注的调用、跳过和执行状态，"
+        "不单独证明 UI 产生了预期业务结果。\n"
+    ) if execution_history is not None else (
+        "- replay action 摘要是本次回放动作序列的 Runtime 记录，只证明这些动作"
+        "进入并完成了回放调用，不单独证明 UI 产生了预期业务结果。\n"
+    )
     source_completion = _format_source_completion(trajectory)
     structured = is_structured_goal(goal) if is_structured is None else is_structured
     if structured:
@@ -141,10 +159,10 @@ def build_cache_assertion_prompt(
             "把它们写成验收要求时才直接影响 PASS/FAIL，否则只作为理解最终结果的上下文。\n\n"
             "缓存通道说明：\n"
             "- 本次执行是历史成功轨迹的回放，不是 VLM 实时决策。\n"
-            "- replay action 摘要是本次回放动作序列的 Runtime 记录，只证明这些动作"
-            "进入并完成了回放调用，不单独证明 UI 产生了预期业务结果。\n"
+            f"{runtime_description}"
             "- 当前可见状态仍必须由附图 2 支持；回放摘要不能推翻截图里的直接可见事实。\n"
             "- 附图 2 没有展示某段历史过程，不等于该过程没有发生。\n\n"
+            f"{runtime_note}"
             "首次成功语义锚点说明：\n"
             "- 这部分来自生成缓存的成功 Run，可用于理解业务别名、页面别名和"
             "首跑对用户目标的解释；遇到口语歧义时优先采纳锚点的解释，避免"
@@ -174,10 +192,10 @@ def build_cache_assertion_prompt(
         f"{img_index_intro}\n\n"
         "缓存通道说明：\n"
         "- 本次执行是历史成功轨迹的回放，不是 VLM 实时决策。\n"
-        "- replay action 摘要是本次回放动作序列的 Runtime 记录，只证明这些动作"
-        "进入并完成了回放调用，不单独证明 UI 产生了预期业务结果。\n"
+        f"{runtime_description}"
         "- 当前可见状态仍必须由最终截图支持；回放摘要不能推翻截图里的直接可见事实。\n"
         "- 最终截图没有展示某段历史过程，不等于该过程没有发生。\n\n"
+        f"{runtime_note}"
         "首次成功语义锚点说明：\n"
         "- 这部分来自生成缓存的成功 Run，可用于理解用户目标里的业务别名、"
         "页面别名和首跑对目标的解释。\n"
@@ -228,6 +246,39 @@ def _format_replay_summary(trajectory: Dict[str, Any]) -> str:
         lines.append(f"step {index}: {action_type}{intent_text}{detail}")
     if len(actions) > 20:
         lines.insert(0, f"... 前面还有 {len(actions) - 20} 个 action")
+    return "\n".join(lines)
+
+
+def _format_execution_history(history: List[Dict[str, Any]]) -> str:
+    """V3 本轮事实摘要；不把缓存计划或历史首跑坐标冒充执行记录。"""
+    if not history:
+        return "(本轮无已记录的回放操作；不以缓存计划替代执行记录)"
+    # 保持原 V3 最后 20 个缓存步骤的范围；修复/等待不能挤掉该步骤的其它操作。
+    steps = list(dict.fromkeys(row.get("index") for row in history))
+    kept_steps = set(steps[-20:])
+    rows = [row for row in history if row.get("index") in kept_steps]
+    lines: List[str] = []
+    for row in rows:
+        action = row.get("action") or {}
+        status = str(row.get("runtime_status") or "not_recorded")
+        intent = str(action.get("plan_intent") or "")
+        detail = "" if status == "skipped" else _action_detail(action)
+        if "wait_ms" in action:
+            detail += f" wait_ms={action['wait_ms']}"
+        line = (
+            f"record {row.get('sequence')} step {row.get('index')}: "
+            f"{action.get('type')} source={row.get('source')} status={status}"
+            f"{detail}"
+        )
+        if intent:
+            line += f" plan_intent={intent}"
+        if row.get("reason"):
+            line += f" reason={row['reason']}"
+        if row.get("error"):
+            line += f" error={row['error']}"
+        lines.append(line)
+    if len(steps) > 20:
+        lines.insert(0, f"... 前面还有 {len(steps) - 20} 个缓存步骤的 {len(history) - len(rows)} 条本轮 Runtime 记录")
     return "\n".join(lines)
 
 
