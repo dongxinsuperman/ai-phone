@@ -4,6 +4,45 @@
 
 ## Unreleased
 
+### V3 缓存共享：平台族 + Case 原文哈希
+
+- 新 V3 成品由 Server 按平台族与 Case 原文哈希统一生成共享 key，同端不同设备
+  可复用；Android、iOS、鸿蒙互相隔离，`ios_sim` 与 iOS 真机同属 iOS。
+  哈希沿用完整 Run goal 的既有空白规范化口径，不使用 Case ID 或设备标识，
+  也不把运行期 Map 新加入 key。设备、分辨率、首跑 Run 仍保留用于来源追溯。
+- 回放使用当前承载设备与截图，复用既有 V3 重定位、救援、最终断言和失败首跑
+  降级；不修改 Case/Map 输入、固定输入内容、App 参数或首跑执行规则。
+  同一原文配不同 Map/账号的任务不会因此自动改写首跑留下的固定输入参数。
+- 混合版本保守兼容：Agent hello 新增可选共享能力声明；旧 Server 忽略该字段。
+  新 Server 仅向已声明能力的 Agent 下发平台共享缓存；旧 Agent 保持设备缓存，
+  无共享命中则正常首跑。新归档用现有 meta 标记共享，不改缓存 schema/表结构。
+  未知平台退回设备级缓存，旧缓存仍仅供原设备命中，不批量迁移或自动提升共享。
+- V3 原子 upsert 处理多设备同时首跑成功的同 key 写入。共享成品带内部版本号；
+  派发时在现有 RunLog 记录本 attempt 实际命中的 key/版本（包括未命中）。
+  suspect/失败删除只作用于该版本，不误伤另一设备新写入的成功缓存；记录缺失
+  或异常时不猜测删除共享缓存。不改变正常回放成功后“不重建缓存”的策略。
+- 仅改变 V3 绑定和可选兼容信息，V1/V2、用户接口、模型/思考配置、数据库列与
+  依赖不变。需更新 Server 与相关 Agent 后启用跨设备共享；可分批更新，不要求
+  用户修改提交代码。模拟数据库/派发/回放回归不等同于真实设备跨机验收。
+
+### V3 cache sharing: platform family + normalized Case-text hash
+
+- Compute shared V3 keys on the Server from platform family and the existing full-goal
+  semantic hash. Separate Android/iOS/Harmony; fold iOS simulators into iOS. Keep source
+  devices, resolutions, and Runs as provenance, not binding. Do not add Map or Case IDs
+  to the hash or dynamically rewrite cached fixed input/application parameters.
+- Reuse current-device relocation, rescue, assertion, and full-run fallback. Preserve
+  first-run semantics and the policy of not rebuilding caches after successful replay.
+- Add optional Agent hello capability and archive-meta scope markers. Old Servers ignore
+  additions; new Servers only dispatch shared caches to capable Agents. Keep legacy caches
+  device-bound without bulk migration; unknown platforms remain device-bound.
+- Use atomic V3 upsert for concurrent first runs. Persist the exact selected generation
+  per Run attempt in existing logs; late failures cannot invalidate newer successful caches.
+  Missing/corrupt bindings do not authorize deleting shared caches.
+- Preserve V1/V2, user-facing contracts, settings, models, database schema, and dependencies.
+  Sharing requires updated Server and Agents, supports staged updates, and needs no caller
+  changes. Simulated regressions are not physical cross-device acceptance.
+
 ### V3 滑动回放：根据当前截图重定位操作区域
 
 - `scroll` 接入现有 V3 定位与救援链路，根据缓存语义和当前截图重新取得滑动中心，

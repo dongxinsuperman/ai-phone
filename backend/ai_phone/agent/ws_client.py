@@ -169,6 +169,7 @@ class AgentWSClient:
                 "agent_name": self.agent_name,
                 "host_os": self.host_os,
                 "devices": devices,
+                "capabilities": [P.CAP_V3_PLATFORM_CACHE],
             }
         )
 

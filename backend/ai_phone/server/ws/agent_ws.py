@@ -212,6 +212,7 @@ async def agent_ws(
     devices = await filter_managed_devices_for_agent(agent_id, devices)
     serials = {str(d.get("serial")) for d in devices if d.get("serial")}
     await hub.register_agent(agent_id, agent_name, host_os, ws)
+    hub.set_agent_capabilities(agent_id, first.get("capabilities"))
     await hub.set_devices(agent_id, serials)
     await _upsert_devices(agent_id, devices, hub)
 
@@ -293,6 +294,7 @@ async def _dispatch(
         # rescan 检测到设备集合变化时会重发 hello（保持初次握手同样的 schema）。
         # 这里做幂等的设备列表覆盖：和初次握手共用 _upsert_devices + hub.set_devices。
         devices = msg.get("devices") or []
+        hub.set_agent_capabilities(agent_id, msg.get("capabilities"))
         devices = await filter_managed_devices_for_agent(agent_id, devices)
         serials = {str(d.get("serial")) for d in devices if d.get("serial")}
         await hub.set_devices(agent_id, serials)
@@ -560,6 +562,7 @@ async def _dispatch(
                     cache_key=cache_key,
                     run_id=str(msg.get("run_id") or ""),
                     reason=str(msg.get("reason") or "")[:200],
+                    attempt=_message_attempt(msg),
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("mark cache suspect 失败 cache_key={}: {}", cache_key[:12], exc)
@@ -909,7 +912,7 @@ async def _finalize_run(run_id: str, msg: Dict[str, Any]) -> bool:
             schedule_trajectory_cache_finalize,
         )
 
-        schedule_trajectory_cache_finalize(get_session_factory(), run_id, final_status)
+        schedule_trajectory_cache_finalize(get_session_factory(), run_id, final_status, attempt=attempt)
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "轨迹缓存后台整理调度失败 run_id={} status={}: {}",

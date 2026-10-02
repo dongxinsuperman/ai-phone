@@ -145,7 +145,8 @@ def _recv_until(agent, msg_type: str, max_msgs: int = 5) -> dict:
     raise AssertionError(f"未在前 {max_msgs} 条消息内收到 type={msg_type}")
 
 
-def test_agent_ws_hello_registers_device(ws_app):
+@pytest.mark.parametrize("capabilities", [None, ["v3_platform_cache"]])
+def test_agent_ws_hello_registers_device(ws_app, capabilities):
     token = get_settings().agent_token
     with TestClient(ws_app) as client:
         with client.websocket_connect(f"/ws/agent?token={token}") as agent:
@@ -155,6 +156,7 @@ def test_agent_ws_hello_registers_device(ws_app):
                     "agent_id": "agent-x",
                     "agent_name": "mac-local",
                     "host_os": "Darwin",
+                    **({"capabilities": capabilities} if capabilities is not None else {}),
                     "devices": [
                         {
                             "serial": "S1",
@@ -170,6 +172,7 @@ def test_agent_ws_hello_registers_device(ws_app):
                 }
             )
             _wait_device_online(client, "S1")
+            assert ws_app.state.hub.agent_supports("agent-x", "v3_platform_cache") is bool(capabilities)
 
 
 def test_browser_receives_agent_log(ws_app):

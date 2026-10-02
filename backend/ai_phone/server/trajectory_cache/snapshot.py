@@ -19,7 +19,7 @@ from .service import (
     get_active_trajectory_cache_v1,
     get_active_trajectory_cache_v2,
 )
-from .v3_service import get_active_trajectory_cache_v3
+from .v3_service import get_active_trajectory_cache_v3, record_v3_cache_binding
 
 _LOOKUP = {
     "v1": get_active_trajectory_cache_v1,
@@ -53,13 +53,22 @@ async def build_cache_snapshot(
     device_serial: str,
     goal: str,
     effective_cache_mode: str,
+    platform: str = "",
+    allow_platform_cache: bool = False,
+    run_id: str = "",
+    attempt: int = 1,
 ) -> Optional[Dict[str, Any]]:
     """命中则返回随 start_run 下发的 CacheSnapshot；off / 未命中返回 None。"""
     mode = str(effective_cache_mode or CACHE_MODE_OFF).strip().lower()
     lookup = _LOOKUP.get(mode)
     if lookup is None or not (device_serial and goal):
         return None
-    hit = await lookup(session_factory, device_code=device_serial, run_semantic_text=goal)
+    kwargs = {"device_code": device_serial, "run_semantic_text": goal}
+    if mode == "v3":
+        kwargs.update(platform=platform, allow_platform_cache=allow_platform_cache)
+    hit = await lookup(session_factory, **kwargs)
+    if mode == "v3" and run_id:
+        await record_v3_cache_binding(session_factory, run_id=run_id, hit=hit, attempt=attempt)
     if not hit:
         return None
 

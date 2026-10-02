@@ -80,7 +80,24 @@ class RunDispatchService:
         if effective_cache_mode and effective_cache_mode != "off":
             payload["cache_mode"] = effective_cache_mode
         # M4：命中缓存随 start_run 下发回放快照（只下发命中那条），未命中照常首跑。
-        snapshot = await self._maybe_build_cache_snapshot(run_id=run_id, serial=serial, goal=goal)
+        snapshot = await self._maybe_build_cache_snapshot(
+            run_id=run_id, serial=serial, goal=goal, platform=platform,
+            allow_platform_cache=self._hub.agent_supports(agent_id, P.CAP_V3_PLATFORM_CACHE),
+            attempt=max(1, int(attempt or 1)),
+        )
+        # DB 查询期间可能重连为旧 Agent。重新检查，不能把已选中的共享快照
+        # 下发到不再具备能力的连接；清除该 attempt 的选择，正常首跑。
+        if (
+            snapshot and (snapshot.get("meta") or {}).get("cache_revision")
+            and not self._hub.agent_supports(agent_id, P.CAP_V3_PLATFORM_CACHE)
+        ):
+            from ..trajectory_cache.v3_service import record_v3_cache_binding
+
+            await record_v3_cache_binding(
+                self._session_factory or get_session_factory(), run_id=run_id, hit=None,
+                attempt=max(1, int(attempt or 1)),
+            )
+            snapshot = None
         if snapshot:
             payload["cache_snapshot"] = snapshot
 
@@ -99,7 +116,8 @@ class RunDispatchService:
             return await resolve_wake_decision(session, serial, platform)
 
     async def _maybe_build_cache_snapshot(
-        self, *, run_id: str, serial: str, goal: str
+        self, *, run_id: str, serial: str, goal: str, platform: str = "",
+        allow_platform_cache: bool = False, attempt: int = 1,
     ) -> Optional[Dict[str, Any]]:
         """命中缓存则返回下发快照；off / 未命中 / 异常一律返回 None（降级首跑）。
 
@@ -114,7 +132,9 @@ class RunDispatchService:
                 run = await session.get(Run, run_id)
                 mode = str(getattr(run, "effective_cache_mode", "") or "off") if run else "off"
             return await build_cache_snapshot(
-                session_factory, device_serial=serial, goal=goal, effective_cache_mode=mode
+                session_factory, device_serial=serial, goal=goal, effective_cache_mode=mode,
+                platform=platform, allow_platform_cache=allow_platform_cache,
+                run_id=run_id, attempt=attempt,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("构建缓存快照失败（降级为首跑）run_id={}: {}", run_id, exc)

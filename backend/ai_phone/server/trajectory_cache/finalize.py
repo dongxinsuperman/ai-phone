@@ -25,6 +25,8 @@ def schedule_trajectory_cache_finalize(
     session_factory: async_sessionmaker[AsyncSession],
     run_id: str,
     final_status: str,
+    *,
+    attempt: Optional[int] = None,
 ) -> None:
     """Schedule cache cleanup without blocking the Run done path.
 
@@ -36,6 +38,7 @@ def schedule_trajectory_cache_finalize(
                 session_factory=session_factory,
                 run_id=run_id,
                 final_status=final_status,
+                attempt=attempt,
             ),
             name=f"trajectory-cache-finalize-{run_id}",
         )
@@ -61,6 +64,7 @@ async def finalize_trajectory_cache_for_run(
     session_factory: async_sessionmaker[AsyncSession],
     run_id: str,
     final_status: str,
+    attempt: Optional[int] = None,
 ) -> Optional[str]:
     """Run 结束后的缓存收尾：失败删缓存；成功不在 Server 归档（由 Agent 回传）。"""
     from ai_phone.server.trajectory_cache.service import (  # noqa: PLC0415
@@ -102,7 +106,7 @@ async def finalize_trajectory_cache_for_run(
     )
     try:
         if cache_mode == "v3":
-            await delete_trajectory_cache_v3_for_run(session_factory, run_id)
+            await delete_trajectory_cache_v3_for_run(session_factory, run_id, attempt=attempt)
         elif cache_mode == "v1":
             await delete_trajectory_cache_v1_for_run(session_factory, run_id)
         elif cache_mode == "v2":

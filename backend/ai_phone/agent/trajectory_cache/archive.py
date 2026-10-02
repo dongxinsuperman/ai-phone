@@ -153,6 +153,7 @@ async def build_v3_archive(
         ),
         "meta": {
             "source_schema_version": V3_CACHE_SCHEMA_VERSION,
+            "cache_scope": "platform",
             "plan_intent_cleaner": "rule",
         },
     }

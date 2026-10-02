@@ -44,6 +44,7 @@ async def test_rescan_loop_sends_periodic_device_snapshot(monkeypatch):
     hello_payloads = [msg for msg in sent if msg.get("type") == P.MSG_HELLO]
     assert len(hello_payloads) == 2
     assert [msg["devices"][0]["serial"] for msg in hello_payloads] == ["S1", "S1"]
+    assert all(P.CAP_V3_PLATFORM_CACHE in msg["capabilities"] for msg in hello_payloads)
 
 
 @pytest.mark.asyncio
@@ -104,3 +105,4 @@ async def test_pre_hello_runs_before_first_hello(monkeypatch):
     assert order == ["pre", "provider", "connect", "session"]
     hello = [payload for payload in sent if payload["type"] == P.MSG_HELLO][0]
     assert hello["devices"][0]["serial"] == "VM1"
+    assert P.CAP_V3_PLATFORM_CACHE in hello["capabilities"]

@@ -32,6 +32,7 @@ class AgentConn:
     last_seen_at: float = field(default_factory=time.time)
     serials: Set[str] = field(default_factory=set)
     run_ids: Set[str] = field(default_factory=set)
+    capabilities: Set[str] = field(default_factory=set)
 
 
 class Hub:
@@ -209,6 +210,17 @@ class Hub:
         后同进程重连（agent_id 同进程稳定），其名下 Run 仍在本地执行，不应回收。
         """
         return agent_id in self._agents
+
+    def set_agent_capabilities(self, agent_id: str, capabilities: Any) -> None:
+        conn = self._agents.get(agent_id)
+        if conn is not None:
+            conn.capabilities = {
+                item for item in capabilities if isinstance(item, str)
+            } if isinstance(capabilities, list) else set()
+
+    def agent_supports(self, agent_id: str, capability: str) -> bool:
+        conn = self._agents.get(agent_id)
+        return conn is not None and capability in conn.capabilities
 
     # ------------------------------------------------------------------
     # Run 路由

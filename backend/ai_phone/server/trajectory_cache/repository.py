@@ -4,8 +4,8 @@
 经 M3 可靠通道（``MSG_CACHE_ARCHIVE``）回传 Server；本模块把成品 upsert 到对应的
 ``vlm_trajectory_cache_v*`` 表。
 
-约定：``cache_key`` 由 Server 这里**统一计算**（``device_code`` + ``run_semantic_text``
-+ ``schema_version``），不信任 Agent 传来的 key，避免两端实现漂移导致命中/写入对不上。
+约定：``cache_key`` 由 Server 统一计算。V1/V2 与旧 V3 仍绑定设备；新 V3
+按平台族 + 原文哈希共享，不信任 Agent 传来的 key。
 
 成品载荷（archive）约定字段：
 - ``cache_mode``: ``"v1"`` | ``"v2"`` | ``"v3"``
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+from uuid import uuid4
 
 from loguru import logger
 from sqlalchemy import select
@@ -35,6 +36,9 @@ from ai_phone.server.trajectory_cache.service import (
     build_cache_key,
 )
 from ai_phone.server.trajectory_cache.v3_service import V3_CACHE_SCHEMA_VERSION
+from ai_phone.server.trajectory_cache.v3_identity import (
+    build_v3_platform_cache_key, resolve_v3_platform,
+)
 
 _MODE_TO_SCHEMA = {
     "v1": CACHE_SCHEMA_VERSION_V1,
@@ -72,6 +76,23 @@ async def store_trajectory_cache_archive(
     now = datetime.now(timezone.utc)
 
     if mode == "v3":
+        meta = dict(archive.get("meta") or {})
+        if meta.get("cache_scope") == "platform":
+            async with session_factory() as session:
+                family = await resolve_v3_platform(
+                    session, device_code=device_code, hint=str(archive.get("platform") or ""),
+                )
+            if family:
+                cache_key, normalized_goal, semantic_hash = build_v3_platform_cache_key(
+                    platform=family, run_semantic_text=run_semantic_text,
+                )
+                # 共享版本只在 Server 写入时产生，失效操作必须匹配本次命中的版本。
+                meta["cache_revision"] = uuid4().hex
+                archive = {**archive, "platform": family, "meta": meta}
+            else:
+                meta.pop("cache_scope", None)
+                meta.pop("cache_revision", None)
+                archive = {**archive, "meta": meta}
         return await _upsert_v3(
             session_factory,
             archive,
@@ -153,6 +174,34 @@ async def _upsert_v3(
         logger.info("V3 成品缓存回传无 action，跳过 upsert")
         return None
     async with session_factory() as session:
+        values = {
+            "cache_key": cache_key,
+            "device_code": str(archive.get("device_code") or ""),
+            "run_semantic_hash": semantic_hash, "run_semantic_text": normalized_goal,
+            "case_id": archive.get("case_id"), "platform": str(archive.get("platform") or ""),
+            "resolution": str(archive.get("resolution") or ""),
+            "app_package_or_bundle": str(archive.get("app_package_or_bundle") or ""),
+            "schema_version": V3_CACHE_SCHEMA_VERSION, "status": "active",
+            "source_run_id": str(archive.get("source_run_id") or ""),
+            "source_vlm_backend": str(archive.get("source_vlm_backend") or ""),
+            "actions_json": actions, "source_completion": archive.get("source_completion") or {},
+            "meta_json": archive.get("meta") or {}, "updated_at": now, "last_success_at": now,
+        }
+        dialect = session.get_bind().dialect.name
+        if dialect in {"postgresql", "sqlite"}:
+            if dialect == "postgresql":
+                from sqlalchemy.dialects.postgresql import insert
+            else:
+                from sqlalchemy.dialects.sqlite import insert
+            # 同平台多设备同时完成首跑时，由数据库唯一 key 原子收口，不竞争插入。
+            statement = insert(VlmTrajectoryCacheV3).values(**values)
+            await session.execute(statement.on_conflict_do_update(
+                index_elements=[VlmTrajectoryCacheV3.cache_key],
+                set_={k: getattr(statement.excluded, k) for k in values if k != "cache_key"},
+            ))
+            await session.commit()
+            logger.info("V3 成品缓存已写库 cache_key={} actions={}", cache_key, len(actions))
+            return cache_key
         row = (
             await session.execute(
                 select(VlmTrajectoryCacheV3).where(VlmTrajectoryCacheV3.cache_key == cache_key)

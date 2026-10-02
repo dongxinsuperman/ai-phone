@@ -143,6 +143,7 @@ MSG_DRIVER_COMMAND = "driver_command"
 # 拔插会话 / WDA preload），避免真机 USB 抖动波及虚拟机、或虚拟机状态污染真机。
 # 详见 docs-internal/ios-simulator-plan（iOS虚拟机独立接入方案）.md §3.1、§6.1。
 Platform = Literal["android", "ios", "harmony", "ios_sim"]
+CAP_V3_PLATFORM_CACHE = "v3_platform_cache"
 DeviceStatus = Literal["idle", "busy", "offline"]
 
 
@@ -210,6 +211,7 @@ class HelloMsg(TypedDict):
     agent_name: str
     host_os: str
     devices: List[DeviceInfo]
+    capabilities: NotRequired[List[str]]
 
 
 class DeviceUpdateMsg(TypedDict):
