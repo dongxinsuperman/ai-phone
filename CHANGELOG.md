@@ -4,6 +4,22 @@
 
 ## Unreleased
 
+### 修复 V3 救援放行后复用旧截图
+
+- 救援点击、关闭弹窗或等待后判断当前步骤已完成时，将救援确认的最新截图
+  传回回放器，用于本步 after、下一步定位及最后一步的断言证据。此前会错误地
+  复用救援前的画面，导致已经消失的弹窗再次被定位/救援。
+- 保留无需救援的跳过行为，不增加模型请求或截图等待；无配置、缓存格式、
+  Server/Agent 协议变更。更新并重启空闲 Agent 后生效。
+
+### Fix stale frames after V3 rescue handoff
+
+- When rescue completes a step after a repair, popup dismissal or wait, carry its latest
+  observed frame into the step's after image, next localization and final-step evidence.
+  Previously the pre-rescue frame could replace it and trigger unnecessary recovery.
+- Preserve ordinary skips without extra model calls or screenshot waits. No settings,
+  cache format or wire changes; restart an idle updated Agent to apply.
+
 ### 豆包 V3 定位：回放内复用连接、传输失败后重建
 
 - 豆包 V3 坐标定位在单次回放内使用独立 HTTP 客户端和连接池，空闲连接保留

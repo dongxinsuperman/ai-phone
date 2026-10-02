@@ -865,6 +865,7 @@ class V3ReplayRunner:
         self._last_locator_point: Optional[Tuple[int, int]] = None
         self._last_locator_target = ""
         self._reuse_next_before_frame = False
+        self._skip_after_frame: Optional[bytes] = None
         # 单步 status 文案，由路标 / 鉴定 / 修复等深层逻辑实时更新，最终随
         # `缓存完成` 收尾日志一起输出。
         # 设计变更（2026-05-16）：之前还有 _current_step_index / _total / _lines
@@ -967,6 +968,7 @@ class V3ReplayRunner:
                         before_bytes = await self._screenshot_jpeg()
                 self._final_before_bytes = before_bytes
                 await self._emit_screenshot(index, "before", before_bytes)
+                self._skip_after_frame = None
                 execution_action = await self._materialize_action(
                     action,
                     before_bytes,
@@ -992,11 +994,17 @@ class V3ReplayRunner:
                         action_id=str(action.get("action_id") or ""),
                         reason=self._v3_step_status(),
                     )
-                    self._last_frame = before_bytes
+                    # 救援可能已改变页面；放行时保留救援确认过的最新帧，
+                    # 不能再把进入救援前的画面交给下一步或最终断言。
+                    after_bytes = (
+                        self._skip_after_frame
+                        if self._skip_after_frame is not None else before_bytes
+                    )
+                    self._last_frame = after_bytes
                     self._reuse_next_before_frame = True
-                    self._final_after_bytes = before_bytes
+                    self._final_after_bytes = after_bytes
                     if self.capture_after_each_action:
-                        await self._emit_screenshot(index, "after", before_bytes)
+                        await self._emit_screenshot(index, "after", after_bytes)
                     elapsed_ms = int((time.monotonic() - step_started_at) * 1000)
                     # 顺序铁律：after 截图之后 → `缓存完成` → STEP_END
                     await self._log_v3_step_done(
@@ -1433,6 +1441,7 @@ class V3ReplayRunner:
             await self._record_rescue_decision(action=action, decision=decision)
 
             if decision.verdict == V3_RESCUE_CONTINUE_REPLAY:
+                self._skip_after_frame = latest
                 self._set_v3_step_status("辅助放行")
                 await self._log_v3_stage(
                     int(action.get("index") or 0),

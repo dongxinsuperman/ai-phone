@@ -426,6 +426,57 @@ async def test_v3_history_marks_skipped_action_as_not_executed(make_runner, monk
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("repair_verdict", ["REPAIR_ACTION", "POPUP_CLOSE", "WAIT"])
+@pytest.mark.parametrize("has_next", [True, False])
+async def test_rescue_continue_hands_latest_frame_to_next_step_and_final_evidence(
+    make_runner, monkeypatch, repair_verdict, has_next,
+):
+    frames = []
+    for color in ("white", "black"):
+        stream = BytesIO()
+        Image.new("RGB", (64, 128), color).save(stream, "JPEG")
+        frames.append(stream.getvalue())
+    before, repaired = frames
+    rescue = Rescue(V3RescueDecision(
+        verdict=repair_verdict, reason="关闭遮挡或等待页面更新", wait_ms=100,
+        repair_action={"type": "click", "point": {"x": 500, "y": 500}},
+    ))
+    runner = make_runner([action(), action(2)] if has_next else [action()], rescue=rescue)
+    seen, emitted = [], []
+
+    async def stable(*args, **kwargs):
+        return before if kwargs.get("phase") == "执行前" else repaired
+
+    async def locate(a, frame):
+        seen.append((a["index"], frame))
+        if a["index"] == 1:
+            if frame == repaired:
+                rescue.decision = V3RescueDecision(
+                    verdict="CONTINUE_REPLAY", reason="本步骤已完成，继续下一步",
+                )
+            raise V3LocatorMiss("原按钮不可见")
+        assert frame == repaired
+        return {**a, "point": {"x": 100, "y": 200}}
+
+    async def emit(index, phase, frame):
+        emitted.append((index, phase, frame))
+
+    monkeypatch.setattr(runner, "_wait_stable_for_step", stable)
+    monkeypatch.setattr(runner, "_locate_action", locate)
+    monkeypatch.setattr(runner, "_emit_screenshot", emit)
+    runner.capture_after_each_action = True
+    assert (await runner.run()).success
+    assert [c["current_bytes"] for c in rescue.calls] == [before, repaired]
+    assert (1, "after", repaired) in emitted
+    assert (1, "after", before) not in emitted
+    if has_next:
+        assert seen[-1] == (2, repaired)
+        assert (2, "before", repaired) in emitted
+    else:
+        assert runner._final_after_bytes == repaired
+
+
+@pytest.mark.asyncio
 async def test_v3_history_marks_driver_error_without_claiming_completion(make_runner):
     runner = make_runner([action(type="press_home")], dispatcher=Dispatcher(fail=True))
     assert not (await runner.run()).success
