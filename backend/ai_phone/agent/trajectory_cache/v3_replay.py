@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
+from loguru import logger
 from PIL import Image
 
 from ai_phone.agent.async_utils import run_blocking
@@ -177,6 +178,62 @@ class V3PlanLocator:
         self._main_vlm_backend = (
             main_vlm_backend or str(getattr(self.settings, "vlm_backend", "") or "")
         ).strip().lower()
+        # 仅豆包 V3 坐标请求使用；不共用主 VLM、救援或其它 Run 的客户端/会话。
+        self._coordinate_client: Optional[httpx.AsyncClient] = None
+        self._coordinate_client_key: Optional[Tuple[str, str, str]] = None
+        self._coordinate_request_lock = asyncio.Lock()
+
+    async def _close_coordinate_client(self) -> None:
+        client = self._coordinate_client
+        self._coordinate_client = None
+        self._coordinate_client_key = None
+        if client is not None:
+            try:
+                await client.aclose()
+            except Exception as exc:
+                logger.warning("V3 坐标客户端释放失败：{}", type(exc).__name__)
+
+    async def aclose(self) -> None:
+        """释放本定位实例的网络资源；重复关闭安全，不改变模型会话。"""
+        async with self._coordinate_request_lock:
+            await self._close_coordinate_client()
+
+    async def _post_doubao_coordinate(
+        self, *, api_url: str, api_key: str, model: str,
+        payload: Dict[str, Any], timeout_sec: float,
+    ) -> httpx.Response:
+        key = (api_url, api_key, model)
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        timeout = httpx.Timeout(timeout_sec, connect=10.0)
+        async with self._coordinate_request_lock:
+            for attempt in range(2):
+                if (self._coordinate_client is None
+                        or self._coordinate_client.is_closed
+                        or self._coordinate_client_key != key):
+                    await self._close_coordinate_client()
+                    self._coordinate_client = httpx.AsyncClient(
+                        timeout=timeout,
+                        limits=httpx.Limits(
+                            max_connections=1, max_keepalive_connections=1, keepalive_expiry=60.0,
+                        ),
+                    )
+                    self._coordinate_client_key = key
+                client = self._coordinate_client
+                # 旧实现每请求都是空 Cookie jar；只复用传输连接，不新增应用层状态。
+                client.cookies.clear()
+                try:
+                    return await client.post(api_url, json=payload, headers=headers, timeout=timeout)
+                except asyncio.CancelledError:
+                    await self._close_coordinate_client()
+                    raise
+                except httpx.TransportError as exc:
+                    await self._close_coordinate_client()
+                    if attempt:
+                        raise
+                    logger.warning(
+                        "V3 坐标请求传输失败，丢弃客户端后重试一次：{}", type(exc).__name__,
+                    )
+        raise RuntimeError("V3 坐标请求未取得响应")
 
     def is_configured(self) -> bool:
         backend, api_url, api_key, model, _timeout = self._config()
@@ -439,13 +496,10 @@ class V3PlanLocator:
             "caching": {"type": "enabled"},
             "thinking": {"type": "disabled"},
         }
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        timeout = httpx.Timeout(timeout_sec, connect=10.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(api_url, json=payload, headers=headers)
+        # 外层 locate_action 的原有 wait_for 仍限制本次定位总预算，包括网络重试。
+        resp = await self._post_doubao_coordinate(
+            api_url=api_url, api_key=api_key, model=model, payload=payload, timeout_sec=timeout_sec,
+        )
         if resp.status_code != 200:
             raise RuntimeError(f"v3 locator responses 失败: status={resp.status_code} body={resp.text[:200]}")
         text = _extract_responses_text(resp.json())
@@ -775,6 +829,7 @@ class V3ReplayRunner:
         self.log = log
         self.emit = emit
         self.capture_after_each_action = capture_after_each_action
+        self._owns_locator = locator is None
         self.dispatcher = dispatcher or ReplayActionDispatcher(
             driver, max_wait_seconds=getattr(get_settings(), "run_max_wait_sec", 1800),
         )
@@ -870,6 +925,18 @@ class V3ReplayRunner:
             row["elapsed_ms"] = int((time.monotonic() - started) * 1000)
 
     async def run(self) -> ReplayResult:
+        try:
+            return await self._run_actions()
+        finally:
+            close = getattr(self.locator, "aclose", None)
+            if self._owns_locator and callable(close):
+                try:
+                    await close()
+                except Exception as exc:
+                    # 网络资源收尾不能改写已确定的回放结果；不输出地址/密钥。
+                    logger.warning("V3 坐标客户端释放失败：{}", type(exc).__name__)
+
+    async def _run_actions(self) -> ReplayResult:
         actions = list(self.trajectory.get("actions") or [])
         executed = 0
         started_at = time.monotonic()

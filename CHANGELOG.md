@@ -4,6 +4,34 @@
 
 ## Unreleased
 
+### 豆包 V3 定位：回放内复用连接、传输失败后重建
+
+- 豆包 V3 坐标定位在单次回放内使用独立 HTTP 客户端和连接池，空闲连接保留
+  60 秒；回放成功、失败、取消或交回完整首跑时释放。不同 Run 不共享客户端；
+  地址、鉴权或模型变化时丢弃旧客户端。外部注入的定位实例仍由调用方管理。
+- 仅对 HTTP 传输错误关闭旧客户端并最多重试一次；原定位总超时预算仍覆盖
+  初次请求和重试，不延长为两倍。若原预算已经耗尽，仍按原超时路径处理。
+  HTTP 状态错误、模型解析失败及『无』不新增重试，不重复执行设备动作。
+- 只复用网络连接，不带入响应 Cookie 或 `previous_response_id`；请求内容、
+  `thinking=disabled`、主动缓存参数、截图、动作和等待语义不变。
+- 主 VLM、辅助/救援、V1/V2 及海外定位请求未修改。无新增配置、依赖、数据库或
+  对外字段；更新并重启空闲 Agent 后生效，Server 与提交方无需更新。
+
+### Doubao V3 localization: replay-local connections and transport recovery
+
+- Keep an independent HTTP client per owned replay locator, with a 60-second idle
+  keep-alive expiry. Release it on success, failure, cancellation and restart handoff;
+  replace it when endpoint, credentials or model changes. Caller-injected locators
+  remain caller-owned.
+- Rebuild and retry at most once on transport failures, within the unchanged outer
+  localization timeout. Do not extend the deadline or retry HTTP status errors,
+  invalid model output or target misses. No device operation is retried here.
+- Preserve request payloads, disabled thinking, cache flags and screenshot/action
+  semantics; do not introduce cookies or response-history chaining. Leave main VLM,
+  auxiliary/rescue systems, V1/V2 and overseas locator transports unchanged.
+- No new settings, dependencies, database/wire changes; requires an idle Agent restart,
+  not a Server or caller update.
+
 ### V3 归档：整批语义清洗同时标记瞬态清障
 
 - V3 在既有整批描述清洗请求中同时返回每条动作的瞬态清障分类，不再调用 V2
