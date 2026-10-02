@@ -211,9 +211,54 @@ async def test_ten_rescue_calls_are_shared_across_steps_and_never_execute_eleven
     result = await runner.run()
     assert not result.success
     assert "v3_rescue_limit_exceeded limit=10" in result.error
+    assert result.restart_required is True
     assert [c["action"]["index"] for c in rescue.calls] == [1] * 4 + [2] * 6
     assert len([a for a in runner.dispatcher.calls if a["type"] == "press_back"]) == 10
     assert result.actions_executed == 1  # 第一个目标在第4次修复后接回缓存；第二个未完成。
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error,expected", [("", True), ("timeout", False), ("unknown_verdict", False)])
+async def test_only_explicit_rescue_give_up_requests_full_restart(make_runner, monkeypatch, error, expected):
+    rescue = Rescue(V3RescueDecision(verdict="GIVE_UP", reason="无法找回目标", error=error))
+    runner = make_runner([action()], rescue=rescue)
+
+    async def miss(*args, **kwargs):
+        raise V3LocatorMiss("找不到")
+
+    monkeypatch.setattr(runner, "_locate_action", miss)
+    result = await runner.run()
+    assert not result.success
+    assert result.restart_required is expected
+    assert len(rescue.calls) == 1
+    assert runner.dispatcher.calls == []
+
+
+@pytest.mark.asyncio
+async def test_cancelled_rescue_does_not_request_full_restart(make_runner, monkeypatch):
+    import asyncio
+
+    class CancelledRescue(Rescue):
+        async def decide(self, **kwargs):
+            raise asyncio.CancelledError
+
+    runner = make_runner([action()], rescue=CancelledRescue(None))
+
+    async def miss(*args, **kwargs):
+        raise V3LocatorMiss("找不到")
+
+    monkeypatch.setattr(runner, "_locate_action", miss)
+    with pytest.raises(asyncio.CancelledError):
+        await runner.run()
+
+
+@pytest.mark.parametrize("text", ['{}', '{"verdict":"UNKNOWN"}', 'not json'])
+def test_malformed_rescue_output_is_not_an_explicit_restart_decision(text):
+    from ai_phone.agent.trajectory_cache.v3_replay import parse_v3_rescue_response
+
+    decision = parse_v3_rescue_response(text)
+    assert decision.verdict == "GIVE_UP"
+    assert decision.error
 
 
 @pytest.mark.asyncio
@@ -386,6 +431,7 @@ async def test_v3_history_marks_driver_error_without_claiming_completion(make_ru
     assert not (await runner.run()).success
     assert runner.execution_history[0]["runtime_status"] == "execution_error"
     assert "driver failed" in runner.execution_history[0]["error"]
+    assert runner.execution_history[0]["runtime_status"] == "execution_error"
 
 
 @pytest.mark.asyncio

@@ -1301,6 +1301,15 @@ async def _handle_start_run(
     # 旁路错误路径也会直接 send_run_done，所以必须由 bridge 统一调用且只调用一次。
     run_power: Dict[str, Any] = {"driver": None, "started": False}
 
+    def _failure_progress() -> Dict[str, int]:
+        restart = run_power.get("cache_restart")
+        if restart is None:
+            return {"steps": 0, "elapsed_ms": 0}
+        return {
+            "steps": int(run_power.get("restart_step") or restart.step_offset),
+            "elapsed_ms": restart.elapsed_ms + int((time.monotonic() - run_power["restart_started_at"]) * 1000),
+        }
+
     async def _sleep_after_run() -> None:
         if not bool(run_power["started"]):
             # 前置参数/driver 初始化失败不是一次真正开始的设备 Run，不额外碰设备。
@@ -1448,6 +1457,7 @@ async def _handle_start_run(
         # M4 片3a/4：命中缓存 → Agent 本地回放（替代 VLMRunner 首跑）。回放沿用上面
         # open 好的 driver + 唤醒；编排自己发 run_done 终态，清理由最外层 Run 生命周期
         # 边界统一完成；跑完直接 return，不再走下方首跑路径。
+        cache_restart = None
         if engine == "vlm" and cache_snapshot:
             from ai_phone.agent.trajectory_cache.orchestrate import (  # noqa: PLC0415
                 is_v1_cache_hit,
@@ -1457,6 +1467,7 @@ async def _handle_start_run(
                 run_v2_replay,
                 run_v3_replay,
             )
+            from ai_phone.agent.trajectory_cache.restart import V3RestartRequest
 
             replay_coro = None
             if is_v3_cache_hit(cache_snapshot):
@@ -1471,6 +1482,7 @@ async def _handle_start_run(
                     settings=get_settings(),
                     function_map_context=function_map_context,
                     server_http_base=client.server_http_base or get_settings().server_http_base,
+                    restart_on_rescue_failure=True,
                 )
             elif is_v2_cache_hit(cache_snapshot):
                 replay_coro = run_v2_replay(
@@ -1499,7 +1511,7 @@ async def _handle_start_run(
             if replay_coro is not None:
                 try:
                     run_power["started"] = True
-                    await replay_coro
+                    cache_restart = await replay_coro
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("缓存回放异常 run_id={}", run_id)
                     await bridge.send_run_done(
@@ -1515,11 +1527,24 @@ async def _handle_start_run(
                             "token_stats": {},
                         }
                     )
-                return
+                    return
+                if not isinstance(cache_restart, V3RestartRequest):
+                    return
+                cache_mode = "v3"  # 旧 start_run 即使缺 cache_mode，也能从命中快照确认归档版本。
+                run_power.update(cache_restart=cache_restart, restart_step=cache_restart.step_offset,
+                                 restart_started_at=time.monotonic())
+                # 同一次设备租约内最多转一次完整首跑，不递归进入缓存分支。
+                bridge.emit(log_event(
+                    run_id, 2, "V3完整首跑 · 开始",
+                    "使用完整原始 Case 与 Map 重新开始；新执行器/记录器不继承旧缓存进度，"
+                    "前置准备和断言沿用原首跑，新缓存仅来自新阶段成功轨迹。",
+                ))
 
         # M4 片3b/4c：首跑（未命中）且本 run 开了 V2/V3 缓存 → 旁路收集第一手执行数据，
         # run 成功后后台归档成品回传。只旁听已有事件流（bridge.emit + recorder.feed），
-        # 不动 vlm_loop 核心。命中回放走上面分流、不到这里。
+        # 不动 vlm_loop 核心。正常命中回放不到这里；V3 救援失败仅新首跑阶段到这里。
+        from ai_phone.agent.trajectory_cache.restart import restart_report_event
+
         recorder = None
         run_emit = bridge.emit
         if engine == "vlm" and cache_mode in ("v1", "v2", "v3"):
@@ -1530,8 +1555,12 @@ async def _handle_start_run(
             recorder = TrajectoryRecorder(run_id)
 
             def run_emit(evt: Dict[str, Any], _b=bridge.emit, _r=recorder) -> None:
-                _b(evt)
-                _r.feed(evt)
+                # 只收新首跑事件；报告序号与 source_step 一致，action index 仍从1归档。
+                output = restart_report_event(evt, cache_restart) if cache_restart is not None else evt
+                if cache_restart is not None and type(output.get("step")) is int:
+                    run_power["restart_step"] = max(run_power["restart_step"], output["step"])
+                _b(output)
+                _r.feed(output)
 
         try:
             runner = build_runner(
@@ -1553,8 +1582,7 @@ async def _handle_start_run(
                     "attempt": attempt,
                     "result": "error",
                     "message": f"init_runner_failed: {exc}",
-                    "steps": 0,
-                    "elapsed_ms": 0,
+                    **_failure_progress(),
                     "token_stats": {},
                 }
             )
@@ -1588,8 +1616,7 @@ async def _handle_start_run(
                     "attempt": attempt,
                     "result": "error",
                     "message": f"runner_crash: {exc}",
-                    "steps": 0,
-                    "elapsed_ms": 0,
+                    **_failure_progress(),
                     "token_stats": {},
                 }
             )
@@ -1608,8 +1635,7 @@ async def _handle_start_run(
                     "attempt": attempt,
                     "result": "cancelled",
                     "message": "stopped_by_server",
-                    "steps": 0,
-                    "elapsed_ms": 0,
+                    **_failure_progress(),
                     "token_stats": {},
                 }
             )
@@ -1624,8 +1650,7 @@ async def _handle_start_run(
                     "attempt": attempt,
                     "result": "error",
                     "message": f"run_lifecycle_crash: {exc}",
-                    "steps": 0,
-                    "elapsed_ms": 0,
+                    **_failure_progress(),
                     "token_stats": {},
                 }
             )

@@ -27,6 +27,7 @@ from ai_phone.agent.drivers.base import BaseDriver
 from ai_phone.agent.runner.events import log_event
 from ai_phone.agent.runner_bridge import RunnerBridge
 from ai_phone.shared import protocol as P
+from .restart import V3RestartRequest
 
 
 def is_v3_cache_hit(cache_snapshot: Optional[Dict[str, Any]]) -> bool:
@@ -56,12 +57,13 @@ async def run_v3_replay(
     settings: Any,
     function_map_context: Optional[str] = None,
     server_http_base: str = "",
-) -> None:
+    restart_on_rescue_failure: bool = False,
+) -> Optional[V3RestartRequest]:
     """命中 V3 缓存 → Agent 本地回放 → 断言 → run_done（缓存通道）。
 
-    本函数**总会发出一条 run_done 终态**（成功 ``pass`` / 回放失败 ``error`` / 断言
-    失败 ``assert_fail``）；回放或断言失败时另发 ``MSG_CACHE_SUSPECT``。截图 / step /
-    日志全程经 bridge 上报，不阻塞。
+    默认沿用一条 run_done 终态。Agent 显式启用 restart_on_rescue_failure 时，仅在
+    救援耗尽/明确放弃后返回内部重跑请求，暂不发终态；调用方必须完成新的完整首跑。
+    其他失败/断言仍按原策略结束。旧内部调用不传新参数时行为不变。
     """
     from ai_phone.agent.trajectory_cache.assertion import CacheReplayAssertionVerifier
     from ai_phone.agent.trajectory_cache.v3_replay import V3ReplayRunner
@@ -102,12 +104,20 @@ async def run_v3_replay(
 
     await _log(1, "V3缓存回放", f"命中缓存：复用上次成功路线 cache_key={cache_key[:12]}")
 
+    last_step_index = 0
+
+    def replay_emit(event: Dict[str, Any]):
+        nonlocal last_step_index
+        if type(event.get("step")) is int:
+            last_step_index = max(last_step_index, event["step"])
+        return bridge.emit(event)
+
     runner = V3ReplayRunner(
         driver=driver,
         trajectory=trajectory,
         run_id=run_id,
         log=_log,
-        emit=bridge.emit,
+        emit=replay_emit,
         capture_after_each_action=True,
         goal=goal,
         main_vlm_backend=source_backend,
@@ -118,6 +128,13 @@ async def run_v3_replay(
     if not replay_result.success:
         error = str(replay_result.error or "")
         await _mark_suspect(bridge, run_id=run_id, cache_key=cache_key, reason=f"replay_failed: {error}")
+        if restart_on_rescue_failure and getattr(replay_result, "restart_required", False):
+            await _log(2, "V3缓存失效 · 完整重跑", "局部救援已失败，退出旧缓存路线，重新执行完整原始 Case")
+            return V3RestartRequest(
+                reason=error,
+                step_offset=max(last_step_index, int(replay_result.failed_index or 0)),
+                elapsed_ms=_elapsed_ms(),
+            )
         await bridge.send_run_done(
             {
                 "type": P.MSG_RUN_DONE,

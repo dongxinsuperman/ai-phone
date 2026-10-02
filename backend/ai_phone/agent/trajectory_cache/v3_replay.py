@@ -664,6 +664,16 @@ class V3RescueVerifier:
         decision.elapsed_ms = int((time.monotonic() - started) * 1000)
         return decision
 
+class V3RescueRestartRequired(ReplayActionError):
+    """救援预算用尽或模型明确放弃；可启动一次完整首跑，不用于取消/基础设施异常。"""
+
+
+@dataclass
+class V3ReplayResult(ReplayResult):
+    # Agent 内部编排标记；不进入既有 ReplayResult.to_dict / 外部协议。
+    restart_required: bool = False
+
+
 class V3ReplayRunner:
     """按 V3 语义脚本逐步定位并执行。"""
 
@@ -938,13 +948,14 @@ class V3ReplayRunner:
                     elapsed_ms=elapsed_ms,
                     error=str(exc),
                 )
-                return ReplayResult(
+                return V3ReplayResult(
                     success=False,
                     actions_total=len(actions),
                     actions_executed=executed,
                     failed_index=index,
                     error=message,
                     elapsed_ms=int((time.monotonic() - started_at) * 1000),
+                    restart_required=isinstance(exc, V3RescueRestartRequired),
                 )
         await self._log(1, "缓存回放", f"V3 回放完成：设备动作={executed}")
         return ReplayResult(
@@ -1255,7 +1266,7 @@ class V3ReplayRunner:
         history_start = len(self._execution_history)
         while True:
             if self._v3_rescue_calls_used >= self._v3_rescue_max_calls:
-                raise ReplayActionError(
+                raise V3RescueRestartRequired(
                     f"v3_rescue_limit_exceeded limit={self._v3_rescue_max_calls}; {miss_reason}"
                 )
             self._v3_rescue_calls_used += 1
@@ -1367,9 +1378,10 @@ class V3ReplayRunner:
                     miss_reason = f"v3 locator 调用失败：{type(exc).__name__}: {str(exc)[:160]}"
                     continue
 
-            raise ReplayActionError(
-                f"v3 rescue give_up verdict={decision.verdict}: {decision.reason}"
-            )
+            message = f"v3 rescue give_up verdict={decision.verdict}: {decision.reason}"
+            if decision.verdict == V3_RESCUE_GIVE_UP and not decision.error:
+                raise V3RescueRestartRequired(message)
+            raise ReplayActionError(message)
 
     async def _handle_optional_ephemeral(
         self,
@@ -1886,7 +1898,7 @@ def parse_v3_rescue_response(text: str, *, coord_space: str = "normalized") -> V
                 data = {}
     if not isinstance(data, dict):
         data = {}
-    verdict = str(data.get("verdict") or V3_RESCUE_GIVE_UP).strip().upper()
+    verdict = str(data.get("verdict") or "").strip().upper()
     if verdict in {"CONTINUE", "CONTINUE_REPLAY"}:
         verdict = V3_RESCUE_CONTINUE_REPLAY
     if verdict not in {
@@ -1896,7 +1908,10 @@ def parse_v3_rescue_response(text: str, *, coord_space: str = "normalized") -> V
         V3_RESCUE_CONTINUE_REPLAY,
         V3_RESCUE_GIVE_UP,
     }:
-        verdict = V3_RESCUE_GIVE_UP
+        return V3RescueDecision(
+            verdict=V3_RESCUE_GIVE_UP, reason=f"v3 rescue 未知裁决: {verdict or '(缺失)'}",
+            raw=text, error="unknown_verdict", coord_space=coord_space,
+        )
     wait_ms = data.get("wait_ms")
     try:
         parsed_wait_ms = int(wait_ms)

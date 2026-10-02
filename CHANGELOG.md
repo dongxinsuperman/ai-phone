@@ -4,6 +4,44 @@
 
 ## Unreleased
 
+### V3 救援失败：退出缓存并完整重新首跑
+
+- Agent 在 V3 救援预算耗尽或模型明确 `GIVE_UP` 后，将旧缓存标为 suspect，
+  仅在当前任务内转一次完整首跑。使用原始 Case 与 Map，新建主 VLM 执行器与
+  记录器，不续接旧缓存进度，不合并缓存片段与新轨迹，也不递归重入缓存回放。
+- 复用原首跑的前置准备、子步骤、执行与断言，不修改首跑源码/System/模型配置，
+  不额外强制清数据或重置设备。新阶段按现有首跑成功标准完成且具有可回放动作时，
+  才由原后台归档生成新缓存；失败或取消不归档。正常缓存回放成功仍不重建缓存。
+- 缓存阶段不提前发 Run 终态或触发收尾熄屏；保持同一设备占用直到新首跑结束，
+  最终只发一条结果。模型内部步骤重新开始，报告序号在缓存阶段之后连续排列，
+  新缓存的 action index 从1生成、source_step 对应实际报告位置。
+  最终报告耗时包含两阶段，新阶段日志注明完整首跑阶段耗时。
+- 仅预算耗尽/有效放弃裁决触发该转换；模型调用异常、非法裁决、设备执行错误、
+  取消和最终断言失败沿用原处理，不盲目重新首跑。此本地缓存降级不改变 Server
+  的外部 retryMax/attempt/TTL 或取消规则，不新增协议字段、配置、数据库迁移或依赖。
+  旧内部回放调用默认仍发原终态；正式 Agent 编排显式启用新转换，V1/V2 不变。
+- 更新相关 Agent 并在空闲时重启后生效；新行为可能增加异常任务耗时和模型调用，
+  模拟回归不代表真实设备已完成该流程验收。
+
+### V3 rescue failure: leave cache replay and restart the complete first-run flow
+
+- After rescue exhaustion or an explicit valid `GIVE_UP`, invalidate the old cache and
+  restart the original Case/Map once inside the Agent task. Create fresh executor/recorder
+  instances; do not resume cache progress, stitch trajectories, or recurse into cache replay.
+- Reuse unchanged first-run preparation, substeps, execution, and assertion. Do not force
+  extra data clearing/device resets. Only successful new-stage records with replayable actions
+  can produce a new archive; failure/cancellation cannot. Normal replay success still reuses
+  its cache without rebuilding it.
+- Keep one device lease and one terminal result/power hook. Model-local steps start fresh;
+  report steps are offset after the cache phase, while new action indices start at 1 and
+  source-step metadata matches the report. Report elapsed time includes both phases.
+- Do not apply this restart to provider/protocol/device failures, cancellation, or final
+  assertion failure. Preserve external Server retry/attempt/TTL policies and V1/V2 behavior.
+  No new wire fields, settings, database migration, or dependencies. Legacy internal replay
+  callers retain their terminal behavior; formal Agent orchestration opts into the transition.
+- Update/restart relevant idle Agents to activate. Exceptional tasks may cost more time and
+  model calls; simulated regressions are not real-device acceptance.
+
 ### V3 最终断言：单向对齐首跑的证据语义
 
 - 首跑断言代码、System、核心两层规则、模型与思考强度保持不变。V3 本轮摘要
