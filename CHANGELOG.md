@@ -4,6 +4,32 @@
 
 ## Unreleased
 
+### V3 滑动回放：根据当前截图重定位操作区域
+
+- `scroll` 接入现有 V3 定位与救援链路，根据缓存语义和当前截图重新取得滑动中心，
+  不再直接执行首跑设备的历史中心坐标；没有 center 的旧缓存也重新定位。
+  保留原动作类型、浏览方向与次数，不改写为拖拽，不新增固定中心或比例限制。
+- 清洗提示词保留已明确的滚动对象/区域，不捏造区域；历史坐标仍作为首跑记录保存，
+  不是回放依据。报告与本轮断言历史记录新取得的实际中心，缓存原数据不被覆盖。
+- 定位失败复用既有救援/退出缓存处理，不降级照搬旧坐标。允许同一区域往返滑动
+  使用相同中心，不误用点击目标的重复点判断；保留既有屏幕边界校验。
+- 仅改变 Agent 的 V3 滑动定位及后台语义清洗提示；首跑、V1/V2、驱动手势、
+  外部协议、缓存 key/schema、模型配置与数据库不变。无需用户修改 Case/Map；
+  更新相关 Agent 后生效，每个回放滑动会增加一次现有定位模型请求。
+
+### V3 scroll replay: relocate the operation region from the current screenshot
+
+- Route scroll actions through the existing V3 locator/rescue path. Replace historical
+  centers with current-image coordinates, including legacy actions without a center.
+  Preserve action type, browsing direction, and amount; no fixed centers or new ratio rules.
+- Keep explicitly described scroll regions during intent cleaning. Retain source coordinates
+  for provenance only; report actual relocated centers without mutating the cache.
+- Reuse existing miss/rescue handling rather than executing stale coordinates. Allow repeated
+  centers for scrolls within the same region; retain existing screen-boundary validation.
+- Preserve first-run execution, V1/V2, driver gestures, public protocols, cache keys/schema,
+  models/settings, and storage. No Case/Map changes required. Updated Agents perform one
+  existing locator request per replayed scroll.
+
 ### V3 救援失败：退出缓存并完整重新首跑
 
 - Agent 在 V3 救援预算耗尽或模型明确 `GIVE_UP` 后，将旧缓存标为 suspect，
