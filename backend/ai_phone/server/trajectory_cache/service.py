@@ -207,11 +207,12 @@ async def _write_log(
     level: int,
     title: str,
     content: str,
+    attempt: Optional[int] = None,
 ) -> None:
     session.add(
         RunLog(
             run_id=run_id,
-            attempt=current_attempt(),
+            attempt=current_attempt() if attempt is None else max(1, int(attempt)),
             level=level,
             title=title,
             content=content,

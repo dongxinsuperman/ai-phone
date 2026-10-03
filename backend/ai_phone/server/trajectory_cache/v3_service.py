@@ -155,6 +155,7 @@ async def delete_trajectory_cache_v3_for_run(
             level=1,
             title="V3轨迹缓存",
             content=f"case 失败已触发本次绑定 V3 缓存删除 deleted={deleted}",
+            attempt=attempt,
         )
         await session.commit()
         return deleted
@@ -199,6 +200,7 @@ async def mark_trajectory_cache_v3_suspect(
                 f"已标记 V3 cache suspect cache_key={normalized_key[:12]} "
                 f"changed={changed} reason={reason[:160]}"
             ),
+            attempt=attempt,
         )
         await session.commit()
         return changed

@@ -4,6 +4,22 @@
 
 ## Unreleased
 
+### 修复 V3 缓存失效日志的重试轮次归属
+
+- Server 写入 V3 缓存停用、删除日志时使用传入的 `attempt`，与实际缓存处理
+  保持一致；修复第二、第三次尝试的处理正确、日志却归到第一次的情况。
+- 未传编号的旧调用继续使用当前轮次上下文，V1/V2 行为不变。没有模型、
+  失效策略、数据库结构或消息字段变更；更新 Server 后对新写入日志生效，
+  不回写历史日志，也不要求 Agent 同步升级。
+
+### Fix retry-attempt attribution in V3 invalidation logs
+
+- Use the supplied `attempt` for Server-side V3 suspect/deletion logs, matching the
+  cache operation rather than the receiving worker's default attempt.
+- Preserve context fallback for existing callers and V1/V2. No model, invalidation
+  policy, schema or wire changes. Applies to new logs after a Server update; no
+  historical rewrite or coordinated Agent upgrade is required.
+
 ### 修复 V3 重试轮次失效通知与断言排障信息
 
 - V3 回放失败、救援转完整首跑以及最终断言失败时，缓存失效通知携带当前

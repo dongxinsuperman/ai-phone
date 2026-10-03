@@ -243,6 +243,30 @@ async def test_agent_suspect_message_targets_retry_binding_and_preserves_newer_c
     with attempt_context(1):
         await _dispatch(hub, None, "unit-agent", messages[0])
     assert (await lookup(sf))["source_run_id"] == "newer-generation"
+    async with sf() as session:
+        logs = (await session.execute(select(RunLog).where(
+            RunLog.run_id == "replay-B", RunLog.title == "V3轨迹缓存",
+        ).order_by(RunLog.id))).scalars().all()
+        assert [row.attempt for row in logs] == [attempt, attempt]
+        assert "changed=1" in logs[0].content
+        assert "changed=0" in logs[1].content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("attempt", [2, 3])
+@pytest.mark.parametrize("explicit", [False, True])
+async def test_v3_delete_log_uses_explicit_attempt_or_existing_context(sf, attempt, explicit):
+    await store_trajectory_cache_archive(sf, archive=archive())
+    await bind(sf, attempt=attempt)
+    with attempt_context(1 if explicit else attempt):
+        kwargs = {"attempt": attempt} if explicit else {}
+        assert await delete_trajectory_cache_v3_for_run(sf, "replay-B", **kwargs) == 1
+    async with sf() as session:
+        row = (await session.execute(select(RunLog).where(
+            RunLog.run_id == "replay-B", RunLog.title == "V3轨迹缓存",
+        ))).scalars().one()
+        assert row.attempt == attempt
+        assert "deleted=1" in row.content
 
 
 @pytest.mark.asyncio
