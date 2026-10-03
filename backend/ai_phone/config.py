@@ -356,6 +356,28 @@ class Settings(BaseSettings):
         default=240000,
         description="上一轮 prompt ≥ 该 tokens 触发分段重置 previous_response_id；<=0 禁用",
     )
+    # 仅豆包主决策读取；不改变 provider、辅助模型或轨迹回放连接。
+    # session 原样使用 Responses；sliding_window 独立走 Chat + 隐式缓存。
+    vlm_context_mode: str = Field(
+        default="session",
+        pattern=r"^(session|sliding_window)$",
+        description=(
+            "豆包主 VLM 上下文方式：session（默认，原 Responses 续接）或 "
+            "sliding_window（Chat 严格滑窗）。其他 provider 忽略。"
+            "由 Server ENV 配置并下发 Agent。env: AI_PHONE_VLM_CONTEXT_MODE"
+        ),
+    )
+    vlm_history_window_rounds: int = Field(
+        default=5,
+        ge=1,
+        le=64,
+        description=(
+            "仅豆包 sliding_window 模式生效；含当前请求的完整对话轮数。"
+            "超窗截图和响应一起丢弃，Case/Map/System/子步骤固定保留；"
+            "不裁本地报告、断言和轨迹记录。由 Server 下发。"
+            "env: AI_PHONE_VLM_HISTORY_WINDOW_ROUNDS"
+        ),
+    )
     # --- 主 VLM 协议后端开关（多协议适配层）---
     # 主 VLM 走哪家协议，决定执行链上"看图 → 决策 → 输出动作"那一坨怎么发请求。
     # 三家协议差异较大（方舟 Responses / Anthropic Messages-tools / OpenAI Responses-computer_use_preview），

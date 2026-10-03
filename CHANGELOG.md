@@ -4,6 +4,35 @@
 
 ## Unreleased
 
+### 可选的豆包主 VLM Chat 完整轮次滑窗
+
+- 新增 Server 集中下发的 `AI_PHONE_VLM_CONTEXT_MODE`（默认 `session` 保留原
+  Responses 续接）与 `AI_PHONE_VLM_HISTORY_WINDOW_ROUNDS`（滑窗默认 5，1-64）。
+  显式选择 `sliding_window` 后，豆包主决策走独立 Chat 客户端；每个 Run 启动时
+  固定模式，旧 Agent 忽略新字段并继续原链路。
+- 窗口包含当前请求，旧图片、响应和临时提示一起退出；不额外保留首轮或历史
+  摘要。完整 Case/Map/System/子步骤始终提供，本地完整执行记录不裁剪。
+- Chat 使用 Run 隔离的隐式缓存路由键，真实 `cached_tokens` 进入原 Token
+  统计链路。隐式命中及提速不保证；保持原模型、思考配置和 Seed XML 动作接口。
+- 不改变现有 Responses 客户端、辅助模型、断言/审判、Driver、V1/V2/V3 数据
+  格式及回放内部请求、数据库或业务消息协议。启用需更新 Agent 并确认其已收到
+  Server 配置；未开启时不改变现有执行行为。详见 `docs/vlm-context-modes.md`。
+
+### Opt-in Doubao main-VLM Chat round window
+
+- Add Server-distributed `AI_PHONE_VLM_CONTEXT_MODE` (`session` by default) and
+  `AI_PHONE_VLM_HISTORY_WINDOW_ROUNDS` (5, range 1-64). Only explicit
+  `sliding_window` selection creates the independent Chat main client; each Run
+  keeps its initial selection. Older Agents ignore the new fields.
+- Retain at most N-1 complete exchanges plus the current request; discard older
+  images, replies and transient hints without an initial-round exception or
+  summary. Preserve fixed Case/Map/System/substeps and full local records.
+- Use a Run-isolated implicit-cache routing key and the existing token statistics.
+  Cache hits and latency improvements are not guaranteed. Preserve model settings,
+  Seed XML, auxiliary/verification paths and trajectory-cache formats/protocols.
+- No schema or public submission API changes. Update idle Agents before enabling
+  and verify Server configuration delivery; the default Responses path is unchanged.
+
 ### 同步全量配置示例的豆包模型
 
 - `.env.full.example` 的主模型改为 `doubao-seed-evolving`，辅助模型改为

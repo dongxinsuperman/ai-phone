@@ -94,6 +94,61 @@ def test_sensitive_fields_never_distributed():
         assert sensitive not in snap
 
 
+def test_context_switch_and_rounds_are_server_distributed(monkeypatch):
+    """Server snapshot wins over Agent local defaults; factory sees that snapshot."""
+    import ai_phone.config as cfg
+    from ai_phone.shared.llm import create_main_vlm
+    from ai_phone.shared.llm.main.doubao_chat_window import DoubaoChatWindowClient
+
+    local = _derived_doubao_settings(vlm_context_mode="session", vlm_history_window_rounds=5)
+    monkeypatch.setattr(cfg, "_base_settings", lambda: local)
+    server = _derived_doubao_settings(vlm_context_mode="sliding_window", vlm_history_window_rounds=3)
+    snapshot = build_downlink_config(settings=server)
+    assert snapshot["vlm_context_mode"] == "sliding_window"
+    assert snapshot["vlm_history_window_rounds"] == 3
+    assert {"vlm_context_mode", "vlm_history_window_rounds"} <= downlink_field_names()
+    effective = set_runtime_override(snapshot)
+    assert get_settings() is effective
+    assert effective.vlm_backend == "doubao_responses"
+    assert effective.trajectory_cache_recovery_vlm_backend == "doubao_responses"
+    assert effective.trajectory_cache_recovery_vlm_api_url.endswith("/responses")
+    assert effective.assistant_backend == "doubao_chat"
+    client = create_main_vlm("case-system")
+    assert isinstance(client, DoubaoChatWindowClient)
+    assert client.window_rounds == 3
+    # Reconfiguration affects newly created Runs only, not this client's state.
+    set_runtime_override(build_downlink_config(settings=local))
+    assert get_settings().vlm_context_mode == "session"
+    assert client.window_rounds == 3
+
+
+def test_older_server_without_context_fields_keeps_safe_session_default(monkeypatch):
+    import ai_phone.config as cfg
+
+    local = _derived_doubao_settings()
+    monkeypatch.setattr(cfg, "_base_settings", lambda: local)
+    snapshot = build_downlink_config(settings=local)
+    snapshot.pop("vlm_context_mode")
+    snapshot.pop("vlm_history_window_rounds")
+    effective = set_runtime_override(snapshot)
+    assert effective.vlm_context_mode == "session"
+    assert effective.vlm_history_window_rounds == 5
+
+
+def test_older_agent_filters_new_context_fields(monkeypatch):
+    import ai_phone.config as cfg
+
+    snapshot = build_downlink_config(settings=_derived_doubao_settings(vlm_context_mode="sliding_window", vlm_history_window_rounds=3))
+    assert snapshot["vlm_context_mode"] == "sliding_window"
+    original_allowed = downlink_field_names()
+    monkeypatch.setattr(cfg, "downlink_field_names", lambda: original_allowed - {"vlm_context_mode", "vlm_history_window_rounds"})
+    local = _derived_doubao_settings()
+    monkeypatch.setattr(cfg, "_base_settings", lambda: local)
+    effective = set_runtime_override(snapshot)
+    assert effective.vlm_context_mode == "session"
+    assert effective.vlm_history_window_rounds == 5
+
+
 def test_settings_loads_env_defaults_before_env_and_env_local(monkeypatch, tmp_path):
     """配置文件优先级：.env.defaults < .env < .env.local < 系统环境变量。"""
     (tmp_path / ".env.defaults").write_text(
