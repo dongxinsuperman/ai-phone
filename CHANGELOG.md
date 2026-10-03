@@ -4,6 +4,28 @@
 
 ## Unreleased
 
+### 修复 V3 重试轮次失效通知与断言排障信息
+
+- V3 回放失败、救援转完整首跑以及最终断言失败时，缓存失效通知携带当前
+  `attempt`，使 Server 按本次尝试绑定的缓存版本处理，避免自动重试时误按
+  第一次尝试查找。保留既有缓存版本隔离与旧消息兼容行为，不改变失败策略。
+- 缓存断言调用失败时保留异常类型，空消息的 `TimeoutError` / `ReadTimeout`
+  不再只显示“调用失败”。裁决仍为 SKIP，不增加重试或延长超时。
+- `.env.full.example` 的七项模型调用超时同步为现有默认值 300 秒，避免复制
+  示例覆盖新默认值；不会改写已部署的 `.env`。无模型切换、数据库迁移或
+  外部提交接口变更；代码修复在更新并重启空闲 Agent 后生效。
+
+### Fix V3 retry-attempt invalidation and assertion diagnostics
+
+- Include the current `attempt` in V3 cache-suspect messages for replay failures,
+  rescue-to-first-run handoffs and failed final verification. Preserve existing
+  revision guards and legacy-message compatibility; failure policy is unchanged.
+- Include exception types in cache assertion failures, including empty timeout
+  messages. Keep SKIP handling, retry behavior and timeout budgets unchanged.
+- Align seven model-call timeouts in `.env.full.example` with the existing
+  300-second defaults. Existing deployment overrides are not rewritten. No model,
+  database or public submission API changes; restart an idle updated Agent to apply.
+
 ### 修复 V3 救援放行后复用旧截图
 
 - 救援点击、关闭弹窗或等待后判断当前步骤已完成时，将救援确认的最新截图

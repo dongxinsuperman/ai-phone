@@ -211,6 +211,41 @@ async def test_binding_is_attempt_scoped_and_persisted_in_existing_logs(sf):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("attempt", [2, 3])
+async def test_agent_suspect_message_targets_retry_binding_and_preserves_newer_cache(sf, attempt):
+    from types import SimpleNamespace
+
+    from ai_phone.agent.trajectory_cache.orchestrate import _mark_suspect
+    from ai_phone.server.ws.agent_ws import _dispatch
+
+    key = await store_trajectory_cache_archive(sf, archive=archive(source="first-generation"))
+    await bind(sf, attempt=1)
+    await store_trajectory_cache_archive(sf, archive=archive(source="retry-generation"))
+    await bind(sf, attempt=attempt)
+    messages = []
+    hub = SimpleNamespace(touch_agent=lambda agent_id: None)
+
+    class Bridge:
+        async def send_cache_suspect(self, payload):
+            messages.append(payload)
+            # The receiving worker does not inherit the Agent's attempt context.
+            with attempt_context(1):
+                await _dispatch(hub, None, "unit-agent", payload)
+
+    await _mark_suspect(Bridge(), run_id="replay-B", attempt=attempt,
+                        cache_key=key, reason="retry rescue exhausted")
+    assert messages[0]["attempt"] == attempt
+    assert await lookup(sf) is None
+
+    # A later successful run may publish a new shared cache. A late old message
+    # must still be constrained by the original attempt's bound revision.
+    await store_trajectory_cache_archive(sf, archive=archive(source="newer-generation"))
+    with attempt_context(1):
+        await _dispatch(hub, None, "unit-agent", messages[0])
+    assert (await lookup(sf))["source_run_id"] == "newer-generation"
+
+
+@pytest.mark.asyncio
 async def test_corrupt_binding_fails_closed(sf):
     await store_trajectory_cache_archive(sf, archive=archive())
     await bind(sf)

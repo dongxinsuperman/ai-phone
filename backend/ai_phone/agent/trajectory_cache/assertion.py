@@ -85,9 +85,14 @@ class CacheReplayAssertionVerifier:
                 timeout=self.settings.assertion_timeout_sec,
             )
         except Exception as exc:  # noqa: BLE001
+            # TimeoutError / ReadTimeout can have an empty message; keep their type
+            # while preserving the existing SKIP policy.
+            error_detail = type(exc).__name__
+            if str(exc):
+                error_detail += f": {exc}"
             return CacheAssertionResult(
                 "SKIP",
-                f"断言系统调用失败，缓存通道不能确认成功：{exc}",
+                f"断言系统调用失败，缓存通道不能确认成功：{error_detail}",
             )
 
         return parse_cache_assertion_response(text)

@@ -49,14 +49,15 @@ def runner_result(monkeypatch, result):
 
 
 @pytest.mark.asyncio
-async def test_rescue_restart_invalidates_cache_without_emitting_terminal(monkeypatch):
+@pytest.mark.parametrize("attempt", [1, 2, 3])
+async def test_rescue_restart_invalidates_cache_without_emitting_terminal(monkeypatch, attempt):
     runner_result(monkeypatch, v3_replay.V3ReplayResult(
         success=False, actions_total=5, actions_executed=2, failed_index=3,
         error="rescue exhausted", restart_required=True,
     ))
     bridge = Bridge()
     request = await orchestrate.run_v3_replay(
-        run_id="unit", serial="unit-device", goal="完整原任务", attempt=1,
+        run_id="unit", serial="unit-device", goal="完整原任务", attempt=attempt,
         driver=object(), bridge=bridge, snapshot=SNAPSHOT,
         settings=SimpleNamespace(vlm_backend="doubao_responses"), restart_on_rescue_failure=True,
     )
@@ -64,6 +65,7 @@ async def test_rescue_restart_invalidates_cache_without_emitting_terminal(monkey
     assert request.step_offset == 5
     assert request.elapsed_ms >= 0
     assert bridge.suspects[0]["cache_key"] == "unit-cache"
+    assert bridge.suspects[0]["attempt"] == attempt
     assert bridge.done == []
 
 

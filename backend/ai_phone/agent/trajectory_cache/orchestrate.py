@@ -127,7 +127,10 @@ async def run_v3_replay(
 
     if not replay_result.success:
         error = str(replay_result.error or "")
-        await _mark_suspect(bridge, run_id=run_id, cache_key=cache_key, reason=f"replay_failed: {error}")
+        await _mark_suspect(
+            bridge, run_id=run_id, attempt=attempt, cache_key=cache_key,
+            reason=f"replay_failed: {error}",
+        )
         if restart_on_rescue_failure and getattr(replay_result, "restart_required", False):
             await _log(2, "V3缓存失效 · 完整重跑", "局部救援已失败，退出旧缓存路线，重新执行完整原始 Case")
             return V3RestartRequest(
@@ -190,6 +193,7 @@ async def run_v3_replay(
         await _mark_suspect(
             bridge,
             run_id=run_id,
+            attempt=attempt,
             cache_key=cache_key,
             reason=f"assertion_{assertion.verdict.lower()}: {assertion.reason}",
         )
@@ -203,7 +207,7 @@ async def run_v3_replay(
 
 
 async def _mark_suspect(
-    bridge: RunnerBridge, *, run_id: str, cache_key: str, reason: str
+    bridge: RunnerBridge, *, run_id: str, attempt: int, cache_key: str, reason: str
 ) -> None:
     """通知 Server 把命中但回放 / 断言失败的 V3 缓存标 suspect（不阻塞、不查库）。"""
     if not cache_key:
@@ -213,6 +217,7 @@ async def _mark_suspect(
             {
                 "type": P.MSG_CACHE_SUSPECT,
                 "run_id": run_id,
+                "attempt": attempt,
                 "cache_key": cache_key,
                 "cache_mode": "v3",
                 "reason": reason[:200],

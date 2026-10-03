@@ -3,6 +3,7 @@ import inspect
 from pathlib import Path
 
 import pytest
+from dotenv import dotenv_values
 
 from ai_phone.config import Settings
 from ai_phone.server.analytics.ai import AnalyticsAIClient
@@ -28,6 +29,13 @@ def test_auxiliary_model_timeout_defaults_are_five_minutes(field):
     assert Settings.model_fields[field].default == 300.0
     defaults = Path(__file__).resolve().parents[1] / ".env.defaults"
     assert getattr(Settings(_env_file=defaults), field) == 300.0
+
+
+@pytest.mark.parametrize("field", TIMEOUT_FIELDS)
+@pytest.mark.parametrize("filename", [".env.defaults", ".env.full.example"])
+def test_auxiliary_timeout_templates_match_settings_defaults(field, filename):
+    values = dotenv_values(Path(__file__).resolve().parents[1] / filename)
+    assert float(values[f"AI_PHONE_{field.upper()}"]) == Settings.model_fields[field].default
 
 
 @pytest.mark.parametrize("adapter,module", ADAPTERS)

@@ -255,7 +255,8 @@ async def test_v3_assertion_receives_this_runs_history_separately_from_cached_pl
 
 
 @pytest.mark.asyncio
-async def test_v3_replay_failure_marks_suspect_and_errors(monkeypatch):
+@pytest.mark.parametrize("attempt", [1, 2, 3])
+async def test_v3_replay_failure_marks_suspect_and_errors(monkeypatch, attempt):
     _patch(
         monkeypatch,
         replay_result=ReplayResult(
@@ -266,7 +267,7 @@ async def test_v3_replay_failure_marks_suspect_and_errors(monkeypatch):
     )
     bridge = _FakeBridge()
     await orchestrate.run_v3_replay(
-        run_id="r2", serial="S1", goal="打开微信", attempt=1,
+        run_id="r2", serial="S1", goal="打开微信", attempt=attempt,
         driver=object(), bridge=bridge, snapshot=_SNAPSHOT, settings=_Settings(),
     )
     assert len(bridge.run_done) == 1
@@ -278,29 +279,33 @@ async def test_v3_replay_failure_marks_suspect_and_errors(monkeypatch):
     assert sus["type"] == "cache_suspect"
     assert sus["cache_key"] == _SNAPSHOT["cache_key"]
     assert sus["cache_mode"] == "v3"
+    assert sus["attempt"] == done["attempt"] == attempt
 
 
 @pytest.mark.asyncio
-async def test_v3_replay_success_but_assertion_fail_marks_suspect(monkeypatch):
+@pytest.mark.parametrize("attempt", [1, 2, 3])
+@pytest.mark.parametrize("verdict", ["FAIL", "SKIP"])
+async def test_v3_replay_success_but_assertion_fail_marks_suspect(monkeypatch, attempt, verdict):
     _patch(
         monkeypatch,
         replay_result=ReplayResult(
             success=True, actions_total=1, actions_executed=1, elapsed_ms=900,
             final_before_bytes=b"before",
         ),
-        assertion=CacheAssertionResult("FAIL", "没看到结果"),
+        assertion=CacheAssertionResult(verdict, "没看到结果"),
     )
     bridge = _FakeBridge()
     await orchestrate.run_v3_replay(
-        run_id="r3", serial="S1", goal="打开微信", attempt=1,
+        run_id="r3", serial="S1", goal="打开微信", attempt=attempt,
         driver=object(), bridge=bridge, snapshot=_SNAPSHOT, settings=_Settings(),
     )
     assert len(bridge.run_done) == 1
     done = bridge.run_done[0]
     assert done["result"] == "assert_fail"
-    assert "assertion_fail" in done["message"]
+    assert f"assertion_{verdict.lower()}" in done["message"]
     assert len(bridge.suspects) == 1
-    assert bridge.suspects[0]["reason"].startswith("assertion_fail")
+    assert bridge.suspects[0]["reason"].startswith(f"assertion_{verdict.lower()}")
+    assert bridge.suspects[0]["attempt"] == done["attempt"] == attempt
 
 
 _SNAPSHOT_V2 = {
