@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+### 同步全量配置示例的豆包模型
+
+- `.env.full.example` 的主模型改为 `doubao-seed-evolving`，辅助模型改为
+  `doubao-seed-2-1-turbo-260628`，与精简示例和代码默认值一致；同步可复制注释，
+  移除旧豆包 1.6 示例。仅修改部署模板，不覆盖现有 `.env`，不切换已部署模型。
+
+### Align Doubao models in the full environment example
+
+- Align the full template and copyable comments with the compact example and code
+  defaults: Seed Evolving for phone execution and Seed 2.1 Turbo for auxiliary calls.
+  Remove retired Seed 1.6 examples without changing existing deployment overrides.
+
 ### 修复 V3 缓存失效日志的重试轮次归属
 
 - Server 写入 V3 缓存停用、删除日志时使用传入的 `attempt`，与实际缓存处理
