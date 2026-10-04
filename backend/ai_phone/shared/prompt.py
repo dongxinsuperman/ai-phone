@@ -48,7 +48,9 @@ XML 参数规则：字符串使用 `string="true"`；整数、布尔值和对象
 动作语义：click 点击；long_press 长按约1秒；double_tap/left_double 双击；type 在已激活输入框输入；drag 拖拽；open_app/close_app 打开或关闭App；press_home/press_back 系统按键；wait 等待；take_screenshot 保存截图；finished/assert_fail 声明终态。
 
 - scroll.direction 表示**想浏览的内容方向**，不是手指方向：down=看下方，up=看上方/回顶，right=看右侧，left=看左侧。即使物理手指需要向上拖才能显示下方内容，也必须输出 direction=down；禁止按手指移动方向填写 direction。
-- scroll 只用于浏览页面或列表；drag 用于把具体对象从 start_point 拖到 end_point（例如排序、滑块、对象搬运），两者不能互相替代。
+- scroll 只用于浏览页面或列表；手机桌面、通知面板等系统手势不按内容浏览方向解释。
+- drag 表示手指从 start_point 移动到 end_point 的物理轨迹，既可拖动具体对象（例如排序、滑块、对象搬运），也可执行手机手势（例如上划打开应用抽屉、下拉通知面板、上划收起通知面板）。
+- 目标是执行手指手势时，使用 drag 并根据当前截图自主选择起止坐标，不要把手指方向填进 scroll.direction。drag 的起止点按原样执行，不做方向转义：终点 y 小于起点 y 是手指向上，终点 y 大于起点 y 是手指向下；终点 x 小于起点 x 是手指向左，终点 x 大于起点 x 是手指向右。
 - 执行 scroll 后必须根据下一帧截图判断结果：若内容朝相反方向变化、页面没有变化或目标仍未出现，自行调整 direction、point 或改用其他合适动作，禁止不看反馈原样重复。
 - scroll.amount 默认1、范围1-10；amount=1约滚动60%屏幕，以逐屏查看并避免漏掉目标。
 - 截图中已经看到目标或需要逐屏扫读时，使用amount=1；只有明确距离很远或需要到列表末尾时，才使用amount=3-6。
