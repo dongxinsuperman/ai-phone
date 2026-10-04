@@ -271,6 +271,23 @@ def test_factory_uses_phone_settings_not_auxiliary_settings():
     assert cfg.vlm_backend == "doubao_responses"
 
 
+def test_unconfigured_settings_select_window_five_and_session_env_still_works(monkeypatch):
+    monkeypatch.delenv("AI_PHONE_VLM_CONTEXT_MODE", raising=False)
+    monkeypatch.delenv("AI_PHONE_VLM_HISTORY_WINDOW_ROUNDS", raising=False)
+    values = settings().model_dump()
+    values.pop("vlm_context_mode")
+    values.pop("vlm_history_window_rounds")
+    cfg = Settings(_env_file=None, **values)
+    assert cfg.vlm_context_mode == "sliding_window" and cfg.vlm_history_window_rounds == 5
+    client = create_main_vlm("system", settings=cfg)
+    assert isinstance(client, DoubaoChatWindowClient) and client.window_rounds == 5
+
+    monkeypatch.setenv("AI_PHONE_VLM_CONTEXT_MODE", "session")
+    overridden = Settings(_env_file=None, **values)
+    assert overridden.vlm_context_mode == "session"
+    assert isinstance(create_main_vlm("system", settings=overridden), VLMClient)
+
+
 @pytest.mark.parametrize(
     "backend,module,name",
     [

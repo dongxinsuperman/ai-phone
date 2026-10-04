@@ -1,4 +1,4 @@
-"""Opt-in Doubao main VLM: Chat Completions + strict client-owned window.
+"""Default Doubao main VLM: Chat Completions + strict client-owned window.
 
 Only transport and request history differ from Responses. Use the same fixed
 System/Case/substeps/Map, Seed XML parser, Decision and TokenCounter contracts.

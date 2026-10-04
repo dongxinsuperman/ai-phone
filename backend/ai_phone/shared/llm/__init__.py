@@ -74,6 +74,7 @@ def create_main_vlm(
 
     if backend == "doubao_responses":
         # 只切豆包主决策内部实现；backend 不改名，Prompt/XML/归档消费者不变。
+        # 当前 Settings 默认滑窗；没有新字段的旧式配置对象仍兼容原续接。
         context_mode = getattr(cfg, "vlm_context_mode", "session")
         if context_mode == "sliding_window":
             from ai_phone.shared.llm.main.doubao_chat_window import DoubaoChatWindowClient
@@ -89,7 +90,7 @@ def create_main_vlm(
                 "AI_PHONE_VLM_CONTEXT_MODE 只支持 session / sliding_window，"
                 f"当前为 {context_mode!r}"
             )
-        # 默认路径：原 VLMClient 原样保留，不改参数或缓存/分段语义。
+        # 显式回退/旧配置兼容：原 VLMClient 原样保留，不改缓存/分段语义。
         from ai_phone.shared.vlm import VLMClient
 
         return VLMClient(

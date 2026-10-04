@@ -122,7 +122,7 @@ def test_context_switch_and_rounds_are_server_distributed(monkeypatch):
     assert client.window_rounds == 3
 
 
-def test_older_server_without_context_fields_keeps_safe_session_default(monkeypatch):
+def test_older_server_without_context_fields_uses_new_agent_window_default(monkeypatch):
     import ai_phone.config as cfg
 
     local = _derived_doubao_settings()
@@ -131,7 +131,7 @@ def test_older_server_without_context_fields_keeps_safe_session_default(monkeypa
     snapshot.pop("vlm_context_mode")
     snapshot.pop("vlm_history_window_rounds")
     effective = set_runtime_override(snapshot)
-    assert effective.vlm_context_mode == "session"
+    assert effective.vlm_context_mode == "sliding_window"
     assert effective.vlm_history_window_rounds == 5
 
 
@@ -142,11 +142,37 @@ def test_older_agent_filters_new_context_fields(monkeypatch):
     assert snapshot["vlm_context_mode"] == "sliding_window"
     original_allowed = downlink_field_names()
     monkeypatch.setattr(cfg, "downlink_field_names", lambda: original_allowed - {"vlm_context_mode", "vlm_history_window_rounds"})
-    local = _derived_doubao_settings()
+    # An actual older Agent has the legacy default; don't substitute the new
+    # Settings default when simulating its unknown-field filtering.
+    local = _derived_doubao_settings(vlm_context_mode="session")
     monkeypatch.setattr(cfg, "_base_settings", lambda: local)
     effective = set_runtime_override(snapshot)
     assert effective.vlm_context_mode == "session"
     assert effective.vlm_history_window_rounds == 5
+
+
+def test_default_window_five_is_downlinked_and_explicit_session_can_override(monkeypatch):
+    import ai_phone.config as cfg
+    from ai_phone.shared.llm import create_main_vlm
+    from ai_phone.shared.llm.main.doubao_chat_window import DoubaoChatWindowClient
+    from ai_phone.shared.vlm import VLMClient
+
+    server = _derived_doubao_settings()
+    assert server.vlm_context_mode == "sliding_window"
+    assert server.vlm_history_window_rounds == 5
+    local = _derived_doubao_settings(vlm_context_mode="session", vlm_history_window_rounds=9)
+    monkeypatch.setattr(cfg, "_base_settings", lambda: local)
+    effective = set_runtime_override(build_downlink_config(settings=server))
+    assert effective.vlm_context_mode == "sliding_window"
+    assert effective.vlm_history_window_rounds == 5
+    client = create_main_vlm("case-system")
+    assert isinstance(client, DoubaoChatWindowClient)
+    assert client.window_rounds == 5
+
+    legacy = _derived_doubao_settings(vlm_context_mode="session")
+    set_runtime_override(build_downlink_config(settings=legacy))
+    assert isinstance(create_main_vlm("case-system"), VLMClient)
+    assert isinstance(client, DoubaoChatWindowClient) and client.window_rounds == 5
 
 
 def test_settings_loads_env_defaults_before_env_and_env_local(monkeypatch, tmp_path):
@@ -216,6 +242,8 @@ def test_env_defaults_contains_only_public_runtime_defaults():
 
     assert forbidden.isdisjoint(active)
     assert active["AI_PHONE_FUNCTION_MAP_CONTEXT_MAX_CHARS"] == "0"
+    assert active["AI_PHONE_VLM_CONTEXT_MODE"] == "sliding_window"
+    assert active["AI_PHONE_VLM_HISTORY_WINDOW_ROUNDS"] == "5"
     assert active["AI_PHONE_IOS_WDA_PRELOAD"] == "true"
     assert active["AI_PHONE_RUN_RETRY_ENABLED"] == "true"
     assert active["AI_PHONE_SCROLL_STUCK_THRESHOLD"] == "8"

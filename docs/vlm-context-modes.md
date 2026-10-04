@@ -1,30 +1,34 @@
 # 豆包主 VLM 上下文切换
 
-当前默认仍使用原 Responses 会话续接。可显式开启独立的 Chat 完整轮次滑窗；
+豆包主 VLM 默认使用 Chat 严格完整轮次滑窗，默认 5 轮；可显式切回原 Responses 会话续接。
 不修改模型、Prompt 规则、动作协议、辅助系统或轨迹缓存格式。
 
 ## Server 配置及下发
 
-在 **Server 的 `backend/.env`** 配置：
+未配置时使用随代码提交的默认值；也可在 **Server 的 `backend/.env`** 显式覆盖：
 
 ```env
-# 默认；原 Responses + 服务端历史续接 + 显式缓存
-AI_PHONE_VLM_CONTEXT_MODE=session
+# 默认；Chat 严格完整轮次滑窗 + 隐式缓存
+AI_PHONE_VLM_CONTEXT_MODE=sliding_window
 
 # 仅滑窗模式使用，1-64，默认 5
 AI_PHONE_VLM_HISTORY_WINDOW_ROUNDS=5
 ```
 
-开启滑窗时只将 `AI_PHONE_VLM_CONTEXT_MODE` 改为 `sliding_window`。这两项属于现有
+切回原方式时只将 `AI_PHONE_VLM_CONTEXT_MODE` 改为 `session`。这两项属于现有
 Settings 执行配置下发集；Agent 接收 Server 快照后，通过主客户端工厂选择实现。
 不要把 `PHONE_VLM_PROVIDER` 改成 Chat，也不要为了切主请求改变 AUX 配置。
 
-部署步骤：在空闲时更新并重启需要新能力的 Agent，更新 Server 配置并按现有流程
+默认值变更会影响没有显式配置这两项的部署；已有 `.env`、`.env.local` 或进程 ENV
+覆盖仍优先，不自动改写。需要保留原行为时，升级前在 Server 显式配置 `session`。
+
+部署步骤：在空闲时更新并重启需要新能力的 Agent，更新 Server 并按现有流程
 重启/重新下发配置；确认 Agent 已接收目标值，再提交新 Run。既有 Run 在创建时
 固定客户端与窗口大小，不因后续配置下发混换历史。
 
 - 旧 Agent 会忽略未知的新字段，继续使用原链路，不会因这两个字段报错；但不会启用滑窗。
-- 旧 Server 不下发这两个字段时，新 Agent 的干净默认配置仍为 `session`、5 轮。
+- 旧 Server 不下发这两个字段时，新 Agent 使用自身配置，干净默认是 `sliding_window`、5 轮。
+  要统一由 Server 控制新开关，应同步更新 Server。
 - 回退时 Server 配置改回 `session`，重新下发，对新 Run 生效。
 - 新模式仅对豆包主 VLM 生效；Claude、GPT 与它们原有窗口配置不变。
 

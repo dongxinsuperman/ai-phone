@@ -359,11 +359,11 @@ class Settings(BaseSettings):
     # 仅豆包主决策读取；不改变 provider、辅助模型或轨迹回放连接。
     # session 原样使用 Responses；sliding_window 独立走 Chat + 隐式缓存。
     vlm_context_mode: str = Field(
-        default="session",
+        default="sliding_window",
         pattern=r"^(session|sliding_window)$",
         description=(
-            "豆包主 VLM 上下文方式：session（默认，原 Responses 续接）或 "
-            "sliding_window（Chat 严格滑窗）。其他 provider 忽略。"
+            "豆包主 VLM 上下文方式：sliding_window（默认，Chat 严格滑窗）或 "
+            "session（原 Responses 续接）。其他 provider 忽略。"
             "由 Server ENV 配置并下发 Agent。env: AI_PHONE_VLM_CONTEXT_MODE"
         ),
     )
