@@ -52,7 +52,7 @@ def _feed_step(
     rec.feed(
         make_event(
             EVT_ACTION, run_id, step=step, text=display, elapsed_ms=100,
-            action_type=action_type, actions=actions,
+            action_type=action_type, actions=[{**a, **({"scroll_gesture_version": 1} if a.get("action") == "scroll" else {})} for a in actions],
             vlm_screenshot_size=vlm_screenshot_size,
         )
     )
@@ -93,6 +93,7 @@ def test_archive_supports_every_first_run_executable_action(action_type):
         "content": "1111", "direction": "up", "scroll_amount": 3,
         "name": "com.example.app", "seconds": 7, "keycode": 66,
         "save_to_album": False,
+        "scroll_gesture_version": 1,
     }
     actions = archive_mod._actions_from_steps([
         {"step": 1, "thought": "首跑行为", "actions": [raw]},

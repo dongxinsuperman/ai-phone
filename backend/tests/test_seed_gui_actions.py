@@ -19,7 +19,7 @@ def test_seed_xml_preserves_thought_and_maps_action() -> None:
     assert parsed[0].action == A.ACTION_SCROLL
     assert parsed[0].point == [500, 800]
     assert parsed[0].direction == "down"
-    assert parsed[0].raw == "scroll(point='<point>500 800</point>', direction='down')"
+    assert parsed[0].raw == "scroll(point='<point>500 800</point>', direction='down', scroll_type='singleAction')"
 
 
 def test_seed_xml_preserves_model_scroll_direction_for_next_frame_feedback() -> None:
@@ -27,7 +27,7 @@ def test_seed_xml_preserves_model_scroll_direction_for_next_frame_feedback() -> 
 <seed:tool_call><function name="scroll"><parameter name="point" string="true"><point>620 600</point></parameter><parameter name="direction" string="true">up</parameter></function></seed:tool_call>"""
     parsed = parse_actions(raw)
     assert parsed[0].direction == "up"
-    assert parsed[0].raw == "scroll(point='<point>620 600</point>', direction='up')"
+    assert parsed[0].raw == "scroll(point='<point>620 600</point>', direction='up', scroll_type='singleAction')"
     assert parsed[0].extra == {}
 
 
@@ -134,8 +134,10 @@ def test_seed_xml_prompt_preserves_action_behavior_rules() -> None:
     assert "既可拖动具体对象" in prompt
     assert "根据下一帧截图判断结果" in prompt
     assert "禁止不看反馈原样重复" in prompt
-    assert "amount=1约滚动60%屏幕" in prompt
-    assert "下一帧仍未看到目标时必须立即降回amount=1" in prompt
+    assert "scroll.point 是手指按下的起始位置" in prompt
+    assert "1000ms" in prompt and "100ms" in prompt
+    assert "每次看图后再决定下一步" in prompt
+    assert "不得使用toEdge" in prompt
     assert "一次等待完成，不要拆成多次wait" in prompt
     assert "不要再点击系统截图按钮" in prompt
     assert "long_press 长按约1秒" in prompt

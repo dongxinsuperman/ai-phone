@@ -8,6 +8,7 @@ from typing import Any
 from loguru import logger
 
 from ai_phone.shared import actions as A
+from ai_phone.shared.scroll_gesture import SCROLL_GESTURE_VERSION, validate_scroll_options
 
 
 _POINT_SCHEMA = {
@@ -27,7 +28,13 @@ ACTION_SCHEMAS: list[dict[str, Any]] = [
     {"name": "double_tap", "parameters": {"type": "object", "properties": {"point": _POINT_SCHEMA}, "required": ["point"]}},
     {"name": "left_double", "parameters": {"type": "object", "properties": {"point": _POINT_SCHEMA}, "required": ["point"]}},
     {"name": "type", "parameters": {"type": "object", "properties": {"content": {"type": "string"}}, "required": ["content"]}},
-    {"name": "scroll", "parameters": {"type": "object", "properties": {"point": _POINT_SCHEMA, "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Content browsing direction, not finger movement: down reveals lower content; up reveals upper content or returns to top; right reveals content on the right; left reveals content on the left."}, "amount": {"type": "integer", "minimum": 1, "maximum": 10}}, "required": ["point", "direction"]}},
+    {"name": "scroll", "parameters": {"type": "object", "properties": {
+        "point": {**_POINT_SCHEMA, "description": "Scroll start position (finger-down), not the midpoint of the swipe. Choose a point inside the intended scrollable region with room to move in the physical gesture direction."},
+        "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Content browsing direction, not finger movement: down reveals lower content; up reveals upper content or returns to top; right reveals content on the right; left reveals content on the left."},
+        "amount": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Repeat count for singleAction only. This does not select fast scrolling."},
+        "scroll_type": {"type": "string", "enum": ["singleAction", "toEdge"], "description": "Default singleAction: controlled scroll, then observe. toEdge: 10 fast passes toward the requested content boundary; only for explicit top/bottom/leftmost/rightmost goals, never for finding intermediate content."},
+        "distance": {"type": "integer", "minimum": 1, "maximum": 1000, "description": "Optional singleAction finger travel, in 0-1000 units of the scrolling axis (600 = 60% screen height for vertical scrolling, or width for horizontal). Default 600; actual travel is capped at screen bounds. Not supported with toEdge."},
+    }, "required": ["point", "direction"]}},
     {"name": "drag", "parameters": {"type": "object", "properties": {"start_point": _POINT_SCHEMA, "end_point": _POINT_SCHEMA}, "required": ["start_point", "end_point"]}},
     {"name": "open_app", "parameters": {"type": "object", "properties": {"app_name": {"type": "string"}}, "required": ["app_name"]}},
     {"name": "close_app", "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
@@ -119,10 +126,16 @@ def _to_parsed(call: dict[str, Any]) -> A.ParsedAction:
         if value is not None and not isinstance(value, bool):
             parsed.seconds = int(value)
     if name == A.ACTION_SCROLL:
-        amount = int(params.get("amount", 1))
-        if not 1 <= amount <= 10:
+        amount = params.get("amount", 1)
+        if isinstance(amount, bool) or not isinstance(amount, int) or not 1 <= amount <= 10:
             raise ValueError("scroll amount must be in [1, 10]")
         parsed.scroll_amount = amount
+        parsed.scroll_type = params.get("scroll_type", "singleAction")
+        parsed.scroll_distance = params.get("distance")
+        validate_scroll_options(parsed.scroll_type, parsed.scroll_distance)
+        if parsed.scroll_type == "toEdge" and "amount" in params:
+            raise ValueError("toEdge has a fixed pass budget; omit amount")
+        parsed.scroll_gesture_version = SCROLL_GESTURE_VERSION
     if name == A.ACTION_KEY_EVENT and params.get("keycode") is not None:
         parsed.keycode = int(params["keycode"])
     if name == A.ACTION_TAKE_SCREENSHOT:
@@ -162,7 +175,9 @@ def _canonical_raw(p: A.ParsedAction) -> str:
         return f"drag(start_point='{pt(p.start_point)}', end_point='{pt(p.end_point)}')"
     if p.action == A.ACTION_SCROLL:
         amount = f", amount={p.scroll_amount}" if p.scroll_amount > 1 else ""
-        return f"scroll(point='{pt(p.point)}', direction='{p.direction}'{amount})"
+        mode = f", scroll_type='{p.scroll_type}'" if p.scroll_gesture_version else ""
+        distance = f", distance={p.scroll_distance}" if p.scroll_distance is not None else ""
+        return f"scroll(point='{pt(p.point)}', direction='{p.direction}'{amount}{mode}{distance})"
     if p.action == A.ACTION_TYPE:
         return f"type(content='{_quote(p.content or '')}')"
     if p.action == A.ACTION_OPEN_APP:

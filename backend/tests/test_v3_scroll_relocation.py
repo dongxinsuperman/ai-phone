@@ -22,7 +22,8 @@ def frame(size, color="white"):
 def cached_scroll(direction="down", **extra):
     return {
         "index": 1, "action_id": "scroll-1", "type": "scroll",
-        "direction": direction, "amount": 3, "center": {"x": 360, "y": 640},
+        "direction": direction, "amount": 3, "point": {"x": 360, "y": 640},
+        "scroll_gesture_version": 1, "scroll_type": "singleAction",
         "plan_intent": "滑动左侧设置列表", "raw": "首跑原始动作，仅留档", **extra,
     }
 
@@ -35,8 +36,10 @@ class Driver:
     def window_size(self):
         return self.size
 
-    def scroll(self, direction, center=None, amount=1):
-        self.calls.append((direction, center, amount))
+    def scroll(self, direction, point=None, amount=1, **kwargs):
+        self.calls.append((direction, point, amount))
+
+    scroll_seed = scroll
 
 
 @pytest.fixture
@@ -90,7 +93,7 @@ async def test_scroll_relocates_on_current_device_without_changing_direction_or_
 ):
     source = cached_scroll(direction)
     if not with_old_center:
-        source.pop("center")
+        source.pop("point")
     original = deepcopy(source)
     runner, driver, calls, screenshot = make_runner([source], size=size)
 
@@ -104,7 +107,7 @@ async def test_scroll_relocates_on_current_device_without_changing_direction_or_
     assert f"缓存浏览方向：{direction}" in calls[0]["prompt"]
     assert "360" not in calls[0]["prompt"] and "640" not in calls[0]["prompt"]
     actual = runner.execution_history[0]["action"]
-    assert actual["center"] == {"x": expected_center[0], "y": expected_center[1]}
+    assert actual["point"] == {"x": expected_center[0], "y": expected_center[1]}
     assert actual["direction"] == direction and actual["amount"] == 3
     assert runner.trajectory["actions"] == [original] and source == original
 
@@ -134,15 +137,15 @@ async def test_same_center_is_valid_for_consecutive_scrolls(make_runner):
 
 
 @pytest.mark.asyncio
-async def test_relocated_center_reaches_existing_native_swipe_generation(make_runner, monkeypatch):
+async def test_relocated_seed_start_reaches_new_touch_swipe_generation(make_runner, monkeypatch):
     runner, driver, _, _ = make_runner([cached_scroll(amount=1)])
     swipes = []
     monkeypatch.setattr(driver, "swipe", lambda *args, **kwargs: swipes.append((args, kwargs)), raising=False)
-    monkeypatch.setattr(driver, "scroll", lambda *args: BaseDriver.scroll(driver, *args))
+    monkeypatch.setattr(driver, "scroll_seed", lambda *args, **kwargs: BaseDriver.scroll_seed(driver, *args, **kwargs))
     result = await runner.run()
     assert result.success
-    # 当前定位中心(270,960)，使用未修改的驱动手势生成逻辑，而非旧中心(360,640)。
-    assert swipes == [((270, 1122, 270, 798), {"duration_ms": 400})]
+    # 当前定位起点(270,960)进入Seed新手势，不使用归档起点(360,640)。
+    assert swipes == [((270, 960, 270, 72), {"duration_ms": 1000})]
 
 
 @pytest.mark.asyncio
@@ -202,7 +205,7 @@ async def test_scroll_miss_then_wait_relocates_using_updated_screenshot(make_run
     assert [c["image"] for c in calls] == [screenshot, updated]
     assert len(rescue.calls) == 1
     assert driver.calls == [("down", (324, 1440), 3)]
-    assert runner.execution_history[-1]["action"]["center"] == {"x": 324, "y": 1440}
+    assert runner.execution_history[-1]["action"]["point"] == {"x": 324, "y": 1440}
 
 
 @pytest.mark.asyncio
@@ -228,7 +231,7 @@ async def test_scroll_miss_without_rescue_does_not_use_historical_or_default_cen
 def test_non_locator_scroll_is_rejected_and_missing_point_cannot_fall_back():
     with pytest.raises(ReplayActionError, match="必须先定位"):
         module._non_locator_action(cached_scroll())
-    with pytest.raises(module.V3LocatorMiss, match="缺少当前滑动中心"):
+    with pytest.raises(module.V3LocatorMiss, match="缺少当前滑动起点"):
         module._replay_action_from_parsed(
             ParsedAction(action="scroll"), source_action=cached_scroll(),
             image_size=None, window_size=(1080, 2400),
@@ -238,7 +241,7 @@ def test_non_locator_scroll_is_rejected_and_missing_point_cannot_fall_back():
 def test_scroll_center_does_not_poison_click_duplicate_check():
     runner = module.V3ReplayRunner(driver=Driver((1080, 2400)), trajectory={"actions": []})
     runner._validate_located_action(
-        cached_scroll(), {"type": "scroll", "center": {"x": 300, "y": 400}},
+        cached_scroll(), {"type": "scroll", "point": {"x": 300, "y": 400}, "scroll_gesture_version": 1},
         window_size=(1080, 2400),
     )
     runner._validate_located_action(
@@ -255,7 +258,19 @@ def test_cleaning_preserves_scroll_region_without_inventing_coordinates():
 
 
 @pytest.mark.asyncio
-async def test_shared_dispatcher_still_executes_v1_v2_stored_centers():
+async def test_shared_dispatcher_rejects_obsolete_v1_v2_centers():
     driver = Driver((1080, 2400))
-    await ReplayActionDispatcher(driver).execute(cached_scroll("left"))
-    assert driver.calls == [("left", (360, 640), 3)]
+    old = {"type": "scroll", "direction": "left", "center": {"x": 360, "y": 640}}
+    with pytest.raises(ReplayActionError, match="Obsolete"):
+        await ReplayActionDispatcher(driver).execute(old)
+    assert driver.calls == []
+
+
+@pytest.mark.asyncio
+async def test_obsolete_v3_plan_stops_before_locator_or_device_action(make_runner):
+    old = cached_scroll()
+    old.pop("scroll_gesture_version")
+    runner, driver, calls, _ = make_runner([old])
+    result = await runner.run()
+    assert not result.success and result.restart_required
+    assert result.actions_executed == 0 and calls == [] and driver.calls == []

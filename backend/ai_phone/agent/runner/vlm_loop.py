@@ -1818,31 +1818,29 @@ class VLMRunner:
 
         elif action == A.ACTION_SCROLL:
             direction = parsed.direction or "down"
-            # 滚动次数：Claude/GPT CU 在长列表场景常给 amount>1（"快速翻 N 屏"），
-            # 不透传会一直只滑 1 屏 → 模型见截图变化不大反复 scroll → 卡死被
-            # 审判 KILL。豆包路径 ParsedAction 默认 amount=1，行为不变。
-            amount = max(1, int(parsed.scroll_amount or 1))
-            # VLM 明确给点 → 以该点为中心做局部滑动（分块/分栏场景精准滑）
-            # VLM 没给点    → 走 driver 内置全屏中线兜底（整页 list 翻页）
-            if parsed.point:
-                abs_xy: Optional[Tuple[int, int]] = await self._vlm_point_to_abs(
-                    parsed.point, coord_space=parsed.coord_space
-                )
-                amount_suffix = f"，连续 {amount} 次" if amount > 1 else ""
-                await self._log(
-                    1, "滑动",
-                    f"方向: {direction}，中心: {abs_xy}{amount_suffix}",
-                    step=step,
-                )
+            point = await self._vlm_point_to_abs(
+                parsed.point, coord_space=parsed.coord_space
+            ) if parsed.point else None
+            from ai_phone.shared.scroll_gesture import is_cu_backend
+            if is_cu_backend(self._settings.vlm_backend):
+                amount = max(1, int(parsed.scroll_amount or 1))
+                suffix = f"，连续 {amount} 次" if amount > 1 else ""
+                detail = f"方向: {direction}，中心: {point}{suffix}" if point else f"方向: {direction}（屏幕中线兜底）{suffix}"
+                await self._log(1, "滑动", detail, step=step)
+                await run_blocking(self.driver.scroll, direction, point, amount)
             else:
-                abs_xy = None
-                amount_suffix = f"，连续 {amount} 次" if amount > 1 else ""
                 await self._log(
-                    1, "滑动",
-                    f"方向: {direction}（屏幕中线兜底）{amount_suffix}",
+                    1, "滑动", f"方向: {direction}，起点: {point}，模式: {parsed.scroll_type}", step=step,
+                )
+                gesture = await run_blocking(
+                    self.driver.scroll_seed, direction, point, parsed.scroll_amount,
+                    scroll_type=parsed.scroll_type, distance=parsed.scroll_distance,
+                )
+                await self._log(
+                    1, "滑动手势",
+                    f"起点{gesture.start} → 终点{gesture.end}，每次{gesture.duration_ms}ms，次数{gesture.repeat}",
                     step=step,
                 )
-            await run_blocking(self.driver.scroll, direction, abs_xy, amount)
 
         elif action == A.ACTION_DRAG:
             sp = await self._vlm_point_to_abs(

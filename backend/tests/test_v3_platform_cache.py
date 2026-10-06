@@ -20,6 +20,7 @@ from ai_phone.server.trajectory_cache.v3_service import (
     mark_trajectory_cache_v3_suspect, V3_BINDING_LOG_TITLE,
 )
 from ai_phone.server.retry import attempt_context
+from ai_phone.shared.scroll_gesture import seed_scroll_cache_key
 
 
 GOAL = "进入设置，向下浏览设置列表并打开关于手机"
@@ -30,7 +31,8 @@ def archive(device="A", platform="android", *, shared=True, goal=GOAL, source="s
         "cache_mode": "v3", "device_code": device, "run_semantic_text": goal,
         "source_run_id": source, "platform": platform,
         "actions": [{"index": 1, "action_id": "a1", "type": "scroll", "direction": "down",
-                     "amount": 1, "center": {"x": 360, "y": 640},
+                     "amount": 1, "point": {"x": 360, "y": 640},
+                     "scroll_gesture_version": 1, "scroll_type": "singleAction",
                      "plan_intent": "滑动设置列表"}],
         "meta": {"cache_scope": "platform"} if shared else {},
     }
@@ -107,14 +109,14 @@ async def test_ios_real_and_simulator_share_family(sf):
 @pytest.mark.asyncio
 async def test_registered_platform_wins_over_wrong_archive_hint(sf):
     key = await store_trajectory_cache_archive(sf, archive=archive("I", "android"))
-    assert key == build_v3_platform_cache_key(platform="ios", run_semantic_text=GOAL)[0]
+    assert key == seed_scroll_cache_key(build_v3_platform_cache_key(platform="ios", run_semantic_text=GOAL)[0])
     assert await lookup(sf, "B") is None
 
 
 @pytest.mark.asyncio
 async def test_unknown_platform_keeps_device_scope(sf):
     key = await store_trajectory_cache_archive(sf, archive=archive("U", "android"))
-    assert key == build_cache_key(device_code="U", run_semantic_text=GOAL, schema_version=3)[0]
+    assert key == seed_scroll_cache_key(build_cache_key(device_code="U", run_semantic_text=GOAL, schema_version=3)[0])
     hit = await lookup(sf, "U")
     assert "cache_scope" not in hit["meta"] and "cache_revision" not in hit["meta"]
     assert await lookup(sf, "B") is None
@@ -361,8 +363,10 @@ async def test_shared_snapshot_replay_locates_coordinates_on_device_b(sf, monkey
         def window_size(self):
             return 1080, 2400
 
-        def scroll(self, direction, center, amount):
-            self.calls.append((direction, center, amount))
+        def scroll(self, direction, point, amount, **kwargs):
+            self.calls.append((direction, point, amount))
+
+        scroll_seed = scroll
 
     driver = Driver()
     runner = replay.V3ReplayRunner(driver=driver, trajectory=snapshot, locator=locator, goal=GOAL)
@@ -380,8 +384,27 @@ async def test_shared_snapshot_replay_locates_coordinates_on_device_b(sf, monkey
     assert result.success
     assert driver.calls == [("down", (810, 1440), 1)]
     assert model_calls[0]["image_bytes"] == current_image
-    assert runner.execution_history[0]["action"]["center"] == {"x": 810, "y": 1440}
-    assert snapshot["actions"][0]["center"] == {"x": 360, "y": 640}
+    assert runner.execution_history[0]["action"]["point"] == {"x": 810, "y": 1440}
+    assert snapshot["actions"][0]["point"] == {"x": 360, "y": 640}
+
+
+@pytest.mark.asyncio
+async def test_old_scroll_archive_upload_is_rejected(sf):
+    old = archive()
+    old["actions"][0].pop("scroll_gesture_version")
+    assert await store_trajectory_cache_archive(sf, archive=old) is None
+
+
+@pytest.mark.asyncio
+async def test_preexisting_old_scroll_cache_is_obsolete_not_a_hit(sf):
+    key, normalized, semantic_hash = build_cache_key(device_code="A", run_semantic_text=GOAL, schema_version=3)
+    async with sf() as session:
+        session.add(VlmTrajectoryCacheV3(cache_key=key, device_code="A", run_semantic_text=normalized, run_semantic_hash=semantic_hash, source_vlm_backend="doubao_responses", actions_json=[{"type": "scroll", "center": {"x": 360, "y": 640}, "direction": "down"}], status="active"))
+        await session.commit()
+    assert await lookup(sf, device="A") is None
+    async with sf() as session:
+        row = (await session.execute(select(VlmTrajectoryCacheV3).where(VlmTrajectoryCacheV3.cache_key == key))).scalars().one()
+        assert row.status == "obsolete"
 
 
 @pytest.mark.asyncio

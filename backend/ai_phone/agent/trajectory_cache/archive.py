@@ -512,6 +512,7 @@ def _actions_from_steps(
                 screen_size=screen_size,
                 vlm_screenshot_size=parsed_dict.get("vlm_screenshot_size", vlm_screenshot_size),
                 source=str(parsed_dict.get("source") or "agent_first_hand"),
+                source_vlm_backend=source_vlm_backend,
             )
             if action is None:  # 终止 / 未知动作不入缓存
                 continue
@@ -540,6 +541,9 @@ def _rebuild_parsed(d: Dict[str, Any], *, raw: str = "") -> A.ParsedAction:
         keycode=d.get("keycode"),
         save_to_album=bool(d.get("save_to_album", True)),
         scroll_amount=int(d.get("scroll_amount") or 1),
+        scroll_gesture_version=int(d.get("scroll_gesture_version") or 0),
+        scroll_type=str(d.get("scroll_type") or "singleAction"),
+        scroll_distance=d.get("scroll_distance"),
         raw=str(d.get("raw") or raw or ""),
         coord_space=str(d.get("coord_space") or "normalized"),
     )
@@ -553,6 +557,7 @@ def _action_from_parsed_raw(
     screen_size: Tuple[int, int],
     source: str,
     vlm_screenshot_size: Optional[Tuple[int, int]] = None,
+    source_vlm_backend: str = "",
 ) -> Optional[Dict[str, Any]]:
     """自 next ``service._action_from_parsed_raw`` 迁来：parsed → 回放执行器认的规范化
     action。三协议坐标统一经 ``_parsed_point_to_abs``，字段名与 ReplayActionDispatcher 对齐。
@@ -580,14 +585,23 @@ def _action_from_parsed_raw(
     if action == A.ACTION_WAIT:
         return {**base, "type": action, "seconds": int(parsed.seconds or 1)}
     if action == A.ACTION_SCROLL:
+        from ai_phone.shared.scroll_gesture import is_cu_backend
+        cu = is_cu_backend(source_vlm_backend)
+        if parsed.scroll_gesture_version != (0 if cu else 1):
+            raise ValueError("obsolete scroll recording; rerun to generate a new cache")
         out = {
             **base,
             "type": action,
             "direction": parsed.direction or "down",
             "amount": int(parsed.scroll_amount or 1),
         }
+        if not cu:
+            out["scroll_gesture_version"] = parsed.scroll_gesture_version
+            out["scroll_type"] = parsed.scroll_type
+            if parsed.scroll_distance is not None:
+                out["scroll_distance"] = parsed.scroll_distance
         if parsed.point:
-            out["center"] = _parsed_point_to_abs(parsed.point, parsed.coord_space, screen_size, vlm_screenshot_size)
+            out["center" if cu else "point"] = _parsed_point_to_abs(parsed.point, parsed.coord_space, screen_size, vlm_screenshot_size)
         return out
     if action == A.ACTION_DRAG:
         if not (parsed.start_point and parsed.end_point):

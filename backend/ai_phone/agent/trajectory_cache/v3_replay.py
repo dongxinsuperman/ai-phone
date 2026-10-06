@@ -830,8 +830,10 @@ class V3ReplayRunner:
         self.emit = emit
         self.capture_after_each_action = capture_after_each_action
         self._owns_locator = locator is None
+        self.main_vlm_backend = main_vlm_backend or getattr(get_settings(), "vlm_backend", "doubao_responses")
         self.dispatcher = dispatcher or ReplayActionDispatcher(
             driver, max_wait_seconds=getattr(get_settings(), "run_max_wait_sec", 1800),
+            main_vlm_backend=self.main_vlm_backend,
         )
         self.locator = locator or V3PlanLocator(
             main_vlm_backend=main_vlm_backend
@@ -890,6 +892,7 @@ class V3ReplayRunner:
             "type", "point", "center", "start", "end", "direction", "amount",
             "seconds", "wait_ms", "app_name", "name", "app", "bundle_id", "content", "text",
             "keycode", "duration_ms", "interval_ms", "save_to_album", "plan_intent",
+            "scroll_gesture_version", "scroll_type", "scroll_distance",
         )
         row = {
             "sequence": len(self._execution_history) + 1,
@@ -939,6 +942,9 @@ class V3ReplayRunner:
 
     async def _run_actions(self) -> ReplayResult:
         actions = list(self.trajectory.get("actions") or [])
+        from ai_phone.shared.scroll_gesture import has_incompatible_scroll
+        if has_incompatible_scroll(actions, self.main_vlm_backend):
+            return V3ReplayResult(success=False, actions_total=len(actions), actions_executed=0, elapsed_ms=0, error="obsolete_scroll_cache: regenerate from a new first run", restart_required=True)
         executed = 0
         started_at = time.monotonic()
         await self._log(1, "缓存回放", f"V3 开始回放：actions={len(actions)}")
@@ -1921,12 +1927,15 @@ def build_v3_locator_prompt(
         )
     elif source_action_type == A.ACTION_SCROLL:
         coord_hint = "截图实际像素坐标" if coord_space == "absolute" else "0-1000 归一化坐标"
+        position = "手指按下的起始位置（不是手势中心），沿手指移动方向留足空间" if action.get("scroll_gesture_version") == 1 else "操作中心"
+        mode_rule = f"  滚动模式：{action.get('scroll_type') or 'singleAction'}；不要改写缓存模式或距离。\n" if action.get("scroll_gesture_version") == 1 else ""
         locate_rule = (
             "- 滑动类动作：根据目标描述在当前截图中找到要滚动的列表、卡片或页面区域，"
-            "选择该区域内适合本次滑动的操作中心，输出：<point>x y</point>。\n"
+            f"选择该区域内适合本次滑动的{position}，输出：<point>x y</point>。\n"
             f"  坐标使用{coord_hint}；不要固定取屏幕中央，不要照搬首跑位置。\n"
             f"  缓存浏览方向：{action.get('direction') or 'down'}；"
             f"次数：{action.get('amount') or 1}。方向和次数由缓存执行，你只定位操作区域。\n"
+            + mode_rule +
             "  方向指浏览内容的方向，不是手指方向；不要据此改写动作。"
             "目标区域不可见、被遮挡或无法确定时输出：无。\n"
         )
@@ -2173,9 +2182,10 @@ def _replay_action_from_parsed(
         return out
     if parsed.action == A.ACTION_SCROLL:
         if parsed.point is None:
-            raise V3LocatorMiss("v3 scroll locator 缺少当前滑动中心")
+            raise V3LocatorMiss("v3 scroll locator 缺少当前滑动起点")
         x, y = _point_to_abs(parsed.point, parsed.coord_space, image_size, window_size)
-        out["center"] = {"x": x, "y": y}
+        field = "point" if source_action.get("scroll_gesture_version") == 1 else "center"
+        out[field] = {"x": x, "y": y}
         out.setdefault("direction", "down")
         out.setdefault("amount", 1)
         return out
@@ -2242,7 +2252,7 @@ def _point_to_abs(
 
 def _action_primary_point(action: Dict[str, Any]) -> Optional[Tuple[int, int]]:
     if action.get("type") == A.ACTION_SCROLL:
-        return _coerce_point(action.get("center"))
+        return _coerce_point(action.get("point") if action.get("scroll_gesture_version") == 1 else action.get("center"))
     raw = action.get("point")
     if isinstance(raw, dict):
         try:
@@ -2340,9 +2350,10 @@ def _format_v3_action_log(action: Dict[str, Any]) -> str:
 
 
 def _format_v3_action_point(action: Dict[str, Any]) -> str:
-    point = action.get("center") if action.get("type") == A.ACTION_SCROLL else action.get("point")
+    raw = action.get("point") if action.get("type") != A.ACTION_SCROLL or action.get("scroll_gesture_version") == 1 else action.get("center")
+    point = _coerce_point(raw)
     if point:
-        return f"({point.get('x')},{point.get('y')})"
+        return f"({point[0]},{point[1]})"
     if action.get("start") or action.get("end"):
         start = action.get("start") or {}
         end = action.get("end") or {}
@@ -2388,9 +2399,16 @@ def _v3_executed_action_message(action: Dict[str, Any]) -> str:
     if action_type == A.ACTION_WAIT:
         return f"等待 {action.get('seconds') or 1} 秒"
     if action_type == A.ACTION_SCROLL:
+        if action.get("scroll_gesture_version", 0) == 0:
+            return (
+                f"滑动 direction={action.get('direction') or 'down'} "
+                f"amount={action.get('amount') or 1} center={action.get('center')}"
+            )
         return (
             f"滑动 direction={action.get('direction') or 'down'} "
-            f"amount={action.get('amount') or 1} center={action.get('center')}"
+            f"amount={action.get('amount') or 1} "
+            f"{'start' if action.get('scroll_gesture_version') == 1 else 'center'}={point} "
+            f"mode={action.get('scroll_type') or 'legacy'}"
         )
     if action_type == A.ACTION_DRAG:
         return f"拖拽 start={action.get('start')} end={action.get('end')}"

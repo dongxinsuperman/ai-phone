@@ -28,6 +28,8 @@ from ai_phone.server.models import (
     VlmTrajectoryCacheV2,
 )
 from ai_phone.server.retry import current_attempt
+from ai_phone.config import get_settings
+from ai_phone.shared.scroll_gesture import has_incompatible_scroll, is_cu_backend, scroll_cache_candidates
 
 CACHE_SCHEMA_VERSION_V1 = 1
 CACHE_SCHEMA_VERSION_V2 = 2
@@ -111,15 +113,37 @@ async def _get_active_trajectory_cache(
         schema_version=schema_version,
     )
     async with session_factory() as session:
-        row = (
-            await session.execute(
-                select(model).where(
-                    model.cache_key == cache_key,
-                    model.status == "active",
-                )
-            )
-        ).scalars().first()
-        return row.to_dict() if row is not None else None
+        for candidate in scroll_cache_candidates(cache_key, get_settings().vlm_backend):
+            row = (await session.execute(select(model).where(
+                model.cache_key == candidate, model.status == "active",
+            ))).scalars().first()
+            hit = await active_cache_payload(session, row)
+            if hit is not None:
+                return hit
+        return None
+
+
+async def active_cache_payload(session, row) -> Optional[Dict[str, Any]]:
+    """Select the active model's scroll contract without retiring another family."""
+    if row is None:
+        return None
+    payload = row.to_dict()
+    actions = payload.get("actions") or (payload.get("trajectory_json") or {}).get("actions") or []
+    backend = get_settings().vlm_backend
+    if has_incompatible_scroll(actions, backend):
+        # A valid CU archive must remain usable when switching back to CU.
+        # Unknown provenance is a Seed miss, not permission to retire CU data.
+        source_backend = payload.get("source_vlm_backend") or ""
+        if not source_backend and payload.get("source_run_id"):
+            source_run = await session.get(Run, payload["source_run_id"])
+            if source_run is not None:
+                source_backend = (source_run.token_summary or {}).get("vlm_backend") or ""
+        if not is_cu_backend(backend) and source_backend == "doubao_responses":
+            row.status = "obsolete"
+            await session.commit()
+            logger.info("旧豆包滑动缓存已失效 cache_key={}", row.cache_key[:12])
+        return None
+    return payload
 
 
 async def delete_trajectory_cache_v1_for_run(
@@ -174,9 +198,11 @@ async def _delete_trajectory_cache_for_run(
             run_semantic_text=run.goal,
             schema_version=schema_version,
         )
-        result = await session.execute(
-            delete(model).where(model.cache_key == cache_key)
-        )
+        backend = (run.token_summary or {}).get("vlm_backend") or get_settings().vlm_backend
+        keys = scroll_cache_candidates(cache_key, backend)
+        rows = (await session.execute(select(model).where(model.cache_key.in_(keys)))).scalars().all()
+        targets = [row.id for row in rows if not has_incompatible_scroll((row.trajectory_json or {}).get("actions"), backend)]
+        result = await session.execute(delete(model).where(model.id.in_(targets)))
         deleted = int(result.rowcount or 0)
         await _write_log(
             session,

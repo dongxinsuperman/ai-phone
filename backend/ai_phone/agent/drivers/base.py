@@ -249,6 +249,36 @@ class BaseDriver(ABC):
     # ------------------------------------------------------------------
     # 派生能力（复合动作 —— 与驱动无关，默认用 swipe 合成）
     # ------------------------------------------------------------------
+    def scroll_seed(
+        self,
+        direction: str,
+        point: Optional[Tuple[int, int]] = None,
+        amount: int = 1,
+        *, scroll_type: str = "singleAction",
+        distance: Optional[int] = None,
+    ):
+        """Scroll from finger-down toward the requested content direction.
+
+        singleAction: axis-relative distance, 1000ms; toEdge: 10 x 100ms passes.
+        Only Seed touch actions enter this method; CU uses its existing scroll.
+        """
+        import time
+        from ai_phone.shared.scroll_gesture import build_scroll_gesture
+
+        gesture = build_scroll_gesture(
+            self.window_size(), point, direction,
+            scroll_type=scroll_type, distance=distance, amount=amount,
+        )
+        if gesture.start != gesture.end:
+            for i in range(gesture.repeat):
+                self.swipe(*gesture.start, *gesture.end, duration_ms=gesture.duration_ms)
+                if scroll_type == "singleAction" and i + 1 < gesture.repeat:
+                    time.sleep(.1)
+        if scroll_type == "toEdge":
+            # Fast flings need time to decelerate before the caller observes UI.
+            time.sleep(1)
+        return gesture
+
     def scroll(
         self,
         direction: str,

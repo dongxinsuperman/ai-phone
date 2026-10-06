@@ -1428,8 +1428,10 @@ class FakeDriver:
     def device_info(self):
         return None
 
-    def scroll(self, direction, center=None, amount=1):
-        self.calls.append(("scroll", direction, center, amount))
+    def scroll(self, direction, point=None, amount=1, **kwargs):
+        self.calls.append(("scroll", direction, point, amount))
+
+    scroll_seed = scroll
 
 
 class CacheStableDriver(FakeDriver):
@@ -2013,7 +2015,7 @@ async def test_replay_action_dispatcher_calls_driver_methods():
     )
     await dispatcher.execute({"type": "type", "content": "hello"})
     await dispatcher.execute(
-        {"type": "scroll", "direction": "down", "center": {"x": 7, "y": 8}, "amount": 2}
+        {"type": "scroll", "direction": "down", "point": {"x": 7, "y": 8}, "amount": 2, "scroll_gesture_version": 1}
     )
     await dispatcher.execute(
         {"type": "drag", "start": {"x": 9, "y": 10}, "end": {"x": 11, "y": 12}}

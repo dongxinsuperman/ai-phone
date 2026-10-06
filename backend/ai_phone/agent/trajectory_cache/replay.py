@@ -103,8 +103,9 @@ class ReplayActionDispatcher:
     三端差异优先放在 BaseDriver 子类里；这里保持统一 action schema。
     """
 
-    def __init__(self, driver: BaseDriver, *, max_wait_seconds: int = 60):
+    def __init__(self, driver: BaseDriver, *, max_wait_seconds: int = 60, main_vlm_backend: Optional[str] = None):
         self.driver = driver
+        self.main_vlm_backend = main_vlm_backend or getattr(get_settings(), "vlm_backend", "doubao_responses")
         # V1/V2 保持旧上限；V3 由调用方传入首跑同一配置，避免长等待被静默缩短。
         self.max_wait_seconds = max(1, int(max_wait_seconds))
         # take_screenshot 非致命失败时在此暂存原因，供调用方（回放循环）读取后
@@ -136,10 +137,21 @@ class ReplayActionDispatcher:
             await asyncio.sleep(seconds)
             return
         if action_type == A.ACTION_SCROLL:
-            center = _optional_point(action, "center")
             direction = str(action.get("direction") or "down")
             amount = int(action.get("amount") or 1)
-            await run_blocking(self.driver.scroll, direction, center, amount)
+            version = int(action.get("scroll_gesture_version") or 0)
+            from ai_phone.shared.scroll_gesture import is_cu_backend
+            if version == 1 and not is_cu_backend(self.main_vlm_backend):
+                point = _point(action, "point")
+                await run_blocking(
+                    self.driver.scroll_seed, direction, point, amount,
+                    scroll_type=str(action.get("scroll_type") or "singleAction"),
+                    distance=action.get("scroll_distance"),
+                )
+            elif version == 0 and is_cu_backend(self.main_vlm_backend):
+                await run_blocking(self.driver.scroll, direction, _optional_point(action, "center"), amount)
+            else:
+                raise ReplayActionError(f"Obsolete or unsupported scroll cache version: {version}; regenerate cache")
             return
         if action_type == A.ACTION_DRAG:
             start = _point(action, "start")
@@ -227,6 +239,7 @@ class ReplayRunner:
         self.log = log
         self.emit = emit
         self.capture_after_each_action = capture_after_each_action
+        self.main_vlm_backend = getattr(dispatcher, "main_vlm_backend", None) or getattr(get_settings(), "vlm_backend", "doubao_responses")
         self.dispatcher = dispatcher or ReplayActionDispatcher(driver)
         self.replay_mode = str(replay_mode or "v2").lower()
         self._is_v1_replay = self.replay_mode == "v1"
@@ -339,6 +352,9 @@ class ReplayRunner:
 
     async def run(self) -> ReplayResult:
         actions = list(self.trajectory.get("actions") or [])
+        from ai_phone.shared.scroll_gesture import has_incompatible_scroll
+        if has_incompatible_scroll(actions, self.main_vlm_backend):
+            return ReplayResult(success=False, actions_total=len(actions), actions_executed=0, elapsed_ms=0, error="obsolete_scroll_cache: regenerate from a new first run")
         executed = 0
         run_started_at = time.monotonic()
         await self._log(1, "缓存回放", f"开始回放 actions={len(actions)}")
@@ -1380,9 +1396,15 @@ class ReplayRunner:
         if action == A.ACTION_SCROLL:
             out["direction"] = parsed.direction or "down"
             out["amount"] = max(1, int(parsed.scroll_amount or 1))
+            if parsed.scroll_gesture_version:
+                out["scroll_gesture_version"] = parsed.scroll_gesture_version
+                out["scroll_type"] = parsed.scroll_type
+                if parsed.scroll_distance is not None:
+                    out["scroll_distance"] = parsed.scroll_distance
             if parsed.point:
                 x, y = await self._parsed_point_to_abs(parsed.point, parsed.coord_space)
-                out["center"] = {"x": x, "y": y}
+                field = "point" if parsed.scroll_gesture_version else "center"
+                out[field] = {"x": x, "y": y}
             return out
         if action == A.ACTION_DRAG:
             sx, sy = await self._parsed_point_to_abs(

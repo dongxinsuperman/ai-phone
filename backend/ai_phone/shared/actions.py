@@ -190,6 +190,10 @@ class ParsedAction:
     raw: str = ""
     extra: Dict[str, Any] = field(default_factory=dict)
     coord_space: str = "normalized"
+    # Only Seed touch scrolls opt into the new geometry. Native CU stays unmarked.
+    scroll_gesture_version: int = 0
+    scroll_type: str = "singleAction"
+    scroll_distance: Optional[int] = None
 
     @property
     def is_known(self) -> bool:
@@ -211,6 +215,11 @@ class ParsedAction:
         # scroll_amount 仅在 >1 时显式输出，默认值不污染日志
         if self.scroll_amount and self.scroll_amount > 1:
             out["scroll_amount"] = self.scroll_amount
+        if self.action == ACTION_SCROLL and self.scroll_gesture_version:
+            out["scroll_gesture_version"] = self.scroll_gesture_version
+            out["scroll_type"] = self.scroll_type
+            if self.scroll_distance is not None:
+                out["scroll_distance"] = self.scroll_distance
         # take_screenshot 显式携带 save_to_album，供缓存归档/回放还原意图
         if self.action == ACTION_TAKE_SCREENSHOT:
             out["save_to_album"] = bool(self.save_to_album)
@@ -389,6 +398,9 @@ def parse_action(action_str: str) -> ParsedAction:
         return parsed
 
     if fn_name == ACTION_SCROLL:
+        # This DSL is the Seed/Doubao expression; native CU parsers construct
+        # ParsedAction directly and do not inherit this touch marker.
+        parsed.scroll_gesture_version = 1
         pt = _extract_point(params_str)
         if pt is not None:
             parsed.point = list(pt)
@@ -403,6 +415,14 @@ def parse_action(action_str: str) -> ParsedAction:
                 parsed.scroll_amount = max(1, int(am.group(1)))
             except (TypeError, ValueError):
                 parsed.scroll_amount = 1
+        mode = re.search(r"scroll_type\s*=\s*['\"]([^'\"]+)['\"]", params_str)
+        distance = re.search(r"distance\s*=\s*['\"]?(\d+)['\"]?", params_str)
+        if mode or distance:
+            from .scroll_gesture import SCROLL_GESTURE_VERSION, validate_scroll_options
+            parsed.scroll_type = mode.group(1) if mode else "singleAction"
+            parsed.scroll_distance = int(distance.group(1)) if distance else None
+            validate_scroll_options(parsed.scroll_type, parsed.scroll_distance)
+            parsed.scroll_gesture_version = SCROLL_GESTURE_VERSION
         return parsed
 
     if fn_name == ACTION_DRAG:

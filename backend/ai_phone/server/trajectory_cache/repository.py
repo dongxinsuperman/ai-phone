@@ -93,6 +93,9 @@ async def store_trajectory_cache_archive(
                 meta.pop("cache_scope", None)
                 meta.pop("cache_revision", None)
                 archive = {**archive, "meta": meta}
+        from ai_phone.shared.scroll_gesture import contains_seed_scroll, seed_scroll_cache_key
+        if contains_seed_scroll(archive.get("actions")):
+            cache_key = seed_scroll_cache_key(cache_key)
         return await _upsert_v3(
             session_factory,
             archive,
@@ -101,6 +104,9 @@ async def store_trajectory_cache_archive(
             semantic_hash=semantic_hash,
             now=now,
         )
+    from ai_phone.shared.scroll_gesture import contains_seed_scroll, seed_scroll_cache_key
+    if contains_seed_scroll((archive.get("trajectory_json") or {}).get("actions")):
+        cache_key = seed_scroll_cache_key(cache_key)
     model = VlmTrajectoryCache if mode == "v1" else VlmTrajectoryCacheV2
     return await _upsert_v1_v2(
         session_factory,
@@ -127,6 +133,11 @@ async def _upsert_v1_v2(
 ) -> Optional[str]:
     trajectory = archive.get("trajectory_json") or {}
     actions = trajectory.get("actions") or []
+    from ai_phone.config import get_settings
+    from ai_phone.shared.scroll_gesture import has_incompatible_scroll
+    if has_incompatible_scroll(actions, archive.get("source_vlm_backend") or get_settings().vlm_backend):
+        logger.warning("拒绝接收旧滑动语义的轨迹缓存 schema=v{}", schema_version)
+        return None
     if not actions:
         logger.info("成品缓存回传无 action，跳过 upsert schema=v{}", schema_version)
         return None
@@ -170,6 +181,11 @@ async def _upsert_v3(
     now: datetime,
 ) -> Optional[str]:
     actions = archive.get("actions") or []
+    from ai_phone.config import get_settings
+    from ai_phone.shared.scroll_gesture import has_incompatible_scroll
+    if has_incompatible_scroll(actions, archive.get("source_vlm_backend") or get_settings().vlm_backend):
+        logger.warning("拒绝接收旧滑动语义的 V3 缓存")
+        return None
     if not actions:
         logger.info("V3 成品缓存回传无 action，跳过 upsert")
         return None

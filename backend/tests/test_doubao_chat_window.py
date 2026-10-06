@@ -285,6 +285,9 @@ def test_unconfigured_settings_select_window_five_and_session_env_still_works(mo
     monkeypatch.setenv("AI_PHONE_VLM_CONTEXT_MODE", "session")
     overridden = Settings(_env_file=None, **values)
     assert overridden.vlm_context_mode == "session"
+    # The legacy client reads global Settings; keep this unit test independent
+    # of whether the command was launched from the repository root or backend/.
+    monkeypatch.setattr("ai_phone.shared.vlm.get_settings", lambda: overridden)
     assert isinstance(create_main_vlm("system", settings=overridden), VLMClient)
 
 

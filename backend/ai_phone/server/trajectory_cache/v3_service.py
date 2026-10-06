@@ -16,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ai_phone.server.models import Run, RunLog, VlmTrajectoryCacheV3
 from ai_phone.server.retry import current_attempt
+from ai_phone.config import get_settings
+from ai_phone.shared.scroll_gesture import scroll_cache_candidates, has_incompatible_scroll
 from ai_phone.server.trajectory_cache.service import _write_log, build_cache_key
 from ai_phone.server.trajectory_cache.v3_identity import build_v3_platform_cache_key, resolve_v3_platform
 
@@ -46,25 +48,30 @@ async def get_active_trajectory_cache_v3(
                 shared_key, _normalized, _semantic_hash = build_v3_platform_cache_key(
                     platform=family, run_semantic_text=run_semantic_text,
                 )
-                shared = (await session.execute(select(VlmTrajectoryCacheV3).where(
-                    VlmTrajectoryCacheV3.cache_key == shared_key,
-                    VlmTrajectoryCacheV3.status == "active",
-                    VlmTrajectoryCacheV3.platform == family,
-                ))).scalars().first()
-                if shared is not None:
-                    meta = shared.meta_json or {}
-                    if meta.get("cache_scope") == "platform" and isinstance(meta.get("cache_revision"), str) and meta["cache_revision"]:
-                        return shared.to_dict()
+                for candidate in scroll_cache_candidates(shared_key, get_settings().vlm_backend):
+                    shared = (await session.execute(select(VlmTrajectoryCacheV3).where(
+                        VlmTrajectoryCacheV3.cache_key == candidate,
+                        VlmTrajectoryCacheV3.status == "active",
+                        VlmTrajectoryCacheV3.platform == family,
+                    ))).scalars().first()
+                    if shared is not None:
+                        meta = shared.meta_json or {}
+                        if meta.get("cache_scope") == "platform" and isinstance(meta.get("cache_revision"), str) and meta["cache_revision"]:
+                            from .service import active_cache_payload
+                            hit = await active_cache_payload(session, shared)
+                            if hit is not None:
+                                return hit
         # 不提升历史设备缓存为跨设备缓存；旧 Agent / 旧缓存仍走本设备 key。
-        row = (
-            await session.execute(
-                select(VlmTrajectoryCacheV3).where(
-                    VlmTrajectoryCacheV3.cache_key == cache_key,
-                    VlmTrajectoryCacheV3.status == "active",
-                )
-            )
-        ).scalars().first()
-        return row.to_dict() if row is not None else None
+        from .service import active_cache_payload
+        for candidate in scroll_cache_candidates(cache_key, get_settings().vlm_backend):
+            row = (await session.execute(select(VlmTrajectoryCacheV3).where(
+                VlmTrajectoryCacheV3.cache_key == candidate,
+                VlmTrajectoryCacheV3.status == "active",
+            ))).scalars().first()
+            hit = await active_cache_payload(session, row)
+            if hit is not None:
+                return hit
+        return None
 
 
 async def record_v3_cache_binding(session_factory, *, run_id: str, hit, attempt: int = 1) -> None:
@@ -145,9 +152,10 @@ async def delete_trajectory_cache_v3_for_run(
         conditions = await _failure_conditions(session, run_id=run_id, attempt=attempt)
         if not conditions:
             return 0
-        result = await session.execute(
-            delete(VlmTrajectoryCacheV3).where(*conditions)
-        )
+        backend = (run.token_summary or {}).get("vlm_backend") or get_settings().vlm_backend
+        rows = (await session.execute(select(VlmTrajectoryCacheV3).where(*conditions))).scalars().all()
+        targets = [r.id for r in rows if not has_incompatible_scroll(r.actions_json, backend)]
+        result = await session.execute(delete(VlmTrajectoryCacheV3).where(*conditions, VlmTrajectoryCacheV3.id.in_(targets)))
         deleted = int(result.rowcount or 0)
         await _write_log(
             session,
@@ -181,9 +189,14 @@ async def mark_trajectory_cache_v3_suspect(
         if not conditions:
             return 0
         now = datetime.now(timezone.utc)
+        run = await session.get(Run, run_id)
+        backend = (run.token_summary or {}).get("vlm_backend") if run is not None else None
+        backend = backend or get_settings().vlm_backend
+        rows = (await session.execute(select(VlmTrajectoryCacheV3).where(*conditions))).scalars().all()
+        targets = [r.id for r in rows if not has_incompatible_scroll(r.actions_json, backend)]
         result = await session.execute(
             update(VlmTrajectoryCacheV3)
-            .where(*conditions)
+            .where(*conditions, VlmTrajectoryCacheV3.id.in_(targets))
             .values(
                 status="suspect",
                 last_failed_at=now,
