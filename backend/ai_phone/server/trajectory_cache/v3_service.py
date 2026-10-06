@@ -48,12 +48,13 @@ async def get_active_trajectory_cache_v3(
                 shared_key, _normalized, _semantic_hash = build_v3_platform_cache_key(
                     platform=family, run_semantic_text=run_semantic_text,
                 )
-                for candidate in scroll_cache_candidates(shared_key, get_settings().vlm_backend):
-                    shared = (await session.execute(select(VlmTrajectoryCacheV3).where(
-                        VlmTrajectoryCacheV3.cache_key == candidate,
-                        VlmTrajectoryCacheV3.status == "active",
-                        VlmTrajectoryCacheV3.platform == family,
-                    ))).scalars().first()
+                candidates = scroll_cache_candidates(shared_key, get_settings().vlm_backend)
+                shared_rows = (await session.execute(select(VlmTrajectoryCacheV3).where(
+                    VlmTrajectoryCacheV3.cache_key.in_(candidates),
+                    VlmTrajectoryCacheV3.status == "active",
+                    VlmTrajectoryCacheV3.platform == family,
+                ).order_by(VlmTrajectoryCacheV3.updated_at.desc(), VlmTrajectoryCacheV3.id.desc()))).scalars().all()
+                for shared in shared_rows:
                     if shared is not None:
                         meta = shared.meta_json or {}
                         if meta.get("cache_scope") == "platform" and isinstance(meta.get("cache_revision"), str) and meta["cache_revision"]:
@@ -63,11 +64,12 @@ async def get_active_trajectory_cache_v3(
                                 return hit
         # 不提升历史设备缓存为跨设备缓存；旧 Agent / 旧缓存仍走本设备 key。
         from .service import active_cache_payload
-        for candidate in scroll_cache_candidates(cache_key, get_settings().vlm_backend):
-            row = (await session.execute(select(VlmTrajectoryCacheV3).where(
-                VlmTrajectoryCacheV3.cache_key == candidate,
-                VlmTrajectoryCacheV3.status == "active",
-            ))).scalars().first()
+        candidates = scroll_cache_candidates(cache_key, get_settings().vlm_backend)
+        rows = (await session.execute(select(VlmTrajectoryCacheV3).where(
+            VlmTrajectoryCacheV3.cache_key.in_(candidates),
+            VlmTrajectoryCacheV3.status == "active",
+        ).order_by(VlmTrajectoryCacheV3.updated_at.desc(), VlmTrajectoryCacheV3.id.desc()))).scalars().all()
+        for row in rows:
             hit = await active_cache_payload(session, row)
             if hit is not None:
                 return hit

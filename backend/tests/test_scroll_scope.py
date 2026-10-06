@@ -207,3 +207,26 @@ async def test_seed_and_cu_cache_storage_lookup_and_failure_are_isolated(_test_e
     assert preserved["cache_key"] == cu_key
     stored = preserved.get("actions") or preserved["trajectory_json"]["actions"]
     assert stored == [cu_action]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["v1", "v2", "v3"])
+@pytest.mark.parametrize("new_has_scroll", [False, True])
+async def test_newest_seed_recording_wins_across_scroll_namespaces(_test_engine, mode, new_has_scroll, monkeypatch):
+    factory = db.get_session_factory()
+    cfg = SimpleNamespace(vlm_backend="doubao_responses")
+    monkeypatch.setattr(service, "get_settings", lambda: cfg)
+    monkeypatch.setattr(v3_service, "get_settings", lambda: cfg)
+    scroll = {"type": "scroll", "direction": "down", "point": {"x": 360, "y": 1024}, "scroll_gesture_version": 1}
+    click = {"type": "click", "point": {"x": 360, "y": 256}}
+    for source, has_scroll in [("old", not new_has_scroll), ("new", new_has_scroll)]:
+        archive = {"cache_mode": mode, "device_code": "scope", "run_semantic_text": "same-goal",
+                   "source_run_id": source, "source_vlm_backend": "doubao_responses"}
+        actions = [scroll] if has_scroll else [click]
+        if mode == "v3": archive["actions"] = actions
+        else: archive["trajectory_json"] = {"actions": actions}
+        assert await store_trajectory_cache_archive(factory, archive=archive)
+    getter = {"v1": service.get_active_trajectory_cache_v1, "v2": service.get_active_trajectory_cache_v2,
+              "v3": v3_service.get_active_trajectory_cache_v3}[mode]
+    hit = await getter(factory, device_code="scope", run_semantic_text="same-goal")
+    assert hit["source_run_id"] == "new"

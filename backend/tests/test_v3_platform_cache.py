@@ -396,6 +396,16 @@ async def test_old_scroll_archive_upload_is_rejected(sf):
 
 
 @pytest.mark.asyncio
+async def test_new_platform_recording_without_scroll_supersedes_scoped_scroll(sf):
+    await store_trajectory_cache_archive(sf, archive=archive(source="older-scroll"))
+    newer = archive(source="newer-click")
+    newer["actions"] = [{"index": 1, "type": "click", "point": {"x": 360, "y": 256}}]
+    await store_trajectory_cache_archive(sf, archive=newer)
+    hit = await lookup(sf, "B")
+    assert hit["source_run_id"] == "newer-click"
+
+
+@pytest.mark.asyncio
 async def test_preexisting_old_scroll_cache_is_obsolete_not_a_hit(sf):
     key, normalized, semantic_hash = build_cache_key(device_code="A", run_semantic_text=GOAL, schema_version=3)
     async with sf() as session:

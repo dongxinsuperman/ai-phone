@@ -1838,7 +1838,7 @@ class VLMRunner:
                 )
                 await self._log(
                     1, "滑动手势",
-                    f"起点{gesture.start} → 终点{gesture.end}，每次{gesture.duration_ms}ms，次数{gesture.repeat}",
+                    f"起点{gesture.start} → 终点{gesture.end}，每次目标移动时长{gesture.duration_ms}ms，次数{gesture.repeat}",
                     step=step,
                 )
 

@@ -249,6 +249,16 @@ class BaseDriver(ABC):
     # ------------------------------------------------------------------
     # 派生能力（复合动作 —— 与驱动无关，默认用 swipe 合成）
     # ------------------------------------------------------------------
+    def swipe_for_scroll(
+        self, sx: int, sy: int, ex: int, ey: int, duration_ms: int,
+    ) -> None:
+        """Seed scroll hook: duration is movement time, not initial hold time.
+
+        Platforms whose legacy swipe API has different timing semantics must
+        override this hook. Existing drag and native CU gestures stay on swipe.
+        """
+        self.swipe(sx, sy, ex, ey, duration_ms=duration_ms)
+
     def scroll_seed(
         self,
         direction: str,
@@ -271,7 +281,9 @@ class BaseDriver(ABC):
         )
         if gesture.start != gesture.end:
             for i in range(gesture.repeat):
-                self.swipe(*gesture.start, *gesture.end, duration_ms=gesture.duration_ms)
+                # getattr also supports lightweight duck-typed test drivers.
+                scroll_swipe = getattr(self, "swipe_for_scroll", self.swipe)
+                scroll_swipe(*gesture.start, *gesture.end, duration_ms=gesture.duration_ms)
                 if scroll_type == "singleAction" and i + 1 < gesture.repeat:
                     time.sleep(.1)
         if scroll_type == "toEdge":

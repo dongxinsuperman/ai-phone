@@ -227,6 +227,30 @@ def _require_hmdriver2() -> None:
 # （具体值以 hmdriver2.proto.KeyCode 为准；这里不硬编码避免版本漂移）
 
 
+def _scroll_pointer_points(sx: int, sy: int, ex: int, ey: int, duration_ms: int) -> List[Dict[str, int]]:
+    """Encode exact linear travel and its intervals for hmdriver2's gesture API."""
+    if isinstance(duration_ms, bool) or not isinstance(duration_ms, int) or duration_ms <= 0:
+        raise ValueError("scroll movement duration must be a positive integer")
+    coordinates = (sx, sy, ex, ey)
+    if any(isinstance(v, bool) or not isinstance(v, int) or not 0 <= v < 65536 for v in coordinates):
+        raise ValueError("scroll coordinates must fit the gesture protocol's 16-bit positions")
+    segments = (duration_ms + 49) // 50
+    if segments + 1 > 1000:
+        raise ValueError("scroll duration exceeds the pointer matrix's 1000-point limit")
+    if (ex - sx) ** 2 + (ey - sy) ** 2 > (40 * duration_ms) ** 2:
+        raise ValueError("scroll travel exceeds the gesture API's 40000px/s timing limit")
+    points = [{"x": sx, "y": sy}]
+    # Encoded time belongs to the move arriving at this point. A zero interval
+    # on the endpoint falls back to speed-based travel, so every move (including
+    # the final one) must carry its explicit interval. No duplicate hold point.
+    for i in range(1, segments + 1):
+        x = round(sx + (ex - sx) * i / segments)
+        y = round(sy + (ey - sy) * i / segments)
+        interval = duration_ms * i // segments - duration_ms * (i - 1) // segments
+        points.append({"x": x + 65536 * interval, "y": y})
+    return points
+
+
 class HarmonyDriver(BaseDriver):
     """鸿蒙驱动实现。和 Android / iOS 同级。"""
 
@@ -1003,6 +1027,32 @@ class HarmonyDriver(BaseDriver):
         self._call_with_reconnect(
             lambda: self._raw.swipe(int(sx), int(sy), int(ex), int(ey), speed=speed)
         )
+
+    def swipe_for_scroll(
+        self, sx: int, sy: int, ex: int, ey: int, duration_ms: int,
+    ) -> None:
+        """Seed-only timed pointer path, independent of swipe's 200px/s floor.
+
+        hmdriver2's gesture protocol stores each point's interval in the high
+        16 bits of x (see its _gesture.PointerMatrix.setPoint implementation).
+        Interpolate exact endpoints, including sub-pixel-per-sample travel;
+        avoid the SDK gesture helper's integer step truncation and 600ms delay.
+        Existing drag and CU callers retain the speed-based swipe method.
+        """
+        points = _scroll_pointer_points(sx, sy, ex, ey, duration_ms)
+
+        def inject():
+            client = self._raw._client
+            matrix = client.invoke("PointerMatrix.create", this=None, args=[1, len(points)]).result
+            for index, point in enumerate(points):
+                client.invoke("PointerMatrix.setPoint", this=matrix, args=[0, index, point])
+            # Injection also applies a speed cap to movement between points.
+            # Use its maximum so explicit intervals govern even a 100ms fling.
+            response = client.invoke("Driver.injectMultiPointerAction", args=[matrix, 40000])
+            if response.result is not True:
+                raise RuntimeError("Harmony timed scroll injection was not acknowledged")
+
+        self._call_with_reconnect(inject)
 
     # ------------------------------------------------------------------
     # 输入 & 按键

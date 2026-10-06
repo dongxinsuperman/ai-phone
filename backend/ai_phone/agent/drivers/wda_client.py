@@ -353,6 +353,32 @@ class WdaClient:
             },
         )
 
+    @_auto_recover_session
+    def timed_swipe(
+        self, sx: float, sy: float, ex: float, ey: float, duration_ms: int,
+    ) -> None:
+        """Move a pressed touch pointer over duration_ms, without a long hold.
+
+        /wda/dragfromtoforduration uses duration for the initial press, not
+        movement. WDA's W3C pointerMove instead schedules the move's duration.
+        Keep the legacy endpoint for existing drag and native CU callers.
+        """
+        if isinstance(duration_ms, bool) or not isinstance(duration_ms, int) or duration_ms <= 0:
+            raise ValueError("scroll movement duration must be a positive integer")
+        sid = self._ensure_session()
+        self._request("POST", f"/session/{sid}/actions", {
+            "actions": [{
+                "type": "pointer", "id": "seed-scroll-finger",
+                "parameters": {"pointerType": "touch"},
+                "actions": [
+                    {"type": "pointerMove", "duration": 0, "origin": "viewport", "x": float(sx), "y": float(sy)},
+                    {"type": "pointerDown", "button": 0},
+                    {"type": "pointerMove", "duration": duration_ms, "origin": "viewport", "x": float(ex), "y": float(ey)},
+                    {"type": "pointerUp", "button": 0},
+                ],
+            }],
+        })
+
     # ------------------------------------------------------------------
     # 输入 & 按键
     # ------------------------------------------------------------------

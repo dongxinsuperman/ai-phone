@@ -297,6 +297,13 @@ class IosSimulatorDriver(BaseDriver):
         pex, pey = self._px_to_pt(ex, ey)
         self._wda.swipe(psx, psy, pex, pey, duration_s=max(0.05, duration_ms / 1000.0))
 
+    def swipe_for_scroll(
+        self, sx: int, sy: int, ex: int, ey: int, duration_ms: int,
+    ) -> None:
+        psx, psy = self._px_to_pt(sx, sy)
+        pex, pey = self._px_to_pt(ex, ey)
+        self._wda.timed_swipe(psx, psy, pex, pey, duration_ms=duration_ms)
+
     # ------------------------------------------------------------------
     # 输入 & 按键
     # ------------------------------------------------------------------

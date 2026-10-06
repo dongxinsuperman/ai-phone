@@ -113,10 +113,13 @@ async def _get_active_trajectory_cache(
         schema_version=schema_version,
     )
     async with session_factory() as session:
-        for candidate in scroll_cache_candidates(cache_key, get_settings().vlm_backend):
-            row = (await session.execute(select(model).where(
-                model.cache_key == candidate, model.status == "active",
-            ))).scalars().first()
+        candidates = scroll_cache_candidates(cache_key, get_settings().vlm_backend)
+        # Namespace isolates scroll contracts, not recording recency. A newer
+        # first run without scrolling must supersede an older scoped recording.
+        rows = (await session.execute(select(model).where(
+            model.cache_key.in_(candidates), model.status == "active",
+        ).order_by(model.updated_at.desc(), model.id.desc()))).scalars().all()
+        for row in rows:
             hit = await active_cache_payload(session, row)
             if hit is not None:
                 return hit
