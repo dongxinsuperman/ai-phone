@@ -194,6 +194,8 @@ class ParsedAction:
     scroll_gesture_version: int = 0
     scroll_type: str = "singleAction"
     scroll_distance: Optional[int] = None
+    # Optional metadata only: never part of the executable DSL/driver arguments.
+    action_summary: Optional[str] = None
 
     @property
     def is_known(self) -> bool:
@@ -204,7 +206,12 @@ class ParsedAction:
         return self.action in (ACTION_FINISHED, ACTION_ASSERT_FAIL)
 
     def to_dict(self) -> Dict[str, Any]:
+        from ai_phone.shared.action_summary import normalize_action_summary
+
         out: Dict[str, Any] = {"action": self.action}
+        summary = normalize_action_summary(self.action_summary)
+        if summary:
+            out["action_summary"] = summary
         for k in (
             "point", "start_point", "end_point", "content", "direction",
             "name", "seconds", "keycode",

@@ -18,6 +18,8 @@ prompt 越简越好，不要再大段教 DSL。
 """
 from __future__ import annotations
 
+from ai_phone.shared.action_summary import NATIVE_ACTION_SUMMARY_POLICY
+
 from ai_phone.shared.function_map_prompt import (
     build_execution_priority_system_policy,
     build_function_map_system_policy,
@@ -239,6 +241,7 @@ def build_system_prompt(
     return f"""You are operating a real mobile device. You receive a screenshot each turn and call the `computer` tool to perform UI actions.
 
 {language_policy}
+{NATIVE_ACTION_SUMMARY_POLICY}
 The UI may be in English, Korean, Japanese, Arabic, or other languages. Read the visible text carefully and act accordingly.
 
 **Don't ask for confirmation. Don't pause to clarify. Take the next action.** This is a one-way automation pipeline — there is no human to answer mid-run.

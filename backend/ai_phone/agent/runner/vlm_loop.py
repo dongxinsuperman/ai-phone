@@ -34,6 +34,7 @@ from ai_phone.agent.drivers.base import AlbumSaveResult, BaseDriver
 from ai_phone.config import get_settings
 from ai_phone.shared import actions as A
 from ai_phone.shared import protocol as P
+from ai_phone.shared.action_summary import normalize_action_summary
 from ai_phone.shared.function_map_prompt import build_function_map_user_context
 from ai_phone.shared.llm import (
     BaseAssistant,
@@ -1369,6 +1370,13 @@ class VLMRunner:
                 display_action,
                 step=step,
             )
+            summaries = [
+                (f"{i}. " if is_chain else "") + summary
+                for i, action in enumerate(parsed_chain, start=1)
+                if (summary := normalize_action_summary(action.action_summary))
+            ]
+            if summaries:
+                await self._log(1, "动作摘要", "\n".join(summaries), step=step)
 
             # 把这一步思考+动作压入审判用的动作历史。即便后续是终止动作也压一条，
             # 方便审判看到"VLM 是怎么决定 finished/assert_fail 的"。链式时整段
@@ -1868,10 +1876,17 @@ class VLMRunner:
             await self._log(1, "等待", detail, step=step)
             await asyncio.sleep(secs["seconds"])
             # 只更新旁路记录，不新增手机动作：缓存承接实际等待值，而非被裁剪的申请值。
-            actual_wait = A.ParsedAction(action=A.ACTION_WAIT, seconds=int(secs["seconds"]))
+            actual_wait = A.ParsedAction(
+                action=A.ACTION_WAIT, seconds=int(secs["seconds"]),
+                action_summary=parsed.action_summary if not secs.get("clipped") else None,
+            )
+            actual_wait_dict = actual_wait.to_dict()
+            if secs.get("clipped"):
+                # 申请时长已改变，摘要可能包含旧值；明确让记录器回退旧语义。
+                actual_wait_dict["action_summary"] = None
             await self._emit_event(make_event(
                 EVT_ACTION, self.run_id, step=step, text=actual_wait.raw or f"wait(seconds={actual_wait.seconds})",
-                action_type=A.ACTION_WAIT, actions=[actual_wait.to_dict()],
+                action_type=A.ACTION_WAIT, actions=[actual_wait_dict],
             ))
 
         elif action == A.ACTION_OPEN_APP:

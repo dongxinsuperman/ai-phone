@@ -23,6 +23,7 @@ from loguru import logger
 
 from ai_phone.config import Settings, get_settings
 from ai_phone.shared import actions as A
+from ai_phone.shared.action_summary import normalize_action_summary
 
 from .ephemeral import (
     ROLE_BUSINESS_REQUIRED,
@@ -126,7 +127,8 @@ async def build_v3_archive(
     由调用方决定是否丢弃（不回传空缓存）。
     """
     raw_actions = _actions_from_steps(
-        steps, source_vlm_backend=source_vlm_backend, screen_size=screen_size
+        steps, source_vlm_backend=source_vlm_backend, screen_size=screen_size,
+        include_action_summary=True,
     )
     actions = [
         _normalize_v3_action(action, source_vlm_backend=source_vlm_backend)
@@ -486,6 +488,7 @@ def _actions_from_steps(
     *,
     source_vlm_backend: str = "",
     screen_size: Tuple[int, int] = (0, 0),
+    include_action_summary: bool = False,
 ) -> List[Dict[str, Any]]:
     """把 recorder 每步的结构化动作转成 V3 source action（规范化字段 + abs 坐标）。
 
@@ -517,6 +520,10 @@ def _actions_from_steps(
             if action is None:  # 终止 / 未知动作不入缓存
                 continue
             action["thought"] = str(parsed_dict.get("thought") or thought)
+            if include_action_summary:
+                summary = normalize_action_summary(parsed_dict.get("action_summary"))
+                if summary:
+                    action["action_summary"] = summary
             action["action_id"] = f"a{s.get('step')}_{len(out) + 1}"
             action["source_step"] = s.get("step")  # V2 state_landmark 映射 after 截图用
             out.append(action)
@@ -713,6 +720,10 @@ def _strip_v3_action_for_cache(action: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _plan_intent_for_action(action: Dict[str, Any], *, source_vlm_backend: str = "") -> str:
+    summary = normalize_action_summary(action.get("action_summary"))
+    if summary:
+        # 规则候选与模型输入使用相同来源，不能再由旧 Thought 否决摘要。
+        return summary
     action_type = str(action.get("type") or "").strip()
     actual_target = _action_target_from_text(action.get("thought")) or _action_sentence_from_text(
         action.get("thought")
@@ -1081,19 +1092,19 @@ def _v3_plan_cleaner_rules() -> str:
         "1. plan_intent 必须以中文动词开头：点击 / 输入 / 关闭 / 打开 / 选择 / 切换 / 滑动 / 拖拽 / 长按 / 双击 / 返回 / 按键 / 截图 / 等待。\n"
         "   中文动词是行为描述，不是新的动作 type；click 可描述为选择/切换，drag 描述为拖拽，"
         "scroll 描述为滑动，take_screenshot 描述为截图，press_home/press_back/key_event 可描述为返回/按键。\n"
-        "2. thought 是英文时必须翻译为中文动词短语，禁止把英文整句照搬到 plan_intent。\n"
+        "2. 源语义是英文时必须翻译为中文动词短语，禁止把英文整句照搬到 plan_intent。\n"
         "3. 截图上稳定可见的 UI 原文（按钮文字、标签名、输入框 placeholder、菜单项、品牌/产品名）\n"
         "   无论中英文都按原文照写，不翻译、不意译、不大小写改写，以便定位模型逐字符搜索。\n"
         "4. 状态 / 反思 / 完成时态描述（典型标记：has been / have been / I've / I'm / appeared /\n"
         "   not yet / opened but / is already / indicating / the page shows / the dialog has /\n"
         "   现在屏幕 / 已经 / 刚刚），说明模型在描述「屏幕现状」或「刚做了什么」，\n"
         "   不是下一步动作；必须从中识别真正被点按 / 被输入 / 被关闭的控件后用中文动词重写。\n"
-        "5. 是否保留 thought 里出现的具体文案，按「文案稳定性 × goal 粒度」两维度联合判断：\n"
+        "5. 是否保留源语义里出现的具体文案，按「文案稳定性 × goal 粒度」两维度联合判断：\n"
         "   维度 A（最高优先级）：用户原始目标已直接给出某个具体控件文案 →\n"
-        "     plan_intent 用 goal 的具体文案；忽略 thought 里出现的不同文案。\n"
+        "     plan_intent 用 goal 的具体文案；忽略源语义里出现的不同文案。\n"
         "   维度 B：用户原始目标是泛化指代（序号 / 位置 / 数量 / 语义化指代）时，\n"
-        "     按 thought 里这段文案的「屏幕稳定性」分流：\n"
-        "     B1. 稳定 UI 锚点（保留 thought 这段具体文案）\n"
+        "     按源语义里这段文案的「屏幕稳定性」分流：\n"
+        "     B1. 稳定 UI 锚点（保留源语义这段具体文案）\n"
         "         典型形态：应用自带的固定 UI 元素文字 ——\n"
         "           · 顶 / 底 / 侧 导航栏 tab 名；\n"
         "           · 系统级或应用级的标准动作按钮（确定 / 取消 / 返回 / 发送 等）；\n"
@@ -1107,28 +1118,31 @@ def _v3_plan_cleaner_rules() -> str:
         "           · 随时间或后端数据变化的展示文字。\n"
         "         判定特征：换设备 / 换日期 / 换用户进来这段文字会变。\n"
         "     B3. 不确定时 → 按 B2 处理，宁可保守泛化，避免下次回放因屏幕内容变化而无法定位。\n"
-        "6. thought 决定操作的控件（次优先级）：plan_intent 描述哪个控件，由 thought\n"
+        "6. 源语义决定操作的控件（次优先级）：plan_intent 描述哪个控件，由源语义\n"
         "   决定（哪个按钮 / 哪个卡片 / 哪个输入框）；用户原始目标只决定描述粒度，\n"
-        "   不决定操作哪个控件。如果 thought 描述的控件和用户原始目标无关\n"
-        "   （首跑可能多了清障 / 中转动作），按 thought 写真实操作的控件即可，\n"
+        "   不决定操作哪个控件。如果源语义描述的控件和用户原始目标无关\n"
+        "   （首跑可能多了清障 / 中转动作），按源语义写真实操作的控件即可，\n"
         "   不要硬把用户原始目标塞进 plan_intent。\n"
-        "   scroll 的描述必须保留 thought 已明确的滚动对象/区域（如左侧列表、题目卡片内），"
+        "   scroll 的描述必须保留源语义已明确的滚动对象/区域（如左侧列表、题目卡片内），"
         "供回放根据当前截图重新定位操作中心；未明确时不要凭空添加区域。"
         "不把首跑中心坐标改写成固定位置或百分比。方向和次数仍由原动作参数执行。\n"
         "7. 不输出下一步、不输出业务结果、不输出原因分析、不输出页面状态、不输出坐标。\n"
-        "8. 不确定时按 thought 里能识别到的「控件类型 + 大致位置」保守输出，不要加戏；\n"
-        "   thought 完全无法识别任何控件信息时返回空字符串，由系统兜底，禁止凭空捏造或输出占位短语。\n\n"
+        "8. 不确定时按源语义里能识别到的「控件类型 + 大致位置」保守输出，不要加戏；\n"
+        "   源语义完全无法识别任何控件信息时返回空字符串，由系统兜底，禁止凭空捏造或输出占位短语。\n\n"
     )
 
 
 def _v3_action_brief(action: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """V3 cleaner 最小输入：只暴露"实际 action 行为"（type + thought），避免噪点引偏。"""
+    """每条二选一：有效摘要存在时绝不把该条 Thought 带进模型请求。"""
     if not action:
         return {}
     brief: Dict[str, Any] = {}
     if action.get("type") not in (None, ""):
         brief["type"] = action.get("type")
-    if action.get("thought") not in (None, ""):
+    summary = normalize_action_summary(action.get("action_summary"))
+    if summary:
+        brief["action_summary"] = summary
+    elif action.get("thought") not in (None, ""):
         brief["thought"] = action.get("thought")
     return brief
 

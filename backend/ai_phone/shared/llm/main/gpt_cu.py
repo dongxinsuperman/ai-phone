@@ -48,6 +48,7 @@ import httpx
 from loguru import logger
 
 from ai_phone.config import get_settings
+from ai_phone.shared.action_summary import extract_action_summaries, summaries_for_actions
 from ai_phone.shared.actions import (
     ACTION_TAKE_SCREENSHOT,
     ParsedAction,
@@ -394,6 +395,7 @@ class GPTComputerUseClient:
             pa = _computer_call_to_parsed_action(cc)
             if pa is None:
                 continue
+            pa.action_summary = cc.get("_action_summary")
             parsed_actions.append(pa)
             action_strs.append(pa.raw or pa.action)
 
@@ -530,7 +532,7 @@ def _parse_gpt_response(
         elif itype == "computer_call":
             computer_calls.append(item)
 
-    full_text = "\n".join(text_parts)
+    full_text, summary_metadata = extract_action_summaries("\n".join(text_parts))
 
     platform_actions = _extract_platform_actions(full_text)
 
@@ -564,6 +566,22 @@ def _parse_gpt_response(
     ).strip()
     thought_pieces = [p for p in (reasoning_parts + [cleaned_text]) if p]
     thought = "\n".join(thought_pieces)
+
+    native_names = [
+        str((call.get("action") or {}).get("type") or "")
+        if isinstance(call.get("action"), dict) else ""
+        for call in computer_calls
+    ]
+    native_summaries = summaries_for_actions(summary_metadata, "computer", native_names)
+    # Copies retain provider IDs/parameters; raw API history is never mutated.
+    computer_calls = [
+        {**call, "_action_summary": summary} if summary else call
+        for call, summary in zip(computer_calls, native_summaries)
+    ]
+    for action, summary in zip(platform_actions, summaries_for_actions(
+        summary_metadata, "platform", [a.action for a in platform_actions],
+    )):
+        action.action_summary = summary
 
     return thought, computer_calls, platform_actions, finish_action
 

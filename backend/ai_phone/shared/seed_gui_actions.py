@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
+from html import unescape
 from typing import Any
 
 from loguru import logger
 
 from ai_phone.shared import actions as A
+from ai_phone.shared.action_summary import normalize_action_summary, MAX_ACTION_SUMMARY_CHARS
 from ai_phone.shared.scroll_gesture import SCROLL_GESTURE_VERSION, validate_scroll_options
 
 
@@ -47,10 +50,20 @@ ACTION_SCHEMAS: list[dict[str, Any]] = [
 ]
 
 
-def schemas_prompt_text(action_names: set[str] | None = None) -> str:
+def schemas_prompt_text(action_names: set[str] | None = None, *, include_action_summary: bool = False) -> str:
     schemas = ACTION_SCHEMAS
     if action_names is not None:
         schemas = [item for item in schemas if item["name"] in action_names]
+    if include_action_summary:
+        schemas = deepcopy(schemas)
+        for item in schemas:
+            if item["name"] in {A.ACTION_FINISHED, A.ACTION_ASSERT_FAIL}:
+                continue
+            item["parameters"]["properties"]["action_summary"] = {
+                "type": "string", "maxLength": MAX_ACTION_SUMMARY_CHARS,
+                "description": "当前动作的目标摘要；保留可见控件原文及必要弹窗/业务确认上下文。",
+            }
+            item["parameters"].setdefault("required", []).append("action_summary")
     return "\n".join(json.dumps(item, ensure_ascii=False) for item in schemas)
 
 
@@ -69,12 +82,30 @@ def parse_actions(
     allow_internal_actions: bool = False,
 ) -> list[A.ParsedAction]:
     try:
-        from ui_tars.action_parser import parse_xml_action_65
+        from ui_tars.action_parser import parse_xml_action_65, FN_REGEX_PATTERN_65
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("Seed GUI XML协议需要依赖 ui-tars==0.5.1") from exc
     try:
-        calls = parse_xml_action_65(content or "")
+        # Strip only our metadata before the official action parser. An invalid
+        # summary JSON value must not invalidate an otherwise executable click.
+        summaries: list[str | None] = []
+
+        def strip_summary(match):
+            body = match.group(2)
+            parts = list(_SUMMARY_PARAM.finditer(body))
+            summary = None
+            if len(parts) == 1 and re.search(r'\bstring="true"', parts[0].group(0).split(">", 1)[0]):
+                summary = normalize_action_summary(unescape(parts[0].group("value")))
+            summaries.append(summary)
+            start, end = match.start(2) - match.start(), match.end(2) - match.start()
+            return match.group(0)[:start] + _SUMMARY_PARAM.sub("", body) + match.group(0)[end:]
+
+        action_content = re.sub(FN_REGEX_PATTERN_65, strip_summary, content or "", flags=re.DOTALL)
+        calls = parse_xml_action_65(action_content)
         parsed = [_to_parsed(item) for item in calls]
+        for item, summary in zip(parsed, summaries):
+            if not item.is_terminal:
+                item.action_summary = summary
         public_actions = {
             {"left_double": A.ACTION_DOUBLE_TAP}.get(item["name"], item["name"])
             for item in ACTION_SCHEMAS
@@ -89,6 +120,12 @@ def parse_actions(
     except Exception as exc:  # Model output is untrusted; retry on the same frame.
         logger.warning("Seed GUI XML解析/校验失败: {}: {}", type(exc).__name__, str(exc)[:240])
         return []
+
+
+_SUMMARY_PARAM = re.compile(
+    r'<parameter\b(?=[^>]*\bname="action_summary")[^>]*>(?P<value>.*?)(?:</parameter>|$)',
+    re.DOTALL,
+)
 
 
 def _point(value: Any) -> list[int] | None:

@@ -120,7 +120,8 @@ def test_seed_xml_prompt_contains_copyable_official_examples() -> None:
     assert 'string="true|false"' not in prompt
     assert (
         '<function name="click"><parameter name="point" string="true">'
-        '<point>500 800</point></parameter></function>'
+        '<point>500 800</point></parameter>'
+        '<parameter name="action_summary" string="true">点击页面底部的继续按钮</parameter></function>'
     ) in prompt
     assert '<parameter name="seconds" string="false">3</parameter>' in prompt
     assert '<function name="wait" seconds="3">' in prompt

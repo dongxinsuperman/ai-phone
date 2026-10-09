@@ -55,7 +55,7 @@ def test_batch_keeps_original_rules_and_independent_action_facts():
     assert "保留每条动作的完整描述粒度" in prompt
     assert "输入框名称、位置/区域提示、输入内容或等待秒数" in prompt
     assert "不等于唯一控件文案" in prompt
-    assert "不能据此覆盖 thought" in prompt
+    assert "不能据此覆盖源语义" in prompt
     assert "拖拽" in rules and "截图" in rules and "按键" in rules
 
 

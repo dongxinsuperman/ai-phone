@@ -44,6 +44,7 @@ import httpx
 from loguru import logger
 
 from ai_phone.config import get_settings
+from ai_phone.shared.action_summary import extract_action_summaries, summaries_for_actions
 from ai_phone.shared.actions import (
     ACTION_TAKE_SCREENSHOT,
     ParsedAction,
@@ -454,6 +455,7 @@ class ClaudeComputerUseClient:
             pa = _tool_use_to_parsed_action(tool_use)
             if pa is None:
                 continue
+            pa.action_summary = tool_use.get("_action_summary")
             parsed_actions.append(pa)
             action_strs.append(pa.raw or pa.action)
 
@@ -818,7 +820,7 @@ def _parse_claude_response(
         elif btype == "tool_use":
             tool_uses.append(block)
 
-    full_text = "\n".join(text_parts)
+    full_text, summary_metadata = extract_action_summaries("\n".join(text_parts))
 
     # 平台动作（行级）：先扫，转成 ParsedAction 列表；从 thought 文本里剥掉
     platform_actions = _extract_platform_actions(full_text)
@@ -855,6 +857,22 @@ def _parse_claude_response(
     ).strip()
     thought_pieces = [p for p in (thinking_parts + [cleaned_text]) if p]
     thought = "\n".join(thought_pieces)
+
+    native_names = [
+        str((call.get("input") or {}).get("action") or "")
+        if isinstance(call.get("input"), dict) else ""
+        for call in tool_uses
+    ]
+    native_summaries = summaries_for_actions(summary_metadata, "computer", native_names)
+    # Copies retain provider IDs/parameters; raw API history is never mutated.
+    tool_uses = [
+        {**call, "_action_summary": summary} if summary else call
+        for call, summary in zip(tool_uses, native_summaries)
+    ]
+    for action, summary in zip(platform_actions, summaries_for_actions(
+        summary_metadata, "platform", [a.action for a in platform_actions],
+    )):
+        action.action_summary = summary
 
     return thought, tool_uses, platform_actions, finish_action
 

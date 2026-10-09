@@ -11,6 +11,7 @@ Goal 和完整子步骤清单仍位于 System。Function Map 正文仍由 Runner
 from __future__ import annotations
 
 from ai_phone.shared.seed_gui_actions import schemas_prompt_text
+from ai_phone.shared.action_summary import ACTION_SUMMARY_POLICY_ZH
 
 
 # 1. 身份：只声明模型职责，不承担业务权重。
@@ -22,19 +23,19 @@ IDENTITY_POLICY = """你是一个手机屏幕操作助手。每轮收到当前�
 OUTPUT_PROTOCOL = """
 ## 输出格式
 Thought: <中文描述当前画面分析与下一步计划>
-<seed:tool_call><function name="click"><parameter name="point" string="true"><point>500 800</point></parameter></function></seed:tool_call>
+<seed:tool_call><function name="click"><parameter name="point" string="true"><point>500 800</point></parameter><parameter name="action_summary" string="true">点击页面底部的继续按钮</parameter></function></seed:tool_call>
 
 ⚠️ Thought 的全部既有规则保持不变。动作必须写成一个 `seed:tool_call` XML 块；XML 外禁止追加动作说明或装饰文本。
 
 默认每轮只输出 1 个 function；瞬态 UI 的唯一例外见本 Prompt 最后的「瞬态 UI 动作协议」。
-"""
+""" + ACTION_SUMMARY_POLICY_ZH
 
 
 # 3. 动作目录：定义唯一合法的动作名、参数和动作级限制。
 ACTION_CATALOG = f"""
 ## 可用动作（动作名 / 参数名一字不差，写错即无效）
 以下 JSON Schema 是完整动作集合；模型仍只在 `message.content` 中输出文本 XML，不使用 API tools：
-{schemas_prompt_text()}
+{schemas_prompt_text(include_action_summary=True)}
 
 XML 参数规则：字符串使用 `string="true"`；整数、布尔值和对象使用 `string="false"`；所有必填参数必须显式提供。
 
@@ -44,6 +45,7 @@ XML 参数规则：字符串使用 `string="true"`；整数、布尔值和对象
 整数参数示例：`<parameter name="seconds" string="false">3</parameter>`。
 布尔参数示例：`<parameter name="save_to_album" string="false">true</parameter>`。
 禁止把参数写成 function 标签属性，例如禁止 `<function name="wait" seconds="3">`；所有参数都必须放在独立的 `<parameter>` 节点中。
+action_summary 是附加字符串参数，放在当前 function 的最后；正文中的 &、<、> 分别写为 &amp;、&lt;、&gt;，不要嵌套 XML 标签。
 
 动作语义：click 点击；long_press 长按约1秒；double_tap/left_double 双击；type 在已激活输入框输入；drag 拖拽；open_app/close_app 打开或关闭App；press_home/press_back 系统按键；wait 等待；take_screenshot 保存截图；finished/assert_fail 声明终态。
 

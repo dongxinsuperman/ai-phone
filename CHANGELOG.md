@@ -4,6 +4,64 @@
 
 ## Unreleased
 
+### 首跑新增动作摘要，V3 清洗按条替换 Thought 输入
+
+- 原因：V3 原先把每步完整 Thought 送入后置清洗，其中混有子步骤判读、页面
+  状态和推理，增加清洗输入量。让首跑模型结合当前截图同时生成简短动作摘要，
+  减少送入清洗的冗余文字；仍保留后置清洗承担描述规范化及弹窗分类。
+- 主执行统一请求可选元数据 `action_summary`，不增加 V3 专用启用分支。
+  豆包在现有 Seed XML 的当前 function 中返回摘要；Claude/GPT 在同轮独立
+  `ACTION_SUMMARY` 文本行返回与原生动作对应的摘要，原生工具参数保持不变。
+- 摘要贯通动作记录，应用启停补发真实包名与等待补发实际秒数时保留对应摘要；
+  等待被裁剪时丢弃可能含旧时长的摘要。报告保留原“动作”行，另加“动作摘要”，
+  不替换执行 DSL 或断言历史。摘要缺失、无效或无法绑定时不额外拒绝合法动作。
+- V3 对每条动作只选择一种清洗输入：有效摘要存在就发送摘要，缺失或不可用
+  才发送原 Thought；初次请求和修正请求都不融合两者。规则候选同样使用所选
+  语义，原 Thought 继续保留作历史记录。后置描述规范化、弹窗分类、完整性校验、
+  gate、救援及最终断言沿用原行为，不合并/删除/增加缓存动作。
+- 不改变 V1/V2 归档、设备操作、坐标、参数、模型配置、数据库或消息类型。
+  新摘要仅附在现有动作数据中，旧记录继续走 Thought。模型真实生成质量与
+  耗时收益需要独立对比，代码回归通过不代表首跑/回放准确率已获同等验证。
+- 验证：隔离本机模型配置覆盖后 1750 项回归通过，稳定检测另 3 项通过；
+  PostgreSQL 专用测试未指定隔离库而跳过 1 项，既有预期失败 1 项。豆包同一
+  真实历史截图的两次固定输入对照均定位到目标，新版返回独立摘要；未执行
+  设备动作，不据单次对照声称提速。Claude/GPT 已覆盖解析、绑定与工具回执，
+  尚未做真实模型准确率对比。
+- 后续本地安卓导航 Case 已完成真实首跑→清洗落库→命中回放：首跑断言 PASS
+  （70.55 秒），6 个动作一次清洗完成（85.29 秒），回放断言 PASS（35.43 秒），
+  未救援或重新首跑，缓存版本未变。4 个模型动作的摘要均来自 XML；真实清洗
+  请求仅含这些摘要，无对应 Thought。另 2 个为程序启停动作。本例不覆盖真实
+  弹窗 gate 分支，也不将单例耗时视为通用性能结论。
+
+### Add first-run action summaries and exclusive V3 cleaner input selection
+
+- V3 previously sent the full Thought for every action to the cleaner, including
+  substep checks, screen state and reasoning. Generate a concise action summary
+  while the execution model has the current screenshot to reduce redundant
+  cleaning input, retaining post-processing for descriptions and popup classification.
+- Collect optional per-action `action_summary` metadata across the three main
+  backends. Seed keeps its XML action format; Claude/GPT use a separate assistant
+  text record while retaining native tool arguments. No V3-only generation switch.
+- Preserve executable actions and original report lines; add a summary log line.
+  Carry summaries through runtime corrections and recording. Missing, invalid or
+  unmatched metadata falls back without invalidating an otherwise legal action.
+- V3 sends either a valid summary or the original Thought per action, never both,
+  including repair requests. Rule candidates use the same selected source. Keep
+  popup classification, validation, replay, rescue and assertions unchanged.
+- V1/V2 archives, database schemas, model configuration and driver behavior are
+  unchanged. Model quality and latency gains require separate live validation.
+- Validation: 1750 regression tests plus 3 stability tests passed; one isolated
+  PostgreSQL test skipped and one existing expected failure. A fixed-screenshot
+  Doubao smoke pair hit the target with both prompts and returned metadata with
+  the new prompt. No device actions; no latency claim from this single pair.
+  Claude/GPT coverage is offline parsing/binding/tool-ack testing, not live accuracy.
+- A subsequent local Android navigation Case passed first run (70.55s), persisted
+  six actions after one cleaning call (85.29s), and passed cached replay (35.43s)
+  without rescue/restart or a cache revision change. Captured requests confirm
+  XML-derived summaries for four model actions and no corresponding Thoughts;
+  two app-lifecycle actions are system-generated. This is not live popup-gate
+  coverage or a general performance comparison.
+
 ### 修复 V3 在 PostgreSQL 9.4 上的写库与豆包 Chat 输出截断
 
 - 原因：V3 原子写入引入了旧版 PostgreSQL 不支持的语法，导致清洗成功后仍无法

@@ -32,6 +32,60 @@ from ai_phone.agent.runner.vlm_loop import (
 from ai_phone.shared.vlm import Decision
 
 
+@pytest.mark.asyncio
+async def test_action_summary_adds_report_line_without_changing_execution_or_assertion_history(monkeypatch):
+    from ai_phone.shared import actions as A
+    from ai_phone.agent.trajectory_cache.recorder import TrajectoryRecorder
+    from ai_phone.agent.trajectory_cache.archive import _actions_from_steps
+    from ai_phone.server.models import RunLog
+    from ai_phone.server.submissions.reports import _render_log_row
+
+    async def no_sleep(*args):
+        pass
+
+    monkeypatch.setattr(asyncio, "sleep", no_sleep)
+    observations = []
+    for summary in (None, "点击页面右上角的关闭按钮"):
+        driver = FakeDriver()
+        client = ScriptedVLMClient([
+            ScriptedStep("点击关闭按钮", "click(point='<point>805 75</point>')"),
+            ScriptedStep("已完成", "finished()"),
+        ])
+        original_decide = client.decide
+
+        async def decide(frame, **kwargs):
+            decision = await original_decide(frame, **kwargs)
+            parsed = A.parse_action(decision.action_str)
+            if parsed.action == "click":
+                parsed.action_summary = summary
+            decision.parsed_actions = [parsed]
+            return decision
+
+        client.decide = decide
+        events, emit = _collect_events()
+        runner = VLMRunner("summary-test", driver, "点击关闭按钮", emit=emit, vlm_client=client)
+        result = await runner.run()
+        assert result.ok
+        rec = TrajectoryRecorder("summary-test")
+        for event in events:
+            rec.feed(event)
+        actions = _actions_from_steps(rec.steps(), screen_size=(1080, 1920), include_action_summary=True)
+        assert actions[0].get("action_summary") == summary
+        lines = [e for e in events if e.get("title") == "动作摘要"]
+        if summary:
+            assert len(lines) == 1 and lines[0]["content"] == summary
+            rendered = _render_log_row(RunLog(level=1, title="动作摘要", content=summary))
+            assert "动作摘要 — " + summary in rendered
+        else:
+            assert lines == []
+        observations.append((
+            driver.calls,
+            [(e["title"], e["content"]) for e in events if e.get("title") == "动作"],
+            [(r["thought"], r["action_str"], r["runtime_status"]) for r in runner._action_log],
+        ))
+    assert observations[0] == observations[1]
+
+
 # ---------------------------------------------------------------------------
 # 测试辅助：FakeDriver + ScriptedVLMClient
 # ---------------------------------------------------------------------------

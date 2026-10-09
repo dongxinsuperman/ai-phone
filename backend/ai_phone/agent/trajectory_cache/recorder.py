@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from loguru import logger
+from ai_phone.shared.action_summary import normalize_action_summary
 
 from ai_phone.agent.runner.events import (
     EVT_ACTION,
@@ -47,7 +48,21 @@ class TrajectoryRecorder:
                 if step is not None:
                     s = self._step(int(step))
                     s["action_type"] = str(evt.get("action_type") or "")
-                    s["actions"] = list(evt.get("actions") or [])
+                    actions = list(evt.get("actions") or [])
+                    previous = s.get("actions") or []
+                    # 启停 App/等待会补发真实包名/秒数。仅保留同一步同动作的摘要，
+                    # 真实参数仍由后到事件覆盖；不合并动作、不从其它步骤继承。
+                    if len(actions) == len(previous) == 1 and all(
+                        isinstance(a, dict) for a in (actions[0], previous[0])
+                    ):
+                        current, old = actions[0], previous[0]
+                        if (current.get("action") in {"open_app", "close_app", "wait"}
+                                and current.get("action") == old.get("action")
+                                and "action_summary" not in current):
+                            summary = normalize_action_summary(old.get("action_summary"))
+                            if summary:
+                                actions = [{**current, "action_summary": summary}]
+                    s["actions"] = actions
                     s["display_action"] = str(evt.get("text") or "")
                     s["elapsed_ms"] = int(evt.get("elapsed_ms") or 0)
                     s["ts"] = evt.get("ts")

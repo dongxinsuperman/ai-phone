@@ -22,6 +22,8 @@
 """
 from __future__ import annotations
 
+from ai_phone.shared.action_summary import NATIVE_ACTION_SUMMARY_POLICY
+
 from ai_phone.shared.function_map_prompt import (
     build_execution_priority_system_policy,
     build_function_map_system_policy,
@@ -254,6 +256,7 @@ def build_system_prompt(
     return f"""You are operating a real mobile device. Each turn you receive the current screenshot and must take **one** next action via the `computer` tool by default. Multiple tool_use blocks per turn are allowed only when interacting with transient UI (auto-hiding overlays / toasts) — see §C.
 
 {language_policy}
+{NATIVE_ACTION_SUMMARY_POLICY}
 The UI may be in English, Korean, Japanese, Arabic, or other languages. Read the visible text carefully and act accordingly.
 
 ## Your Task

@@ -252,7 +252,7 @@ def test_scroll_center_does_not_poison_click_duplicate_check():
 
 def test_cleaning_preserves_scroll_region_without_inventing_coordinates():
     rules = _v3_plan_cleaner_rules()
-    assert "保留 thought 已明确的滚动对象/区域" in rules
+    assert "保留源语义已明确的滚动对象/区域" in rules
     assert "未明确时不要凭空添加区域" in rules
     assert "不把首跑中心坐标改写成固定位置或百分比" in rules
 
