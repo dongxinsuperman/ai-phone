@@ -2290,7 +2290,7 @@ def _action_brief(action: Optional[Dict[str, Any]]) -> str:
     plan_intent = str(action.get("plan_intent") or action.get("intent") or "").strip()
     return (
         f"index={action.get('index')} type={action.get('type')} "
-        f"plan_intent={plan_intent[:80]}"
+        f"plan_intent={plan_intent}"
     )
 
 
