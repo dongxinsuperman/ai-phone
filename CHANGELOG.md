@@ -4,6 +4,56 @@
 
 ## Unreleased
 
+### 隔离 Android VM 停机测试 / Isolate the Android VM stop test
+
+- `stop_all` 的运行时清理测试使用固定模拟 serial，却会发现本机真实 ADB，
+  可能关闭正在使用同一 serial 的模拟器。隔离此测试的 SDK 发现，避免触及
+  真实设备；仅调整测试，单项验证通过。
+- The runtime-cleanup test used fake emulator serials but discovered the host's
+  real ADB, allowing it to stop an actual emulator. Mock SDK discovery in this
+  test; production behavior is unchanged. The focused test passed.
+
+### 按整条 Case 直接复用摘要，仅保留弹窗分类
+
+- 原因：首跑已生成动作摘要，后台仍要求模型逐条重写描述并输出评分和理由，
+  重复了已经完成的整理。摘要齐全的 Case 现在由程序直接保留摘要，只请求
+  整批弹窗/业务角色分类，不再把描述改写规则发送给模型。
+- 每个 Case 只选一种模式：任一动作缺失或带无效摘要，整条回退现有整批清洗；
+  有确定包名的启停 App 动作不要求摘要。旧清洗仍按条优先用摘要、缺失时用
+  Thought，不把两者混合。分类关闭且摘要齐全时无需调用后台模型。
+- 摘要模式只接受 action_id 与弹窗分类结果；摘要由程序保存，不经模型回传、
+  重写或旧清洗的 120 字截断。原始动作参数、完整 ID 校验、有限修正、风险门槛、
+  回放门控、救援与最终断言保持原行为。模型、思考档位和超时配置不变。
+- 三家首跑摘要提示词补充可直接回放的描述要求：保留实际控件及稳定文案，
+  动态条目沿用 Case 的序号/条件/明确名称，不写后续目的，不影响执行参数。
+- 验证：159 项针对性测试通过；后端回归 1762 项通过，稳定检测另 3 项通过，
+  1 项隔离 PostgreSQL 测试跳过、1 项既有预期失败。保存的同一导航轨迹、相同
+  模型与 high 档位下，一组真实请求对照为旧清洗 114.60 秒、新分类 84.92 秒，
+  输入 2262→921 token，正文输出 708→437 token；角色判断一致、摘要与执行
+  参数保留。该结果是单组静态请求，不代表新的真机验收或通用提速比例。
+
+### Reuse summaries per Case and retain popup classification
+
+- Once first-run summaries describe the actions, rewriting and scoring every
+  description repeats work. A Case with complete summaries now copies them
+  directly and asks the model only for popup/business-role classification.
+- Select one mode for the whole Case. Any missing or invalid summary falls back
+  to the existing batch cleaner; app lifecycle actions with resolved packages
+  need no summary. With classification disabled, complete summaries need no call.
+- Classification results cannot overwrite summaries or truncate them at the
+  legacy 120-character limit. Preserve action parameters, ID validation, bounded
+  repair, risk thresholds, replay gates, rescue, assertions and model settings.
+- Clarify replay-ready summary requirements in all three main prompts, including
+  stable labels and Case selection criteria for dynamic items. Preserve action
+  selection and executable parameters.
+- Validation: 159 focused tests passed; 1762 backend tests plus 3 stability tests
+  passed, with one isolated PostgreSQL test skipped and one existing expected
+  failure. One real-request pair using the same saved navigation trajectory,
+  model and high effort took 114.60s for cleaning and 84.92s for classification;
+  input tokens were 2262/921 and answer tokens 708/437. Roles matched and source
+  summaries/parameters were preserved. This is not a fresh device run or a
+  general speedup claim.
+
 ### 首跑新增动作摘要，V3 清洗按条替换 Thought 输入
 
 - 原因：V3 原先把每步完整 Thought 送入后置清洗，其中混有子步骤判读、页面

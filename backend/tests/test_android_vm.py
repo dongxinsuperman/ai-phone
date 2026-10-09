@@ -1276,7 +1276,11 @@ def test_android_vm_manager_decorates_only_vm_devices(tmp_path):
     assert infos[1].extra == {}
 
 
-def test_android_vm_manager_stop_all_clears_runtimes(tmp_path):
+def test_android_vm_manager_stop_all_clears_runtimes(tmp_path, monkeypatch):
+    # Fake runtime serials must never reach the host's real ADB/emulators.
+    monkeypatch.setattr(
+        "ai_phone.agent.android_vm.manager.find_android_tools", lambda: (None, [])
+    )
     manager = AndroidVmManager(runtime_dir=tmp_path, max_instances=2)
     manager._runtimes["vm-1"] = VmRuntime(
         vm_id="vm-1",

@@ -22,6 +22,11 @@ ACTION_SUMMARY_POLICY_ZH = """
 每个非终态动作同时提供 action_summary，通常一两句、最多300字。
 描述本条实际要做的操作及目标，保留截图上可见的控件原文、必要的区域/位置；
 输入说明输入框，滚动说明操作区域，拖拽说明起止对象。执行值仍以原动作参数为准。
+摘要会直接用作下次回放的定位描述，不再由后台改写。只写本条操作及目标，
+不追加“进入某页面”等后续目的。固定按钮、导航、输入框等可见文案按原文保留；
+对于课程、订单、消息等动态条目，保留 Case 的实际选择条件（如第一条、指定名称），
+不把 Case 的序号/条件选择替换为本次碰巧出现的标题、编号或用户数据。
+只对当前实际操作对象应用这些条件，不把清障/中转控件替换成 Case 的最终目标。
 涉及弹窗、引导、权限、安全、支付或业务确认时，保留其类型、处理对象，以及是否
 正在阻挡当前操作的可见事实，供后续清洗分类；不得自行宣布该动作可跳过。
 不复制子步骤判读、Map全文或整段Thought，不写后续计划，不声称动作已经成功。
@@ -43,6 +48,13 @@ metadata in a tool call, thinking/reasoning block, or FINISHED/ASSERT_FAIL reaso
 Each summary is at most 300 characters and describes only that action's operation
 and target. Preserve exact visible UI text and necessary region/position. For
 input name the field; for scrolling name the region; for dragging name the endpoints.
+The summary will be reused directly for replay localization without later rewriting.
+Describe this action and target only; omit subsequent purposes such as entering a page.
+Keep fixed UI labels verbatim. For dynamic items such as courses, orders or messages,
+preserve the Case's selection criterion (first item, explicit name, or condition),
+not an incidental title, identifier or user value seen only in this screenshot.
+Apply that criterion only to the actual target; never substitute the Case's final
+goal for an intermediate control or an obstruction-removal action.
 For popups, guides, permissions, security, payments or confirmations, retain the
 visible type/object and whether it obstructs the current task; never declare a
 step optional or safe to skip. Follow the existing human-readable language policy.

@@ -134,7 +134,7 @@ async def build_v3_archive(
         _normalize_v3_action(action, source_vlm_backend=source_vlm_backend)
         for action in raw_actions
     ]
-    # V3 弹窗角色与描述在同一次整批文本请求中生成，不调用 V2 逐条图片分类。
+    # 按整条 Case 选择摘要直用/旧清洗；弹窗仍在同一次整批文本请求中分类。
     # upload_image 参数保留给旧调用方兼容；V3 新归档不上传弹窗对照图。
     payload: Dict[str, Any] = {
         "cache_mode": "v3",
@@ -155,8 +155,8 @@ async def build_v3_archive(
             "plan_intent_cleaner": "rule",
         },
     }
-    # 整批模型清洗：结构先完整校验，再按原候选接受规则合回描述；最终结构不合规
-    # 则停止本次归档。仍在后台 task 内 await，不阻塞已结束的 case。
+    # 整批结果先完整校验，再合回弹窗角色及旧路径的描述。摘要路径不接受模型改写。
+    # 最终结构不合规则停止本次归档；后台执行，不阻塞已结束的 case。
     await _clean_v3_plan_intents(payload=payload, goal=goal)
     return payload
 
@@ -915,6 +915,24 @@ def _clean_text(value: Any) -> str:
 # 在归档后台 task 内 await，不阻塞 case 完成。整批结构校验失败时反馈模型修正；
 # 有限修正后仍失败则停止本次归档，不把不合规的模型输出写成有效缓存。
 # ---------------------------------------------------------------------------
+def _can_reuse_case_summaries(actions: List[Dict[str, Any]]) -> bool:
+    """整条 Case 二选一；程序启停 App 已有确定包名，不因缺摘要降级。
+
+    其余任一动作缺失/无效摘要时，整批仍走原清洗，不在 Case 内混合协议。
+    """
+    has_summary = False
+    for action in actions:
+        if normalize_action_summary(action.get("action_summary")):
+            has_summary = True
+        elif not (
+            action.get("type") in {A.ACTION_OPEN_APP, A.ACTION_CLOSE_APP}
+            and isinstance(action.get("app_name"), str)
+            and action["app_name"].strip()
+        ):
+            return False
+    return has_summary
+
+
 async def _clean_v3_plan_intents(*, payload: Dict[str, Any], goal: str) -> None:
     cleaner = V3PlanIntentCleaner()
     if not cleaner.is_configured():
@@ -930,6 +948,7 @@ async def _clean_v3_plan_intents(*, payload: Dict[str, Any], goal: str) -> None:
     results = result["actions"]
     cleaned = 0
     rejected = 0
+    reused = 0
     optional_actions = 0
     source_step_counts = Counter(a.get("source_step") for a in actions if a.get("source_step") is not None)
     for action, item in zip(actions, results):
@@ -945,6 +964,15 @@ async def _clean_v3_plan_intents(*, payload: Dict[str, Any], goal: str) -> None:
             if popup_meta:
                 action["ephemeral_meta"] = popup_meta
                 optional_actions += 1
+        if result.get("reuse_action_summaries"):
+            summary = normalize_action_summary(action.get("action_summary"))
+            if summary:
+                # 只取首跑摘要，禁止模型覆盖，也不经过旧描述的清理/120字截断。
+                action["plan_intent"] = summary
+                action["plan_intent_meta"] = {"source": "action_summary"}
+                reused += 1
+            # 程序启停 App 的确定性描述沿用归档时的规则候选。
+            continue
         rule_plan_intent = _clean_text(action.get("plan_intent") or "")
         plan_intent = _clean_text(item.get("plan_intent") or "")
         if not plan_intent:
@@ -974,6 +1002,9 @@ async def _clean_v3_plan_intents(*, payload: Dict[str, Any], goal: str) -> None:
     if result.get("classify_ephemeral"):
         meta["ephemeral_classifier_mode"] = "v3_batch_semantic"
         meta["ephemeral_optional_actions"] = optional_actions
+    if reused:
+        meta["plan_intent_cleaner"] = "action_summary"
+        meta["plan_intent_reused_actions"] = reused
     if cleaned:
         meta["plan_intent_cleaner"] = "model"
         meta["plan_intent_cleaned_actions"] = cleaned
@@ -1028,21 +1059,29 @@ class V3PlanIntentCleaner:
     async def clean_actions(
         self, *, actions: List[Dict[str, Any]], goal: str = "",
     ) -> Dict[str, Any]:
-        """整批生成 + 明确错误反馈修正；单次/总耗时均有上限，执行参数不由模型生成。"""
+        """Case 统一选择摘要直用或旧清洗；完整校验和有限修正沿用原路径。"""
         source_actions = deepcopy(actions)
         ids = batch_action_ids(source_actions)
         started = time.monotonic()
         if not ids:
             return {"actions": [], "model_calls": 0, "repair_rounds": 0, "elapsed_ms": 0}
-        backend, api_url, api_key, model, timeout_sec = self._config()
-        # 保持既有单次超时设置；首次生成 + 2次修正的总预算最多为该设置的3倍。
-        deadline = started + timeout_sec * MAX_BATCH_MODEL_CALLS
         action_inputs = [{"action_id": a["action_id"], **_v3_action_brief(a)} for a in source_actions]
+        reuse_action_summaries = _can_reuse_case_summaries(source_actions)
         classify_ephemeral = bool(
             self.settings.trajectory_cache_ephemeral_action_enabled
             and self.settings.trajectory_cache_ephemeral_classify_enabled
         )
         min_confidence = float(self.settings.trajectory_cache_ephemeral_classify_min_confidence)
+        if reuse_action_summaries and not classify_ephemeral:
+            return {
+                "actions": [{"action_id": action_id} for action_id in ids],
+                "model_calls": 0, "repair_rounds": 0,
+                "elapsed_ms": int((time.monotonic() - started) * 1000),
+                "classify_ephemeral": False, "reuse_action_summaries": True,
+            }
+        backend, api_url, api_key, model, timeout_sec = self._config()
+        # 保持既有单次超时设置；首次生成 + 2次修正的总预算最多为该设置的3倍。
+        deadline = started + timeout_sec * MAX_BATCH_MODEL_CALLS
         previous_output = ""
         errors: List[str] = []
         for attempt in range(1, MAX_BATCH_MODEL_CALLS + 1):
@@ -1055,19 +1094,26 @@ class V3PlanIntentCleaner:
                 goal=goal, action_inputs=action_inputs, rules=_v3_plan_cleaner_rules(),
                 previous_output=previous_output, errors=errors,
                 classify_ephemeral=classify_ephemeral, min_confidence=min_confidence,
+                reuse_action_summaries=reuse_action_summaries,
             )
             try:
                 previous_output = await asyncio.wait_for(
                     _call_vlm_with_images(
                         backend=backend, api_url=api_url, api_key=api_key, model=model,
                         timeout_sec=call_timeout,
-                        system=("你是 V3 轨迹缓存的整批动作语义清洗器。"
+                        system=("你是 V3 轨迹缓存的整批弹窗角色分类器。"
+                                "动作描述已确定，只分类，不改写描述或执行动作。只输出 JSON，不要 markdown。"
+                                if reuse_action_summaries else
+                                "你是 V3 轨迹缓存的整批动作语义清洗器。"
                                 "按请求同时整理描述与清障角色，不执行动作。只输出 JSON，不要 markdown。"),
                         prompt=prompt, images=[], aux_reasoning_effort=self.settings.aux_reasoning_effort,
                     ),
                     timeout=call_timeout,
                 )
-                rows = validate_batch_plan_output(previous_output, ids, classify_ephemeral=classify_ephemeral)
+                rows = validate_batch_plan_output(
+                    previous_output, ids, classify_ephemeral=classify_ephemeral,
+                    reuse_action_summaries=reuse_action_summaries,
+                )
             except BatchPlanValidationError as exc:
                 errors = exc.errors
             except Exception as exc:  # 请求失败也不直接放弃，有限次数重试同一任务。
@@ -1078,6 +1124,7 @@ class V3PlanIntentCleaner:
                     "elapsed_ms": int((time.monotonic() - started) * 1000),
                     "classify_ephemeral": classify_ephemeral,
                     "ephemeral_min_confidence": min_confidence,
+                    "reuse_action_summaries": reuse_action_summaries,
                 }
             logger.warning(
                 "V3 整批清洗未通过，第 {}/{} 次请求：{}",
