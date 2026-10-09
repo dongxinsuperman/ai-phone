@@ -27,7 +27,7 @@ from ai_phone.agent.drivers.base import BaseDriver
 from ai_phone.agent.runner.events import log_event
 from ai_phone.agent.runner_bridge import RunnerBridge
 from ai_phone.shared import protocol as P
-from .restart import V3RestartRequest
+from .restart import V3RestartRequest, V3TakeoverRequest
 
 
 def is_v3_cache_hit(cache_snapshot: Optional[Dict[str, Any]]) -> bool:
@@ -62,7 +62,7 @@ async def run_v3_replay(
     """命中 V3 缓存 → Agent 本地回放 → 断言 → run_done（缓存通道）。
 
     默认沿用一条 run_done 终态。Agent 显式启用 restart_on_rescue_failure 时，仅在
-    救援耗尽/明确放弃后返回内部重跑请求，暂不发终态；调用方必须完成新的完整首跑。
+    救援耗尽时返回长程救援交接，其他原有可重跑情形返回完整首跑请求；暂不发终态。
     其他失败/断言仍按原策略结束。旧内部调用不传新参数时行为不变。
     """
     from ai_phone.agent.trajectory_cache.assertion import CacheReplayAssertionVerifier
@@ -132,6 +132,19 @@ async def run_v3_replay(
             reason=f"replay_failed: {error}",
         )
         if restart_on_rescue_failure and getattr(replay_result, "restart_required", False):
+            if getattr(replay_result, "takeover_required", False):
+                actions = trajectory.get("actions") or []
+                position = next((i for i, a in enumerate(actions)
+                                 if a.get("index") == replay_result.failed_index), None)
+                await _log(2, "V3缓存 · 长程救援接管", "累计救援预算已耗尽，保留当前现场，由独立长程救援继续完整原始 Case")
+                return V3TakeoverRequest(
+                    reason=error,
+                    step_offset=max(last_step_index, int(replay_result.failed_index or 0)),
+                    elapsed_ms=_elapsed_ms(),
+                    failed_action=deepcopy(actions[position]) if position is not None else {},
+                    next_action=deepcopy(actions[position + 1]) if position is not None and position + 1 < len(actions) else {},
+                    execution_history=runner.execution_history,
+                )
             await _log(2, "V3缓存失效 · 完整重跑", "局部救援已失败，退出旧缓存路线，重新执行完整原始 Case")
             return V3RestartRequest(
                 reason=error,

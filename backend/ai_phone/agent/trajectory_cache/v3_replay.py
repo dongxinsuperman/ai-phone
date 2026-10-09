@@ -804,10 +804,15 @@ class V3RescueRestartRequired(ReplayActionError):
     """救援预算用尽或模型明确放弃；可启动一次完整首跑，不用于取消/基础设施异常。"""
 
 
+class V3RescueTakeoverRequired(V3RescueRestartRequired):
+    """Cumulative rescue budget exhausted; preserve the current device state."""
+
+
 @dataclass
 class V3ReplayResult(ReplayResult):
     # Agent 内部编排标记；不进入既有 ReplayResult.to_dict / 外部协议。
     restart_required: bool = False
+    takeover_required: bool = False
 
 
 class V3ReplayRunner:
@@ -1117,6 +1122,7 @@ class V3ReplayRunner:
                     error=message,
                     elapsed_ms=int((time.monotonic() - started_at) * 1000),
                     restart_required=isinstance(exc, V3RescueRestartRequired),
+                    takeover_required=isinstance(exc, V3RescueTakeoverRequired),
                 )
         await self._log(1, "缓存回放", f"V3 回放完成：设备动作={executed}")
         return ReplayResult(
@@ -1434,7 +1440,7 @@ class V3ReplayRunner:
         history_start = len(self._execution_history)
         while True:
             if self._v3_rescue_calls_used >= self._v3_rescue_max_calls:
-                raise V3RescueRestartRequired(
+                raise V3RescueTakeoverRequired(
                     f"v3_rescue_limit_exceeded limit={self._v3_rescue_max_calls}; {miss_reason}"
                 )
             self._v3_rescue_calls_used += 1
@@ -1548,6 +1554,8 @@ class V3ReplayRunner:
                     continue
 
             message = f"v3 rescue give_up verdict={decision.verdict}: {decision.reason}"
+            if self._v3_rescue_calls_used >= self._v3_rescue_max_calls:
+                raise V3RescueTakeoverRequired(message)
             if decision.verdict == V3_RESCUE_GIVE_UP and not decision.error:
                 raise V3RescueRestartRequired(message)
             raise ReplayActionError(message)

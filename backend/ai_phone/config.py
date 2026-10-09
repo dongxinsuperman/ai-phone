@@ -1485,11 +1485,11 @@ class Settings(BaseSettings):
         ),
     )
     trajectory_cache_v3_rescue_max_calls_per_replay: int = Field(
-        default=10,
+        default=5,
         ge=0,
         le=20,
         description=(
-            "单条 V3 回放最多允许调用 rescue VLM 多少次。"
+            "单条 V3 回放累计 rescue 次数上限；耗尽且仍需恢复时由独立长程救援从现场接管。"
             "env: AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_MAX_CALLS_PER_REPLAY"
         ),
     )

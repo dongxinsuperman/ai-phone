@@ -111,8 +111,8 @@ def test_v3_rescue_map_respects_existing_disable_switch(monkeypatch):
     assert runner.function_map_context is None
 
 
-@pytest.mark.parametrize("explicit_limit,expected", [(None, 10), (3, 3), (0, 0)])
-def test_v3_rescue_default_is_ten_and_explicit_limits_still_win(monkeypatch, explicit_limit, expected):
+@pytest.mark.parametrize("explicit_limit,expected", [(None, 5), (3, 3), (0, 0)])
+def test_v3_rescue_default_is_five_and_explicit_limits_still_win(monkeypatch, explicit_limit, expected):
     from ai_phone.agent.trajectory_cache import v3_replay as module
 
     overrides = {} if explicit_limit is None else {
@@ -191,7 +191,7 @@ async def test_rescue_receives_map_and_previous_repairs_without_cross_action_lea
 
 
 @pytest.mark.asyncio
-async def test_ten_rescue_calls_are_shared_across_steps_and_never_execute_eleventh(make_runner, monkeypatch):
+async def test_five_rescue_calls_are_shared_across_steps_and_never_execute_sixth(make_runner, monkeypatch):
     rescue = Rescue(V3RescueDecision(
         verdict="REPAIR_ACTION", reason="局部修复",
         repair_action={"type": "press_back"},
@@ -210,10 +210,11 @@ async def test_ten_rescue_calls_are_shared_across_steps_and_never_execute_eleven
     monkeypatch.setattr(runner, "_locate_action", locate)
     result = await runner.run()
     assert not result.success
-    assert "v3_rescue_limit_exceeded limit=10" in result.error
+    assert "v3_rescue_limit_exceeded limit=5" in result.error
     assert result.restart_required is True
-    assert [c["action"]["index"] for c in rescue.calls] == [1] * 4 + [2] * 6
-    assert len([a for a in runner.dispatcher.calls if a["type"] == "press_back"]) == 10
+    assert [c["action"]["index"] for c in rescue.calls] == [1] * 4 + [2]
+    assert len([a for a in runner.dispatcher.calls if a["type"] == "press_back"]) == 5
+    assert result.takeover_required is True
     assert result.actions_executed == 1  # 第一个目标在第4次修复后接回缓存；第二个未完成。
 
 
@@ -592,3 +593,34 @@ async def test_v3_verifier_keeps_images_thinking_but_excludes_historical_success
     assert received["final_bytes"] == b"new-final"
     assert received["prev_before_bytes"] == b"new-before"
     assert received["thinking"] is True
+
+
+@pytest.mark.asyncio
+async def test_fifth_successful_rescue_can_finish_cache_without_handoff(make_runner, monkeypatch):
+    rescue = Rescue(V3RescueDecision(verdict="REPAIR_ACTION", reason="关闭遮挡",
+                                     repair_action={"type":"press_back"}))
+    runner = make_runner([action()], rescue=rescue)
+    runner._v3_rescue_max_calls = 5
+    calls = 0
+    async def locate(a, frame):
+        nonlocal calls
+        calls += 1
+        if calls <= 5:
+            raise V3LocatorMiss("仍需修复")
+        return {**a, "point":{"x":100,"y":200}}
+    monkeypatch.setattr(runner,"_locate_action",locate)
+    result=await runner.run()
+    assert result.success and len(rescue.calls)==5
+    assert not getattr(result,"takeover_required",False)
+
+
+@pytest.mark.asyncio
+async def test_last_budget_call_give_up_transfers_to_long_rescue(make_runner, monkeypatch):
+    rescue=Rescue(V3RescueDecision(verdict="GIVE_UP",reason="仍无法恢复"))
+    runner=make_runner([action()],rescue=rescue)
+    runner._v3_rescue_max_calls=5
+    runner._v3_rescue_calls_used=4
+    async def locate(*args):raise V3LocatorMiss("不可见")
+    monkeypatch.setattr(runner,"_locate_action",locate)
+    result=await runner.run()
+    assert result.takeover_required and len(rescue.calls)==1

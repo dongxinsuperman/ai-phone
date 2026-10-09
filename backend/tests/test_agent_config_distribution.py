@@ -253,7 +253,7 @@ def test_env_defaults_contains_only_public_runtime_defaults():
     assert active["AI_PHONE_TRAJECTORY_CACHE_RECOVERY_VLM_ENABLED"] == "true"
     assert active["AI_PHONE_TRAJECTORY_CACHE_EPHEMERAL_ACTION_ENABLED"] == "true"
     assert active["AI_PHONE_ASSERTION_TIMEOUT_SEC"] == "300"
-    assert active["AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_MAX_CALLS_PER_REPLAY"] == "10"
+    assert active["AI_PHONE_TRAJECTORY_CACHE_V3_RESCUE_MAX_CALLS_PER_REPLAY"] == "5"
     assert active["AI_PHONE_STRUCT_STRICTNESS_HARD_SCORE"] == "10"
     assert active["AI_PHONE_STRUCT_STRICTNESS_AUDIT_SCORE"] == "10"
     assert active["AI_PHONE_SLEEP_AFTER_RUN"] == "true"
@@ -267,7 +267,7 @@ def test_code_defaults_match_project_runtime_policy():
     assert s.struct_strictness_hard_score == 10
     assert s.struct_strictness_audit_score == 10
     assert s.assertion_timeout_sec == 300
-    assert s.trajectory_cache_v3_rescue_max_calls_per_replay == 10
+    assert s.trajectory_cache_v3_rescue_max_calls_per_replay == 5
     assert s.sleep_after_run is True
 
 
