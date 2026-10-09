@@ -717,6 +717,9 @@ async def _chat_completions_images(
     # - OpenAI o 系列：reasoning_effort=medium
     # - 其它 OpenAI-compatible 代理：不强塞私有字段，避免 400 后降级。
     if _is_doubao_chat_url(api_url):
+        from ai_phone.shared.llm.output_limits import DOUBAO_CHAT_MAX_COMPLETION_TOKENS
+
+        payload["max_completion_tokens"] = DOUBAO_CHAT_MAX_COMPLETION_TOKENS
         payload["thinking"] = {"type": "enabled"}
         # 仅 AUX 调用方显式传入档位；手机层救援/门控共用此 helper，但不跟随 AUX 档位。
         if aux_reasoning_effort:

@@ -23,6 +23,7 @@ from ai_phone.config import Settings, get_settings
 from ai_phone.shared import actions as A
 from ai_phone.shared.seed_gui_actions import extract_thought, parse_actions
 from ai_phone.shared.vlm import Decision, TokenCounter
+from ai_phone.shared.llm.output_limits import DOUBAO_CHAT_MAX_COMPLETION_TOKENS
 
 
 class DoubaoChatWindowClient:
@@ -160,9 +161,10 @@ class DoubaoChatWindowClient:
             "messages": self._messages(current_user),
             "temperature": 0,
             "thinking": {"type": "disabled"},
+            "max_completion_tokens": DOUBAO_CHAT_MAX_COMPLETION_TOKENS,
             "prompt_cache_key": self._prompt_cache_key,
         }
-        # No tools / caching / store / previous_response_id / output cap.
+        # No tools / caching / store / previous_response_id.
         # Implicit caching is automatic; keeping a route key does not add history.
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         started = time.monotonic()

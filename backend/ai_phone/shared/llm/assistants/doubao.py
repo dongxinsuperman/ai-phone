@@ -27,6 +27,7 @@ import httpx
 from ai_phone.config import get_settings
 from ai_phone.shared.llm.assertion_policy import FINISHED_ASSERTION_SYSTEM_ZH
 from ai_phone.shared.llm.base import AnalysisResult, TokenCounter
+from ai_phone.shared.llm.output_limits import DOUBAO_CHAT_MAX_COMPLETION_TOKENS
 
 __all__ = ["DoubaoAssistant"]
 
@@ -76,6 +77,7 @@ class DoubaoAssistant:
             "top_p": 0,
             "messages": messages,
             "thinking": {"type": thinking_type},
+            "max_completion_tokens": DOUBAO_CHAT_MAX_COMPLETION_TOKENS,
         }
         if thinking and settings.aux_reasoning_effort:
             payload["reasoning_effort"] = settings.aux_reasoning_effort
@@ -284,6 +286,7 @@ class DoubaoAssistant:
                 {"role": "user", "content": user},
             ],
             "thinking": {"type": thinking_type},
+            "max_completion_tokens": DOUBAO_CHAT_MAX_COMPLETION_TOKENS,
         }
         if thinking and settings.aux_reasoning_effort:
             payload["reasoning_effort"] = settings.aux_reasoning_effort

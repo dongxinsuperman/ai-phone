@@ -44,7 +44,8 @@ from ai_phone.agent.trajectory_cache.v3_ephemeral import (
     V3EphemeralGateVerifier as CacheEphemeralGateVerifier,
     EphemeralGateDecision,
 )
-from ai_phone.agent.trajectory_cache.ephemeral import _call_vlm_with_images
+from ai_phone.agent.trajectory_cache.ephemeral import _call_vlm_with_images, _is_doubao_chat_url
+from ai_phone.shared.llm.output_limits import DOUBAO_CHAT_MAX_COMPLETION_TOKENS
 from ai_phone.agent.trajectory_cache.recovery import (
     _extract_messages_text,
     _extract_responses_text,
@@ -453,6 +454,8 @@ class V3PlanLocator:
                 },
             ],
         }
+        if _is_doubao_chat_url(api_url):
+            payload["max_completion_tokens"] = DOUBAO_CHAT_MAX_COMPLETION_TOKENS
         return await _post_chat_payload(
             api_url=api_url,
             api_key=api_key,

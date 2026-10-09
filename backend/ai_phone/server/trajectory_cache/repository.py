@@ -23,6 +23,7 @@ from uuid import uuid4
 
 from loguru import logger
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ai_phone.server.models import (
@@ -204,11 +205,8 @@ async def _upsert_v3(
             "meta_json": archive.get("meta") or {}, "updated_at": now, "last_success_at": now,
         }
         dialect = session.get_bind().dialect.name
-        if dialect in {"postgresql", "sqlite"}:
-            if dialect == "postgresql":
-                from sqlalchemy.dialects.postgresql import insert
-            else:
-                from sqlalchemy.dialects.sqlite import insert
+        if dialect == "sqlite":
+            from sqlalchemy.dialects.sqlite import insert
             # 同平台多设备同时完成首跑时，由数据库唯一 key 原子收口，不竞争插入。
             statement = insert(VlmTrajectoryCacheV3).values(**values)
             await session.execute(statement.on_conflict_do_update(
@@ -218,30 +216,26 @@ async def _upsert_v3(
             await session.commit()
             logger.info("V3 成品缓存已写库 cache_key={} actions={}", cache_key, len(actions))
             return cache_key
-        row = (
-            await session.execute(
-                select(VlmTrajectoryCacheV3).where(VlmTrajectoryCacheV3.cache_key == cache_key)
-            )
-        ).scalars().first()
+        # 与 V1/V2、设备配置一样先查再写，兼容实际部署的 PostgreSQL 9.4。
+        # 已有行加锁；首次并发插入沿用 Harmony 端口租约的 savepoint + 唯一键仲裁。
+        # 不能直接使用 ON CONFLICT（PG 9.5 才支持），也不能回退成无竞争保护的插入。
+        lookup = select(VlmTrajectoryCacheV3).where(
+            VlmTrajectoryCacheV3.cache_key == cache_key
+        ).with_for_update()
+        row = (await session.execute(lookup)).scalars().first()
         if row is None:
-            row = VlmTrajectoryCacheV3(cache_key=cache_key)
-            session.add(row)
-        row.device_code = str(archive.get("device_code") or "")
-        row.run_semantic_hash = semantic_hash
-        row.run_semantic_text = normalized_goal
-        row.case_id = archive.get("case_id")
-        row.platform = str(archive.get("platform") or "")
-        row.resolution = str(archive.get("resolution") or "")
-        row.app_package_or_bundle = str(archive.get("app_package_or_bundle") or "")
-        row.schema_version = V3_CACHE_SCHEMA_VERSION
-        row.status = "active"
-        row.source_run_id = str(archive.get("source_run_id") or "")
-        row.source_vlm_backend = str(archive.get("source_vlm_backend") or "")
-        row.actions_json = actions
-        row.source_completion = archive.get("source_completion") or {}
-        row.meta_json = archive.get("meta") or {}
-        row.updated_at = now
-        row.last_success_at = now
+            try:
+                async with session.begin_nested():
+                    row = VlmTrajectoryCacheV3(**values)
+                    session.add(row)
+                    await session.flush()
+            except IntegrityError:
+                row = (await session.execute(lookup)).scalars().first()
+                if row is None:
+                    # 不是同 key 的并发插入，不吞掉真正的数据完整性错误。
+                    raise
+        for key, value in values.items():
+            setattr(row, key, value)
         await session.commit()
     logger.info("V3 成品缓存已写库 cache_key={} actions={}", cache_key, len(actions))
     return cache_key

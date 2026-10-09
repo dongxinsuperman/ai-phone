@@ -52,7 +52,8 @@ Settings 执行配置下发集；Agent 接收 Server 快照后，通过主客户
 
 新实现使用 PHONE 配置派生的 `/chat/completions`、相同模型及凭证；仍不传 tools，
 返回相同 Seed XML，转换为同一 Decision/ParsedAction。保持 `thinking=disabled`，
-不额外增加输出上限，不修改动作或业务 Prompt。
+Chat 沿用豆包公共输出预算 `max_completion_tokens=65536`（包含思考与回答，
+解除默认回答长度限制），不修改动作或业务 Prompt；请求超时仍按原设置执行。
 
 不发送 `previous_response_id`、显式 `caching` 或 `store`。使用每 Run 独立且 Run 内
 稳定的不透明 `prompt_cache_key` 提高隐式缓存路由亲和；它不是历史 ID。不同设备/

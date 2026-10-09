@@ -4,6 +4,42 @@
 
 ## Unreleased
 
+### 修复 V3 在 PostgreSQL 9.4 上的写库与豆包 Chat 输出截断
+
+- 原因：V3 原子写入引入了旧版 PostgreSQL 不支持的语法，导致清洗成功后仍无法
+  保存；整批清洗请求未显式指定输出预算，可能在 JSON 完整输出前触及默认回答
+  上限，重复要求整批修正也无法消除容量限制。
+- V3 PostgreSQL 保存沿用项目先查再新增/更新的方式，移除要求 PG 9.5+
+  的 `ON CONFLICT`；使用行锁及既有嵌套事务/唯一键冲突处理方式，保留并发
+  写入同一缓存的能力。SQLite 原子写入、V1/V2、缓存结构和失效规则不变。
+- 豆包 Chat 共用 `max_completion_tokens=65536`，覆盖主决策、AUX（含断言
+  与分析）、缓存清洗及方舟 Chat 定位/门控请求。此值为接口总输出上限，
+  包括思考与回答，解除默认回答长度限制；不与 `max_tokens` 同传。
+- 不改变模型、思考开关/档位、300 秒调用超时、清洗三次请求预算或 JSON 校验。
+  此改动解决输出容量限制，不保证消除独立网络/模型超时；不改其他厂商或
+  Responses 协议。Server 更新用于写库修复，Agent 更新用于请求参数生效。
+
+### Fix V3 persistence on PostgreSQL 9.4 and Doubao Chat output truncation
+
+- V3's PostgreSQL upsert used `ON CONFLICT`, which requires PostgreSQL 9.5+;
+  successfully generated archives could therefore fail to persist on 9.4.
+  Reuse the existing select/insert/update pattern, row locks and savepoints to
+  handle concurrent first inserts without requiring a database upgrade.
+- Batch cleaning omitted an explicit output budget, allowing the default answer
+  limit to truncate otherwise valid JSON. Retrying the whole batch did not remove
+  that limit. Share `max_completion_tokens=65536` across Doubao Chat callers,
+  including main execution, auxiliary calls and cache processing. This is the
+  documented API ceiling for reasoning plus answer tokens, not a target length;
+  do not also send `max_tokens`.
+- Keep models, thinking settings, request timeouts, cleaning retry counts and
+  validation unchanged. This does not fix independent network/model timeouts.
+  Other providers, Responses, SQLite upserts and V1/V2 storage remain unchanged.
+- Validation: 529 focused regression tests and one isolated PostgreSQL 14 test
+  covering 12 concurrent first writers plus an update passed. Read-only EXPLAIN
+  checks for lookup/insert/update passed on PostgreSQL 9.4.22; no application
+  database writes or deployments were performed. Update Server for persistence
+  and Agent for the request-budget changes.
+
 ### 默认启用豆包主 VLM Chat 五轮滑窗
 
 - 新增 Server 集中下发的 `AI_PHONE_VLM_CONTEXT_MODE`（默认 `sliding_window`）

@@ -91,6 +91,7 @@ async def test_strict_window_discards_old_images_responses_and_hints(rounds):
             reply(n=j)["choices"][0]["message"]["content"] for j in range(max(1, n - rounds + 1), n)
         ]
         assert p["messages"][0] == {"role": "system", "content": "original-system"}
+        assert p["max_completion_tokens"] == 65536
         assert len(client._history) <= rounds - 1
         assert not client.pending_hints
         assert not (set(p) & {"input", "previous_response_id", "caching", "store", "tools", "max_tokens"})

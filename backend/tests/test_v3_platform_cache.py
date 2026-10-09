@@ -426,34 +426,40 @@ async def test_legacy_snapshot_mark_then_delete_remains_supported(sf):
 
 
 @pytest.mark.asyncio
-async def test_postgres_v3_upsert_compiles_atomic_conflict_statement():
+async def test_postgres_v3_uses_legacy_safe_insert_and_update(_test_engine):
     from types import SimpleNamespace
-    from sqlalchemy.dialects import postgresql
-    from ai_phone.server.trajectory_cache.repository import _upsert_v3
+    from sqlalchemy import event
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
     statements = []
 
-    class Session:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            pass
-
-        def get_bind(self):
+    class LegacySession(AsyncSession):
+        # 仅选择生产 PG 分支；实际 SQLite 事务验证行插入/更新，不伪造查询结果。
+        def get_bind(self, *args, **kwargs):
             return SimpleNamespace(dialect=SimpleNamespace(name="postgresql"))
 
-        async def execute(self, stmt):
-            statements.append(str(stmt.compile(dialect=postgresql.dialect())))
-
-        async def commit(self):
-            pass
-
-    assert await _upsert_v3(
-        Session, archive(), cache_key="test-key", normalized_goal=GOAL, semantic_hash="test-hash",
-        now=datetime.now(timezone.utc),
-    ) == "test-key"
-    assert "ON CONFLICT (cache_key) DO UPDATE" in statements[0]
+    engine = db.get_engine()
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+    event.listen(engine.sync_engine, "before_cursor_execute", capture)
+    sf = async_sessionmaker(engine, class_=LegacySession, expire_on_commit=False)
+    try:
+        key = await store_trajectory_cache_archive(sf, archive=archive(shared=False))
+        source = archive(shared=False, source="new-run")
+        # 保持同一 key（源 scroll 的独立 key 规则仍适用）。
+        source["actions"] = [{**archive()["actions"][0], "amount": 2}]
+        assert await store_trajectory_cache_archive(sf, archive=source) == key
+        async with sf() as session:
+            rows = (await session.execute(select(VlmTrajectoryCacheV3))).scalars().all()
+            assert len(rows) == 1
+            assert rows[0].source_run_id == "new-run"
+            assert rows[0].actions_json == source["actions"]
+        assert any("SAVEPOINT" in sql for sql in statements)
+        assert any("INSERT INTO vlm_trajectory_cache_v3" in sql for sql in statements)
+        assert any("UPDATE vlm_trajectory_cache_v3" in sql for sql in statements)
+        assert not any("ON CONFLICT" in sql for sql in statements)
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", capture)
 
 
 @pytest.mark.asyncio

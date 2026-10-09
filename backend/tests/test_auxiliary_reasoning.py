@@ -50,6 +50,8 @@ async def test_doubao_post_only_sends_explicit_effort_when_thinking_is_enabled(m
 
     monkeypatch.setattr(doubao.httpx, "AsyncClient", Client)
     assert await doubao.DoubaoAssistant()._post(messages=[], thinking=thinking, scene="断言系统") == "OK"
+    assert captured["max_completion_tokens"] == 65536
+    assert "max_tokens" not in captured
     assert captured["thinking"]["type"] == ("enabled" if thinking else "disabled")
     if thinking and effort:
         assert captured["reasoning_effort"] == effort
@@ -84,6 +86,8 @@ async def test_analysis_uses_the_same_aux_effort(monkeypatch):
 
     monkeypatch.setattr(doubao.httpx, "AsyncClient", Client)
     await doubao.DoubaoAssistant().analyze_text(system="分析", user="输入", thinking=True)
+    assert captured["max_completion_tokens"] == 65536
+    assert "max_tokens" not in captured
     assert captured["reasoning_effort"] == "medium"
 
 
