@@ -62,6 +62,7 @@ from ai_phone.agent.trajectory_cache.replay import (
 )
 from ai_phone.agent.trajectory_cache.text_norm import normalize_run_semantic
 from ai_phone.shared import actions as A
+from ai_phone.shared.seed_gui_actions import extract_thought, parse_actions as parse_seed_actions, schemas_prompt_text
 
 
 @dataclass
@@ -744,6 +745,7 @@ class V3RescueVerifier:
                 coord_space=self.coord_space,
             )
         backend, api_url, api_key, model, timeout_sec = self._config()
+        seed_xml = backend == "doubao_responses" and not self._main_vlm_is_overseas_cu()
         prompt = build_v3_rescue_prompt(
             goal=goal,
             trajectory=trajectory,
@@ -754,6 +756,7 @@ class V3RescueVerifier:
             coord_space=self.coord_space,
             function_map_context=function_map_context,
             rescue_history=rescue_history,
+            seed_xml=seed_xml,
         )
         started = time.monotonic()
         try:
@@ -769,7 +772,7 @@ class V3RescueVerifier:
                         "你正在执行救援任务，不是常规执行、坐标定位或重新规划整个 Case。"
                         "职责是理解定位失败后如何恢复可继续回放的状态；结合整体目标、"
                         "当前缓存动作、最新截图和已执行救援记录选择恢复方式。"
-                        "只输出本轮恢复裁决 JSON。"
+                        + ("用主执行相同的 Seed GUI XML 输出本轮唯一动作。" if seed_xml else "只输出本轮恢复裁决 JSON。")
                     ),
                     prompt=prompt,
                     images=[("current_replay", current_bytes)],
@@ -792,7 +795,8 @@ class V3RescueVerifier:
                 error=type(exc).__name__,
                 coord_space=self.coord_space,
             )
-        decision = parse_v3_rescue_response(text, coord_space=self.coord_space)
+        decision = (parse_v3_rescue_xml_response(text) if seed_xml else
+                    parse_v3_rescue_response(text, coord_space=self.coord_space))
         decision.elapsed_ms = int((time.monotonic() - started) * 1000)
         return decision
 
@@ -863,8 +867,6 @@ class V3ReplayRunner:
             function_map_context
             if bool(getattr(settings, "function_map_context_enabled", True)) else None
         )
-        self._ephemeral_gate_calls_used = 0
-        self._ephemeral_gate_max_calls = int(settings.trajectory_cache_ephemeral_gate_max_calls or 0)
         self._v3_rescue_calls_used = 0
         self._v3_rescue_max_calls = int(settings.trajectory_cache_v3_rescue_max_calls_per_replay or 0)
         self._last_locator_point: Optional[Tuple[int, int]] = None
@@ -1578,11 +1580,6 @@ class V3ReplayRunner:
                 ),
             )
             return {"mode": "execute_original"}
-        if self._ephemeral_gate_calls_used >= self._ephemeral_gate_max_calls:
-            raise ReplayActionError(
-                f"v3_ephemeral_gate_limit_exceeded action_id={action_id} "
-                f"limit={self._ephemeral_gate_max_calls}"
-            )
         popup_before = self._ephemeral_meta_image_bytes(meta, "cached_popup_before")
         cached_after = self._ephemeral_meta_image_bytes(meta, "cached_after")
         semantic_only = meta.get("classification_source") == "v3_batch_semantic"
@@ -1602,7 +1599,6 @@ class V3ReplayRunner:
             )
             return {"mode": "execute_original"}
 
-        self._ephemeral_gate_calls_used += 1
         decision = await verifier.decide(
             goal=self.goal,
             action=action,
@@ -1975,9 +1971,10 @@ def build_v3_rescue_prompt(
     coord_space: str,
     function_map_context: Optional[str] = None,
     rescue_history: Optional[List[Dict[str, Any]]] = None,
+    seed_xml: bool = False,
 ) -> str:
     coord_hint = "截图实际像素坐标" if coord_space == "absolute" else "0-1000 归一化坐标"
-    return (
+    prompt = (
         "缓存回放中，当前步骤的目标没有在截图中定位到。\n"
         "你的身份是救援模型：本次因定位失败而介入，不是在执行普通缓存动作。\n"
         "你的使命是恢复到能够继续当前或后续缓存步骤的状态，而不是机械重复原动作，"
@@ -1985,8 +1982,10 @@ def build_v3_rescue_prompt(
         "每轮只裁决一次局部恢复；已执行动作仍未使目标可定位时，重新评估恢复方式，"
         "不要把动作调用完成当成恢复成功，也不要仅因已尝试过就继续同样的尝试。\n"
         "当前目标重新可定位后，由回放执行器续接；若当前步骤已满足且能衔接后续，"
-        "可返回 CONTINUE_REPLAY；确认局部无法恢复才 GIVE_UP。\n"
-        "只输出 JSON，不要 markdown。\n\n"
+        + ("返回 finished；确认局部无法恢复才返回 assert_fail。\n" if seed_xml else
+           "可返回 CONTINUE_REPLAY；确认局部无法恢复才 GIVE_UP。\n")
+        + ("输出简短 Thought 和一个 Seed GUI XML 动作，不要 markdown。\n\n" if seed_xml else "只输出 JSON，不要 markdown。\n\n")
+        +
         f"整体目标：{goal}\n"
         "整体目标是本次 Run 的完整原始语义，缓存步骤不能替代它。\n"
         f"本次原始 Function Map（业务上下文）：\n{function_map_context or '（未提供）'}\n\n"
@@ -2005,28 +2004,81 @@ def build_v3_rescue_prompt(
         "历史动作坐标是实际下发的设备像素，不能当作当前截图坐标或归一化坐标照搬；"
         "新的修复动作仍遵守下面的坐标要求。\n"
         f"修复动作坐标要求：{coord_hint}。\n\n"
-        "输出 schema：\n"
-        "{\n"
-        '  "verdict": "WAIT | POPUP_CLOSE | REPAIR_ACTION | CONTINUE_REPLAY | GIVE_UP",\n'
-        '  "reason": "一句话说明",\n'
-        '  "wait_ms": 800,\n'
-        '  "repair_action": {"type":"click","point":{"x":500,"y":500}}\n'
-        "}\n"
-        "repair_action 必须是下面 oneOf 中一个动作对象；type、必要参数必须完整，"
-        "一次只返回一个动作，不返回动作数组：\n"
-        f"{json.dumps({'oneOf': _v3_repair_action_schemas()}, ensure_ascii=False)}\n"
-        "移动端滑动/翻页用 drag，并按当前截图提供 start 与 end；"
-        "不要输出 swipe、scroll、tap、click(...)、Action: 或 Seed XML。"
-        "动作名与参数直接按上述 JSON schema 写，不能自创别名。\n"
-        "坐标由你根据当前截图与意图决定，不固定方向、落点或百分比。"
-        "duration_ms 是毫秒，long_press 默认1000、drag 默认500；"
-        "wait.seconds 是秒，沿用执行器的1到60秒范围。\n"
-        "规则：页面可能还在加载则 WAIT，并给出等待毫秒数；"
-        "有明显可关闭遮挡层则 POPUP_CLOSE 并给关闭动作；"
-        "需要一个安全局部动作才能回到缓存路线则 REPAIR_ACTION；"
-        "如果当前步骤已完成、页面已经能衔接下一条缓存动作，则 CONTINUE_REPLAY；"
-        "确认无法通过安全局部恢复衔接缓存则 GIVE_UP；信息不确定时不能冒险执行或放行。"
-        "不要重跑完整任务。"
+    )
+
+    if seed_xml:
+        prompt += (
+            "使用与主执行相同的 <seed:tool_call><function name=\"动作名\">"
+            "<parameter name=\"参数名\" string=\"true或false\">参数值</parameter>"
+            "</function></seed:tool_call>。每轮必须且只能返回一个合法 function。\n"
+            "参数遵循以下既有动作定义；坐标参数使用 <point>x y</point>，不要坐标 JSON。\n"
+            + schemas_prompt_text(_V3_RESCUE_XML_ACTIONS) + "\n"
+            "需要关闭遮挡或局部修复时直接返回对应动作；等待时返回 wait。"
+            "滑动或快进使用 drag 的 start_point/end_point，不新增动作类型。"
+            "finished(content=原因) 仅表示当前缓存步骤已满足且能够继续下一步，"
+            "不是整条 Case 完成；程序仍会继续回放并执行最终断言。"
+            "assert_fail(content=原因) 表示无法通过安全局部动作恢复，将放弃缓存。"
+            "不确定时不能冒险执行或放行。不要重跑完整任务。"
+        )
+    else:
+        prompt += (
+            "输出 schema：\n"
+            "{\n"
+            '  "verdict": "WAIT | POPUP_CLOSE | REPAIR_ACTION | CONTINUE_REPLAY | GIVE_UP",\n'
+            '  "reason": "一句话说明",\n'
+            '  "wait_ms": 800,\n'
+            '  "repair_action": {"type":"click","point":{"x":500,"y":500}}\n'
+            "}\n"
+            "repair_action 必须是下面 oneOf 中一个动作对象；type、必要参数必须完整，"
+            "一次只返回一个动作，不返回动作数组：\n"
+            f"{json.dumps({'oneOf': _v3_repair_action_schemas()}, ensure_ascii=False)}\n"
+            "移动端滑动/翻页用 drag，并按当前截图提供 start 与 end；"
+            "不要输出 swipe、scroll、tap、click(...)、Action: 或 Seed XML。"
+            "动作名与参数直接按上述 JSON schema 写，不能自创别名。\n"
+            "坐标由你根据当前截图与意图决定，不固定方向、落点或百分比。"
+            "duration_ms 是毫秒，long_press 默认1000、drag 默认500；"
+            "wait.seconds 是秒，沿用执行器的1到60秒范围。\n"
+            "规则：页面可能还在加载则 WAIT，并给出等待毫秒数；"
+            "有明显可关闭遮挡层则 POPUP_CLOSE 并给关闭动作；"
+            "需要一个安全局部动作才能回到缓存路线则 REPAIR_ACTION；"
+            "如果当前步骤已完成、页面已经能衔接下一条缓存动作，则 CONTINUE_REPLAY；"
+            "确认无法通过安全局部恢复衔接缓存则 GIVE_UP；信息不确定时不能冒险执行或放行。"
+            "不要重跑完整任务。"
+        )
+    return prompt
+
+
+_V3_RESCUE_XML_ACTIONS = {
+    "click", "double_tap", "long_press", "drag", "wait", "press_back", "press_home",
+    "finished", "assert_fail",
+}
+
+
+def parse_v3_rescue_xml_response(text: str) -> V3RescueDecision:
+    """Reuse the main Seed parser; terminal actions refer only to cache recovery."""
+    actions = parse_seed_actions(text)
+    if len(actions) != 1 or actions[0].action not in _V3_RESCUE_XML_ACTIONS:
+        return V3RescueDecision(
+            verdict=V3_RESCUE_GIVE_UP, reason="救援必须返回一个合法的 Seed XML 动作",
+            raw=text, error="invalid_seed_xml",
+        )
+    action = actions[0]
+    reason = action.content or extract_thought(text) or action.action
+    if action.action in {A.ACTION_FINISHED, A.ACTION_ASSERT_FAIL}:
+        return V3RescueDecision(
+            verdict=V3_RESCUE_CONTINUE_REPLAY if action.action == A.ACTION_FINISHED else V3_RESCUE_GIVE_UP,
+            reason=reason, raw=text,
+        )
+    repair = {"type": action.action}
+    if action.point is not None:
+        repair["point"] = dict(zip(("x", "y"), action.point))
+    if action.action == A.ACTION_DRAG:
+        repair["start"] = dict(zip(("x", "y"), action.start_point))
+        repair["end"] = dict(zip(("x", "y"), action.end_point))
+    if action.action == A.ACTION_WAIT:
+        repair["seconds"] = action.seconds
+    return V3RescueDecision(
+        verdict=V3_RESCUE_REPAIR_ACTION, reason=reason, repair_action=repair, raw=text,
     )
 
 

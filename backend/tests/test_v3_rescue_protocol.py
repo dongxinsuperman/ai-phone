@@ -114,3 +114,75 @@ async def test_proposal_log_is_explicitly_not_an_executed_action(monkeypatch):
     assert logs[0][0] == "V3局部辅助提案"
     assert "尚未执行" in logs[0][1] and '"start"' in logs[0][1]
     assert runner.execution_history == []
+
+
+def xml_action(name, params=""):
+    return f'<seed:tool_call><function name="{name}">{params}</function></seed:tool_call>'
+
+
+@pytest.mark.parametrize("name,params,expected", [
+    ("click", '<parameter name="point" string="true"><point>828 337</point></parameter>', {"type":"click","point":{"x":828,"y":337}}),
+    ("drag", '<parameter name="start_point" string="true"><point>800 500</point></parameter><parameter name="end_point" string="true"><point>200 500</point></parameter>', {"type":"drag","start":{"x":800,"y":500},"end":{"x":200,"y":500}}),
+    ("wait", '<parameter name="seconds" string="false">3</parameter>', {"type":"wait","seconds":3}),
+    ("press_back", "", {"type":"press_back"}),
+])
+def test_seed_rescue_uses_native_action_parameters(name, params, expected):
+    decision = module.parse_v3_rescue_xml_response(xml_action(name, params))
+    assert decision.error == ""
+    assert decision.repair_action == expected
+    assert decision.coord_space == "normalized"
+
+
+@pytest.mark.parametrize("name,verdict", [("finished", "CONTINUE_REPLAY"), ("assert_fail", "GIVE_UP")])
+def test_seed_terminal_decisions_control_cache_only(name, verdict):
+    decision = module.parse_v3_rescue_xml_response(xml_action(name, '<parameter name="content" string="true">说明</parameter>'))
+    assert decision.verdict == verdict
+    assert decision.error == ""
+    assert decision.repair_action is None
+
+
+@pytest.mark.parametrize("raw", [
+    '{"verdict":"REPAIR_ACTION","repair_action":{"type":"click","point":{"x":828,337}}}',
+    xml_action("click"),
+    xml_action("press_back") + xml_action("press_home"),
+    xml_action("type", '<parameter name="content" string="true">不可输入</parameter>'),
+])
+def test_seed_rescue_rejects_invalid_or_unapproved_actions(raw):
+    decision = module.parse_v3_rescue_xml_response(raw)
+    assert decision.error == "invalid_seed_xml"
+    assert decision.repair_action is None
+
+
+@pytest.mark.asyncio
+async def test_doubao_rescue_requests_xml_and_preserves_context(monkeypatch):
+    captured = {}
+    verifier = module.V3RescueVerifier()
+    monkeypatch.setattr(verifier, "is_configured", lambda: True)
+    monkeypatch.setattr(verifier, "_main_vlm_is_overseas_cu", lambda: False)
+    monkeypatch.setattr(verifier, "_config", lambda: ("doubao_responses", "unit", "key", "model", 30))
+    async def call(**kwargs):
+        captured.update(kwargs)
+        return xml_action("press_back")
+    monkeypatch.setattr(module, "_call_vlm_with_images", call)
+    result = await verifier.decide(goal="目标包含输出 schema：仍须完整", trajectory={}, action={"type":"click"}, current_bytes=b"image", function_map_context="完整地图")
+    assert result.repair_action == {"type":"press_back"}
+    assert "Seed GUI XML" in captured["system"]
+    assert "目标包含输出 schema：仍须完整" in captured["prompt"]
+    assert "完整地图" in captured["prompt"]
+    assert "只输出 JSON" not in captured["prompt"]
+    assert "CONTINUE_REPLAY" not in captured["prompt"]
+    assert '"verdict"' not in captured["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_v3_popup_gate_continues_past_three_successful_calls():
+    calls = []
+    async def decide(**kwargs):
+        calls.append(kwargs)
+        return module.EphemeralGateDecision(verdict=module.GATE_SKIP, reason="当前没有弹窗")
+    gate = SimpleNamespace(is_configured=lambda: True, decide=decide)
+    runner = module.V3ReplayRunner(driver=object(), trajectory={"actions":[]}, ephemeral_gate_verifier=gate)
+    for index in range(20):
+        result = await runner._handle_optional_ephemeral(action={"action_id":str(index), "ephemeral_meta":{"classification_source":"v3_batch_semantic"}}, index=index, current_bytes=b"image", next_action=None)
+        assert result == {"mode":"skip"}
+    assert len(calls) == 20
