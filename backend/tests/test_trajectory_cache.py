@@ -1343,7 +1343,8 @@ def test_build_cache_assertion_prompt_contains_replay_summary():
         has_prev=False,
     )
 
-    assert "缓存轨迹回放后的最终页面" in prompt
+    assert "【用户 Case】\n打开应用并确认首页展示" in prompt
+    assert "【执行过程，按时间顺序】" in prompt
     assert "step 1: open_app app=com.demo" in prompt
     assert "step 2: click point={'x': 1, 'y': 2}" in prompt
     assert "首次成功语义锚点" in prompt
@@ -2944,21 +2945,28 @@ async def test_cache_assertion_verifier_uses_assistant():
     assert assistant.calls[0]["thinking"] is True
 
 
-def test_cache_assertion_prompt_has_free_and_structured_modes():
+def test_cache_assertion_prompt_preserves_free_and_structured_materials():
+    free_goal = "点击我的，点击学习"
+    structured_goal = "测试标题：验证入口\n操作步骤：点击我的\n预期结果：显示我的页面"
     free_prompt = build_cache_assertion_prompt(
-        goal="点击我的，点击学习",
+        goal=free_goal,
         trajectory={"actions": [{"index": 1, "type": "click", "intent": "点击学习"}]},
         has_prev=True,
     )
     structured_prompt = build_cache_assertion_prompt(
-        goal="测试标题：验证入口\n操作步骤：点击我的\n预期结果：显示我的页面",
+        goal=structured_goal,
         trajectory={"actions": [{"index": 1, "type": "click", "intent": "点击我的"}]},
         has_prev=True,
     )
 
-    assert "最后一个动作" in free_prompt
-    assert "结构化测试用例" in structured_prompt
+    assert f"【用户 Case】\n{free_goal}" in free_prompt
+    assert f"【用户 Case】\n{structured_goal}" in structured_prompt
+    assert "step 1: click" in free_prompt
+    assert "step 1: click" in structured_prompt
+    assert "最后一个动作之前的画面" in free_prompt
+    assert "最后一个动作之前的画面" in structured_prompt
     assert "intent=点击学习" in free_prompt
+    assert "intent=点击我的" in structured_prompt
     assert "首次成功语义锚点" in structured_prompt
 
 

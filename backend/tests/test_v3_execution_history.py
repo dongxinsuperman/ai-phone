@@ -516,13 +516,19 @@ def test_v3_assertion_uses_runtime_coordinates_and_semantics_not_cached_plan():
             "runtime_status": "completed_without_exception",
             "action": {"type": "click", "point": {"x": 100, "y": 200},
                        "plan_intent": "点击当前目标"},
+        }, {
+            "sequence": 2, "index": 2, "source": "cache",
+            "runtime_status": "skipped",
+            "action": {"type": "click", "point": {"x": 999, "y": 888},
+                       "plan_intent": "关闭未出现的辅助弹窗"},
         }],
     )
     assert "{'x': 100, 'y': 200}" in prompt
     assert "{'x': 999, 'y': 888}" not in prompt
     assert "plan_intent=点击当前目标" in prompt
     assert "status=completed_without_exception" in prompt
-    assert "skipped 表示该缓存动作本轮没有执行" in prompt
+    assert "record 2 step 2: click source=cache status=skipped" in prompt
+    assert "plan_intent=关闭未出现的辅助弹窗" in prompt
 
 
 def test_v3_empty_runtime_history_never_falls_back_to_cached_plan():
