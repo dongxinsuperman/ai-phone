@@ -35,6 +35,7 @@ from loguru import logger
 from ai_phone.agent.async_utils import run_blocking
 from ai_phone.agent.drivers.base import AlbumSaveResult, BaseDriver
 from ai_phone.config import get_settings
+from ai_phone.shared.llm.assertion_policy import build_finished_user_prompt, format_finished_history, parse_finished_verdict
 from ai_phone.agent.trajectory_cache.restart import V3TakeoverRequest
 from ai_phone.shared import actions as A
 from ai_phone.shared import protocol as P
@@ -152,71 +153,6 @@ STRUCT_AUDIT_ALLOW_LIMIT = _settings.audit_allow_limit  # env: AI_PHONE_AUDIT_AL
 STRUCT_AUDIT_HISTORY_LIMIT = 100
 STRUCT_AUDIT_TIMEOUT_SECONDS = _settings.audit_timeout_sec  # env: AI_PHONE_AUDIT_TIMEOUT_SEC
 
-
-# ---- 结构化通道断言 · 两层判定共享 prompt 块 ----
-# 同时被实时跑路径（``_build_finished_assertion_prompt`` 的结构化分支）和
-# 缓存回放路径（``trajectory_cache.assertion.build_cache_assertion_prompt``
-# 的结构化分支）引用，保证两路对"语义等价 / 客观矛盾"的判定口径完全一致——
-# 否则同一个 case 的实时跑和缓存回放可能给出相反裁决，缓存命中率反成噪声。
-#
-# 改造背景：旧版 prompt 同时说"语义验收 ≠ 逐字匹配"又说"证据不足必须 FAIL"，
-# 模型在保守倾向下经常把"同义但文案不同"判 FAIL（线上典型现场：预期
-# 「了解更多」、实际「详情→」；预期「6 个章节」、实际首屏 3 个但可滑动）。
-# 新版改成两层判定：先做宽松语义等价匹配，能 PASS 就 PASS；只对"客观数字 /
-# 二元状态 / 关键控件存在性 / 页面归属"这类硬事实启用第二层严格证据要求。
-# 配 3 个抽象占位符 few-shot（不带任何业务专有名）把边界打透。
-STRUCTURED_ASSERTION_TWO_LAYER_BLOCK = '''裁决两层流程（必须严格按顺序执行，不允许跳过第一层直接挑刺）：
-
-第一层 · 综合语义验收（先做这一层，能 PASS 就 PASS，不要进入第二层挑刺）：
-- 先判断每条预期结果属于哪一种事实，并按本提示词定义的证据职责取证：
-  * 当前可见状态：主要根据附图 2 判断
-  * 最后一个动作造成的状态变化：根据附图 2，并在存在附图 1 时结合附图 1 判断
-  * 不会持续显示的历史操作或过程：动作历史 / 回放摘要只能证明其中明确记录的动作与 Runtime 状态，不能单独证明 UI 业务结果
-  * 主 VLM 的 thought、finished 内容或首次成功语义锚点：只辅助理解，不能单独证明成立
-- 对文案和界面表达做语义等价匹配，下列情况一律视为成立：
-  * 同义/近义文案（如「功能列表」≈「全部功能」≈「功能中心」；「详情」≈「了解更多」≈「查看更多」）
-  * 同一控件的不同表达（按钮 / 链接 / icon+文字 都算"显示了 X"）
-  * 列表/卡片项次序不同但内容等价
-  * 颜色描述泛化（「蓝色」涵盖「蓝紫色 / 蓝绿色 / 蓝灰色」，「高亮」涵盖「选中态 / 加粗 / 加边框」）
-  * 同一信息的不同载体（弹窗 / Toast / 卡片 / 顶部横条都算"出现了提示"）
-  * 数值"约/前 N 个"可在 ±1 的小范围浮动
-- 只要对应证据中存在能让一个产品经理认可的"语义对应物"，该条预期结果即视为成立。
-
-第二层 · 关键事实硬证据（仅当第一层无法找到语义对应物、或预期里包含明确客观事实时才启用）：
-- 客观事实仅限以下四类：
-  * 具体数字（金额、数量、百分比、时长——给定确定值，不是"约/几个"）
-  * 二元状态（开/关、登录/未登录、选中/未选中、可点/置灰）
-  * 关键控件存在性（"应该有 X 入口"——X 必须能从截图里看到对应的可视元素，不论文案怎么写）
-  * 页面归属（已经进入 X 模块/页面）——用 tab 选中态、页面标题、面包屑等任一可视证据即可，不必逐字
-- 当前可见的客观事实必须由附图 2 支持；动作历史 / 回放摘要不能证明附图 2 中并不存在的可见控件、数字或页面状态。
-- 对“是否请求 / 尝试 / 完成一次 Runtime 调用”，可以采用动作历史 / 回放摘要中明确记录的状态；对“调用是否产生预期业务结果”，仍需截图、前后变化或明确的 Runtime 结果，不能由模型自述证明。
-- 只有有效证据与预期结果明确矛盾时，才允许 FAIL。
-
-裁决冲突解决：
-- 第一层 PASS、第二层无客观事实矛盾 → 整体 PASS
-- 第一层 FAIL（连语义等价物都找不到）→ 第二层不再启用，直接 FAIL
-- 第一层 PASS、第二层有客观事实矛盾 → FAIL（必须写明哪个客观事实矛盾）
-
-few-shot（抽象占位示意，不要照抄文案，按你看到的真实截图原话裁决）：
-
-【示例 1 · 语义等价 PASS】
-预期结果：「卡片右下角显示蓝色"了解更多"链接」
-附图 2：卡片右下角是蓝紫色"详情 →"按钮
-判断：第一层成立——"详情" ≈ "了解更多"（同义），"按钮"与"链接"是同一控件不同表达，"蓝紫色"在"蓝色"泛化范围内。第二层无客观事实矛盾。
-应输出：PASS: 卡片右下角蓝色系"详情→"控件即预期"了解更多"链接的语义等价表达
-
-【示例 2 · 关键数量矛盾 FAIL】
-预期结果：「列表显示 6 个章节」
-附图 2：列表只能看到 3 个章节，且页面已滚动到底没有更多
-判断：第一层成立但第二层启用——预期"6 个"是确定数字（≠"约/几个"），截图明确只有"3 个"且无更多。
-应输出：FAIL: 列表实际仅展示 3 个章节，与预期 6 个数量不符
-
-【示例 3 · 关键控件缺失 FAIL】
-预期结果：「页面包含"提交"按钮且为可点击状态」
-附图 2：进入了正确的页面，但底部"提交"按钮被键盘完全遮挡不可见，也没有任何其它形态（"完成 / 确认 / 下一步"等）的提交入口
-判断：第一层失败——找不到任何"提交"语义等价物，且"按钮存在性"属于关键控件类客观事实。
-应输出：FAIL: 当前页面未呈现可见的提交类控件
-'''
 
 # ---- 结构化通道判定信号 ----
 # 默认只做标签准入：命中「测试标题/前置条件/操作步骤/预期结果」等标签才进结构化。
@@ -2507,46 +2443,7 @@ class LongRescueRunner:
         return "\n".join(lines)
 
     def _format_finished_assertion_history(self, limit: int) -> str:
-        """为 finished 二次断言拆分客观动作请求与主 VLM 自述。
-
-        ``_action_log`` 先记录主 VLM 的决定，再由执行链回填 Runtime 状态。即使
-        状态是 ``completed_without_exception``，也只证明驱动调用完成且没有抛异常，
-        不能证明 UI 已产生预期业务结果。thought 是模型当时的判断，证据属性与最后
-        的 thought / finished 自述相同。
-
-        当前 ``finished`` 行不再重复放进历史：它是本次待审的终态申请，已经通过
-        ``thought`` / ``finish_msg`` 单独传入，不是手机操作证据。
-        """
-        if not self._action_log:
-            return "(无可作为执行记录的非终态动作)"
-        rows = self._action_log[-limit:]
-        lines: List[str] = []
-        for row in rows:
-            action = (row.get("action_str") or "").strip().replace("\n", " ")
-            action_type = str(row.get("action_type") or "").strip().lower()
-            action_lower = action.lower()
-            if action_type in {A.ACTION_FINISHED, A.ACTION_ASSERT_FAIL} or action_lower.startswith(
-                ("finished(", "assert_fail(")
-            ):
-                continue
-            thought = (row.get("thought") or "").strip().replace("\n", " ")
-            runtime_status = str(row.get("runtime_status") or "not_recorded")
-            status_text = {
-                "completed_without_exception": "Runtime 调用完成且无异常",
-                "execution_error": "Runtime 调用报错",
-                "unknown": "Runtime 未识别或未完成动作",
-                "pending": "仅记录到动作请求",
-                "not_recorded": "历史记录未标注执行状态",
-            }.get(runtime_status, runtime_status)
-            lines.append(
-                f"step {row['step']:>3} Runtime 动作记录"
-                f"（{status_text}；不证明 UI 产生预期结果）:{action}"
-            )
-            lines.append(
-                "         模型当时判断"
-                f"（主 VLM 自述；不得单独作证）:{thought or '(无)'}"
-            )
-        return "\n".join(lines) if lines else "(无可作为执行记录的非终态动作)"
+        return format_finished_history(self._action_log[-limit:])
 
     async def _classify_structured_via_supervisor(self) -> bool:
         """中等档严格度 + 关键字弱时，借审判模型一次性分类 goal 是否走结构化通道。
@@ -2754,16 +2651,9 @@ class LongRescueRunner:
 
         first_line = text.splitlines()[0].strip() if text else ""
 
-        if first_line.upper().startswith("PASS:"):
-            return (
-                "PASS",
-                first_line.split(":", 1)[1].strip() or "截图足以支持完成",
-            )
-        if first_line.upper().startswith("FAIL:"):
-            return (
-                "FAIL",
-                first_line.split(":", 1)[1].strip() or "截图不足以支持完成",
-            )
+        parsed = parse_finished_verdict(text)
+        if parsed is not None:
+            return parsed
 
         reason = (
             f"断言系统返回非协议内容：{first_line[:80]}；回退采纳主 VLM 结果"
@@ -2772,130 +2662,12 @@ class LongRescueRunner:
         return ("SKIP", reason)
 
     def _build_finished_assertion_prompt(
-        self,
-        *,
-        thought: str,
-        finish_msg: str,
-        has_prev: bool,
+        self, *, thought: str, finish_msg: str, has_prev: bool,
     ) -> str:
-        """构造 finished 断言系统提示词。
-
-        双图对照模式（``has_prev=True``）：附图 1 = 主 VLM 最后一个动作之前的
-        画面，附图 2 = 当前最终画面。附图 2 负责当前可见结果，附图 1 只辅助
-        判断最后一个动作是否产生预期变化；两图相同本身不能直接判 FAIL。
-
-        单图模式（``has_prev=False``）：仅有附图 = 当前最终画面（首步即
-        finished 的极端情况）。仍综合动作历史，不要求最终图还原全部过程。
-
-        结构化通道 / 自由通道使用不同口径：
-
-        - 结构化 case：以"预期结果"为验收中心，必须阅读动作历史
-        - 自由对话：验收用户最终要求，历史过程与当前可见结果分工取证
-        """
-        history = self._format_finished_assertion_history(
-            STRUCT_AUDIT_HISTORY_LIMIT
-        )
-        img_index_intro = (
-            "本提示词附带两张图（按消息顺序）：\n"
-            "- 附图 1：主 VLM **最后一个动作之前**看到的画面（动作前对照帧）\n"
-            "- 附图 2：当前**最终落点**画面（断言要验收的对象）\n"
-            "两张图之间只跨越主 VLM 最后一个动作。"
-        ) if has_prev else (
-            "本提示词附带一张图：\n"
-            "- 附图：当前**最终落点**画面（断言要验收的对象）\n"
-            "本次没有动作前对照帧（首步即 finished 的极端情况），请综合该图、动作历史与主 VLM 最后说明判断。"
-        )
-
-        cmp_block_struct = (
-            "双图对照规则（仅在存在两张图时启用）：\n"
-            "- 附图 2 是当前最终画面，也是当前可见结果的验收对象。\n"
-            "- 附图 1 只是最后一个动作之前的画面，两图之间只跨越最后一个实际动作。\n"
-            "- 当最后一个动作本应造成可见变化时，可以用两图差异验证该变化是否发生，"
-            "例如返回页面、关闭弹窗、切换页签、拖动进度或改变选中状态。\n"
-            "- **两图相同本身不能直接判 FAIL。** 但如果最后一个非终态动作按任务语义必须"
-            "造成可见变化，而附图 2 没有显示该动作对应的目标状态，则可以判 FAIL；"
-            "不需要主 VLM 先声称变化已经发生。\n"
-            "- 对等待、截图保存、保持当前状态，或者操作前目标状态已经成立的情况，两图相同不构成失败。\n"
-            "- 双图只辅助判断最后一个动作，不替代对预期结果和动作历史的综合验收。\n\n"
-        ) if has_prev else ""
-
-        evidence_block = (
-            "本次输入字段说明（证据权限与冲突规则以 System 为唯一准则）：\n"
-            "- 【最近动作历史】必须阅读。每步已拆成两类：『Runtime 动作记录』包含"
-            "动作与执行状态，但不证明 UI 业务结果；『模型当时判断』是主 VLM 自述，不得单独作证。\n"
-            "- 【附图 2 / 当前附图】是最终画面；【附图 1】如存在，只是最后一个非终态动作前的对照画面。\n"
-            "- 【主 VLM 最后思考】与【finished 内容】都是本次待审自述，不是独立证据。\n\n"
-        )
-
-        if self._is_structured:
-            return (
-                "你是手机自动化任务的最终断言系统，只负责裁决主 VLM 的 finished 是否可被采纳。"
-                "你不能继续执行步骤，也不能把本次 finished 改写成新的动作建议。\n\n"
-                f"{img_index_intro}\n\n"
-                "当前是结构化测试用例。验收中心仍然是用户输入中的「预期结果」，"
-                "但你必须阅读本提示词提供的「最近动作历史」，不能把它当成无关信息。\n"
-                "前置条件和操作过程只有在用户明确把它们写成验收要求时，才可以直接影响 PASS/FAIL；"
-                "否则只作为理解最终结果的上下文。不得因为某一步措辞不完全相同，或用户没有明确要求的"
-                "顺序差异而判 FAIL。\n\n"
-                f"{evidence_block}"
-                f"{cmp_block_struct}"
-                f"{STRUCTURED_ASSERTION_TWO_LAYER_BLOCK}\n"
-                "额外约束：\n"
-                "- 不得因为无法仅凭最终截图还原全部点击过程、执行顺序或中间页面而判 FAIL。\n"
-                "- 用户明确要求的过程或顺序，可以根据动作历史验收；用户没有明确要求时，不得主动扩大检查范围。\n"
-                "- 如果判 FAIL，必须指出具体是哪条任务要求与哪项有效证据明确矛盾。\n"
-                "- 「不能完全确认」「截图没有展示历史过程」「看起来不像」不能单独作为 FAIL 理由。\n"
-                "- 不允许输出 UNSURE，也不允许建议继续执行；只能做最终裁决。\n\n"
-                "输出协议：只输出第一行，且只能是以下两种之一：\n"
-                "PASS: <一句话原因>\n"
-                "FAIL: <一句话原因>\n\n"
-                "FAIL 时必须明确指出：是哪一条预期结果走到了第二层、被哪个客观事实证伪——"
-                "禁止以「文案不一致 / 看起来不像 / 不能 100% 确认」作为 FAIL 理由。\n\n"
-                f"【用户目标】\n{self.goal}"
-                f"\n\n【最近动作历史】\n{history}"
-                f"\n\n【主VLM最后思考】\n{thought}"
-                f"\n\n【主VLM finished 内容】\n{finish_msg}\n"
-            )
-
-        cmp_block_free = (
-            "双图对照规则（仅在存在两张图时启用）：\n"
-            "- 附图 2 是当前最终画面；附图 1 只辅助判断最后一个动作是否造成预期变化。\n"
-            "- 两图相同本身不能直接判 FAIL。但如果最后一个非终态动作按任务语义必须造成"
-            "可见变化，而附图 2 没有该动作对应的目标状态，则可以判 FAIL；不依赖主 VLM 自述。\n"
-            "- 等待、截图保存、保持当前状态或操作前目标状态已成立时，两图相同不构成失败。\n\n"
-        ) if has_prev else ""
-
-        return (
-            "你是手机自动化任务的最终断言系统，只负责裁决主 VLM 的 finished 是否可被采纳。"
-            "你不能继续执行步骤，也不能把本次 finished 改写成新的动作建议。\n\n"
-            f"{img_index_intro}\n\n"
-            "当前是自由任务。验收范围保持为用户最后一个 action 步骤对应的结果；如果用户"
-            "直接描述的是最终状态，则验收该最终状态。你必须阅读最近动作历史来识别最后一个"
-            "非终态动作和理解结果，但不能把历史自动扩展成逐步验收清单。\n"
-            "除非用户明确把前面的某个动作或执行顺序写成验收条件，否则不单独检查前面的动作"
-            "是否执行过，也不检查其顺序。\n\n"
-            f"{evidence_block}"
-            f"{cmp_block_free}"
-            "裁决规则：\n"
-            "1. 当前可见结果以附图 2 为主要证据。\n"
-            "2. 最后一个动作是否造成变化，可以使用附图 1 和附图 2 对照判断。\n"
-            "3. Runtime 动作记录只证明明确写出的执行状态，不证明 UI 业务结果；模型当时判断不得单独作证。\n"
-            "4. 用户未明确要求时，不检查前面动作是否执行过，也不检查其顺序。\n"
-            "5. 只有最后动作/最终状态要求与有效证据明确矛盾时，才允许 FAIL。\n"
-            "6. 最终图没有展示不会持续存在的历史过程，不等于该过程没有发生。\n"
-            "7. 主 VLM 的 thought 和 finished 内容不能单独证明完成。\n"
-            "8. 不允许输出 UNSURE，也不允许建议继续执行；只能做最终裁决。\n\n"
-            "输出协议：只输出第一行，且只能是以下两种之一：\n"
-            "PASS: <一句话原因>\n"
-            "FAIL: <一句话原因>\n\n"
-            "请特别注意：\n"
-            "- 如果截图已经足以支持“最后一个动作”的结果成立，应直接 PASS。\n"
-            "- “最终图不展示历史过程”绝不等于“该过程没有发生”。\n"
-            "- 你的 FAIL 必须指出任务要求与有效证据之间的明确矛盾。\n\n"
-            f"【用户目标】\n{self.goal}"
-            f"\n\n【最近动作历史】\n{history}"
-            f"\n\n【主VLM最后思考】\n{thought}"
-            f"\n\n【主VLM finished 内容】\n{finish_msg}\n"
+        return build_finished_user_prompt(
+            goal=self.goal,
+            history=self._format_finished_assertion_history(STRUCT_AUDIT_HISTORY_LIMIT),
+            thought=thought, finish_msg=finish_msg, has_prev=has_prev,
         )
 
     # ------------------------------------------------------------------

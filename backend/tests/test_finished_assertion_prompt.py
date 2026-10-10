@@ -40,59 +40,42 @@ def _runner(*, structured: bool, steps: int = 3) -> VLMRunner:
 
 def test_structured_assertion_requires_history_and_assigns_evidence_roles() -> None:
     prompt = _runner(structured=True)._build_finished_assertion_prompt(
-        thought="已经返回列表页",
-        finish_msg="已显示列表页",
-        has_prev=True,
+        thought="已经返回列表页", finish_msg="已显示列表页", has_prev=True,
     )
-
-    assert "【最近动作历史】必须阅读" in prompt
-    assert "Runtime 动作记录" in prompt
-    assert "模型当时判断" in prompt
-    assert "不证明 UI 业务结果" in prompt
-    assert "不得单独作证" in prompt
-    assert "证据权限与冲突规则以 System 为唯一准则" in prompt
-    assert "你只验「预期结果」，不验前置条件、不验操作过程、不验历史顺序" not in prompt
-    assert "step   1 Runtime 动作记录（Runtime 调用完成且无异常" in prompt
-    assert "模型当时判断（主 VLM 自述；不得单独作证）:第 1 步完整思考" in prompt
-
+    assert "【用户 Case】" in prompt
+    assert "【执行过程，按时间顺序】" in prompt
+    assert "动作前观察与子步骤判断" in prompt
+    assert prompt.index("第 1 步完整思考") < prompt.index("随后实际动作：action_1()")
+    assert "执行状态：调用完成且无异常" in prompt
+    assert "不得单独作证" not in prompt
+    assert "不证明 UI" not in prompt
+    assert "裁决两层流程" not in prompt
 
 def test_structured_assertion_does_not_treat_identical_images_as_automatic_fail() -> None:
     prompt = _runner(structured=True)._build_finished_assertion_prompt(
-        thought="状态已变化",
-        finish_msg="完成",
-        has_prev=True,
+        thought="状态已变化", finish_msg="完成", has_prev=True,
     )
-
-    assert "两图相同本身不能直接判 FAIL" in prompt
-    assert "不需要主 VLM 先声称变化已经发生" in prompt
-    assert "动作历史或主 VLM 明确声称变化已经发生" not in prompt
-    assert "等待、截图保存、保持当前状态" in prompt
-    assert "双图只辅助判断最后一个动作" in prompt
-
+    assert "图1：最后一个实际动作之前的画面" in prompt
+    assert "图2：当前最终画面" in prompt
+    assert "FAIL" not in prompt  # 裁决规则只在 System 中维护。
 
 def test_single_image_assertion_still_requires_action_history() -> None:
     prompt = _runner(structured=True)._build_finished_assertion_prompt(
-        thought="完成",
-        finish_msg="完成",
-        has_prev=False,
+        thought="完成", finish_msg="完成", has_prev=False,
     )
-
-    assert "请综合该图、动作历史与主 VLM 最后说明判断" in prompt
-    assert "【最近动作历史】必须阅读" in prompt
-
+    assert "本次没有动作前对照图" in prompt
+    assert "【执行过程，按时间顺序】" in prompt
+    assert "图2" not in prompt
 
 def test_freeform_template_uses_history_without_expanding_order_checks() -> None:
-    prompt = _runner(structured=False)._build_finished_assertion_prompt(
-        thought="已经返回",
-        finish_msg="完成",
-        has_prev=True,
+    free = _runner(structured=False)._build_finished_assertion_prompt(
+        thought="已经返回", finish_msg="完成", has_prev=True,
     )
-
-    assert "验收范围保持为用户最后一个 action 步骤对应的结果" in prompt
-    assert "不能把历史自动扩展成逐步验收清单" in prompt
-    assert "不单独检查前面的动作是否执行过，也不检查其顺序" in prompt
-    assert "只有最后动作/最终状态要求与有效证据明确矛盾" in prompt
-
+    structured = _runner(structured=True)._build_finished_assertion_prompt(
+        thought="已经返回", finish_msg="完成", has_prev=True,
+    )
+    assert free == structured
+    assert "【用户 Case】" in free
 
 def test_default_max_length_history_is_present_without_per_entry_truncation() -> None:
     prompt = _runner(structured=True, steps=100)._build_finished_assertion_prompt(
@@ -101,8 +84,8 @@ def test_default_max_length_history_is_present_without_per_entry_truncation() ->
         has_prev=False,
     )
 
-    assert "step   1 Runtime 动作记录" in prompt
-    assert "step 100 Runtime 动作记录" in prompt
+    assert "第 1 步\n" in prompt
+    assert "第 100 步\n" in prompt
     assert "第 1 步完整思考" in prompt
     assert "第 100 步完整思考" in prompt
 
@@ -125,11 +108,11 @@ def test_finished_declaration_is_not_reused_as_action_evidence() -> None:
         has_prev=True,
     )
 
-    history = prompt.split("【最近动作历史】", 1)[1].split(
-        "【主VLM最后思考】", 1
+    history = prompt.split("【执行过程，按时间顺序】", 1)[1].split(
+        "【主模型最终说明】", 1
     )[0]
     assert "finished(content='成功')" not in history
-    assert "step   1 Runtime 动作记录" in history
+    assert "第 1 步\n" in history
 
 
 def test_cache_assertion_uses_replay_for_history_but_screenshot_for_visible_facts() -> None:
@@ -145,11 +128,11 @@ def test_cache_assertion_uses_replay_for_history_but_screenshot_for_visible_fact
         is_structured=True,
     )
 
-    assert "必须阅读缓存回放摘要" in prompt
-    assert "Runtime 记录" in prompt
-    assert "不单独证明 UI 产生了预期业务结果" in prompt
-    assert "不能推翻截图里的直接可见事实" in prompt
-    assert "两图相同本身不能直接判 FAIL" in prompt
+    assert "【执行过程，按时间顺序】" in prompt
+    assert "本次缓存回放的动作序列" in prompt
+    assert "裁决两层流程" not in prompt
+    assert "【用户 Case】" in prompt
+    assert "FAIL" not in prompt
 
 
 def test_cache_freeform_does_not_expand_into_intermediate_step_audit() -> None:
@@ -165,16 +148,15 @@ def test_cache_freeform_does_not_expand_into_intermediate_step_audit() -> None:
         is_structured=False,
     )
 
-    assert "只验用户最后一个 action 步骤对应的结果" in prompt
-    assert "不能把摘要自动扩展成逐步验收清单" in prompt
-    assert "不单独检查前面的动作是否执行过，也不检查其顺序" in prompt
+    assert "打开详情后返回列表页" in prompt
+    assert "裁决规则" not in prompt
+    assert "【执行过程，按时间顺序】" in prompt
 
 
 @pytest.mark.parametrize("structured", [False, True])
 @pytest.mark.parametrize("has_prev", [False, True])
 def test_v3_assertion_uses_only_current_evidence_and_describes_real_image_span(structured, has_prev):
     from copy import deepcopy
-    from ai_phone.agent.runner.vlm_loop import STRUCTURED_ASSERTION_TWO_LAYER_BLOCK
 
     goal = "[预期结果]\n显示正确账号的列表页" if structured else "返回正确账号的列表页"
     trajectory = {"cache_mode": "v3", "source_completion": {
@@ -203,9 +185,9 @@ def test_v3_assertion_uses_only_current_evidence_and_describes_real_image_span(s
     else:
         assert "唯一最终截图" in prompt
     if structured:
-        assert STRUCTURED_ASSERTION_TWO_LAYER_BLOCK in prompt  # 首跑核心规则仍为同一原文。
+        assert "裁决两层流程" not in prompt
     else:
-        assert "不能把摘要自动扩展成逐步验收清单" in prompt
+        assert "裁决规则" not in prompt
     assert trajectory == original  # 只移除断言输入里的旧说明，不改已有缓存数据。
 
 
@@ -287,19 +269,19 @@ async def test_assistant_system_is_result_oriented_and_evidence_aware(
 
     if language == "zh":
         assert system == FINISHED_ASSERTION_SYSTEM_ZH
-        assert "结果导向，不默认挑错" in system
-        assert "不同证据负责不同事实，不做简单的全局优先级排序" in system
-        assert "Runtime 动作记录" in system
-        assert "模型当时判断" in system
-        assert "不能与模型自述互相印证" in system
+        assert "以整体语义是否达成为准" in system
+        assert "不预设最终截图高于过程信息" in system
+        assert "实际动作记录" in system
+        assert "动作前状态" in system
+        assert "没有发现明确矛盾" in system
         assert "严格保守" not in system
     else:
         assert system == FINISHED_ASSERTION_SYSTEM_EN
-        assert "Be result-oriented" in system
-        assert "do not apply one global ranking" in system
-        assert "Runtime action record" in system
-        assert "model judgment at the time" in system
-        assert "must not self-corroborate" in system
+        assert "Judge overall semantic completion" in system
+        assert "without automatically ranking" in system
+        assert "actual action records" in system
+        assert "state before its action" in system
+        assert "no clear contradiction" in system
         assert "strict, conservative" not in system
 
 
@@ -328,3 +310,22 @@ def test_finished_assertion_timeout_default_is_five_minutes():
     assert Settings.model_fields["assertion_timeout_sec"].default == 300.0
     defaults = Path(__file__).resolve().parents[1] / ".env.defaults"
     assert Settings(_env_file=defaults).assertion_timeout_sec == 300.0
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("PASS: 完成", ("PASS", "完成")),
+    ("FAIL：必需操作被跳过", ("FAIL", "必需操作被跳过")),
+    ("FAIL: 账号错误\n附加内容", ("FAIL", "账号错误")),
+    ("看起来 PASS", None),
+    ("UNSURE: 缺少截图", None),
+])
+def test_verdict_parser_preserves_explicit_failure_with_fullwidth_colon(text, expected):
+    from ai_phone.shared.llm.assertion_policy import parse_finished_verdict
+    assert parse_finished_verdict(text) == expected
+
+
+def test_cache_parser_preserves_fullwidth_failure():
+    from ai_phone.agent.trajectory_cache.assertion import parse_cache_assertion_response
+    result = parse_cache_assertion_response("FAIL：清数据操作实际被跳过")
+    assert result.verdict == "FAIL"
+    assert result.reason == "清数据操作实际被跳过"

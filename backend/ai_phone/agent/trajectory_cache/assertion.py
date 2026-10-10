@@ -11,10 +11,10 @@ from typing import Any, Dict, List, Optional
 
 from ai_phone.agent.runner.vlm_loop import (
     STRUCT_AUDIT_HISTORY_LIMIT,
-    STRUCTURED_ASSERTION_TWO_LAYER_BLOCK,
     _classify_structured_local,
     _compute_structured_signal,
 )
+from ai_phone.shared.llm.assertion_policy import parse_finished_verdict
 from ai_phone.config import Settings, get_settings
 from ai_phone.shared.llm import BaseAssistant, TokenCounter, create_assistant
 
@@ -107,13 +107,10 @@ class CacheReplayAssertionVerifier:
 
 def parse_cache_assertion_response(text: str) -> CacheAssertionResult:
     first_line = text.splitlines()[0].strip() if text else ""
-    upper = first_line.upper()
-    if upper.startswith("PASS:"):
-        reason = first_line.split(":", 1)[1].strip() or "截图足以支持完成"
-        return CacheAssertionResult("PASS", reason, raw=text)
-    if upper.startswith("FAIL:"):
-        reason = first_line.split(":", 1)[1].strip() or "截图不足以支持完成"
-        return CacheAssertionResult("FAIL", reason, raw=text)
+    parsed = parse_finished_verdict(text)
+    if parsed is not None:
+        verdict, reason = parsed
+        return CacheAssertionResult(verdict, reason, raw=text)
     reason = f"断言系统返回非协议内容：{first_line[:80]}"
     return CacheAssertionResult("SKIP", reason, raw=text)
 
@@ -126,7 +123,7 @@ def build_cache_assertion_prompt(
     is_structured: Optional[bool] = None,
     execution_history: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
-    # V3 单向对齐首跑验收；V1/V2 继续保留原提示词与摘要窗口。
+    # 裁决规则由共享 System 提供；保留各缓存版本自己的材料来源与摘要窗口。
     is_v3 = (
         execution_history is not None
         or str(trajectory.get("cache_mode") or "") == "v3"
@@ -162,130 +159,22 @@ def build_cache_assertion_prompt(
             trajectory, limit=STRUCT_AUDIT_HISTORY_LIMIT if is_v3 else 20,
         )
     )
-    runtime_note = (
-        "- 本摘要来自本轮实际回放记录，包括重新定位后的动作、局部修复、等待和跳过。\n"
-        "- skipped 表示该缓存动作本轮没有执行；pending/interrupted/execution_error 不表示执行完成。\n"
-        "- completed_without_exception 只表示 Runtime 调用完成且无异常，不单独证明 UI 业务结果。\n"
-    ) if execution_history is not None else ""
-    if execution_history is not None:
-        runtime_description = (
-            "- replay action 摘要是本轮 Runtime 记录，只证明条目中明确标注的调用、跳过和执行状态，"
-            "不单独证明 UI 产生了预期业务结果。\n"
-        )
-    elif is_v3:
-        runtime_description = (
-            "- 本次没有本轮 Runtime 记录，摘要仅来自历史缓存计划，用于理解动作意图，"
-            "不证明这些动作本轮已经执行或产生了预期业务结果。\n"
-        )
-    else:
-        runtime_description = (
-            "- replay action 摘要是本次回放动作序列的 Runtime 记录，只证明这些动作"
-            "进入并完成了回放调用，不单独证明 UI 产生了预期业务结果。\n"
-        )
-    # 首跑历史完成声明仍存于缓存中，但不再送入 V3 本轮断言，避免历史 PASS 改写目标。
-    source_completion = _format_source_completion(trajectory) if not is_v3 else ""
-    source_section = (
-        f"\n\n【首次成功语义锚点】\n{source_completion}\n"
-        if not is_v3 else ""
+    provenance = (
+        "摘要来自本轮实际执行，包含修复、等待与跳过；skipped 表示未执行，"
+        "pending/interrupted/execution_error 不表示完成。"
+        if execution_history is not None else
+        "本次没有本轮 Runtime 记录，摘要仅来自历史缓存计划，不证明这些动作本轮已经执行。"
+        if is_v3 else "摘要来自本次缓存回放的动作序列。"
     )
-    current_evidence_note = (
-        "本轮验收只依据原始用户目标与本轮有效证据；历史通过结论不能证明本轮成功，"
-        "也不能改写本轮目标或降低验收要求。\n\n"
+    source = (
+        "本轮不提供历史成功结论；历史通过结论不能证明本轮成功。"
+        if is_v3 else "【首次成功语义锚点，仅供理解历史业务别名】\n" + _format_source_completion(trajectory)
     )
-    source_note_structured = current_evidence_note if is_v3 else (
-        "首次成功语义锚点说明：\n"
-        "- 这部分来自生成缓存的成功 Run，可用于理解业务别名、页面别名和"
-        "首跑对用户目标的解释；遇到口语歧义时优先采纳锚点的解释，避免"
-        "因口语称呼与页面文案对不上而误判。\n"
-        "- 它不能替代当前截图证据；最终仍必须由附图 2 支持。\n\n"
-    )
-    source_note_free = current_evidence_note if is_v3 else (
-        "首次成功语义锚点说明：\n"
-        "- 这部分来自生成缓存的成功 Run，可用于理解用户目标里的业务别名、"
-        "页面别名和首跑对目标的解释。\n"
-        "- 它不能替代当前截图证据；最终仍必须由附图 2 支持。\n"
-        "- 如果用户目标存在口语歧义，应优先采用首次成功语义锚点中的解释。"
-        "只要附图 2 显示的最终落点与首跑语义锚点中的目标解释一致，就不应"
-        "因为页面文案未逐字等于用户目标中的口语称呼而 FAIL。\n\n"
-    )
-    comparison_rule = (
-        "2. 如果存在两张图，只用两图差异辅助判断最后缓存步骤的状态变化，"
-        "并结合本轮实际记录区分修复与原缓存动作；两图相同本身不能直接判 FAIL。\n"
-    ) if is_v3 else (
-        "2. 如果存在附图 1 / 附图 2，只用两图差异辅助判断最后一个动作结果；"
-        "两图相同本身不能直接判 FAIL。\n"
-    )
-    structured = is_structured_goal(goal) if is_structured is None else is_structured
-    if structured:
-        return (
-            "你是手机自动化任务的最终断言系统，只负责裁决缓存轨迹回放后的"
-            "最终页面是否满足结构化测试用例。你不能继续执行步骤，也不能输出新的"
-            "动作建议。\n\n"
-            f"{img_index_intro}\n\n"
-            "当前是结构化测试用例。验收中心是用户输入中的「预期结果」，但必须阅读"
-            "缓存回放摘要，不能把它当成无关信息。前置条件和操作过程只有在用户明确"
-            "把它们写成验收要求时才直接影响 PASS/FAIL，否则只作为理解最终结果的上下文。\n\n"
-            "缓存通道说明：\n"
-            "- 本次执行是历史成功轨迹的回放，不是 VLM 实时决策。\n"
-            f"{runtime_description}"
-            "- 当前可见状态仍必须由附图 2 支持；回放摘要不能推翻截图里的直接可见事实。\n"
-            "- 附图 2 没有展示某段历史过程，不等于该过程没有发生。\n\n"
-            f"{runtime_note}"
-            f"{source_note_structured}"
-            f"{STRUCTURED_ASSERTION_TWO_LAYER_BLOCK}\n"
-            "额外约束（缓存通道独有）：\n"
-            "- 如果 replay 摘要与附图 2 的直接可见事实明显矛盾（如摘要声称已进入目标页，"
-            "截图却明确停在其它页面），按第二层「页面归属客观事实矛盾」判 FAIL。\n"
-            "- 如果附图 2 只是没有展示此前发生的过程，不能把「没有展示」当成「没有发生」。\n"
-            "- 两图相同本身不能直接判 FAIL；还必须确认最后动作应产生可见变化且附图 2 没有目标状态。\n"
-            "- 不允许输出 UNSURE，也不允许建议继续执行；只能做最终裁决。\n\n"
-            "输出协议：只输出第一行，且只能是以下两种之一：\n"
-            "PASS: <一句话原因>\n"
-            "FAIL: <一句话原因>\n\n"
-            "FAIL 时必须明确指出：是哪一条预期结果走到了第二层、被哪个客观事实证伪——"
-            "禁止以「文案不一致 / 看起来不像 / 不能 100% 确认」作为 FAIL 理由。\n\n"
-            f"【用户目标】\n{goal.strip()}\n\n"
-            f"【缓存回放摘要】\n{replay_summary}\n"
-            f"{source_section}"
-        )
-
     return (
-        "你是手机自动化任务的最终断言系统，只负责裁决缓存轨迹回放后的"
-        "最终页面是否满足用户目标。你不能继续执行步骤，也不能输出新的"
-        "动作建议。\n\n"
-        f"{img_index_intro}\n\n"
-        "缓存通道说明：\n"
-        "- 本次执行是历史成功轨迹的回放，不是 VLM 实时决策。\n"
-        f"{runtime_description}"
-        "- 当前可见状态仍必须由最终截图支持；回放摘要不能推翻截图里的直接可见事实。\n"
-        "- 最终截图没有展示某段历史过程，不等于该过程没有发生。\n\n"
-        f"{runtime_note}"
-        f"{source_note_free}"
-        "自由任务验收范围：\n"
-        "- 只验用户最后一个 action 步骤对应的结果；如果用户直接描述最终状态，则验收该最终状态。\n"
-        "- 必须阅读回放摘要来识别最后一个动作，但不能把摘要自动扩展成逐步验收清单。\n"
-        "- 除非用户明确把前面的某个动作或执行顺序写成验收条件，否则不单独检查"
-        "前面的动作是否执行过，也不检查其顺序。\n\n"
-        "裁决规则：\n"
-        "1. 从用户目标与回放摘要中识别最后一个动作或最终状态，再判断附图 2 是否支持"
-        "这个结果已经成立。\n"
-        f"{comparison_rule}"
-        "3. 回放摘要只证明 Runtime 动作序列及其回放状态，不单独证明 UI 业务结果。\n"
-        "4. 用户未明确要求时，不检查前面动作是否执行过，也不检查其顺序。\n"
-        "5. 页面标题/模块名不必逐字等于按钮文案。只要截图显示已进入该按钮对应"
-        "的结果页、功能区或目标 tab，就应 PASS。\n"
-        "6. 对数值、比例、选中态、开关态、页面名称、弹窗状态等当前可见要求，"
-        "必须有截图证据。\n"
-        "7. replay 摘要与最终截图中的直接可见事实矛盾时，以最终截图为准。\n"
-        "8. 只有用户目标与有效证据明确矛盾时才允许 FAIL。\n"
-        "9. 不允许输出 UNSURE，也不允许建议继续执行；只能做最终裁决。\n\n"
-        "输出协议：只输出第一行，且只能是以下两种之一：\n"
-        "PASS: <一句话原因>\n"
-        "FAIL: <一句话原因>\n\n"
-        "FAIL 时必须说明是哪一条目标/预期没有被截图可靠支持。\n\n"
-        f"【用户目标】\n{goal.strip()}\n\n"
-        f"【缓存回放摘要】\n{replay_summary}\n"
-        f"{source_section}"
+        f"【用户 Case】\n{goal}\n\n"
+        f"【缓存执行材料说明】\n{provenance}\n{source}\n\n"
+        f"【执行过程，按时间顺序】\n{replay_summary}\n\n"
+        f"【附图】\n{img_index_intro}"
     )
 
 

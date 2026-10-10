@@ -4,6 +4,42 @@
 
 ## Unreleased
 
+### 精简终局断言提示词并增强输出解析健壮性 / Streamline final-verification prompts and harden verdict parsing
+
+- 将普通执行、独立长程救援及 V1/V2/V3 缓存终局验收的裁决原则集中在共享
+  System 提示词中；User 提示词保留各入口自己的任务、过程材料和图片说明，
+  移除重复的两层裁决、示例及额外规则。这是提示词瘦身与健壮性调整，并非
+  单一缺陷修复；模型的裁决行为可能随规则变化而改变。
+- 先理解 Case 的核心意图、必需操作和预期结果，再按时间顺序综合动作前观察、
+  实际动作、执行状态与最终画面。辅助页面未出现不自动构成失败；核心必需
+  操作被跳过或未完成仍应失败。历史过程不必再次出现在最终截图中，完成声明
+  也不自动等于通过。
+- 保留历史覆盖上限、缓存材料来源及图片跨度说明。共享输出解析兼容英文和
+  中文冒号的 `PASS` / `FAIL`，不猜测其它非协议输出。模型、调用参数、手机
+  动作、重试和配置缺失/调用失败的兜底策略未调整；没有数据库或 CLI 迁移。
+- 针对性回归覆盖提示词材料、协议、辅助调用、普通执行、长程救援及缓存链路；
+  另用历史执行材料真实调用辅助模型复判。历史材料复判不等于新设备端测，
+  也不代表全部缓存入口或生产场景已完成实测。运行断言的进程须加载更新后的
+  代码才能生效。
+
+- Centralize final-verification policy for regular execution, independent long rescue,
+  and V1/V2/V3 cache replay in shared System prompts. Keep each caller's task, process
+  evidence, and image descriptions in its User prompt; remove duplicate two-layer
+  rules, examples, and constraints. This is a prompt-slimming and robustness adjustment,
+  not a single-defect fix, and it can change model adjudication behavior.
+- Evaluate core intent, required operations, and expected results using chronological
+  observations, actions, execution status, and screenshots. Missing auxiliary UI does
+  not automatically fail a task; skipped or unfinished core operations still do.
+  Historical progress need not remain visible in the final screenshot, and completion
+  claims do not automatically establish success.
+- Preserve history limits, cache provenance, and image-span descriptions. Share verdict
+  parsing that accepts ASCII and fullwidth colons without guessing other output.
+  Model settings, device actions, retries, and missing-config/call-error fallbacks stay
+  unchanged. No database or CLI migration is required.
+- Validation includes focused regressions and real auxiliary-model calls using historical
+  execution material. These are not new device runs or exhaustive validation of every
+  cache or production scenario. Processes performing verification must load the updated code.
+
 ### V3 局部救援明确放弃也转入长程救援
 
 - 即使尚未耗尽累计五次额度，只要局部模型明确放弃，也保留当前现场并转入
