@@ -17,7 +17,7 @@ class V3RestartRequest:
 
 @dataclass(frozen=True)
 class V3TakeoverRequest(V3RestartRequest):
-    """Continue the same Case from the live screen after the replay rescue budget."""
+    """Continue from the live screen when local rescue gives up or runs out."""
     failed_action: Dict[str, Any] = field(default_factory=dict)
     next_action: Dict[str, Any] = field(default_factory=dict)
     execution_history: List[Dict[str, Any]] = field(default_factory=list)

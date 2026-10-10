@@ -219,8 +219,8 @@ async def test_five_rescue_calls_are_shared_across_steps_and_never_execute_sixth
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("error,expected", [("", True), ("timeout", False), ("unknown_verdict", False)])
-async def test_only_explicit_rescue_give_up_requests_full_restart(make_runner, monkeypatch, error, expected):
+@pytest.mark.parametrize("error,expected", [("", True), ("timeout", False), ("unknown_verdict", False), ("invalid_seed_xml", False), ("ReadError", False)])
+async def test_explicit_rescue_give_up_requests_long_rescue_before_budget_exhaustion(make_runner, monkeypatch, error, expected):
     rescue = Rescue(V3RescueDecision(verdict="GIVE_UP", reason="无法找回目标", error=error))
     runner = make_runner([action()], rescue=rescue)
 
@@ -231,6 +231,7 @@ async def test_only_explicit_rescue_give_up_requests_full_restart(make_runner, m
     result = await runner.run()
     assert not result.success
     assert result.restart_required is expected
+    assert result.takeover_required is expected
     assert len(rescue.calls) == 1
     assert runner.dispatcher.calls == []
 
@@ -624,3 +625,38 @@ async def test_last_budget_call_give_up_transfers_to_long_rescue(make_runner, mo
     monkeypatch.setattr(runner,"_locate_action",locate)
     result=await runner.run()
     assert result.takeover_required and len(rescue.calls)==1
+
+
+@pytest.mark.asyncio
+async def test_first_give_up_is_handed_off_without_full_restart_or_terminal(make_runner, monkeypatch):
+    from types import SimpleNamespace
+    from ai_phone.agent.trajectory_cache import orchestrate, v3_replay
+    from ai_phone.agent.trajectory_cache.restart import V3TakeoverRequest
+    from tests.test_v3_restart import Bridge
+
+    rescue = Rescue(V3RescueDecision(verdict="GIVE_UP", reason="局部无法恢复，交给长程救援"))
+    current = action()
+    runner = make_runner([current], rescue=rescue)
+    runner._v3_rescue_max_calls = 5
+
+    async def miss(*args):
+        raise V3LocatorMiss("当前目标不可见")
+
+    monkeypatch.setattr(runner, "_locate_action", miss)
+    monkeypatch.setattr(v3_replay, "V3ReplayRunner", lambda **kwargs: runner)
+    bridge = Bridge()
+    request = await orchestrate.run_v3_replay(
+        run_id="unit", serial="unit-device", goal="完整原始 Case", attempt=1,
+        driver=runner.driver, bridge=bridge,
+        snapshot={"cache_key": "unit-cache", "actions": [current]},
+        settings=SimpleNamespace(vlm_backend="doubao_responses"),
+        restart_on_rescue_failure=True,
+    )
+    assert isinstance(request, V3TakeoverRequest)
+    assert len(rescue.calls) == 1
+    assert request.failed_action == current
+    assert "局部无法恢复" in request.reason
+    assert bridge.done == [] and runner.dispatcher.calls == []
+    titles = [event.get("title") for event in bridge.events]
+    assert "V3缓存 · 长程救援接管" in titles
+    assert "V3缓存失效 · 完整重跑" not in titles

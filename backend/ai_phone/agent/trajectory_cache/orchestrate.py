@@ -62,7 +62,7 @@ async def run_v3_replay(
     """命中 V3 缓存 → Agent 本地回放 → 断言 → run_done（缓存通道）。
 
     默认沿用一条 run_done 终态。Agent 显式启用 restart_on_rescue_failure 时，仅在
-    救援耗尽时返回长程救援交接，其他原有可重跑情形返回完整首跑请求；暂不发终态。
+    局部救援明确放弃或耗尽时返回长程救援交接，其他原有可重跑情形返回完整首跑请求；暂不发终态。
     其他失败/断言仍按原策略结束。旧内部调用不传新参数时行为不变。
     """
     from ai_phone.agent.trajectory_cache.assertion import CacheReplayAssertionVerifier
@@ -136,7 +136,7 @@ async def run_v3_replay(
                 actions = trajectory.get("actions") or []
                 position = next((i for i, a in enumerate(actions)
                                  if a.get("index") == replay_result.failed_index), None)
-                await _log(2, "V3缓存 · 长程救援接管", "累计救援预算已耗尽，保留当前现场，由独立长程救援继续完整原始 Case")
+                await _log(2, "V3缓存 · 长程救援接管", "局部救援明确放弃或累计预算已耗尽，保留当前现场，由独立长程救援继续完整原始 Case")
                 return V3TakeoverRequest(
                     reason=error,
                     step_offset=max(last_step_index, int(replay_result.failed_index or 0)),

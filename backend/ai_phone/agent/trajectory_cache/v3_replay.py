@@ -801,11 +801,11 @@ class V3RescueVerifier:
         return decision
 
 class V3RescueRestartRequired(ReplayActionError):
-    """救援预算用尽或模型明确放弃；可启动一次完整首跑，不用于取消/基础设施异常。"""
+    """回放退出后允许后续执行；长救援与完整首跑由结果标记区分。"""
 
 
 class V3RescueTakeoverRequired(V3RescueRestartRequired):
-    """Cumulative rescue budget exhausted; preserve the current device state."""
+    """Local rescue gives up or exhausts its budget; preserve the live scene."""
 
 
 @dataclass
@@ -1557,7 +1557,7 @@ class V3ReplayRunner:
             if self._v3_rescue_calls_used >= self._v3_rescue_max_calls:
                 raise V3RescueTakeoverRequired(message)
             if decision.verdict == V3_RESCUE_GIVE_UP and not decision.error:
-                raise V3RescueRestartRequired(message)
+                raise V3RescueTakeoverRequired(message)
             raise ReplayActionError(message)
 
     async def _handle_optional_ephemeral(
