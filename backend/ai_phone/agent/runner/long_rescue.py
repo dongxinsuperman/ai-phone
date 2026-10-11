@@ -1333,6 +1333,7 @@ class LongRescueRunner:
                 "thought": thought,
                 "action_str": display_action,
                 "action_type": action_type,
+                "action_summary": "\n".join(summaries),
                 "runtime_status": (
                     "terminal_declaration"
                     if action_type in {A.ACTION_FINISHED, A.ACTION_ASSERT_FAIL}

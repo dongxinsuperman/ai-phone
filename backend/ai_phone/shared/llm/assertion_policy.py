@@ -59,9 +59,12 @@ def format_finished_history(rows: list[dict]) -> str:
             "pending": "待执行",
             "not_recorded": "未记录执行状态",
         }.get(status, status)
+        summary = (row.get("action_summary") or "").strip()
+        summary_line = f"动作摘要：{summary}\n" if summary else ""
         lines.append(
             f"第 {row['step']} 步\n"
             f"动作前观察与子步骤判断：\n{(row.get('thought') or '').strip() or '(无)'}\n"
+            f"{summary_line}"
             f"随后实际动作：{action}\n执行状态：{label}"
         )
     return "\n\n".join(lines) or "(无非终态动作记录)"
