@@ -624,6 +624,17 @@ class Settings(BaseSettings):
         description="辅助模型 API 地址。必填，不跟随 PHONE_VLM。env: AI_PHONE_AUX_BASE_URL",
     )
 
+    # V3普通缓存click专用；关闭时不加载采集依赖、不校验Jev凭据。
+    v3_ios_fast_enabled: bool = Field(default=False, description="V3 iOS真机独立按需截图及稳定实验通道")
+    v3_harmony_fast_enabled: bool = Field(default=False, description="V3鸿蒙实验快速通道，原驱动保留")
+    v3_fast_stability_enabled: bool = Field(default=False, description="V3实验快速截图稳定分支")
+    jev_enabled: bool = Field(default=False, description="仅启用V3普通click的Jev重定位")
+    jev_provider: str = Field(default="openrouter", description="Decisions渠道：openrouter / openai")
+    jev_api_key: str = Field(default="", repr=False, description="所选Decisions渠道的独立API Key")
+    jev_api_url: str = Field(default="", description="可选：完整Decisions端点；空值使用渠道默认")
+    jev_model: str = Field(default="", description="可选：多模态Decisions模型；空值使用渠道默认")
+    jev_timeout_sec: float = Field(default=35.0, gt=0, description="Decisions单次请求超时秒数")
+
     # --- VLM Agent · 瞬态 UI 检测（动态判断系统） ---
     # 视频播放工具栏 / Toast / 半透明菜单这类"自动隐藏"的瞬态控件，单帧策略下
     # VLM 看到 → 推理 → 执行的 6s+ 链路一定追不上。系统层 snapshot-replay 机制

@@ -42,6 +42,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+jev = [
+    # Optional Android tree reader; no imports or service start while Jev is off.
+    "uiautomator2==3.7.0",
+]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",

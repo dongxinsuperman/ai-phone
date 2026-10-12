@@ -18,6 +18,7 @@ EVT_STEP_START = "step_start"
 EVT_STEP_END = "step_end"
 EVT_LOG = "log"                 # Sonic 风格日志条目
 EVT_SCREENSHOT = "screenshot"   # 操作前/后截图 bytes 让上层决定是否上传
+EVT_LOCATOR_EVIDENCE = "locator_evidence"  # 独立附件，不进入before/after截图槽位
 EVT_THOUGHT = "thought"
 EVT_ACTION = "action"
 EVT_EXEC_RESULT = "exec_result"

@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 from copy import deepcopy
@@ -58,6 +59,8 @@ async def run_v3_replay(
     function_map_context: Optional[str] = None,
     server_http_base: str = "",
     restart_on_rescue_failure: bool = False,
+    screenshot_provider=None,
+    click_executor=None,
 ) -> Optional[V3RestartRequest]:
     """命中 V3 缓存 → Agent 本地回放 → 断言 → run_done（缓存通道）。
 
@@ -112,18 +115,100 @@ async def run_v3_replay(
             last_step_index = max(last_step_index, event["step"])
         return bridge.emit(event)
 
-    runner = V3ReplayRunner(
-        driver=driver,
-        trajectory=trajectory,
-        run_id=run_id,
-        log=_log,
-        emit=replay_emit,
-        capture_after_each_action=True,
-        goal=goal,
-        main_vlm_backend=source_backend,
-        function_map_context=function_map_context,
-    )
-    replay_result = await runner.run()
+    locator = None
+    if getattr(settings, "jev_enabled", False):
+        from .jev_click.factory import create_locator
+
+        locator = await create_locator(settings=settings, driver=driver, main_vlm_backend=source_backend,
+                                       emit=replay_emit, run_id=run_id)
+    runner_options = {"locator": locator} if locator is not None else {}
+    if screenshot_provider is not None:
+        runner_options["screenshot_provider"] = screenshot_provider
+    if click_executor is None and locator is not None and getattr(driver, "platform", "") == "android":
+        adapter = getattr(locator, "adapter", None)
+        if (not getattr(locator, "initialization_error", "") and getattr(adapter, "device", None) is not None
+                and callable(getattr(adapter, "click", None))):
+            click_executor = adapter.click
+            await _log(1, "V3点击通道", "普通缓存click复用当前UiAutomator2连接，等待调用完成；其他动作仍走原驱动")
+    if click_executor is not None:
+        runner_options["click_executor"] = click_executor
+    capture_source = None
+    try:
+        if screenshot_provider is None:
+            from .capture_sources.factory import create_source
+
+            adapter = getattr(locator, "adapter", None)
+            borrowed = getattr(adapter, "device", None) if not getattr(locator, "initialization_error", "") else None
+            capture_source, capture_label = await create_source(driver, borrowed_device=borrowed)
+            if capture_source is not None:
+                runner_options["screenshot_provider"] = capture_source.capture
+            await _log(1, "V3截图通道", capture_label)
+        if (capture_source is not None and getattr(driver, "platform", "") == "harmony"):
+            adapter = getattr(locator, "adapter", None)
+            if adapter is not None:
+                adapter.fast_tree = capture_source.tree
+            if click_executor is None and locator is not None:
+                runner_options["click_executor"] = capture_source.click
+                await _log(1, "V3点击通道", "鸿蒙UITest直接点击，保留完成回执，移除SDK额外600ms等待")
+        if capture_source is not None and getattr(driver, "platform", "") == "ios":
+            if click_executor is None and locator is not None:
+                runner_options["click_executor"] = capture_source.click
+                await _log(1, "V3点击通道", "iOS WDA普通点击：临时缩短内部等待，点击后恢复原设置")
+        if (getattr(settings, "v3_fast_stability_enabled", False)
+                and str(getattr(driver, "platform", "")).lower() in {"android", "harmony", "ios"}
+                and (capture_source is not None or screenshot_provider is not None)):
+            from functools import partial
+            from .fast_stability import policy_for_platform, wait_fast_stable
+
+            policy = policy_for_platform(driver.platform)
+            runner_options["stability_waiter"] = partial(wait_fast_stable, policy=policy)
+            await _log(1, "V3稳定通道", f"快速截图分支：额外采样间隔={int(policy.interval_s * 1000)}ms，上限4秒；稳定图直接供定位；替代固定等待")
+        size_device = getattr(capture_source, "device", None)
+        if size_device is not None:
+            from functools import partial
+            from .capture_sources.window_size import live_window_size
+
+            runner_options["window_size_provider"] = partial(
+                live_window_size, size_device, driver.window_size,
+            )
+            await _log(1, "V3尺寸通道", "每步UiAutomator2实时读取显示宽高；失败走原驱动")
+        if locator is not None:
+            runner_options["suppress_jev_before_image"] = True
+        runner = V3ReplayRunner(
+            driver=driver,
+            trajectory=trajectory,
+            run_id=run_id,
+            log=_log,
+            emit=replay_emit,
+            # V3 relocates from the next step's before frame. Intermediate after
+            # screenshots are report-only; capture the final state for assertion below.
+            capture_after_each_action=False,
+            observe_delay_ms=200,
+            goal=goal,
+            main_vlm_backend=source_backend,
+            function_map_context=function_map_context,
+            **runner_options,
+        )
+        replay_result = await runner.run()
+        if replay_result.success:
+            # The screenshot connection must stay alive through final capture.
+            # In Jev mode this can be the same UiAutomator connection as the locator.
+            await _log(1, "缓存稳定", "断言入口：固定等待2秒，再采集最终截图交给断言系统")
+            await asyncio.sleep(2.0)
+            final_frame = await runner.capture_final_frame()
+    finally:
+        if capture_source is not None:
+            try:
+                from ai_phone.agent.async_utils import run_blocking
+
+                await run_blocking(capture_source.close)
+            except Exception as exc:
+                logger.warning("V3 screenshot cleanup failed: {}", type(exc).__name__)
+        if locator is not None:
+            try:
+                await locator.aclose()
+            except Exception as exc:
+                logger.warning("Jev locator cleanup failed: {}", type(exc).__name__)
 
     if not replay_result.success:
         error = str(replay_result.error or "")
@@ -167,8 +252,6 @@ async def run_v3_replay(
         return
 
     # 断言入口：等最后一帧稳定后再交给断言系统（V3 用版本3 稳定，逻辑在 runner 内）。
-    await _log(1, "缓存稳定", "断言入口：等待最后一帧稳定后再交给断言系统…")
-    final_frame = await runner.capture_final_frame()
     assertion = await CacheReplayAssertionVerifier(
         settings=settings,
         counter=assertion_counter,

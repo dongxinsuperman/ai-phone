@@ -826,6 +826,12 @@ class V3ReplayRunner:
         log: Optional[ReplayLogFn] = None,
         emit: Optional[ReplayEmitFn] = None,
         capture_after_each_action: bool = False,
+        observe_delay_ms: Optional[int] = None,
+        screenshot_provider=None,
+        window_size_provider=None,
+        click_executor=None,
+        stability_waiter=None,
+        suppress_jev_before_image: bool = False,
         dispatcher: Optional[ReplayActionDispatcher] = None,
         locator: Optional[V3PlanLocator] = None,
         rescue_verifier: Optional[V3RescueVerifier] = None,
@@ -840,6 +846,16 @@ class V3ReplayRunner:
         self.log = log
         self.emit = emit
         self.capture_after_each_action = capture_after_each_action
+        self.observe_delay_ms = observe_delay_ms
+        # Bound once at replay creation. Original and Jev locators consume the
+        # same images; no per-step model/router choice is involved.
+        self.screenshot_provider = screenshot_provider
+        self.window_size_provider = window_size_provider or (lambda: self.driver.window_size())
+        self.click_executor = click_executor
+        self.stability_waiter = stability_waiter
+        self.suppress_jev_before_image = suppress_jev_before_image
+        self._jev_wait_step = None
+        self._jev_requests_this_step = 0
         self._owns_locator = locator is None
         self.main_vlm_backend = main_vlm_backend or getattr(get_settings(), "vlm_backend", "doubao_responses")
         self.dispatcher = dispatcher or ReplayActionDispatcher(
@@ -922,7 +938,17 @@ class V3ReplayRunner:
         )
         started = time.monotonic()
         try:
-            await self.dispatcher.execute(action)
+            if (self.click_executor is not None and source == "cache"
+                    and action.get("type") == A.ACTION_CLICK
+                    and action.get("locator_source_type", "click") == "click"):
+                point = _action_primary_point(action)
+                if point is None:
+                    raise ReplayActionError("V3 click missing executable coordinates")
+                self.dispatcher.last_screenshot_error = None
+                await run_blocking(self.click_executor, *point)
+                row["click_executor"] = "injected"
+            else:
+                await self.dispatcher.execute(action)
         except asyncio.CancelledError:
             row["runtime_status"] = "interrupted"
             raise
@@ -934,6 +960,8 @@ class V3ReplayRunner:
             row["runtime_status"] = "completed_without_exception"
         finally:
             row["elapsed_ms"] = int((time.monotonic() - started) * 1000)
+        if row.get("click_executor"):
+            await self._log_v3_stage(index, "执行", f"快捷坐标点击完成，耗时={row['elapsed_ms']}ms")
 
     async def run(self) -> ReplayResult:
         try:
@@ -980,7 +1008,10 @@ class V3ReplayRunner:
                     if before_bytes is None:
                         before_bytes = await self._screenshot_jpeg()
                 self._final_before_bytes = before_bytes
-                await self._emit_screenshot(index, "before", before_bytes)
+                if not (self.suppress_jev_before_image
+                        and action.get("type") == "click"
+                        and action.get("locator_source_type", "click") == "click"):
+                    await self._emit_screenshot(index, "before", before_bytes)
                 self._skip_after_frame = None
                 execution_action = await self._materialize_action(
                     action,
@@ -1219,6 +1250,11 @@ class V3ReplayRunner:
         ``_wait_stable()`` 内部会用 ``self._last_frame`` 作 frame_a，
         已经稳定时开销极小。详见 内部缓存回放步骤化日志约定。
         """
+        if not self.capture_after_each_action:
+            # Without per-action after frames, the retained frame can precede the
+            # last action. Never let a screenshot failure turn that into final evidence.
+            self._last_frame = None
+            self._final_after_bytes = None
         frame = await self._wait_stable()
         if frame is not None:
             return frame
@@ -1331,9 +1367,38 @@ class V3ReplayRunner:
         )
 
     async def _locate_action(self, action: Dict[str, Any], screenshot_bytes: bytes) -> Dict[str, Any]:
+        ordinary = (getattr(self.locator, "supports_loading_wait", False)
+                    and action.get("type") == "click"
+                    and action.get("locator_source_type", "click") == "click")
+        if not ordinary:
+            return await self._locate_once(action, screenshot_bytes)
+        from .jev_click.locator import JevWaitRequested
+
+        step = action.get("action_id") or action.get("index")
+        if step != self._jev_wait_step:
+            self._jev_wait_step = step
+            self._jev_requests_this_step = 0
+        while True:
+            if self._jev_requests_this_step >= 3:
+                raise V3LocatorMiss("Jev request budget exhausted for current step")
+            self._jev_requests_this_step += 1
+            allow_wait = self._jev_requests_this_step < 3
+            try:
+                return await self._locate_once(action, screenshot_bytes, wait_allowed=allow_wait)
+            except JevWaitRequested:
+                if not allow_wait:
+                    raise V3LocatorMiss("Jev loading wait budget exhausted") from None
+                await self._log_v3_stage(int(action.get("index") or 0), "等待",
+                                         f"JEV识别明确加载迹象，等待1秒后刷新；请求次数={self._jev_requests_this_step}/3")
+                await asyncio.sleep(1.0)
+                screenshot_bytes = await self._screenshot_jpeg()
+                self._last_frame = screenshot_bytes
+                self._final_before_bytes = screenshot_bytes
+
+    async def _locate_once(self, action: Dict[str, Any], screenshot_bytes: bytes, *, wait_allowed=None) -> Dict[str, Any]:
         action_type = str(action.get("type") or "")
         image_size = _decode_image_size(screenshot_bytes)
-        window_size = await run_blocking(self.driver.window_size)
+        window_size = await run_blocking(self.window_size_provider)
         await self._log(
             1,
             "V3寻找目标",
@@ -1344,6 +1409,7 @@ class V3ReplayRunner:
             "定位",
             f"正在当前截图中寻找：{_v3_target_text(action)}",
         )
+        wait_options = {} if wait_allowed is None else {"wait_allowed": wait_allowed}
         located = await self.locator.locate_action(
             goal=self.goal,
             trajectory=self.trajectory,
@@ -1351,6 +1417,7 @@ class V3ReplayRunner:
             screenshot_bytes=screenshot_bytes,
             image_size=image_size,
             window_size=window_size,
+            **wait_options,
         )
         self._validate_located_action(action, located.action, window_size=window_size)
         plan_intent = str(action.get("plan_intent") or action.get("intent") or "")
@@ -1668,7 +1735,7 @@ class V3ReplayRunner:
             "intent": intent or raw.get("intent") or source,
             "source": source,
         }
-        window_size = await run_blocking(self.driver.window_size)
+        window_size = await run_blocking(self.window_size_provider)
         if action_type in (A.ACTION_CLICK, A.ACTION_DOUBLE_TAP, A.ACTION_LONG_PRESS):
             point = _coerce_point(raw.get("point"))
             if point is None:
@@ -1748,6 +1815,12 @@ class V3ReplayRunner:
 
     async def _screenshot_jpeg(self) -> bytes:
         quality, max_long_edge = self._screenshot_jpeg_params()
+        if self.screenshot_provider is not None:
+            from .screenshots import as_jpeg
+
+            def capture():
+                return as_jpeg(self.screenshot_provider(quality, max_long_edge), quality, max_long_edge)
+            return await run_blocking(capture)
         return await run_blocking(
             self.driver.screenshot_jpeg, quality, max_long_edge
         )
@@ -1798,6 +1871,10 @@ class V3ReplayRunner:
         return result.bytes_
 
     async def _wait_stable_result(self) -> StabilityResult:
+        if self.stability_waiter is not None:
+            return await self.stability_waiter(
+                self._screenshot_jpeg, frame_a_bytes=self._last_frame,
+            )
         # Distributed Agent Brain：稳定检测走本地 v2_compare。
         # （历史 server_brain 下有一条经 RemoteDriver 的远程分支，执行脑下沉后移除；
         #  M4 缓存下沉会把整条 V3 replay 迁到 Agent 侧。）
@@ -1808,7 +1885,12 @@ class V3ReplayRunner:
         )
 
     async def _observe_after_action(self, *, index: Optional[int] = None) -> None:
-        delay_ms = max(0, int(get_settings().trajectory_cache_observe_delay_ms or 0))
+        if self.stability_waiter is not None:
+            return  # Next before-frame settling replaces the fixed delay.
+        delay_ms = max(0, int(
+            self.observe_delay_ms if self.observe_delay_ms is not None
+            else get_settings().trajectory_cache_observe_delay_ms or 0
+        ))
         if delay_ms > 0:
             if index is not None:
                 await self._log_v3_stage(

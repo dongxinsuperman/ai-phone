@@ -39,6 +39,37 @@ AI_PHONE_RUN_RETRY_CLEAR_CACHE=true
 
 `AI_PHONE_RUN_RETRY_CLEAR_CACHE=true` 表示缓存模式下失败后，下一次 attempt 前会删除当前 mode 对应缓存，避免一直命中同一份坏缓存。
 
+### V3安卓截图通道
+
+安装UiAutomator2可选依赖后，V3启动时会优先尝试常驻服务直接返回JPEG，保持原分辨率与原画质参数。原定位模型和Jev均可使用；已有Jev连接会被复用。启动检查失败时明确记录原因并保留原ADB截图通道，iOS/Harmony沿原通道。运行中不会隐式补拍另一通道。日志“V3截图通道”说明本次实际选择。
+
+### 可选：V3 Jev 点击重定位
+
+默认关闭。仅在命中V3缓存后，将普通click的目标重定位交给多模态Decisions模型；缓存格式和投递参数不变。其他动作继续使用原定位，定位失败进入已有救援。
+
+在Server模型配置中设置：
+
+```dotenv
+AI_PHONE_JEV_ENABLED=false
+AI_PHONE_JEV_PROVIDER=openrouter
+AI_PHONE_JEV_API_KEY=
+```
+
+启用时将`ENABLED`改为`true`并填写对应渠道的Key。`PROVIDER`二选一：`openrouter`或`openai`，一次只使用一个渠道；Key不继承PHONE_VLM或AUX。
+
+| 渠道 | 默认端点 | 默认模型 |
+|---|---|---|
+| openrouter | `https://openrouter.ai/api/alpha/decisions` | `openai/gpt-6-luna-decisions` |
+| openai | `https://api.openai.com/v1/decisions` | `gpt-6-luna` |
+
+两种Decisions协议由程序分别适配；普通Chat Completions兼容服务不能直接代替。自定义部署可选设置`AI_PHONE_JEV_API_URL`（完整Decisions端点）、`AI_PHONE_JEV_MODEL`和`AI_PHONE_JEV_TIMEOUT_SEC`（默认35秒）。
+
+Android普通缓存click在Jev初始化成功时复用已有UiAutomator2连接执行坐标点击，仍等待调用完成；救援修复和其他动作沿原驱动。日志会记录实际通道及点击耗时。
+
+Android Agent需安装可选依赖：在backend目录运行`pip install -e '.[jev]'`；关闭开关时无需安装。iOS和Harmony复用该任务已有的WDA/UITest连接，Jev不创建第二个设备会话。Server和Agent均需使用支持这些配置的版本，启动V3时固定本次策略，后续click复用一次初始化的连接。
+
+日志中的“Jev定位证据”包含实际模型输入红框图、定位原图、所选编号和分段耗时。图片作为独立附件，V3执行前截图保留。为降低回放耗时，V3不再逐步拍after留证图，任务结束仍单独截图供最终验收。Jev仅识别当前摘要目标，不传执行历史、不额外采集点击后文字；V3动作后观察等待为200ms。定位复用V3已有截图，只取一次UI树，模型返回后不反向读取设备验证。已有截图尺寸不一致、定位超时、API或采集失败、目标不确定进入原救援，不尝试切换另一渠道或旧定位器。
+
 ## 3. 投递方式
 
 `POST /api/submissions` 支持批次级默认 `cacheMode`，也支持 item 覆盖。
