@@ -396,25 +396,17 @@ def test_v3_coord_space_follows_actual_locator_backend_family():
     assert generic_locator.coord_space == "absolute"
 
 
-def test_v3_locator_rejects_screen_edge_and_repeated_points_for_different_targets():
+def test_v3_locator_keeps_edge_guard_and_allows_same_point_for_different_targets():
     runner = V3ReplayRunner(driver=FakeDriver(), trajectory={"actions": []})
-
     with pytest.raises(V3LocatorMiss, match="屏幕边缘"):
         runner._validate_located_action(
             {"type": "click", "plan_intent": "点击应用图标"},
             {"type": "click", "point": {"x": 1079, "y": 1667}},
             window_size=(1080, 2400),
         )
-
-    runner._validate_located_action(
-        {"type": "click", "plan_intent": "点击关闭按钮"},
-        {"type": "click", "point": {"x": 500, "y": 500}},
-        window_size=(1080, 2400),
-    )
-
-    with pytest.raises(V3LocatorMiss, match="不同目标返回同一坐标"):
+    for target in ("提交", "继续") * 60:
         runner._validate_located_action(
-            {"type": "click", "plan_intent": "点击底部标签"},
+            {"type": "click", "plan_intent": target},
             {"type": "click", "point": {"x": 500, "y": 500}},
             window_size=(1080, 2400),
         )

@@ -133,7 +133,6 @@ async def test_same_center_is_valid_for_consecutive_scrolls(make_runner):
     result = await runner.run()
     assert result.success and len(calls) == 2
     assert driver.calls == [("down", (270, 960), 3), ("up", (270, 960), 3)]
-    assert runner._last_locator_point is None
 
 
 @pytest.mark.asyncio

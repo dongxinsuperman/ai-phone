@@ -60,7 +60,6 @@ from ai_phone.agent.trajectory_cache.replay import (
     _emit_maybe_await,
     _resolve_landmark_path,
 )
-from ai_phone.agent.trajectory_cache.text_norm import normalize_run_semantic
 from ai_phone.shared import actions as A
 from ai_phone.shared.seed_gui_actions import extract_thought, parse_actions as parse_seed_actions, schemas_prompt_text
 
@@ -874,8 +873,6 @@ class V3ReplayRunner:
         )
         self._v3_rescue_calls_used = 0
         self._v3_rescue_max_calls = int(settings.trajectory_cache_v3_rescue_max_calls_per_replay or 0)
-        self._last_locator_point: Optional[Tuple[int, int]] = None
-        self._last_locator_target = ""
         self._reuse_next_before_frame = False
         self._skip_after_frame: Optional[bytes] = None
         # 单步 status 文案，由路标 / 鉴定 / 修复等深层逻辑实时更新，最终随
@@ -1394,25 +1391,6 @@ class V3ReplayRunner:
             raise V3LocatorMiss(
                 f"v3 locator 返回屏幕边缘坐标 target={target} point={point} window={w}x{h}"
             )
-        # 同一区域连续往返滚动可以使用同一个中心，不套用点击目标的重复点判断，
-        # 也不把滚动中心写入点击/拖拽定位历史。仍保留既有屏幕边界校验。
-        if source_action.get("type") == A.ACTION_SCROLL:
-            return
-        previous_point = self._last_locator_point
-        previous_target = self._last_locator_target
-        if (
-            previous_point is not None
-            and previous_point == point
-            and previous_target
-            and target
-            and normalize_run_semantic(previous_target) != normalize_run_semantic(target)
-        ):
-            raise V3LocatorMiss(
-                "v3 locator 对不同目标返回同一坐标 "
-                f"prev={previous_target} current={target} point={point}"
-            )
-        self._last_locator_point = point
-        self._last_locator_target = target
 
     async def _rescue_and_retry_locator(
         self,
