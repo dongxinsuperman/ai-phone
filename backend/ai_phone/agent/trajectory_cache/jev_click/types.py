@@ -83,7 +83,7 @@ def tree_data(xml: str, size: tuple[int, int]) -> tuple[list[dict], list[str]]:
     return candidates, list(dict.fromkeys(labels))
 
 
-def annotate(frame: Frame) -> bytes:
+def annotate_legacy(frame: Frame) -> bytes:
     image = Image.open(io.BytesIO(frame.image)).convert("RGB")
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default(size=20)
@@ -117,6 +117,22 @@ def annotate(frame: Frame) -> bytes:
         (max(1, round(image.width * 0.8)), max(1, round(image.height * 0.8))), Image.Resampling.LANCZOS
     ).save(out, format="JPEG", quality=85)
     return out.getvalue()
+
+
+def annotate_with_mode(frame: Frame) -> tuple[bytes, str]:
+    """Shared three-platform renderer; preserve legacy output on layout failure."""
+    from .point_overlay import annotate_points
+    from loguru import logger
+
+    try:
+        return annotate_points(frame), "point_overlay"
+    except Exception as exc:
+        logger.warning("Jev point overlay failed; using legacy renderer: {}", type(exc).__name__)
+        return annotate_legacy(frame), "legacy"
+
+
+def annotate(frame: Frame) -> bytes:
+    return annotate_with_mode(frame)[0]
 
 
 def image_size(image: bytes) -> tuple[int, int]:

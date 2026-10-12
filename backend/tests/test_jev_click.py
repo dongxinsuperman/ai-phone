@@ -776,3 +776,25 @@ def test_ios_static_text_regions_include_tabs_without_claiming_native_clickabili
     nodes, _ = tree_data(IosAdapter.convert(xml, (1125, 2001)), (1125, 2001))
     assert [n["text"] for n in nodes] == ["研究员之家", "正文"]
     assert nodes[0]["bounds"] == [237, 90, 477, 159]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fallback", [False, True])
+async def test_overlay_prompt_matches_actual_renderer_and_click_point(monkeypatch, fallback):
+    from ai_phone.agent.trajectory_cache.jev_click import point_overlay
+
+    if fallback:
+
+        def fail(_):
+            raise ValueError("layout unavailable")
+
+        monkeypatch.setattr(point_overlay, "annotate_points", fail)
+    events = []
+    loc, _ = locator(emit=events.append)
+    result = await loc.locate_action(**params())
+    text = "\n".join(loc.client.choose.call_args.args[0])
+    assert result.action["point"] == {"x": 50, "y": 60}
+    assert events[-1]["evidence"]["overlay_mode"] == ("legacy" if fallback else "point_overlay")
+    assert ("红点是最终点击位置" in text) == (not fallback)
+    assert ("编号对应原始红框区域" in text) == fallback
+    await loc.aclose()

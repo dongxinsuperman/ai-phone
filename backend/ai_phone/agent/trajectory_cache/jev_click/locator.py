@@ -9,7 +9,7 @@ from ai_phone.agent.runner.events import EVT_LOCATOR_EVIDENCE, make_event
 from ai_phone.agent.trajectory_cache.v3_replay import V3LocateResult, V3LocatorMiss, V3PlanLocator
 
 from .client import DecisionsClient, JevError
-from .types import annotate, redact
+from .types import annotate_with_mode, redact
 
 
 class JevWaitRequested(Exception):
@@ -73,12 +73,17 @@ class JevClickLocator:
             if not frame.candidates:
                 raise JevError("NOT_FOUND: no visible candidates")
             t = time.monotonic()
-            model_image = await run_blocking(annotate, frame)
+            model_image, overlay_mode = await run_blocking(annotate_with_mode, frame)
+            evidence["overlay_mode"] = overlay_mode
             evidence["timings_ms"]["annotate"] = round((time.monotonic() - t) * 1000)
             images["model_input"] = model_image  # Exact bytes sent; also the red-box preview.
             nodes = redact(frame.candidates)
             choices = {
-                n["id"]: f"点击截图红框{n['id']}对应区域"
+                n["id"]: (
+                    f"点击编号{n['id']}引线对应红点的目标"
+                    if overlay_mode == "point_overlay"
+                    else f"点击截图红框{n['id']}对应区域"
+                )
                 if self.adapter.model_note
                 else f"点击{n['id']}，文字/标签：{n['text'] or n['description'] or ' / '.join(n['labels']) or '无文字图形控件'}"
                 for n in nodes
@@ -96,6 +101,12 @@ class JevClickLocator:
                     "当前缓存点击目标：" + evidence["target"],
                     "当前动作由V3缓存确定，只定位目标，不重新规划；旧编号不适用于当前页面。",
                     "仅明确可见加载迹象才允许WAIT；没有WAIT选项时只能选候选、NOT_FOUND或UNCERTAIN。",
+                    (
+                        "红框仅用于展示，重叠框可能已缩小；编号通过引线对应红点，红点是最终点击位置。"
+                        "请选择红点落在目标上的编号，不能按编号文字所在位置推断目标。"
+                        if overlay_mode == "point_overlay"
+                        else "编号对应原始红框区域，点击位置是该区域中心。"
+                    ),
                     self.adapter.model_note,
                     "当前候选：" + json.dumps(nodes, ensure_ascii=False),
                 ]
