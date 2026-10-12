@@ -36,7 +36,26 @@ function onScroll() {
   autoScroll.value = atBottom
 }
 
-const shown = computed(() => props.entries)
+const shown = computed(() => props.entries.map((entry) => {
+  if (entry.title !== 'Jev定位证据') return entry
+  try {
+    const evidence = JSON.parse(entry.content)
+    const url = evidence.images?.model_input
+    if (evidence.schema === 'jev_locator_v1' && typeof url === 'string'
+      && url.startsWith('/files/') && !url.includes('..')) {
+      return {
+        ...entry,
+        content: `目标：${evidence.target || ''}；选择：${evidence.answer?.choice || '无'}；`
+          + `定位耗时：${evidence.timings_ms?.total ?? '?'}ms`
+          + (evidence.error ? `；${evidence.error}` : ''),
+        evidence_detail: entry.content,
+        image_url: url,
+        image_label: 'Jev红框／模型输入',
+      }
+    }
+  } catch { /* Keep ordinary log behavior for malformed evidence. */ }
+  return entry
+}))
 </script>
 
 <template>
@@ -74,6 +93,10 @@ const shown = computed(() => props.entries)
           <img :src="e.image_url" alt="" loading="lazy" />
           <span class="thumb-tag" v-if="e.image_label">{{ e.image_label }}</span>
         </a>
+        <details v-if="e.evidence_detail">
+          <summary>定位证据详情</summary>
+          <pre style="white-space: pre-wrap; overflow-wrap: anywhere">{{ e.evidence_detail }}</pre>
+        </details>
       </div>
       <div v-if="!entries.length" class="empty">暂无日志</div>
     </div>

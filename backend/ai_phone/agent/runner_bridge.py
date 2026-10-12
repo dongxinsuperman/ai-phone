@@ -26,6 +26,7 @@ from ai_phone.agent.runner.events import (
     EVT_RUN_FINISH,
     EVT_RUN_START,
     EVT_SCREENSHOT,
+    EVT_LOCATOR_EVIDENCE,
     EVT_STEP_END,
     EVT_STEP_START,
     EVT_THOUGHT,
@@ -120,6 +121,8 @@ class RunnerBridge:
                 # 双份。EVT_THOUGHT / EVT_ACTION 事件本身保留，给未来扩展
                 # （把 thought / action 写进 RunStep）留一条事件源。
                 pass
+            elif t == EVT_LOCATOR_EVIDENCE:
+                self._enqueue_serial(self._upload_locator_evidence(evt))
             elif t == EVT_SCREENSHOT:
                 # 串行链保证它先于本 step 的 EVT_STEP_END 上传完，slot 自然就绪。
                 self._enqueue_serial(self._upload_screenshot(evt))
@@ -210,6 +213,30 @@ class RunnerBridge:
                 "ts": evt.get("ts"),
             }
         )
+
+    async def _upload_locator_evidence(self, evt: Dict[str, Any]) -> None:
+        """Attach Jev images to a log, never mutate screenshot slots or live frames."""
+        import json
+
+        step = int(evt.get("step") or 0)
+        evidence = dict(evt.get("evidence") or {})
+        images = evt.get("images") or {}
+        urls = {}
+        for name in ("current", "model_input"):
+            data = images.get(name)
+            if not data:
+                continue
+            try:
+                url = await self._upload_with_retry(data, step, f"jev-{name}")
+            except Exception:
+                url = ""
+            if url:
+                urls[name] = url
+        evidence["images"] = urls
+        evidence["evidence_complete"] = bool(images) and len(urls) == len(images)
+        await self._forward_log({**evt, "title": "Jev定位证据",
+                                 "level": 1 if evidence["evidence_complete"] else 2,
+                                 "content": json.dumps(evidence, ensure_ascii=False)})
 
     async def _upload_screenshot(self, evt: Dict[str, Any]) -> None:
         data: bytes = evt.get("bytes") or b""

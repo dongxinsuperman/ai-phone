@@ -711,12 +711,35 @@ def _render_log_row(r: RunLog) -> str:
         msg = f"{title} — {body}"
     else:
         msg = title or body
+    attachment = ""
+    if title == "Jev定位证据":
+        import json
+
+        try:
+            evidence = json.loads(body)
+            if evidence.get("schema") == "jev_locator_v1":
+                msg = (f"{title} — 目标：{evidence.get('target', '')}；"
+                       f"选择：{(evidence.get('answer') or {}).get('choice', '无')}；"
+                       f"定位耗时：{(evidence.get('timings_ms') or {}).get('total', '?')}ms"
+                       + (f"；{evidence['error']}" if evidence.get('error') else ""))
+                attachment = f'<details><summary>定位证据详情</summary><pre>{_esc(body)}</pre></details>'
+                # Dedicated relative file URLs only; never accept HTML or arbitrary
+                # protocols from log content. The full JSON remains downloadable/readable.
+                for name, label_ in (("model_input", "Jev红框／模型输入"), ("current", "定位原图")):
+                    url = evidence.get("images", {}).get(name, "")
+                    if isinstance(url, str) and url.startswith("/files/") and ".." not in url:
+                        attachment += (f'<a href="{_esc(url)}" target="_blank" rel="noopener">'
+                                       f'<img src="{_esc(url)}" alt="{_esc(label_)}" loading="lazy" '
+                                       'style="max-width:240px;max-height:320px"/></a>')
+        except (ValueError, AttributeError, TypeError):
+            pass
     return (
         f'<div class="tl-row tl-log {css}">'
         f'  <span class="tl-time">{_esc(_fmt_ts_ms(r.ts))}</span>'
         f'  <div class="tl-body">'
         f'    <span class="lvl">{_esc(label)}</span>'
         f'    <span class="msg">{_esc(msg) if msg else "—"}</span>'
+        f'    {attachment}'
         f'  </div>'
         f'</div>'
     )
