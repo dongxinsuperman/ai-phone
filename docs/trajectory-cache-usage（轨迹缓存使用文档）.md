@@ -53,6 +53,7 @@ AI_PHONE_RUN_RETRY_CLEAR_CACHE=true
 AI_PHONE_JEV_ENABLED=false
 AI_PHONE_JEV_PROVIDER=openrouter
 AI_PHONE_JEV_API_KEY=
+AI_PHONE_JEV_MODEL=
 ```
 
 启用时将`ENABLED`改为`true`并填写对应渠道的Key。`PROVIDER`二选一：`openrouter`或`openai`，一次只使用一个渠道；Key不继承PHONE_VLM或AUX。
@@ -62,13 +63,13 @@ AI_PHONE_JEV_API_KEY=
 | openrouter | `https://openrouter.ai/api/alpha/decisions` | `openai/gpt-6-luna-decisions` |
 | openai | `https://api.openai.com/v1/decisions` | `gpt-6-luna` |
 
-两种Decisions协议由程序分别适配；普通Chat Completions兼容服务不能直接代替。自定义部署可选设置`AI_PHONE_JEV_API_URL`（完整Decisions端点）、`AI_PHONE_JEV_MODEL`和`AI_PHONE_JEV_TIMEOUT_SEC`（默认35秒）。
+两种Decisions协议由程序分别适配；普通Chat Completions兼容服务不能直接代替。`AI_PHONE_JEV_MODEL`可选，留空使用表中的渠道默认模型。开启JEV后，程序按设备平台选择配套快速通道与稳定检测；关闭时使用原定位和设备通道，快速通道初始化失败时保留原通道兜底。
 
 Android普通缓存click在Jev初始化成功时复用已有UiAutomator2连接执行坐标点击，仍等待调用完成；救援修复和其他动作沿原驱动。日志会记录实际通道及点击耗时。
 
 Android Agent需安装可选依赖：在backend目录运行`pip install -e '.[jev]'`；关闭开关时无需安装。iOS和Harmony复用该任务已有的WDA/UITest连接，Jev不创建第二个设备会话。Server和Agent均需使用支持这些配置的版本，启动V3时固定本次策略，后续click复用一次初始化的连接。
 
-日志中的“Jev定位证据”包含实际模型输入红框图、定位原图、所选编号和分段耗时。图片作为独立附件，V3执行前截图保留。为降低回放耗时，V3不再逐步拍after留证图，任务结束仍单独截图供最终验收。Jev仅识别当前摘要目标，不传执行历史、不额外采集点击后文字；V3动作后观察等待为200ms。定位复用V3已有截图，只取一次UI树，模型返回后不反向读取设备验证。已有截图尺寸不一致、定位超时、API或采集失败、目标不确定进入原救援，不尝试切换另一渠道或旧定位器。
+日志中的“Jev定位证据”包含实际模型输入红框图、所选编号和分段耗时。JEV分支仅展示画框后的模型输入图，画框前原图仍在内部复用，不重复上传；其他分支保留原截图展示。为降低回放耗时，V3不再逐步拍after留证图，任务结束仍单独截图供最终验收。Jev仅识别当前摘要目标，不传执行历史、不额外采集点击后文字；V3动作后观察等待为200ms。定位复用V3已有截图，只取一次UI树，模型返回后不反向读取设备验证。已有截图尺寸不一致、定位超时、API或采集失败、目标不确定进入原救援，不尝试切换另一渠道或旧定位器。
 
 ## 3. 投递方式
 
