@@ -866,6 +866,7 @@ class V3ReplayRunner:
             main_vlm_backend=main_vlm_backend
             or str(trajectory.get("source_vlm_backend") or "")
         )
+        self._step_locator = None
         self.rescue_verifier = rescue_verifier or V3RescueVerifier(
             main_vlm_backend=main_vlm_backend
             or str(trajectory.get("source_vlm_backend") or "")
@@ -975,6 +976,14 @@ class V3ReplayRunner:
                     # 网络资源收尾不能改写已确定的回放结果；不输出地址/密钥。
                     logger.warning("V3 坐标客户端释放失败：{}", type(exc).__name__)
 
+    def _select_step_locator(self, action: Dict[str, Any]) -> None:
+        """Bind this step's route using the original action, not a derived request."""
+        select = getattr(self.locator, "for_action", None)
+        self._step_locator = select(action) if callable(select) else self.locator
+
+    def _active_locator(self):
+        return getattr(self, "_step_locator", None) or self.locator
+
     async def _run_actions(self) -> ReplayResult:
         actions = list(self.trajectory.get("actions") or [])
         from ai_phone.shared.scroll_gesture import has_incompatible_scroll
@@ -990,6 +999,7 @@ class V3ReplayRunner:
             self._current_step_status = ""
             self._step_action_source = "cache"
             try:
+                self._select_step_locator(action)
                 await self._log_v3_step_start(
                     index=index,
                     total=len(actions),
@@ -1009,6 +1019,7 @@ class V3ReplayRunner:
                         before_bytes = await self._screenshot_jpeg()
                 self._final_before_bytes = before_bytes
                 if not (self.suppress_jev_before_image
+                        and self._active_locator() is self.locator
                         and action.get("type") == "click"
                         and action.get("locator_source_type", "click") == "click"):
                     await self._emit_screenshot(index, "before", before_bytes)
@@ -1367,7 +1378,7 @@ class V3ReplayRunner:
         )
 
     async def _locate_action(self, action: Dict[str, Any], screenshot_bytes: bytes) -> Dict[str, Any]:
-        ordinary = (getattr(self.locator, "supports_loading_wait", False)
+        ordinary = (getattr(self._active_locator(), "supports_loading_wait", False)
                     and action.get("type") == "click"
                     and action.get("locator_source_type", "click") == "click")
         if not ordinary:
@@ -1410,7 +1421,7 @@ class V3ReplayRunner:
             f"正在当前截图中寻找：{_v3_target_text(action)}",
         )
         wait_options = {} if wait_allowed is None else {"wait_allowed": wait_allowed}
-        located = await self.locator.locate_action(
+        located = await self._active_locator().locate_action(
             goal=self.goal,
             trajectory=self.trajectory,
             action=action,
@@ -2337,6 +2348,7 @@ def _type_locator_action(action: Dict[str, Any]) -> Dict[str, Any]:
     return {
         **action,
         "type": A.ACTION_CLICK,
+        "locator_source_type": A.ACTION_TYPE,
         "plan_intent": focus_intent,
         "intent": focus_intent,
     }

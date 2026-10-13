@@ -42,12 +42,20 @@ class JevClickLocator:
         finally:
             self.initialization_ms = round((time.monotonic() - started) * 1000)
 
+    def for_action(self, action):
+        """Choose once from the original cached action before locator conversion."""
+        if action.get("type") == "click" and action.get("locator_source_type", "click") == "click":
+            return self
+        if self.original is None:
+            self.original = V3PlanLocator(settings=self.settings, main_vlm_backend=self.backend)
+        return self.original
+
     async def locate_action(self, **kwargs):
         action = kwargs["action"]
-        if action.get("type") != "click" or action.get("locator_source_type", "click") != "click":
-            if self.original is None:
-                self.original = V3PlanLocator(settings=self.settings, main_vlm_backend=self.backend)
-            return await self.original.locate_action(**kwargs)
+        # Defensive boundary for callers outside V3ReplayRunner.
+        selected = self.for_action(action)
+        if selected is not self:
+            return await selected.locate_action(**kwargs)
 
         started = time.monotonic()
         evidence = {

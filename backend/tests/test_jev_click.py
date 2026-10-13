@@ -798,3 +798,87 @@ async def test_overlay_prompt_matches_actual_renderer_and_click_point(monkeypatc
     assert ("红点是最终点击位置" in text) == (not fallback)
     assert ("编号对应原始红框区域" in text) == fallback
     await loc.aclose()
+
+
+@pytest.mark.asyncio
+async def test_runner_binds_route_before_input_probe_conversion(monkeypatch):
+    import ai_phone.agent.trajectory_cache.v3_replay as replay
+    from ai_phone.agent.trajectory_cache.v3_replay import V3LocateResult
+
+    loc, driver = locator()
+    original_calls = []
+
+    async def locate_original(self, **kwargs):
+        action = kwargs["action"]
+        original_calls.append(deepcopy(action))
+        if action["type"] == "drag":
+            return V3LocateResult(
+                action={**action, "start": {"x": 30, "y": 40}, "end": {"x": 70, "y": 140}},
+                raw="",
+                reason="original",
+            )
+        return V3LocateResult(action={**action, "point": {"x": 50, "y": 60}}, raw="", reason="original")
+
+    monkeypatch.setattr(V3PlanLocator, "locate_action", locate_original)
+    # Simulate the exact old bug: a type probe looks like a plain Click.
+    convert = replay._type_locator_action
+
+    def without_source(action):
+        probe = convert(action)
+        probe.pop("locator_source_type")
+        return probe
+
+    monkeypatch.setattr(replay, "_type_locator_action", without_source)
+    actions = [
+        {"index": 1, "action_id": "a1", "type": "click", "plan_intent": "激活输入框"},
+        {"index": 2, "action_id": "a2", "type": "type", "content": "集合", "plan_intent": "输入集合"},
+        {
+            "index": 3,
+            "action_id": "a3",
+            "type": "scroll",
+            "direction": "down",
+            "amount": 1,
+            "scroll_gesture_version": 1,
+            "scroll_type": "singleAction",
+            "scroll_distance": 100,
+            "plan_intent": "滑动列表",
+        },
+        {"index": 4, "action_id": "a4", "type": "drag", "plan_intent": "拖动列表"},
+        {"index": 5, "action_id": "a5", "type": "click", "plan_intent": "返回"},
+    ]
+    before = deepcopy(actions)
+    dispatcher = SimpleNamespace(execute=AsyncMock(), last_screenshot_error=None)
+    runner = V3ReplayRunner(
+        driver=driver,
+        trajectory={"actions": actions},
+        locator=loc,
+        dispatcher=dispatcher,
+        capture_after_each_action=False,
+        observe_delay_ms=0,
+    )
+    monkeypatch.setattr(runner, "_wait_stable_for_step", AsyncMock(return_value=driver.screenshot_jpeg()))
+    result = await runner.run()
+    assert result.success, result.error
+    assert actions == before
+    assert loc.client.choose.await_count == 2  # Original ordinary clicks only.
+    assert [a["type"] for a in original_calls] == ["click", "scroll", "drag"]
+    assert [c.args[0]["type"] for c in dispatcher.execute.call_args_list] == [
+        "click",
+        "type",
+        "scroll",
+        "drag",
+        "click",
+    ]
+    assert dispatcher.execute.call_args_list[1].args[0]["content"] == "集合"
+    await loc.aclose()
+
+
+def test_input_visibility_probe_preserves_original_source_type():
+    from ai_phone.agent.trajectory_cache.v3_replay import _type_locator_action
+
+    action = {"type": "type", "content": "集合", "plan_intent": "输入集合"}
+    before = deepcopy(action)
+    probe = _type_locator_action(action)
+    assert probe["type"] == "click"
+    assert probe["locator_source_type"] == "type"
+    assert action == before
