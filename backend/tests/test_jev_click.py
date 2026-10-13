@@ -642,7 +642,8 @@ async def test_v3_entry_real_runner_click_and_final_assertion_contract(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_disabled_v3_entry_does_not_construct_jev(monkeypatch):
+@pytest.mark.parametrize("platform", ["android", "harmony", "ios"])
+async def test_disabled_v3_entry_does_not_construct_jev(monkeypatch, platform):
     from ai_phone.agent.trajectory_cache import orchestrate, v3_replay
     from ai_phone.agent.trajectory_cache.jev_click import factory
 
@@ -652,6 +653,9 @@ async def test_disabled_v3_entry_does_not_construct_jev(monkeypatch):
     class Runner:
         def __init__(self, **kwargs):
             assert "locator" not in kwargs
+            for option in ("screenshot_provider", "stability_waiter", "click_executor",
+                           "window_size_provider", "suppress_jev_before_image"):
+                assert option not in kwargs
             assert kwargs["capture_after_each_action"] is False
             assert kwargs["observe_delay_ms"] == 200
 
@@ -665,10 +669,10 @@ async def test_disabled_v3_entry_does_not_construct_jev(monkeypatch):
         serial="unit",
         goal="goal",
         attempt=1,
-        driver=object(),
+        driver=SimpleNamespace(platform=platform),
         bridge=bridge,
         snapshot={"cache_mode": "v3"},
-        settings=Settings(_env_file=None),
+        settings=Settings(_env_file=None, jev_enabled=False),
     )
     create.assert_not_awaited()
 
