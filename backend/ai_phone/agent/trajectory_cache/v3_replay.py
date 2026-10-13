@@ -1352,6 +1352,7 @@ class V3ReplayRunner:
         previous_action: Optional[Dict[str, Any]] = None,
         next_action: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
+        self._locator_frame = screenshot_bytes
         try:
             return await self._locate_action(action, screenshot_bytes)
         except V3LocatorMiss as first_miss:
@@ -1371,13 +1372,15 @@ class V3ReplayRunner:
 
         return await self._rescue_and_retry_locator(
             action,
-            screenshot_bytes,
+            self._locator_frame,
             previous_action=previous_action,
             next_action=next_action,
             miss_reason=miss_reason,
         )
 
     async def _locate_action(self, action: Dict[str, Any], screenshot_bytes: bytes) -> Dict[str, Any]:
+        # Rescue must receive the frame used by the latest locator attempt.
+        self._locator_frame = screenshot_bytes
         ordinary = (getattr(self._active_locator(), "supports_loading_wait", False)
                     and action.get("type") == "click"
                     and action.get("locator_source_type", "click") == "click")
@@ -1403,6 +1406,7 @@ class V3ReplayRunner:
                                          f"JEV识别明确加载迹象，等待1秒后刷新；请求次数={self._jev_requests_this_step}/3")
                 await asyncio.sleep(1.0)
                 screenshot_bytes = await self._screenshot_jpeg()
+                self._locator_frame = screenshot_bytes
                 self._last_frame = screenshot_bytes
                 self._final_before_bytes = screenshot_bytes
 
@@ -1557,13 +1561,16 @@ class V3ReplayRunner:
                 )
                 if latest is None:
                     latest = await self._screenshot_jpeg()
+                self._locator_frame = latest
                 try:
                     self._set_v3_step_status("等待后定位成功")
                     return await self._locate_action(action, latest)
                 except V3LocatorMiss as retry_miss:
+                    latest = self._locator_frame
                     miss_reason = str(retry_miss)
                     continue
                 except Exception as exc:  # noqa: BLE001
+                    latest = self._locator_frame
                     miss_reason = f"v3 locator 调用失败：{type(exc).__name__}: {str(exc)[:160]}"
                     continue
 
@@ -1599,13 +1606,16 @@ class V3ReplayRunner:
                 )
                 if latest is None:
                     latest = await self._screenshot_jpeg()
+                self._locator_frame = latest
                 try:
                     self._set_v3_step_status("局部修复成功")
                     return await self._locate_action(action, latest)
                 except V3LocatorMiss as retry_miss:
+                    latest = self._locator_frame
                     miss_reason = str(retry_miss)
                     continue
                 except Exception as exc:  # noqa: BLE001
+                    latest = self._locator_frame
                     miss_reason = f"v3 locator 调用失败：{type(exc).__name__}: {str(exc)[:160]}"
                     continue
 

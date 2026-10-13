@@ -894,3 +894,27 @@ def test_jev_internal_options_are_not_environment_settings():
     config = JevConfig.from_settings(settings())
     assert config.url == "https://openrouter.ai/api/alpha/decisions"
     assert config.timeout == 35.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wait_count", [0, 1, 2])
+@pytest.mark.parametrize("failure", [V3LocatorMiss("NOT_FOUND"), RuntimeError("transport")])
+async def test_loading_refresh_hands_latest_locator_frame_to_rescue(monkeypatch, wait_count, failure):
+    from ai_phone.agent.trajectory_cache.jev_click.locator import JevWaitRequested
+    runner = object.__new__(V3ReplayRunner)
+    runner.locator = SimpleNamespace(supports_loading_wait=True)
+    runner._step_locator = runner.locator
+    runner._jev_wait_step = None
+    runner._jev_requests_this_step = 0
+    runner._log = AsyncMock()
+    runner._log_v3_stage = AsyncMock()
+    frames = [b"initial-loading", b"refreshed-page", b"last-page"]
+    runner._screenshot_jpeg = AsyncMock(side_effect=frames[1:])
+    runner._locate_once = AsyncMock(side_effect=[JevWaitRequested() for _ in range(wait_count)] + [failure])
+    runner._rescue_and_retry_locator = AsyncMock(return_value={"type": "click"})
+    monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+    action = {"type": "click", "index": 1, "action_id": "a1"}
+    await runner._locate_with_retry_and_rescue(action, frames[0])
+    assert runner._rescue_and_retry_locator.call_args.args[1] == frames[wait_count]
+    assert [call.args[1] for call in runner._locate_once.call_args_list] == frames[:wait_count + 1]
+    assert runner._screenshot_jpeg.await_count == wait_count  # No extra rescue capture.
