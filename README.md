@@ -62,6 +62,39 @@
 
 三端真机与三端虚拟机进入同一个设备池、复用同一条任务执行链路，对外仍然只有 iOS、Android、HarmonyOS 三个平台。环境准备见 [Android 虚拟机 Agent 环境准备](./docs/agent-vm-env-setup（Agent虚拟机环境准备）.md)、[iOS 虚拟机 Agent 环境准备](<./docs/agent-ios-sim-vm-env-setup（Agent iOS虚拟机环境准备）.md>) 与 [鸿蒙虚拟机 Agent 环境准备](./docs/agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md)；鸿蒙当前形态与后续 Provider 规划见 [harmony-vm-architecture](./docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md)。
 
+**v0.8 · JEV多模态决策：三端手机点击，迈向秒级执行**
+
+**让已知目标快速落到手机上。** ai-phone为V3缓存回放引入JEV多模态点击通道，将目标定位收敛为一次候选选择，并打通Android、iOS、HarmonyOS的截图、定位和设备执行。已有安卓实测中，包含模型往返的一次点击链路达到**约0.99秒**，已完整接入AI Phone的执行生态中。
+
+![Jev Phone · 三端多模态视觉交互通道与点击演示页面](./assets/jev/jev-overview.svg)
+
+当前承接V3回放中的普通Click：缓存提供操作目标，JEV定位当前画面中的目标，设备通道执行点击。后续将扩大场景覆盖，并探索输入、滚动、长按等动作的承接。
+
+![JEV连续答题回放 · 原速片段与秒表](./assets/jev/jev-five-questions.gif)
+
+**实时定位，真实点击。** 截图与控件位置实时采集、编号标注后发送给模型；模型返回目标编号，系统映射并换算点击坐标，直接驱动手机执行。
+
+<table>
+<tr>
+<td width="35%" align="center">
+<a href="./assets/jev/android-grounding.png"><img src="./assets/jev/android-grounding.png" alt="安卓设备实际候选标注：区域编号对应设备点击位置" width="220"></a>
+</td>
+<td width="65%" valign="middle">
+<h3>秒级点击，毫秒级本地处理。</h3>
+<p>已有安卓实测，本地各环节均为毫秒级：</p>
+<ul>
+<li>截图采集：约<strong>160ms</strong></li>
+<li>控件读取：约<strong>240ms</strong></li>
+<li>候选标注与编码：<strong>15～50ms</strong></li>
+<li>点击执行：约<strong>160ms</strong></li>
+</ul>
+<p>不计模型请求，本地整轮中位耗时约<strong>620ms</strong>。</p>
+<p>定位、决策、执行连成一条快速通道，让连续操作的提速直接体现在手机上。</p>
+<p>左图为安卓设备的实际候选标注。性能记录见<a href="https://github.com/dongxinsuperman/jev-phone">Jev Phone</a>。</p>
+</td>
+</tr>
+</table>
+
 **7. 应用分发（三端通用）** —— 上传 APK / HAP / IPA，以及 iOS Simulator 使用的 `.app` / `.zip` 产物，按平台和设备类型筛出可分发设备，一键批量安装到设备池，实时回传每台安装结果、支持失败重试：
 
 ![应用分发 · 三端上传包 → 选设备 → 批量安装 → 查看每台安装结果](./assets/screenshots/app-distribution.png)
