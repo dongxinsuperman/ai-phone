@@ -132,7 +132,6 @@ def test_config_defaults(provider, model, url):
     [
         {"jev_provider": "chat"},
         {"jev_api_key": ""},
-        {"jev_api_url": "https://api.openai.com/v1/chat/completions"},
     ],
 )
 def test_invalid_config_is_not_silently_another_model(change):
@@ -882,3 +881,12 @@ def test_input_visibility_probe_preserves_original_source_type():
     assert probe["type"] == "click"
     assert probe["locator_source_type"] == "type"
     assert action == before
+
+
+def test_jev_internal_options_are_not_environment_settings():
+    removed = {"jev_api_url", "jev_timeout_sec", "v3_fast_stability_enabled",
+               "v3_harmony_fast_enabled", "v3_ios_fast_enabled"}
+    assert removed.isdisjoint(Settings.model_fields)
+    config = JevConfig.from_settings(settings())
+    assert config.url == "https://openrouter.ai/api/alpha/decisions"
+    assert config.timeout == 35.0

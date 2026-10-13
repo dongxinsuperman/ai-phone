@@ -139,7 +139,7 @@ async def run_v3_replay(
 
             adapter = getattr(locator, "adapter", None)
             borrowed = getattr(adapter, "device", None) if not getattr(locator, "initialization_error", "") else None
-            capture_source, capture_label = await create_source(driver, borrowed_device=borrowed)
+            capture_source, capture_label = await create_source(driver, borrowed_device=borrowed, enabled=getattr(settings, "jev_enabled", False))
             if capture_source is not None:
                 runner_options["screenshot_provider"] = capture_source.capture
             await _log(1, "V3截图通道", capture_label)
@@ -154,7 +154,7 @@ async def run_v3_replay(
             if click_executor is None and locator is not None:
                 runner_options["click_executor"] = capture_source.click
                 await _log(1, "V3点击通道", "iOS WDA普通点击：临时缩短内部等待，点击后恢复原设置")
-        if (getattr(settings, "v3_fast_stability_enabled", False)
+        if (getattr(settings, "jev_enabled", False)
                 and str(getattr(driver, "platform", "")).lower() in {"android", "harmony", "ios"}
                 and (capture_source is not None or screenshot_provider is not None)):
             from functools import partial

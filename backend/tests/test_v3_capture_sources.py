@@ -46,20 +46,20 @@ def test_borrowed_connection_is_not_initialized_or_closed_again():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("platform", ["ios", "ios_sim", "harmony"])
 async def test_other_platforms_keep_original_without_new_sessions(platform):
-    source, label = await create_source(driver(platform))
+    source, label = await create_source(driver(platform), enabled=False)
     assert source is None and "原截图通道" in label
 
 
 @pytest.mark.asyncio
 async def test_failed_preflight_keeps_original_and_does_not_close_borrowed_client():
     d = SimpleNamespace(jsonrpc=SimpleNamespace(takeScreenshot=lambda *a: None))
-    source, label = await create_source(driver(), borrowed_device=d)
+    source, label = await create_source(driver(), borrowed_device=d, enabled=True)
     assert source is None and "启动检查未通过" in label
 
 
 @pytest.mark.asyncio
 async def test_bad_orientation_at_startup_is_not_selected():
-    source, label = await create_source(driver(), borrowed_device=device(jpeg((2400, 1080))))
+    source, label = await create_source(driver(), borrowed_device=device(jpeg((2400, 1080))), enabled=True)
     assert source is None and "ValueError" in label
 
 
@@ -80,7 +80,7 @@ async def test_independent_source_initializes_once_and_owns_only_its_client(monk
             calls.append(("stop", kw))
 
     monkeypatch.setitem(sys.modules, "uiautomator2", SimpleNamespace(Device=Device))
-    source, _ = await create_source(driver())
+    source, _ = await create_source(driver(), enabled=True)
     source.capture(95, None)
     source.capture(95, None)
     source.close()
@@ -91,7 +91,7 @@ async def test_independent_source_initializes_once_and_owns_only_its_client(monk
 @pytest.mark.asyncio
 async def test_runtime_error_is_not_a_hidden_adb_second_capture():
     d = device(jpeg())
-    source, _ = await create_source(driver(), borrowed_device=d)
+    source, _ = await create_source(driver(), borrowed_device=d, enabled=True)
     d.jsonrpc.takeScreenshot = lambda *a: None
     with pytest.raises(RuntimeError, match="unavailable"):
         source.capture(95, None)
@@ -155,3 +155,11 @@ async def test_shared_locator_connection_survives_final_capture(monkeypatch):
     assert create.call_args.kwargs["borrowed_device"] is loc.adapter.device
     assert verify.call_args.kwargs["final_bytes"] == b"final"
     assert loc.closed and source.closed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", ["android", "harmony", "ios"])
+async def test_jev_disabled_never_initializes_fast_channel(platform):
+    source, label = await create_source(driver(platform), enabled=False)
+    assert source is None
+    assert "JEV关闭" in label

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass, field
-from urllib.parse import urlsplit
 
 import httpx
+
+from ai_phone.config import JEV_REQUEST_TIMEOUT_SEC
 
 
 class JevError(RuntimeError):
@@ -33,19 +34,6 @@ class JevConfig:
         if not str(settings.jev_api_key).strip():
             raise ValueError("AI_PHONE_JEV_API_KEY is required when Jev is enabled")
         url, model = defaults[provider]
-        url = str(settings.jev_api_url or url).strip()
-        parsed = urlsplit(url)
-        if (
-            parsed.scheme != "https"
-            or not parsed.netloc
-            or parsed.username
-            or parsed.password
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValueError("AI_PHONE_JEV_API_URL must be a credential-free HTTPS Decisions endpoint")
-        if not parsed.path.rstrip("/").endswith("/decisions"):
-            raise ValueError("AI_PHONE_JEV_API_URL must end with /decisions, not a chat endpoint")
         model = str(settings.jev_model or model).strip()
         if not model:
             raise ValueError("AI_PHONE_JEV_MODEL must not be blank")
@@ -54,7 +42,7 @@ class JevConfig:
             url,
             model,
             str(settings.jev_api_key).strip(),
-            float(settings.jev_timeout_sec),
+            JEV_REQUEST_TIMEOUT_SEC,
         )
 
 
