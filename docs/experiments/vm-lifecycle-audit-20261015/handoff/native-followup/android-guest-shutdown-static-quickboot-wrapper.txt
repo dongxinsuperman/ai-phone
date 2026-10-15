@@ -1,0 +1,192 @@
+
+/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+00000001004e5f88 <_androidSnapshot_quickbootSave>:
+1004e5f88: d10203ff    	sub	sp, sp, #0x80
+1004e5f8c: a90367fa    	stp	x26, x25, [sp, #0x30]
+1004e5f90: a9045ff8    	stp	x24, x23, [sp, #0x40]
+1004e5f94: a90557f6    	stp	x22, x21, [sp, #0x50]
+1004e5f98: a9064ff4    	stp	x20, x19, [sp, #0x60]
+1004e5f9c: a9077bfd    	stp	x29, x30, [sp, #0x70]
+1004e5fa0: 9101c3fd    	add	x29, sp, #0x70
+1004e5fa4: aa0003f3    	mov	x19, x0
+1004e5fa8: 944165a4    	bl	0x10153f638 <dyld_stub_binder+0x10153f638>
+1004e5fac: f9400008    	ldr	x8, [x0]
+1004e5fb0: f940c908    	ldr	x8, [x8, #0x190]
+1004e5fb4: d63f0100    	blr	x8
+1004e5fb8: aa0003f5    	mov	x21, x0
+1004e5fbc: b0008788    	adrp	x8, 0x1015d6000 <__ZN8crashpad12_GLOBAL__N_119kCompletedDirectoryE+0x55b6d>
+1004e5fc0: 91012108    	add	x8, x8, #0x48
+1004e5fc4: f100027f    	cmp	x19, #0x0
+1004e5fc8: 9a930114    	csel	x20, x8, x19, eq
+1004e5fcc: d000db28    	adrp	x8, 0x10204b000 <_qemu_set_log.logfile_buf+0xc28>
+1004e5fd0: f9459d13    	ldr	x19, [x8, #0xb38]
+1004e5fd4: aa1403e0    	mov	x0, x20
+1004e5fd8: 944163f1    	bl	0x10153ef9c <dyld_stub_binder+0x10153ef9c>
+1004e5fdc: aa0003e2    	mov	x2, x0
+1004e5fe0: aa1303e0    	mov	x0, x19
+1004e5fe4: aa1403e1    	mov	x1, x20
+1004e5fe8: 97fffde6    	bl	0x1004e5780 <__ZN7android8snapshot9Quickboot4saveENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEE>
+1004e5fec: aa0003f3    	mov	x19, x0
+1004e5ff0: 360003c0    	tbz	w0, #0x0, 0x1004e6068 <_androidSnapshot_quickbootSave+0xe0>
+1004e5ff4: 940054d9    	bl	0x1004fb358 <__ZN7android8snapshot11Snapshotter3getEv>
+1004e5ff8: 394d7c08    	ldrb	w8, [x0, #0x35f]
+1004e5ffc: f941a809    	ldr	x9, [x0, #0x350]
+1004e6000: 7219011f    	tst	w8, #0x80
+1004e6004: 9a881128    	csel	x8, x9, x8, ne
+1004e6008: b4000a08    	cbz	x8, 0x1004e6148 <_androidSnapshot_quickbootSave+0x1c0>
+1004e600c: 394d8008    	ldrb	w8, [x0, #0x360]
+1004e6010: 360009c8    	tbz	w8, #0x0, 0x1004e6148 <_androidSnapshot_quickbootSave+0x1c0>
+1004e6014: aa1403e0    	mov	x0, x20
+1004e6018: 944163e1    	bl	0x10153ef9c <dyld_stub_binder+0x10153ef9c>
+1004e601c: aa0003f6    	mov	x22, x0
+1004e6020: a90003f4    	stp	x20, x0, [sp]
+1004e6024: 390043ff    	strb	wzr, [sp, #0x10]
+1004e6028: 3900a3ff    	strb	wzr, [sp, #0x28]
+1004e602c: 8b000288    	add	x8, x20, x0
+1004e6030: 385ff108    	ldurb	w8, [x8, #-0x1]
+1004e6034: aa1403e0    	mov	x0, x20
+1004e6038: 34000728    	cbz	w8, 0x1004e611c <_androidSnapshot_quickbootSave+0x194>
+1004e603c: b27cebe8    	mov	x8, #0x7ffffffffffffff0 ; =9223372036854775792
+1004e6040: eb0802df    	cmp	x22, x8
+1004e6044: 54001142    	b.hs	0x1004e626c <_androidSnapshot_quickbootSave+0x2e4>
+1004e6048: 910003e8    	mov	x8, sp
+1004e604c: 91004118    	add	x24, x8, #0x10
+1004e6050: f1005edf    	cmp	x22, #0x17
+1004e6054: 540003e2    	b.hs	0x1004e60d0 <_androidSnapshot_quickbootSave+0x148>
+1004e6058: 39009ff6    	strb	w22, [sp, #0x27]
+1004e605c: aa1803f7    	mov	x23, x24
+1004e6060: b5000496    	cbnz	x22, 0x1004e60f0 <_androidSnapshot_quickbootSave+0x168>
+1004e6064: 14000027    	b	0x1004e6100 <_androidSnapshot_quickbootSave+0x178>
+1004e6068: 940054bc    	bl	0x1004fb358 <__ZN7android8snapshot11Snapshotter3getEv>
+1004e606c: 394d7c08    	ldrb	w8, [x0, #0x35f]
+1004e6070: f941a809    	ldr	x9, [x0, #0x350]
+1004e6074: 7219011f    	tst	w8, #0x80
+1004e6078: 9a881128    	csel	x8, x9, x8, ne
+1004e607c: b4000068    	cbz	x8, 0x1004e6088 <_androidSnapshot_quickbootSave+0x100>
+1004e6080: 394d8008    	ldrb	w8, [x0, #0x360]
+1004e6084: 370000e8    	tbnz	w8, #0x0, 0x1004e60a0 <_androidSnapshot_quickbootSave+0x118>
+1004e6088: 94416596    	bl	0x10153f6e0 <dyld_stub_binder+0x10153f6e0>
+1004e608c: f9405808    	ldr	x8, [x0, #0xb0]
+1004e6090: f9400108    	ldr	x8, [x8]
+1004e6094: d63f0100    	blr	x8
+1004e6098: 39400008    	ldrb	w8, [x0]
+1004e609c: 363ffac8    	tbz	w8, #0x7, 0x1004e5ff4 <_androidSnapshot_quickbootSave+0x6c>
+1004e60a0: aa1403e0    	mov	x0, x20
+1004e60a4: 944163be    	bl	0x10153ef9c <dyld_stub_binder+0x10153ef9c>
+1004e60a8: aa1403e1    	mov	x1, x20
+1004e60ac: aa0003e2    	mov	x2, x0
+1004e60b0: 97ffff6c    	bl	0x1004e5e60 <__ZN7android8snapshot9Quickboot10invalidateENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEE>
+1004e60b4: 940054a9    	bl	0x1004fb358 <__ZN7android8snapshot11Snapshotter3getEv>
+1004e60b8: 394d7c08    	ldrb	w8, [x0, #0x35f]
+1004e60bc: f941a809    	ldr	x9, [x0, #0x350]
+1004e60c0: 7219011f    	tst	w8, #0x80
+1004e60c4: 9a881128    	csel	x8, x9, x8, ne
+1004e60c8: b50004e8    	cbnz	x8, 0x1004e6164 <_androidSnapshot_quickbootSave+0x1dc>
+1004e60cc: 1400002e    	b	0x1004e6184 <_androidSnapshot_quickbootSave+0x1fc>
+1004e60d0: b2400ed9    	orr	x25, x22, #0xf
+1004e60d4: 91000720    	add	x0, x25, #0x1
+1004e60d8: 94416564    	bl	0x10153f668 <dyld_stub_binder+0x10153f668>
+1004e60dc: aa0003f7    	mov	x23, x0
+1004e60e0: b24107e8    	mov	x8, #-0x7fffffffffffffff ; =-9223372036854775807
+1004e60e4: 8b080328    	add	x8, x25, x8
+1004e60e8: a901a3f6    	stp	x22, x8, [sp, #0x18]
+1004e60ec: f9000be0    	str	x0, [sp, #0x10]
+1004e60f0: aa1703e0    	mov	x0, x23
+1004e60f4: aa1403e1    	mov	x1, x20
+1004e60f8: aa1603e2    	mov	x2, x22
+1004e60fc: 94416342    	bl	0x10153ee04 <dyld_stub_binder+0x10153ee04>
+1004e6100: 38366aff    	strb	wzr, [x23, x22]
+1004e6104: 52800028    	mov	w8, #0x1                ; =1
+1004e6108: 3900a3e8    	strb	w8, [sp, #0x28]
+1004e610c: 39c09fe8    	ldrsb	w8, [sp, #0x27]
+1004e6110: f9400be9    	ldr	x9, [sp, #0x10]
+1004e6114: 7100011f    	cmp	w8, #0x0
+1004e6118: 9a984120    	csel	x0, x9, x24, mi
+1004e611c: 52800001    	mov	w1, #0x0                ; =0
+1004e6120: 97ffdc7f    	bl	0x1004dd31c <_androidSnapshot_setRamFileDirty>
+1004e6124: 3940a3e8    	ldrb	w8, [sp, #0x28]
+1004e6128: 7100051f    	cmp	w8, #0x1
+1004e612c: 540000e1    	b.ne	0x1004e6148 <_androidSnapshot_quickbootSave+0x1c0>
+1004e6130: 39c09fe8    	ldrsb	w8, [sp, #0x27]
+1004e6134: 36f800a8    	tbz	w8, #0x1f, 0x1004e6148 <_androidSnapshot_quickbootSave+0x1c0>
+1004e6138: f9400be0    	ldr	x0, [sp, #0x10]
+1004e613c: f94013e8    	ldr	x8, [sp, #0x20]
+1004e6140: 9240f901    	and	x1, x8, #0x7fffffffffffffff
+1004e6144: 9441652b    	bl	0x10153f5f0 <dyld_stub_binder+0x10153f5f0>
+1004e6148: 97fffb76    	bl	0x1004e4f20 <__ZN7android8snapshot9Quickboot37saveAvdToSystemImageSnapshotsLocalDirEv>
+1004e614c: 94005483    	bl	0x1004fb358 <__ZN7android8snapshot11Snapshotter3getEv>
+1004e6150: 394d7c08    	ldrb	w8, [x0, #0x35f]
+1004e6154: f941a809    	ldr	x9, [x0, #0x350]
+1004e6158: 7219011f    	tst	w8, #0x80
+1004e615c: 9a881128    	csel	x8, x9, x8, ne
+1004e6160: b4000128    	cbz	x8, 0x1004e6184 <_androidSnapshot_quickbootSave+0x1fc>
+1004e6164: 9441655f    	bl	0x10153f6e0 <dyld_stub_binder+0x10153f6e0>
+1004e6168: f9405808    	ldr	x8, [x0, #0xb0]
+1004e616c: f9400108    	ldr	x8, [x8]
+1004e6170: d63f0100    	blr	x8
+1004e6174: b9400008    	ldr	w8, [x0]
+1004e6178: 721a011f    	tst	w8, #0x40
+1004e617c: 1a9f17e0    	cset	w0, eq
+1004e6180: 9400004a    	bl	0x1004e62a8 <_androidSnapshot_writeQuickbootChoice>
+1004e6184: 9441652d    	bl	0x10153f638 <dyld_stub_binder+0x10153f638>
+1004e6188: f9400008    	ldr	x8, [x0]
+1004e618c: f940c908    	ldr	x8, [x8, #0x190]
+1004e6190: d63f0100    	blr	x8
+1004e6194: aa0003f6    	mov	x22, x0
+1004e6198: 94416513    	bl	0x10153f5e4 <dyld_stub_binder+0x10153f5e4>
+1004e619c: 7100001f    	cmp	w0, #0x0
+1004e61a0: 5400056c    	b.gt	0x1004e624c <_androidSnapshot_quickbootSave+0x2c4>
+1004e61a4: d343fea8    	lsr	x8, x21, #3
+1004e61a8: d29ef9e9    	mov	x9, #0xf7cf             ; =63439
+1004e61ac: f2bc6a69    	movk	x9, #0xe353, lsl #16
+1004e61b0: f2d374a9    	movk	x9, #0x9ba5, lsl #32
+1004e61b4: f2e41889    	movk	x9, #0x20c4, lsl #48
+1004e61b8: 9bc97d08    	umulh	x8, x8, x9
+1004e61bc: d344fd17    	lsr	x23, x8, #4
+1004e61c0: d343fec8    	lsr	x8, x22, #3
+1004e61c4: 9bc97d08    	umulh	x8, x8, x9
+1004e61c8: d344fd16    	lsr	x22, x8, #4
+1004e61cc: d00087c1    	adrp	x1, 0x1015e0000 <__ZN8crashpad12_GLOBAL__N_119kCompletedDirectoryE+0x5fb6d>
+1004e61d0: 910f0421    	add	x1, x1, #0x3c1
+1004e61d4: 910003e0    	mov	x0, sp
+1004e61d8: 52805fe2    	mov	w2, #0x2ff              ; =767
+1004e61dc: 52800003    	mov	w3, #0x0                ; =0
+1004e61e0: 52800004    	mov	w4, #0x0                ; =0
+1004e61e4: 94416929    	bl	0x101540688 <dyld_stub_binder+0x101540688>
+1004e61e8: f94003e8    	ldr	x8, [sp]
+1004e61ec: d00087c1    	adrp	x1, 0x1015e0000 <__ZN8crashpad12_GLOBAL__N_119kCompletedDirectoryE+0x5fb6d>
+1004e61f0: 912c6c21    	add	x1, x1, #0xb1b
+1004e61f4: 9105c100    	add	x0, x8, #0x170
+1004e61f8: 52800222    	mov	w2, #0x11               ; =17
+1004e61fc: 97fca636    	bl	0x10040fad4 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+1004e6200: aa0003f5    	mov	x21, x0
+1004e6204: aa1403e0    	mov	x0, x20
+1004e6208: 94416365    	bl	0x10153ef9c <dyld_stub_binder+0x10153ef9c>
+1004e620c: aa0003e2    	mov	x2, x0
+1004e6210: aa1503e0    	mov	x0, x21
+1004e6214: aa1403e1    	mov	x1, x20
+1004e6218: 97fca62f    	bl	0x10040fad4 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+1004e621c: d00087c1    	adrp	x1, 0x1015e0000 <__ZN8crashpad12_GLOBAL__N_119kCompletedDirectoryE+0x5fb6d>
+1004e6220: 91198421    	add	x1, x1, #0x661
+1004e6224: 52800102    	mov	w2, #0x8                ; =8
+1004e6228: 97fca62b    	bl	0x10040fad4 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+1004e622c: cb1702c1    	sub	x1, x22, x23
+1004e6230: 94416b71    	bl	0x101540ff4 <dyld_stub_binder+0x101540ff4>
+1004e6234: d00087c1    	adrp	x1, 0x1015e0000 <__ZN8crashpad12_GLOBAL__N_119kCompletedDirectoryE+0x5fb6d>
+1004e6238: 9119a821    	add	x1, x1, #0x66a
+1004e623c: 52800062    	mov	w2, #0x3                ; =3
+1004e6240: 97fca625    	bl	0x10040fad4 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+1004e6244: 910003e0    	mov	x0, sp
+1004e6248: 9441690d    	bl	0x10154067c <dyld_stub_binder+0x10154067c>
+1004e624c: aa1303e0    	mov	x0, x19
+1004e6250: a9477bfd    	ldp	x29, x30, [sp, #0x70]
+1004e6254: a9464ff4    	ldp	x20, x19, [sp, #0x60]
+1004e6258: a94557f6    	ldp	x22, x21, [sp, #0x50]
+1004e625c: a9445ff8    	ldp	x24, x23, [sp, #0x40]
+1004e6260: a94367fa    	ldp	x26, x25, [sp, #0x30]
+1004e6264: 910203ff    	add	sp, sp, #0x80
+1004e6268: d65f03c0    	ret
+1004e626c: 944162c5    	bl	0x10153ed80 <dyld_stub_binder+0x10153ed80>

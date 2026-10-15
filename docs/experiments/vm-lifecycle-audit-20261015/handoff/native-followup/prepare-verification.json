@@ -1,0 +1,13 @@
+{
+  "mode": "prepare-only",
+  "native_execution_started": false,
+  "product_file_count": 32,
+  "product_mismatches": [],
+  "previous_harness_unchanged": true,
+  "dry_run_root_created": false,
+  "guard_tests_log": "..........\n----------------------------------------------------------------------\nRan 10 tests in 0.002s\n\nOK\n",
+  "syntax": "passed",
+  "product_imports_in_prepare": "none (stdlib runpy/test/plan only)",
+  "harness_sha256": "5e14ffb100bbcd3fb4e3a420615716633a3b907902f999abc2a030e8f0623d9e",
+  "fixture_sha256": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87"
+}

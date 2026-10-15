@@ -1,0 +1,200 @@
+2026-10-16 06:22:25.473 | DEBUG    | ai_phone.agent.drivers.harmony:_neutralize_hmdriver_del_once:114 - hmdriver2.Driver.__del__ 已阉割（去除 _instance.clear + fport 副作用）
+2026-10-16 06:22:28.697 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:////Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-2dc9844f-20261016-a3/server.sqlite3
+2026-10-16 06:22:29.050 | INFO     | ai_phone.agent.ws_client:run_forever:221 - 连接 Server WS ws://127.0.0.1:58152/ws/agent?token=***
+2026-10-16 06:22:29.073 | INFO     | ai_phone.agent.ws_client:_on_connected:275 - hello sent | devices=[]
+2026-10-16 06:22:29.073 | INFO     | ai_phone.agent.ws_client:_rescan_loop:511 - rescan_loop 启动，间隔 5.0s
+2026-10-16 06:22:29.073 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 name=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 host_os=Darwin 24.6.0
+2026-10-16 06:22:29.090 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:222 - Agent hello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=[]
+2026-10-16 06:22:29.090 | WARNING  | ai_phone.server.ws.agent_ws:agent_ws:236 - 向 Agent personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 下发配置失败（VLM Run 未应用配置会拒绝执行，等待后续补发）：新版 PHONE_VLM 配置缺失，无法派生模型执行链路：AI_PHONE_PHONE_VLM_PROVIDER, AI_PHONE_PHONE_VLM_BASE_URL, AI_PHONE_PHONE_VLM_API_KEY, AI_PHONE_PHONE_VLM_MODEL。请配置 AI_PHONE_PHONE_VLM_*；不再回退旧式 AI_PHONE_VLM_*。
+2026-10-16 06:22:53.076 | INFO     | ai_phone.agent.android_vm.manager:_provision_device:1390 - VM emulator-5666 开机预置完成 locale=- tz=Asia/Shanghai optimize=True
+2026-10-16 06:22:53.099 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['emulator-5666']
+2026-10-16 06:22:53.103 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=['emulator-5666']
+2026-10-16 06:22:57.118 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['emulator-5666'] → []
+2026-10-16 06:22:57.120 | INFO     | ai_phone.server.ws.agent_ws:op:763 - Agent personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 移除已拔出设备 ['emulator-5666']
+2026-10-16 06:22:57.120 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=[]
+2026-10-16 06:22:59.101 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=[]
+2026-10-16 06:23:03.167 | INFO     | ai_phone.agent.android_vm.manager:_provision_device:1390 - VM emulator-5666 开机预置完成 locale=- tz=Asia/Shanghai optimize=True
+2026-10-16 06:23:03.189 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['emulator-5666']
+2026-10-16 06:23:03.192 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=['emulator-5666']
+2026-10-16 06:23:06.877 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['emulator-5666'] → []
+2026-10-16 06:23:06.879 | INFO     | ai_phone.server.ws.agent_ws:op:763 - Agent personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 移除已拔出设备 ['emulator-5666']
+2026-10-16 06:23:06.879 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=[]
+2026-10-16 06:23:12.948 | INFO     | ai_phone.agent.android_vm.manager:_provision_device:1390 - VM emulator-5666 开机预置完成 locale=- tz=Asia/Shanghai optimize=True
+2026-10-16 06:23:12.971 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['emulator-5666']
+2026-10-16 06:23:12.974 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=['emulator-5666']
+2026-10-16 06:23:14.792 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['emulator-5666'] → []
+2026-10-16 06:23:14.793 | INFO     | ai_phone.server.ws.agent_ws:op:763 - Agent personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 移除已拔出设备 ['emulator-5666']
+2026-10-16 06:23:14.794 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=[]
+2026-10-16 06:23:20.731 | INFO     | ai_phone.agent.android_vm.manager:_provision_device:1390 - VM emulator-5666 开机预置完成 locale=- tz=Asia/Shanghai optimize=True
+2026-10-16 06:23:20.754 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['emulator-5666']
+2026-10-16 06:23:20.757 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=['emulator-5666']
+2026-10-16 06:23:22.698 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['emulator-5666'] → []
+2026-10-16 06:23:22.700 | INFO     | ai_phone.server.ws.agent_ws:op:763 - Agent personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 移除已拔出设备 ['emulator-5666']
+2026-10-16 06:23:22.700 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=[]
+2026-10-16 06:23:29.103 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=[]
+2026-10-16 06:23:39.232 | INFO     | ai_phone.agent.android_vm.manager:_provision_device:1390 - VM emulator-5666 开机预置完成 locale=- tz=Asia/Shanghai optimize=True
+2026-10-16 06:23:39.254 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['emulator-5666']
+2026-10-16 06:23:39.257 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=['emulator-5666']
+2026-10-16 06:23:41.930 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['emulator-5666'] → []
+2026-10-16 06:23:41.931 | INFO     | ai_phone.server.ws.agent_ws:op:763 - Agent personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 移除已拔出设备 ['emulator-5666']
+2026-10-16 06:23:41.932 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=[]
+2026-10-16 06:23:43.586 | ERROR    | ai_phone.agent.android_vm.manager:_start_and_report:238 - Android VM 启动失败 vm_id=49cc71b3076c: 无法核实已有虚拟机的镜像，未修改或启动：实际镜像 system-images;android-33;google_apis;arm64-v8a 与请求 system-images;android-34;google_apis;arm64-v8a 不一致
+Traceback (most recent call last):
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/android_vm/manager.py", line 1638, in _verify_existing_avd_image
+    raise ValueError(f"实际镜像 {packages[0]} 与请求 {system_image} 不一致")
+
+ValueError: 实际镜像 system-images;android-33;google_apis;arm64-v8a 与请求 system-images;android-34;google_apis;arm64-v8a 不一致
+
+
+The above exception was the direct cause of the following exception:
+
+
+Traceback (most recent call last):
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/android_vm/manager.py", line 288, in start_sync
+    return self._start_sync_locked(vm_id, operation_msg)
+           │    │                  │      └ {'type': 'vm_start', 'vm_id': '49cc71b3076c', 'name': 'personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3', 'alias': ...
+           │    │                  └ '49cc71b3076c'
+           │    └ <function AndroidVmManager._start_sync_locked at 0x106704f40>
+           └ <ai_phone.agent.android_vm.manager.AndroidVmManager object at 0x106b63850>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/android_vm/manager.py", line 393, in _start_sync_locked
+    created_here = self._ensure_avd(
+                   │    └ <function AndroidVmManager._ensure_avd at 0x106705a80>
+                   └ <ai_phone.agent.android_vm.manager.AndroidVmManager object at 0x106b63850>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/android_vm/manager.py", line 1104, in _ensure_avd
+    _verify_existing_avd_image(tools, avd_name, system_image, avd_list=proc.stdout or "")
+    │                          │      │         │                      │    └ 'Available Android Virtual Devices:\n    Name: aiphone_vm_49cc71b3076c\n    Path: /Users/dongxin/.codex/personal-vm-followup/...
+    │                          │      │         │                      └ CompletedProcess(args=['/Users/dongxin/Library/Android/sdk/cmdline-tools/latest/bin/avdmanager', 'list', 'avd'], returncode=0...
+    │                          │      │         └ 'system-images;android-34;google_apis;arm64-v8a'
+    │                          │      └ 'aiphone_vm_49cc71b3076c'
+    │                          └ AndroidVmTools(adb='/Users/dongxin/Library/Android/sdk/platform-tools/adb', emulator='/Users/dongxin/Library/Android/sdk/emul...
+    └ <function _verify_existing_avd_image at 0x106706700>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/android_vm/manager.py", line 1640, in _verify_existing_avd_image
+    raise _ExistingAvdImageError(f"无法核实已有虚拟机的镜像，未修改或启动：{exc}") from exc
+          └ <class 'ai_phone.agent.android_vm.manager._ExistingAvdImageError'>
+
+ai_phone.agent.android_vm.manager._ExistingAvdImageError: 无法核实已有虚拟机的镜像，未修改或启动：实际镜像 system-images;android-33;google_apis;arm64-v8a 与请求 system-images;android-34;google_apis;arm64-v8a 不一致
+
+
+The above exception was the direct cause of the following exception:
+
+
+Traceback (most recent call last):
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_snapshot_a6.py", line 870, in <module>
+    main()
+    └ <function main at 0x103343c40>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_snapshot_a6.py", line 864, in main
+    asyncio.run(execute(args.run_id))
+    │       │   │       │    └ 'android-snapshot-a6-2dc9844f-20261016-a3'
+    │       │   │       └ Namespace(execute=True, dry_run=False, run_id='android-snapshot-a6-2dc9844f-20261016-a3')
+    │       │   └ <function execute at 0x103343ba0>
+    │       └ <function run at 0x102a7a840>
+    └ <module 'asyncio' from '/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asy...
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           │      │   └ <coroutine object execute at 0x12a04cc10>
+           │      └ <function Runner.run at 0x10314e5c0>
+           └ <asyncio.runners.Runner object at 0x1032fb190>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           │    │     │                  └ <Task pending name='Task-1' coro=<execute() running at /Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/e...
+           │    │     └ <function BaseEventLoop.run_until_complete at 0x10314c220>
+           │    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+           └ <asyncio.runners.Runner object at 0x1032fb190>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 641, in run_until_complete
+    self.run_forever()
+    │    └ <function BaseEventLoop.run_forever at 0x10314c180>
+    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 608, in run_forever
+    self._run_once()
+    │    └ <function BaseEventLoop._run_once at 0x10314df80>
+    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 1936, in _run_once
+    handle._run()
+    │      └ <function Handle._run at 0x102a6c0e0>
+    └ <Handle Task.task_wakeup(<Future finis...m64-v8a 不一致')>)>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/events.py", line 84, in _run
+    self._context.run(self._callback, *self._args)
+    │    │            │    │           │    └ <member '_args' of 'Handle' objects>
+    │    │            │    │           └ <Handle Task.task_wakeup(<Future finis...m64-v8a 不一致')>)>
+    │    │            │    └ <member '_callback' of 'Handle' objects>
+    │    │            └ <Handle Task.task_wakeup(<Future finis...m64-v8a 不一致')>)>
+    │    └ <member '_context' of 'Handle' objects>
+    └ <Handle Task.task_wakeup(<Future finis...m64-v8a 不一致')>)>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/ws_client.py", line 486, in run
+    await self._call_handler(handler, handler_msg)
+          │    │             │        └ {'type': 'vm_start', 'vm_id': '49cc71b3076c', 'name': 'personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3', 'alias': ...
+          │    │             └ <function execute.<locals>.guard.<locals>.call at 0x1074dd440>
+          │    └ <function AgentWSClient._call_handler at 0x1066e23e0>
+          └ AgentWSClient(ws_url='ws://127.0.0.1:58152/ws/agent', token='kMfmVuQbByNlqqAjXDOkhcQgHkXrRIkOIcaB__ANmYg', agent_id='personal...
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/ws_client.py", line 387, in _call_handler
+    await handler(self, msg)
+          │       │     └ {'type': 'vm_start', 'vm_id': '49cc71b3076c', 'name': 'personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3', 'alias': ...
+          │       └ AgentWSClient(ws_url='ws://127.0.0.1:58152/ws/agent', token='kMfmVuQbByNlqqAjXDOkhcQgHkXrRIkOIcaB__ANmYg', agent_id='personal...
+          └ <function execute.<locals>.guard.<locals>.call at 0x1074dd440>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_snapshot_a6.py", line 556, in call
+    await handler(client, msg)
+          │       │       └ {'type': 'vm_start', 'vm_id': '49cc71b3076c', 'name': 'personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3', 'alias': ...
+          │       └ AgentWSClient(ws_url='ws://127.0.0.1:58152/ws/agent', token='kMfmVuQbByNlqqAjXDOkhcQgHkXrRIkOIcaB__ANmYg', agent_id='personal...
+          └ <bound method AndroidVmManager.handle_start of <ai_phone.agent.android_vm.manager.AndroidVmManager object at 0x106b63850>>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/android_vm/manager.py", line 170, in handle_start
+    await self._start_and_report(client, msg)
+          │    │                 │       └ {'type': 'vm_start', 'vm_id': '49cc71b3076c', 'name': 'personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3', 'alias': ...
+          │    │                 └ AgentWSClient(ws_url='ws://127.0.0.1:58152/ws/agent', token='kMfmVuQbByNlqqAjXDOkhcQgHkXrRIkOIcaB__ANmYg', agent_id='personal...
+          │    └ <function AndroidVmManager._start_and_report at 0x106704d60>
+          └ <ai_phone.agent.android_vm.manager.AndroidVmManager object at 0x106b63850>
+
+> File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/android_vm/manager.py", line 236, in _start_and_report
+    result = await asyncio.to_thread(self.start_sync, operation_msg)
+                   │       │         │    │           └ {'type': 'vm_start', 'vm_id': '49cc71b3076c', 'name': 'personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3', 'alias': ...
+                   │       │         │    └ <function AndroidVmManager.start_sync at 0x106704ea0>
+                   │       │         └ <ai_phone.agent.android_vm.manager.AndroidVmManager object at 0x106b63850>
+                   │       └ <function to_thread at 0x1031636a0>
+                   └ <module 'asyncio' from '/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asy...
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+                 │    │                     └ functools.partial(<built-in method run of _contextvars.Context object at 0x108355500>, <bound method AndroidVmManager.start_s...
+                 │    └ <function BaseEventLoop.run_in_executor at 0x10314cae0>
+                 └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             │        │            └ None
+             │        └ None
+             └ None
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/android_vm/manager.py", line 304, in start_sync
+    raise VmStartFailure(exc) from exc
+          └ <class 'ai_phone.agent.android_vm.manager.VmStartFailure'>
+
+ai_phone.agent.android_vm.manager.VmStartFailure: 无法核实已有虚拟机的镜像，未修改或启动：实际镜像 system-images;android-33;google_apis;arm64-v8a 与请求 system-images;android-34;google_apis;arm64-v8a 不一致
+2026-10-16 06:23:43.603 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=[]
+2026-10-16 06:23:59.113 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=[]
+2026-10-16 06:24:00.151 | INFO     | ai_phone.agent.android_vm.manager:_provision_device:1390 - VM emulator-5666 开机预置完成 locale=- tz=Asia/Shanghai optimize=True
+2026-10-16 06:24:00.173 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['emulator-5666']
+2026-10-16 06:24:00.176 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=['emulator-5666']
+2026-10-16 06:24:02.881 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['emulator-5666'] → []
+2026-10-16 06:24:02.882 | INFO     | ai_phone.server.ws.agent_ws:op:763 - Agent personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 移除已拔出设备 ['emulator-5666']
+2026-10-16 06:24:02.883 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=[]
+2026-10-16 06:24:03.798 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 devices=[]
+2026-10-16 06:24:03.941 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:273 - Agent 断开 | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3
+2026-10-16 06:24:03.941 | INFO     | ai_phone.server.hub:unregister_agent:201 - Agent 下线 | id=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3 serials=[]
+2026-10-16 06:24:04.136 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+{"status": "passed", "evidence": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-2dc9844f-20261016-a3/evidence.json", "live_native_pids": [], "preserved_avds": []}

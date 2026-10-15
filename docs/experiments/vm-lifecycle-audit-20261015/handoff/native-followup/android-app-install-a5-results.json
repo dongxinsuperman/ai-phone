@@ -1,0 +1,508 @@
+{
+  "status": "passed",
+  "run_root": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-f263af3a-20261016-a5",
+  "evidence": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-f263af3a-20261016-a5/evidence.json",
+  "archive_evidence": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-app-install-a5.evidence.json",
+  "source_commit": "f263af3a0b8ed6aea556c63354747a79e52a4f86",
+  "harness_sha256": "43356f481dea68c8adcd7b5fb7344b08912f2b2e4f678075533f2a15856eaf51",
+  "duration_sec": 76.820651,
+  "vm_id": "c25177d4311c",
+  "receipts": [
+    {
+      "run": "android-app-install-f263af3a-20261016-a5",
+      "platform": "android",
+      "event": "load",
+      "token": "",
+      "count": 0
+    },
+    {
+      "run": "android-app-install-f263af3a-20261016-a5",
+      "platform": "android",
+      "event": "confirm",
+      "token": "personal11a45b500f0f",
+      "count": 1
+    },
+    {
+      "run": "android-app-install-f263af3a-20261016-a5",
+      "platform": "android",
+      "event": "load",
+      "token": "personal11a45b500f0f",
+      "count": 1
+    }
+  ],
+  "images": {
+    "before": {
+      "original": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-f263af3a-20261016-a5/fixture-before.png",
+      "archive": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a5-fixture-before.png",
+      "sha256": "0ce11a341fc3894b00a0fa6379804e4bc50310a6c357f9c25fcf8b7c6908696f"
+    },
+    "confirmed": {
+      "original": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-f263af3a-20261016-a5/fixture-confirmed.png",
+      "archive": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a5-fixture-confirmed.png",
+      "sha256": "11aa153281bd2edad933cbe4d034d52755139e0a072bc05f09b5575d9d33d93d"
+    },
+    "persisted": {
+      "original": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-f263af3a-20261016-a5/fixture-persisted.png",
+      "archive": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a5-fixture-persisted.png",
+      "sha256": "9a8d69f9daa39fbcd2b6ee15053a23db3a19adea657e3668f9017271bccafdbc"
+    }
+  },
+  "operations": [
+    {
+      "action": "start",
+      "endpoint": "dispatch",
+      "request_id": "960136dbabf8437b",
+      "outcome": "succeeded",
+      "generation_id": null
+    },
+    {
+      "action": "stop",
+      "endpoint": "stop",
+      "request_id": "1d89e7f3d8454de6",
+      "outcome": "succeeded",
+      "generation_id": "68340:109054693757875"
+    },
+    {
+      "action": "start",
+      "endpoint": "start",
+      "request_id": "f3b7bc086b894418",
+      "outcome": "succeeded",
+      "generation_id": "68340:109054693757875"
+    },
+    {
+      "action": "stop",
+      "endpoint": "stop",
+      "request_id": "9b3e3f7bd68f459d",
+      "outcome": "succeeded",
+      "generation_id": "68578:109099276447166"
+    }
+  ],
+  "sync_commands": [
+    {
+      "ack_marker": "dff39835c41c4f79999181dea525387f",
+      "expected_stdout": "dff39835c41c4f79999181dea525387f\n",
+      "stdout": "dff39835c41c4f79999181dea525387f\n",
+      "returncode": 0,
+      "monotonic_ns": 109097038253000,
+      "returned_monotonic_ns": 109097076313500
+    },
+    {
+      "ack_marker": "1c85d706ad194187aca366b8637459dc",
+      "expected_stdout": "1c85d706ad194187aca366b8637459dc\n",
+      "stdout": "1c85d706ad194187aca366b8637459dc\n",
+      "returncode": 0,
+      "monotonic_ns": 109122817361250,
+      "returned_monotonic_ns": 109122853214458
+    }
+  ],
+  "process_stops": [
+    {
+      "pid": 68340,
+      "emu_kill_succeeded": true,
+      "forwarded_kwargs": {
+        "deadline": 109216.98250525,
+        "grace_deadline": 109117.097514083
+      },
+      "fallback_signals": [],
+      "calls": [
+        {
+          "method": "wait",
+          "at": "2026-10-15T21:46:24.740846+00:00",
+          "monotonic_ns": 109097097751125,
+          "kwargs": {
+            "timeout": 19.9997723330016
+          },
+          "result": 0,
+          "returned_monotonic_ns": 109098595992833
+        }
+      ]
+    },
+    {
+      "pid": 68578,
+      "emu_kill_succeeded": true,
+      "forwarded_kwargs": {
+        "deadline": 109242.778653167,
+        "grace_deadline": 109142.874669583
+      },
+      "fallback_signals": [],
+      "calls": [
+        {
+          "method": "wait",
+          "at": "2026-10-15T21:46:50.517944+00:00",
+          "monotonic_ns": 109122874857458,
+          "kwargs": {
+            "timeout": 19.999824458005605
+          },
+          "result": 0,
+          "returned_monotonic_ns": 109123815082708
+        }
+      ]
+    }
+  ],
+  "diagnostic_summary": {
+    "phases": {
+      "first-write": {
+        "witness_ok": true,
+        "witness_errors": [],
+        "witness": {
+          "startedWallMs": 1792100770588,
+          "startedElapsedNs": 24144414928,
+          "mode": "first-write",
+          "openedForWrite": true,
+          "created": true,
+          "fileFsync": true,
+          "parentFsync": true,
+          "path": "/data/user/0/org.personal.aiphone.lifecycle/personal-witness-android-app-install-f263af3a-20261016-a5.txt",
+          "parent": "/data/user/0/org.personal.aiphone.lifecycle",
+          "existedBefore": false,
+          "sha256": "11bc74d2c48a418c78991d940c92d9b2d0f260a062d9d0f119672b7b467b884b",
+          "bytes": 93,
+          "inode": 132002,
+          "mtimeMs": 1792100770000,
+          "ok": true,
+          "finishedWallMs": 1792100770592,
+          "finishedElapsedNs": 24147940719
+        },
+        "providers": [
+          {
+            "packageName": "com.google.android.webview",
+            "versionName": "109.0.5414.123",
+            "longVersionCode": 541412334,
+            "ok": true
+          }
+        ],
+        "storage_observations": [
+          {
+            "identity_ok": true,
+            "confirmed_value": false,
+            "probe_ok": true,
+            "missing": true,
+            "read_error": null,
+            "parse_error": null,
+            "raw_value": null,
+            "parsed_value": null,
+            "trigger": "page-finished",
+            "evaluation_finished_ns": 25965528720
+          },
+          {
+            "identity_ok": true,
+            "confirmed_value": false,
+            "probe_ok": true,
+            "missing": true,
+            "read_error": null,
+            "parse_error": null,
+            "raw_value": null,
+            "parsed_value": null,
+            "trigger": "receipt-request",
+            "evaluation_finished_ns": 25935557137
+          },
+          {
+            "identity_ok": true,
+            "confirmed_value": true,
+            "probe_ok": true,
+            "missing": false,
+            "read_error": null,
+            "parse_error": null,
+            "raw_value": "{\"token\":\"personal11a45b500f0f\",\"count\":1}",
+            "parsed_value": {
+              "token": "personal11a45b500f0f",
+              "count": 1
+            },
+            "trigger": "receipt-request",
+            "evaluation_finished_ns": 33162906099
+          }
+        ],
+        "witness_observation_count": 1,
+        "confirmed_storage_observed": true
+      },
+      "restart-read": {
+        "witness_ok": true,
+        "witness_errors": [],
+        "witness": {
+          "startedWallMs": 1792100803772,
+          "startedElapsedNs": 13328300505,
+          "mode": "restart-read",
+          "openedForWrite": false,
+          "created": false,
+          "fileFsync": false,
+          "parentFsync": false,
+          "path": "/data/user/0/org.personal.aiphone.lifecycle/personal-witness-android-app-install-f263af3a-20261016-a5.txt",
+          "parent": "/data/user/0/org.personal.aiphone.lifecycle",
+          "existedBefore": true,
+          "sha256": "11bc74d2c48a418c78991d940c92d9b2d0f260a062d9d0f119672b7b467b884b",
+          "bytes": 93,
+          "inode": 132002,
+          "mtimeMs": 1792100770000,
+          "ok": true,
+          "finishedWallMs": 1792100803781,
+          "finishedElapsedNs": 13337234047
+        },
+        "providers": [
+          {
+            "packageName": "com.google.android.webview",
+            "versionName": "109.0.5414.123",
+            "longVersionCode": 541412334,
+            "ok": true
+          }
+        ],
+        "storage_observations": [
+          {
+            "identity_ok": true,
+            "confirmed_value": true,
+            "probe_ok": true,
+            "missing": false,
+            "read_error": null,
+            "parse_error": null,
+            "raw_value": "{\"token\":\"personal11a45b500f0f\",\"count\":1}",
+            "parsed_value": {
+              "token": "personal11a45b500f0f",
+              "count": 1
+            },
+            "trigger": "receipt-request",
+            "evaluation_finished_ns": 14237716964
+          },
+          {
+            "identity_ok": true,
+            "confirmed_value": true,
+            "probe_ok": true,
+            "missing": false,
+            "read_error": null,
+            "parse_error": null,
+            "raw_value": "{\"token\":\"personal11a45b500f0f\",\"count\":1}",
+            "parsed_value": {
+              "token": "personal11a45b500f0f",
+              "count": 1
+            },
+            "trigger": "page-finished",
+            "evaluation_finished_ns": 14254481256
+          }
+        ],
+        "witness_observation_count": 1,
+        "confirmed_storage_observed": true
+      }
+    },
+    "evidence_complete": true,
+    "missing_evidence_means": "diagnostic evidence incomplete; never inferred as missing file/storage",
+    "raw_storage_false_means": "not proven preserved; inspect missing/read_error/parse_error/identity before assigning cause",
+    "webview_provider_identities": {
+      "first-write": [
+        [
+          "com.google.android.webview",
+          "109.0.5414.123",
+          "541412334"
+        ]
+      ],
+      "restart-read": [
+        [
+          "com.google.android.webview",
+          "109.0.5414.123",
+          "541412334"
+        ]
+      ]
+    },
+    "webview_provider_same": true,
+    "durable_witness_preserved": true,
+    "raw_storage_preserved": true,
+    "actual_webview_versions_observed": true
+  },
+  "installation": {
+    "package_id": "221e7bcc47d8",
+    "task_id": "a44b468d4caa",
+    "item_id": "3149b52bfbed",
+    "handler_calls": 1,
+    "native_calls": 1,
+    "native_finished": true,
+    "guard_error": null
+  },
+  "native_exit_samples": [
+    {
+      "at": "2026-10-15T21:46:24.669980+00:00",
+      "vm_id": "c25177d4311c",
+      "confirmed": false,
+      "popen_pid": null,
+      "popen_poll": null,
+      "matching_pids": [
+        68340
+      ],
+      "process_inventory_complete": true,
+      "bind_errno": {
+        "5666": {
+          "plain": 48,
+          "reuse": 48
+        },
+        "5667": {
+          "plain": 48,
+          "reuse": 48
+        }
+      }
+    },
+    {
+      "at": "2026-10-15T21:46:26.260947+00:00",
+      "vm_id": "c25177d4311c",
+      "confirmed": true,
+      "popen_pid": null,
+      "popen_poll": null,
+      "matching_pids": [],
+      "process_inventory_complete": true,
+      "bind_errno": {
+        "5666": {
+          "plain": 48,
+          "reuse": 0
+        },
+        "5667": {
+          "plain": 48,
+          "reuse": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-15T21:46:50.449251+00:00",
+      "vm_id": "c25177d4311c",
+      "confirmed": false,
+      "popen_pid": 68578,
+      "popen_poll": null,
+      "matching_pids": [
+        68578
+      ],
+      "process_inventory_complete": true,
+      "bind_errno": {
+        "5666": {
+          "plain": 48,
+          "reuse": 48
+        },
+        "5667": {
+          "plain": 48,
+          "reuse": 48
+        }
+      }
+    },
+    {
+      "at": "2026-10-15T21:46:51.488285+00:00",
+      "vm_id": "c25177d4311c",
+      "confirmed": true,
+      "popen_pid": 68578,
+      "popen_poll": 0,
+      "matching_pids": [],
+      "process_inventory_complete": true,
+      "bind_errno": {
+        "5666": {
+          "plain": 48,
+          "reuse": 0
+        },
+        "5667": {
+          "plain": 48,
+          "reuse": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-15T21:46:51.828174+00:00",
+      "vm_id": "c25177d4311c",
+      "confirmed": true,
+      "popen_pid": null,
+      "popen_poll": null,
+      "matching_pids": [],
+      "process_inventory_complete": true,
+      "bind_errno": {
+        "5666": {
+          "plain": 48,
+          "reuse": 0
+        },
+        "5667": {
+          "plain": 48,
+          "reuse": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-15T21:46:52.340389+00:00",
+      "vm_id": "c25177d4311c",
+      "confirmed": true,
+      "popen_pid": null,
+      "popen_poll": null,
+      "matching_pids": [],
+      "process_inventory_complete": true,
+      "bind_errno": {}
+    },
+    {
+      "at": "2026-10-15T21:46:52.360758+00:00",
+      "vm_id": "c25177d4311c",
+      "confirmed": true,
+      "popen_pid": null,
+      "popen_poll": null,
+      "matching_pids": [],
+      "process_inventory_complete": true,
+      "bind_errno": {}
+    },
+    {
+      "at": "2026-10-15T21:46:52.392345+00:00",
+      "vm_id": "c25177d4311c",
+      "confirmed": true,
+      "popen_pid": null,
+      "popen_poll": null,
+      "matching_pids": [],
+      "process_inventory_complete": true,
+      "bind_errno": {}
+    }
+  ],
+  "cleanup_readback": {
+    "at": "2026-10-15T21:47:31.064470+00:00",
+    "scope": "exact-owned process IDs and private loopback ports only",
+    "processes": {
+      "68340": {
+        "exists": false
+      },
+      "68578": {
+        "exists": false
+      },
+      "68271": {
+        "exists": false
+      }
+    },
+    "ports": {
+      "15037": {
+        "127.0.0.1": {
+          "bindable": true
+        },
+        "::1": {
+          "bindable": true
+        }
+      },
+      "5666": {
+        "127.0.0.1": {
+          "bindable": true
+        },
+        "::1": {
+          "bindable": true
+        }
+      },
+      "5667": {
+        "127.0.0.1": {
+          "bindable": true
+        },
+        "::1": {
+          "bindable": true
+        }
+      }
+    },
+    "avd_exists": false,
+    "ini_exists": false
+  },
+  "protected_metadata_changed": [],
+  "product_mismatches": [],
+  "source_changes": [],
+  "scope": "Original no_snapshot synthetic page case passed on product sync candidate; not a unique causal proof for every a2/a4 failure",
+  "not_covered": [
+    "save/discard_changes/cold_boot snapshot matrix",
+    "external guest networking",
+    "VLM/company business Case",
+    "physical devices",
+    "agent.main._get_driver live port reuse"
+  ],
+  "visual_review": {
+    "previous_note": "pending independent root inspection",
+    "root_review_pending": false,
+    "root_independent_review": "passed",
+    "root_evidence": "android-a5-root-review.json"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "reviewer": "root",
+  "result": "confirmed failure, not acceptance",
+  "observations": {
+    "before": "empty token, count 0",
+    "confirmed": "personal05598c7fa9de, count 1",
+    "after_restart": "empty token, count 0"
+  },
+  "sha256": {
+    "a2-fixture-before.png": "238ab0cfb45ac9adcc8a70f7f5670f396e323ac16e36daa2e7eda409ca0b958f",
+    "a2-fixture-confirmed.png": "a70cebc80fab57f35a96149d01a85d9c58b610612d06ebbe936db74f828a4398",
+    "a2-failure-d499f403dffb.png": "e04449fb4b059cae222982ce3ddad9c0311e6f25e4303a502aedf28d666da76e"
+  },
+  "cause": "not yet established; retained original AVD for read-only investigation"
+}

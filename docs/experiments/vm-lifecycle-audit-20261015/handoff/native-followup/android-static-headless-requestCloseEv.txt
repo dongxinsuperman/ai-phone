@@ -1,0 +1,221 @@
+Read-only disassembly. Target binary was not executed.
+Command: ['/usr/bin/xcrun', 'llvm-objdump', '--arch=arm64', '--disassemble-symbols=__ZN20EmulatorNoQtNoWindow12requestCloseEv,__ZNSt3__110__function6__funcIZN20EmulatorNoQtNoWindow12requestCloseEvE3$_0NS_9allocatorIS3_EEFvRKN7android4base8OptionalINS6_9emulation16AdbCommandResultEEEEEclESD_', '/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless']
+
+/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+000000010059ea1c <__ZN20EmulatorNoQtNoWindow12requestCloseEv>:
+10059ea1c: d10343ff    	sub	sp, sp, #0xd0
+10059ea20: a90a57f6    	stp	x22, x21, [sp, #0xa0]
+10059ea24: a90b4ff4    	stp	x20, x19, [sp, #0xb0]
+10059ea28: a90c7bfd    	stp	x29, x30, [sp, #0xc0]
+10059ea2c: 910303fd    	add	x29, sp, #0xc0
+10059ea30: aa0003f3    	mov	x19, x0
+10059ea34: d0009c68    	adrp	x8, 0x10192c000 <dyld_stub_binder+0x10192c000>
+10059ea38: f9400108    	ldr	x8, [x8]
+10059ea3c: f9400108    	ldr	x8, [x8]
+10059ea40: f81d83a8    	stur	x8, [x29, #-0x28]
+10059ea44: f00082c0    	adrp	x0, 0x1015f9000 <__ZN7android9emulationL3hdrE+0x741a>
+10059ea48: 91191400    	add	x0, x0, #0x645
+10059ea4c: 94380d78    	bl	0x1013a202c <_crashhandler_exitmode>
+10059ea50: 97ffffba    	bl	0x10059e938 <__ZN20EmulatorNoQtNoWindow24saveMultidisplayToConfigEv>
+10059ea54: 528000e0    	mov	w0, #0x7                ; =7
+10059ea58: 943773d1    	bl	0x10137b99c <__ZN7android14featurecontrol9isEnabledENS0_7FeatureE>
+10059ea5c: 340005c0    	cbz	w0, 0x10059eb14 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0xf8>
+10059ea60: 943e8320    	bl	0x10153f6e0 <dyld_stub_binder+0x10153f6e0>
+10059ea64: f9405808    	ldr	x8, [x0, #0xb0]
+10059ea68: f9400508    	ldr	x8, [x8, #0x8]
+10059ea6c: d63f0100    	blr	x8
+10059ea70: 9437dfae    	bl	0x101396928 <_avdInfo_getSnapshotLockFilePath>
+10059ea74: b4000320    	cbz	x0, 0x10059ead8 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0xbc>
+10059ea78: 943e8da0    	bl	0x1015420f8 <dyld_stub_binder+0x1015420f8>
+10059ea7c: b50002e0    	cbnz	x0, 0x10059ead8 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0xbc>
+10059ea80: 943e82d9    	bl	0x10153f5e4 <dyld_stub_binder+0x10153f5e4>
+10059ea84: 7100081f    	cmp	w0, #0x2
+10059ea88: 5400028c    	b.gt	0x10059ead8 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0xbc>
+10059ea8c: f00082c0    	adrp	x0, 0x1015f9000 <__ZN7android9emulationL3hdrE+0x741a>
+10059ea90: 91194800    	add	x0, x0, #0x652
+10059ea94: 910143e8    	add	x8, sp, #0x50
+10059ea98: 528004c1    	mov	w1, #0x26               ; =38
+10059ea9c: d2800002    	mov	x2, #0x0                ; =0
+10059eaa0: d2800003    	mov	x3, #0x0                ; =0
+10059eaa4: 943e82d9    	bl	0x10153f608 <dyld_stub_binder+0x10153f608>
+10059eaa8: f00082c1    	adrp	x1, 0x1015f9000 <__ZN7android9emulationL3hdrE+0x741a>
+10059eaac: 91155c21    	add	x1, x1, #0x557
+10059eab0: 910143e3    	add	x3, sp, #0x50
+10059eab4: 52800040    	mov	w0, #0x2                ; =2
+10059eab8: 528022a2    	mov	w2, #0x115              ; =277
+10059eabc: 943e82d0    	bl	0x10153f5fc <dyld_stub_binder+0x10153f5fc>
+10059eac0: 39c19fe8    	ldrsb	w8, [sp, #0x67]
+10059eac4: 36f800a8    	tbz	w8, #0x1f, 0x10059ead8 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0xbc>
+10059eac8: f9402be0    	ldr	x0, [sp, #0x50]
+10059eacc: f94033e8    	ldr	x8, [sp, #0x60]
+10059ead0: 9240f901    	and	x1, x8, #0x7fffffffffffffff
+10059ead4: 943e82c7    	bl	0x10153f5f0 <dyld_stub_binder+0x10153f5f0>
+10059ead8: 943e82d8    	bl	0x10153f638 <dyld_stub_binder+0x10153f638>
+10059eadc: 52800280    	mov	w0, #0x14               ; =20
+10059eae0: 943e8348    	bl	0x10153f800 <dyld_stub_binder+0x10153f800>
+10059eae4: 943e82ff    	bl	0x10153f6e0 <dyld_stub_binder+0x10153f6e0>
+10059eae8: f9404808    	ldr	x8, [x0, #0x90]
+10059eaec: f9408108    	ldr	x8, [x8, #0x100]
+10059eaf0: 52800080    	mov	w0, #0x4                ; =4
+10059eaf4: d63f0100    	blr	x8
+10059eaf8: f85d83a8    	ldur	x8, [x29, #-0x28]
+10059eafc: d0009c69    	adrp	x9, 0x10192c000 <dyld_stub_binder+0x10192c000>
+10059eb00: f9400129    	ldr	x9, [x9]
+10059eb04: f9400129    	ldr	x9, [x9]
+10059eb08: eb08013f    	cmp	x9, x8
+10059eb0c: 54000e60    	b.eq	0x10059ecd8 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x2bc>
+10059eb10: 1400008d    	b	0x10059ed44 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x328>
+10059eb14: 943e82c9    	bl	0x10153f638 <dyld_stub_binder+0x10153f638>
+10059eb18: 52800280    	mov	w0, #0x14               ; =20
+10059eb1c: 943e8339    	bl	0x10153f800 <dyld_stub_binder+0x10153f800>
+10059eb20: f9400673    	ldr	x19, [x19, #0x8]
+10059eb24: 528000a8    	mov	w8, #0x5                ; =5
+10059eb28: 39019fe8    	strb	w8, [sp, #0x67]
+10059eb2c: 528d0e68    	mov	w8, #0x6873             ; =26739
+10059eb30: 72ad8ca8    	movk	w8, #0x6c65, lsl #16
+10059eb34: b90053e8    	str	w8, [sp, #0x50]
+10059eb38: 52800d88    	mov	w8, #0x6c               ; =108
+10059eb3c: 7900abe8    	strh	w8, [sp, #0x54]
+10059eb40: 910143f5    	add	x21, sp, #0x50
+10059eb44: 528000c8    	mov	w8, #0x6                ; =6
+10059eb48: 3901ffe8    	strb	w8, [sp, #0x7f]
+10059eb4c: 528cae48    	mov	w8, #0x6572             ; =25970
+10059eb50: 72adec48    	movk	w8, #0x6f62, lsl #16
+10059eb54: b9006be8    	str	w8, [sp, #0x68]
+10059eb58: 528e8de8    	mov	w8, #0x746f             ; =29807
+10059eb5c: 7900dbe8    	strh	w8, [sp, #0x6c]
+10059eb60: 3901bbff    	strb	wzr, [sp, #0x6e]
+10059eb64: 52800048    	mov	w8, #0x2                ; =2
+10059eb68: 39025fe8    	strb	w8, [sp, #0x97]
+10059eb6c: 528e05a8    	mov	w8, #0x702d             ; =28717
+10059eb70: 790103e8    	strh	w8, [sp, #0x80]
+10059eb74: 39020bff    	strb	wzr, [sp, #0x82]
+10059eb78: 52800900    	mov	w0, #0x48               ; =72
+10059eb7c: 943e82bb    	bl	0x10153f668 <dyld_stub_binder+0x10153f668>
+10059eb80: aa0003f4    	mov	x20, x0
+10059eb84: 91012016    	add	x22, x0, #0x48
+10059eb88: f90007e0    	str	x0, [sp, #0x8]
+10059eb8c: f9000ff6    	str	x22, [sp, #0x18]
+10059eb90: 910143e1    	add	x1, sp, #0x50
+10059eb94: 943e82a0    	bl	0x10153f614 <dyld_stub_binder+0x10153f614>
+10059eb98: 91006000    	add	x0, x0, #0x18
+10059eb9c: 910062a1    	add	x1, x21, #0x18
+10059eba0: 943e829d    	bl	0x10153f614 <dyld_stub_binder+0x10153f614>
+10059eba4: 9100c280    	add	x0, x20, #0x30
+10059eba8: 9100c2a1    	add	x1, x21, #0x30
+10059ebac: 943e829a    	bl	0x10153f614 <dyld_stub_binder+0x10153f614>
+10059ebb0: d000a288    	adrp	x8, 0x1019f0000 <_keysym_names+0x248>
+10059ebb4: 91286108    	add	x8, x8, #0xa18
+10059ebb8: f9000bf6    	str	x22, [sp, #0x10]
+10059ebbc: 9100c3f4    	add	x20, sp, #0x30
+10059ebc0: f9001be8    	str	x8, [sp, #0x30]
+10059ebc4: f90027f4    	str	x20, [sp, #0x48]
+10059ebc8: f9400268    	ldr	x8, [x19]
+10059ebcc: f9402109    	ldr	x9, [x8, #0x40]
+10059ebd0: 910083e8    	add	x8, sp, #0x20
+10059ebd4: 910023e1    	add	x1, sp, #0x8
+10059ebd8: 9100c3e2    	add	x2, sp, #0x30
+10059ebdc: aa1303e0    	mov	x0, x19
+10059ebe0: 52827103    	mov	w3, #0x1388             ; =5000
+10059ebe4: 52800004    	mov	w4, #0x0                ; =0
+10059ebe8: d63f0120    	blr	x9
+10059ebec: f94017f3    	ldr	x19, [sp, #0x28]
+10059ebf0: b40000b3    	cbz	x19, 0x10059ec04 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x1e8>
+10059ebf4: 91002268    	add	x8, x19, #0x8
+10059ebf8: 92800009    	mov	x9, #-0x1               ; =-1
+10059ebfc: f8e90108    	ldaddal	x9, x8, [x8]
+10059ec00: b40000e8    	cbz	x8, 0x10059ec1c <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x200>
+10059ec04: f94027e0    	ldr	x0, [sp, #0x48]
+10059ec08: eb14001f    	cmp	x0, x20
+10059ec0c: 540001a0    	b.eq	0x10059ec40 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x224>
+10059ec10: b4000200    	cbz	x0, 0x10059ec50 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x234>
+10059ec14: 52800508    	mov	w8, #0x28               ; =40
+10059ec18: 1400000b    	b	0x10059ec44 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x228>
+10059ec1c: f9400268    	ldr	x8, [x19]
+10059ec20: f9400908    	ldr	x8, [x8, #0x10]
+10059ec24: aa1303e0    	mov	x0, x19
+10059ec28: d63f0100    	blr	x8
+10059ec2c: aa1303e0    	mov	x0, x19
+10059ec30: 943e831b    	bl	0x10153f89c <dyld_stub_binder+0x10153f89c>
+10059ec34: f94027e0    	ldr	x0, [sp, #0x48]
+10059ec38: eb14001f    	cmp	x0, x20
+10059ec3c: 54fffea1    	b.ne	0x10059ec10 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x1f4>
+10059ec40: 52800408    	mov	w8, #0x20               ; =32
+10059ec44: f9400009    	ldr	x9, [x0]
+10059ec48: f8686928    	ldr	x8, [x9, x8]
+10059ec4c: d63f0100    	blr	x8
+10059ec50: f94007f3    	ldr	x19, [sp, #0x8]
+10059ec54: b40002b3    	cbz	x19, 0x10059eca8 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x28c>
+10059ec58: f9400bf4    	ldr	x20, [sp, #0x10]
+10059ec5c: aa1303e0    	mov	x0, x19
+10059ec60: eb14027f    	cmp	x19, x20
+10059ec64: 540000a1    	b.ne	0x10059ec78 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x25c>
+10059ec68: 1400000c    	b	0x10059ec98 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x27c>
+10059ec6c: d1006294    	sub	x20, x20, #0x18
+10059ec70: eb13029f    	cmp	x20, x19
+10059ec74: 54000100    	b.eq	0x10059ec94 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x278>
+10059ec78: 38dff288    	ldursb	w8, [x20, #-0x1]
+10059ec7c: 36ffff88    	tbz	w8, #0x1f, 0x10059ec6c <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x250>
+10059ec80: f85e8280    	ldur	x0, [x20, #-0x18]
+10059ec84: f85f8288    	ldur	x8, [x20, #-0x8]
+10059ec88: 9240f901    	and	x1, x8, #0x7fffffffffffffff
+10059ec8c: 943e8259    	bl	0x10153f5f0 <dyld_stub_binder+0x10153f5f0>
+10059ec90: 17fffff7    	b	0x10059ec6c <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x250>
+10059ec94: f94007e0    	ldr	x0, [sp, #0x8]
+10059ec98: f9000bf3    	str	x19, [sp, #0x10]
+10059ec9c: f9400fe8    	ldr	x8, [sp, #0x18]
+10059eca0: cb000101    	sub	x1, x8, x0
+10059eca4: 943e8253    	bl	0x10153f5f0 <dyld_stub_binder+0x10153f5f0>
+10059eca8: 39c25fe8    	ldrsb	w8, [sp, #0x97]
+10059ecac: 37f80208    	tbnz	w8, #0x1f, 0x10059ecec <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x2d0>
+10059ecb0: 39c1ffe8    	ldrsb	w8, [sp, #0x7f]
+10059ecb4: 37f80288    	tbnz	w8, #0x1f, 0x10059ed04 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x2e8>
+10059ecb8: 39c19fe8    	ldrsb	w8, [sp, #0x67]
+10059ecbc: 37f80308    	tbnz	w8, #0x1f, 0x10059ed1c <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x300>
+10059ecc0: f85d83a8    	ldur	x8, [x29, #-0x28]
+10059ecc4: d0009c69    	adrp	x9, 0x10192c000 <dyld_stub_binder+0x10192c000>
+10059ecc8: f9400129    	ldr	x9, [x9]
+10059eccc: f9400129    	ldr	x9, [x9]
+10059ecd0: eb08013f    	cmp	x9, x8
+10059ecd4: 54000381    	b.ne	0x10059ed44 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x328>
+10059ecd8: a94c7bfd    	ldp	x29, x30, [sp, #0xc0]
+10059ecdc: a94b4ff4    	ldp	x20, x19, [sp, #0xb0]
+10059ece0: a94a57f6    	ldp	x22, x21, [sp, #0xa0]
+10059ece4: 910343ff    	add	sp, sp, #0xd0
+10059ece8: d65f03c0    	ret
+10059ecec: f94043e0    	ldr	x0, [sp, #0x80]
+10059ecf0: f9404be8    	ldr	x8, [sp, #0x90]
+10059ecf4: 9240f901    	and	x1, x8, #0x7fffffffffffffff
+10059ecf8: 943e823e    	bl	0x10153f5f0 <dyld_stub_binder+0x10153f5f0>
+10059ecfc: 39c1ffe8    	ldrsb	w8, [sp, #0x7f]
+10059ed00: 36fffdc8    	tbz	w8, #0x1f, 0x10059ecb8 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x29c>
+10059ed04: f94037e0    	ldr	x0, [sp, #0x68]
+10059ed08: f9403fe8    	ldr	x8, [sp, #0x78]
+10059ed0c: 9240f901    	and	x1, x8, #0x7fffffffffffffff
+10059ed10: 943e8238    	bl	0x10153f5f0 <dyld_stub_binder+0x10153f5f0>
+10059ed14: 39c19fe8    	ldrsb	w8, [sp, #0x67]
+10059ed18: 36fffd48    	tbz	w8, #0x1f, 0x10059ecc0 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x2a4>
+10059ed1c: f9402be0    	ldr	x0, [sp, #0x50]
+10059ed20: f94033e8    	ldr	x8, [sp, #0x60]
+10059ed24: 9240f901    	and	x1, x8, #0x7fffffffffffffff
+10059ed28: 943e8232    	bl	0x10153f5f0 <dyld_stub_binder+0x10153f5f0>
+10059ed2c: f85d83a8    	ldur	x8, [x29, #-0x28]
+10059ed30: d0009c69    	adrp	x9, 0x10192c000 <dyld_stub_binder+0x10192c000>
+10059ed34: f9400129    	ldr	x9, [x9]
+10059ed38: f9400129    	ldr	x9, [x9]
+10059ed3c: eb08013f    	cmp	x9, x8
+10059ed40: 54fffcc0    	b.eq	0x10059ecd8 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0x2bc>
+10059ed44: 943e8000    	bl	0x10153ed44 <dyld_stub_binder+0x10153ed44>
+
+000000010059f828 <__ZNSt3__110__function6__funcIZN20EmulatorNoQtNoWindow12requestCloseEvE3$_0NS_9allocatorIS3_EEFvRKN7android4base8OptionalINS6_9emulation16AdbCommandResultEEEEEclESD_>:
+10059f828: a9bf7bfd    	stp	x29, x30, [sp, #-0x10]!
+10059f82c: 910003fd    	mov	x29, sp
+10059f830: 943e7fac    	bl	0x10153f6e0 <dyld_stub_binder+0x10153f6e0>
+10059f834: f9404808    	ldr	x8, [x0, #0x90]
+10059f838: f9408101    	ldr	x1, [x8, #0x100]
+10059f83c: 52800080    	mov	w0, #0x4                ; =4
+10059f840: a8c17bfd    	ldp	x29, x30, [sp], #0x10
+10059f844: d61f0020    	br	x1

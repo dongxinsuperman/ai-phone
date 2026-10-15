@@ -1,0 +1,10 @@
+{
+  "old_sha256": "4a394c4d6ea4cb4b0611103e42bef3579b8818d3fab4f2e095313f7e4c467197",
+  "new_sha256": "6aefde1f42ca4b3861c48771d34a6fdeef4dafe4325e30244c5d16ea2521fb16",
+  "only_argv_helper_and_call_changed_ast": true,
+  "product_count": 33,
+  "product_mismatches": [],
+  "independent_guard_tests": 30,
+  "native_executed_by_reviewer": false,
+  "result": "argv restriction fixed; root may authorize a new single run; original a1 remains a preflight failure, not product acceptance"
+}

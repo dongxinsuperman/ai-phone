@@ -1,0 +1,455 @@
+--- /Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_e2e.a2.py
++++ /Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_diagnostic_a3.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Opt-in personal Android Server-to-Agent app-install + lifecycle E2E.
++"""Opt-in a3 diagnosis: real installation + original page + durable private witness.
+ 
+ Default: print the plan only. No imports of ai_phone, network, directory creation,
+ ADB daemon, emulator, or package build occur without --execute.
+@@ -12,6 +12,7 @@
+ 
+ import argparse
+ import asyncio
++import base64
+ import contextlib
+ import datetime as dt
+ import hashlib
+@@ -36,6 +37,9 @@
+ HERE = Path(__file__).resolve().parent
+ REPO = HERE.parents[4]
+ FIXTURE_HTML = HERE.parents[1] / "execution/personal-fixture.html"
++EXPECTED_FIXTURE_SHA256 = "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87"
++JAVA_TEMPLATE = HERE / "a3_MainActivity.java"
++STORAGE_PROBE_JS = HERE / "a3_storage_diagnostic.js"
+ FROZEN_MANIFEST = HERE / "frozen-products.json"
+ SDK = Path.home() / "Library/Android/sdk"
+ DEFAULT_PARENT = Path.home() / ".codex/personal-vm-followup"
+@@ -57,27 +61,8 @@
+  </application>
+ </manifest>'''
+ 
+-JAVA = '''package org.personal.aiphone.lifecycle;
+-import android.app.Activity;
+-import android.os.Bundle;
+-import android.webkit.WebView;
+-import android.webkit.WebViewClient;
+-public final class MainActivity extends Activity {
+- @Override public void onCreate(Bundle state) {
+-  super.onCreate(state);
+-  WebView view = new WebView(this);
+-  view.getSettings().setJavaScriptEnabled(true);
+-  view.getSettings().setDomStorageEnabled(true);
+-  view.setWebViewClient(new WebViewClient());
+-  setContentView(view);
+-  String url = getIntent().getStringExtra("url");
+-  if (url == null || !url.startsWith("http://127.0.0.1:19080/fixture/")) {
+-   throw new IllegalArgumentException("personal loopback fixture URL required");
+-  }
+-  android.util.Log.i("PersonalVmE2E", "fixture-url=" + url);
+-  view.loadUrl(url);
+- }
+-}'''
++JAVA = JAVA_TEMPLATE.read_text().replace(
++    '/* A3_READONLY_STORAGE_JS */ ""', json.dumps(STORAGE_PROBE_JS.read_text(), ensure_ascii=True))
+ 
+ 
+ def utc_now():
+@@ -148,6 +133,70 @@
+     return {"returncode": returncode, "package_lines": lines, "exact_package": package_id, "absent": True}
+ 
+ 
++def diagnostic_summary(records, *, witness_name, witness_sha256, witness_bytes, fixture_url, storage_key, token):
++    """Report each independent track; missing/error evidence never means empty storage."""
++    phases = {}
++    for phase in ("first-write", "restart-read"):
++        rows = [row for row in records if row.get("phase") == phase]
++        witnesses = [row["data"] for row in rows if row.get("kind") == "witness"]
++        providers = [row["data"] for row in rows if row.get("kind") == "webview-provider"]
++        storage = [row["data"] for row in rows if row.get("kind") == "storage"]
++        witness_errors = []
++        witness = witnesses[0] if len(witnesses) == 1 else None
++        if witness is None:
++            witness_errors.append("exactly one witness observation required")
++        else:
++            if not witness.get("ok") or witness.get("mode") != phase:
++                witness_errors.append("witness operation failed or mode mismatch")
++            if witness.get("sha256") != witness_sha256 or witness.get("bytes") != witness_bytes:
++                witness_errors.append("witness content changed or unavailable")
++            if Path(str(witness.get("path") or "")).name != witness_name or \
++                    witness.get("parent") not in {f"/data/user/0/{APP_ID}", f"/data/data/{APP_ID}"}:
++                witness_errors.append("witness path is not the exact app-private file")
++            if phase == "first-write":
++                if witness.get("existedBefore") is not False or not all(witness.get(key) is True for key in
++                        ("created", "openedForWrite", "fileFsync", "parentFsync")):
++                    witness_errors.append("durable first-write evidence incomplete")
++            elif witness.get("existedBefore") is not True or any(witness.get(key) is not False for key in ("created", "openedForWrite", "fileFsync", "parentFsync")):
++                witness_errors.append("restart was not strictly read-only")
++        observations = []
++        for data in storage:
++            identity_ok = data.get("href") == fixture_url and data.get("storageKey") == storage_key \
++                and data.get("origin") == f"http://127.0.0.1:{FIXTURE_GUEST_PORT}"
++            parsed = data.get("parsedValue")
++            try:
++                independently_parsed = json.loads(data["rawValue"]) if isinstance(data.get("rawValue"), str) else None
++            except (TypeError, ValueError):
++                independently_parsed = None
++            confirmed_value = data.get("probeOk") is True and identity_ok and data.get("readError") is None \
++                and data.get("parseError") is None and data.get("missing") is False \
++                and isinstance(data.get("rawValue"), str) and isinstance(parsed, dict) \
++                and independently_parsed == parsed and parsed.get("token") == token and parsed.get("count") == 1
++            observations.append({"identity_ok": identity_ok, "confirmed_value": confirmed_value,
++                "probe_ok": data.get("probeOk"), "missing": data.get("missing"),
++                "read_error": data.get("readError"), "parse_error": data.get("parseError"),
++                "raw_value": data.get("rawValue"), "parsed_value": parsed,
++                "trigger": data.get("trigger"), "evaluation_finished_ns": data.get("evaluationFinishedElapsedNs")})
++        phases[phase] = {"witness_ok": not witness_errors, "witness_errors": witness_errors,
++                         "witness": witness, "providers": providers, "storage_observations": observations,
++                         "witness_observation_count": len(witnesses),
++                         "confirmed_storage_observed": any(x["confirmed_value"] for x in observations)}
++    complete = all(x["witness_observation_count"] == 1 and x["providers"] and
++                   any(s["probe_ok"] is True and s["identity_ok"] for s in x["storage_observations"]) for x in phases.values())
++    provider_ids = {phase: sorted({(str(p.get("packageName")), str(p.get("versionName")), str(p.get("longVersionCode")))
++                    for p in value["providers"] if p.get("ok") is True}) for phase, value in phases.items()}
++    return {"phases": phases, "evidence_complete": bool(complete),
++            "missing_evidence_means": "diagnostic evidence incomplete; never inferred as missing file/storage",
++            "raw_storage_false_means": "not proven preserved; inspect missing/read_error/parse_error/identity before assigning cause",
++            "webview_provider_identities": provider_ids,
++            "webview_provider_same": (provider_ids["first-write"] == provider_ids["restart-read"])
++                                      if all(provider_ids.values()) else None,
++            "durable_witness_preserved": all(x["witness_ok"] for x in phases.values()),
++            "raw_storage_preserved": all(x["confirmed_storage_observed"] for x in phases.values()),
++            "actual_webview_versions_observed": all(any(p.get("ok") is True and p.get("packageName")
++                and p.get("versionName") and p.get("longVersionCode") is not None for p in x["providers"]) for x in phases.values())}
++
++
+ def planned_paths(run_id: str):
+     root = DEFAULT_PARENT / run_id
+     return {
+@@ -160,6 +209,7 @@
+         "allowed_emulator_ports": [EMULATOR_PORT],
+         "fixture_apk": str(root / "fixture/personal-lifecycle.apk"),
+         "fixture_html": str(FIXTURE_HTML),
++        "diagnostic_java_template": str(JAVA_TEMPLATE), "diagnostic_readonly_js": str(STORAGE_PROBE_JS),
+         "agent_download_tmp": str(root / "tmp"),
+         "server_upload_storage": str(root / "storage/app-install"),
+         "ios_device_set_plan": str(root / "ios/devices"),
+@@ -172,6 +222,11 @@
+         "mode": "dry-run", "platform": "android", "run_id": run_id,
+         "source_repo": str(REPO), "paths": planned_paths(run_id),
+         "frozen_products": frozen_products(),
++        "diagnostic": {"fixture_html_sha256": digest(FIXTURE_HTML), "expected_html_sha256": EXPECTED_FIXTURE_SHA256,
++            "witness": "Before first WebView: exclusive private file write + FD.sync + parent Os.fsync. Restart: read only, never repair.",
++            "raw_storage": "Asynchronous read-only evaluateJavascript on page load and original receipt POST; no HTML modification.",
++            "confirmation_stop": "No new wait, guest command, sync, force-stop or reinstall after confirmation; monotonic timing only.",
++            "a2_avd": "Never inspected or changed by this new harness; a new run root is mandatory."},
+         "ownership": "Only VM IDs returned by this fresh local Server and recorded before dispatch.",
+         "server": "Fresh SQLite and loopback-only HTTP/WS, ephemeral port and token. No project .env or CLI defaults.",
+         "agent": "Restricted AgentWSClient + AndroidVmManager. No agent.main, global provider, foreign reclaim or orphan cleanup.",
+@@ -218,7 +273,7 @@
+         tmp.replace(target)
+ 
+     def add(self, stage, **details):
+-        self.value["stages"].append({"stage": stage, "at": utc_now(), **details})
++        self.value["stages"].append({"stage": stage, "at": utc_now(), "monotonic_ns": time.monotonic_ns(), **details})
+         self.flush()
+ 
+ 
+@@ -385,6 +440,8 @@
+ 
+ 
+ async def execute(run_id: str):
++    if digest(FIXTURE_HTML) != EXPECTED_FIXTURE_SHA256:
++        raise RuntimeError("Original shared HTML changed; refusing diagnostic execution")
+     product_freeze = frozen_products()
+     if product_freeze["mismatches"]:
+         raise RuntimeError("Frozen product source changed; refusing native execution: " + ", ".join(product_freeze["mismatches"]))
+@@ -400,11 +457,16 @@
+     before = protected_fingerprint()
+     token = configure(root, run_id)
+     evidence = Evidence(root, run_id)
++    source_snapshot = root / "diagnostic-sources"
++    source_snapshot.mkdir()
++    for original in (Path(__file__).resolve(), FIXTURE_HTML, JAVA_TEMPLATE, STORAGE_PROBE_JS):
++        (source_snapshot / original.name).write_bytes(original.read_bytes())
++    (source_snapshot / "MainActivity.generated.java").write_text(JAVA)
+     evidence.value["paths"] = planned_paths(run_id)
+     evidence.value["protected_before"] = before
+     evidence.value["frozen_products_at_start"] = product_freeze
+     source_files = [
+-        Path(__file__).resolve(), FIXTURE_HTML,
++        Path(__file__).resolve(), FIXTURE_HTML, JAVA_TEMPLATE, STORAGE_PROBE_JS,
+         REPO / "backend/ai_phone/agent/android_vm/manager.py",
+         REPO / "backend/ai_phone/agent/ws_client.py",
+         REPO / "backend/ai_phone/agent/identity.py",
+@@ -477,6 +539,17 @@
+     prefix = "/api/internal/vm/instances"
+     agent_id = "personal-e2e-" + run_id
+     expected_token = "personal" + uuid.uuid4().hex[:12]
++    witness_name = "personal-witness-" + run_id + ".txt"
++    witness_payload = (json.dumps({"run_id": run_id, "witness_token": expected_token}, sort_keys=True, separators=(",", ":")) + "\n").encode()
++    witness_sha256 = hashlib.sha256(witness_payload).hexdigest()
++    fixture_url = f"http://127.0.0.1:{FIXTURE_GUEST_PORT}/fixture/?" + urllib.parse.urlencode({"run": run_id, "platform": "android"})
++    diagnostic_state = {"records": [], "first_write_error": None, "host_timing": [], "receipt_timing": [],
++                        "native_calls": [], "avd_snapshots": [],
++                        "witness_name": witness_name, "expected_witness_sha256": witness_sha256,
++                        "expected_witness_bytes": len(witness_payload), "fixture_url": fixture_url,
++                        "storage_key": "personal-vm-e2e:" + run_id,
++                        "source_snapshot": str(source_snapshot), "original_html_sha256": digest(FIXTURE_HTML)}
++    evidence.value["a3_diagnostic"] = diagnostic_state
+     receipts = evidence.value["receipts"]
+     native_pids = set()
+     native_process_handles = {}
+@@ -493,6 +566,102 @@
+     }
+     evidence.value["server_app_install"] = installation
+     original_install_apk = install_handler.install_apk
++    original_manager_subprocess = android_manager_module.subprocess
++    original_stop_owned_process = android_manager_module._stop_owned_process
++
++    def timing(label, **details):
++        # In-memory observations only: no added device command, I/O or delay.
++        diagnostic_state["host_timing"].append({"label": label, "at": utc_now(),
++                                               "monotonic_ns": time.monotonic_ns(), **details})
++
++    def summarize_diagnostic():
++        return diagnostic_summary(diagnostic_state["records"], witness_name=witness_name,
++                                  witness_sha256=witness_sha256, witness_bytes=len(witness_payload),
++                                  fixture_url=fixture_url, storage_key=diagnostic_state["storage_key"], token=expected_token)
++
++    class ManagerSubprocessObserver:
++        """Delegate unchanged calls; observe existing argv/results, not new probes."""
++        def __getattr__(self, name):
++            return getattr(original_manager_subprocess, name)
++
++        def Popen(self, args, *extra, **kwargs):
++            argv = [str(x) for x in args]
++            if "-avd" not in argv or argv[argv.index("-avd") + 1] not in {"aiphone_vm_" + key for key in owned}:
++                raise RuntimeError("Diagnostic observer refused an unowned native launch")
++            record = {"kind": "native-launch", "argv": argv, "at": utc_now(), "monotonic_ns": time.monotonic_ns()}
++            diagnostic_state["native_calls"].append(record)
++            try:
++                process = original_manager_subprocess.Popen(args, *extra, **kwargs)
++                record.update(pid=process.pid, returned_at=utc_now(), returned_monotonic_ns=time.monotonic_ns())
++                native_pids.add(process.pid)
++                native_process_handles[process.pid] = process
++                return process
++            except BaseException as exc:
++                record.update(error=type(exc).__name__ + ": " + str(exc))
++                raise
++
++        def run(self, args, *extra, **kwargs):
++            argv = [str(x) for x in args]
++            relevant = argv[-2:] == ["emu", "kill"] or any(
++                argv[index:index + 2] in (["create", "avd"], ["delete", "avd"]) for index in range(len(argv) - 1))
++            if not relevant:
++                return original_manager_subprocess.run(args, *extra, **kwargs)
++            record = {"kind": "native-command", "argv": argv, "at": utc_now(), "monotonic_ns": time.monotonic_ns()}
++            diagnostic_state["native_calls"].append(record)
++            try:
++                result = original_manager_subprocess.run(args, *extra, **kwargs)
++                record.update(returncode=result.returncode, returned_at=utc_now(), returned_monotonic_ns=time.monotonic_ns(),
++                              stdout=result.stdout.decode(errors="replace") if isinstance(result.stdout, bytes) else result.stdout,
++                              stderr=result.stderr.decode(errors="replace") if isinstance(result.stderr, bytes) else result.stderr)
++                return result
++            except BaseException as exc:
++                record.update(error=type(exc).__name__ + ": " + str(exc), returned_at=utc_now(), returned_monotonic_ns=time.monotonic_ns())
++                raise
++
++    def observed_stop_owned_process(process, *, graceful):
++        record = {"kind": "owned-process-stop", "pid": process.pid, "emu_kill_succeeded": graceful,
++                  "at": utc_now(), "monotonic_ns": time.monotonic_ns(), "calls": []}
++        diagnostic_state["native_calls"].append(record)
++
++        class ProcessObserver:
++            def __getattr__(self, name):
++                original = getattr(process, name)
++                if name not in {"wait", "poll", "is_running", "terminate", "kill"}:
++                    return original
++                def invoke(*args, **kwargs):
++                    call = {"method": name, "at": utc_now(), "monotonic_ns": time.monotonic_ns(), "kwargs": kwargs}
++                    record["calls"].append(call)
++                    try:
++                        value = original(*args, **kwargs)
++                        call.update(result=value, returned_monotonic_ns=time.monotonic_ns())
++                        return value
++                    except BaseException as exc:
++                        call.update(error=type(exc).__name__ + ": " + str(exc), returned_monotonic_ns=time.monotonic_ns())
++                        raise
++                return invoke
++        try:
++            return original_stop_owned_process(ProcessObserver(), graceful=graceful)
++        finally:
++            record.update(returned_at=utc_now(), returned_monotonic_ns=time.monotonic_ns(),
++                          fallback_signals=[call["method"] for call in record["calls"] if call["method"] in {"terminate", "kill"}])
++
++    def avd_snapshot(vm_id, phase):
++        assert_owned(vm_id)
++        avd = root / "android/avd" / ("aiphone_vm_" + vm_id + ".avd")
++        snapshot = {"phase": phase, "at": utc_now(), "monotonic_ns": time.monotonic_ns(),
++                    "vm_id": vm_id, "avd_name": avd.stem, "path": str(avd), "files": []}
++        for name in ("config.ini", "hardware-qemu.ini", "emu-launch-params.txt", "emulator-user.ini", "userdata-qemu.img", "userdata-qemu.img.qcow2"):
++            path = avd / name
++            if not path.exists():
++                snapshot["files"].append({"path": str(path), "exists": False})
++                continue
++            metadata = path.stat()
++            row = {"path": str(path), "exists": True, "inode": metadata.st_ino, "size": metadata.st_size,
++                   "mtime_ns": metadata.st_mtime_ns, "birth_time": getattr(metadata, "st_birthtime", None)}
++            if name.endswith((".ini", ".txt")) and metadata.st_size < 65536:
++                row.update(sha256=digest(path), text=path.read_text())
++            snapshot["files"].append(row)
++        diagnostic_state["avd_snapshots"].append(snapshot)
+ 
+     def activity_users(serial):
+         with device_activity._lock:
+@@ -682,6 +851,8 @@
+                      server_available_readback=True,
+                      native_popen_pid=runtime.process.pid if runtime.process is not None else None,
+                      native_popen_poll=runtime.process.poll() if runtime.process is not None else None)
++        if phase in {"native-ready-first", "native-ready-restarted"}:
++            avd_snapshot(vm_id, phase)
+         return driver
+ 
+     def owned_processes_alive():
+@@ -745,7 +916,11 @@
+         return ((numbers[0] + numbers[2]) // 2, (numbers[1] + numbers[3]) // 2)
+ 
+     async def receipt(event, count, start=0):
+-        return await eventually(lambda: asyncio.sleep(0, result=list(receipts[start:])),
++        async def current_receipts():
++            if diagnostic_state["first_write_error"]:
++                raise RuntimeError("Durable witness first-write precondition failed: " + diagnostic_state["first_write_error"])
++            return await asyncio.sleep(0, result=list(receipts[start:]))
++        return await eventually(current_receipts,
+                                 lambda values: any(x["event"] == event and x["count"] == count
+                                   and (count == 0 or x["token"] == expected_token) for x in values), timeout=35)
+ 
+@@ -757,10 +932,17 @@
+         reverse_readback = await asyncio.to_thread(adb_command, "-s", serial, "reverse", "--list")
+         if f"tcp:{FIXTURE_GUEST_PORT} tcp:{host_port}" not in reverse_readback:
+             raise RuntimeError("Private fixture reverse mapping was not confirmed")
+-        url = f"http://127.0.0.1:{FIXTURE_GUEST_PORT}/fixture/?" + urllib.parse.urlencode({"run": run_id, "platform": "android"})
++        url = fixture_url
++        phase = "restart-read" if expect_existing else "first-write"
+         remote_command = "am start -n " + shlex.quote(APP_ID + "/.MainActivity") + " --es url " + shlex.quote(url)
++        remote_command += " --es witness_mode " + shlex.quote(phase) + " --es witness_name " + shlex.quote(witness_name)
++        if not expect_existing:
++            remote_command += " --es witness_payload_b64 " + shlex.quote(base64.b64encode(witness_payload).decode())
++        timing("activity-launch-requested", phase=phase)
+         launch_output = await asyncio.to_thread(adb_command, "-s", serial, "shell", remote_command)
++        timing("activity-launch-returned", phase=phase)
+         evidence.add("fixture-open", vm_id=vm_id, url=url, output=launch_output.strip(),
++                     witness_mode=phase,
+                      transport="exact-serial private adb reverse", reverse_mapping=reverse_readback.strip())
+         await receipt("load", 1 if expect_existing else 0, start)
+         driver = await asyncio.to_thread(fresh_driver, vm_id)
+@@ -794,7 +976,9 @@
+                 geometry = await asyncio.to_thread(fixture_color_bounds, png, (21, 90, 182))
+                 button_position = geometry["center"]
+                 evidence.add("fixture-button-locator", method="fixed fixture screenshot pixels", **geometry)
++            timing("confirm-click-requested")
+             await asyncio.to_thread(driver.click, *button_position)
++            timing("confirm-click-returned")
+             await receipt("confirm", 1, start)
+         image = await asyncio.to_thread(driver.screenshot_png)
+         label = "fixture-persisted" if expect_existing else "fixture-confirmed"
+@@ -812,6 +996,8 @@
+     if install_android.adb.host != "127.0.0.1" or install_android.adb.port != ADB_PORT:
+         raise RuntimeError("Production APK adapter is not bound to the private ADB server")
+     install_handler.install_apk = observed_install_apk
++    android_manager_module.subprocess = ManagerSubprocessObserver()
++    android_manager_module._stop_owned_process = observed_stop_owned_process
+ 
+     try:
+         fixture = await asyncio.to_thread(build_fixture, root)
+@@ -865,7 +1051,26 @@
+                 from fastapi import HTTPException
+                 raise HTTPException(400, "invalid receipt")
+             receipts.append({k: value.get(k) for k in ("run", "platform", "event", "token", "count")})
++            diagnostic_state["receipt_timing"].append({"at": utc_now(), "monotonic_ns": time.monotonic_ns(),
++                **{k: value.get(k) for k in ("run", "platform", "event", "token", "count")}})
+             evidence.flush()
++            return {"ok": True}
++
++        @app.post("/fixture/diagnostic")
++        async def fixture_diagnostic(request: Request):
++            value = await request.json()
++            if value.get("protocol") != "personal-vm-a3" or value.get("run") != run_id or value.get("platform") != "android" or \
++                    value.get("phase") not in {"first-write", "restart-read"} or \
++                    value.get("kind") not in {"witness", "storage", "webview-provider"} or not isinstance(value.get("data"), dict):
++                from fastapi import HTTPException
++                raise HTTPException(400, "unexpected personal diagnostic scope")
++            value["host_received_at"] = utc_now()
++            value["host_received_monotonic_ns"] = time.monotonic_ns()
++            diagnostic_state["records"].append(value)
++            if value["phase"] == "first-write" and value["kind"] == "witness" and value["data"].get("ok") is not True:
++                diagnostic_state["first_write_error"] = str(value["data"].get("error") or "unknown fsync/write error")
++            # Persist with the next existing evidence flush; do not add disk
++            # I/O or wait to the original confirmation-to-stop path.
+             return {"ok": True}
+ 
+         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+@@ -938,7 +1143,11 @@
+ 
+         async with AsyncClient(base_url=base_url, timeout=300, trust_env=False) as http:
+             async def api(method, path, **kwargs):
++                if method == "POST" and path.endswith("/stop"):
++                    timing("server-stop-requested", path=path)
+                 response = await http.request(method, path, headers=auth, **kwargs)
++                if method == "POST" and path.endswith("/stop"):
++                    timing("server-stop-returned", status_code=response.status_code)
+                 if response.status_code >= 400:
+                     raise RuntimeError(f"{method} {path}: {response.status_code} {response.text[:2000]}")
+                 return response.json()
+@@ -1110,6 +1319,16 @@
+             await wait_vm(vm_id, "running")
+             await ready(vm_id, "native-ready-restarted")
+             await visible_case(vm_id, expect_existing=True)
++            observed_diagnostic = summarize_diagnostic()
++            evidence.add("a3-dual-track-diagnostic", result=observed_diagnostic)
++            if not observed_diagnostic["evidence_complete"]:
++                raise RuntimeError("Diagnostic evidence incomplete; no inference of missing file or localStorage")
++            if not observed_diagnostic["actual_webview_versions_observed"]:
++                raise RuntimeError("Actual WebView provider version evidence incomplete")
++            if not observed_diagnostic["durable_witness_preserved"]:
++                raise RuntimeError("Durable app-private witness did not pass first-write/restart-read checks")
++            if not observed_diagnostic["raw_storage_preserved"]:
++                raise RuntimeError("Raw localStorage readback did not confirm the original saved token/count")
+             await api("POST", prefix + "/" + vm_id + "/stop")
+             await wait_vm(vm_id, "stopped")
+             existing_instance_phase = False
+@@ -1231,13 +1450,23 @@
+         evidence.value["preserved_after_existing_instance_failure"] = preserve_existing_failure
+         evidence.value["private_adb_stopped"] = private_adb_stopped
+         evidence.value["finished_at"] = utc_now()
++        android_manager_module.subprocess = original_manager_subprocess
++        android_manager_module._stop_owned_process = original_stop_owned_process
++        diagnostic_state["summary"] = summarize_diagnostic()
++        try:
++            all_source_hashes = {name: digest(REPO / name) for name in evidence.value["source_hashes_at_start"]}
++            evidence.value["source_hashes_at_finish"] = all_source_hashes
++            diagnostic_state["source_mismatches"] = [name for name, sha in evidence.value["source_hashes_at_start"].items()
++                                                       if all_source_hashes[name] != sha]
++        except Exception as exc:
++            diagnostic_state["source_mismatches"] = [str(exc)]
+         try:
+             evidence.value["frozen_products_at_finish"] = frozen_products()
+             freeze_changed = bool(evidence.value["frozen_products_at_finish"]["mismatches"])
+         except Exception as exc:
+             freeze_changed = True
+             evidence.value["frozen_product_check_error"] = str(exc)
+-        if changed or manager._runtimes or remaining_avds or not private_adb_stopped or install_work_active or freeze_changed:
++        if changed or manager._runtimes or remaining_avds or not private_adb_stopped or install_work_active or freeze_changed or diagnostic_state["source_mismatches"]:
+             evidence.value["status"] = "failed"
+         evidence.flush()
+         print(json.dumps({"status": evidence.value["status"], "evidence": str(root / "evidence.json"),
+@@ -1252,7 +1481,7 @@
+     mode = parser.add_mutually_exclusive_group()
+     mode.add_argument("--execute", action="store_true", help="Run only the isolated personal Android test")
+     mode.add_argument("--dry-run", action="store_true", help="Print plan; default")
+-    parser.add_argument("--run-id", default="android-app-install-" + dt.datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6])
++    parser.add_argument("--run-id", default="android-app-install-a3-" + dt.datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6])
+     args = parser.parse_args()
+     if not re.fullmatch(r"android-[A-Za-z0-9_-]{8,70}", args.run_id):
+         parser.error("run-id must be an ASCII android- test identifier")

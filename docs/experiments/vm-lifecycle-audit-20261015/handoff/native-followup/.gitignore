@@ -1,0 +1,11 @@
+# Native runtime databases, private Agent state and build caches remain local.
+ios-runs/
+__pycache__/
+*.class
+*.apk
+*.p12
+*.keystore
+*.db
+*.sqlite3
+# Upstream source downloads are retained locally; commit/hash/URL index is kept.
+chromium-109.0.5414.123/

@@ -1,0 +1,21 @@
+{
+  "at": "2026-10-15T22:25:20.122609+00:00",
+  "status": "native-checks-complete-visual-review-pending",
+  "product_commit": "2dc9844ffd86b88f2e41acfc79fae87ae222d631",
+  "product_count": 33,
+  "harness": "android_app_install_sync_a5.py",
+  "harness_sha256": "43356f481dea68c8adcd7b5fb7344b08912f2b2e4f678075533f2a15856eaf51",
+  "guard_tests": 57,
+  "observer_cases": 14,
+  "guard_log": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a5-prepare/guard-tests-a7-2dc-final.log",
+  "observer_evidence": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a5-prepare/observer-equivalence-a7-2dc-final.json",
+  "html_java_js_unchanged": true,
+  "prior_snapshot_matrix": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-snapshot-a6-a3-results.json",
+  "prior_all_resources_cleaned": true,
+  "planned_run_root": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-2dc9844f-20261016-a7",
+  "native_execution_started": true,
+  "native_run_status": "native_checks_passed_visual_review_pending",
+  "native_run_root": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-2dc9844f-20261016-a7",
+  "result_path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-app-install-a7-results.json",
+  "hardware_slot_released": true
+}

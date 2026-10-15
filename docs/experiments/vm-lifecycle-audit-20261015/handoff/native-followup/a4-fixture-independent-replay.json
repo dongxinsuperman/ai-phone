@@ -1,0 +1,109 @@
+{
+  "scope": "Unchanged frozen HTML+diagnostic JS executed via Node vm with fake DOM/fetch/storage; no browser/native/network/AVD access. Demonstrates fixture logic only, not WebView or disk durability.",
+  "source_sha256": {
+    "html": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+    "probe": "7a2bd86efcb92da3a63956b34e24948e1399bc48cc4e42cb2d284981d2db80cf"
+  },
+  "passed": 5,
+  "cases": [
+    {
+      "case": "first-confirm",
+      "receipt": {
+        "run": "android-independent-a4-fixture",
+        "platform": "android",
+        "event": "confirm",
+        "token": "private-token-a4",
+        "count": 1
+      },
+      "raw": "{\"token\":\"private-token-a4\",\"count\":1}",
+      "writes": [
+        {
+          "method": "setItem",
+          "key": "personal-vm-e2e:android-independent-a4-fixture",
+          "value": "{\"token\":\"private-token-a4\",\"count\":1}"
+        }
+      ]
+    },
+    {
+      "case": "same-origin-key-fresh-js-context-with-persisted-storage",
+      "receipt": {
+        "run": "android-independent-a4-fixture",
+        "platform": "android",
+        "event": "load",
+        "token": "private-token-a4",
+        "count": 1
+      },
+      "raw": "{\"token\":\"private-token-a4\",\"count\":1}",
+      "all_operations": [
+        {
+          "method": "getItem",
+          "key": "personal-vm-e2e:android-independent-a4-fixture"
+        },
+        {
+          "method": "getItem",
+          "key": "personal-vm-e2e:android-independent-a4-fixture"
+        }
+      ]
+    },
+    {
+      "case": "absent-backend-data-is-read-as-null-without-clearing",
+      "receipt": {
+        "run": "android-independent-a4-fixture",
+        "platform": "android",
+        "event": "load",
+        "token": "",
+        "count": 0
+      },
+      "probe": {
+        "href": "http://127.0.0.1:19080/fixture/?run=android-independent-a4-fixture&platform=android",
+        "origin": "http://127.0.0.1:19080",
+        "storageKey": "personal-vm-e2e:android-independent-a4-fixture",
+        "runFromLocation": "android-independent-a4-fixture",
+        "platformFromLocation": "android",
+        "userAgent": "isolated-offline-replay",
+        "documentReadyState": "complete",
+        "capturedDateMs": 1792097675983,
+        "capturedPerformanceMs": 1,
+        "rawValue": null,
+        "missing": true,
+        "readError": null,
+        "parseError": null,
+        "parsedValue": null
+      },
+      "all_operations": [
+        {
+          "method": "getItem",
+          "key": "personal-vm-e2e:android-independent-a4-fixture"
+        },
+        {
+          "method": "getItem",
+          "key": "personal-vm-e2e:android-independent-a4-fixture"
+        }
+      ]
+    },
+    {
+      "case": "malformed-storage-distinct-from-missing",
+      "receipt": {
+        "run": "android-independent-a4-fixture",
+        "platform": "android",
+        "event": "load",
+        "token": "",
+        "count": 0
+      },
+      "missing": false,
+      "parseErrorPresent": true
+    },
+    {
+      "case": "read-failure-distinct-from-missing",
+      "receipt": {
+        "run": "android-independent-a4-fixture",
+        "platform": "android",
+        "event": "load",
+        "token": "",
+        "count": 0
+      },
+      "missing": null,
+      "readErrorPresent": true
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "base_commit": "74f209dc6556d4678291b0dce63a9817741b6bea",
+  "tested_source_label": "74f209d plus frozen current Harmony Manager/capability/registry, independent stopped-process counterexample",
+  "source_manifest": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/harmony-reclaimed-stop-manifest.json",
+  "source_root": "/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-harmony-stop-proof-13s6j6v7",
+  "baseline_testcases": 936,
+  "baseline_skipped": 2,
+  "baseline_xml_sha256": "9f58fee6c276e796159de203d8666c03d0884fbdd5cd21a3a22ed0ac0d34dfca",
+  "selected_files": [],
+  "additional_test_files": {
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/test_harmony_reclaimed_stop_independent.py::test_live_exact_instance_blocks_success_and_delete_without_process_handle[registry-stop]": "25d3384de08b6b5178f5040c9cec8c41f78b5c2fa236f2fb0c21c46c55feb79a"
+  },
+  "baseline_file_overlap": [],
+  "explicit_config": {
+    "AI_PHONE_ENV": "isolated-main-flow-test",
+    "AI_PHONE_DB_URL": "sqlite+aiosqlite:////private/tmp/ai-phone-main-flow-impact-4khzrx8l/unconfigured-test.db",
+    "AI_PHONE_STORAGE_DIR": "/private/tmp/ai-phone-main-flow-impact-4khzrx8l/storage",
+    "AI_PHONE_AGENT_TOKEN": "main-flow-fixture-token",
+    "AI_PHONE_SUBMISSION_INTERNAL_TOKEN": "main-flow-fixture-token",
+    "AI_PHONE_SERVER_WS_URL": "ws://127.0.0.1:9/blocked",
+    "AI_PHONE_SERVER_HTTP_BASE": "http://127.0.0.1:9/blocked",
+    "AI_PHONE_PHONE_VLM_PROVIDER": "doubao",
+    "AI_PHONE_PHONE_VLM_BASE_URL": "http://127.0.0.1:9/blocked",
+    "AI_PHONE_PHONE_VLM_API_KEY": "fixture-only",
+    "AI_PHONE_PHONE_VLM_MODEL": "fixture-only",
+    "AI_PHONE_AUX_PROVIDER": "doubao",
+    "AI_PHONE_AUX_BASE_URL": "http://127.0.0.1:9/blocked",
+    "AI_PHONE_AUX_API_KEY": "fixture-only",
+    "AI_PHONE_AUX_MODEL": "fixture-only"
+  },
+  "runtime_dir": "/private/tmp/ai-phone-main-flow-impact-4khzrx8l",
+  "product_hashes_before": {
+    "backend/ai_phone/agent/harmony_vm/manager.py": "f9927f728d5efb185cfddc25de9fcb530b57c137c62926ba8458daa3a1c105f5",
+    "backend/ai_phone/agent/harmony_vm/capability.py": "0b55a6dd74febed56efae177f82091c0d84607d090ba2122114bce1f1812035b",
+    "backend/ai_phone/agent/harmony_vm/registry.py": "bebe6a5f0db459782b74721a753b4a7faeb26943beb7e8c60194e4403f997d80",
+    "backend/tests/test_harmony_vm_agent_hardening.py": "7a8fa57520a02505cd105aebcf047376e435a7b387ac6993805876d57cad95fe"
+  },
+  "collected_nodeids": [
+    "::test_live_exact_instance_blocks_success_and_delete_without_process_handle[registry-stop]"
+  ],
+  "excluded_nodeids": {
+    "tests/test_agent_config_distribution.py::test_env_defaults_contains_only_public_runtime_defaults": "Repository default-file content check is outside the runtime-flow scope; repository .env reads are forbidden here."
+  },
+  "blocked_external_calls": [
+    {
+      "event": "socket.bind",
+      "description": "('::1', 0)",
+      "test": "collection/import"
+    }
+  ],
+  "pytest_args": [
+    "-p",
+    "pytest_asyncio.plugin",
+    "-p",
+    "pytest_timeout",
+    "-o",
+    "asyncio_default_fixture_loop_scope=function",
+    "--rootdir",
+    "/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-harmony-stop-proof-13s6j6v7/backend",
+    "--basetemp",
+    "/private/tmp/ai-phone-main-flow-impact-4khzrx8l/pytest",
+    "--timeout=30",
+    "--timeout-method=thread",
+    "--maxfail=1",
+    "--durations=15",
+    "--junitxml",
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/harmony-reclaimed-stop-registry-stop-regression.xml",
+    "-q",
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/test_harmony_reclaimed_stop_independent.py::test_live_exact_instance_blocks_success_and_delete_without_process_handle[registry-stop]"
+  ],
+  "elapsed_seconds": 0.413,
+  "pytest_exit_code": 1,
+  "product_hashes_after": {
+    "backend/ai_phone/agent/harmony_vm/manager.py": "f9927f728d5efb185cfddc25de9fcb530b57c137c62926ba8458daa3a1c105f5",
+    "backend/ai_phone/agent/harmony_vm/capability.py": "0b55a6dd74febed56efae177f82091c0d84607d090ba2122114bce1f1812035b",
+    "backend/ai_phone/agent/harmony_vm/registry.py": "bebe6a5f0db459782b74721a753b4a7faeb26943beb7e8c60194e4403f997d80",
+    "backend/tests/test_harmony_vm_agent_hardening.py": "7a8fa57520a02505cd105aebcf047376e435a7b387ac6993805876d57cad95fe"
+  },
+  "product_source_unchanged": true,
+  "runtime_removed": false
+}

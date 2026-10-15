@@ -1,0 +1,152 @@
+{
+  "scope": "Only the two owned a6-a2 SDK processes; selected diagnostic fields, no machine/user diagnostic identifiers copied",
+  "findings": [
+    {
+      "source": "/Users/dongxin/Library/Logs/DiagnosticReports/qemu-system-aarch64-headless-2026-10-16-060222.ips",
+      "source_sha256": "a694552bb5839241b84c5f048bc3f60f9cdcc180df970a93ac610254b3d45887",
+      "pid": 71919,
+      "capture_time": "2026-10-16 06:02:20.4772 +0800",
+      "exception": {
+        "codes": "0x0000000000000000, 0x0000000000000000",
+        "rawCodes": [
+          0,
+          0
+        ],
+        "type": "EXC_CRASH",
+        "signal": "SIGABRT"
+      },
+      "termination": {
+        "code": 6,
+        "namespace": "SIGNAL",
+        "indicator": "Abort trap: 6"
+      },
+      "main_binary_uuid": "4c4c4415-5555-3144-a1d3-56bd0670f55d",
+      "main_binary_path": "/Users/USER/Library/Android/*/qemu-system-aarch64-headless",
+      "faulting_frames": [
+        {
+          "imageOffset": 37768,
+          "symbol": "__pthread_kill",
+          "symbolLocation": 8,
+          "imageIndex": 17
+        },
+        {
+          "imageOffset": 26696,
+          "symbol": "pthread_kill",
+          "symbolLocation": 296,
+          "imageIndex": 18
+        },
+        {
+          "imageOffset": 494052,
+          "symbol": "abort",
+          "symbolLocation": 124,
+          "imageIndex": 19
+        },
+        {
+          "imageOffset": 5904796,
+          "symbol": "skin_winsys_quit_request",
+          "symbolLocation": 572,
+          "imageIndex": 0
+        },
+        {
+          "imageOffset": 13988,
+          "symbol": "_sigtramp",
+          "symbolLocation": 56,
+          "imageIndex": 20
+        },
+        {
+          "imageOffset": 5901224,
+          "symbol": "skin_winsys_enter_main_loop",
+          "symbolLocation": 72,
+          "imageIndex": 0
+        },
+        {
+          "imageOffset": 1767800,
+          "symbol": "main",
+          "symbolLocation": 22940,
+          "imageIndex": 0
+        },
+        {
+          "imageOffset": 27544,
+          "symbol": "start",
+          "symbolLocation": 6076,
+          "imageIndex": 21
+        }
+      ]
+    },
+    {
+      "source": "/Users/dongxin/Library/Logs/DiagnosticReports/qemu-system-aarch64-headless-2026-10-16-060239.ips",
+      "source_sha256": "beff7b736a404c09d9363abd89cf73ccde12a308a2ab5378378b61144666c620",
+      "pid": 72067,
+      "capture_time": "2026-10-16 06:02:39.0697 +0800",
+      "exception": {
+        "codes": "0x0000000000000000, 0x0000000000000000",
+        "rawCodes": [
+          0,
+          0
+        ],
+        "type": "EXC_CRASH",
+        "signal": "SIGABRT"
+      },
+      "termination": {
+        "code": 6,
+        "namespace": "SIGNAL",
+        "indicator": "Abort trap: 6"
+      },
+      "main_binary_uuid": "4c4c4415-5555-3144-a1d3-56bd0670f55d",
+      "main_binary_path": "/Users/USER/Library/Android/*/qemu-system-aarch64-headless",
+      "faulting_frames": [
+        {
+          "imageOffset": 37768,
+          "symbol": "__pthread_kill",
+          "symbolLocation": 8,
+          "imageIndex": 17
+        },
+        {
+          "imageOffset": 26696,
+          "symbol": "pthread_kill",
+          "symbolLocation": 296,
+          "imageIndex": 18
+        },
+        {
+          "imageOffset": 494052,
+          "symbol": "abort",
+          "symbolLocation": 124,
+          "imageIndex": 19
+        },
+        {
+          "imageOffset": 5904796,
+          "symbol": "skin_winsys_quit_request",
+          "symbolLocation": 572,
+          "imageIndex": 0
+        },
+        {
+          "imageOffset": 13988,
+          "symbol": "_sigtramp",
+          "symbolLocation": 56,
+          "imageIndex": 20
+        },
+        {
+          "imageOffset": 5901224,
+          "symbol": "skin_winsys_enter_main_loop",
+          "symbolLocation": 72,
+          "imageIndex": 0
+        },
+        {
+          "imageOffset": 1767800,
+          "symbol": "main",
+          "symbolLocation": 22940,
+          "imageIndex": 0
+        },
+        {
+          "imageOffset": 27544,
+          "symbol": "start",
+          "symbolLocation": 6076,
+          "imageIndex": 21
+        }
+      ]
+    }
+  ],
+  "reviewed_sdk_path": "ARM headless snapshot quit path prints saving done then calls abort; current binary was independently matched by control_health and independent_review",
+  "limits": "An observed intentional abort does not establish snapshot save/load success; this is not a general SIGABRT allowlist.",
+  "public_reference": "https://android.googlesource.com/platform/external/qemu/+/refs/heads/emu-master-dev/android/android-ui/modules/aemu-ui-headless/src/android/skin/winsys-headless.cpp"
+}

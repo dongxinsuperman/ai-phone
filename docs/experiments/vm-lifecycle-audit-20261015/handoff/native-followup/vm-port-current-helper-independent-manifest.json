@@ -1,0 +1,13 @@
+{
+  "base_commit": "d7cbac0",
+  "source_sha256": {
+    "backend/ai_phone/agent/vm_ports.py": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+    "backend/ai_phone/agent/android_vm/manager.py": "0d4528d299c67ca244c207ae678cab8c616824d82ef38f12d21469a7e12beb0d",
+    "backend/ai_phone/agent/harmony_vm/manager.py": "efac19845e45b5c0a7aa2faefc95f8c6dc9cecd6842442fee303765dc9a3999e",
+    "backend/ai_phone/agent/harmony_vm/capability.py": "6716584a4ee555fd49b2297db5136e004679806d2af0b12a2c4edb3eac5003fa"
+  },
+  "unit_tests": "21 passed; 3 pytest configuration warnings due to explicitly disabled plugin autoload",
+  "independent_actual_helper_socket_cases": 8,
+  "native_commands_run": false,
+  "product_files_modified_by_reviewer": false
+}

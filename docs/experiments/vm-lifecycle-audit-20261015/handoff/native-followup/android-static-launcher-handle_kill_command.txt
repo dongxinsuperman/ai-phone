@@ -1,0 +1,105 @@
+
+/Users/dongxin/Library/Android/sdk/emulator/emulator:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+0000000100009578 <__Z19handle_kill_commandiPPc>:
+100009578: 71000c1f    	cmp	w0, #0x3
+10000957c: 5400006a    	b.ge	0x100009588 <__Z19handle_kill_commandiPPc+0x10>
+100009580: 52800000    	mov	w0, #0x0                ; =0
+100009584: d65f03c0    	ret
+100009588: d101c3ff    	sub	sp, sp, #0x70
+10000958c: a9016ffc    	stp	x28, x27, [sp, #0x10]
+100009590: a90267fa    	stp	x26, x25, [sp, #0x20]
+100009594: a9035ff8    	stp	x24, x23, [sp, #0x30]
+100009598: a90457f6    	stp	x22, x21, [sp, #0x40]
+10000959c: a9054ff4    	stp	x20, x19, [sp, #0x50]
+1000095a0: a9067bfd    	stp	x29, x30, [sp, #0x60]
+1000095a4: 910183fd    	add	x29, sp, #0x60
+1000095a8: aa0103f5    	mov	x21, x1
+1000095ac: aa0003f6    	mov	x22, x0
+1000095b0: 5280001b    	mov	w27, #0x0               ; =0
+1000095b4: 5280001a    	mov	w26, #0x0               ; =0
+1000095b8: 52800014    	mov	w20, #0x0               ; =0
+1000095bc: b9000fff    	str	wzr, [sp, #0xc]
+1000095c0: 5280003c    	mov	w28, #0x1               ; =1
+1000095c4: 104c5bb7    	adr	x23, 0x1000a2138 <dyld_stub_binder+0x1000a2138>
+1000095c8: d503201f    	nop
+1000095cc: 504c5b98    	adr	x24, 0x1000a213e <dyld_stub_binder+0x1000a213e>
+1000095d0: d503201f    	nop
+1000095d4: 14000005    	b	0x1000095e8 <__Z19handle_kill_commandiPPc+0x70>
+1000095d8: 5280003b    	mov	w27, #0x1               ; =1
+1000095dc: 1100079c    	add	w28, w28, #0x1
+1000095e0: 6b16039f    	cmp	w28, w22
+1000095e4: 540003ca    	b.ge	0x10000965c <__Z19handle_kill_commandiPPc+0xe4>
+1000095e8: 93407f93    	sxtw	x19, w28
+1000095ec: f87cdab9    	ldr	x25, [x21, w28, sxtw #3]
+1000095f0: aa1903e0    	mov	x0, x25
+1000095f4: aa1703e1    	mov	x1, x23
+1000095f8: 94025ade    	bl	0x1000a0170 <dyld_stub_binder+0x1000a0170>
+1000095fc: 340001a0    	cbz	w0, 0x100009630 <__Z19handle_kill_commandiPPc+0xb8>
+100009600: aa1903e0    	mov	x0, x25
+100009604: aa1803e1    	mov	x1, x24
+100009608: 94025ada    	bl	0x1000a0170 <dyld_stub_binder+0x1000a0170>
+10000960c: 35fffe80    	cbnz	w0, 0x1000095dc <__Z19handle_kill_commandiPPc+0x64>
+100009610: 91000673    	add	x19, x19, #0x1
+100009614: 6b16027f    	cmp	w19, w22
+100009618: 540001ea    	b.ge	0x100009654 <__Z19handle_kill_commandiPPc+0xdc>
+10000961c: f8737aa0    	ldr	x0, [x21, x19, lsl #3]
+100009620: 94025ad1    	bl	0x1000a0164 <dyld_stub_binder+0x1000a0164>
+100009624: aa0003f4    	mov	x20, x0
+100009628: 5280003a    	mov	w26, #0x1               ; =1
+10000962c: 14000008    	b	0x10000964c <__Z19handle_kill_commandiPPc+0xd4>
+100009630: 91000673    	add	x19, x19, #0x1
+100009634: 6b16027f    	cmp	w19, w22
+100009638: 54fffd0a    	b.ge	0x1000095d8 <__Z19handle_kill_commandiPPc+0x60>
+10000963c: f8737aa0    	ldr	x0, [x21, x19, lsl #3]
+100009640: 94025ac9    	bl	0x1000a0164 <dyld_stub_binder+0x1000a0164>
+100009644: b9000fe0    	str	w0, [sp, #0xc]
+100009648: 5280003b    	mov	w27, #0x1               ; =1
+10000964c: aa1303fc    	mov	x28, x19
+100009650: 17ffffe3    	b	0x1000095dc <__Z19handle_kill_commandiPPc+0x64>
+100009654: 5280003a    	mov	w26, #0x1               ; =1
+100009658: 17ffffe1    	b	0x1000095dc <__Z19handle_kill_commandiPPc+0x64>
+10000965c: 360002fb    	tbz	w27, #0x0, 0x1000096b8 <__Z19handle_kill_commandiPPc+0x140>
+100009660: 7100029f    	cmp	w20, #0x0
+100009664: 1a9fd7e8    	cset	w8, gt
+100009668: 0a080348    	and	w8, w26, w8
+10000966c: 7100051f    	cmp	w8, #0x1
+100009670: b9400ff3    	ldr	w19, [sp, #0xc]
+100009674: 54000181    	b.ne	0x1000096a4 <__Z19handle_kill_commandiPPc+0x12c>
+100009678: 940084a5    	bl	0x10002a90c <__ZN7android4base6System3getEv>
+10000967c: aa1303e0    	mov	x0, x19
+100009680: 940094a5    	bl	0x10002e914 <__ZN7android4base6System10isPidAliveEi>
+100009684: 34000160    	cbz	w0, 0x1000096b0 <__Z19handle_kill_commandiPPc+0x138>
+100009688: 940084a1    	bl	0x10002a90c <__ZN7android4base6System3getEv>
+10000968c: f9400008    	ldr	x8, [x0]
+100009690: f940cd08    	ldr	x8, [x8, #0x198]
+100009694: 52807d01    	mov	w1, #0x3e8              ; =1000
+100009698: d63f0100    	blr	x8
+10000969c: 71000694    	subs	w20, w20, #0x1
+1000096a0: 54fffec1    	b.ne	0x100009678 <__Z19handle_kill_commandiPPc+0x100>
+1000096a4: 9400849a    	bl	0x10002a90c <__ZN7android4base6System3getEv>
+1000096a8: aa1303e0    	mov	x0, x19
+1000096ac: 940094a2    	bl	0x10002e934 <__ZN7android4base6System11killProcessEi>
+1000096b0: 52800020    	mov	w0, #0x1                ; =1
+1000096b4: 14000002    	b	0x1000096bc <__Z19handle_kill_commandiPPc+0x144>
+1000096b8: 52800000    	mov	w0, #0x0                ; =0
+1000096bc: a9467bfd    	ldp	x29, x30, [sp, #0x60]
+1000096c0: a9454ff4    	ldp	x20, x19, [sp, #0x50]
+1000096c4: a94457f6    	ldp	x22, x21, [sp, #0x40]
+1000096c8: a9435ff8    	ldp	x24, x23, [sp, #0x30]
+1000096cc: a94267fa    	ldp	x26, x25, [sp, #0x20]
+1000096d0: a9416ffc    	ldp	x28, x27, [sp, #0x10]
+1000096d4: 9101c3ff    	add	sp, sp, #0x70
+1000096d8: d65f03c0    	ret
+
+Read-only command: ['/usr/bin/xcrun', 'llvm-objdump', '--disassemble-symbols=__ZN7android4base6System11killProcessEi', '/Users/dongxin/Library/Android/sdk/emulator/emulator']
+
+/Users/dongxin/Library/Android/sdk/emulator/emulator:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+000000010002e934 <__ZN7android4base6System11killProcessEi>:
+10002e934: 52800121    	mov	w1, #0x9                ; =9
+10002e938: 1401c7a0    	b	0x1000a07b8 <dyld_stub_binder+0x1000a07b8>

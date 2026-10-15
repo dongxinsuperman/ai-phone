@@ -1,0 +1,989 @@
+{
+  "status": "passed",
+  "root": "/tmp/aiphone-personal-harmony-legacy-20261016b2",
+  "started_at": "2026-10-15T19:40:48.916592+00:00",
+  "plan": {
+    "scope": "ONE personal local Harmony Phone; new isolated SQLite/WS/storage/registry/instance root",
+    "default_action": "plan only; explicit --execute after root hardware approval",
+    "reuse": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/execution/harmony_personal_e2e.py",
+    "native_steps": [
+      "create unbound VM via API",
+      "real capability/bind/start",
+      "write random guest marker",
+      "real stop while dropping exactly its terminal stop ACK",
+      "disconnect old Agent session",
+      "inject legacy format in only owned registry and SQLite row",
+      "new Agent + fresh Manager, same real host identity file and real pre-hello reclaim",
+      "actual private inventory -> owner handoff only, no state or lease release",
+      "ordinary stop freshly checks native absence; direct old port/token row query proves lease deleted",
+      "restart original VM/UUID and read guest marker",
+      "disconnect only the second WS session; fresh third Manager/session reclaims the still-running private instance with process=None",
+      "ordinary stop, immediate ledger delete, independent native cleanup"
+    ],
+    "injections": [
+      "Drop exactly one own terminal stopped ACK with cleanup_confirmed=true; preserve the real receipt as evidence.",
+      "After actual stop and old-session disconnect, only own registry row: ready=false; remove cleanup_confirmed and exit_evidence; keep instance/UUID/port/lease.",
+      "Only the freshly-created isolated SQLite VM row: remove runtime.owner_host_id; preserve state/error/last_status/lease and operation facts."
+    ],
+    "guards": [
+      "fresh ASCII /tmp root, no .env inheritance",
+      "Python network loopback only",
+      "one exact VM ID and canonical private instance path",
+      "refuse existing emulator processes or connected unowned HDC targets",
+      "private inventory only; never default instance roots",
+      "no global HDC kill/restart or image changes",
+      "default DevEco/config metadata hashes before and after",
+      "product/source hashes before and after",
+      "one scoped emergency delete on failure; preserve failed outcome"
+    ],
+    "running_reclaim_boundary": "Fresh Manager and Agent session in this harness process; this does not simulate killing the Agent OS process or host.",
+    "shared_port_helper": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/vm_ports.py"
+  },
+  "protected_before": {
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_harmony_8ef590502d89/config.ini": "d9e02a36096d3684498346cf70e5bf053a6bbf9817ce34a6f8eb1007a1b00641",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_harmony_8ef590502d89.ini": "8d04b5680ba467e1c059dbb7d0463b6a3edbc72698e879eae6161b83f7530ce2",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_hdc_test/config.ini": "2d8e0eddf338e0a8ff9b571985221ade1efaac556930aaa869a9cfa3ced45d18",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_hdc_test.ini": "c614dfdb3328e5c48612050084f08b9ea8f5453757333262a3a0406a82ca6933",
+    "/Users/dongxin/.Huawei/Emulator/deployed/lists.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "/Users/dongxin/Library/Caches/Huawei/Emulator6.1/.emu_config": "7cebbf23abec7212f5908c2c2ed6085c6ecd30ba15808de3b754979b47a17e56"
+  },
+  "source_hashes_at_start": {
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/harmony_personal_e2e.py": "d951bc304dff6a9c23694035abc2b481b167a5cdad344ac5698c62a4912d5e70",
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/personal-fixture.html": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+    "backend/ai_phone/agent/harmony_vm/manager.py": "efac19845e45b5c0a7aa2faefc95f8c6dc9cecd6842442fee303765dc9a3999e",
+    "backend/ai_phone/agent/harmony_vm/capability.py": "6716584a4ee555fd49b2297db5136e004679806d2af0b12a2c4edb3eac5003fa",
+    "backend/ai_phone/agent/harmony_vm/registry.py": "bebe6a5f0db459782b74721a753b4a7faeb26943beb7e8c60194e4403f997d80",
+    "backend/ai_phone/agent/ws_client.py": "c9d6b39b48952b4c10adf8d124a210adc014f89525af9008586d2a7bdffcc04d",
+    "backend/ai_phone/agent/drivers/harmony.py": "3dbab0a5cc082928492c09d15711f1b73705399a72a7fe199dc5b7d7c21fbec4",
+    "backend/ai_phone/agent/drivers/hdc.py": "440df7e7dd2795b6b0bffd2942efb4a161550bfe8877085973006c88601a5e7c",
+    "backend/ai_phone/server/harmony_vm/api.py": "00b4665fda0e96e110b2fcb6ef236edc0af62a4a956abd76ca156c94e96793a6",
+    "backend/ai_phone/server/harmony_vm/service.py": "cef15701e1c3d6260a2e681911fa200dda10f27114225ab85994417e67008460",
+    "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+    "backend/ai_phone/server/vm_lifecycle.py": "232cf364266b1e344a7d29e87ebce39709994a1b0aa790db582ef33602af56aa",
+    "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/harmony_legacy_native.py": "686927c9b162fdf80e93e1f2b8439f934870ae1fba0afd5632e91119a94b16d8",
+    "backend/ai_phone/agent/vm_ports.py": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+    "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+    "backend/ai_phone/server/harmony_vm/models.py": "b82d52e8c663d1202aab25ef5be878145ebb2bcc94c26dd73a1759b1f8bb939e"
+  },
+  "initial_hdc_targets": [
+    {
+      "serial": "127.0.0.1:10001",
+      "status": "Offline"
+    },
+    {
+      "serial": "127.0.0.1:12346",
+      "status": "Offline"
+    }
+  ],
+  "host_identity": {
+    "id": "13dec84613a9401ca8de5dc0bd7ba0bf",
+    "path": "/tmp/aiphone-personal-harmony-legacy-20261016b2/storage/agent-host-id",
+    "sha256": "22107004a876fd2d27bf57c6fb443ff3b1642f318ec3f575bc85efbc6a7a82ed"
+  },
+  "vm_id": "8c5348377bf8",
+  "initial": {
+    "uuid": "d6435aa3-3df2-44c5-a17e-73b415b896c3",
+    "server": {
+      "state": "running",
+      "assigned_agent_id": "personal-legacy-old-49f683c2be87",
+      "error_code": "",
+      "error_message": "",
+      "runtime": {
+        "operation": {
+          "action": "start",
+          "request_id": "1b1428f73c8f4c04",
+          "pending": false,
+          "outcome": "succeeded",
+          "target_agent_id": "personal-legacy-old-49f683c2be87",
+          "target_host_id": "13dec84613a9401ca8de5dc0bd7ba0bf",
+          "first_bind": true,
+          "started_at": "2026-10-15T19:40:53.888147+00:00",
+          "deadline_at": "2026-10-15T19:46:53.888147+00:00",
+          "timeout_sec": 360.0,
+          "created_in_attempt": true,
+          "completed_at": "2026-10-15T19:41:46.072615+00:00"
+        },
+        "last_status": {
+          "state": "running",
+          "ok": true,
+          "reason": "running",
+          "details": {
+            "instance_name": "aiphone_harmony_8c5348377bf8",
+            "instance_path": "/private/tmp/aiphone-personal-harmony-legacy-20261016b2/agent-runtime/instances",
+            "instance_created": true,
+            "created_in_attempt": true,
+            "hdc_port": 10001,
+            "hdc_serial": "127.0.0.1:10001",
+            "driver_fport_port": 16556,
+            "resolved_abi": "arm64",
+            "reused": false,
+            "reclaimed": false,
+            "cleanup_confirmed": true,
+            "requested_acceleration": "auto",
+            "acceleration_selectable": false,
+            "detected_cpu_acceleration": "unknown",
+            "detected_gpu_renderer": "unknown",
+            "acceleration_evidence": []
+          },
+          "ts": "2026-10-15T19:41:46.069427+00:00"
+        },
+        "instance_created": true,
+        "owner_host_id": "13dec84613a9401ca8de5dc0bd7ba0bf"
+      },
+      "lease_token": "a79272fefae34fe2855b190f16043b11",
+      "hdc_serial": "127.0.0.1:10001",
+      "hdc_port": 10001,
+      "lease_row": {
+        "vm_id": "8c5348377bf8",
+        "agent_id": "personal-legacy-old-49f683c2be87",
+        "lease_token": "a79272fefae34fe2855b190f16043b11",
+        "state": "active"
+      }
+    },
+    "marker_path": "/data/local/tmp/aiphone-personal-legacy-8c5348377bf8.txt",
+    "marker_sha256": "9426212d898d53b60e4cc1770c42ded4e028ea31a22c505e7e4f284668e3d45c"
+  },
+  "ownership_only_handoff": {
+    "before": {
+      "state": "error",
+      "assigned_agent_id": "personal-legacy-old-49f683c2be87",
+      "error_code": "agent_disconnected",
+      "error_message": "Agent 断开，本次操作已结束；不会自动重试",
+      "runtime": {
+        "operation": {
+          "action": "stop",
+          "request_id": "a8240a3ec25e4ff3",
+          "pending": false,
+          "outcome": "failed",
+          "target_agent_id": "personal-legacy-old-49f683c2be87",
+          "target_host_id": "13dec84613a9401ca8de5dc0bd7ba0bf",
+          "first_bind": false,
+          "started_at": "2026-10-15T19:41:49.031623+00:00",
+          "deadline_at": "2026-10-15T19:43:49.031623+00:00",
+          "timeout_sec": 120.0,
+          "completed_at": "2026-10-15T19:42:09.196623+00:00",
+          "failure_reason": "agent_disconnected"
+        },
+        "last_status": {
+          "state": "error",
+          "ok": false,
+          "reason": "agent_disconnected",
+          "details": {
+            "cleanup_confirmed": false
+          }
+        },
+        "instance_created": true,
+        "details": {
+          "cleanup_confirmed": false
+        }
+      },
+      "lease_token": "a79272fefae34fe2855b190f16043b11",
+      "hdc_serial": "127.0.0.1:10001",
+      "hdc_port": 10001,
+      "lease_row": {
+        "vm_id": "8c5348377bf8",
+        "agent_id": "personal-legacy-old-49f683c2be87",
+        "lease_token": "a79272fefae34fe2855b190f16043b11",
+        "state": "active"
+      }
+    },
+    "after": {
+      "state": "error",
+      "assigned_agent_id": "personal-legacy-new-90f48880860f",
+      "error_code": "agent_disconnected",
+      "error_message": "Agent 断开，本次操作已结束；不会自动重试",
+      "runtime": {
+        "operation": {
+          "action": "stop",
+          "request_id": "a8240a3ec25e4ff3",
+          "pending": false,
+          "outcome": "failed",
+          "target_agent_id": "personal-legacy-old-49f683c2be87",
+          "target_host_id": "13dec84613a9401ca8de5dc0bd7ba0bf",
+          "first_bind": false,
+          "started_at": "2026-10-15T19:41:49.031623+00:00",
+          "deadline_at": "2026-10-15T19:43:49.031623+00:00",
+          "timeout_sec": 120.0,
+          "completed_at": "2026-10-15T19:42:09.196623+00:00",
+          "failure_reason": "agent_disconnected"
+        },
+        "last_status": {
+          "state": "error",
+          "ok": false,
+          "reason": "agent_disconnected",
+          "details": {
+            "cleanup_confirmed": false
+          }
+        },
+        "instance_created": true,
+        "details": {
+          "cleanup_confirmed": false
+        },
+        "owner_host_id": "13dec84613a9401ca8de5dc0bd7ba0bf"
+      },
+      "lease_token": "a79272fefae34fe2855b190f16043b11",
+      "hdc_serial": "127.0.0.1:10001",
+      "hdc_port": 10001,
+      "lease_row": {
+        "vm_id": "8c5348377bf8",
+        "agent_id": "personal-legacy-old-49f683c2be87",
+        "lease_token": "a79272fefae34fe2855b190f16043b11",
+        "state": "active"
+      }
+    },
+    "inventory": {
+      "type": "harmony_vm_reconcile",
+      "agent_id": "personal-legacy-new-90f48880860f",
+      "instances": [
+        {
+          "vm_id": "8c5348377bf8",
+          "lease_token": "a79272fefae34fe2855b190f16043b11",
+          "state": "stopped",
+          "hdc_serial": "127.0.0.1:10001",
+          "details": {
+            "instance_name": "aiphone_harmony_8c5348377bf8",
+            "instance_path": "/private/tmp/aiphone-personal-harmony-legacy-20261016b2/agent-runtime/instances",
+            "orphan_reconcile": true,
+            "managed_instance_present": true,
+            "instance_created": true,
+            "cleanup_confirmed": false
+          }
+        }
+      ],
+      "inventory_complete": true,
+      "unknown_vm_ids": [],
+      "untracked_instance_names": []
+    },
+    "prehello_checks": [
+      {
+        "agent_id": "personal-legacy-new-90f48880860f",
+        "registry_before": {
+          "8c5348377bf8": {
+            "vm_id": "8c5348377bf8",
+            "name": "PERSONAL-legacy-20261016b2",
+            "instance_name": "aiphone_harmony_8c5348377bf8",
+            "instance_path": "/private/tmp/aiphone-personal-harmony-legacy-20261016b2/agent-runtime/instances",
+            "image_root": "/Users/dongxin/.Huawei/Emulator/images",
+            "hdc_port": 10001,
+            "hdc_serial": "127.0.0.1:10001",
+            "lease_token": "a79272fefae34fe2855b190f16043b11",
+            "observed_request_id": "1b1428f73c8f4c04",
+            "created_in_attempt": true,
+            "driver_fport_port": null,
+            "started_at": 1792093258.078964,
+            "ready": false,
+            "missing_ticks": 0,
+            "created": true,
+            "last_config": {
+              "device_type": "Phone",
+              "os_version": "HarmonyOS 6.0.31(23)",
+              "api_version": "23",
+              "abi": "arm64",
+              "image_id": "Phone|HarmonyOS 6.0.31(23)|arm64",
+              "screen_profile": "Default Phone",
+              "screen_width": 1080,
+              "screen_height": 2340,
+              "density": 420,
+              "screen_size_in": "",
+              "memory_gb": 2,
+              "storage_gb": 4,
+              "config_json": {
+                "display": {
+                  "mode": "official_default"
+                }
+              }
+            },
+            "cleanup_pending": false
+          }
+        },
+        "registry_after": {
+          "8c5348377bf8": {
+            "vm_id": "8c5348377bf8",
+            "name": "PERSONAL-legacy-20261016b2",
+            "instance_name": "aiphone_harmony_8c5348377bf8",
+            "instance_path": "/private/tmp/aiphone-personal-harmony-legacy-20261016b2/agent-runtime/instances",
+            "image_root": "/Users/dongxin/.Huawei/Emulator/images",
+            "hdc_port": 10001,
+            "hdc_serial": "127.0.0.1:10001",
+            "lease_token": "a79272fefae34fe2855b190f16043b11",
+            "observed_request_id": "1b1428f73c8f4c04",
+            "created_in_attempt": true,
+            "driver_fport_port": null,
+            "started_at": 1792093258.078964,
+            "ready": false,
+            "missing_ticks": 0,
+            "created": true,
+            "last_config": {
+              "device_type": "Phone",
+              "os_version": "HarmonyOS 6.0.31(23)",
+              "api_version": "23",
+              "abi": "arm64",
+              "image_id": "Phone|HarmonyOS 6.0.31(23)|arm64",
+              "screen_profile": "Default Phone",
+              "screen_width": 1080,
+              "screen_height": 2340,
+              "density": 420,
+              "screen_size_in": "",
+              "memory_gb": 2,
+              "storage_gb": 4,
+              "config_json": {
+                "display": {
+                  "mode": "official_default"
+                }
+              }
+            },
+            "cleanup_pending": false
+          }
+        },
+        "reclaimed_ids": [],
+        "runtime_ids": [],
+        "phase": "pre_hello",
+        "scenario": "legacy_stopped",
+        "process_handles": {}
+      }
+    ],
+    "direct_saved_lease_query": {
+      "port": 10001,
+      "token": "a79272fefae34fe2855b190f16043b11",
+      "row": {
+        "port": 10001,
+        "vm_id": "8c5348377bf8",
+        "agent_id": "personal-legacy-old-49f683c2be87",
+        "lease_token": "a79272fefae34fe2855b190f16043b11",
+        "state": "active"
+      }
+    },
+    "same_host_file_sha256": "22107004a876fd2d27bf57c6fb443ff3b1642f318ec3f575bc85efbc6a7a82ed"
+  },
+  "fresh_stop_released_legacy_lease": {
+    "server": {
+      "state": "stopped",
+      "assigned_agent_id": "personal-legacy-new-90f48880860f",
+      "error_code": "",
+      "error_message": "",
+      "runtime": {
+        "operation": {
+          "action": "stop",
+          "request_id": "7ca8a00625dc437a",
+          "pending": false,
+          "outcome": "succeeded",
+          "target_agent_id": "personal-legacy-new-90f48880860f",
+          "target_host_id": "13dec84613a9401ca8de5dc0bd7ba0bf",
+          "first_bind": false,
+          "started_at": "2026-10-15T19:42:11.010196+00:00",
+          "deadline_at": "2026-10-15T19:44:11.010196+00:00",
+          "timeout_sec": 120.0,
+          "completed_at": "2026-10-15T19:42:12.431084+00:00"
+        },
+        "last_status": {
+          "state": "stopped",
+          "ok": true,
+          "reason": "not_running",
+          "details": {
+            "cleanup_confirmed": true,
+            "exit_evidence": {
+              "source": "registry_instance_absence",
+              "hdc_serial": "127.0.0.1:10001",
+              "hdc_port": 10001,
+              "started_unix": 1792093331.013859,
+              "instance_process_status": "absent",
+              "process_handle_present": false,
+              "sample_count": 1,
+              "last_sample": {
+                "target_status": "offline",
+                "port_bindable": true,
+                "duration_sec": 1.371
+              },
+              "elapsed_sec": 1.371
+            }
+          },
+          "ts": "2026-10-15T19:42:12.428432+00:00"
+        },
+        "instance_created": true,
+        "details": {
+          "cleanup_confirmed": false
+        },
+        "owner_host_id": "13dec84613a9401ca8de5dc0bd7ba0bf",
+        "lease_history": [
+          {
+            "lease_token": "a79272fefae34fe2855b190f16043b11",
+            "port": 10001,
+            "released_at": "2026-10-15T19:42:12.430108+00:00",
+            "reason": "stopped"
+          }
+        ]
+      },
+      "lease_token": null,
+      "hdc_serial": null,
+      "hdc_port": null,
+      "lease_row": null
+    },
+    "receipt": {
+      "type": "harmony_vm_status",
+      "request_id": "7ca8a00625dc437a",
+      "vm_id": "8c5348377bf8",
+      "lease_token": "a79272fefae34fe2855b190f16043b11",
+      "state": "stopped",
+      "ok": true,
+      "reason": "not_running",
+      "error": "",
+      "hdc_serial": "127.0.0.1:10001",
+      "details": {
+        "cleanup_confirmed": true,
+        "exit_evidence": {
+          "source": "registry_instance_absence",
+          "hdc_serial": "127.0.0.1:10001",
+          "hdc_port": 10001,
+          "started_unix": 1792093331.013859,
+          "instance_process_status": "absent",
+          "process_handle_present": false,
+          "sample_count": 1,
+          "last_sample": {
+            "target_status": "offline",
+            "port_bindable": true,
+            "duration_sec": 1.371
+          },
+          "elapsed_sec": 1.371
+        }
+      }
+    },
+    "independent_saved_lease_query": {
+      "port": 10001,
+      "token": "a79272fefae34fe2855b190f16043b11",
+      "row": null
+    }
+  },
+  "restart_data_preserved": {
+    "vm_id": "8c5348377bf8",
+    "uuid": "d6435aa3-3df2-44c5-a17e-73b415b896c3",
+    "marker_sha256": "9426212d898d53b60e4cc1770c42ded4e028ea31a22c505e7e4f284668e3d45c",
+    "matched": true
+  },
+  "running_reclaim_without_process_handle": {
+    "previous_agent": "personal-legacy-new-90f48880860f",
+    "new_agent": "personal-running-reclaim-1e9f92784883",
+    "host_id": "13dec84613a9401ca8de5dc0bd7ba0bf",
+    "host_file_sha256": "22107004a876fd2d27bf57c6fb443ff3b1642f318ec3f575bc85efbc6a7a82ed",
+    "old_process_pid": 38391,
+    "old_process_still_running": true,
+    "new_runtime_process_is_none": true,
+    "prehello_check": {
+      "agent_id": "personal-running-reclaim-1e9f92784883",
+      "registry_before": {
+        "8c5348377bf8": {
+          "vm_id": "8c5348377bf8",
+          "name": "PERSONAL-legacy-20261016b2",
+          "instance_name": "aiphone_harmony_8c5348377bf8",
+          "instance_path": "/private/tmp/aiphone-personal-harmony-legacy-20261016b2/agent-runtime/instances",
+          "image_root": "/Users/dongxin/.Huawei/Emulator/images",
+          "hdc_port": 10001,
+          "hdc_serial": "127.0.0.1:10001",
+          "lease_token": "5d88ada727e14965acccb35d74d861a1",
+          "observed_request_id": "4c31a2debff84661",
+          "created_in_attempt": false,
+          "driver_fport_port": 16556,
+          "started_at": 1792093339.649598,
+          "ready": true,
+          "missing_ticks": 0,
+          "created": true,
+          "last_config": {
+            "device_type": "Phone",
+            "os_version": "HarmonyOS 6.0.31(23)",
+            "api_version": "23",
+            "abi": "arm64",
+            "image_id": "Phone|HarmonyOS 6.0.31(23)|arm64",
+            "screen_profile": "Default Phone",
+            "screen_width": 1080,
+            "screen_height": 2340,
+            "density": 420,
+            "screen_size_in": "",
+            "memory_gb": 2,
+            "storage_gb": 4,
+            "config_json": {
+              "display": {
+                "mode": "official_default"
+              }
+            }
+          }
+        }
+      },
+      "registry_after": {
+        "8c5348377bf8": {
+          "vm_id": "8c5348377bf8",
+          "name": "PERSONAL-legacy-20261016b2",
+          "instance_name": "aiphone_harmony_8c5348377bf8",
+          "instance_path": "/private/tmp/aiphone-personal-harmony-legacy-20261016b2/agent-runtime/instances",
+          "image_root": "/Users/dongxin/.Huawei/Emulator/images",
+          "hdc_port": 10001,
+          "hdc_serial": "127.0.0.1:10001",
+          "lease_token": "5d88ada727e14965acccb35d74d861a1",
+          "observed_request_id": "4c31a2debff84661",
+          "created_in_attempt": false,
+          "driver_fport_port": 16556,
+          "started_at": 1792093339.649598,
+          "ready": true,
+          "missing_ticks": 0,
+          "created": true,
+          "last_config": {
+            "device_type": "Phone",
+            "os_version": "HarmonyOS 6.0.31(23)",
+            "api_version": "23",
+            "abi": "arm64",
+            "image_id": "Phone|HarmonyOS 6.0.31(23)|arm64",
+            "screen_profile": "Default Phone",
+            "screen_width": 1080,
+            "screen_height": 2340,
+            "density": 420,
+            "screen_size_in": "",
+            "memory_gb": 2,
+            "storage_gb": 4,
+            "config_json": {
+              "display": {
+                "mode": "official_default"
+              }
+            }
+          }
+        }
+      },
+      "reclaimed_ids": [
+        "8c5348377bf8"
+      ],
+      "runtime_ids": [
+        "8c5348377bf8"
+      ],
+      "phase": "pre_hello",
+      "scenario": "running_process_handle_absent",
+      "process_handles": {
+        "8c5348377bf8": false
+      }
+    },
+    "server": {
+      "state": "running",
+      "assigned_agent_id": "personal-running-reclaim-1e9f92784883",
+      "error_code": "",
+      "error_message": "",
+      "runtime": {
+        "operation": {
+          "action": "start",
+          "request_id": "4c31a2debff84661",
+          "pending": false,
+          "outcome": "succeeded",
+          "target_agent_id": "personal-legacy-new-90f48880860f",
+          "target_host_id": "13dec84613a9401ca8de5dc0bd7ba0bf",
+          "first_bind": false,
+          "started_at": "2026-10-15T19:42:15.470991+00:00",
+          "deadline_at": "2026-10-15T19:48:15.470991+00:00",
+          "timeout_sec": 360.0,
+          "completed_at": "2026-10-15T19:42:53.555936+00:00"
+        },
+        "last_status": {
+          "state": "running",
+          "ok": true,
+          "reason": "reclaimed",
+          "details": {
+            "instance_name": "aiphone_harmony_8c5348377bf8",
+            "instance_path": "/private/tmp/aiphone-personal-harmony-legacy-20261016b2/agent-runtime/instances",
+            "orphan_reconcile": true,
+            "managed_instance_present": true,
+            "instance_created": true,
+            "cleanup_confirmed": false
+          },
+          "ts": "2026-10-15T19:43:01.710025+00:00"
+        },
+        "instance_created": true,
+        "details": {
+          "cleanup_confirmed": false
+        },
+        "owner_host_id": "13dec84613a9401ca8de5dc0bd7ba0bf",
+        "lease_history": [
+          {
+            "lease_token": "a79272fefae34fe2855b190f16043b11",
+            "port": 10001,
+            "released_at": "2026-10-15T19:42:12.430108+00:00",
+            "reason": "stopped"
+          }
+        ]
+      },
+      "lease_token": "5d88ada727e14965acccb35d74d861a1",
+      "hdc_serial": "127.0.0.1:10001",
+      "hdc_port": 10001,
+      "lease_row": {
+        "vm_id": "8c5348377bf8",
+        "agent_id": "personal-running-reclaim-1e9f92784883",
+        "lease_token": "5d88ada727e14965acccb35d74d861a1",
+        "state": "active"
+      }
+    },
+    "marker_still_matches": true,
+    "scope": "fresh Manager/session, not OS process kill"
+  },
+  "stop_after_running_reclaim": {
+    "server": {
+      "state": "stopped",
+      "assigned_agent_id": "personal-running-reclaim-1e9f92784883",
+      "error_code": "",
+      "error_message": "",
+      "runtime": {
+        "operation": {
+          "action": "stop",
+          "request_id": "4999cf82feef4467",
+          "pending": false,
+          "outcome": "succeeded",
+          "target_agent_id": "personal-running-reclaim-1e9f92784883",
+          "target_host_id": "13dec84613a9401ca8de5dc0bd7ba0bf",
+          "first_bind": false,
+          "started_at": "2026-10-15T19:43:03.157826+00:00",
+          "deadline_at": "2026-10-15T19:45:03.157826+00:00",
+          "timeout_sec": 120.0,
+          "completed_at": "2026-10-15T19:43:20.171095+00:00"
+        },
+        "last_status": {
+          "state": "stopped",
+          "ok": true,
+          "reason": "stopped",
+          "details": {
+            "cleanup_confirmed": true,
+            "cleanup_mode": "offline_hdc_target",
+            "stale_hdc_target": "127.0.0.1:10001",
+            "stop_errors": [],
+            "crash_service_cleanup_confirmed": true,
+            "hdc_port": 10001,
+            "exit_evidence": {
+              "hdc_serial": "127.0.0.1:10001",
+              "hdc_port": 10001,
+              "started_unix": 1792093389.494785,
+              "budget_sec": 15.0,
+              "sample_count": 6,
+              "max_sample_duration_sec": 1.351,
+              "max_offline_free_samples": 4,
+              "last_sample": {
+                "target_status": "offline",
+                "port_bindable": true,
+                "duration_sec": 1.351,
+                "elapsed_sec": 10.609
+              },
+              "elapsed_sec": 10.609,
+              "result": "offline_hdc_target",
+              "process_handle_present": false,
+              "process_return_code": null,
+              "process_sampled_unix": 1792093400.1036859,
+              "instance_process_status": "absent",
+              "instance_process_sampled_unix": 1792093400.1450508
+            }
+          },
+          "ts": "2026-10-15T19:43:20.168630+00:00"
+        },
+        "instance_created": true,
+        "details": {
+          "cleanup_confirmed": false
+        },
+        "owner_host_id": "13dec84613a9401ca8de5dc0bd7ba0bf",
+        "lease_history": [
+          {
+            "lease_token": "a79272fefae34fe2855b190f16043b11",
+            "port": 10001,
+            "released_at": "2026-10-15T19:42:12.430108+00:00",
+            "reason": "stopped"
+          },
+          {
+            "lease_token": "5d88ada727e14965acccb35d74d861a1",
+            "port": 10001,
+            "released_at": "2026-10-15T19:43:20.170157+00:00",
+            "reason": "stopped"
+          }
+        ]
+      },
+      "lease_token": null,
+      "hdc_serial": null,
+      "hdc_port": null,
+      "lease_row": null
+    },
+    "receipt": {
+      "type": "harmony_vm_status",
+      "request_id": "4999cf82feef4467",
+      "vm_id": "8c5348377bf8",
+      "lease_token": "5d88ada727e14965acccb35d74d861a1",
+      "state": "stopped",
+      "ok": true,
+      "reason": "stopped",
+      "error": "",
+      "hdc_serial": "127.0.0.1:10001",
+      "details": {
+        "cleanup_confirmed": true,
+        "cleanup_mode": "offline_hdc_target",
+        "stale_hdc_target": "127.0.0.1:10001",
+        "stop_errors": [],
+        "crash_service_cleanup_confirmed": true,
+        "hdc_port": 10001,
+        "exit_evidence": {
+          "hdc_serial": "127.0.0.1:10001",
+          "hdc_port": 10001,
+          "started_unix": 1792093389.494785,
+          "budget_sec": 15.0,
+          "sample_count": 6,
+          "max_sample_duration_sec": 1.351,
+          "max_offline_free_samples": 4,
+          "last_sample": {
+            "target_status": "offline",
+            "port_bindable": true,
+            "duration_sec": 1.351,
+            "elapsed_sec": 10.609
+          },
+          "elapsed_sec": 10.609,
+          "result": "offline_hdc_target",
+          "process_handle_present": false,
+          "process_return_code": null,
+          "process_sampled_unix": 1792093400.1036859,
+          "instance_process_status": "absent",
+          "instance_process_sampled_unix": 1792093400.1450508
+        }
+      }
+    },
+    "independent_native_state": {
+      "instance_directory_absent": false,
+      "registry_absent": false,
+      "runtime_absent": true,
+      "owned_processes": [],
+      "ports": {
+        "10001": {
+          "listening": false,
+          "bindable": true
+        },
+        "16556": {
+          "listening": false,
+          "bindable": true
+        }
+      }
+    },
+    "original_process_returncode": 0,
+    "independent_saved_lease_query": {
+      "port": 10001,
+      "token": "5d88ada727e14965acccb35d74d861a1",
+      "row": null
+    }
+  },
+  "cleanup": {
+    "server_404": true,
+    "delete_commands": 1,
+    "instance_directory_absent": true,
+    "registry_absent": true,
+    "runtime_absent": true,
+    "owned_processes": [],
+    "ports": {
+      "10001": {
+        "listening": false,
+        "bindable": true
+      },
+      "16556": {
+        "listening": false,
+        "bindable": true
+      }
+    }
+  },
+  "port_probe_observations": [
+    {
+      "sample_index": 1,
+      "vm_id": "8c5348377bf8",
+      "port": 10001,
+      "probe_unix": 1792093323.572974,
+      "real_product_return": true,
+      "plain_bind": {
+        "bindable": false,
+        "errno": 48,
+        "error": "[Errno 48] Address already in use"
+      },
+      "reuse_bind": {
+        "bindable": true
+      },
+      "synchronous_observer_sec": 9.1e-05,
+      "side_channel_started_unix": 1792093323.573704,
+      "connect_ex": 61,
+      "plain_bind_at_snapshot": {
+        "bindable": false,
+        "errno": 48,
+        "error": "[Errno 48] Address already in use"
+      },
+      "reuse_bind_at_snapshot": {
+        "bindable": true
+      },
+      "netstat": {
+        "args": [
+          "/usr/sbin/netstat",
+          "-anv",
+          "-p",
+          "tcp"
+        ],
+        "returncode": 0,
+        "lines": [
+          "tcp4       0      0  127.0.0.1.10001        127.0.0.1.55197        TIME_WAIT         313006        19068  518425  146988  37601      0 02131 00000004 00000000005c55f5 00000080 01000900      0      0 000000"
+        ],
+        "stderr": "",
+        "elapsed_sec": 0.015247
+      },
+      "lsof": {
+        "args": [
+          "/usr/sbin/lsof",
+          "-nP",
+          "-iTCP:10001"
+        ],
+        "returncode": 1,
+        "lines": [],
+        "stderr": "",
+        "elapsed_sec": 0.0495
+      },
+      "owned_processes": [],
+      "side_channel_finished_unix": 1792093323.6563
+    },
+    {
+      "sample_index": 2,
+      "vm_id": "8c5348377bf8",
+      "port": 10001,
+      "probe_unix": 1792093325.433804,
+      "real_product_return": true,
+      "plain_bind": {
+        "bindable": false,
+        "errno": 48,
+        "error": "[Errno 48] Address already in use"
+      },
+      "reuse_bind": {
+        "bindable": true
+      },
+      "synchronous_observer_sec": 0.0001,
+      "side_channel_started_unix": 1792093325.434001,
+      "connect_ex": 61,
+      "plain_bind_at_snapshot": {
+        "bindable": false,
+        "errno": 48,
+        "error": "[Errno 48] Address already in use"
+      },
+      "reuse_bind_at_snapshot": {
+        "bindable": true
+      },
+      "netstat": {
+        "args": [
+          "/usr/sbin/netstat",
+          "-anv",
+          "-p",
+          "tcp"
+        ],
+        "returncode": 0,
+        "lines": [
+          "tcp4       0      0  127.0.0.1.10001        127.0.0.1.55197        TIME_WAIT         313006        19068  518425  146988  37601      0 02131 00000004 00000000005c55f5 00000080 01000900      0      0 000000"
+        ],
+        "stderr": "",
+        "elapsed_sec": 0.010788
+      },
+      "lsof": {
+        "args": [
+          "/usr/sbin/lsof",
+          "-nP",
+          "-iTCP:10001"
+        ],
+        "returncode": 1,
+        "lines": [],
+        "stderr": "",
+        "elapsed_sec": 0.046246
+      },
+      "owned_processes": [],
+      "side_channel_finished_unix": 1792093325.509023
+    },
+    {
+      "sample_index": 3,
+      "vm_id": "8c5348377bf8",
+      "port": 10001,
+      "probe_unix": 1792093327.276341,
+      "real_product_return": true,
+      "plain_bind": {
+        "bindable": false,
+        "errno": 48,
+        "error": "[Errno 48] Address already in use"
+      },
+      "reuse_bind": {
+        "bindable": true
+      },
+      "synchronous_observer_sec": 0.000107,
+      "side_channel_started_unix": 1792093327.276591,
+      "connect_ex": 61,
+      "plain_bind_at_snapshot": {
+        "bindable": false,
+        "errno": 48,
+        "error": "[Errno 48] Address already in use"
+      },
+      "reuse_bind_at_snapshot": {
+        "bindable": true
+      },
+      "netstat": {
+        "args": [
+          "/usr/sbin/netstat",
+          "-anv",
+          "-p",
+          "tcp"
+        ],
+        "returncode": 0,
+        "lines": [
+          "tcp4       0      0  127.0.0.1.10001        127.0.0.1.55197        TIME_WAIT         313006        19068  518425  146988  37601      0 02131 00000004 00000000005c55f5 00000080 01000900      0      0 000000"
+        ],
+        "stderr": "",
+        "elapsed_sec": 0.016598
+      },
+      "lsof": {
+        "args": [
+          "/usr/sbin/lsof",
+          "-nP",
+          "-iTCP:10001"
+        ],
+        "returncode": 1,
+        "lines": [],
+        "stderr": "",
+        "elapsed_sec": 0.04173
+      },
+      "owned_processes": [],
+      "side_channel_finished_unix": 1792093327.353108
+    }
+  ],
+  "protected_after": {
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_harmony_8ef590502d89/config.ini": "d9e02a36096d3684498346cf70e5bf053a6bbf9817ce34a6f8eb1007a1b00641",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_harmony_8ef590502d89.ini": "8d04b5680ba467e1c059dbb7d0463b6a3edbc72698e879eae6161b83f7530ce2",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_hdc_test/config.ini": "2d8e0eddf338e0a8ff9b571985221ade1efaac556930aaa869a9cfa3ced45d18",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_hdc_test.ini": "c614dfdb3328e5c48612050084f08b9ea8f5453757333262a3a0406a82ca6933",
+    "/Users/dongxin/.Huawei/Emulator/deployed/lists.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "/Users/dongxin/Library/Caches/Huawei/Emulator6.1/.emu_config": "7cebbf23abec7212f5908c2c2ed6085c6ecd30ba15808de3b754979b47a17e56"
+  },
+  "protected_unchanged": true,
+  "source_hashes_at_end": {
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/harmony_personal_e2e.py": "d951bc304dff6a9c23694035abc2b481b167a5cdad344ac5698c62a4912d5e70",
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/personal-fixture.html": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+    "backend/ai_phone/agent/harmony_vm/manager.py": "efac19845e45b5c0a7aa2faefc95f8c6dc9cecd6842442fee303765dc9a3999e",
+    "backend/ai_phone/agent/harmony_vm/capability.py": "6716584a4ee555fd49b2297db5136e004679806d2af0b12a2c4edb3eac5003fa",
+    "backend/ai_phone/agent/harmony_vm/registry.py": "bebe6a5f0db459782b74721a753b4a7faeb26943beb7e8c60194e4403f997d80",
+    "backend/ai_phone/agent/ws_client.py": "c9d6b39b48952b4c10adf8d124a210adc014f89525af9008586d2a7bdffcc04d",
+    "backend/ai_phone/agent/drivers/harmony.py": "3dbab0a5cc082928492c09d15711f1b73705399a72a7fe199dc5b7d7c21fbec4",
+    "backend/ai_phone/agent/drivers/hdc.py": "440df7e7dd2795b6b0bffd2942efb4a161550bfe8877085973006c88601a5e7c",
+    "backend/ai_phone/server/harmony_vm/api.py": "00b4665fda0e96e110b2fcb6ef236edc0af62a4a956abd76ca156c94e96793a6",
+    "backend/ai_phone/server/harmony_vm/service.py": "cef15701e1c3d6260a2e681911fa200dda10f27114225ab85994417e67008460",
+    "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+    "backend/ai_phone/server/vm_lifecycle.py": "232cf364266b1e344a7d29e87ebce39709994a1b0aa790db582ef33602af56aa",
+    "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/harmony_legacy_native.py": "686927c9b162fdf80e93e1f2b8439f934870ae1fba0afd5632e91119a94b16d8",
+    "backend/ai_phone/agent/vm_ports.py": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+    "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+    "backend/ai_phone/server/harmony_vm/models.py": "b82d52e8c663d1202aab25ef5be878145ebb2bcc94c26dd73a1759b1f8bb939e"
+  },
+  "sources_unchanged": true,
+  "final_native_state": {
+    "instance_directory_absent": true,
+    "registry_absent": true,
+    "runtime_absent": true,
+    "owned_processes": [],
+    "ports": {
+      "10001": {
+        "listening": false,
+        "bindable": true
+      },
+      "16556": {
+        "listening": false,
+        "bindable": true
+      }
+    }
+  },
+  "finished_at": "2026-10-15T19:43:22.361589+00:00"
+}

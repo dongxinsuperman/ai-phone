@@ -1,0 +1,102 @@
+{
+  "repository": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone",
+  "artifact_root": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs",
+  "device_set": "/private/tmp/aiphone-personal-ios-plan",
+  "fixture": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/execution/personal-fixture.html",
+  "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-16e",
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+  "persistent_host_identity": "new-run/storage/agent-host-id, mode 0600; same file on reconnect, fresh agent_id",
+  "execution_gate": "root source freeze and exclusive native hardware slot; default mode is plan only",
+  "actions": [
+    "isolated HTTP/WS server",
+    "create unbound config",
+    "real capability probe",
+    "bind/start WDA",
+    "real input and screenshot",
+    "backend proof receipt",
+    "stop",
+    "restart same UDID and data",
+    "offline delete removes Server ledger",
+    "reconnect exact orphan cleanup"
+  ],
+  "forbidden": [
+    "default simulator set",
+    "physical devices",
+    "company endpoints/packages/configs",
+    "global shutdown/delete",
+    "production VLM credentials"
+  ]
+}
+2026-10-16 03:50:22.500 | DEBUG    | ai_phone.agent.drivers.harmony:_neutralize_hmdriver_del_once:114 - hmdriver2.Driver.__del__ 已阉割（去除 _instance.clear + fport 副作用）
+{"phase": "isolation", "elapsed_seconds": 1.295, "isolated_set_empty": true, "source_root": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone", "default_set_access": false, "private_wda_ports": [18300, 19300]}
+2026-10-16 03:50:23.349 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:////Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8/personal.db
+2026-10-16 03:50:23.427 | INFO     | ai_phone.server.ios_sim.catalog:ensure_catalog_row:142 - iOS 虚拟机官方机型目录已导入：79 个机型（Xcode 26.0.1）
+2026-10-16 03:50:23.428 | INFO     | ai_phone.server.db:init_ios_sim_db:215 - iOS 虚拟机数据表建表完成
+{"phase": "persistent_host_identity", "elapsed_seconds": 1.663, "path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8/storage/agent-host-id", "host_id": "f2503c7593f449a9bc1b0476c0b3c516", "sha256": "ec9ee320bb85fbfa43033249ff8978d1ac722afae08566caeaa344170bdfd426", "permissions": "0600"}
+2026-10-16 03:50:23.691 | INFO     | ai_phone.agent.ws_client:run_forever:221 - 连接 Server WS ws://127.0.0.1:56907/ws/agent?token=***
+2026-10-16 03:50:23.988 | INFO     | ai_phone.agent.ws_client:_on_connected:275 - hello sent | devices=[]
+2026-10-16 03:50:23.990 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=personal-ios-ios-20261016-035022-ddd0e8 name=Personal iOS isolated acceptance host_os=Darwin 24.6.0
+2026-10-16 03:50:23.993 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:222 - Agent hello | id=personal-ios-ios-20261016-035022-ddd0e8 devices=[]
+2026-10-16 03:50:23.993 | WARNING  | ai_phone.server.ws.agent_ws:agent_ws:236 - 向 Agent personal-ios-ios-20261016-035022-ddd0e8 下发配置失败（VLM Run 未应用配置会拒绝执行，等待后续补发）：新版 PHONE_VLM 配置缺失，无法派生模型执行链路：AI_PHONE_PHONE_VLM_PROVIDER, AI_PHONE_PHONE_VLM_BASE_URL, AI_PHONE_PHONE_VLM_API_KEY, AI_PHONE_PHONE_VLM_MODEL。请配置 AI_PHONE_PHONE_VLM_*；不再回退旧式 AI_PHONE_VLM_*。
+2026-10-16 03:50:24.069 | INFO     | ai_phone.agent.ios_sim.manager:report_orphan_reconcile:1073 - 已上报 iOS 虚拟机对账清单：在跑 0 / 没跑 0（共 0）
+2026-10-16 03:50:24.069 | INFO     | ai_phone.agent.ws_client:_rescan_loop:508 - rescan_loop 启动，间隔 15.0s
+{"phase": "server_agent_connected", "elapsed_seconds": 2.169, "base_url": "http://127.0.0.1:56907", "agent_id": "personal-ios-ios-20261016-035022-ddd0e8"}
+2026-10-16 03:50:24.231 | INFO     | ai_phone.server.ios_sim.api:create_instance:194 - 已创建 iOS 虚拟机配置 vm_id=7b6b1c8a6085 alias=Personal iOS ios-20261016-035022-ddd0e8 机型=iPhone 16e 系统=iOS 26.0
+{"phase": "created_unbound_config", "elapsed_seconds": 2.206, "vm_id": "7b6b1c8a6085", "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-16e", "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0"}
+{"phase": "dispatch_started", "elapsed_seconds": 2.663, "delete_during_start_status": 409}
+2026-10-16 03:50:25.178 | INFO     | ai_phone.agent.ios_sim.manager:_ensure_instance:592 - 已创建受管虚拟机 name=aiphone_sim_7b6b1c8a6085 udid=3FFD282D-0846-4B8E-8437-CF522201D796
+2026-10-16 03:50:49.082 | INFO     | ai_phone.agent.drivers.ios_simulator_wda:build_wda_for_simulator:523 - 构建虚拟机版 WDA：cwd=/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/third_party/WebDriverAgent cmd=/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild build-for-testing -project WebDriverAgent.xcodeproj -scheme WebDriverAgentRunner-nodebug -destination generic/platform=iOS Simulator -derivedDataPath /Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8/storage/ios_sim_wda_build CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO
+2026-10-16 03:50:54.088 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-ios-ios-20261016-035022-ddd0e8 devices=[]
+2026-10-16 03:51:24.097 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-ios-ios-20261016-035022-ddd0e8 devices=[]
+2026-10-16 03:51:38.516 | INFO     | ai_phone.agent.drivers.ios_simulator_wda:build_wda_for_simulator:546 - 虚拟机版 WDA 构建完成，耗时 49.4s：/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8/storage/ios_sim_wda_build/Build/Products/Debug-iphonesimulator/WebDriverAgentRunner-Runner.app
+2026-10-16 03:51:42.523 | INFO     | ai_phone.agent.drivers.ios_simulator_wda:_install:1004 - udid=3FFD282D-0846-4B8E-8437-CF522201D796 已安装 WDA runner：com.example.wda.xctrunner
+2026-10-16 03:51:43.059 | INFO     | ai_phone.agent.drivers.ios_simulator_wda:_launch:1041 - udid=3FFD282D-0846-4B8E-8437-CF522201D796 已启动 WDA：com.example.wda.xctrunner: 42096 → wda=18303 mjpeg=19303
+2026-10-16 03:51:48.138 | INFO     | ai_phone.agent.drivers.ios_simulator_wda:_wait_ready:1087 - udid=3FFD282D-0846-4B8E-8437-CF522201D796 WDA ready（simulator 26.0）http://127.0.0.1:18303
+2026-10-16 03:51:48.165 | INFO     | ai_phone.agent.ios_sim.manager:_start_sync_locked:487 - iOS 虚拟机已就绪 vm_id=7b6b1c8a6085 udid=3FFD282D-0846-4B8E-8437-CF522201D796 name=aiphone_sim_7b6b1c8a6085 wda=18303 
+{"phase": "running", "elapsed_seconds": 86.299, "vm_id": "7b6b1c8a6085", "udid": "3FFD282D-0846-4B8E-8437-CF522201D796", "wda_port": 18303, "mjpeg_port": 19303}
+2026-10-16 03:51:48.352 | INFO     | ai_phone.agent.drivers.simctl:simctl_available:165 - iOS Simulator 底座可用：/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8/bin/xcrun
+2026-10-16 03:51:48.855 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['3FFD282D-0846-4B8E-8437-CF522201D796']
+2026-10-16 03:51:48.859 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-ios-ios-20261016-035022-ddd0e8 devices=['3FFD282D-0846-4B8E-8437-CF522201D796']
+2026-10-16 03:51:49.174 | INFO     | ai_phone.agent.drivers.wda_client:create_session:250 - WDA session 已建 sid=06AD9F7C-DBD5-41D6-8E71-D0BD2308675F bundle=None
+2026-10-16 03:51:54.296 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-ios-ios-20261016-035022-ddd0e8 devices=['3FFD282D-0846-4B8E-8437-CF522201D796']
+2026-10-16 03:52:13.853 | DEBUG    | ai_phone.agent.drivers.wda_client:dismiss_keyboard:416 - dismiss_keyboard 忽略: WDA 4xx POST /session/06AD9F7C-DBD5-41D6-8E71-D0BD2308675F/wda/keyboard/dismiss: 400 {
+  "value" : {
+    "error" : "invalid element state",
+    "message" : "Error Domain=com.facebook.WebDriverAgent Code=1 \"Did not know how to dismiss the keyboard. Try to dismiss it in the way support
+{"phase": "real_input_business_result", "elapsed_seconds": 115.89, "run_id": "19c38af42a66", "status": "success", "execution": {"token": "personal-eb12ee512800", "button": {"type": "XCUIElementTypeButton", "name": "确认", "label": "确认", "enabled": "true", "visible": "true", "accessible": "true", "x": "20", "y": "283", "width": "350", "height": "63", "index": "4", "traits": "Button"}, "screenshot": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8/confirmed.png", "native_source_has_token": true}, "receipt": {"run": "ios-20261016-035022-ddd0e8", "platform": "ios", "event": "confirm", "token": "personal-eb12ee512800", "count": 1, "received_at": "2026-10-15T19:52:16.992446+00:00"}}
+2026-10-16 03:52:21.699 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['3FFD282D-0846-4B8E-8437-CF522201D796'] → []
+2026-10-16 03:52:21.706 | INFO     | ai_phone.server.ws.agent_ws:op:763 - Agent personal-ios-ios-20261016-035022-ddd0e8 移除已拔出设备 ['3FFD282D-0846-4B8E-8437-CF522201D796']
+2026-10-16 03:52:21.707 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-ios-ios-20261016-035022-ddd0e8 devices=[]
+{"phase": "stopped_retained", "elapsed_seconds": 119.948, "vm_id": "7b6b1c8a6085", "udid": "3FFD282D-0846-4B8E-8437-CF522201D796", "native": {"name": "aiphone_sim_7b6b1c8a6085", "state": "Shutdown", "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0", "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-16e", "is_available": true}}
+2026-10-16 03:52:22.457 | INFO     | ai_phone.agent.ios_sim.manager:_ensure_instance:567 - 复用已有受管虚拟机 name=aiphone_sim_7b6b1c8a6085 udid=3FFD282D-0846-4B8E-8437-CF522201D796
+2026-10-16 03:52:24.086 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-ios-ios-20261016-035022-ddd0e8 devices=[]
+2026-10-16 03:52:33.463 | DEBUG    | ai_phone.agent.drivers.ios_simulator_wda:build_wda_for_simulator:490 - 复用已有的虚拟机版 WDA 产物：/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8/storage/ios_sim_wda_build/Build/Products/Debug-iphonesimulator/WebDriverAgentRunner-Runner.app
+2026-10-16 03:52:34.012 | INFO     | ai_phone.agent.drivers.ios_simulator_wda:_install:993 - udid=3FFD282D-0846-4B8E-8437-CF522201D796 已装的 WDA runner 即当前产物，跳过安装：com.example.wda.xctrunner
+2026-10-16 03:52:34.374 | INFO     | ai_phone.agent.drivers.ios_simulator_wda:_launch:1041 - udid=3FFD282D-0846-4B8E-8437-CF522201D796 已启动 WDA：com.example.wda.xctrunner: 42624 → wda=18303 mjpeg=19303
+2026-10-16 03:52:40.455 | INFO     | ai_phone.agent.drivers.ios_simulator_wda:_wait_ready:1087 - udid=3FFD282D-0846-4B8E-8437-CF522201D796 WDA ready（simulator 26.0）http://127.0.0.1:18303
+2026-10-16 03:52:40.476 | INFO     | ai_phone.agent.ios_sim.manager:_start_sync_locked:487 - iOS 虚拟机已就绪 vm_id=7b6b1c8a6085 udid=3FFD282D-0846-4B8E-8437-CF522201D796 name=aiphone_sim_7b6b1c8a6085 wda=18303 
+2026-10-16 03:52:40.531 | INFO     | ai_phone.agent.drivers.wda_client:create_session:250 - WDA session 已建 sid=0E37CDE1-3E84-4AC3-8287-631778442E08 bundle=None
+2026-10-16 03:52:40.604 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['3FFD282D-0846-4B8E-8437-CF522201D796']
+2026-10-16 03:52:40.609 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-ios-ios-20261016-035022-ddd0e8 devices=['3FFD282D-0846-4B8E-8437-CF522201D796']
+{"phase": "restart_preserves_identity_and_data", "elapsed_seconds": 144.404, "vm_id": "7b6b1c8a6085", "udid": "3FFD282D-0846-4B8E-8437-CF522201D796", "receipt": {"run": "ios-20261016-035022-ddd0e8", "platform": "ios", "event": "load", "token": "personal-eb12ee512800", "count": 1, "received_at": "2026-10-15T19:52:45.659180+00:00"}, "native_source_has_persisted_token_and_count": true, "screenshot": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8/after-restart.png"}
+2026-10-16 03:52:50.225 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['3FFD282D-0846-4B8E-8437-CF522201D796'] → []
+2026-10-16 03:52:50.229 | INFO     | ai_phone.server.ws.agent_ws:op:763 - Agent personal-ios-ios-20261016-035022-ddd0e8 移除已拔出设备 ['3FFD282D-0846-4B8E-8437-CF522201D796']
+2026-10-16 03:52:50.230 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-ios-ios-20261016-035022-ddd0e8 devices=[]
+2026-10-16 03:52:50.367 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:273 - Agent 断开 | id=personal-ios-ios-20261016-035022-ddd0e8
+2026-10-16 03:52:50.367 | INFO     | ai_phone.server.hub:unregister_agent:201 - Agent 下线 | id=personal-ios-ios-20261016-035022-ddd0e8 serials=[]
+{"phase": "offline_delete_ledger_removed", "elapsed_seconds": 148.446, "response": {"id": "7b6b1c8a6085", "deleted": true, "alias_deleted": 1, "cleanup_sent": false, "avd_cleanup_sent": false}, "server_status": 404, "native_present": true}
+{"phase": "new_agent_session_same_host", "elapsed_seconds": 148.447, "previous_agent_id": "personal-ios-ios-20261016-035022-ddd0e8", "agent_id": "personal-ios-reconnect-9e41309316c0", "host_id": "f2503c7593f449a9bc1b0476c0b3c516", "identity_file_sha256": "ec9ee320bb85fbfa43033249ff8978d1ac722afae08566caeaa344170bdfd426"}
+2026-10-16 03:52:50.474 | INFO     | ai_phone.agent.ws_client:run_forever:221 - 连接 Server WS ws://127.0.0.1:56907/ws/agent?token=***
+2026-10-16 03:52:50.782 | INFO     | ai_phone.agent.ws_client:_on_connected:275 - hello sent | devices=[]
+2026-10-16 03:52:50.783 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=personal-ios-reconnect-9e41309316c0 name=Personal iOS isolated acceptance host_os=Darwin 24.6.0
+2026-10-16 03:52:50.786 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:222 - Agent hello | id=personal-ios-reconnect-9e41309316c0 devices=[]
+2026-10-16 03:52:50.786 | WARNING  | ai_phone.server.ws.agent_ws:agent_ws:236 - 向 Agent personal-ios-reconnect-9e41309316c0 下发配置失败（VLM Run 未应用配置会拒绝执行，等待后续补发）：新版 PHONE_VLM 配置缺失，无法派生模型执行链路：AI_PHONE_PHONE_VLM_PROVIDER, AI_PHONE_PHONE_VLM_BASE_URL, AI_PHONE_PHONE_VLM_API_KEY, AI_PHONE_PHONE_VLM_MODEL。请配置 AI_PHONE_PHONE_VLM_*；不再回退旧式 AI_PHONE_VLM_*。
+2026-10-16 03:52:50.873 | INFO     | ai_phone.agent.ios_sim.manager:report_orphan_reconcile:1073 - 已上报 iOS 虚拟机对账清单：在跑 0 / 没跑 1（共 1）
+2026-10-16 03:52:50.873 | INFO     | ai_phone.agent.ws_client:_rescan_loop:508 - rescan_loop 启动，间隔 15.0s
+{"phase": "reconnect_cleanup_complete", "elapsed_seconds": 149.338, "vm_id": "7b6b1c8a6085", "udid": "3FFD282D-0846-4B8E-8437-CF522201D796", "native_absent": true, "data_directory_absent": true, "port_reservation_released": true}
+2026-10-16 03:52:51.369 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:273 - Agent 断开 | id=personal-ios-reconnect-9e41309316c0
+2026-10-16 03:52:51.369 | INFO     | ai_phone.server.hub:unregister_agent:201 - Agent 下线 | id=personal-ios-reconnect-9e41309316c0 serials=[]
+{"phase": "personal_cleanup", "elapsed_seconds": 149.543, "results": [{"vm_id": "7b6b1c8a6085", "result": {"ok": true, "reason": "not_found", "error": "", "sim_name": "aiphone_sim_7b6b1c8a6085", "details": {"cleanup_confirmed": true}}}], "isolated_set_empty": true}
+2026-10-16 03:52:51.780 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+{"phase": "source_and_host_identity_verified", "elapsed_seconds": 149.762, "source_hash_mismatches": [], "persistent_host_identity_unchanged": true}
+{"result": "passed", "evidence": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8/result.json"}

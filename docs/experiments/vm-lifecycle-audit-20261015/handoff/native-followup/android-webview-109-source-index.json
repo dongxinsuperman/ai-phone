@@ -1,0 +1,86 @@
+{
+  "indexed_at": "2026-10-15T20:13:02.144602+00:00",
+  "runtime_package": "com.google.android.webview",
+  "runtime_version": "109.0.5414.123",
+  "runtime_version_code": 541412334,
+  "chromium_tag": "109.0.5414.123",
+  "chromium_commit": "1da24e1281b9ed5d02aa48789f8481ccb9469b13",
+  "chromium_tag_url": "https://chromium.googlesource.com/chromium/src/+/refs/tags/109.0.5414.123",
+  "leveldb_commit_from_chromium_DEPS": "d019e3605f222ebc5a3a2484a2cb29db537551dd",
+  "raw_sources_local_only": "chromium-109.0.5414.123/",
+  "note": "Full upstream files are local audit evidence, not vendored product code. Commit only this index and original analysis reports. Runtime mapping is a3; a2 exact provider and commit/flush events were not captured.",
+  "sources": [
+    {
+      "path": "chrome/VERSION",
+      "url": "https://raw.githubusercontent.com/chromium/chromium/109.0.5414.123/chrome/VERSION",
+      "bytes": 39,
+      "sha256": "9c3ea4687eec1589b9dc68953ddbc68c7175f4d3947f9e39e90aa0964c4c3a71"
+    },
+    {
+      "path": "components/services/storage/dom_storage/local_storage_impl.cc",
+      "url": "https://raw.githubusercontent.com/chromium/chromium/109.0.5414.123/components/services/storage/dom_storage/local_storage_impl.cc",
+      "bytes": 29794,
+      "sha256": "cae02742aa8c8855a93caa34e8ef86d623e9bf71af041994488159dffa541af9"
+    },
+    {
+      "path": "components/services/storage/dom_storage/storage_area_impl.cc",
+      "url": "https://raw.githubusercontent.com/chromium/chromium/109.0.5414.123/components/services/storage/dom_storage/storage_area_impl.cc",
+      "bytes": 33146,
+      "sha256": "e71a433ce866f6903b56d398aa6ee33519092d0da91babaef732767f012208f0"
+    },
+    {
+      "path": "android_webview/browser/aw_browser_context.cc",
+      "url": "https://raw.githubusercontent.com/chromium/chromium/109.0.5414.123/android_webview/browser/aw_browser_context.cc",
+      "bytes": 23745,
+      "sha256": "b600459f9d0990f58dbcb6cd431a5b1557afa72d1945ef3e452c824736fa2b96"
+    },
+    {
+      "path": "components/services/storage/dom_storage/dom_storage_database.cc",
+      "url": "https://raw.githubusercontent.com/chromium/chromium/109.0.5414.123/components/services/storage/dom_storage/dom_storage_database.cc",
+      "bytes": 15545,
+      "sha256": "b2c6affb2037f9d1459f74ed55afdb357cbf11d989d68b863a654975f8b89f9b"
+    },
+    {
+      "path": "components/services/storage/storage_service_impl.cc",
+      "url": "https://raw.githubusercontent.com/chromium/chromium/109.0.5414.123/components/services/storage/storage_service_impl.cc",
+      "bytes": 5341,
+      "sha256": "920f897fa919d802609bdaae15678c1fe12e131dfb8bf57972782808a2e0cfbc"
+    },
+    {
+      "path": "android_webview/lib/aw_main_delegate.cc",
+      "url": "https://raw.githubusercontent.com/chromium/chromium/109.0.5414.123/android_webview/lib/aw_main_delegate.cc",
+      "bytes": 21475,
+      "sha256": "1b794cd0ad1f2525ddb32f7eaa32a1d8b79c0a3015f6207e25f54e105912d346"
+    },
+    {
+      "path": "content/browser/browser_main_loop.cc",
+      "url": "https://raw.githubusercontent.com/chromium/chromium/109.0.5414.123/content/browser/browser_main_loop.cc",
+      "bytes": 57594,
+      "sha256": "35c7a3f941722759dce41892b4edc30535530ce9308cc2b404c3218378daafb5"
+    },
+    {
+      "path": "content/browser/storage_partition_impl.cc",
+      "url": "https://raw.githubusercontent.com/chromium/chromium/109.0.5414.123/content/browser/storage_partition_impl.cc",
+      "bytes": 128684,
+      "sha256": "0f7a0377a0e220705bb5410cca4cc8bcd6a4c8b27f07b1959ec4b5bb2f02e5de"
+    },
+    {
+      "path": "DEPS",
+      "url": "https://raw.githubusercontent.com/chromium/chromium/109.0.5414.123/DEPS",
+      "bytes": 174258,
+      "sha256": "95c7e94efe373d7851931a645a6848b6a5efb089a545615a0365061c002c21bc"
+    },
+    {
+      "path": "leveldb-d019e3605f222ebc5a3a2484a2cb29db537551dd/include/leveldb/options.h",
+      "url": "https://chromium.googlesource.com/external/leveldb/+/d019e3605f222ebc5a3a2484a2cb29db537551dd/include/leveldb/options.h?format=TEXT",
+      "bytes": 7362,
+      "sha256": "7b6ee58f89515ed4dd5f7c39076a4e97a7c90b009209534fadb71e1da801fbc0"
+    },
+    {
+      "path": "leveldb-d019e3605f222ebc5a3a2484a2cb29db537551dd/db/db_impl.cc",
+      "url": "https://chromium.googlesource.com/external/leveldb/+/d019e3605f222ebc5a3a2484a2cb29db537551dd/db/db_impl.cc?format=TEXT",
+      "bytes": 49072,
+      "sha256": "52453d1fb693010797cf299b76d204e53ebbd80568b5fd6a95727f787c4ef2cd"
+    }
+  ]
+}

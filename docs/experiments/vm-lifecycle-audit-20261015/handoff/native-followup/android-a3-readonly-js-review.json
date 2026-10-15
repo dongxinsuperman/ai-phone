@@ -1,0 +1,57 @@
+{
+  "scope": "Independent Node vm execution of read-only diagnostic JavaScript; no ADB, VM, network, or product changes.",
+  "recorded_at": "2026-10-15T20:03:31.110287+00:00",
+  "source": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a3_storage_diagnostic.js",
+  "sha256": "7a2bd86efcb92da3a63956b34e24948e1399bc48cc4e42cb2d284981d2db80cf",
+  "status": "passed",
+  "checks": [
+    {
+      "name": "value",
+      "reads": 1,
+      "writes": 0,
+      "missing": false,
+      "read_error": false,
+      "parse_error": false
+    },
+    {
+      "name": "missing",
+      "reads": 1,
+      "writes": 0,
+      "missing": true,
+      "read_error": false,
+      "parse_error": false
+    },
+    {
+      "name": "json-null",
+      "reads": 1,
+      "writes": 0,
+      "missing": false,
+      "read_error": false,
+      "parse_error": false
+    },
+    {
+      "name": "malformed",
+      "reads": 1,
+      "writes": 0,
+      "missing": false,
+      "read_error": false,
+      "parse_error": true
+    },
+    {
+      "name": "read-error",
+      "reads": 1,
+      "writes": 0,
+      "missing": null,
+      "read_error": true,
+      "parse_error": false
+    }
+  ],
+  "assertions": [
+    "Exact origin-derived storage key read once per case",
+    "setItem/removeItem/clear/property writes forbidden by mocks",
+    "Valid JSON value preserved",
+    "Missing key distinguished from JSON null",
+    "Read failure not mislabeled as missing",
+    "Parse failure preserved as diagnostic error"
+  ]
+}

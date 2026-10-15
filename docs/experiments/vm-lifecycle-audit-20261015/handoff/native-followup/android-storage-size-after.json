@@ -1,0 +1,47 @@
+{
+  "manager_sha256": "4008ca8b5533712e2af251db8ae48b091b7fec3f03ee8816e339aeedc5cc78fc",
+  "method": "AndroidVmManager._write_avd_screen_config",
+  "execution": "actual method AST; temporary directory only; no Agent/subprocess/SDK calls",
+  "cases": [
+    {
+      "old": "6442450944",
+      "request_mib": 4096,
+      "actual_after": "6442450944",
+      "expected": "6442450944",
+      "passed": true,
+      "file_unchanged": true
+    },
+    {
+      "old": "6g",
+      "request_mib": 4096,
+      "actual_after": "6g",
+      "expected": "6g",
+      "passed": true,
+      "file_unchanged": true
+    },
+    {
+      "old": "6144M",
+      "request_mib": 4096,
+      "actual_after": "6144M",
+      "expected": "6144M",
+      "passed": true,
+      "file_unchanged": true
+    },
+    {
+      "old": "6442450944",
+      "request_mib": 6144,
+      "actual_after": "6442450944",
+      "expected": "6442450944",
+      "passed": true,
+      "file_unchanged": true
+    },
+    {
+      "old": "6442450944",
+      "request_mib": 8192,
+      "actual_after": "8192M",
+      "expected": "8192M",
+      "passed": true,
+      "file_unchanged": false
+    }
+  ]
+}

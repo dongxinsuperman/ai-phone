@@ -1,0 +1,199 @@
+{
+  "started_at": "2026-10-15T19:50:22.026769+00:00",
+  "status": "passed",
+  "scope": "personal localhost only; isolated simulator device set; real HTTP/WS/native input; deterministic run handler; no VLM/Onion/physical devices",
+  "device_set": "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8",
+  "phases": [
+    {
+      "phase": "isolation",
+      "elapsed_seconds": 1.295,
+      "isolated_set_empty": true,
+      "source_root": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone",
+      "default_set_access": false,
+      "private_wda_ports": [
+        18300,
+        19300
+      ]
+    },
+    {
+      "phase": "persistent_host_identity",
+      "elapsed_seconds": 1.663,
+      "path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8/storage/agent-host-id",
+      "host_id": "f2503c7593f449a9bc1b0476c0b3c516",
+      "sha256": "ec9ee320bb85fbfa43033249ff8978d1ac722afae08566caeaa344170bdfd426",
+      "permissions": "0600"
+    },
+    {
+      "phase": "server_agent_connected",
+      "elapsed_seconds": 2.169,
+      "base_url": "http://127.0.0.1:56907",
+      "agent_id": "personal-ios-ios-20261016-035022-ddd0e8"
+    },
+    {
+      "phase": "created_unbound_config",
+      "elapsed_seconds": 2.206,
+      "vm_id": "7b6b1c8a6085",
+      "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-16e",
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0"
+    },
+    {
+      "phase": "dispatch_started",
+      "elapsed_seconds": 2.663,
+      "delete_during_start_status": 409
+    },
+    {
+      "phase": "running",
+      "elapsed_seconds": 86.299,
+      "vm_id": "7b6b1c8a6085",
+      "udid": "3FFD282D-0846-4B8E-8437-CF522201D796",
+      "wda_port": 18303,
+      "mjpeg_port": 19303
+    },
+    {
+      "phase": "real_input_business_result",
+      "elapsed_seconds": 115.89,
+      "run_id": "19c38af42a66",
+      "status": "success",
+      "execution": {
+        "token": "personal-eb12ee512800",
+        "button": {
+          "type": "XCUIElementTypeButton",
+          "name": "确认",
+          "label": "确认",
+          "enabled": "true",
+          "visible": "true",
+          "accessible": "true",
+          "x": "20",
+          "y": "283",
+          "width": "350",
+          "height": "63",
+          "index": "4",
+          "traits": "Button"
+        },
+        "screenshot": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8/confirmed.png",
+        "native_source_has_token": true
+      },
+      "receipt": {
+        "run": "ios-20261016-035022-ddd0e8",
+        "platform": "ios",
+        "event": "confirm",
+        "token": "personal-eb12ee512800",
+        "count": 1,
+        "received_at": "2026-10-15T19:52:16.992446+00:00"
+      }
+    },
+    {
+      "phase": "stopped_retained",
+      "elapsed_seconds": 119.948,
+      "vm_id": "7b6b1c8a6085",
+      "udid": "3FFD282D-0846-4B8E-8437-CF522201D796",
+      "native": {
+        "name": "aiphone_sim_7b6b1c8a6085",
+        "state": "Shutdown",
+        "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+        "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-16e",
+        "is_available": true
+      }
+    },
+    {
+      "phase": "restart_preserves_identity_and_data",
+      "elapsed_seconds": 144.404,
+      "vm_id": "7b6b1c8a6085",
+      "udid": "3FFD282D-0846-4B8E-8437-CF522201D796",
+      "receipt": {
+        "run": "ios-20261016-035022-ddd0e8",
+        "platform": "ios",
+        "event": "load",
+        "token": "personal-eb12ee512800",
+        "count": 1,
+        "received_at": "2026-10-15T19:52:45.659180+00:00"
+      },
+      "native_source_has_persisted_token_and_count": true,
+      "screenshot": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8/after-restart.png"
+    },
+    {
+      "phase": "offline_delete_ledger_removed",
+      "elapsed_seconds": 148.446,
+      "response": {
+        "id": "7b6b1c8a6085",
+        "deleted": true,
+        "alias_deleted": 1,
+        "cleanup_sent": false,
+        "avd_cleanup_sent": false
+      },
+      "server_status": 404,
+      "native_present": true
+    },
+    {
+      "phase": "new_agent_session_same_host",
+      "elapsed_seconds": 148.447,
+      "previous_agent_id": "personal-ios-ios-20261016-035022-ddd0e8",
+      "agent_id": "personal-ios-reconnect-9e41309316c0",
+      "host_id": "f2503c7593f449a9bc1b0476c0b3c516",
+      "identity_file_sha256": "ec9ee320bb85fbfa43033249ff8978d1ac722afae08566caeaa344170bdfd426"
+    },
+    {
+      "phase": "reconnect_cleanup_complete",
+      "elapsed_seconds": 149.338,
+      "vm_id": "7b6b1c8a6085",
+      "udid": "3FFD282D-0846-4B8E-8437-CF522201D796",
+      "native_absent": true,
+      "data_directory_absent": true,
+      "port_reservation_released": true
+    },
+    {
+      "phase": "personal_cleanup",
+      "elapsed_seconds": 149.543,
+      "results": [
+        {
+          "vm_id": "7b6b1c8a6085",
+          "result": {
+            "ok": true,
+            "reason": "not_found",
+            "error": "",
+            "sim_name": "aiphone_sim_7b6b1c8a6085",
+            "details": {
+              "cleanup_confirmed": true
+            }
+          }
+        }
+      ],
+      "isolated_set_empty": true
+    },
+    {
+      "phase": "source_and_host_identity_verified",
+      "elapsed_seconds": 149.762,
+      "source_hash_mismatches": [],
+      "persistent_host_identity_unchanged": true
+    }
+  ],
+  "source_sha256": {
+    "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios_personal_native_followup.py": "2b72053dadc6b1b170f8cc78629c8cfd232d945baa80a96eb37ad6e00c6d6215",
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/personal-fixture.html": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+    "backend/ai_phone/agent/ios_sim/manager.py": "6401fce688f697450099204f8c96c8995ffb2f2dcc65912b265e7ff1362bda60",
+    "backend/ai_phone/agent/ios_sim/capability.py": "299b9d97a595e0e5963f916ce5fa375beb322d8226fb67e1aa5547799f7fba67",
+    "backend/ai_phone/agent/drivers/ios_simulator.py": "6fa35133ff3e8aef472349442aedca3be42f5141ecd0ee31d9c3efc936a65790",
+    "backend/ai_phone/agent/drivers/ios_simulator_driver.py": "ddc173297404542b57c33a006c5997e2f7c14f24c921f5b3b6e112e2629e9c18",
+    "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+    "backend/ai_phone/agent/drivers/wda_client.py": "95a944344e5f6eef75531fb0c433306845dc5b4abc079cf40f530bf1bba55f6c",
+    "backend/ai_phone/agent/drivers/simctl.py": "844014abea1f4a9e9c3694615db2d0859c261dd9f4a7e603dbff7b806580a084",
+    "backend/ai_phone/agent/health/probe.py": "a4ec72f21e4dc6b1bf4b0c3bcfcdde37b74b57305cc57b9d2ce738fc91139c33",
+    "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+    "backend/ai_phone/agent/device_activity.py": "cc2e96d66080f7aa60fa8d0b9956e433e186fd892dfc26c00a8c904060395e31",
+    "backend/ai_phone/agent/vm_ports.py": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+    "backend/ai_phone/agent/ws_client.py": "c9d6b39b48952b4c10adf8d124a210adc014f89525af9008586d2a7bdffcc04d",
+    "backend/ai_phone/config.py": "3b7163177da93467f1c5b9eca8c1e22c9cd0b3c697903d6149f3521229df2dc0",
+    "backend/ai_phone/server/ios_sim/api.py": "5df873d042daadb1a7b7f71a9ab642acdb276dd93835219548cd329736f0d1df",
+    "backend/ai_phone/server/ios_sim/service.py": "687dcf0c157300f37c1d825d4d55ca83ecbfa07cba3efa3190467dd2a4164647",
+    "backend/ai_phone/server/ios_sim/models.py": "5fc988f4271008c8298781959b1d9fbb875e7dd6fe3ad7efbdcb22a5af2b860f",
+    "backend/ai_phone/server/db.py": "86ea88a0dad6049997df20ec180f605e70a320ba39cb3311f643861ebcaa40e9",
+    "backend/ai_phone/server/models.py": "2205f795c618d29b6111f4a92edfb8ac163f52f637b8455164eaa2cfd58210cd",
+    "backend/ai_phone/server/app.py": "2db57a8e7f596d36cbc4772808ad840d59ec134767d7e8ce8837bf5100435f73",
+    "backend/ai_phone/server/api/_deps.py": "83e8ecdb97ae92480c6034200039d080ad0e024bcd26f6cf361e68c3b9ea6bd7",
+    "backend/ai_phone/server/ws/_deps.py": "a35024e4a79af02d098e71ab3f5a6f1ae5bad0130d35097a6a97ead977bacfcf",
+    "backend/ai_phone/server/vm_lifecycle.py": "232cf364266b1e344a7d29e87ebce39709994a1b0aa790db582ef33602af56aa",
+    "backend/ai_phone/server/hub.py": "7252018d5468f7e0ccc3f7b28e3fa238053751e61925cef1b3538050c6ee4b33",
+    "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50"
+  },
+  "finished_at": "2026-10-15T19:52:51.789227+00:00"
+}

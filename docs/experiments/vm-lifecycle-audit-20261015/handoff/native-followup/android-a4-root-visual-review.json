@@ -1,0 +1,21 @@
+{
+  "at": "2026-10-15T20:53:47.674393+00:00",
+  "reviewer": "root",
+  "method": "independent direct visual inspection of all three original PNG files",
+  "status": "failed_data_retention_confirmed",
+  "vm_id": "b834fac98cc2",
+  "product_commit": "8a2a3be1bb60f719282349e6135be3c226c3a7fe",
+  "token": "personal34791164d5d2",
+  "findings": [
+    "Initial image shows empty input, no saved marker, count 0.",
+    "Confirmed image shows exact token in saved result and count 1.",
+    "Restart failure image is readable, not white: empty input, no saved marker, count 0.",
+    "New a4 visual gate did not run; original data assertion failed first.",
+    "Successful durable witness is independent evidence; it does not repair the missing localStorage record."
+  ],
+  "original_images": {
+    "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/fixture-before.png": "d80acf2a92ad9c89403474d2d3c88e82d236ccc0beea1da17ae9fbc2773f2c16",
+    "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/fixture-confirmed.png": "72f2a51f8bfc40f16bcad779835f6ba36087d6fcc4a05d9d598830f4f8d653d2",
+    "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/failure-b834fac98cc2.png": "207a74cf5bf032d0fe05adaef85cd4f64213b933a26d21a1ecc6974b6a0b51dd"
+  }
+}

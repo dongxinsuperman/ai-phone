@@ -1,0 +1,59 @@
+Source SDK universal adb SHA256: 5759ea07285e5a5b66d84f489c118a3fa3998e69cd37725e5a3dc7cbe0597278
+Arm64 slice SHA256: 56539eabf8c443277dadf9e4a1ec2068cb82d01261208e2c00bc2452f012b255
+
+/tmp/android-shutdown-primary/sdk-adb-arm64.bin:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+0000000100006374 <__Z22read_and_dump_protocolN7android4base11borrowed_fdEP32StandardStreamsCallbackInterface>:
+100006374: a9bd57f6    	stp	x22, x21, [sp, #-0x30]!
+100006378: a9014ff4    	stp	x20, x19, [sp, #0x10]
+10000637c: a9027bfd    	stp	x29, x30, [sp, #0x20]
+100006380: 910083fd    	add	x29, sp, #0x20
+100006384: aa0103f4    	mov	x20, x1
+100006388: aa0003f5    	mov	x21, x0
+10000638c: 52800500    	mov	w0, #0x28               ; =40
+100006390: 72a00200    	movk	w0, #0x10, lsl #16
+100006394: 94181546    	bl	0x10060b8ac <dyld_stub_binder+0x10060b8ac>
+100006398: aa0003f3    	mov	x19, x0
+10000639c: 2a1503e1    	mov	w1, w21
+1000063a0: 9400d17e    	bl	0x10003a998 <__ZN13ShellProtocolC2EN7android4base11borrowed_fdE>
+1000063a4: 9400d18f    	bl	0x10003a9e0 <__ZN13ShellProtocol4ReadEv>
+1000063a8: 34000380    	cbz	w0, 0x100006418 <__Z22read_and_dump_protocolN7android4base11borrowed_fdEP32StandardStreamsCallbackInterface+0xa4>
+1000063ac: 320c83f6    	mov	w22, #0x100010          ; =1048592
+1000063b0: 52801ff5    	mov	w21, #0xff              ; =255
+1000063b4: 14000005    	b	0x1000063c8 <__Z22read_and_dump_protocolN7android4base11borrowed_fdEP32StandardStreamsCallbackInterface+0x54>
+1000063b8: 38411275    	ldurb	w21, [x19, #0x11]
+1000063bc: aa1303e0    	mov	x0, x19
+1000063c0: 9400d188    	bl	0x10003a9e0 <__ZN13ShellProtocol4ReadEv>
+1000063c4: 360002c0    	tbz	w0, #0x0, 0x10000641c <__Z22read_and_dump_protocolN7android4base11borrowed_fdEP32StandardStreamsCallbackInterface+0xa8>
+1000063c8: 39403268    	ldrb	w8, [x19, #0xc]
+1000063cc: 71000d1f    	cmp	w8, #0x3
+1000063d0: 54ffff40    	b.eq	0x1000063b8 <__Z22read_and_dump_protocolN7android4base11borrowed_fdEP32StandardStreamsCallbackInterface+0x44>
+1000063d4: 7100091f    	cmp	w8, #0x2
+1000063d8: 540000e0    	b.eq	0x1000063f4 <__Z22read_and_dump_protocolN7android4base11borrowed_fdEP32StandardStreamsCallbackInterface+0x80>
+1000063dc: 7100051f    	cmp	w8, #0x1
+1000063e0: 54fffee1    	b.ne	0x1000063bc <__Z22read_and_dump_protocolN7android4base11borrowed_fdEP32StandardStreamsCallbackInterface+0x48>
+1000063e4: f8766a62    	ldr	x2, [x19, x22]
+1000063e8: f9400288    	ldr	x8, [x20]
+1000063ec: f9400108    	ldr	x8, [x8]
+1000063f0: 14000004    	b	0x100006400 <__Z22read_and_dump_protocolN7android4base11borrowed_fdEP32StandardStreamsCallbackInterface+0x8c>
+1000063f4: f8766a62    	ldr	x2, [x19, x22]
+1000063f8: f9400288    	ldr	x8, [x20]
+1000063fc: f9400508    	ldr	x8, [x8, #0x8]
+100006400: 91004661    	add	x1, x19, #0x11
+100006404: aa1403e0    	mov	x0, x20
+100006408: d63f0100    	blr	x8
+10000640c: 3707fd80    	tbnz	w0, #0x0, 0x1000063bc <__Z22read_and_dump_protocolN7android4base11borrowed_fdEP32StandardStreamsCallbackInterface+0x48>
+100006410: 528011b5    	mov	w21, #0x8d              ; =141
+100006414: 14000002    	b	0x10000641c <__Z22read_and_dump_protocolN7android4base11borrowed_fdEP32StandardStreamsCallbackInterface+0xa8>
+100006418: 52801ff5    	mov	w21, #0xff              ; =255
+10000641c: f9400268    	ldr	x8, [x19]
+100006420: f9400508    	ldr	x8, [x8, #0x8]
+100006424: aa1303e0    	mov	x0, x19
+100006428: d63f0100    	blr	x8
+10000642c: aa1503e0    	mov	x0, x21
+100006430: a9427bfd    	ldp	x29, x30, [sp, #0x20]
+100006434: a9414ff4    	ldp	x20, x19, [sp, #0x10]
+100006438: a8c357f6    	ldp	x22, x21, [sp], #0x30
+10000643c: d65f03c0    	ret

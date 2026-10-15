@@ -1,0 +1,58 @@
+{
+  "prepared_at": "2026-10-15T19:39:41.157692+00:00",
+  "status": "prepared_only_no_native_lifecycle_or_server_started",
+  "entry": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios_personal_native_followup.py",
+  "entry_sha256": "2b72053dadc6b1b170f8cc78629c8cfd232d945baa80a96eb37ad6e00c6d6215",
+  "artifact_root": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs",
+  "run_id": "fresh timestamp and UUID created only at authorized execution",
+  "command": [
+    "backend/.venv/bin/python",
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios_personal_native_followup.py",
+    "--execute-personal-ios"
+  ],
+  "gate": "root source freeze then exclusive slot in Harmony -> Android -> iOS order",
+  "guard_negative_checks": 6,
+  "all_rejected_before_apple_tool_execution": true,
+  "host_identity_checks": {
+    "stable_same_storage": true,
+    "different_private_storage_distinct": true,
+    "mode": "0o600",
+    "corrupt_identity_rejected": true,
+    "production_path": "new-run/storage/agent-host-id"
+  },
+  "isolation": [
+    "fresh private SQLite/storage/tokens",
+    "only loopback HTTP/WS",
+    "AI_PHONE_* and proxy environment removed",
+    "short random /private/tmp device set",
+    "exact authorized VM ID and UDID guard",
+    "single iOS Simulator provider",
+    "private WDA build under new run",
+    "private 18300/19300 port domains",
+    "no defaultSimulator/physical device/company/global CLI mutation"
+  ],
+  "resources": {
+    "native_instances": 1,
+    "device_type": "iPhone 16e",
+    "runtime_requirement": "iOS 26.0",
+    "xcode_installed_version_from_plist": "26.0.1",
+    "wda_build_cache_estimate_mib": 190,
+    "recommended_private_disk_budget_gib": 3,
+    "free_disk_gib": 46.1,
+    "expected_duration_based_on_previous_pass_seconds": 158
+  },
+  "old_evidence_sha256": {
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/ios_personal_e2e.py": "38efbdd9c843c6c21dbf618b2dffc24de86aae05f631f727384902453f572753",
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/ios-evidence-summary.json": "25f9bf8131fa1750040cedde0acd56fc769d9b74a06ab8999e6a4e533dc1640f",
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/personal-runtime/ios-20261016-012711-37f48c/result.json": "c6130c7b745c1fd2ec7f629cb525354bfc33c5981186662131c956a35f29ad53",
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/personal-runtime/ios-20261016-012711-37f48c/confirmed.png": "a843c6a4f9df3a1f3b356ee3831770d4dde0553c21d3b155d330d8ff7bf57e2c",
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/personal-runtime/ios-20261016-012711-37f48c/after-restart.png": "fa15f9ce021ed58c927917af48a17590caa9a64afe21abcc7d6317278de801ab"
+  },
+  "not_covered": [
+    "production VLM/Runner",
+    "iPad",
+    "real phone",
+    "company business app",
+    "full live mirror"
+  ]
+}

@@ -1,0 +1,340 @@
+--- /Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_visual_a4.py
++++ /Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_sync_a5.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Opt-in a4 calibration: retain a3 data checks and require rendered restart evidence.
++"""Opt-in a5 product guest-sync diagnosis with unchanged data and visual checks.
+ 
+ Default: print the plan only. No imports of ai_phone, network, directory creation,
+ ADB daemon, emulator, or package build occur without --execute.
+@@ -134,6 +134,84 @@
+     if "package:" + package_id in lines:
+         raise RuntimeError("The fresh test VM already contains the personal fixture APK")
+     return {"returncode": returncode, "package_lines": lines, "exact_package": package_id, "absent": True}
++
++
++def validate_guest_sync_argv(args, environment, *, adb_path, serial):
++    """Permit only the product's exact sync command on the private route."""
++    argv = [str(value) for value in args]
++    power_words = {"shutdown", "poweroff", "reboot"}
++    if any(power_words.intersection(value.split()) for value in argv):
++        raise RuntimeError("Guest power commands are not authorized by this sync-only test")
++    if not any(re.search(r"(?<![A-Za-z0-9_])(?:/system/bin/)?sync(?![A-Za-z0-9_])", value) for value in argv):
++        return False
++    expected_prefix = [str(adb_path), "-s", serial, "shell"]
++    marker = re.fullmatch(r"/system/bin/sync && printf '%s\\n' '([0-9a-f]{32})'", argv[4]) if len(argv) == 5 else None
++    if len(argv) != 5 or argv[:4] != expected_prefix or marker is None or serial != f"emulator-{EMULATOR_PORT}":
++        raise RuntimeError("Unapproved native sync command or target")
++    expected_environment = {"ADB_SERVER_SOCKET": f"tcp:127.0.0.1:{ADB_PORT}",
++                            "ANDROID_ADB_SERVER_HOST": "127.0.0.1", "ANDROID_ADB_SERVER_PORT": str(ADB_PORT),
++                            "ADB_SERVER_PORT": str(ADB_PORT)}
++    if any(environment.get(key) != value for key, value in expected_environment.items()):
++        raise RuntimeError("Guest sync is not routed through this private ADB daemon")
++    return {"ack_marker": marker.group(1), "expected_stdout": marker.group(1) + "\n"}
++
++
++def cleanup_stop_decision(vm_id, generation_id, attempts):
++    """A failed/unknown stop cannot turn into an automatic cleanup retry."""
++    relevant = [row for row in attempts if row.get("vm_id") == vm_id and row.get("generation_id") == generation_id]
++    unresolved = [row for row in relevant if row.get("outcome") != "succeeded"]
++    return {"allowed": not unresolved, "generation_id": generation_id,
++            "reason": "same-generation stop failed or is unresolved; preserve resources for root" if unresolved else
++                      "no unsuccessful stop for this native generation; one protective cleanup is allowed",
++            "prior_attempt_count": len(relevant), "unresolved_attempt_count": len(unresolved)}
++
++
++def observe_manager_stops(manager, generation_for, attempts):
++    """Record real stop results without changing arguments, deadlines or return values."""
++    original = manager.stop_sync
++
++    def observed(vm_id, *args, **kwargs):
++        record = {"vm_id": vm_id, "generation_id": generation_for(vm_id), "outcome": "running",
++                  "at": utc_now(), "monotonic_ns": time.monotonic_ns(), "args": list(args), "forwarded_kwargs": dict(kwargs)}
++        attempts.append(record)
++        try:
++            result = original(vm_id, *args, **kwargs)
++            record.update(outcome="succeeded" if isinstance(result, dict) and result.get("ok") is True else "failed", result=result)
++            return result
++        except BaseException as exc:
++            record.update(outcome="failed", error=type(exc).__name__ + ": " + str(exc))
++            raise
++        finally:
++            record.update(finished_at=utc_now(), finished_monotonic_ns=time.monotonic_ns())
++
++    manager.stop_sync = observed
++
++
++def require_operation(instance, *, vm_id, action, request_id=None):
++    if not isinstance(instance, dict) or instance.get("id") != vm_id:
++        raise RuntimeError("Lifecycle response is missing the exact requested VM identity")
++    runtime = instance.get("runtime")
++    operation = runtime.get("operation") if isinstance(runtime, dict) else None
++    if not isinstance(operation, dict) or operation.get("action") != action:
++        raise RuntimeError("Lifecycle response is missing the requested operation")
++    observed_id = operation.get("request_id")
++    if not isinstance(observed_id, str) or not observed_id or observed_id.strip() != observed_id:
++        raise RuntimeError("Lifecycle operation request_id is missing or invalid")
++    if request_id is not None and observed_id != request_id:
++        raise RuntimeError("Lifecycle readback belongs to another operation request_id")
++    return operation
++
++
++def operation_snapshot_ready(instance, *, vm_id, action, request_id, desired_state):
++    operation = require_operation(instance, vm_id=vm_id, action=action, request_id=request_id)
++    outcome = operation.get("outcome")
++    if outcome in {"failed", "timeout", "timed_out", "cancelled"}:
++        raise RuntimeError(f"This {action} operation {request_id} ended as {outcome}; physical {instance.get('state')} is not success")
++    if outcome == "pending" and operation.get("pending") is True:
++        return False
++    if outcome != "succeeded" or operation.get("pending") is not False:
++        raise RuntimeError("Lifecycle operation has no explicit successful terminal outcome")
++    return instance.get("state") == desired_state
+ 
+ 
+ def diagnostic_summary(records, *, witness_name, witness_sha256, witness_bytes, fixture_url, storage_key, token):
+@@ -237,6 +315,12 @@
+             "selected_frame": "Save the exact passing PNG/XML pair; do not take a replacement screenshot",
+             "failure": "Read/identity errors fail immediately; not-yet-drawn valid samples poll until bounded timeout; no UI/device recovery",
+             "root_visual_review": "Still required; pixel text is not automatically verified by the gate"},
++        "a5_stop_scope": {"policy": "Observe only the product's exact private-ADB /system/bin/sync with per-command acknowledgment marker, then its original emu kill/exit verification",
++            "fixture_sync_added": False, "before_stop_wait_added": False, "guest_power_shutdown_authorized": False,
++            "acknowledgment_limit": "Marker proves this sync command completed; it does not prove App userspace commit, every storage I/O result, or VM exit",
++            "failed_stop_cleanup": "Do not repeat failed/unresolved stop for the same native generation; keep resources for root",
++            "new_generation_cleanup": "After successful old-generation stop and restart, one protective stop remains allowed for a later data/visual failure",
++            "snapshot_coverage": "This case uses no_snapshot only; save/discard_changes/cold_boot reuse require a separate authorized matrix"},
+         "ownership": "Only VM IDs returned by this fresh local Server and recorded before dispatch.",
+         "server": "Fresh SQLite and loopback-only HTTP/WS, ephemeral port and token. No project .env or CLI defaults.",
+         "agent": "Restricted AgentWSClient + AndroidVmManager. No agent.main, global provider, foreign reclaim or orphan cleanup.",
+@@ -683,7 +767,7 @@
+     witness_sha256 = hashlib.sha256(witness_payload).hexdigest()
+     fixture_url = f"http://127.0.0.1:{FIXTURE_GUEST_PORT}/fixture/?" + urllib.parse.urlencode({"run": run_id, "platform": "android"})
+     diagnostic_state = {"records": [], "first_write_error": None, "host_timing": [], "receipt_timing": [],
+-                        "native_calls": [], "avd_snapshots": [],
++                        "native_calls": [], "avd_snapshots": [], "stop_sync_attempts": [], "api_stop_attempts": [], "api_lifecycle_attempts": [],
+                         "witness_name": witness_name, "expected_witness_sha256": witness_sha256,
+                         "expected_witness_bytes": len(witness_payload), "fixture_url": fixture_url,
+                         "storage_key": "personal-vm-e2e:" + run_id,
+@@ -718,6 +802,34 @@
+                                   witness_sha256=witness_sha256, witness_bytes=len(witness_payload),
+                                   fixture_url=fixture_url, storage_key=diagnostic_state["storage_key"], token=expected_token)
+ 
++    def native_generation(vm_id):
++        avd_name = "aiphone_vm_" + vm_id
++        launches = [row for row in diagnostic_state["native_calls"] if row.get("kind") == "native-launch"
++                    and row.get("pid") is not None and avd_name in row.get("argv", [])]
++        if not launches:
++            return None
++        latest = launches[-1]
++        return str(latest["pid"]) + ":" + str(latest["monotonic_ns"])
++
++    def cleanup_decision(vm_id):
++        return cleanup_stop_decision(vm_id, native_generation(vm_id),
++            diagnostic_state["stop_sync_attempts"] + diagnostic_state["api_stop_attempts"])
++
++    def latest_api_operation(vm_id, action):
++        matches = [row for row in diagnostic_state["api_lifecycle_attempts"] if row["vm_id"] == vm_id and row["action"] == action]
++        if not matches:
++            raise RuntimeError("No current HTTP lifecycle operation was recorded for this VM")
++        return matches[-1]
++
++    def finish_api_operation(vm_id, action, outcome, **details):
++        record = latest_api_operation(vm_id, action)
++        if outcome == "succeeded" and record["outcome"] in {"failed", "timeout", "timed_out", "cancelled"}:
++            raise RuntimeError("A failed lifecycle attempt cannot be promoted by later physical facts")
++        record.update(outcome=outcome, finished_at=utc_now(), finished_monotonic_ns=time.monotonic_ns(), **details)
++
++    def finish_api_stop(vm_id, outcome, **details):
++        finish_api_operation(vm_id, "stop", outcome, **details)
++
+     class ManagerSubprocessObserver:
+         """Delegate unchanged calls; observe existing argv/results, not new probes."""
+         def __getattr__(self, name):
+@@ -741,11 +853,24 @@
+ 
+         def run(self, args, *extra, **kwargs):
+             argv = [str(x) for x in args]
+-            relevant = argv[-2:] == ["emu", "kill"] or any(
++            command_environment = os.environ if kwargs.get("env") is None else kwargs["env"]
++            guest_sync = validate_guest_sync_argv(argv, command_environment,
++                adb_path=adb, serial=f"emulator-{EMULATOR_PORT}")
++            if guest_sync:
++                runtimes = [runtime for key, runtime in manager._runtimes.items()
++                            if key in owned and runtime.adb_serial == f"emulator-{EMULATOR_PORT}"]
++                if len(runtimes) != 1:
++                    raise RuntimeError("Guest sync does not identify exactly one owned runtime")
++            relevant = guest_sync or argv[-2:] == ["emu", "kill"] or any(
+                 argv[index:index + 2] in (["create", "avd"], ["delete", "avd"]) for index in range(len(argv) - 1))
+             if not relevant:
+                 return original_manager_subprocess.run(args, *extra, **kwargs)
+             record = {"kind": "native-command", "argv": argv, "at": utc_now(), "monotonic_ns": time.monotonic_ns()}
++            if guest_sync:
++                record.update(command_category="product-guest-filesystem-sync", vm_id=runtimes[0].vm_id,
++                              generation_id=native_generation(runtimes[0].vm_id),
++                              ack_marker=guest_sync["ack_marker"], expected_stdout=guest_sync["expected_stdout"],
++                              private_adb_verified=True, returncode_is_not_completion_evidence=True)
+             diagnostic_state["native_calls"].append(record)
+             try:
+                 result = original_manager_subprocess.run(args, *extra, **kwargs)
+@@ -1039,6 +1164,7 @@
+             return confirmed
+ 
+         current_manager._runtime_exit_confirmed = observed
++        observe_manager_stops(current_manager, native_generation, diagnostic_state["stop_sync_attempts"])
+ 
+     observe_exit_verification(manager)
+ 
+@@ -1349,22 +1475,74 @@
+ 
+         async with AsyncClient(base_url=base_url, timeout=300, trust_env=False) as http:
+             async def api(method, path, **kwargs):
++                operation_record = None
+                 if method == "POST" and path.endswith("/stop"):
+                     timing("server-stop-requested", path=path)
+-                response = await http.request(method, path, headers=auth, **kwargs)
++                endpoint = path.rsplit("/", 1)[-1]
++                if method == "POST" and endpoint in {"dispatch", "start", "stop"}:
++                    operation_vm_id = path.rsplit("/", 2)[-2]
++                    action = "stop" if endpoint == "stop" else "start"
++                    operation_record = {"vm_id": operation_vm_id, "generation_id": native_generation(operation_vm_id),
++                        "kind": "http-" + action, "action": action, "endpoint": endpoint, "outcome": "requested",
++                        "at": utc_now(), "monotonic_ns": time.monotonic_ns()}
++                    diagnostic_state["api_lifecycle_attempts"].append(operation_record)
++                    if action == "stop":
++                        diagnostic_state["api_stop_attempts"].append(operation_record)
++                try:
++                    response = await http.request(method, path, headers=auth, **kwargs)
++                except BaseException as exc:
++                    if operation_record is not None:
++                        operation_record.update(outcome="failed", error=type(exc).__name__ + ": " + str(exc))
++                    raise
+                 if method == "POST" and path.endswith("/stop"):
+                     timing("server-stop-returned", status_code=response.status_code)
+                 if response.status_code >= 400:
++                    if operation_record is not None:
++                        operation_record.update(outcome="failed", status_code=response.status_code)
+                     raise RuntimeError(f"{method} {path}: {response.status_code} {response.text[:2000]}")
+-                return response.json()
++                try:
++                    body = response.json()
++                    if operation_record is not None:
++                        if not isinstance(body, dict) or body.get("sent") is not True:
++                            raise RuntimeError("Lifecycle HTTP response did not explicitly send this operation")
++                        instance = body.get("instance")
++                        operation = require_operation(instance, vm_id=operation_record["vm_id"], action=operation_record["action"])
++                        operation_record.update(request_id=operation["request_id"], response_operation=dict(operation))
++                        operation_snapshot_ready(instance, vm_id=operation_record["vm_id"], action=operation_record["action"],
++                            request_id=operation_record["request_id"], desired_state="stopped" if operation_record["action"] == "stop" else "running")
++                    return body
++                except BaseException as exc:
++                    if operation_record is not None:
++                        operation_record.update(outcome="failed", error=type(exc).__name__ + ": " + str(exc))
++                    raise
+ 
+             async def wait_vm(vm_id, state, timeout=240):
++                action = "stop" if state == "stopped" else "start" if state == "running" else None
++                expected_request_id = None
+                 async def read():
+                     value = await api("GET", prefix + "/" + vm_id)
++                    if action is not None:
++                        operation_snapshot_ready(value, vm_id=vm_id, action=action, request_id=expected_request_id, desired_state=state)
+                     if value["state"] == "error":
+                         raise RuntimeError(f"VM operation failed: {value.get('error_message')}")
+                     return value
+-                return await eventually(read, lambda v: v["state"] == state, timeout=timeout)
++                try:
++                    if action is not None:
++                        attempt = latest_api_operation(vm_id, action)
++                        if attempt["outcome"] in {"failed", "timeout", "timed_out", "cancelled"}:
++                            raise RuntimeError("This HTTP lifecycle attempt already failed")
++                        expected_request_id = attempt.get("request_id")
++                        if not expected_request_id:
++                            raise RuntimeError("This HTTP lifecycle attempt has no confirmed request_id")
++                    value = await eventually(read, lambda v: operation_snapshot_ready(v, vm_id=vm_id, action=action,
++                        request_id=expected_request_id, desired_state=state) if action is not None else v["state"] == state, timeout=timeout)
++                    if action is not None:
++                        finish_api_operation(vm_id, action, "succeeded", server_state_observed=state, verified_request_id=expected_request_id)
++                except BaseException as exc:
++                    if action is not None:
++                        finish_api_operation(vm_id, action, "failed", error=type(exc).__name__ + ": " + str(exc))
++                    raise
++                return value
+ 
+             config = {"alias": "personal-e2e-" + run_id, "api_level": 33, "abi": "arm64",
+                       "system_type": "google_apis", "screen_width": 540, "screen_height": 960, "density": 240,
+@@ -1515,10 +1693,13 @@
+             await api("POST", prefix + "/" + vm_id + "/stop")
+             stopped = await wait_vm(vm_id, "stopped")
+             if not avd_path.is_dir() or not android_manager_module._is_port_free(EMULATOR_PORT) or not android_manager_module._is_port_free(EMULATOR_PORT + 1):
++                finish_api_stop(vm_id, "failed", reason="native stop preservation/port verification failed")
+                 raise RuntimeError("Stop did not preserve AVD and release both emulator ports")
+             if owned_processes_alive():
++                finish_api_stop(vm_id, "failed", reason="owned emulator remained alive after reported stop")
+                 raise RuntimeError("Stop left an owned emulator process alive")
+             if stopped.get("assigned_agent_id") != agent_id:
++                finish_api_stop(vm_id, "failed", reason="stop lost binding")
+                 raise RuntimeError("Stop lost the existing Agent binding")
+             evidence.add("stop", status="passed", avd_preserved=True, binding_preserved=True, ports_released=True)
+             await api("POST", prefix + "/" + vm_id + "/start")
+@@ -1562,9 +1743,10 @@
+         # Capture the exact owned screen before normal cleanup; diagnostics do
+         # not retry the failed lifecycle operation or broaden device selection.
+         gate_failed = str(evidence.value.get("restart_visual_gate", {}).get("outcome") or "").startswith("failed")
+-        if gate_failed:
+-            evidence.add("failure-screen", skipped=True, reason="Use saved observation samples; no extra screenshot or connection recovery after visual-gate failure")
+-        for key in ([] if gate_failed else sorted(owned & set(manager._runtimes))):
++        failed_stop = any(not cleanup_decision(key)["allowed"] for key in owned)
++        if gate_failed or failed_stop:
++            evidence.add("failure-screen", skipped=True, reason="Use saved evidence; no extra screenshot or connection recovery after failed visual gate or failed/unresolved stop")
++        for key in ([] if gate_failed or failed_stop else sorted(owned & set(manager._runtimes))):
+             try:
+                 driver = await asyncio.to_thread(fresh_driver, key)
+                 png = await asyncio.to_thread(driver.screenshot_png)
+@@ -1595,9 +1777,18 @@
+         # Normal native deletion ONLY for IDs created in this run, even if start
+         # failed before registering a runtime. Never rmtree or force-kill.
+         preserve_existing_failure = evidence.value["status"] == "failed" and first_binding_confirmed and existing_instance_phase
++        blocked_cleanup_vm_ids = []
++        evidence.value["cleanup_stop_blocked_for_vm_ids"] = blocked_cleanup_vm_ids
+         for vm_id in ([] if install_work_active else sorted(owned)):
+             try:
+                 assert_owned(vm_id)
++                decision = cleanup_decision(vm_id)
++                if not decision["allowed"]:
++                    blocked_cleanup_vm_ids.append(vm_id)
++                    evidence.add("cleanup-stop-retry-blocked", vm_id=vm_id, decision=decision,
++                                 stop_and_delete_skipped=True,
++                                 reason="Keep failed stop facts and current resources; root must authorize any further native action")
++                    continue
+                 stopped = await asyncio.to_thread(manager.stop_sync, vm_id)
+                 if preserve_existing_failure:
+                     avd_path = root / "android/avd" / ("aiphone_vm_" + vm_id + ".avd")
+@@ -1629,7 +1820,7 @@
+                 await worker
+         await close_all_sessions()
+         await db_module.dispose_engine()
+-        if private_adb_started and not manager._runtimes and not install_work_active:
++        if private_adb_started and not manager._runtimes and not install_work_active and not blocked_cleanup_vm_ids:
+             with contextlib.suppress(Exception):
+                 await asyncio.to_thread(adb_command, "kill-server", timeout=10)
+         for process in native_process_handles.values():
+@@ -1644,8 +1835,9 @@
+                 return process.create_time() != private_adb_create_time or not process.is_running()
+             except psutil.NoSuchProcess:
+                 return True
+-        with contextlib.suppress(TimeoutError):
+-            await eventually(lambda: asyncio.sleep(0, result=private_daemon_gone()), bool, timeout=5)
++        if not blocked_cleanup_vm_ids:
++            with contextlib.suppress(TimeoutError):
++                await eventually(lambda: asyncio.sleep(0, result=private_daemon_gone()), bool, timeout=5)
+         # Process identity, not residual TIME_WAIT, proves our daemon exited.
+         private_adb_stopped = private_daemon_gone()
+         remaining_avds = sorted(str(p) for p in (root / "android/avd").iterdir()
+@@ -1692,7 +1884,7 @@
+     mode = parser.add_mutually_exclusive_group()
+     mode.add_argument("--execute", action="store_true", help="Run only the isolated personal Android test")
+     mode.add_argument("--dry-run", action="store_true", help="Print plan; default")
+-    parser.add_argument("--run-id", default="android-app-install-a4-" + dt.datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6])
++    parser.add_argument("--run-id", default="android-app-install-a5-" + dt.datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6])
+     args = parser.parse_args()
+     if not re.fullmatch(r"android-[A-Za-z0-9_-]{8,70}", args.run_id):
+         parser.error("run-id must be an ASCII android- test identifier")

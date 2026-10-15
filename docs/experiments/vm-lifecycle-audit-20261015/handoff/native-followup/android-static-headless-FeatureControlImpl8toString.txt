@@ -1,0 +1,21 @@
+Read-only disassembly. Target binary was not executed.
+Command: ['/usr/bin/xcrun', 'llvm-objdump', '--arch=arm64', '--disassemble-symbols=__ZN7android14featurecontrol18FeatureControlImpl8toStringENS0_7FeatureE', '/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless']
+
+/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+0000000101381ae8 <__ZN7android14featurecontrol18FeatureControlImpl8toStringENS0_7FeatureE>:
+101381ae8: 7101e81f    	cmp	w0, #0x7a
+101381aec: 54000108    	b.hi	0x101381b0c <__ZN7android14featurecontrol18FeatureControlImpl8toStringENS0_7FeatureE+0x24>
+101381af0: 900028a8    	adrp	x8, 0x101895000 <_mv_ref_blocks+0x114>
+101381af4: 912ca108    	add	x8, x8, #0xb28
+101381af8: f8605901    	ldr	x1, [x8, w0, uxtw #3]
+101381afc: d0003888    	adrp	x8, 0x101a93000 <_decoder_ctrl_maps+0x90>
+101381b00: 91034108    	add	x8, x8, #0xd0
+101381b04: f8605900    	ldr	x0, [x8, w0, uxtw #3]
+101381b08: d65f03c0    	ret
+101381b0c: b0001960    	adrp	x0, 0x1016ae000 <_update_bits+0x4307>
+101381b10: 91004000    	add	x0, x0, #0x10
+101381b14: 528001c1    	mov	w1, #0xe                ; =14
+101381b18: d65f03c0    	ret

@@ -1,0 +1,15 @@
+{
+  "path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8/storage/ios_sim_wda_build",
+  "allocated_kib_before": 192340,
+  "action": "removed",
+  "retained": [
+    "SQLite",
+    "results",
+    "screenshots",
+    "native logs",
+    "host identity",
+    "source hashes",
+    "guard scripts"
+  ],
+  "absent_after": true
+}

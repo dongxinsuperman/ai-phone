@@ -1,0 +1,30 @@
+# Legacy Server upgrade-order replay
+Baseline function loaded from 452e7d77326f9fc0e5b003ecbf6cec5fc499e4bf:backend/ai_phone/server/ios_sim/service.py
+Only this old function is executed against an isolated SQLite fixture and fake Hub; no native command/Agent.
+Passing below demonstrates the old Server sends an erroneous delete, not upgrade safety.
+
+2026-10-16 02:25:03.315 | DEBUG    | ai_phone.agent.drivers.harmony:_neutralize_hmdriver_del_once:114 - hmdriver2.Driver.__del__ 已阉割（去除 _instance.clear + fport 副作用）
+/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+Warning: Input is not a terminal (fd=0).
+============================= test session starts ==============================
+platform darwin -- Python 3.11.15, pytest-9.0.3, pluggy-1.6.0 -- /Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/bin/python
+rootdir: /Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend
+configfile: pyproject.toml
+plugins: timeout-2.4.0, xonsh-0.22.8, asyncio-1.3.0, anyio-4.13.0
+timeout: 300.0s
+timeout method: thread
+timeout func_only: False
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 1 item
+
+tests/test_vm_upgrade_independent_review.py::test_legacy_server_replay_demonstrates_agent_first_upgrade_delete_hazard 2026-10-16 02:25:03.602 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-5b66f1a4f1ab406ba8aead2bcd04168e?mode=memory&cache=shared&uri=true
+2026-10-16 02:25:03.659 | INFO     | ai_phone.server.ios_sim.service:handle_vm_reconcile:462 - iOS 虚拟机孤儿实例已回发删除 agent=personal-new-session 共 1 台
+2026-10-16 02:25:03.659 | INFO     | ai_phone.server.ios_sim.service:handle_vm_reconcile:466 - iOS 虚拟机对账完成 agent=personal-new-session 上报 1 台（在跑 0 / 没跑 1）
+PASSED2026-10-16 02:25:03.661 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+
+
+============================== 1 passed in 0.07s ===============================
+

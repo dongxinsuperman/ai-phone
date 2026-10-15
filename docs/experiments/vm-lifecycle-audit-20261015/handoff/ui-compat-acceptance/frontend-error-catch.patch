@@ -1,0 +1,48 @@
+diff --git a/web/src/pages/HarmonyVirtualMachines.vue b/web/src/pages/HarmonyVirtualMachines.vue
+index 9f920b5..bf6d1e3 100644
+--- a/web/src/pages/HarmonyVirtualMachines.vue
++++ b/web/src/pages/HarmonyVirtualMachines.vue
+@@ -381,6 +381,11 @@ async function dispatchTo(vm, agentId) {
+     await loadInstances({ quiet: true })
+   } catch (e) {
+     err.value = prettyErr(e)
++    if (e?.detail?.instance?.id) {
++      applyOperationResult(vm, e.detail)
++      if (candidateVmId.value === vm.id) closeCandidates()
++    }
++    await loadInstances({ quiet: true })
+   } finally {
+     delete busyByVm[vm.id]
+   }
+diff --git a/web/src/pages/IosSimVirtualMachines.vue b/web/src/pages/IosSimVirtualMachines.vue
+index f250686..387ed1d 100644
+--- a/web/src/pages/IosSimVirtualMachines.vue
++++ b/web/src/pages/IosSimVirtualMachines.vue
+@@ -258,6 +258,11 @@ async function dispatchTo(vm, agentId) {
+     await loadInstances({ quiet: true })
+   } catch (e) {
+     err.value = prettyErr(e)
++    if (e?.detail?.instance?.id) {
++      applyOperationResult(vm, e.detail)
++      if (candidateVmId.value === vm.id) closeCandidates()
++    }
++    await loadInstances({ quiet: true })
+   } finally {
+     delete busyByVm[vm.id]
+   }
+diff --git a/web/src/pages/VirtualMachines.vue b/web/src/pages/VirtualMachines.vue
+index fc6505b..7c72c9c 100644
+--- a/web/src/pages/VirtualMachines.vue
++++ b/web/src/pages/VirtualMachines.vue
+@@ -826,6 +826,11 @@ async function dispatchTo(vm, agentId) {
+     await refresh({ quiet: true })
+   } catch (e) {
+     err.value = prettyErr(e)
++    if (e?.detail?.instance?.id) {
++      applyOperationResult(vm, e.detail)
++      if (candidateVmId.value === vm.id) closeCandidates()
++    }
++    await refresh({ quiet: true })
+   } finally {
+     delete busyByVm[vm.id]
+   }

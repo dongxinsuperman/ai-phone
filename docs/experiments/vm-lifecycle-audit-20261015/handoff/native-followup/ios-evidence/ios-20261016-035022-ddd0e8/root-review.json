@@ -1,0 +1,19 @@
+{
+  "reviewer": "root",
+  "result": "accepted",
+  "product_commit": "90342046a932273e54d7f96cb2947d753476477b",
+  "images": {
+    "confirmed.png": "fb587afb2225a98bc5ecafa8dcd5350e25a8ad2d67fb7da78142e064dccf7fef",
+    "after-restart.png": "d21136f0a80fd84f6dd569dd08f9d9f8062a7104533f8c7958def1374d7c4096"
+  },
+  "observed": "same saved personal-eb12ee512800 and count 1 on both; after-restart input is empty; local receipt visible",
+  "source_and_cleanup_readback_passed": true,
+  "scope": "personal loopback HTTP/WS and real iPhone Simulator/WDA with deterministic handler; no company services/devices/packages",
+  "limits": [
+    "production VLM/Runner/main",
+    "iPad",
+    "real phone",
+    "full live mirror",
+    "legacy database upgrade in this native run"
+  ]
+}

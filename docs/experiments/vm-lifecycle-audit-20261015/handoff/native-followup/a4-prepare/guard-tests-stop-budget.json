@@ -1,0 +1,8 @@
+{
+  "tests_run": 38,
+  "success": true,
+  "deferred": [
+    "<run_path>.InstallScopeTests.test_import_and_plan_do_not_import_product_or_create_run_root"
+  ],
+  "reason": "Root is preparing the new product commit/freeze; the existing manifest intentionally remains the prior 9034204 freeze. No test or freeze manifest was weakened/changed."
+}

@@ -1,0 +1,43 @@
+{
+  "harness_sha256": "43356f481dea68c8adcd7b5fb7344b08912f2b2e4f678075533f2a15856eaf51",
+  "passed": 6,
+  "cases": [
+    {
+      "case": "failed",
+      "raised": "RuntimeError:This stop operation r1 ended as failed; physical stopped is not success",
+      "attempt_outcome": "failed",
+      "same_generation_cleanup_allowed": false
+    },
+    {
+      "case": "timeout",
+      "raised": "RuntimeError:This stop operation r1 ended as timeout; physical stopped is not success",
+      "attempt_outcome": "failed",
+      "same_generation_cleanup_allowed": false
+    },
+    {
+      "case": "replaced",
+      "raised": "RuntimeError:Lifecycle readback belongs to another operation request_id",
+      "attempt_outcome": "failed",
+      "same_generation_cleanup_allowed": false
+    },
+    {
+      "case": "missing",
+      "raised": "RuntimeError:Lifecycle response is missing the requested operation",
+      "attempt_outcome": "failed",
+      "same_generation_cleanup_allowed": false
+    },
+    {
+      "case": "pending",
+      "raised": "TimeoutError:isolated wait budget",
+      "attempt_outcome": "failed",
+      "same_generation_cleanup_allowed": false
+    },
+    {
+      "case": "success",
+      "raised": null,
+      "attempt_outcome": "succeeded",
+      "same_generation_cleanup_allowed": true
+    }
+  ],
+  "scope": "unchanged current function AST and fake HTTP/poll; no native/network"
+}

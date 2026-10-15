@@ -1,0 +1,131 @@
+{
+  "product_commit": "2dc9844ffd86b88f2e41acfc79fae87ae222d631",
+  "test_fixture_commit": "2dc9844ffd86b88f2e41acfc79fae87ae222d631",
+  "cli_commit": "e65dad549d2d667972c44718962d6c6f87bf8eb9",
+  "source_sha256": {
+    "backend/ai_phone/agent/android_vm/capability.py": "ed8630cb9f20d1791eea36d142bce755e73147b50a6e1621b2f6b4192d210b31",
+    "backend/ai_phone/agent/android_vm/manager.py": "4008ca8b5533712e2af251db8ae48b091b7fec3f03ee8816e339aeedc5cc78fc",
+    "backend/ai_phone/agent/app_install/handler.py": "31abda8902919971a2879a3b6e262ddb16509213b7a1a249392a560ba7a81d22",
+    "backend/ai_phone/agent/app_uninstall/handler.py": "b373f34caf73043d54bc297cacd929c18783342486b8330acbb97c0c44b7714d",
+    "backend/ai_phone/agent/device_activity.py": "cc2e96d66080f7aa60fa8d0b9956e433e186fd892dfc26c00a8c904060395e31",
+    "backend/ai_phone/agent/drivers/__init__.py": "67dd1c2ac123154794e17d584ec5fb5335baec68293f16acea0fd1f14de506c8",
+    "backend/ai_phone/agent/drivers/android.py": "af3b1fe42b0ce93e2ad1717143e8959bc2a438e2a73955a2a7ca0c6224136d9a",
+    "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+    "backend/ai_phone/agent/harmony_vm/capability.py": "6716584a4ee555fd49b2297db5136e004679806d2af0b12a2c4edb3eac5003fa",
+    "backend/ai_phone/agent/harmony_vm/manager.py": "efac19845e45b5c0a7aa2faefc95f8c6dc9cecd6842442fee303765dc9a3999e",
+    "backend/ai_phone/agent/health/probe.py": "a4ec72f21e4dc6b1bf4b0c3bcfcdde37b74b57305cc57b9d2ce738fc91139c33",
+    "backend/ai_phone/agent/health/supervisor.py": "8393340453f02129d1c342e1815806cfe4f039ff00d7f117fbab94c462678858",
+    "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+    "backend/ai_phone/agent/ios_sim/manager.py": "6401fce688f697450099204f8c96c8995ffb2f2dcc65912b265e7ff1362bda60",
+    "backend/ai_phone/agent/main.py": "33941428605993c5c6b4ec709e2bb4f42d014ea57634a5133d5e3bd2d8e33d99",
+    "backend/ai_phone/agent/native_operation.py": "1fbc78e1560cf21ba3dc6e68d50adfc9a025831fba3d3848c407e291ff901255",
+    "backend/ai_phone/agent/vm_ports.py": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+    "backend/ai_phone/agent/ws_client.py": "aadad560bfa0788b0b6eefe6636be7b7f2e95cae96b31d423f2dcaa34252592e",
+    "backend/ai_phone/server/android_vm/api.py": "3bdcfa84b46262ca974be0e29ba9352986d6e0a350df109c8d09aa2d69116d3d",
+    "backend/ai_phone/server/android_vm/service.py": "b7f9aa7149dbf196b71e63076cf3469b80d6f35845f5caf25143f3ff0a318621",
+    "backend/ai_phone/server/api/_deps.py": "83e8ecdb97ae92480c6034200039d080ad0e024bcd26f6cf361e68c3b9ea6bd7",
+    "backend/ai_phone/server/app.py": "2db57a8e7f596d36cbc4772808ad840d59ec134767d7e8ce8837bf5100435f73",
+    "backend/ai_phone/server/harmony_vm/api.py": "00b4665fda0e96e110b2fcb6ef236edc0af62a4a956abd76ca156c94e96793a6",
+    "backend/ai_phone/server/harmony_vm/service.py": "cef15701e1c3d6260a2e681911fa200dda10f27114225ab85994417e67008460",
+    "backend/ai_phone/server/hub.py": "7252018d5468f7e0ccc3f7b28e3fa238053751e61925cef1b3538050c6ee4b33",
+    "backend/ai_phone/server/ios_sim/api.py": "5df873d042daadb1a7b7f71a9ab642acdb276dd93835219548cd329736f0d1df",
+    "backend/ai_phone/server/ios_sim/service.py": "687dcf0c157300f37c1d825d4d55ca83ecbfa07cba3efa3190467dd2a4164647",
+    "backend/ai_phone/server/vm_lifecycle.py": "232cf364266b1e344a7d29e87ebce39709994a1b0aa790db582ef33602af56aa",
+    "backend/ai_phone/server/ws/_deps.py": "a35024e4a79af02d098e71ab3f5a6f1ae5bad0130d35097a6a97ead977bacfcf",
+    "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+    "web/src/pages/HarmonyVirtualMachines.vue": "d702050463af50e3ecd2aa6a7866fd7ba6855d197527e303271650aa69f11d35",
+    "web/src/pages/IosSimVirtualMachines.vue": "4b99e783884daf6ff8a9eaa918f568a0e3976a31ef38545e43d9400e1e1f6c29",
+    "web/src/pages/VirtualMachines.vue": "2a78c051715bf1ecc9e8dcb29e60f098e714e89cfd77d8320659ae47daac4abf"
+  },
+  "verified_all_product_and_test_hashes": true,
+  "regression": {
+    "passed": 1549,
+    "skipped": 2,
+    "warnings": 73,
+    "files": 73,
+    "blocked_calls": [],
+    "evidence": "combined-regression-evidence.json",
+    "captured_source_label_note": "combined-regression-evidence retains its generic capture label after 74f209d; all 33 product Git blobs and 73 test/fixture working-file hashes match the tested snapshot. Additional handoff test sources were not part of the product commit and are included in this handoff commit."
+  },
+  "scope": "personal repositories and isolated/native test resources only; no push or published packages",
+  "cli_api_verification": {
+    "product_commit": "8a2a3be1bb60f719282349e6135be3c226c3a7fe",
+    "passed": 12,
+    "requests": 30,
+    "profile_reads": 0,
+    "evidence": "vm-cli-final-8a2a3be.json"
+  },
+  "native_evidence": {
+    "harmony_b2": {
+      "status": "passed",
+      "product_commit": "90342046a932273e54d7f96cb2947d753476477b",
+      "evidence": "native-followup/harmony-legacy-b2-summary.json"
+    },
+    "ios_followup": {
+      "status": "passed",
+      "product_commit": "90342046a932273e54d7f96cb2947d753476477b",
+      "evidence": "native-followup/ios-evidence/ios-20261016-035022-ddd0e8/summary.json"
+    },
+    "android_a2": {
+      "status": "failed_data_persistence_cause_unknown",
+      "evidence": "native-followup/android-app-install-a2-results.json"
+    },
+    "android_a3": {
+      "status": "diagnostic_data_passed_visual_incomplete",
+      "evidence": "native-followup/android-app-install-a3-results.json"
+    },
+    "android_a4": {
+      "status": "failed_localstorage_retention_durable_witness_retained",
+      "product_commit": "8a2a3be1bb60f719282349e6135be3c226c3a7fe",
+      "evidence": "native-followup/android-app-install-a4-results.json",
+      "root_visual_review": "native-followup/android-a4-root-visual-review.json"
+    },
+    "android_a5": {
+      "status": "passed",
+      "product_commit": "f263af3a0b8ed6aea556c63354747a79e52a4f86",
+      "evidence": "native-followup/android-app-install-a5-results.json",
+      "root_visual_review": "native-followup/android-a5-root-review.json"
+    },
+    "android_a6_a1": {
+      "status": "harness_preflight_failed_no_vm_created",
+      "product_commit": "f263af3a0b8ed6aea556c63354747a79e52a4f86",
+      "evidence": "native-followup/android-snapshot-a6-a1-results.json"
+    },
+    "android_a6_a2": {
+      "status": "failed_snapshot_restore",
+      "product_commit": "f263af3a0b8ed6aea556c63354747a79e52a4f86",
+      "evidence": "native-followup/android-snapshot-a6-a2-results.json"
+    },
+    "android_a6_a3": {
+      "status": "passed",
+      "product_commit": "2dc9844ffd86b88f2e41acfc79fae87ae222d631",
+      "evidence": "native-followup/android-snapshot-a6-a3-results.json",
+      "root_review": "native-followup/android-a6-root-review.json"
+    },
+    "android_a7": {
+      "status": "passed",
+      "product_commit": "2dc9844ffd86b88f2e41acfc79fae87ae222d631",
+      "evidence": "native-followup/android-app-install-a7-results.json",
+      "root_review": "native-followup/android-a7-root-review.json"
+    }
+  },
+  "release_status": "accepted_for_documented_scope_with_limitations",
+  "release_scope": "Personal-source handoff and isolated macOS native validation; not a company deployment, production capacity or all-OS/physical-device certification.",
+  "independent_delivery_review": {
+    "status": "passed",
+    "reviewer": "independent_review",
+    "at": "2026-10-15T22:34:39.060755+00:00",
+    "scope": [
+      "Exact product Git blobs and SHA256, test and fixture hashes, JUnit and terminal test counts.",
+      "A6-a3 raw/summary/cleanup, exact negative image operation, original AVD fingerprints and actual restored snapshots.",
+      "A7 raw capture remains visual-pending; later root direct-image review provides the explicitly separate passed visual result.",
+      "Older failures remain failures; Harmony/iOS native runs retain their actual 9034204 version."
+    ],
+    "additional_runtime_or_native_calls": 0
+  },
+  "test_fixture_commit_scope": "Committed backend/web tests are in product commit 2dc9844; additional handoff test sources listed below are SHA-pinned in the regression evidence and included in this handoff commit.",
+  "additional_handoff_test_sources_sha256": {
+    "docs/experiments/vm-lifecycle-audit-20261015/handoff/test_main_flow_native_occupancy.py": "4a7cb891d03a1ad8fb314ed571b230af9bbeb1f6759998e1c0e427c1a5aa8bd6",
+    "docs/experiments/vm-lifecycle-audit-20261015/handoff/test_native_operation_independent_review.py": "94eb1b745d2f3ce8554896b9080eed65e7fd8b4ba8aa3f0f6121607f7ec666da"
+  }
+}

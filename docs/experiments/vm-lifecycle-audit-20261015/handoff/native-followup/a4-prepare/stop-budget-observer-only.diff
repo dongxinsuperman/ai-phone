@@ -1,0 +1,23 @@
+--- /Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a4-prepare/harness-before-stop-budget.py
++++ /Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_visual_a4.py
+@@ -757,9 +757,9 @@
+                 record.update(error=type(exc).__name__ + ": " + str(exc), returned_at=utc_now(), returned_monotonic_ns=time.monotonic_ns())
+                 raise
+ 
+-    def observed_stop_owned_process(process, *, graceful):
++    def observed_stop_owned_process(process, *, graceful, **kwargs):
+         record = {"kind": "owned-process-stop", "pid": process.pid, "emu_kill_succeeded": graceful,
+-                  "at": utc_now(), "monotonic_ns": time.monotonic_ns(), "calls": []}
++                  "at": utc_now(), "monotonic_ns": time.monotonic_ns(), "calls": [], "forwarded_kwargs": dict(kwargs)}
+         diagnostic_state["native_calls"].append(record)
+ 
+         class ProcessObserver:
+@@ -779,7 +779,7 @@
+                         raise
+                 return invoke
+         try:
+-            return original_stop_owned_process(ProcessObserver(), graceful=graceful)
++            return original_stop_owned_process(ProcessObserver(), graceful=graceful, **kwargs)
+         finally:
+             record.update(returned_at=utc_now(), returned_monotonic_ns=time.monotonic_ns(),
+                           fallback_signals=[call["method"] for call in record["calls"] if call["method"] in {"terminate", "kill"}])

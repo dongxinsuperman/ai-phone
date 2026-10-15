@@ -1,0 +1,46 @@
+{
+  "at": "2026-10-15T22:04:27.195417+00:00",
+  "processes": {
+    "71919": {
+      "exists": false
+    },
+    "72067": {
+      "exists": false
+    },
+    "71871": {
+      "exists": false
+    }
+  },
+  "ports": {
+    "15037": {
+      "127.0.0.1": {
+        "bindable": true
+      },
+      "::1": {
+        "bindable": true
+      }
+    },
+    "5666": {
+      "127.0.0.1": {
+        "bindable": true
+      },
+      "::1": {
+        "bindable": true
+      }
+    },
+    "5667": {
+      "127.0.0.1": {
+        "bindable": true
+      },
+      "::1": {
+        "bindable": true
+      }
+    }
+  },
+  "preserved_avd": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd",
+  "avd_exists": true,
+  "ini_exists": true,
+  "native_handlers_active": 0,
+  "remaining_runtimes": [],
+  "default_metadata_changed": []
+}

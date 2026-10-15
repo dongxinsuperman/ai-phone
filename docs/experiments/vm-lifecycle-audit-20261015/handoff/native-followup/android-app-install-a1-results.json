@@ -1,0 +1,45 @@
+{
+  "status": "failed",
+  "failure_class": "harness pre-install absence probe rejected pm path exit 1",
+  "run_id": "android-app-install-9034204-20261016-a1",
+  "run_root": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a1",
+  "product_commit": "90342046a932273e54d7f96cb2947d753476477b",
+  "source_snapshot": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_e2e.a1.py",
+  "source_sha256": "44a418a43437f20669367beec8a1a5768ddb3ef66920c10adb16349ee6e363ec",
+  "source_snapshot_matches_run": true,
+  "product_hashes_match_at_start_and_finish": true,
+  "install_uploaded": false,
+  "install_task_created": false,
+  "handler_calls": 0,
+  "native_install_calls": 0,
+  "owned_vm_ids": [
+    "082ba6c645ac"
+  ],
+  "cleanup": {
+    "checked_at": "2026-10-15T19:46:09.071305+00:00",
+    "owned_processes": [],
+    "native_compatible_bind_errno": {
+      "15037": {
+        "127.0.0.1": 0,
+        "::1": 0
+      },
+      "5666": {
+        "127.0.0.1": 0,
+        "::1": 0
+      },
+      "5667": {
+        "127.0.0.1": 0,
+        "::1": 0
+      }
+    },
+    "run_avd_directory_entries": []
+  },
+  "private_adb_stopped": true,
+  "protected_metadata_changed": [],
+  "evidence": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a1/evidence.json",
+  "images": [
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a1-native-ready-first.png",
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a1-failure-082ba6c645ac.png"
+  ],
+  "rerun_started": false
+}

@@ -1,0 +1,34 @@
+{"elapsed_seconds": 92.129, "action": "source", "duration_seconds": 4.683, "bytes": 38622}
+{"elapsed_seconds": 93.429, "action": "source", "duration_seconds": 0.796, "bytes": 27132}
+{"elapsed_seconds": 94.908, "action": "source", "duration_seconds": 0.972, "bytes": 27132}
+{"elapsed_seconds": 95.837, "action": "source", "duration_seconds": 0.418, "bytes": 27132}
+{"elapsed_seconds": 95.983, "action": "wda_response", "method": "GET", "path": "/session/06AD9F7C-DBD5-41D6-8E71-D0BD2308675F/wda/screen", "request": null, "response": {"value": {"statusBarSize": {"width": 390, "height": 47}, "scale": 3, "screenSize": {"width": 390, "height": 844}}, "sessionId": "06AD9F7C-DBD5-41D6-8E71-D0BD2308675F"}, "duration_seconds": 0.144}
+{"elapsed_seconds": 96.068, "action": "tap", "label": "input", "rect": {"type": "XCUIElementTypeTextField", "value": "输入本轮标记", "name": "输入本轮标记", "label": "输入本轮标记", "enabled": "true", "visible": "true", "accessible": "true", "x": "20", "y": "210", "width": "350", "height": "58", "index": "3", "placeholderValue": "输入本轮标记", "traits": ""}, "scale": 3.0, "point": [195.0, 239.0], "pixel": [585, 717]}
+{"elapsed_seconds": 96.446, "action": "wda_response", "method": "POST", "path": "/session/06AD9F7C-DBD5-41D6-8E71-D0BD2308675F/wda/tap", "request": {"x": 195.0, "y": 239.0}, "response": {"value": null, "sessionId": "06AD9F7C-DBD5-41D6-8E71-D0BD2308675F"}, "duration_seconds": 0.377}
+{"elapsed_seconds": 96.682, "action": "source", "duration_seconds": 0.236, "bytes": 22593}
+{"elapsed_seconds": 97.442, "action": "source", "duration_seconds": 0.253, "bytes": 22028}
+{"elapsed_seconds": 98.297, "action": "source", "duration_seconds": 0.347, "bytes": 22028}
+{"elapsed_seconds": 99.042, "action": "source", "duration_seconds": 0.234, "bytes": 22028}
+{"elapsed_seconds": 99.795, "action": "source", "duration_seconds": 0.242, "bytes": 22028}
+{"elapsed_seconds": 100.556, "action": "source", "duration_seconds": 0.259, "bytes": 22028}
+{"elapsed_seconds": 101.328, "action": "source", "duration_seconds": 0.263, "bytes": 22028}
+{"elapsed_seconds": 102.095, "action": "source", "duration_seconds": 0.255, "bytes": 22028}
+{"elapsed_seconds": 102.867, "action": "source", "duration_seconds": 0.261, "bytes": 22028}
+{"elapsed_seconds": 103.628, "action": "source", "duration_seconds": 0.257, "bytes": 22028}
+{"elapsed_seconds": 104.374, "action": "source", "duration_seconds": 0.242, "bytes": 22028}
+{"elapsed_seconds": 105.006, "action": "focus_retry", "reason": "keyboard not yet visible after stable target tap"}
+{"elapsed_seconds": 105.245, "action": "source", "duration_seconds": 0.238, "bytes": 22028}
+{"elapsed_seconds": 106.023, "action": "source", "duration_seconds": 0.265, "bytes": 22028}
+{"elapsed_seconds": 106.787, "action": "source", "duration_seconds": 0.254, "bytes": 22028}
+{"elapsed_seconds": 106.877, "action": "tap", "label": "input-focus-retry", "rect": {"type": "XCUIElementTypeTextField", "value": "输入本轮标记", "name": "输入本轮标记", "label": "输入本轮标记", "enabled": "true", "visible": "true", "accessible": "true", "x": "20", "y": "210", "width": "350", "height": "58", "index": "3", "placeholderValue": "输入本轮标记", "traits": ""}, "scale": 3.0, "point": [195.0, 239.0], "pixel": [585, 717]}
+{"elapsed_seconds": 107.227, "action": "wda_response", "method": "POST", "path": "/session/06AD9F7C-DBD5-41D6-8E71-D0BD2308675F/wda/tap", "request": {"x": 195.0, "y": 239.0}, "response": {"value": null, "sessionId": "06AD9F7C-DBD5-41D6-8E71-D0BD2308675F"}, "duration_seconds": 0.35}
+{"elapsed_seconds": 107.911, "action": "source", "duration_seconds": 0.683, "bytes": 42622}
+{"elapsed_seconds": 108.569, "action": "wda_response", "method": "POST", "path": "/session/06AD9F7C-DBD5-41D6-8E71-D0BD2308675F/wda/keys", "request": {"value": ["p", "e", "r", "s", "o", "n", "a", "l", "-", "e", "b", "1", "2", "e", "e", "5", "1", "2", "8", "0", "0"]}, "response": {"value": null, "sessionId": "06AD9F7C-DBD5-41D6-8E71-D0BD2308675F"}, "duration_seconds": 0.655}
+{"elapsed_seconds": 112.364, "action": "source", "duration_seconds": 0.535, "bytes": 40755}
+{"elapsed_seconds": 112.851, "action": "source", "duration_seconds": 0.411, "bytes": 40755}
+{"elapsed_seconds": 113.8, "action": "source", "duration_seconds": 0.44, "bytes": 40755}
+{"elapsed_seconds": 114.703, "action": "source", "duration_seconds": 0.393, "bytes": 40755}
+{"elapsed_seconds": 114.78, "action": "tap", "label": "confirm", "rect": {"type": "XCUIElementTypeButton", "name": "确认", "label": "确认", "enabled": "true", "visible": "true", "accessible": "true", "x": "20", "y": "283", "width": "350", "height": "63", "index": "4", "traits": "Button"}, "scale": 3.0, "point": [195.0, 314.5], "pixel": [585, 944]}
+{"elapsed_seconds": 115.163, "action": "wda_response", "method": "POST", "path": "/session/06AD9F7C-DBD5-41D6-8E71-D0BD2308675F/wda/tap", "request": {"x": 195.0, "y": 314.6666666666667}, "response": {"value": null, "sessionId": "06AD9F7C-DBD5-41D6-8E71-D0BD2308675F"}, "duration_seconds": 0.382}
+{"elapsed_seconds": 115.59, "action": "source", "duration_seconds": 0.427, "bytes": 45610}
+{"elapsed_seconds": 144.324, "action": "source", "duration_seconds": 0.443, "bytes": 22065}

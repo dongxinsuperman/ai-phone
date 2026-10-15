@@ -1,0 +1,23 @@
+{
+  "source_commit": "74f209dc6556d4678291b0dce63a9817741b6bea",
+  "source_path": "backend/ai_phone/server/vm_lifecycle.py",
+  "source_sha256": "573d1a9005265736d08caf2891a81958004052a5bd27a8e53fed37bed497181b",
+  "mode": "Execute committed helper snapshot only; no Server/DB/Agent/native launch",
+  "results": [
+    {
+      "platform": "android",
+      "late_physical_stop_fact_accepted": true,
+      "terminal_operation_outcome_preserved": "failed"
+    },
+    {
+      "platform": "ios",
+      "late_physical_stop_fact_accepted": true,
+      "terminal_operation_outcome_preserved": "failed"
+    },
+    {
+      "platform": "harmony",
+      "late_physical_stop_fact_accepted": true,
+      "terminal_operation_outcome_preserved": "failed"
+    }
+  ]
+}

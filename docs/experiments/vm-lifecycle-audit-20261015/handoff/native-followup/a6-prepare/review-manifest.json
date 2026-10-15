@@ -1,0 +1,57 @@
+{
+  "prepared_at": "2026-10-15T21:53:54.456188+00:00",
+  "status": "one-authorized-native-run-failed-harness-preflight-no-rerun",
+  "native_execution_started": true,
+  "product_commit": "f263af3a0b8ed6aea556c63354747a79e52a4f86",
+  "product_file_count": 33,
+  "product_freeze_mismatches": [],
+  "source_sha256": {
+    "android_snapshot_a6.py": "4a394c4d6ea4cb4b0611103e42bef3579b8818d3fab4f2e095313f7e4c467197",
+    "test_android_snapshot_a6_guards.py": "1bdbf3c69f542f32266873f66a50cc0d90f53504a6528d9d09c6f3c83c9d8b1f",
+    "android_app_install_sync_a5.py": "43356f481dea68c8adcd7b5fb7344b08912f2b2e4f678075533f2a15856eaf51",
+    "test_android_a5_stop_observer_equivalence.py": "d7b2cbd225e2827b30ccb507e8ba9a6f491c5023c00c671ded42925d9ba7210a"
+  },
+  "guards": {
+    "tests_run": 28,
+    "passed": true,
+    "log": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a6-prepare/guard-tests.log",
+    "production_helper_observer_scenarios": 14,
+    "actual_http_operation_replay_cases": 8
+  },
+  "installed_api34": {
+    "installed": true,
+    "package_id": "system-images;android-34;google_apis;arm64-v8a",
+    "package_xml": "/Users/dongxin/Library/Android/sdk/system-images/android-34/google_apis/arm64-v8a/package.xml",
+    "package_xml_sha256": "d7dee35ea8edd16a820feeffd46eff92ab781c00b5895761970e4eb73f5d9be9",
+    "source_properties": "Pkg.Desc=System Image arm64-v8a with Google APIs.\nPkg.Revision=14\nPkg.Dependencies=emulator#34.2.16\nAndroidVersion.ApiLevel=34\nAndroidVersion.ExtensionLevel=7\nAndroidVersion.IsBaseSdk=true\nSystemImage.Abi=arm64-v8a\nSystemImage.TagId=google_apis\nSystemImage.TagDisplay=Google APIs\nSystemImage.GpuSupport=true\nAddon.VendorId=google\nAddon.VendorDisplay=Google Inc.\n\n",
+    "source_properties_sha256": "1e64d5cf821e898a2af4677e55b477567ea56d0c5681cd50add5f8b95db08cf2"
+  },
+  "planned_native_generations": [
+    "save",
+    "save",
+    "discard_changes",
+    "discard_changes",
+    "cold_boot",
+    "cold_boot(original-image-restoration)"
+  ],
+  "negative_image_attempt_adds_native_generation": false,
+  "a5_unchanged": true,
+  "no_app_fixture_changes": true,
+  "sealed_avds_accessed": false,
+  "company_access": false,
+  "main_guides_edited": false,
+  "run_root_created": false,
+  "independent_review_received_at": "2026-10-15T21:56:05.341424+00:00",
+  "independent_review": {
+    "reviewer": "/root/independent_review",
+    "result": "passed-no-current-P1-P2",
+    "guards_independently_passed": 28,
+    "boundary_evidence": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a6-prepare/independent-boundary.json",
+    "boundary_sha256": "bacebd65880fa59020d7b1d7306fb11a174650f4c3313b88580aae9a6a8df803",
+    "native_execution": false
+  },
+  "native_run_root": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a1",
+  "native_run_status": "failed_harness_preflight",
+  "hardware_slot_released": true,
+  "result_path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-snapshot-a6-a1-results.json"
+}

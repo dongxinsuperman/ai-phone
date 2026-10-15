@@ -1,0 +1,8 @@
+{
+  "tests_run": 51,
+  "passed": true,
+  "deferred": [
+    "<run_path>.InstallScopeTests.test_import_and_plan_do_not_import_product_or_create_run_root"
+  ],
+  "reason": "Final product freeze pending. No test or product manifest changed."
+}

@@ -1,0 +1,17 @@
+{
+  "exit_code": 0,
+  "product_sha256": {
+    "backend/ai_phone/agent/android_vm/manager.py": "13bf99f44a4fa566bbfab44258cd4ab8a0eac2d000613fe149ed9fef33b26bd3",
+    "backend/ai_phone/agent/ws_client.py": "aadad560bfa0788b0b6eefe6636be7b7f2e95cae96b31d423f2dcaa34252592e",
+    "backend/ai_phone/server/android_vm/api.py": "3bdcfa84b46262ca974be0e29ba9352986d6e0a350df109c8d09aa2d69116d3d"
+  },
+  "metrics": {
+    "tests": "186",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "0.500"
+  },
+  "scope": "private temp cwd/storage/SQLite; no deployment env; fake device/process boundaries; no native commands",
+  "test_file_sha256": "42747b8f555aad8d43d0ca301f6901feef7abcdfa2ae7b088a5bd40295955520"
+}

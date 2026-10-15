@@ -1,0 +1,94 @@
+{
+  "source_sha256": "4008ca8b5533712e2af251db8ae48b091b7fec3f03ee8816e339aeedc5cc78fc",
+  "scope": "actual product AST; temporary files only; no native/network or sealed writes",
+  "cases": [
+    {
+      "request_mb": 0,
+      "original_file_bytes_inode_mtime_preserved": true,
+      "userdata_untouched": true
+    },
+    {
+      "request_mb": 4096,
+      "original_file_bytes_inode_mtime_preserved": true,
+      "userdata_untouched": true
+    },
+    {
+      "request_mb": 6144,
+      "original_file_bytes_inode_mtime_preserved": true,
+      "userdata_untouched": true
+    },
+    {
+      "request_mb": 8192,
+      "original_file_bytes_inode_mtime_preserved": false,
+      "userdata_untouched": true
+    },
+    {
+      "old_value": "unknown",
+      "rejected_before_write": true
+    },
+    {
+      "old_value": "0",
+      "rejected_before_write": true
+    },
+    {
+      "old_value": "6 GB",
+      "rejected_before_write": true
+    },
+    {
+      "old_value": "9223372036854775808",
+      "rejected_before_write": true
+    },
+    {
+      "old_value": "8589934592G",
+      "rejected_before_write": true
+    }
+  ],
+  "parse_boundaries": [
+    {
+      "input": "9223372036854775807",
+      "bytes": 9223372036854775807
+    },
+    {
+      "input": "9223372036854775808",
+      "bytes": null
+    },
+    {
+      "input": "8589934591G",
+      "bytes": 9223372035781033984
+    },
+    {
+      "input": "8589934592G",
+      "bytes": null
+    },
+    {
+      "input": "9007199254740991K",
+      "bytes": 9223372036854774784
+    },
+    {
+      "input": "9007199254740992K",
+      "bytes": null
+    },
+    {
+      "input": "0000000000000000000",
+      "bytes": null
+    },
+    {
+      "input": "6g",
+      "bytes": 6442450944
+    },
+    {
+      "input": "6144M",
+      "bytes": 6442450944
+    },
+    {
+      "input": "6291456k",
+      "bytes": 6442450944
+    },
+    {
+      "input": "6GiB",
+      "bytes": null
+    }
+  ],
+  "sealed_evidence_unchanged": true,
+  "formal_tests": "104 passed"
+}

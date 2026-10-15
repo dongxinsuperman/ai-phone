@@ -1,0 +1,106 @@
+{
+  "checked_at": "2026-10-15T20:12:26.936764+00:00",
+  "evidence_path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a3/evidence.json",
+  "evidence_sha256": "7f2a7a3c5d856804bcc073327313e4540e6428cfa2965ccdc0b67d84a1ef06d4",
+  "status_at_read": "native_checks_passed_visual_review_pending",
+  "providers": [
+    {
+      "protocol": "personal-vm-a3",
+      "run": "android-app-install-9034204-20261016-a3",
+      "platform": "android",
+      "phase": "first-write",
+      "kind": "webview-provider",
+      "sequence": 2,
+      "emittedWallMs": 1792094911886,
+      "emittedElapsedNs": 23452320802,
+      "data": {
+        "packageName": "com.google.android.webview",
+        "versionName": "109.0.5414.123",
+        "longVersionCode": 541412334,
+        "ok": true
+      },
+      "host_received_at": "2026-10-15T20:08:31.617118+00:00",
+      "host_received_monotonic_ns": 103223946438250
+    },
+    {
+      "protocol": "personal-vm-a3",
+      "run": "android-app-install-9034204-20261016-a3",
+      "platform": "android",
+      "phase": "restart-read",
+      "kind": "webview-provider",
+      "sequence": 2,
+      "emittedWallMs": 1792094943821,
+      "emittedElapsedNs": 14384613464,
+      "data": {
+        "packageName": "com.google.android.webview",
+        "versionName": "109.0.5414.123",
+        "longVersionCode": 541412334,
+        "ok": true
+      },
+      "host_received_at": "2026-10-15T20:09:03.623031+00:00",
+      "host_received_monotonic_ns": 103255952170750
+    }
+  ],
+  "user_agents": [
+    "Mozilla/5.0 (Linux; Android 13; sdk_gphone64_arm64 Build/TE1A.240213.009; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/109.0.5414.123 Mobile Safari/537.36"
+  ],
+  "durable_witness_preserved": true,
+  "raw_storage_preserved": true,
+  "native_stop_observations": [
+    {
+      "kind": "owned-process-stop",
+      "pid": 45869,
+      "emu_kill_succeeded": true,
+      "at": "2026-10-15T20:08:44.020271+00:00",
+      "monotonic_ns": 103236349517041,
+      "calls": [
+        {
+          "method": "wait",
+          "at": "2026-10-15T20:08:44.020314+00:00",
+          "monotonic_ns": 103236349557625,
+          "kwargs": {
+            "timeout": 5
+          },
+          "result": 0,
+          "returned_monotonic_ns": 103237201441500
+        }
+      ],
+      "returned_at": "2026-10-15T20:08:44.872220+00:00",
+      "returned_monotonic_ns": 103237201478458,
+      "fallback_signals": []
+    },
+    {
+      "kind": "owned-process-stop",
+      "pid": 46090,
+      "emu_kill_succeeded": true,
+      "at": "2026-10-15T20:09:06.867761+00:00",
+      "monotonic_ns": 103259196880625,
+      "calls": [
+        {
+          "method": "wait",
+          "at": "2026-10-15T20:09:06.867827+00:00",
+          "monotonic_ns": 103259196938583,
+          "kwargs": {
+            "timeout": 5
+          },
+          "result": 0,
+          "returned_monotonic_ns": 103260353958000
+        }
+      ],
+      "returned_at": "2026-10-15T20:09:08.024868+00:00",
+      "returned_monotonic_ns": 103260353981500,
+      "fallback_signals": []
+    }
+  ],
+  "public_tag": "109.0.5414.123",
+  "public_tag_commit": "1da24e1281b9ed5d02aa48789f8481ccb9469b13",
+  "leveldb_revision_from_tag_DEPS": "d019e3605f222ebc5a3a2484a2cb29db537551dd",
+  "interpretation_limits": [
+    "Runtime version and UA observed for a3, not retroactively for a2",
+    "Published version-tag source mapping is not a trace of runtime commit events",
+    "WebView standard source path uses aggressive one-second scheduling rather than the generic five-second default",
+    "Default LevelDB WriteOptions does not request per-write fsync",
+    "Original a2 failed persistence remains unexplained",
+    "a3 restart visual acceptance is not passed; fleet reported white screenshot and empty native XML"
+  ]
+}

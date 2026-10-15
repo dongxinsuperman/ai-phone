@@ -1,0 +1,19 @@
+...............................................................          [100%]
+============================= slowest 15 durations =============================
+0.10s setup    ::test_create_task_dispatches_to_device_agent
+0.08s setup    ::test_uninstall_business_failures_return_400[uninstall_failed-UNINSTALL_FAILED]
+0.05s call     ::test_timeout_keeps_native_lease_and_temp_package_until_actual_exit[install]
+0.05s call     ::test_native_package_work_keeps_device_occupied_after_async_timeout[uninstall]
+0.05s call     ::test_timeout_keeps_native_lease_and_temp_package_until_actual_exit[uninstall]
+0.05s call     ::test_native_package_work_keeps_device_occupied_after_async_timeout[install]
+0.05s setup    ::test_uninstall_rejects_busy_device_without_dispatch
+0.05s setup    ::test_uninstall_timeout_returns_504_and_releases_lock
+0.05s setup    ::test_uninstall_business_failures_return_400[app_not_found-APP_NOT_FOUND]
+0.05s setup    ::test_handle_result_timeout_reason_sets_timeout_state
+0.05s setup    ::test_uninstall_requires_live_agent
+0.05s setup    ::test_handle_result_updates_item_and_task
+0.05s setup    ::test_uninstall_rejects_invalid_package_name
+0.05s setup    ::test_uninstall_success_returns_200_and_releases_lock
+0.05s setup    ::test_retry_unsuccessful_only_dispatches_terminal_failures
+63 passed in 1.30s
+{"pytest_exit_code": 0, "collected": 63, "blocked_external_calls": 1, "product_source_unchanged": true}

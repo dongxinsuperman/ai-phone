@@ -1,0 +1,31 @@
+{
+  "results": [
+    {
+      "case": "first_managed_identity",
+      "power_calls": [
+        "unlabelled-a",
+        "vm-b"
+      ],
+      "old_metadata_removed": true
+    },
+    {
+      "case": "late_A_before_B",
+      "power_calls": [
+        "vm-b"
+      ],
+      "new_cache_preserved": true
+    },
+    {
+      "case": "ABA",
+      "power_calls": [
+        "vm-a"
+      ],
+      "new_cache_preserved": true
+    },
+    {
+      "case": "same_vm_new_epoch",
+      "new_driver": true,
+      "actual_setup_count": 2
+    }
+  ]
+}

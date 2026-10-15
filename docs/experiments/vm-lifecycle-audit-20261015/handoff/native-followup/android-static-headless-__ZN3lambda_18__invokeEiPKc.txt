@@ -1,0 +1,9 @@
+Read-only disassembly. Target binary was not executed.
+Command: ['/usr/bin/xcrun', 'llvm-objdump', '--arch=arm64', '--disassemble-symbols=__ZN3$_18__invokeEiPKc', '/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless']
+
+/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+000000010059d21c <__ZN3$_18__invokeEiPKc>:
+10059d21c: 14001151    	b	0x1005a1760 <_skin_winsys_quit_request>

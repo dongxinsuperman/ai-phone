@@ -1,0 +1,823 @@
+Read-only disassembly. Target binary was not executed.
+Command: ['/usr/bin/xcrun', 'llvm-objdump', '--arch=arm64', '--disassemble-symbols=__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_', '/Users/dongxin/Library/Android/sdk/emulator/lib64/libandroid-emu-metrics.dylib']
+
+/Users/dongxin/Library/Android/sdk/emulator/lib64/libandroid-emu-metrics.dylib:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+00000000001baed8 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_>:
+  1baed8: d10343ff     	sub	sp, sp, #0xd0
+  1baedc: a9076ffc     	stp	x28, x27, [sp, #0x70]
+  1baee0: a90867fa     	stp	x26, x25, [sp, #0x80]
+  1baee4: a9095ff8     	stp	x24, x23, [sp, #0x90]
+  1baee8: a90a57f6     	stp	x22, x21, [sp, #0xa0]
+  1baeec: a90b4ff4     	stp	x20, x19, [sp, #0xb0]
+  1baef0: a90c7bfd     	stp	x29, x30, [sp, #0xc0]
+  1baef4: 910303fd     	add	x29, sp, #0xc0
+  1baef8: a9402428     	ldp	x8, x9, [x1]
+  1baefc: eb09011f     	cmp	x8, x9
+  1baf00: 54000180     	b.eq	0x1baf30 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x58>
+  1baf04: aa0103f4     	mov	x20, x1
+  1baf08: a9009be5     	stp	x5, x6, [sp, #0x8]
+  1baf0c: a90183e3     	stp	x3, x0, [sp, #0x18]
+  1baf10: f90003e4     	str	x4, [sp]
+  1baf14: 52a00108     	mov	w8, #0x80000            ; =524288
+  1baf18: 2905a3e2     	stp	w2, w8, [sp, #0x2c]
+  1baf1c: 9100c3e1     	add	x1, sp, #0x30
+  1baf20: 9100d3e2     	add	x2, sp, #0x34
+  1baf24: 52800040     	mov	w0, #0x2                ; =2
+  1baf28: 94018040     	bl	0x21b028 <dyld_stub_binder+0x21b028>
+  1baf2c: 34000060     	cbz	w0, 0x1baf38 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x60>
+  1baf30: 52800000     	mov	w0, #0x0                ; =0
+  1baf34: 140000f3     	b	0x1bb300 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x428>
+  1baf38: a9406e9c     	ldp	x28, x27, [x20]
+  1baf3c: eb1b039f     	cmp	x28, x27
+  1baf40: 54000700     	b.eq	0x1bb020 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x148>
+  1baf44: d2800013     	mov	x19, #0x0               ; =0
+  1baf48: d2800018     	mov	x24, #0x0               ; =0
+  1baf4c: d2800019     	mov	x25, #0x0               ; =0
+  1baf50: 14000005     	b	0x1baf64 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x8c>
+  1baf54: f800871a     	str	x26, [x24], #0x8
+  1baf58: 9100639c     	add	x28, x28, #0x18
+  1baf5c: eb1b039f     	cmp	x28, x27
+  1baf60: 54000560     	b.eq	0x1bb00c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x134>
+  1baf64: 39c05f88     	ldrsb	w8, [x28, #0x17]
+  1baf68: f9400389     	ldr	x9, [x28]
+  1baf6c: 7100011f     	cmp	w8, #0x0
+  1baf70: 9a9c413a     	csel	x26, x9, x28, mi
+  1baf74: eb19031f     	cmp	x24, x25
+  1baf78: 54fffee3     	b.lo	0x1baf54 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x7c>
+  1baf7c: cb130316     	sub	x22, x24, x19
+  1baf80: 9343fed7     	asr	x23, x22, #3
+  1baf84: 910006e8     	add	x8, x23, #0x1
+  1baf88: d37dfd09     	lsr	x9, x8, #61
+  1baf8c: b5006009     	cbnz	x9, 0x1bbb8c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xcb4>
+  1baf90: cb130335     	sub	x21, x25, x19
+  1baf94: 9342fea9     	asr	x9, x21, #2
+  1baf98: eb08013f     	cmp	x9, x8
+  1baf9c: 9a888128     	csel	x8, x9, x8, hi
+  1bafa0: b27defe9     	mov	x9, #0x7ffffffffffffff8 ; =9223372036854775800
+  1bafa4: eb0902bf     	cmp	x21, x9
+  1bafa8: 92fc0009     	mov	x9, #0x1fffffffffffffff ; =2305843009213693951
+  1bafac: 9a893119     	csel	x25, x8, x9, lo
+  1bafb0: b40000d9     	cbz	x25, 0x1bafc8 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xf0>
+  1bafb4: d37dff28     	lsr	x8, x25, #61
+  1bafb8: b5005ec8     	cbnz	x8, 0x1bbb90 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xcb8>
+  1bafbc: d37df320     	lsl	x0, x25, #3
+  1bafc0: 94017d26     	bl	0x21a458 <dyld_stub_binder+0x21a458>
+  1bafc4: 14000002     	b	0x1bafcc <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xf4>
+  1bafc8: d2800000     	mov	x0, #0x0                ; =0
+  1bafcc: 8b160018     	add	x24, x0, x22
+  1bafd0: 8b190c19     	add	x25, x0, x25, lsl #3
+  1bafd4: cb170f17     	sub	x23, x24, x23, lsl #3
+  1bafd8: f800871a     	str	x26, [x24], #0x8
+  1bafdc: aa1703e0     	mov	x0, x23
+  1bafe0: aa1303e1     	mov	x1, x19
+  1bafe4: aa1603e2     	mov	x2, x22
+  1bafe8: 94017d58     	bl	0x21a548 <dyld_stub_binder+0x21a548>
+  1bafec: b4000093     	cbz	x19, 0x1baffc <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x124>
+  1baff0: aa1303e0     	mov	x0, x19
+  1baff4: aa1503e1     	mov	x1, x21
+  1baff8: 94017d21     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1baffc: aa1703f3     	mov	x19, x23
+  1bb000: 9100639c     	add	x28, x28, #0x18
+  1bb004: eb1b039f     	cmp	x28, x27
+  1bb008: 54fffae1     	b.ne	0x1baf64 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x8c>
+  1bb00c: eb19031f     	cmp	x24, x25
+  1bb010: 54000102     	b.hs	0x1bb030 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x158>
+  1bb014: aa1303fa     	mov	x26, x19
+  1bb018: f900031f     	str	xzr, [x24]
+  1bb01c: 14000026     	b	0x1bb0b4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x1dc>
+  1bb020: d2800015     	mov	x21, #0x0               ; =0
+  1bb024: d2800018     	mov	x24, #0x0               ; =0
+  1bb028: d2800019     	mov	x25, #0x0               ; =0
+  1bb02c: 14000002     	b	0x1bb034 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x15c>
+  1bb030: aa1303f5     	mov	x21, x19
+  1bb034: cb150316     	sub	x22, x24, x21
+  1bb038: 9343fed3     	asr	x19, x22, #3
+  1bb03c: 91000668     	add	x8, x19, #0x1
+  1bb040: d37dfd09     	lsr	x9, x8, #61
+  1bb044: b5005a49     	cbnz	x9, 0x1bbb8c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xcb4>
+  1bb048: b27defe9     	mov	x9, #0x7ffffffffffffff8 ; =9223372036854775800
+  1bb04c: cb150337     	sub	x23, x25, x21
+  1bb050: 9342feea     	asr	x10, x23, #2
+  1bb054: eb08015f     	cmp	x10, x8
+  1bb058: 9a888148     	csel	x8, x10, x8, hi
+  1bb05c: eb0902ff     	cmp	x23, x9
+  1bb060: 92fc0009     	mov	x9, #0x1fffffffffffffff ; =2305843009213693951
+  1bb064: 9a893118     	csel	x24, x8, x9, lo
+  1bb068: b40000d8     	cbz	x24, 0x1bb080 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x1a8>
+  1bb06c: d37dff08     	lsr	x8, x24, #61
+  1bb070: b5005908     	cbnz	x8, 0x1bbb90 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xcb8>
+  1bb074: d37df300     	lsl	x0, x24, #3
+  1bb078: 94017cf8     	bl	0x21a458 <dyld_stub_binder+0x21a458>
+  1bb07c: 14000002     	b	0x1bb084 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x1ac>
+  1bb080: d2800000     	mov	x0, #0x0                ; =0
+  1bb084: 8b160008     	add	x8, x0, x22
+  1bb088: 8b180c19     	add	x25, x0, x24, lsl #3
+  1bb08c: f900011f     	str	xzr, [x8]
+  1bb090: cb130d00     	sub	x0, x8, x19, lsl #3
+  1bb094: aa0003fa     	mov	x26, x0
+  1bb098: aa1503e1     	mov	x1, x21
+  1bb09c: aa1603e2     	mov	x2, x22
+  1bb0a0: 94017d2a     	bl	0x21a548 <dyld_stub_binder+0x21a548>
+  1bb0a4: b4000095     	cbz	x21, 0x1bb0b4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x1dc>
+  1bb0a8: aa1503e0     	mov	x0, x21
+  1bb0ac: aa1703e1     	mov	x1, x23
+  1bb0b0: 94017cf3     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1bb0b4: 39013fff     	strb	wzr, [sp, #0x4f]
+  1bb0b8: 3900e3ff     	strb	wzr, [sp, #0x38]
+  1bb0bc: 94017cf9     	bl	0x21a4a0 <dyld_stub_binder+0x21a4a0>
+  1bb0c0: 7100041f     	cmp	w0, #0x1
+  1bb0c4: 5400038a     	b.ge	0x1bb134 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x25c>
+  1bb0c8: 70316281     	adr	x1, 0x21dd1b <dyld_stub_binder+0x21dd1b>
+  1bb0cc: d503201f     	nop
+  1bb0d0: 9100e3e0     	add	x0, sp, #0x38
+  1bb0d4: 94017ed3     	bl	0x21ac20 <dyld_stub_binder+0x21ac20>
+  1bb0d8: a9405a93     	ldp	x19, x22, [x20]
+  1bb0dc: eb16027f     	cmp	x19, x22
+  1bb0e0: 54000220     	b.eq	0x1bb124 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x24c>
+  1bb0e4: 303161d5     	adr	x21, 0x21dd1d <dyld_stub_binder+0x21dd1d>
+  1bb0e8: d503201f     	nop
+  1bb0ec: 39805e68     	ldrsb	x8, [x19, #0x17]
+  1bb0f0: a9402a69     	ldp	x9, x10, [x19]
+  1bb0f4: f100011f     	cmp	x8, #0x0
+  1bb0f8: 9a934121     	csel	x1, x9, x19, mi
+  1bb0fc: 7100011f     	cmp	w8, #0x0
+  1bb100: 9a884142     	csel	x2, x10, x8, mi
+  1bb104: 9100e3e0     	add	x0, sp, #0x38
+  1bb108: 94017ec9     	bl	0x21ac2c <dyld_stub_binder+0x21ac2c>
+  1bb10c: 9100e3e0     	add	x0, sp, #0x38
+  1bb110: aa1503e1     	mov	x1, x21
+  1bb114: 94017ebd     	bl	0x21ac08 <dyld_stub_binder+0x21ac08>
+  1bb118: 91006273     	add	x19, x19, #0x18
+  1bb11c: eb16027f     	cmp	x19, x22
+  1bb120: 54fffe61     	b.ne	0x1bb0ec <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x214>
+  1bb124: 70315fa1     	adr	x1, 0x21dd1b <dyld_stub_binder+0x21dd1b>
+  1bb128: d503201f     	nop
+  1bb12c: 9100e3e0     	add	x0, sp, #0x38
+  1bb130: 94017eb6     	bl	0x21ac08 <dyld_stub_binder+0x21ac08>
+  1bb134: f9400288     	ldr	x8, [x20]
+  1bb138: 39c05d09     	ldrsb	w9, [x8, #0x17]
+  1bb13c: f940010a     	ldr	x10, [x8]
+  1bb140: 7100013f     	cmp	w9, #0x0
+  1bb144: 9a884154     	csel	x20, x10, x8, mi
+  1bb148: d10163a0     	sub	x0, x29, #0x58
+  1bb14c: 94017fc0     	bl	0x21b04c <dyld_stub_binder+0x21b04c>
+  1bb150: 34000260     	cbz	w0, 0x1bb19c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x2c4>
+  1bb154: 94017cd3     	bl	0x21a4a0 <dyld_stub_binder+0x21a4a0>
+  1bb158: 36f807c0     	tbz	w0, #0x1f, 0x1bb250 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x378>
+  1bb15c: 10313581     	adr	x1, 0x21d80c <dyld_stub_binder+0x21d80c>
+  1bb160: d503201f     	nop
+  1bb164: 910183e0     	add	x0, sp, #0x60
+  1bb168: 52812702     	mov	w2, #0x938              ; =2360
+  1bb16c: 12800003     	mov	w3, #-0x1               ; =-1
+  1bb170: 52800004     	mov	w4, #0x0                ; =0
+  1bb174: 94017d6d     	bl	0x21a728 <dyld_stub_binder+0x21a728>
+  1bb178: f94033e8     	ldr	x8, [sp, #0x60]
+  1bb17c: 50316061     	adr	x1, 0x21dd8a <dyld_stub_binder+0x21dd8a>
+  1bb180: d503201f     	nop
+  1bb184: 9105c100     	add	x0, x8, #0x170
+  1bb188: 52800462     	mov	w2, #0x23               ; =35
+  1bb18c: 97f969b3     	bl	0x15858 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+  1bb190: 910183e0     	add	x0, sp, #0x60
+  1bb194: 94017d62     	bl	0x21a71c <dyld_stub_binder+0x21a71c>
+  1bb198: 1400002e     	b	0x1bb250 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x378>
+  1bb19c: d10163a0     	sub	x0, x29, #0x58
+  1bb1a0: 52880001     	mov	w1, #0x4000             ; =16384
+  1bb1a4: 94017fa7     	bl	0x21b040 <dyld_stub_binder+0x21b040>
+  1bb1a8: 34000200     	cbz	w0, 0x1bb1e8 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x310>
+  1bb1ac: 94017cbd     	bl	0x21a4a0 <dyld_stub_binder+0x21a4a0>
+  1bb1b0: 36f804c0     	tbz	w0, #0x1f, 0x1bb248 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x370>
+  1bb1b4: 103132c1     	adr	x1, 0x21d80c <dyld_stub_binder+0x21d80c>
+  1bb1b8: d503201f     	nop
+  1bb1bc: 910183e0     	add	x0, sp, #0x60
+  1bb1c0: 52812862     	mov	w2, #0x943              ; =2371
+  1bb1c4: 12800003     	mov	w3, #-0x1               ; =-1
+  1bb1c8: 52800004     	mov	w4, #0x0                ; =0
+  1bb1cc: 94017d57     	bl	0x21a728 <dyld_stub_binder+0x21a728>
+  1bb1d0: f94033e8     	ldr	x8, [sp, #0x60]
+  1bb1d4: 50315ec1     	adr	x1, 0x21ddae <dyld_stub_binder+0x21ddae>
+  1bb1d8: d503201f     	nop
+  1bb1dc: 9105c100     	add	x0, x8, #0x170
+  1bb1e0: 52800342     	mov	w2, #0x1a               ; =26
+  1bb1e4: 14000016     	b	0x1bb23c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x364>
+  1bb1e8: d10163a0     	sub	x0, x29, #0x58
+  1bb1ec: 52837fc1     	mov	w1, #0x1bfe             ; =7166
+  1bb1f0: 52800002     	mov	w2, #0x0                ; =0
+  1bb1f4: 52800003     	mov	w3, #0x0                ; =0
+  1bb1f8: 52800004     	mov	w4, #0x0                ; =0
+  1bb1fc: 94017f8e     	bl	0x21b034 <dyld_stub_binder+0x21b034>
+  1bb200: 34000900     	cbz	w0, 0x1bb320 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x448>
+  1bb204: 94017ca7     	bl	0x21a4a0 <dyld_stub_binder+0x21a4a0>
+  1bb208: 36f80200     	tbz	w0, #0x1f, 0x1bb248 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x370>
+  1bb20c: 10313001     	adr	x1, 0x21d80c <dyld_stub_binder+0x21d80c>
+  1bb210: d503201f     	nop
+  1bb214: 910183e0     	add	x0, sp, #0x60
+  1bb218: 52812982     	mov	w2, #0x94c              ; =2380
+  1bb21c: 12800003     	mov	w3, #-0x1               ; =-1
+  1bb220: 52800004     	mov	w4, #0x0                ; =0
+  1bb224: 94017d41     	bl	0x21a728 <dyld_stub_binder+0x21a728>
+  1bb228: f94033e8     	ldr	x8, [sp, #0x60]
+  1bb22c: 30315ce1     	adr	x1, 0x21ddc9 <dyld_stub_binder+0x21ddc9>
+  1bb230: d503201f     	nop
+  1bb234: 9105c100     	add	x0, x8, #0x170
+  1bb238: 52800402     	mov	w2, #0x20               ; =32
+  1bb23c: 97f96987     	bl	0x15858 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+  1bb240: 910183e0     	add	x0, sp, #0x60
+  1bb244: 94017d36     	bl	0x21a71c <dyld_stub_binder+0x21a71c>
+  1bb248: d10163a0     	sub	x0, x29, #0x58
+  1bb24c: 94017f5f     	bl	0x21afc8 <dyld_stub_binder+0x21afc8>
+  1bb250: 12800008     	mov	w8, #-0x1               ; =-1
+  1bb254: b90063e8     	str	w8, [sp, #0x60]
+  1bb258: 94017c92     	bl	0x21a4a0 <dyld_stub_binder+0x21a4a0>
+  1bb25c: 36f80300     	tbz	w0, #0x1f, 0x1bb2bc <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x3e4>
+  1bb260: 10312d61     	adr	x1, 0x21d80c <dyld_stub_binder+0x21d80c>
+  1bb264: d503201f     	nop
+  1bb268: d10163a0     	sub	x0, x29, #0x58
+  1bb26c: 528111e2     	mov	w2, #0x88f              ; =2191
+  1bb270: 12800003     	mov	w3, #-0x1               ; =-1
+  1bb274: 52800004     	mov	w4, #0x0                ; =0
+  1bb278: 94017d2c     	bl	0x21a728 <dyld_stub_binder+0x21a728>
+  1bb27c: f85a83a8     	ldur	x8, [x29, #-0x58]
+  1bb280: 703154e1     	adr	x1, 0x21dd1f <dyld_stub_binder+0x21dd1f>
+  1bb284: d503201f     	nop
+  1bb288: 9105c100     	add	x0, x8, #0x170
+  1bb28c: 52800362     	mov	w2, #0x1b               ; =27
+  1bb290: 97f96972     	bl	0x15858 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+  1bb294: 39813fe8     	ldrsb	x8, [sp, #0x4f]
+  1bb298: 9100e3e9     	add	x9, sp, #0x38
+  1bb29c: a943afea     	ldp	x10, x11, [sp, #0x38]
+  1bb2a0: f100011f     	cmp	x8, #0x0
+  1bb2a4: 9a894141     	csel	x1, x10, x9, mi
+  1bb2a8: 7100011f     	cmp	w8, #0x0
+  1bb2ac: 9a884162     	csel	x2, x11, x8, mi
+  1bb2b0: 97f9696a     	bl	0x15858 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+  1bb2b4: d10163a0     	sub	x0, x29, #0x58
+  1bb2b8: 94017d19     	bl	0x21a71c <dyld_stub_binder+0x21a71c>
+  1bb2bc: 52800013     	mov	w19, #0x0               ; =0
+  1bb2c0: aa1a03e0     	mov	x0, x26
+  1bb2c4: 39c13fe8     	ldrsb	w8, [sp, #0x4f]
+  1bb2c8: 36f800c8     	tbz	w8, #0x1f, 0x1bb2e0 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x408>
+  1bb2cc: f9401fe0     	ldr	x0, [sp, #0x38]
+  1bb2d0: f94027e8     	ldr	x8, [sp, #0x48]
+  1bb2d4: 9240f901     	and	x1, x8, #0x7fffffffffffffff
+  1bb2d8: 94017c69     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1bb2dc: aa1a03e0     	mov	x0, x26
+  1bb2e0: b4000060     	cbz	x0, 0x1bb2ec <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x414>
+  1bb2e4: cb000321     	sub	x1, x25, x0
+  1bb2e8: 94017c65     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1bb2ec: 9100d3e1     	add	x1, sp, #0x34
+  1bb2f0: 52800060     	mov	w0, #0x3                ; =3
+  1bb2f4: d2800002     	mov	x2, #0x0                ; =0
+  1bb2f8: 94017f4c     	bl	0x21b028 <dyld_stub_binder+0x21b028>
+  1bb2fc: aa1303e0     	mov	x0, x19
+  1bb300: a94c7bfd     	ldp	x29, x30, [sp, #0xc0]
+  1bb304: a94b4ff4     	ldp	x20, x19, [sp, #0xb0]
+  1bb308: a94a57f6     	ldp	x22, x21, [sp, #0xa0]
+  1bb30c: a9495ff8     	ldp	x24, x23, [sp, #0x90]
+  1bb310: a94867fa     	ldp	x26, x25, [sp, #0x80]
+  1bb314: a9476ffc     	ldp	x28, x27, [sp, #0x70]
+  1bb318: 910343ff     	add	sp, sp, #0xd0
+  1bb31c: d65f03c0     	ret
+  1bb320: 910183e0     	add	x0, sp, #0x60
+  1bb324: 94017f3e     	bl	0x21b01c <dyld_stub_binder+0x21b01c>
+  1bb328: 34000240     	cbz	w0, 0x1bb370 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x498>
+  1bb32c: 94017c5d     	bl	0x21a4a0 <dyld_stub_binder+0x21a4a0>
+  1bb330: 36fff8c0     	tbz	w0, #0x1f, 0x1bb248 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x370>
+  1bb334: 103126c1     	adr	x1, 0x21d80c <dyld_stub_binder+0x21d80c>
+  1bb338: d503201f     	nop
+  1bb33c: 910163e0     	add	x0, sp, #0x58
+  1bb340: 52812a42     	mov	w2, #0x952              ; =2386
+  1bb344: 12800003     	mov	w3, #-0x1               ; =-1
+  1bb348: 52800004     	mov	w4, #0x0                ; =0
+  1bb34c: 94017cf7     	bl	0x21a728 <dyld_stub_binder+0x21a728>
+  1bb350: f9402fe8     	ldr	x8, [sp, #0x58]
+  1bb354: 503154a1     	adr	x1, 0x21ddea <dyld_stub_binder+0x21ddea>
+  1bb358: d503201f     	nop
+  1bb35c: 9105c100     	add	x0, x8, #0x170
+  1bb360: 528004a2     	mov	w2, #0x25               ; =37
+  1bb364: 97f9693d     	bl	0x15858 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+  1bb368: 910163e0     	add	x0, sp, #0x58
+  1bb36c: 17ffffb6     	b	0x1bb244 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x36c>
+  1bb370: b9402fe8     	ldr	w8, [sp, #0x2c]
+  1bb374: 37180448     	tbnz	w8, #0x3, 0x1bb3fc <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x524>
+  1bb378: 371009e8     	tbnz	w8, #0x2, 0x1bb4b4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x5dc>
+  1bb37c: 303157a2     	adr	x2, 0x21de71 <dyld_stub_binder+0x21de71>
+  1bb380: d503201f     	nop
+  1bb384: 910183e0     	add	x0, sp, #0x60
+  1bb388: 52800021     	mov	w1, #0x1                ; =1
+  1bb38c: 52800023     	mov	w3, #0x1                ; =1
+  1bb390: 52803804     	mov	w4, #0x1c0              ; =448
+  1bb394: 94017f1c     	bl	0x21b004 <dyld_stub_binder+0x21b004>
+  1bb398: 35000120     	cbnz	w0, 0x1bb3bc <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x4e4>
+  1bb39c: 303156a2     	adr	x2, 0x21de71 <dyld_stub_binder+0x21de71>
+  1bb3a0: d503201f     	nop
+  1bb3a4: 910183e0     	add	x0, sp, #0x60
+  1bb3a8: 52800041     	mov	w1, #0x2                ; =2
+  1bb3ac: 52800023     	mov	w3, #0x1                ; =1
+  1bb3b0: 52803804     	mov	w4, #0x1c0              ; =448
+  1bb3b4: 94017f14     	bl	0x21b004 <dyld_stub_binder+0x21b004>
+  1bb3b8: 34000ae0     	cbz	w0, 0x1bb514 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x63c>
+  1bb3bc: 94017c39     	bl	0x21a4a0 <dyld_stub_binder+0x21a4a0>
+  1bb3c0: 36f81340     	tbz	w0, #0x1f, 0x1bb628 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x750>
+  1bb3c4: 10312241     	adr	x1, 0x21d80c <dyld_stub_binder+0x21d80c>
+  1bb3c8: d503201f     	nop
+  1bb3cc: 12800014     	mov	w20, #-0x1              ; =-1
+  1bb3d0: 910163e0     	add	x0, sp, #0x58
+  1bb3d4: 52812e62     	mov	w2, #0x973              ; =2419
+  1bb3d8: 12800003     	mov	w3, #-0x1               ; =-1
+  1bb3dc: 52800004     	mov	w4, #0x0                ; =0
+  1bb3e0: 94017cd2     	bl	0x21a728 <dyld_stub_binder+0x21a728>
+  1bb3e4: f9402fe8     	ldr	x8, [sp, #0x58]
+  1bb3e8: 70315481     	adr	x1, 0x21de7b <dyld_stub_binder+0x21de7b>
+  1bb3ec: d503201f     	nop
+  1bb3f0: 9105c100     	add	x0, x8, #0x170
+  1bb3f4: 52800582     	mov	w2, #0x2c               ; =44
+  1bb3f8: 1400005e     	b	0x1bb570 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x698>
+  1bb3fc: f9400be8     	ldr	x8, [sp, #0x10]
+  1bb400: 39c05d09     	ldrsb	w9, [x8, #0x17]
+  1bb404: f940010a     	ldr	x10, [x8]
+  1bb408: 7100013f     	cmp	w9, #0x0
+  1bb40c: 9a884142     	csel	x2, x10, x8, mi
+  1bb410: 910183e0     	add	x0, sp, #0x60
+  1bb414: 52800021     	mov	w1, #0x1                ; =1
+  1bb418: 5280c023     	mov	w3, #0x601              ; =1537
+  1bb41c: 52803804     	mov	w4, #0x1c0              ; =448
+  1bb420: 94017ef9     	bl	0x21b004 <dyld_stub_binder+0x21b004>
+  1bb424: 35000180     	cbnz	w0, 0x1bb454 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x57c>
+  1bb428: f9400be8     	ldr	x8, [sp, #0x10]
+  1bb42c: 39c05d09     	ldrsb	w9, [x8, #0x17]
+  1bb430: f940010a     	ldr	x10, [x8]
+  1bb434: 7100013f     	cmp	w9, #0x0
+  1bb438: 9a884142     	csel	x2, x10, x8, mi
+  1bb43c: 910183e0     	add	x0, sp, #0x60
+  1bb440: 52800041     	mov	w1, #0x2                ; =2
+  1bb444: 5280c023     	mov	w3, #0x601              ; =1537
+  1bb448: 52803804     	mov	w4, #0x1c0              ; =448
+  1bb44c: 94017eee     	bl	0x21b004 <dyld_stub_binder+0x21b004>
+  1bb450: 34000620     	cbz	w0, 0x1bb514 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x63c>
+  1bb454: 94017c13     	bl	0x21a4a0 <dyld_stub_binder+0x21a4a0>
+  1bb458: 36f80e80     	tbz	w0, #0x1f, 0x1bb628 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x750>
+  1bb45c: 10311d81     	adr	x1, 0x21d80c <dyld_stub_binder+0x21d80c>
+  1bb460: d503201f     	nop
+  1bb464: 12800014     	mov	w20, #-0x1              ; =-1
+  1bb468: 910163e0     	add	x0, sp, #0x58
+  1bb46c: 52812c62     	mov	w2, #0x963              ; =2403
+  1bb470: 12800003     	mov	w3, #-0x1               ; =-1
+  1bb474: 52800004     	mov	w4, #0x0                ; =0
+  1bb478: 94017cac     	bl	0x21a728 <dyld_stub_binder+0x21a728>
+  1bb47c: f9402fe8     	ldr	x8, [sp, #0x58]
+  1bb480: 10314c81     	adr	x1, 0x21de10 <dyld_stub_binder+0x21de10>
+  1bb484: d503201f     	nop
+  1bb488: 9105c100     	add	x0, x8, #0x170
+  1bb48c: 52800502     	mov	w2, #0x28               ; =40
+  1bb490: 97f968f2     	bl	0x15858 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+  1bb494: f9400be8     	ldr	x8, [sp, #0x10]
+  1bb498: 39805d09     	ldrsb	x9, [x8, #0x17]
+  1bb49c: a9402d0a     	ldp	x10, x11, [x8]
+  1bb4a0: f100013f     	cmp	x9, #0x0
+  1bb4a4: 9a884141     	csel	x1, x10, x8, mi
+  1bb4a8: 7100013f     	cmp	w9, #0x0
+  1bb4ac: 9a894162     	csel	x2, x11, x9, mi
+  1bb4b0: 14000030     	b	0x1bb570 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x698>
+  1bb4b4: 910183e0     	add	x0, sp, #0x60
+  1bb4b8: 52800021     	mov	w1, #0x1                ; =1
+  1bb4bc: 94017ed5     	bl	0x21b010 <dyld_stub_binder+0x21b010>
+  1bb4c0: 350000a0     	cbnz	w0, 0x1bb4d4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x5fc>
+  1bb4c4: 910183e0     	add	x0, sp, #0x60
+  1bb4c8: 52800041     	mov	w1, #0x2                ; =2
+  1bb4cc: 94017ed1     	bl	0x21b010 <dyld_stub_binder+0x21b010>
+  1bb4d0: 34000220     	cbz	w0, 0x1bb514 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x63c>
+  1bb4d4: 94017bf3     	bl	0x21a4a0 <dyld_stub_binder+0x21a4a0>
+  1bb4d8: 36f80a80     	tbz	w0, #0x1f, 0x1bb628 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x750>
+  1bb4dc: 10311981     	adr	x1, 0x21d80c <dyld_stub_binder+0x21d80c>
+  1bb4e0: d503201f     	nop
+  1bb4e4: 12800014     	mov	w20, #-0x1              ; =-1
+  1bb4e8: 910163e0     	add	x0, sp, #0x58
+  1bb4ec: 52812d42     	mov	w2, #0x96a              ; =2410
+  1bb4f0: 12800003     	mov	w3, #-0x1               ; =-1
+  1bb4f4: 52800004     	mov	w4, #0x0                ; =0
+  1bb4f8: 94017c8c     	bl	0x21a728 <dyld_stub_binder+0x21a728>
+  1bb4fc: f9402fe8     	ldr	x8, [sp, #0x58]
+  1bb500: 303149c1     	adr	x1, 0x21de39 <dyld_stub_binder+0x21de39>
+  1bb504: d503201f     	nop
+  1bb508: 9105c100     	add	x0, x8, #0x170
+  1bb50c: 528006e2     	mov	w2, #0x37               ; =55
+  1bb510: 14000018     	b	0x1bb570 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x698>
+  1bb514: 30314ae2     	adr	x2, 0x21de71 <dyld_stub_binder+0x21de71>
+  1bb518: d503201f     	nop
+  1bb51c: 910183e0     	add	x0, sp, #0x60
+  1bb520: 52800001     	mov	w1, #0x0                ; =0
+  1bb524: 52800003     	mov	w3, #0x0                ; =0
+  1bb528: 52803804     	mov	w4, #0x1c0              ; =448
+  1bb52c: 94017eb6     	bl	0x21b004 <dyld_stub_binder+0x21b004>
+  1bb530: 34000340     	cbz	w0, 0x1bb598 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x6c0>
+  1bb534: 94017bdb     	bl	0x21a4a0 <dyld_stub_binder+0x21a4a0>
+  1bb538: 36f80780     	tbz	w0, #0x1f, 0x1bb628 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x750>
+  1bb53c: 10311681     	adr	x1, 0x21d80c <dyld_stub_binder+0x21d80c>
+  1bb540: d503201f     	nop
+  1bb544: 12800014     	mov	w20, #-0x1              ; =-1
+  1bb548: 910163e0     	add	x0, sp, #0x58
+  1bb54c: 52812f82     	mov	w2, #0x97c              ; =2428
+  1bb550: 12800003     	mov	w3, #-0x1               ; =-1
+  1bb554: 52800004     	mov	w4, #0x0                ; =0
+  1bb558: 94017c74     	bl	0x21a728 <dyld_stub_binder+0x21a728>
+  1bb55c: f9402fe8     	ldr	x8, [sp, #0x58]
+  1bb560: 10314a41     	adr	x1, 0x21dea8 <dyld_stub_binder+0x21dea8>
+  1bb564: d503201f     	nop
+  1bb568: 9105c100     	add	x0, x8, #0x170
+  1bb56c: 528005a2     	mov	w2, #0x2d               ; =45
+  1bb570: 97f968ba     	bl	0x15858 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+  1bb574: 910163e0     	add	x0, sp, #0x58
+  1bb578: 94017c69     	bl	0x21a71c <dyld_stub_binder+0x21a71c>
+  1bb57c: 910183e0     	add	x0, sp, #0x60
+  1bb580: 94017e95     	bl	0x21afd4 <dyld_stub_binder+0x21afd4>
+  1bb584: d10163a0     	sub	x0, x29, #0x58
+  1bb588: 94017e90     	bl	0x21afc8 <dyld_stub_binder+0x21afc8>
+  1bb58c: b90063f4     	str	w20, [sp, #0x60]
+  1bb590: 36f805b4     	tbz	w20, #0x1f, 0x1bb644 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x76c>
+  1bb594: 17ffff31     	b	0x1bb258 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x380>
+  1bb598: 94017e68     	bl	0x21af38 <dyld_stub_binder+0x21af38>
+  1bb59c: f9400005     	ldr	x5, [x0]
+  1bb5a0: 910153e0     	add	x0, sp, #0x54
+  1bb5a4: 910183e2     	add	x2, sp, #0x60
+  1bb5a8: d10163a3     	sub	x3, x29, #0x58
+  1bb5ac: aa1403e1     	mov	x1, x20
+  1bb5b0: aa1a03e4     	mov	x4, x26
+  1bb5b4: 94017e91     	bl	0x21aff8 <dyld_stub_binder+0x21aff8>
+  1bb5b8: 340024c0     	cbz	w0, 0x1bba50 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xb78>
+  1bb5bc: aa0003f4     	mov	x20, x0
+  1bb5c0: 94017bb8     	bl	0x21a4a0 <dyld_stub_binder+0x21a4a0>
+  1bb5c4: 36f80320     	tbz	w0, #0x1f, 0x1bb628 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x750>
+  1bb5c8: 10311221     	adr	x1, 0x21d80c <dyld_stub_binder+0x21d80c>
+  1bb5cc: d503201f     	nop
+  1bb5d0: 910163e0     	add	x0, sp, #0x58
+  1bb5d4: 528130c2     	mov	w2, #0x986              ; =2438
+  1bb5d8: 12800003     	mov	w3, #-0x1               ; =-1
+  1bb5dc: 52800004     	mov	w4, #0x0                ; =0
+  1bb5e0: 94017c52     	bl	0x21a728 <dyld_stub_binder+0x21a728>
+  1bb5e4: f9402fe8     	ldr	x8, [sp, #0x58]
+  1bb5e8: 50314761     	adr	x1, 0x21ded6 <dyld_stub_binder+0x21ded6>
+  1bb5ec: d503201f     	nop
+  1bb5f0: 9105c100     	add	x0, x8, #0x170
+  1bb5f4: 528002a2     	mov	w2, #0x15               ; =21
+  1bb5f8: 97f96898     	bl	0x15858 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+  1bb5fc: aa0003f5     	mov	x21, x0
+  1bb600: aa1403e0     	mov	x0, x20
+  1bb604: 94017e6e     	bl	0x21afbc <dyld_stub_binder+0x21afbc>
+  1bb608: aa0003f4     	mov	x20, x0
+  1bb60c: 94017bde     	bl	0x21a584 <dyld_stub_binder+0x21a584>
+  1bb610: aa0003e2     	mov	x2, x0
+  1bb614: aa1503e0     	mov	x0, x21
+  1bb618: aa1403e1     	mov	x1, x20
+  1bb61c: 97f9688f     	bl	0x15858 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+  1bb620: 910163e0     	add	x0, sp, #0x58
+  1bb624: 94017c3e     	bl	0x21a71c <dyld_stub_binder+0x21a71c>
+  1bb628: 12800014     	mov	w20, #-0x1              ; =-1
+  1bb62c: 910183e0     	add	x0, sp, #0x60
+  1bb630: 94017e69     	bl	0x21afd4 <dyld_stub_binder+0x21afd4>
+  1bb634: d10163a0     	sub	x0, x29, #0x58
+  1bb638: 94017e64     	bl	0x21afc8 <dyld_stub_binder+0x21afc8>
+  1bb63c: b90063f4     	str	w20, [sp, #0x60]
+  1bb640: 37ffe0d4     	tbnz	w20, #0x1f, 0x1bb258 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x380>
+  1bb644: f94007e8     	ldr	x8, [sp, #0x8]
+  1bb648: b4000048     	cbz	x8, 0x1bb650 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x778>
+  1bb64c: b9000114     	str	w20, [x8]
+  1bb650: a941a3e9     	ldp	x9, x8, [sp, #0x18]
+  1bb654: b9402fea     	ldr	w10, [sp, #0x2c]
+  1bb658: 370000ca     	tbnz	w10, #0x0, 0x1bb670 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x798>
+  1bb65c: aa1a03e0     	mov	x0, x26
+  1bb660: 52800033     	mov	w19, #0x1               ; =1
+  1bb664: 39c13fe8     	ldrsb	w8, [sp, #0x4f]
+  1bb668: 36ffe3c8     	tbz	w8, #0x1f, 0x1bb2e0 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x408>
+  1bb66c: 17ffff18     	b	0x1bb2cc <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x3f4>
+  1bb670: b4000fc9     	cbz	x9, 0x1bb868 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x990>
+  1bb674: 94017e5e     	bl	0x21afec <dyld_stub_binder+0x21afec>
+  1bb678: f9400fe8     	ldr	x8, [sp, #0x18]
+  1bb67c: f100051f     	cmp	x8, #0x1
+  1bb680: 54000c4b     	b.lt	0x1bb808 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x930>
+  1bb684: aa0003f4     	mov	x20, x0
+  1bb688: d2869b75     	mov	x21, #0x34db            ; =13531
+  1bb68c: f2baf6d5     	movk	x21, #0xd7b6, lsl #16
+  1bb690: f2dbd055     	movk	x21, #0xde82, lsl #32
+  1bb694: f2e86375     	movk	x21, #0x431b, lsl #48
+  1bb698: f94013f3     	ldr	x19, [sp, #0x20]
+  1bb69c: 91004260     	add	x0, x19, #0x10
+  1bb6a0: 94017b9b     	bl	0x21a50c <dyld_stub_binder+0x21a50c>
+  1bb6a4: 91014260     	add	x0, x19, #0x50
+  1bb6a8: 910183e1     	add	x1, sp, #0x60
+  1bb6ac: 910183e2     	add	x2, sp, #0x60
+  1bb6b0: 940001e0     	bl	0x1bbe30 <__ZNSt3__112__hash_tableIiNS_4hashIiEENS_8equal_toIiEENS_9allocatorIiEEE25__emplace_unique_key_argsIiJRKiEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIiPvEEEEbEERKT_DpOT0_>
+  1bb6b4: 91004260     	add	x0, x19, #0x10
+  1bb6b8: 94017b8f     	bl	0x21a4f4 <dyld_stub_binder+0x21a4f4>
+  1bb6bc: b94063e0     	ldr	w0, [sp, #0x60]
+  1bb6c0: 910163e1     	add	x1, sp, #0x58
+  1bb6c4: 52800022     	mov	w2, #0x1                ; =1
+  1bb6c8: 94017e46     	bl	0x21afe0 <dyld_stub_binder+0x21afe0>
+  1bb6cc: 36f800c0     	tbz	w0, #0x1f, 0x1bb6e4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x80c>
+  1bb6d0: 94017ba1     	bl	0x21a554 <dyld_stub_binder+0x21a554>
+  1bb6d4: b9400008     	ldr	w8, [x0]
+  1bb6d8: 7100111f     	cmp	w8, #0x4
+  1bb6dc: 54ffff00     	b.eq	0x1bb6bc <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x7e4>
+  1bb6e0: 14000084     	b	0x1bb8f0 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xa18>
+  1bb6e4: aa0003f6     	mov	x22, x0
+  1bb6e8: f94013f3     	ldr	x19, [sp, #0x20]
+  1bb6ec: 91004260     	add	x0, x19, #0x10
+  1bb6f0: 94017b87     	bl	0x21a50c <dyld_stub_binder+0x21a50c>
+  1bb6f4: aa1303e8     	mov	x8, x19
+  1bb6f8: f9402e6b     	ldr	x11, [x19, #0x58]
+  1bb6fc: b400066b     	cbz	x11, 0x1bb7c8 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x8f0>
+  1bb700: b98063e9     	ldrsw	x9, [sp, #0x60]
+  1bb704: d100056c     	sub	x12, x11, #0x1
+  1bb708: ea0c017f     	tst	x11, x12
+  1bb70c: 540000e0     	b.eq	0x1bb728 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x850>
+  1bb710: aa0903ea     	mov	x10, x9
+  1bb714: eb09017f     	cmp	x11, x9
+  1bb718: 540000a8     	b.hi	0x1bb72c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x854>
+  1bb71c: 9acb092a     	udiv	x10, x9, x11
+  1bb720: 9b0ba54a     	msub	x10, x10, x11, x9
+  1bb724: 14000002     	b	0x1bb72c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x854>
+  1bb728: 8a09018a     	and	x10, x12, x9
+  1bb72c: f845010d     	ldur	x13, [x8, #0x50]
+  1bb730: f86a79ad     	ldr	x13, [x13, x10, lsl #3]
+  1bb734: b40004ad     	cbz	x13, 0x1bb7c8 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x8f0>
+  1bb738: f94001a1     	ldr	x1, [x13]
+  1bb73c: b4000461     	cbz	x1, 0x1bb7c8 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x8f0>
+  1bb740: ea0c017f     	tst	x11, x12
+  1bb744: 540000e1     	b.ne	0x1bb760 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x888>
+  1bb748: 14000015     	b	0x1bb79c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x8c4>
+  1bb74c: b940102c     	ldr	w12, [x1, #0x10]
+  1bb750: 6b09019f     	cmp	w12, w9
+  1bb754: 54000320     	b.eq	0x1bb7b8 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x8e0>
+  1bb758: f9400021     	ldr	x1, [x1]
+  1bb75c: b4000361     	cbz	x1, 0x1bb7c8 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x8f0>
+  1bb760: f940042c     	ldr	x12, [x1, #0x8]
+  1bb764: eb09019f     	cmp	x12, x9
+  1bb768: 54ffff20     	b.eq	0x1bb74c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x874>
+  1bb76c: eb0b019f     	cmp	x12, x11
+  1bb770: 54000063     	b.lo	0x1bb77c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x8a4>
+  1bb774: 9acb098d     	udiv	x13, x12, x11
+  1bb778: 9b0bb1ac     	msub	x12, x13, x11, x12
+  1bb77c: eb0a019f     	cmp	x12, x10
+  1bb780: 54fffec0     	b.eq	0x1bb758 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x880>
+  1bb784: 14000011     	b	0x1bb7c8 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x8f0>
+  1bb788: b940102b     	ldr	w11, [x1, #0x10]
+  1bb78c: 6b09017f     	cmp	w11, w9
+  1bb790: 54000140     	b.eq	0x1bb7b8 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x8e0>
+  1bb794: f9400021     	ldr	x1, [x1]
+  1bb798: b4000181     	cbz	x1, 0x1bb7c8 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x8f0>
+  1bb79c: f940042b     	ldr	x11, [x1, #0x8]
+  1bb7a0: eb09017f     	cmp	x11, x9
+  1bb7a4: 54ffff20     	b.eq	0x1bb788 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x8b0>
+  1bb7a8: 8a0c016b     	and	x11, x11, x12
+  1bb7ac: eb0a017f     	cmp	x11, x10
+  1bb7b0: 54ffff20     	b.eq	0x1bb794 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x8bc>
+  1bb7b4: 14000005     	b	0x1bb7c8 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x8f0>
+  1bb7b8: f94013f3     	ldr	x19, [sp, #0x20]
+  1bb7bc: 91014260     	add	x0, x19, #0x50
+  1bb7c0: 940002c5     	bl	0x1bc2d4 <__ZNSt3__112__hash_tableIiNS_4hashIiEENS_8equal_toIiEENS_9allocatorIiEEE5eraseENS_21__hash_const_iteratorIPNS_11__hash_nodeIiPvEEEE>
+  1bb7c4: aa1303e8     	mov	x8, x19
+  1bb7c8: 91004100     	add	x0, x8, #0x10
+  1bb7cc: 94017b4a     	bl	0x21a4f4 <dyld_stub_binder+0x21a4f4>
+  1bb7d0: 35001d36     	cbnz	w22, 0x1bbb74 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xc9c>
+  1bb7d4: f94013e0     	ldr	x0, [sp, #0x20]
+  1bb7d8: f9400008     	ldr	x8, [x0]
+  1bb7dc: f940cd08     	ldr	x8, [x8, #0x198]
+  1bb7e0: 52800141     	mov	w1, #0xa                ; =10
+  1bb7e4: d63f0100     	blr	x8
+  1bb7e8: 94017e01     	bl	0x21afec <dyld_stub_binder+0x21afec>
+  1bb7ec: cb140008     	sub	x8, x0, x20
+  1bb7f0: 9b557d08     	smulh	x8, x8, x21
+  1bb7f4: 9352fd09     	asr	x9, x8, #18
+  1bb7f8: 8b48fd29     	add	x9, x9, x8, lsr #63
+  1bb7fc: f9400fe8     	ldr	x8, [sp, #0x18]
+  1bb800: eb08013f     	cmp	x9, x8
+  1bb804: 54fff4ab     	b.lt	0x1bb698 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x7c0>
+  1bb808: b9402fe8     	ldr	w8, [sp, #0x2c]
+  1bb80c: 36080108     	tbz	w8, #0x1, 0x1bb82c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x954>
+  1bb810: b94063e0     	ldr	w0, [sp, #0x60]
+  1bb814: 52800121     	mov	w1, #0x9                ; =9
+  1bb818: 94017d83     	bl	0x21ae24 <dyld_stub_binder+0x21ae24>
+  1bb81c: b94063e0     	ldr	w0, [sp, #0x60]
+  1bb820: d2800001     	mov	x1, #0x0                ; =0
+  1bb824: 52800022     	mov	w2, #0x1                ; =1
+  1bb828: 94017dee     	bl	0x21afe0 <dyld_stub_binder+0x21afe0>
+  1bb82c: 94017b1d     	bl	0x21a4a0 <dyld_stub_binder+0x21a4a0>
+  1bb830: 36ffd460     	tbz	w0, #0x1f, 0x1bb2bc <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x3e4>
+  1bb834: 1030fec1     	adr	x1, 0x21d80c <dyld_stub_binder+0x21d80c>
+  1bb838: d503201f     	nop
+  1bb83c: d10163a0     	sub	x0, x29, #0x58
+  1bb840: 52811ae2     	mov	w2, #0x8d7              ; =2263
+  1bb844: 12800003     	mov	w3, #-0x1               ; =-1
+  1bb848: 52800004     	mov	w4, #0x0                ; =0
+  1bb84c: 94017bb7     	bl	0x21a728 <dyld_stub_binder+0x21a728>
+  1bb850: f85a83a8     	ldur	x8, [x29, #-0x58]
+  1bb854: 503128a1     	adr	x1, 0x21dd6a <dyld_stub_binder+0x21dd6a>
+  1bb858: d503201f     	nop
+  1bb85c: 9105c100     	add	x0, x8, #0x170
+  1bb860: 528003e2     	mov	w2, #0x1f               ; =31
+  1bb864: 17fffe8b     	b	0x1bb290 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x3b8>
+  1bb868: aa0803f3     	mov	x19, x8
+  1bb86c: 91004100     	add	x0, x8, #0x10
+  1bb870: 94017b27     	bl	0x21a50c <dyld_stub_binder+0x21a50c>
+  1bb874: 91014260     	add	x0, x19, #0x50
+  1bb878: 910183e1     	add	x1, sp, #0x60
+  1bb87c: 910183e2     	add	x2, sp, #0x60
+  1bb880: 9400016c     	bl	0x1bbe30 <__ZNSt3__112__hash_tableIiNS_4hashIiEENS_8equal_toIiEENS_9allocatorIiEEE25__emplace_unique_key_argsIiJRKiEEENS_4pairINS_15__hash_iteratorIPNS_11__hash_nodeIiPvEEEEbEERKT_DpOT0_>
+  1bb884: 91004260     	add	x0, x19, #0x10
+  1bb888: 94017b1b     	bl	0x21a4f4 <dyld_stub_binder+0x21a4f4>
+  1bb88c: b94063e0     	ldr	w0, [sp, #0x60]
+  1bb890: 910163e1     	add	x1, sp, #0x58
+  1bb894: 52800002     	mov	w2, #0x0                ; =0
+  1bb898: 94017dd2     	bl	0x21afe0 <dyld_stub_binder+0x21afe0>
+  1bb89c: 36f800a0     	tbz	w0, #0x1f, 0x1bb8b0 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x9d8>
+  1bb8a0: 94017b2d     	bl	0x21a554 <dyld_stub_binder+0x21a554>
+  1bb8a4: b9400008     	ldr	w8, [x0]
+  1bb8a8: 7100111f     	cmp	w8, #0x4
+  1bb8ac: 54ffff00     	b.eq	0x1bb88c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x9b4>
+  1bb8b0: f94013f3     	ldr	x19, [sp, #0x20]
+  1bb8b4: 91004260     	add	x0, x19, #0x10
+  1bb8b8: 94017b15     	bl	0x21a50c <dyld_stub_binder+0x21a50c>
+  1bb8bc: aa1303e8     	mov	x8, x19
+  1bb8c0: f9402e6b     	ldr	x11, [x19, #0x58]
+  1bb8c4: b4000deb     	cbz	x11, 0x1bba80 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xba8>
+  1bb8c8: b98063e9     	ldrsw	x9, [sp, #0x60]
+  1bb8cc: d100056c     	sub	x12, x11, #0x1
+  1bb8d0: ea0c017f     	tst	x11, x12
+  1bb8d4: 540002e0     	b.eq	0x1bb930 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xa58>
+  1bb8d8: aa0903ea     	mov	x10, x9
+  1bb8dc: eb09017f     	cmp	x11, x9
+  1bb8e0: 540002a8     	b.hi	0x1bb934 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xa5c>
+  1bb8e4: 9acb092a     	udiv	x10, x9, x11
+  1bb8e8: 9b0ba54a     	msub	x10, x10, x11, x9
+  1bb8ec: 14000012     	b	0x1bb934 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xa5c>
+  1bb8f0: f94013f3     	ldr	x19, [sp, #0x20]
+  1bb8f4: 91004260     	add	x0, x19, #0x10
+  1bb8f8: 94017b05     	bl	0x21a50c <dyld_stub_binder+0x21a50c>
+  1bb8fc: aa1303e8     	mov	x8, x19
+  1bb900: f9402e6b     	ldr	x11, [x19, #0x58]
+  1bb904: b4000e0b     	cbz	x11, 0x1bbac4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xbec>
+  1bb908: b98063e9     	ldrsw	x9, [sp, #0x60]
+  1bb90c: d100056c     	sub	x12, x11, #0x1
+  1bb910: ea0c017f     	tst	x11, x12
+  1bb914: 54000560     	b.eq	0x1bb9c0 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xae8>
+  1bb918: aa0903ea     	mov	x10, x9
+  1bb91c: eb09017f     	cmp	x11, x9
+  1bb920: 54000528     	b.hi	0x1bb9c4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xaec>
+  1bb924: 9acb092a     	udiv	x10, x9, x11
+  1bb928: 9b0ba54a     	msub	x10, x10, x11, x9
+  1bb92c: 14000026     	b	0x1bb9c4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xaec>
+  1bb930: 8a09018a     	and	x10, x12, x9
+  1bb934: f845010d     	ldur	x13, [x8, #0x50]
+  1bb938: f86a79ad     	ldr	x13, [x13, x10, lsl #3]
+  1bb93c: b4000a2d     	cbz	x13, 0x1bba80 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xba8>
+  1bb940: f94001a1     	ldr	x1, [x13]
+  1bb944: b40009e1     	cbz	x1, 0x1bba80 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xba8>
+  1bb948: ea0c017f     	tst	x11, x12
+  1bb94c: 540000e1     	b.ne	0x1bb968 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xa90>
+  1bb950: 14000015     	b	0x1bb9a4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xacc>
+  1bb954: b940102c     	ldr	w12, [x1, #0x10]
+  1bb958: 6b09019f     	cmp	w12, w9
+  1bb95c: 540008a0     	b.eq	0x1bba70 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xb98>
+  1bb960: f9400021     	ldr	x1, [x1]
+  1bb964: b40008e1     	cbz	x1, 0x1bba80 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xba8>
+  1bb968: f940042c     	ldr	x12, [x1, #0x8]
+  1bb96c: eb09019f     	cmp	x12, x9
+  1bb970: 54ffff20     	b.eq	0x1bb954 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xa7c>
+  1bb974: eb0b019f     	cmp	x12, x11
+  1bb978: 54000063     	b.lo	0x1bb984 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xaac>
+  1bb97c: 9acb098d     	udiv	x13, x12, x11
+  1bb980: 9b0bb1ac     	msub	x12, x13, x11, x12
+  1bb984: eb0a019f     	cmp	x12, x10
+  1bb988: 54fffec0     	b.eq	0x1bb960 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xa88>
+  1bb98c: 1400003d     	b	0x1bba80 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xba8>
+  1bb990: b940102b     	ldr	w11, [x1, #0x10]
+  1bb994: 6b09017f     	cmp	w11, w9
+  1bb998: 540006c0     	b.eq	0x1bba70 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xb98>
+  1bb99c: f9400021     	ldr	x1, [x1]
+  1bb9a0: b4000701     	cbz	x1, 0x1bba80 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xba8>
+  1bb9a4: f940042b     	ldr	x11, [x1, #0x8]
+  1bb9a8: eb09017f     	cmp	x11, x9
+  1bb9ac: 54ffff20     	b.eq	0x1bb990 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xab8>
+  1bb9b0: 8a0c016b     	and	x11, x11, x12
+  1bb9b4: eb0a017f     	cmp	x11, x10
+  1bb9b8: 54ffff20     	b.eq	0x1bb99c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xac4>
+  1bb9bc: 14000031     	b	0x1bba80 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xba8>
+  1bb9c0: 8a09018a     	and	x10, x12, x9
+  1bb9c4: f845010d     	ldur	x13, [x8, #0x50]
+  1bb9c8: f86a79ad     	ldr	x13, [x13, x10, lsl #3]
+  1bb9cc: b40007cd     	cbz	x13, 0x1bbac4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xbec>
+  1bb9d0: f94001a1     	ldr	x1, [x13]
+  1bb9d4: b4000781     	cbz	x1, 0x1bbac4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xbec>
+  1bb9d8: ea0c017f     	tst	x11, x12
+  1bb9dc: 540000e1     	b.ne	0x1bb9f8 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xb20>
+  1bb9e0: 14000015     	b	0x1bba34 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xb5c>
+  1bb9e4: b940102c     	ldr	w12, [x1, #0x10]
+  1bb9e8: 6b09019f     	cmp	w12, w9
+  1bb9ec: 54000640     	b.eq	0x1bbab4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xbdc>
+  1bb9f0: f9400021     	ldr	x1, [x1]
+  1bb9f4: b4000681     	cbz	x1, 0x1bbac4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xbec>
+  1bb9f8: f940042c     	ldr	x12, [x1, #0x8]
+  1bb9fc: eb09019f     	cmp	x12, x9
+  1bba00: 54ffff20     	b.eq	0x1bb9e4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xb0c>
+  1bba04: eb0b019f     	cmp	x12, x11
+  1bba08: 54000063     	b.lo	0x1bba14 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xb3c>
+  1bba0c: 9acb098d     	udiv	x13, x12, x11
+  1bba10: 9b0bb1ac     	msub	x12, x13, x11, x12
+  1bba14: eb0a019f     	cmp	x12, x10
+  1bba18: 54fffec0     	b.eq	0x1bb9f0 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xb18>
+  1bba1c: 1400002a     	b	0x1bbac4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xbec>
+  1bba20: b940102b     	ldr	w11, [x1, #0x10]
+  1bba24: 6b09017f     	cmp	w11, w9
+  1bba28: 54000460     	b.eq	0x1bbab4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xbdc>
+  1bba2c: f9400021     	ldr	x1, [x1]
+  1bba30: b40004a1     	cbz	x1, 0x1bbac4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xbec>
+  1bba34: f940042b     	ldr	x11, [x1, #0x8]
+  1bba38: eb09017f     	cmp	x11, x9
+  1bba3c: 54ffff20     	b.eq	0x1bba20 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xb48>
+  1bba40: 8a0c016b     	and	x11, x11, x12
+  1bba44: eb0a017f     	cmp	x11, x10
+  1bba48: 54ffff20     	b.eq	0x1bba2c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xb54>
+  1bba4c: 1400001e     	b	0x1bbac4 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xbec>
+  1bba50: b94057f4     	ldr	w20, [sp, #0x54]
+  1bba54: 910183e0     	add	x0, sp, #0x60
+  1bba58: 94017d5f     	bl	0x21afd4 <dyld_stub_binder+0x21afd4>
+  1bba5c: d10163a0     	sub	x0, x29, #0x58
+  1bba60: 94017d5a     	bl	0x21afc8 <dyld_stub_binder+0x21afc8>
+  1bba64: b90063f4     	str	w20, [sp, #0x60]
+  1bba68: 36ffdef4     	tbz	w20, #0x1f, 0x1bb644 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x76c>
+  1bba6c: 17fffdfb     	b	0x1bb258 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x380>
+  1bba70: f94013f3     	ldr	x19, [sp, #0x20]
+  1bba74: 91014260     	add	x0, x19, #0x50
+  1bba78: 94000217     	bl	0x1bc2d4 <__ZNSt3__112__hash_tableIiNS_4hashIiEENS_8equal_toIiEENS_9allocatorIiEEE5eraseENS_21__hash_const_iteratorIPNS_11__hash_nodeIiPvEEEE>
+  1bba7c: aa1303e8     	mov	x8, x19
+  1bba80: 91004100     	add	x0, x8, #0x10
+  1bba84: 94017a9c     	bl	0x21a4f4 <dyld_stub_binder+0x21a4f4>
+  1bba88: b9405be8     	ldr	w8, [sp, #0x58]
+  1bba8c: f94003e9     	ldr	x9, [sp]
+  1bba90: b4000069     	cbz	x9, 0x1bba9c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xbc4>
+  1bba94: 53083d0a     	ubfx	w10, w8, #8, #8
+  1bba98: b900012a     	str	w10, [x9]
+  1bba9c: 7200191f     	tst	w8, #0x7f
+  1bbaa0: 1a9f17f3     	cset	w19, eq
+  1bbaa4: aa1a03e0     	mov	x0, x26
+  1bbaa8: 39c13fe8     	ldrsb	w8, [sp, #0x4f]
+  1bbaac: 36ffc1a8     	tbz	w8, #0x1f, 0x1bb2e0 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x408>
+  1bbab0: 17fffe07     	b	0x1bb2cc <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x3f4>
+  1bbab4: f94013f3     	ldr	x19, [sp, #0x20]
+  1bbab8: 91014260     	add	x0, x19, #0x50
+  1bbabc: 94000206     	bl	0x1bc2d4 <__ZNSt3__112__hash_tableIiNS_4hashIiEENS_8equal_toIiEENS_9allocatorIiEEE5eraseENS_21__hash_const_iteratorIPNS_11__hash_nodeIiPvEEEE>
+  1bbac0: aa1303e8     	mov	x8, x19
+  1bbac4: 91004100     	add	x0, x8, #0x10
+  1bbac8: 94017a8b     	bl	0x21a4f4 <dyld_stub_binder+0x21a4f4>
+  1bbacc: 94017aa2     	bl	0x21a554 <dyld_stub_binder+0x21a554>
+  1bbad0: b9400014     	ldr	w20, [x0]
+  1bbad4: 94017a73     	bl	0x21a4a0 <dyld_stub_binder+0x21a4a0>
+  1bbad8: 36ffbf20     	tbz	w0, #0x1f, 0x1bb2bc <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x3e4>
+  1bbadc: 1030e981     	adr	x1, 0x21d80c <dyld_stub_binder+0x21d80c>
+  1bbae0: d503201f     	nop
+  1bbae4: d10163a0     	sub	x0, x29, #0x58
+  1bbae8: 52811802     	mov	w2, #0x8c0              ; =2240
+  1bbaec: 12800003     	mov	w3, #-0x1               ; =-1
+  1bbaf0: 52800004     	mov	w4, #0x0                ; =0
+  1bbaf4: 94017b0d     	bl	0x21a728 <dyld_stub_binder+0x21a728>
+  1bbaf8: f85a83a8     	ldur	x8, [x29, #-0x58]
+  1bbafc: 703111e1     	adr	x1, 0x21dd3b <dyld_stub_binder+0x21dd3b>
+  1bbb00: d503201f     	nop
+  1bbb04: 9105c100     	add	x0, x8, #0x170
+  1bbb08: 528002c2     	mov	w2, #0x16               ; =22
+  1bbb0c: 97f96753     	bl	0x15858 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+  1bbb10: 39813fe8     	ldrsb	x8, [sp, #0x4f]
+  1bbb14: 9100e3e9     	add	x9, sp, #0x38
+  1bbb18: a943afea     	ldp	x10, x11, [sp, #0x38]
+  1bbb1c: f100011f     	cmp	x8, #0x0
+  1bbb20: 9a894141     	csel	x1, x10, x9, mi
+  1bbb24: 7100011f     	cmp	w8, #0x0
+  1bbb28: 9a884162     	csel	x2, x11, x8, mi
+  1bbb2c: 97f9674b     	bl	0x15858 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+  1bbb30: 50311101     	adr	x1, 0x21dd52 <dyld_stub_binder+0x21dd52>
+  1bbb34: d503201f     	nop
+  1bbb38: 528002e2     	mov	w2, #0x17               ; =23
+  1bbb3c: 97f96747     	bl	0x15858 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+  1bbb40: aa0003f5     	mov	x21, x0
+  1bbb44: aa1403e0     	mov	x0, x20
+  1bbb48: 94017d1d     	bl	0x21afbc <dyld_stub_binder+0x21afbc>
+  1bbb4c: aa0003f4     	mov	x20, x0
+  1bbb50: 94017a8d     	bl	0x21a584 <dyld_stub_binder+0x21a584>
+  1bbb54: aa0003e2     	mov	x2, x0
+  1bbb58: aa1503e0     	mov	x0, x21
+  1bbb5c: aa1403e1     	mov	x1, x20
+  1bbb60: 97f9673e     	bl	0x15858 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+  1bbb64: 70310da1     	adr	x1, 0x21dd1b <dyld_stub_binder+0x21dd1b>
+  1bbb68: d503201f     	nop
+  1bbb6c: 52800022     	mov	w2, #0x1                ; =1
+  1bbb70: 17fffdd0     	b	0x1bb2b0 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0x3d8>
+  1bbb74: b9405be8     	ldr	w8, [sp, #0x58]
+  1bbb78: f94003e9     	ldr	x9, [sp]
+  1bbb7c: b4fff909     	cbz	x9, 0x1bba9c <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xbc4>
+  1bbb80: 53083d0a     	ubfx	w10, w8, #8, #8
+  1bbb84: f94003e9     	ldr	x9, [sp]
+  1bbb88: 17ffffc4     	b	0x1bba98 <__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_+0xbc0>
+  1bbb8c: 94017a54     	bl	0x21a4dc <dyld_stub_binder+0x21a4dc>
+  1bbb90: 97f932c8     	bl	0x86b0 <__ZSt28__throw_bad_array_new_lengthB6v15006v>

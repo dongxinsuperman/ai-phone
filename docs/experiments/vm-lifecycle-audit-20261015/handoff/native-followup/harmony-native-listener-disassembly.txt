@@ -1,0 +1,94 @@
+Read-only inspection; the Emulator binary was not executed.
+Path: /Applications/DevEco-Studio.app/Contents/tools/emulator/Emulator
+SHA256: 46532dcef34c5815222f42761f9052ed9b6251989f97276dbcfd71e84884ed67
+macOS arm64; symbolic disassembly via Xcode llvm-objdump.
+
+Command: /usr/bin/xcrun llvm-objdump --disassemble-symbols=_bridge_socket_listen /Applications/DevEco-Studio.app/Contents/tools/emulator/Emulator
+1003b6198: 940000c5    	bl	0x1003b64ac <__OSSwapInt16>
+1003b619c: 12003c08    	and	w8, w0, #0xffff
+1003b61a0: b9002fe8    	str	w8, [sp, #0x2c]
+1003b61a4: 14000001    	b	0x1003b61a8 <_bridge_socket_listen+0x110>
+1003b61a8: b9402fe8    	ldr	w8, [sp, #0x2c]
+1003b61ac: 781ea3a8    	sturh	w8, [x29, #-0x16]
+1003b61b0: 52800048    	mov	w8, #0x2                ; =2
+1003b61b4: 381e93a8    	sturb	w8, [x29, #-0x17]
+1003b61b8: 52800040    	mov	w0, #0x2                ; =2
+1003b61bc: 52800021    	mov	w1, #0x1                ; =1
+1003b6224: 910003e9    	mov	x9, sp
+1003b6228: f9000128    	str	x8, [x9]
+1003b622c: 941d7b00    	bl	0x100b14e2c <_emu_log>
+1003b6230: 14000001    	b	0x1003b6234 <_bridge_socket_listen+0x19c>
+1003b6234: 12800008    	mov	w8, #-0x1               ; =-1
+1003b6238: b81e43a8    	stur	w8, [x29, #-0x1c]
+1003b623c: 1400008e    	b	0x1003b6474 <_bridge_socket_listen+0x3dc>
+1003b6240: b85dc3a0    	ldur	w0, [x29, #-0x24]
+1003b6244: 941d8e01    	bl	0x100b19a48 <_socket_set_fast_reuse>
+1003b6248: b81d83bf    	stur	wzr, [x29, #-0x28]
+1003b62a4: 910003e9    	mov	x9, sp
+1003b62a8: f9000128    	str	x8, [x9]
+1003b62ac: 941d7ae0    	bl	0x100b14e2c <_emu_log>
+1003b62b0: 14000001    	b	0x1003b62b4 <_bridge_socket_listen+0x21c>
+1003b62b4: 14000001    	b	0x1003b62b8 <_bridge_socket_listen+0x220>
+1003b62b8: b85dc3a0    	ldur	w0, [x29, #-0x24]
+1003b62bc: d10063a1    	sub	x1, x29, #0x18
+1003b62c0: 52800202    	mov	w2, #0x10               ; =16
+1003b62c4: 94694e03    	bl	0x101e09ad0 <PREFETCH_DISTANCE_SIMPLE+0x101e09a90>
+1003b62c8: b81d83a0    	stur	w0, [x29, #-0x28]
+1003b6354: b81e43a8    	stur	w8, [x29, #-0x1c]
+1003b6358: 14000047    	b	0x1003b6474 <_bridge_socket_listen+0x3dc>
+1003b635c: b85e03a8    	ldur	w8, [x29, #-0x20]
+1003b6360: b0039c89    	adrp	x9, 0x107747000 <__TRACE_KEYMAP_UNMAPPED_EVENT>
+1003b6364: 91381129    	add	x9, x9, #0xe04
+1003b6368: b9000128    	str	w8, [x9]
+1003b636c: b85dc3a0    	ldur	w0, [x29, #-0x24]
+1003b6370: 52800001    	mov	w1, #0x0                ; =0
+1003b6374: 946952ff    	bl	0x101e0af70 <PREFETCH_DISTANCE_SIMPLE+0x101e0af30>
+1003b6378: b81d83a0    	stur	w0, [x29, #-0x28]
+
+Command: /usr/bin/xcrun llvm-objdump --disassemble-symbols=_socket_set_fast_reuse /Applications/DevEco-Studio.app/Contents/tools/emulator/Emulator
+/Applications/DevEco-Studio.app/Contents/tools/emulator/Emulator:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+0000000100b19a48 <_socket_set_fast_reuse>:
+100b19a48: d10083ff    	sub	sp, sp, #0x20
+100b19a4c: a9017bfd    	stp	x29, x30, [sp, #0x10]
+100b19a50: 910043fd    	add	x29, sp, #0x10
+100b19a54: b81fc3a0    	stur	w0, [x29, #-0x4]
+100b19a58: 910023e3    	add	x3, sp, #0x8
+100b19a5c: 52800028    	mov	w8, #0x1                ; =1
+100b19a60: b9000be8    	str	w8, [sp, #0x8]
+100b19a64: b85fc3a0    	ldur	w0, [x29, #-0x4]
+100b19a68: 529fffe1    	mov	w1, #0xffff             ; =65535
+100b19a6c: 52800084    	mov	w4, #0x4                ; =4
+100b19a70: aa0403e2    	mov	x2, x4
+100b19a74: 944bc6fe    	bl	0x101e0b66c <PREFETCH_DISTANCE_SIMPLE+0x101e0b62c>
+100b19a78: b90007e0    	str	w0, [sp, #0x4]
+100b19a7c: b94007e8    	ldr	w8, [sp, #0x4]
+100b19a80: 71000108    	subs	w8, w8, #0x0
+100b19a84: 1a9f07e8    	cset	w8, ne
+100b19a88: 36000148    	tbz	w8, #0x0, 0x100b19ab0 <_socket_set_fast_reuse+0x68>
+100b19a8c: 14000001    	b	0x100b19a90 <_socket_set_fast_reuse+0x48>
+100b19a90: b000a100    	adrp	x0, 0x101f3a000 <PREFETCH_DISTANCE_SIMPLE+0x101f39fc0>
+100b19a94: 9105c800    	add	x0, x0, #0x172
+100b19a98: b000a101    	adrp	x1, 0x101f3a000 <PREFETCH_DISTANCE_SIMPLE+0x101f39fc0>
+100b19a9c: 91057421    	add	x1, x1, #0x15d
+100b19aa0: 52801de2    	mov	w2, #0xef               ; =239
+100b19aa4: d0009823    	adrp	x3, 0x101e1f000 <PREFETCH_DISTANCE_SIMPLE+0x101e1efc0>
+100b19aa8: 91139863    	add	x3, x3, #0x4e6
+100b19aac: 944bbf4f    	bl	0x101e097e8 <PREFETCH_DISTANCE_SIMPLE+0x101e097a8>
+100b19ab0: 14000001    	b	0x100b19ab4 <_socket_set_fast_reuse+0x6c>
+100b19ab4: b94007e0    	ldr	w0, [sp, #0x4]
+100b19ab8: a9417bfd    	ldp	x29, x30, [sp, #0x10]
+100b19abc: 910083ff    	add	sp, sp, #0x20
+100b19ac0: d65f03c0    	ret
+
+Command: /usr/bin/xcrun llvm-objdump --macho --indirect-symbols /Applications/DevEco-Studio.app/Contents/tools/emulator/Emulator
+0x0000000101e09ad0 502168 _bind
+0x0000000101e0af70 502715 _listen
+0x0000000101e0b66c 502868 _setsockopt
+0x00000001073b7d90 502168 _bind
+0x00000001073b8ea8 502715 _listen
+0x00000001073b9370 502868 _setsockopt
+
+Interpretation: bridge_socket_listen creates AF_INET/SOCK_STREAM, calls socket_set_fast_reuse before bind and listen. That helper sets level=0xffff (SOL_SOCKET), option=4 (SO_REUSEADDR), value=1. This proves only this installed macOS binary, not Windows behavior.

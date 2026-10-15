@@ -1,0 +1,12 @@
+# Independent upgrade follow-up verification
+Command: PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_vm_upgrade_independent_review.py tests/test_vm_upgrade_compat_audit.py
+Base commit: 74f209dc6556d4678291b0dce63a9817741b6bea plus current Server upgrade safety follow-up
+All tests use isolated SQLite/fake Agents; no native or company operations.
+Legacy replay and mixed-version boundary cases demonstrate limitations, not successful mixed-version native upgrades.
+
+/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+......................................................                   [100%]
+54 passed in 2.80s

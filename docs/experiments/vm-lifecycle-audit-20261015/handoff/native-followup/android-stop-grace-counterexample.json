@@ -1,0 +1,42 @@
+{
+  "recorded_at": "2026-10-15T20:21:27.677219+00:00",
+  "scope": "Isolated fake process and temporary AST only; no actual sleeping, native commands, product edit, or AVD access. Demonstrates possible premature signal, not a2 cause.",
+  "manager_sha256": "0d4528d299c67ca244c207ae678cab8c616824d82ef38f12d21469a7e12beb0d",
+  "results": [
+    {
+      "case": "current_source",
+      "elapsed_model_seconds": 5.0,
+      "normal_exit_would_be_at": 8,
+      "forced": true,
+      "trace": [
+        {
+          "at": 0.0,
+          "call": "wait",
+          "timeout": 5
+        },
+        {
+          "at": 5.0,
+          "call": "terminate"
+        },
+        {
+          "at": 5.0,
+          "call": "wait",
+          "timeout": 5
+        }
+      ]
+    },
+    {
+      "case": "read_only_counterfactual_20s",
+      "elapsed_model_seconds": 8.0,
+      "normal_exit_would_be_at": 8,
+      "forced": false,
+      "trace": [
+        {
+          "at": 0.0,
+          "call": "wait",
+          "timeout": 20
+        }
+      ]
+    }
+  ]
+}

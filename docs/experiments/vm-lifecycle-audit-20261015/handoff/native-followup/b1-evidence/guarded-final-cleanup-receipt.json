@@ -1,0 +1,53 @@
+{
+  "time": "2026-10-15T19:26:07.192487+00:00",
+  "vm_id": "06aebef10af4",
+  "native_calls": 1,
+  "before": {
+    "owned_processes": [],
+    "target_status": "Offline",
+    "ports": {
+      "10001": {
+        "listening": false,
+        "bindable": true
+      },
+      "16556": {
+        "listening": false,
+        "bindable": true
+      }
+    }
+  },
+  "result": {
+    "ok": true,
+    "reason": "deleted",
+    "details": {
+      "exit_evidence": {
+        "source": "registry_instance_absence",
+        "hdc_serial": "127.0.0.1:10001",
+        "hdc_port": 10001,
+        "started_unix": 1792092365.4405959,
+        "instance_process_status": "absent",
+        "process_handle_present": false,
+        "sample_count": 1,
+        "last_sample": {
+          "target_status": "offline",
+          "port_bindable": true,
+          "duration_sec": 1.362
+        },
+        "elapsed_sec": 1.362
+      },
+      "cleanup_confirmed": true,
+      "crash_service_cleanup_confirmed": true,
+      "crash_service_cleanup_errors": [],
+      "instance_name": "aiphone_harmony_06aebef10af4",
+      "instance_directory_absent": true
+    }
+  },
+  "after": {
+    "instance_directory_absent": true,
+    "registry_absent": true,
+    "runtime_absent": true
+  },
+  "protected_unchanged": true,
+  "original_failed_result_unchanged": true,
+  "scope": "Guarded disposal only after observed port recovery; original end-to-end result stays failed."
+}

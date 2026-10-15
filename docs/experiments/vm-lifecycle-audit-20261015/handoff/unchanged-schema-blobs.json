@@ -1,0 +1,90 @@
+{
+  "backend/ai_phone/server/models.py": {
+    "452e7d7": "63e7670d124e9ad236799f2571d1c987e3c4a81b",
+    "74f209d": "63e7670d124e9ad236799f2571d1c987e3c4a81b"
+  },
+  "backend/ai_phone/server/android_vm/schemas.py": {
+    "452e7d7": "e6311cfb70a2ee7f7257cfbdcd8e8c002b9c5518",
+    "74f209d": "e6311cfb70a2ee7f7257cfbdcd8e8c002b9c5518"
+  },
+  "backend/ai_phone/server/ios_sim/models.py": {
+    "452e7d7": "355c01c896e34fc448007d83458a77b1dfd412a5",
+    "74f209d": "355c01c896e34fc448007d83458a77b1dfd412a5"
+  },
+  "backend/ai_phone/server/ios_sim/schemas.py": {
+    "452e7d7": "1b7b4214b27e993b076b8a16bf1469ac0e86682b",
+    "74f209d": "1b7b4214b27e993b076b8a16bf1469ac0e86682b"
+  },
+  "backend/ai_phone/server/harmony_vm/models.py": {
+    "452e7d7": "d1e2fc4de9b6c936ea90d647232dc15a75a21d9d",
+    "74f209d": "d1e2fc4de9b6c936ea90d647232dc15a75a21d9d"
+  },
+  "backend/ai_phone/server/harmony_vm/schemas.py": {
+    "452e7d7": "1685594c8d33b25c11b4df43708e3a821549d506",
+    "74f209d": "1685594c8d33b25c11b4df43708e3a821549d506"
+  },
+  "backend/ai_phone/shared/protocol.py": {
+    "452e7d7": "3a1ed28898e1ce665d224535587c911d340de24a",
+    "74f209d": "3a1ed28898e1ce665d224535587c911d340de24a"
+  },
+  "backend/ai_phone/config.py": {
+    "452e7d7": "2a24378fe194e641cf5ab74b4b264c1d07d8db22",
+    "74f209d": "2a24378fe194e641cf5ab74b4b264c1d07d8db22"
+  },
+  "backend/pyproject.toml": {
+    "452e7d7": "b4abb1e61eb9a6b5c85fab58bff21df55a86901f",
+    "74f209d": "b4abb1e61eb9a6b5c85fab58bff21df55a86901f"
+  },
+  "backend/migrations/android_vm_v1.sql": {
+    "452e7d7": "798e73c97424e591dcb7d20abd8c2a13509d8c94",
+    "74f209d": "798e73c97424e591dcb7d20abd8c2a13509d8c94"
+  },
+  "backend/migrations/device_wake_policies_v1.sql": {
+    "452e7d7": "4478d8041d6cff7eadf90ba39fddb8e5befd6ada",
+    "74f209d": "4478d8041d6cff7eadf90ba39fddb8e5befd6ada"
+  },
+  "backend/migrations/distributed_agent_brain_v1.sql": {
+    "452e7d7": "95a7e82e43497b56df2a4bdd03327f206cb58e18",
+    "74f209d": "95a7e82e43497b56df2a4bdd03327f206cb58e18"
+  },
+  "backend/migrations/distributed_agent_brain_v2.sql": {
+    "452e7d7": "f0d5bbd679a5f885c3a84fa5b5b7dc08b41756f8",
+    "74f209d": "f0d5bbd679a5f885c3a84fa5b5b7dc08b41756f8"
+  },
+  "backend/migrations/function_map_context_item_v1.sql": {
+    "452e7d7": "e59d7bd6d54d5e7a16e0942ad4c60c766bc267c5",
+    "74f209d": "e59d7bd6d54d5e7a16e0942ad4c60c766bc267c5"
+  },
+  "backend/migrations/function_map_context_v1.sql": {
+    "452e7d7": "46230c7fd6251af856583a82e6a7f14d83ec7c5c",
+    "74f209d": "46230c7fd6251af856583a82e6a7f14d83ec7c5c"
+  },
+  "backend/migrations/harmony_vm_v1.sql": {
+    "452e7d7": "510f97ab562d1d069617720d4af93ee639198e06",
+    "74f209d": "510f97ab562d1d069617720d4af93ee639198e06"
+  },
+  "backend/migrations/ios_sim_v1.sql": {
+    "452e7d7": "f841f6aca9b984c0d177488abd4e6f69028782ce",
+    "74f209d": "f841f6aca9b984c0d177488abd4e6f69028782ce"
+  },
+  "backend/migrations/run_retry_v1.sql": {
+    "452e7d7": "2d47a9dfa76e24d4d46d6b1efd048546e5c20c88",
+    "74f209d": "2d47a9dfa76e24d4d46d6b1efd048546e5c20c88"
+  },
+  "backend/migrations/server_brain_v2.sql": {
+    "452e7d7": "6be4c2eb660ffed343810eb187f8575e5b09fc52",
+    "74f209d": "6be4c2eb660ffed343810eb187f8575e5b09fc52"
+  },
+  "backend/migrations/vlm_trajectory_cache_v1.sql": {
+    "452e7d7": "211ccaa8fbc3125b5224726bb91990c81027010a",
+    "74f209d": "211ccaa8fbc3125b5224726bb91990c81027010a"
+  },
+  "backend/migrations/vlm_trajectory_cache_v2.sql": {
+    "452e7d7": "03e78ca10ed6ec038b9f20301a8c0cb9577b3310",
+    "74f209d": "03e78ca10ed6ec038b9f20301a8c0cb9577b3310"
+  },
+  "backend/migrations/vlm_trajectory_cache_v3.sql": {
+    "452e7d7": "ad91f9d42d8a86fa70a3f1ee3754b7596fb63ac5",
+    "74f209d": "ad91f9d42d8a86fa70a3f1ee3754b7596fb63ac5"
+  }
+}

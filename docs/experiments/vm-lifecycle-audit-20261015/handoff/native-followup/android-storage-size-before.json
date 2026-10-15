@@ -1,0 +1,38 @@
+{
+  "product_commit": "f263af3",
+  "manager_sha256": "a9fc524cf2206baa1295557e936a05781d4d584e96e334e685f3e01c84e1a5db",
+  "method": "AndroidVmManager._write_avd_screen_config",
+  "execution": "actual method AST; temporary directory only; no imports of Agent, subprocess or SDK calls",
+  "cases": [
+    {
+      "old": "6442450944",
+      "request_mib": 4096,
+      "actual_after": "4096M",
+      "shrink_or_equal_overwrite_observed": true
+    },
+    {
+      "old": "6g",
+      "request_mib": 4096,
+      "actual_after": "4096M",
+      "shrink_or_equal_overwrite_observed": true
+    },
+    {
+      "old": "6144M",
+      "request_mib": 4096,
+      "actual_after": "4096M",
+      "shrink_or_equal_overwrite_observed": true
+    },
+    {
+      "old": "6442450944",
+      "request_mib": 6144,
+      "actual_after": "6144M",
+      "shrink_or_equal_overwrite_observed": true
+    },
+    {
+      "old": "6442450944",
+      "request_mib": 8192,
+      "actual_after": "8192M",
+      "shrink_or_equal_overwrite_observed": false
+    }
+  ]
+}

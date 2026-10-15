@@ -1,0 +1,36 @@
+{
+  "prepared_at": "2026-10-15T20:23:16.224910+00:00",
+  "status": "prepared-not-executed",
+  "native_execution_started": false,
+  "product_commit": "90342046a932273e54d7f96cb2947d753476477b",
+  "product_count": 33,
+  "product_mismatches": [],
+  "diagnostic_source_sha256": {
+    "android_app_install_visual_a4.py": "0c156d1ec8783a975bce3626a3db248b2ee4dcb012074690692b120ebdf605ba",
+    "test_android_visual_a4_guards.py": "119e6f8fc093461f11b4944fa2ef1e24f21a6f3ae3d05314572710ae867624b9",
+    "a3_MainActivity.java": "9219cf05d043b476d802cc0b5e5b02b2827d013d13f73d5fab6a39ac03ba906d",
+    "a3_storage_diagnostic.js": "7a2bd86efcb92da3a63956b34e24948e1399bc48cc4e42cb2d284981d2db80cf"
+  },
+  "adbutils_manifest_sha256": "9e42a6da93de8db8ced3077d08abf0e1c517831f9c33ca604e174a26dfff621e",
+  "original_a3_source_sha256": "4ab5904ea8262a27994eae4a90dd969372caea5142ba4fd063ba52b725731fee",
+  "original_a3_unchanged": true,
+  "original_html_sha256": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+  "original_html_unchanged": true,
+  "unchanged_initial_functions_ast": {
+    "target": true,
+    "ui_xml": true,
+    "receipt": true,
+    "ready": true,
+    "configure": true,
+    "build_fixture": true,
+    "diagnostic_summary": true,
+    "api": true
+  },
+  "visible_case_prefix_through_original_count_assertions_ast_unchanged": true,
+  "guard_log": ".......................................\n----------------------------------------------------------------------\nRan 39 tests in 3.268s\n\nOK\n",
+  "dry_run_root_created": false,
+  "visual_gate_total_budget_sec": 30,
+  "xml_read_budget_sec": 8,
+  "png_read_budget_sec": 5,
+  "next_step": "independent review then explicit single-run native authorization"
+}

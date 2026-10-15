@@ -1,0 +1,16 @@
+{
+  "baseline": "452e7d7",
+  "initial_candidate": "74f209d",
+  "final_code_commit": "PENDING_ROOT_CODE_COMMIT",
+  "product_files": {
+    "backend/ai_phone/server/android_vm/api.py": "f74c4486b206921206be86128468c999ea280ed820f25568e5394540ac42fad6",
+    "backend/ai_phone/server/android_vm/service.py": "b7f9aa7149dbf196b71e63076cf3469b80d6f35845f5caf25143f3ff0a318621",
+    "backend/ai_phone/server/ios_sim/api.py": "5df873d042daadb1a7b7f71a9ab642acdb276dd93835219548cd329736f0d1df",
+    "backend/ai_phone/server/ios_sim/service.py": "687dcf0c157300f37c1d825d4d55ca83ecbfa07cba3efa3190467dd2a4164647",
+    "backend/ai_phone/server/harmony_vm/api.py": "00b4665fda0e96e110b2fcb6ef236edc0af62a4a956abd76ca156c94e96793a6",
+    "backend/ai_phone/server/harmony_vm/service.py": "cef15701e1c3d6260a2e681911fa200dda10f27114225ab85994417e67008460",
+    "backend/ai_phone/server/vm_lifecycle.py": "232cf364266b1e344a7d29e87ebce39709994a1b0aa790db582ef33602af56aa",
+    "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+    "backend/ai_phone/agent/harmony_vm/manager.py": "f9927f728d5efb185cfddc25de9fcb530b57c137c62926ba8458daa3a1c105f5"
+  }
+}

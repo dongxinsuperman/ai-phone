@@ -1,0 +1,26 @@
+[
+  {
+    "run": "ios-20261016-035022-ddd0e8",
+    "platform": "ios",
+    "event": "load",
+    "token": "",
+    "count": 0,
+    "received_at": "2026-10-15T19:51:52.860967+00:00"
+  },
+  {
+    "run": "ios-20261016-035022-ddd0e8",
+    "platform": "ios",
+    "event": "confirm",
+    "token": "personal-eb12ee512800",
+    "count": 1,
+    "received_at": "2026-10-15T19:52:16.992446+00:00"
+  },
+  {
+    "run": "ios-20261016-035022-ddd0e8",
+    "platform": "ios",
+    "event": "load",
+    "token": "personal-eb12ee512800",
+    "count": 1,
+    "received_at": "2026-10-15T19:52:45.659180+00:00"
+  }
+]

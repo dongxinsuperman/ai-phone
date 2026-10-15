@@ -1,0 +1,67 @@
+{
+  "status": "passed_functional_and_visual",
+  "duration_seconds": 149.762,
+  "vm_id": "7b6b1c8a6085",
+  "udid": "3FFD282D-0846-4B8E-8437-CF522201D796",
+  "run_id": "19c38af42a66",
+  "token": "personal-eb12ee512800",
+  "count": 1,
+  "visual_review": {
+    "worker_confirmed": true,
+    "confirmed": "saved token + count1 + local receipt visible",
+    "after_restart": "input empty, saved same token + count1 + local receipt visible",
+    "root_independent_review": "passed: both archived screenshots directly inspected; same saved token and count 1, input empty after reboot"
+  },
+  "coverage": [
+    "unbound configuration",
+    "real capability probe and bind/start",
+    "starting delete rejected409",
+    "real WDA input and confirm",
+    "confirm receipt and native visible result",
+    "native Shutdown retains UDID",
+    "restart same UDID and ports",
+    "persisted token/count1 load receipt and visible screenshot",
+    "offline Server delete immediately404 while native remains",
+    "fresh agent_id same persistent host file reconnect removes orphan",
+    "private native/data/port cleanup",
+    "frozen product33 and source26 stable",
+    "old74f evidence unchanged"
+  ],
+  "scope": "personal loopback HTTP/WS and real iPhone Simulator/WDA with deterministic handler; no company services/devices/packages",
+  "not_covered": [
+    "production VLM/Runner/main",
+    "iPad",
+    "real phone",
+    "full live mirror",
+    "legacy database upgrade in this native run"
+  ],
+  "runtime_directory": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8",
+  "archive_directory": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-evidence/ios-20261016-035022-ddd0e8",
+  "cleanup": {
+    "checked_at": "2026-10-15T19:54:25.853721+00:00",
+    "device_set": "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8",
+    "native_set_empty": true,
+    "owned_data_absent": true,
+    "private_ports": {
+      "18303": "free",
+      "19303": "free",
+      "56907": "free"
+    },
+    "guarded_native_commands": 55,
+    "all_commands_use_private_set": true,
+    "default_set_lifecycle_commands": 0,
+    "host_identity_unchanged": true,
+    "host_identity_mode": "0600",
+    "source_count": 26,
+    "source_mismatches": [],
+    "frozen_product_count": 33,
+    "frozen_product_mismatches": [],
+    "old_evidence_changed": [],
+    "sqlite_vm_rows": 0,
+    "sqlite_run_terminal": {
+      "status": "success",
+      "serial": "3FFD282D-0846-4B8E-8437-CF522201D796",
+      "agent_id": "personal-ios-ios-20261016-035022-ddd0e8"
+    }
+  }
+}

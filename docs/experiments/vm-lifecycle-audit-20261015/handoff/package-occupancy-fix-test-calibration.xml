@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="15" time="0.732" timestamp="2026-10-16T02:38:23.594512+08:00" hostname="dongxindeMacBook-Pro.local"><testcase classname="" name="test_timeout_keeps_native_lease_and_temp_package_until_actual_exit[install]" time="0.055" /><testcase classname="" name="test_timeout_keeps_native_lease_and_temp_package_until_actual_exit[uninstall]" time="0.054" /><testcase classname="" name="test_cancelled_waiter_does_not_release_running_native_work[install]" time="0.003" /><testcase classname="" name="test_cancelled_waiter_does_not_release_running_native_work[uninstall]" time="0.001" /><testcase classname="" name="test_cancelled_queued_worker_releases_lease_and_never_starts_later[install]" time="0.002" /><testcase classname="" name="test_cancelled_queued_worker_releases_lease_and_never_starts_later[uninstall]" time="0.001" /><testcase classname="" name="test_cancel_between_thread_pickup_and_native_entry_has_no_late_side_effect[install]" time="0.002" /><testcase classname="" name="test_cancel_between_thread_pickup_and_native_entry_has_no_late_side_effect[uninstall]" time="0.001" /><testcase classname="" name="test_timeout_before_native_coroutine_starts_does_not_leak_ownership[install]" time="0.001" /><testcase classname="" name="test_timeout_before_native_coroutine_starts_does_not_leak_ownership[uninstall]" time="0.001" /><testcase classname="" name="test_native_completion_or_exception_releases_once_and_reports_once[False-install]" time="0.001" /><testcase classname="" name="test_native_completion_or_exception_releases_once_and_reports_once[False-uninstall]" time="0.001" /><testcase classname="" name="test_native_completion_or_exception_releases_once_and_reports_once[True-install]" time="0.001" /><testcase classname="" name="test_native_completion_or_exception_releases_once_and_reports_once[True-uninstall]" time="0.001" /><testcase classname="" name="test_install_preserves_each_platform_native_entry[android]" time="0.002"><failure message="AssertionError: assert ('package-device' == 'package-device'&#10;  &#10;    package-device and 30 == 10)">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x108f62710&gt;
+platform = 'android'
+
+    @pytest.mark.parametrize("platform", ["android", "harmony", "ios", "ios_sim"])
+    async def test_install_preserves_each_platform_native_entry(monkeypatch, platform):
+        calls = []
+        f = _package_setup(
+            monkeypatch, "install", lambda *args: calls.append(args) or (True, "", "ok"), platform=platform,
+        )
+        await f.handler(f.client, f.message)
+        await asyncio.gather(*list(f.tasks))
+        await _wait_released(f.activity, "package-device")
+        assert len(calls) == 1
+&gt;       assert calls[0][0] == "package-device" and calls[0][2] == 10
+E       AssertionError: assert ('package-device' == 'package-device'
+E         
+E           package-device and 30 == 10)
+
+/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-package-occupancy-fix-rx9jbhes/backend/tests/test_native_package_occupancy.py:267: AssertionError</failure></testcase></testsuite></testsuites>

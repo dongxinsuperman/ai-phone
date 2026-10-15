@@ -1,0 +1,169 @@
+{
+  "status": "passed",
+  "product_commit_at_start": "9034204",
+  "scope": "One personal local Harmony Phone; native legacy-registry/session-upgrade and stop regression. No browser, VLM or company resources.",
+  "evidence_root": "/tmp/aiphone-personal-harmony-legacy-20261016b2",
+  "archive": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/b2-evidence",
+  "vm_id": "8c5348377bf8",
+  "host_identity": {
+    "id": "13dec84613a9401ca8de5dc0bd7ba0bf",
+    "path": "/tmp/aiphone-personal-harmony-legacy-20261016b2/storage/agent-host-id",
+    "sha256": "22107004a876fd2d27bf57c6fb443ff3b1642f318ec3f575bc85efbc6a7a82ed"
+  },
+  "legacy_upgrade": {
+    "lost_terminal_stop_ack_injected_once": true,
+    "real_prehello_preserved_legacy_stopped_registry": true,
+    "private_inventory_complete": true,
+    "owner_only_handoff_preserved_state_error_last_status_and_lease": true,
+    "independent_saved_old_lease_query": {
+      "port": 10001,
+      "token": "a79272fefae34fe2855b190f16043b11",
+      "row": null
+    }
+  },
+  "data_preservation": {
+    "vm_id": "8c5348377bf8",
+    "uuid": "d6435aa3-3df2-44c5-a17e-73b415b896c3",
+    "marker_sha256": "9426212d898d53b60e4cc1770c42ded4e028ea31a22c505e7e4f284668e3d45c",
+    "matched": true
+  },
+  "running_reclaim": {
+    "new_runtime_process_is_none": true,
+    "old_process_stayed_running_during_session_change": true,
+    "marker_still_matches": true,
+    "scope": "fresh Manager/session, not OS process kill",
+    "previous_agent": "personal-legacy-new-90f48880860f",
+    "new_agent": "personal-running-reclaim-1e9f92784883",
+    "stop_exit_evidence": {
+      "hdc_serial": "127.0.0.1:10001",
+      "hdc_port": 10001,
+      "started_unix": 1792093389.494785,
+      "budget_sec": 15.0,
+      "sample_count": 6,
+      "max_sample_duration_sec": 1.351,
+      "max_offline_free_samples": 4,
+      "last_sample": {
+        "target_status": "offline",
+        "port_bindable": true,
+        "duration_sec": 1.351,
+        "elapsed_sec": 10.609
+      },
+      "elapsed_sec": 10.609,
+      "result": "offline_hdc_target",
+      "process_handle_present": false,
+      "process_return_code": null,
+      "process_sampled_unix": 1792093400.1036859,
+      "instance_process_status": "absent",
+      "instance_process_sampled_unix": 1792093400.1450508
+    },
+    "independent_original_process_returncode": 0,
+    "independent_saved_lease_query": {
+      "port": 10001,
+      "token": "5d88ada727e14965acccb35d74d861a1",
+      "row": null
+    }
+  },
+  "socket_window_observations": {
+    "count": 3,
+    "all_netstat_time_wait": true,
+    "all_plain_bind_failed_and_reuse_succeeded": true,
+    "all_connect_refused_no_lsof_listener": true,
+    "maximum_synchronous_observer_sec": 0.000107,
+    "product_timeout_unchanged": true,
+    "interpretation": "This run directly captured kernel TIME_WAIT with no listener: ordinary bind rejected while reusable-listener probe succeeded. The prior b1 outcome remains failed and is not retroactively overwritten."
+  },
+  "cleanup": {
+    "server_404": true,
+    "delete_commands": 1,
+    "instance_directory_absent": true,
+    "registry_absent": true,
+    "runtime_absent": true,
+    "owned_processes": [],
+    "ports": {
+      "10001": {
+        "listening": false,
+        "bindable": true
+      },
+      "16556": {
+        "listening": false,
+        "bindable": true
+      }
+    }
+  },
+  "final_native_state": {
+    "instance_directory_absent": true,
+    "registry_absent": true,
+    "runtime_absent": true,
+    "owned_processes": [],
+    "ports": {
+      "10001": {
+        "listening": false,
+        "bindable": true
+      },
+      "16556": {
+        "listening": false,
+        "bindable": true
+      }
+    }
+  },
+  "protected_metadata_unchanged": true,
+  "sources_unchanged_during_run": true,
+  "port_helper_sha256": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+  "source_hashes_file": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/b2-evidence/source-hashes.json",
+  "raw_evidence": {
+    "result.json": {
+      "archived_path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/b2-evidence/result.json",
+      "sha256": "f8e2f3158813b4a96f6d52f8535958046bfc4226d0d657cbcbb29c2d673abaf0",
+      "original_path": "/tmp/aiphone-personal-harmony-legacy-20261016b2/result.json"
+    },
+    "events.jsonl": {
+      "archived_path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/b2-evidence/events.jsonl",
+      "sha256": "72a0e3b10fc7a0efcd1d46f1282adf620bf491b32d993748173c1c3b21df9907",
+      "original_path": "/tmp/aiphone-personal-harmony-legacy-20261016b2/events.jsonl"
+    },
+    "preflight.json": {
+      "archived_path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/b2-evidence/preflight.json",
+      "sha256": "a6cddbc68d4f37d574b623023afc6f0a4daf63bec7a61ea8e631c18791bfe6c9",
+      "original_path": "/tmp/aiphone-personal-harmony-legacy-20261016b2/preflight.json"
+    },
+    "plan.json": {
+      "archived_path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/b2-evidence/plan.json",
+      "sha256": "226dd9dcdc9cf29e33912873562d30be6847490430b92905d3dac093c974a954",
+      "original_path": "/tmp/aiphone-personal-harmony-legacy-20261016b2/plan.json"
+    },
+    "runtime.log": {
+      "archived_path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/b2-evidence/runtime.log",
+      "sha256": "de1852136ed76710d4bf6dd3f6b5ec5cbb64579c67fcae4a84b3f3ef93b09030",
+      "original_path": "/tmp/aiphone-personal-harmony-legacy-20261016b2/runtime.log"
+    },
+    "port-window-1.json": {
+      "archived_path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/b2-evidence/port-window-1.json",
+      "sha256": "5063bcbe773093773374efac0762695786a16a660065acae1495a19f3bd36001",
+      "original_path": "/tmp/aiphone-personal-harmony-legacy-20261016b2/port-window-1.json"
+    },
+    "port-window-2.json": {
+      "archived_path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/b2-evidence/port-window-2.json",
+      "sha256": "68cbe76d944bc81c8e8298fb52a3e10d41eef14175ccb01fd480d85b0b371b83",
+      "original_path": "/tmp/aiphone-personal-harmony-legacy-20261016b2/port-window-2.json"
+    },
+    "port-window-3.json": {
+      "archived_path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/b2-evidence/port-window-3.json",
+      "sha256": "25801b9b078c6ab1c1be067900df71734354f417042c02c86208976c6ef9979c",
+      "original_path": "/tmp/aiphone-personal-harmony-legacy-20261016b2/port-window-3.json"
+    },
+    "emulator.log": {
+      "archived_path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/b2-evidence/emulator.log",
+      "sha256": "fd561faaa7a221730fccf51deeb0928fd772318912e1f3f26b7fb3b875c30371",
+      "original_path": "/tmp/aiphone-personal-harmony-legacy-20261016b2/agent-runtime/logs/8c5348377bf8/emulator.log"
+    }
+  },
+  "prior_failure_preserved": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/harmony-legacy-b1-summary.json",
+  "limits": [
+    "New Manager and WS session in one harness OS process; not a SIGKILL/host reboot simulation.",
+    "Single personal macOS ARM64 Phone instance; not multi-instance stress or Windows coverage."
+  ],
+  "started_at": "2026-10-15T19:40:48.916592+00:00",
+  "finished_at": "2026-10-15T19:43:22.361589+00:00",
+  "finished_at_client": "2026-10-16T03:43:22.361589+08:00",
+  "recorded_at_utc": "2026-10-15T19:44:49.012395+00:00"
+}

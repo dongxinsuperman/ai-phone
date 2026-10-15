@@ -1,0 +1,1076 @@
+{
+  "audited_at_utc": "2026-10-15T18:23:28.269Z",
+  "personal_cli": "/Users/dongxin/aiphonecli开源/bin/aiphone.js",
+  "scope": "Loopback mock contract replay only. CLI source unchanged; real profile blocked; no native operations.",
+  "results": [
+    {
+      "platform": "android",
+      "scenario": "late_failed_stop",
+      "args": [
+        "vm",
+        "android",
+        "restart",
+        "old-vm",
+        "--timeout",
+        "2",
+        "--interval",
+        "0.01"
+      ],
+      "exit_code": 0,
+      "output": {
+        "platform": "android",
+        "operation": "restart",
+        "phase": "ready",
+        "status": {
+          "platform": "android",
+          "instance": {
+            "id": "old-vm",
+            "alias": "personal-compat",
+            "state": "running",
+            "assigned_agent_id": "old-agent",
+            "adb_serial": "emulator-5666",
+            "udid": "personal-test-udid",
+            "runtime": {
+              "operation": {
+                "action": "start",
+                "request_id": "start-attempt-1",
+                "pending": false,
+                "outcome": "succeeded"
+              }
+            }
+          },
+          "serial": "emulator-5666",
+          "device": {
+            "serial": "emulator-5666",
+            "platform": "android",
+            "agent_id": "old-agent",
+            "status": "online",
+            "lock": null,
+            "extra": {
+              "readiness": {
+                "ready": true
+              }
+            }
+          },
+          "lifecycle_state": "running",
+          "ready": true,
+          "schedulable": true,
+          "evidence": {
+            "agent_matches": true,
+            "available": true
+          }
+        },
+        "warning": "沿用原实例启动/快照策略，不承诺保留运行期间的数据变化；未删除或重建实例"
+      },
+      "guard": {
+        "profileReads": 0,
+        "requests": 11,
+        "loopbackOnly": true
+      },
+      "start_after_failed_stop": true,
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/internal/vm/instances"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/vm/instances/old-vm"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/statuses"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/available"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/vm/instances/old-vm/stop"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/vm/instances/old-vm"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/vm/instances/old-vm"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/vm/instances/old-vm/start"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/vm/instances/old-vm"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/statuses"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/available"
+        }
+      ]
+    },
+    {
+      "platform": "android",
+      "scenario": "switch_new_start_failed",
+      "args": [
+        "vm",
+        "android",
+        "dispatch",
+        "old-vm",
+        "--agent",
+        "new-agent",
+        "--wait",
+        "--timeout",
+        "2",
+        "--interval",
+        "0.01"
+      ],
+      "exit_code": 1,
+      "output": {
+        "ok": false,
+        "error": {
+          "code": "dispatch_not_sent",
+          "message": "服务端未确认启动指令下发，请先 get/status 核对",
+          "vm_id": "old-vm",
+          "response": {
+            "sent": false,
+            "switched": true,
+            "old_vm_id": "old-vm",
+            "old_cleanup_sent": false,
+            "instance": {
+              "id": "new-vm",
+              "alias": "personal-compat",
+              "state": "error",
+              "assigned_agent_id": null,
+              "adb_serial": "emulator-5666",
+              "udid": "personal-test-udid",
+              "runtime": {
+                "last_status": {
+                  "state": "error",
+                  "ok": false,
+                  "details": {
+                    "cleanup_confirmed": true,
+                    "instance_created": false
+                  }
+                }
+              },
+              "error_message": "新配置启动失败：所属 Agent 离线"
+            }
+          }
+        }
+      },
+      "guard": {
+        "profileReads": 0,
+        "requests": 3,
+        "loopbackOnly": true
+      },
+      "start_after_failed_stop": false,
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/internal/vm/instances"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/vm/instances/old-vm/dispatch-candidates"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/vm/instances/old-vm/dispatch"
+        }
+      ]
+    },
+    {
+      "platform": "android",
+      "scenario": "switch_success",
+      "args": [
+        "vm",
+        "android",
+        "dispatch",
+        "old-vm",
+        "--agent",
+        "new-agent",
+        "--wait",
+        "--timeout",
+        "2",
+        "--interval",
+        "0.01"
+      ],
+      "exit_code": 0,
+      "output": {
+        "platform": "android",
+        "response": {
+          "sent": true,
+          "switched": true,
+          "old_vm_id": "old-vm",
+          "old_cleanup_sent": false,
+          "instance": {
+            "id": "new-vm",
+            "alias": "personal-compat",
+            "state": "starting",
+            "assigned_agent_id": null,
+            "adb_serial": "emulator-5666",
+            "udid": "personal-test-udid",
+            "runtime": {
+              "operation": {
+                "action": "start",
+                "request_id": "start-attempt-1",
+                "pending": true,
+                "outcome": "pending"
+              }
+            },
+            "error_message": ""
+          },
+          "selected_agent": {
+            "agent_id": "new-agent",
+            "agent_name": "personal mock",
+            "ok": true
+          },
+          "candidates": {
+            "agents": [
+              {
+                "agent_id": "new-agent",
+                "agent_name": "personal mock",
+                "ok": true
+              }
+            ]
+          }
+        },
+        "status": {
+          "platform": "android",
+          "instance": {
+            "id": "new-vm",
+            "alias": "personal-compat",
+            "state": "running",
+            "assigned_agent_id": "new-agent",
+            "adb_serial": "emulator-5666",
+            "udid": "personal-test-udid",
+            "runtime": {
+              "operation": {
+                "action": "start",
+                "request_id": "start-attempt-1",
+                "pending": false,
+                "outcome": "succeeded"
+              }
+            },
+            "error_message": ""
+          },
+          "serial": "emulator-5666",
+          "device": {
+            "serial": "emulator-5666",
+            "platform": "android",
+            "agent_id": "new-agent",
+            "status": "online",
+            "lock": null,
+            "extra": {
+              "readiness": {
+                "ready": true
+              }
+            }
+          },
+          "lifecycle_state": "running",
+          "ready": true,
+          "schedulable": true,
+          "evidence": {
+            "agent_matches": true,
+            "available": true
+          }
+        }
+      },
+      "guard": {
+        "profileReads": 0,
+        "requests": 6,
+        "loopbackOnly": true
+      },
+      "start_after_failed_stop": false,
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/internal/vm/instances"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/vm/instances/old-vm/dispatch-candidates"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/vm/instances/old-vm/dispatch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/vm/instances/new-vm"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/statuses"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/available"
+        }
+      ]
+    },
+    {
+      "platform": "android",
+      "scenario": "delete_offline",
+      "args": [
+        "vm",
+        "android",
+        "delete",
+        "old-vm"
+      ],
+      "exit_code": 0,
+      "output": {
+        "platform": "android",
+        "operation": "delete",
+        "id": "old-vm",
+        "deleted": true,
+        "alias_deleted": 1,
+        "cleanup_sent": false,
+        "avd_cleanup_sent": false,
+        "host_cleanup_confirmed": false,
+        "message": "服务端配置删除结果见 deleted；清理通知不等于宿主文件清理完成"
+      },
+      "guard": {
+        "profileReads": 0,
+        "requests": 3,
+        "loopbackOnly": true
+      },
+      "start_after_failed_stop": false,
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/internal/vm/instances"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/vm/instances/old-vm"
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/internal/vm/instances/old-vm"
+        }
+      ]
+    },
+    {
+      "platform": "ios",
+      "scenario": "late_failed_stop",
+      "args": [
+        "vm",
+        "ios",
+        "restart",
+        "old-vm",
+        "--timeout",
+        "2",
+        "--interval",
+        "0.01"
+      ],
+      "exit_code": 0,
+      "output": {
+        "platform": "ios",
+        "operation": "restart",
+        "phase": "ready",
+        "status": {
+          "platform": "ios",
+          "instance": {
+            "id": "old-vm",
+            "alias": "personal-compat",
+            "state": "running",
+            "assigned_agent_id": "old-agent",
+            "adb_serial": "emulator-5666",
+            "udid": "personal-test-udid",
+            "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+            "runtime_state": {
+              "operation": {
+                "action": "start",
+                "request_id": "start-attempt-1",
+                "pending": false,
+                "outcome": "succeeded"
+              }
+            }
+          },
+          "serial": "personal-test-udid",
+          "device": {
+            "serial": "personal-test-udid",
+            "platform": "ios",
+            "agent_id": "old-agent",
+            "status": "online",
+            "lock": null,
+            "extra": {
+              "readiness": {
+                "ready": true
+              }
+            }
+          },
+          "lifecycle_state": "running",
+          "ready": true,
+          "schedulable": true,
+          "evidence": {
+            "agent_matches": true,
+            "available": true
+          }
+        },
+        "warning": "沿用原实例启动/快照策略，不承诺保留运行期间的数据变化；未删除或重建实例"
+      },
+      "guard": {
+        "profileReads": 0,
+        "requests": 11,
+        "loopbackOnly": true
+      },
+      "start_after_failed_stop": true,
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/internal/ios-sim/instances"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/ios-sim/instances/old-vm"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/statuses"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/available"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/ios-sim/instances/old-vm/stop"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/ios-sim/instances/old-vm"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/ios-sim/instances/old-vm"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/ios-sim/instances/old-vm/start"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/ios-sim/instances/old-vm"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/statuses"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/available"
+        }
+      ]
+    },
+    {
+      "platform": "ios",
+      "scenario": "switch_new_start_failed",
+      "args": [
+        "vm",
+        "ios",
+        "dispatch",
+        "old-vm",
+        "--agent",
+        "new-agent",
+        "--wait",
+        "--timeout",
+        "2",
+        "--interval",
+        "0.01"
+      ],
+      "exit_code": 1,
+      "output": {
+        "ok": false,
+        "error": {
+          "code": "dispatch_not_sent",
+          "message": "服务端未确认启动指令下发，请先 get/status 核对",
+          "vm_id": "old-vm",
+          "response": {
+            "sent": false,
+            "switched": true,
+            "old_vm_id": "old-vm",
+            "old_cleanup_sent": false,
+            "instance": {
+              "id": "new-vm",
+              "alias": "personal-compat",
+              "state": "error",
+              "assigned_agent_id": null,
+              "adb_serial": "emulator-5666",
+              "udid": "personal-test-udid",
+              "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+              "runtime_state": {
+                "last_status": {
+                  "state": "error",
+                  "ok": false,
+                  "details": {
+                    "cleanup_confirmed": true,
+                    "instance_created": false
+                  }
+                }
+              },
+              "error_message": "新配置启动失败：所属 Agent 离线"
+            }
+          }
+        }
+      },
+      "guard": {
+        "profileReads": 0,
+        "requests": 3,
+        "loopbackOnly": true
+      },
+      "start_after_failed_stop": false,
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/internal/ios-sim/instances"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/ios-sim/instances/old-vm/dispatch-candidates"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/ios-sim/instances/old-vm/dispatch"
+        }
+      ]
+    },
+    {
+      "platform": "ios",
+      "scenario": "switch_success",
+      "args": [
+        "vm",
+        "ios",
+        "dispatch",
+        "old-vm",
+        "--agent",
+        "new-agent",
+        "--wait",
+        "--timeout",
+        "2",
+        "--interval",
+        "0.01"
+      ],
+      "exit_code": 0,
+      "output": {
+        "platform": "ios",
+        "response": {
+          "sent": true,
+          "switched": true,
+          "old_vm_id": "old-vm",
+          "old_cleanup_sent": false,
+          "instance": {
+            "id": "new-vm",
+            "alias": "personal-compat",
+            "state": "starting",
+            "assigned_agent_id": null,
+            "adb_serial": "emulator-5666",
+            "udid": "personal-test-udid",
+            "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+            "runtime_state": {
+              "operation": {
+                "action": "start",
+                "request_id": "start-attempt-1",
+                "pending": true,
+                "outcome": "pending"
+              }
+            },
+            "error_message": ""
+          },
+          "selected_agent": {
+            "agent_id": "new-agent",
+            "agent_name": "personal mock",
+            "ok": true
+          },
+          "candidates": {
+            "agents": [
+              {
+                "agent_id": "new-agent",
+                "agent_name": "personal mock",
+                "ok": true
+              }
+            ]
+          }
+        },
+        "status": {
+          "platform": "ios",
+          "instance": {
+            "id": "new-vm",
+            "alias": "personal-compat",
+            "state": "running",
+            "assigned_agent_id": "new-agent",
+            "adb_serial": "emulator-5666",
+            "udid": "personal-test-udid",
+            "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+            "runtime_state": {
+              "operation": {
+                "action": "start",
+                "request_id": "start-attempt-1",
+                "pending": false,
+                "outcome": "succeeded"
+              }
+            },
+            "error_message": ""
+          },
+          "serial": "personal-test-udid",
+          "device": {
+            "serial": "personal-test-udid",
+            "platform": "ios",
+            "agent_id": "new-agent",
+            "status": "online",
+            "lock": null,
+            "extra": {
+              "readiness": {
+                "ready": true
+              }
+            }
+          },
+          "lifecycle_state": "running",
+          "ready": true,
+          "schedulable": true,
+          "evidence": {
+            "agent_matches": true,
+            "available": true
+          }
+        }
+      },
+      "guard": {
+        "profileReads": 0,
+        "requests": 6,
+        "loopbackOnly": true
+      },
+      "start_after_failed_stop": false,
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/internal/ios-sim/instances"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/ios-sim/instances/old-vm/dispatch-candidates"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/ios-sim/instances/old-vm/dispatch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/ios-sim/instances/new-vm"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/statuses"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/available"
+        }
+      ]
+    },
+    {
+      "platform": "ios",
+      "scenario": "delete_offline",
+      "args": [
+        "vm",
+        "ios",
+        "delete",
+        "old-vm"
+      ],
+      "exit_code": 0,
+      "output": {
+        "platform": "ios",
+        "operation": "delete",
+        "id": "old-vm",
+        "deleted": true,
+        "alias_deleted": 1,
+        "cleanup_sent": false,
+        "avd_cleanup_sent": false,
+        "host_cleanup_confirmed": false,
+        "message": "服务端配置删除结果见 deleted；清理通知不等于宿主文件清理完成"
+      },
+      "guard": {
+        "profileReads": 0,
+        "requests": 3,
+        "loopbackOnly": true
+      },
+      "start_after_failed_stop": false,
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/internal/ios-sim/instances"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/ios-sim/instances/old-vm"
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/internal/ios-sim/instances/old-vm"
+        }
+      ]
+    },
+    {
+      "platform": "harmony",
+      "scenario": "late_failed_stop",
+      "args": [
+        "vm",
+        "harmony",
+        "restart",
+        "old-vm",
+        "--timeout",
+        "2",
+        "--interval",
+        "0.01"
+      ],
+      "exit_code": 0,
+      "output": {
+        "platform": "harmony",
+        "operation": "restart",
+        "phase": "ready",
+        "status": {
+          "platform": "harmony",
+          "instance": {
+            "id": "old-vm",
+            "alias": "personal-compat",
+            "state": "running",
+            "assigned_agent_id": "old-agent",
+            "adb_serial": "emulator-5666",
+            "udid": "personal-test-udid",
+            "runtime": {
+              "operation": {
+                "action": "start",
+                "request_id": "start-attempt-1",
+                "pending": false,
+                "outcome": "succeeded"
+              }
+            }
+          },
+          "serial": "harmony-vm:old-vm",
+          "device": {
+            "serial": "harmony-vm:old-vm",
+            "platform": "harmony",
+            "agent_id": "old-agent",
+            "status": "online",
+            "lock": null,
+            "extra": {
+              "readiness": {
+                "ready": true
+              }
+            }
+          },
+          "lifecycle_state": "running",
+          "ready": true,
+          "schedulable": true,
+          "evidence": {
+            "agent_matches": true,
+            "available": true
+          }
+        },
+        "warning": "沿用原实例启动/快照策略，不承诺保留运行期间的数据变化；未删除或重建实例"
+      },
+      "guard": {
+        "profileReads": 0,
+        "requests": 11,
+        "loopbackOnly": true
+      },
+      "start_after_failed_stop": true,
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/internal/harmony-vm/instances"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/harmony-vm/instances/old-vm"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/statuses"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/available"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/harmony-vm/instances/old-vm/stop"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/harmony-vm/instances/old-vm"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/harmony-vm/instances/old-vm"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/harmony-vm/instances/old-vm/start"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/harmony-vm/instances/old-vm"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/statuses"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/available"
+        }
+      ]
+    },
+    {
+      "platform": "harmony",
+      "scenario": "switch_new_start_failed",
+      "args": [
+        "vm",
+        "harmony",
+        "dispatch",
+        "old-vm",
+        "--agent",
+        "new-agent",
+        "--wait",
+        "--timeout",
+        "2",
+        "--interval",
+        "0.01"
+      ],
+      "exit_code": 1,
+      "output": {
+        "ok": false,
+        "error": {
+          "code": "dispatch_not_sent",
+          "message": "服务端未确认启动指令下发，请先 get/status 核对",
+          "vm_id": "old-vm",
+          "response": {
+            "sent": false,
+            "switched": true,
+            "old_vm_id": "old-vm",
+            "old_cleanup_sent": false,
+            "instance": {
+              "id": "new-vm",
+              "alias": "personal-compat",
+              "state": "error",
+              "assigned_agent_id": null,
+              "adb_serial": "emulator-5666",
+              "udid": "personal-test-udid",
+              "runtime": {
+                "last_status": {
+                  "state": "error",
+                  "ok": false,
+                  "details": {
+                    "cleanup_confirmed": true,
+                    "instance_created": false
+                  }
+                }
+              },
+              "error_message": "新配置启动失败：所属 Agent 离线"
+            }
+          }
+        }
+      },
+      "guard": {
+        "profileReads": 0,
+        "requests": 3,
+        "loopbackOnly": true
+      },
+      "start_after_failed_stop": false,
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/internal/harmony-vm/instances"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/harmony-vm/instances/old-vm/dispatch-candidates"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/harmony-vm/instances/old-vm/dispatch"
+        }
+      ]
+    },
+    {
+      "platform": "harmony",
+      "scenario": "switch_success",
+      "args": [
+        "vm",
+        "harmony",
+        "dispatch",
+        "old-vm",
+        "--agent",
+        "new-agent",
+        "--wait",
+        "--timeout",
+        "2",
+        "--interval",
+        "0.01"
+      ],
+      "exit_code": 0,
+      "output": {
+        "platform": "harmony",
+        "response": {
+          "sent": true,
+          "switched": true,
+          "old_vm_id": "old-vm",
+          "old_cleanup_sent": false,
+          "instance": {
+            "id": "new-vm",
+            "alias": "personal-compat",
+            "state": "starting",
+            "assigned_agent_id": null,
+            "adb_serial": "emulator-5666",
+            "udid": "personal-test-udid",
+            "runtime": {
+              "operation": {
+                "action": "start",
+                "request_id": "start-attempt-1",
+                "pending": true,
+                "outcome": "pending"
+              }
+            },
+            "error_message": ""
+          },
+          "selected_agent": {
+            "agent_id": "new-agent",
+            "agent_name": "personal mock",
+            "ok": true
+          },
+          "candidates": {
+            "agents": [
+              {
+                "agent_id": "new-agent",
+                "agent_name": "personal mock",
+                "ok": true
+              }
+            ]
+          }
+        },
+        "status": {
+          "platform": "harmony",
+          "instance": {
+            "id": "new-vm",
+            "alias": "personal-compat",
+            "state": "running",
+            "assigned_agent_id": "new-agent",
+            "adb_serial": "emulator-5666",
+            "udid": "personal-test-udid",
+            "runtime": {
+              "operation": {
+                "action": "start",
+                "request_id": "start-attempt-1",
+                "pending": false,
+                "outcome": "succeeded"
+              }
+            },
+            "error_message": ""
+          },
+          "serial": "harmony-vm:new-vm",
+          "device": {
+            "serial": "harmony-vm:new-vm",
+            "platform": "harmony",
+            "agent_id": "new-agent",
+            "status": "online",
+            "lock": null,
+            "extra": {
+              "readiness": {
+                "ready": true
+              }
+            }
+          },
+          "lifecycle_state": "running",
+          "ready": true,
+          "schedulable": true,
+          "evidence": {
+            "agent_matches": true,
+            "available": true
+          }
+        }
+      },
+      "guard": {
+        "profileReads": 0,
+        "requests": 6,
+        "loopbackOnly": true
+      },
+      "start_after_failed_stop": false,
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/internal/harmony-vm/instances"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/harmony-vm/instances/old-vm/dispatch-candidates"
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/harmony-vm/instances/old-vm/dispatch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/harmony-vm/instances/new-vm"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/statuses"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devices/available"
+        }
+      ]
+    },
+    {
+      "platform": "harmony",
+      "scenario": "delete_offline",
+      "args": [
+        "vm",
+        "harmony",
+        "delete",
+        "old-vm"
+      ],
+      "exit_code": 0,
+      "output": {
+        "platform": "harmony",
+        "operation": "delete",
+        "id": "old-vm",
+        "deleted": true,
+        "alias_deleted": 1,
+        "cleanup_sent": false,
+        "avd_cleanup_sent": false,
+        "host_cleanup_confirmed": false,
+        "message": "服务端配置删除结果见 deleted；清理通知不等于宿主文件清理完成"
+      },
+      "guard": {
+        "profileReads": 0,
+        "requests": 3,
+        "loopbackOnly": true
+      },
+      "start_after_failed_stop": false,
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/api/internal/harmony-vm/instances"
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/harmony-vm/instances/old-vm"
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/internal/harmony-vm/instances/old-vm"
+        }
+      ]
+    }
+  ]
+}

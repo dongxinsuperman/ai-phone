@@ -1,0 +1,58 @@
+2026-10-16 04:07:57.936 | DEBUG    | ai_phone.agent.drivers.harmony:_neutralize_hmdriver_del_once:114 - hmdriver2.Driver.__del__ 已阉割（去除 _instance.clear + fport 副作用）
+2026-10-16 04:08:02.855 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:////Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a3/server.sqlite3
+2026-10-16 04:08:03.210 | INFO     | ai_phone.agent.ws_client:run_forever:221 - 连接 Server WS ws://127.0.0.1:58995/ws/agent?token=***
+2026-10-16 04:08:03.273 | INFO     | ai_phone.agent.ws_client:_on_connected:275 - hello sent | devices=[]
+2026-10-16 04:08:03.273 | INFO     | ai_phone.agent.ws_client:_rescan_loop:508 - rescan_loop 启动，间隔 5.0s
+2026-10-16 04:08:03.273 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=personal-e2e-android-app-install-9034204-20261016-a3 name=personal-e2e-android-app-install-9034204-20261016-a3 host_os=Darwin 24.6.0
+2026-10-16 04:08:03.288 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:222 - Agent hello | id=personal-e2e-android-app-install-9034204-20261016-a3 devices=[]
+2026-10-16 04:08:03.288 | WARNING  | ai_phone.server.ws.agent_ws:agent_ws:236 - 向 Agent personal-e2e-android-app-install-9034204-20261016-a3 下发配置失败（VLM Run 未应用配置会拒绝执行，等待后续补发）：新版 PHONE_VLM 配置缺失，无法派生模型执行链路：AI_PHONE_PHONE_VLM_PROVIDER, AI_PHONE_PHONE_VLM_BASE_URL, AI_PHONE_PHONE_VLM_API_KEY, AI_PHONE_PHONE_VLM_MODEL。请配置 AI_PHONE_PHONE_VLM_*；不再回退旧式 AI_PHONE_VLM_*。
+2026-10-16 04:08:26.287 | INFO     | ai_phone.agent.android_vm.manager:_provision_device:1209 - VM emulator-5666 开机预置完成 locale=- tz=Asia/Shanghai optimize=True
+2026-10-16 04:08:26.310 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['emulator-5666']
+2026-10-16 04:08:26.313 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-e2e-android-app-install-9034204-20261016-a3 devices=['emulator-5666']
+2026-10-16 04:08:27.127 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-e2e-android-app-install-9034204-20261016-a3 devices=['emulator-5666']
+2026-10-16 04:08:28.176 | INFO     | ai_phone.agent.app_install.handler:_download_package:129 - app_install package downloaded url=http://127.0.0.1:58995/api/app-install/packages/822d89bbd941/download path=/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a3/tmp/ai-phone-app-install-t1e4yj6w/personal-lifecycle.apk bytes=24979
+2026-10-16 04:08:28.189 | INFO     | ai_phone.agent.app_install.android:install_apk:20 - app_install android push serial=emulator-5666 local=/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a3/tmp/ai-phone-app-install-t1e4yj6w/personal-lifecycle.apk remote=/data/local/tmp/ai-phone-install-0177c3e2.apk
+2026-10-16 04:08:30.541 | INFO     | ai_phone.agent.app_install.android:install_apk:29 - app_install android pm install serial=emulator-5666 output=Success
+2026-10-16 04:08:30.592 | INFO     | ai_phone.agent.app_install.handler:_run_app_install:103 - app_install result sent=True task_id=2bb78a9934a5 item_id=3bfc5fd9f8f8 serial=emulator-5666 success=True reason=
+2026-10-16 04:08:33.383 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-e2e-android-app-install-9034204-20261016-a3 devices=['emulator-5666']
+2026-10-16 04:08:41.497 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:273 - Agent 断开 | id=personal-e2e-android-app-install-9034204-20261016-a3
+2026-10-16 04:08:41.497 | INFO     | ai_phone.server.hub:unregister_agent:201 - Agent 下线 | id=personal-e2e-android-app-install-9034204-20261016-a3 serials=['emulator-5666']
+2026-10-16 04:08:41.498 | INFO     | ai_phone.agent.ws_client:run_forever:252 - 1.0s 后重连 (第 1 次)
+2026-10-16 04:08:41.499 | INFO     | ai_phone.server.ws.agent_ws:op:808 - Agent personal-e2e-android-app-install-9034204-20261016-a3 断开，删除其名下设备 1 条
+2026-10-16 04:08:41.502 | INFO     | ai_phone.server.ws.agent_ws:_on_disconnect:1088 - Agent personal-e2e-android-app-install-9034204-20261016-a3 断开，已标记 VM unavailable 1 台
+2026-10-16 04:08:42.499 | INFO     | ai_phone.agent.ws_client:run_forever:221 - 连接 Server WS ws://127.0.0.1:58995/ws/agent?token=***
+2026-10-16 04:08:42.577 | INFO     | ai_phone.agent.ws_client:_on_connected:275 - hello sent | devices=['emulator-5666']
+2026-10-16 04:08:42.581 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=personal-e2e-android-app-install-9034204-20261016-a3 name=personal-e2e-android-app-install-9034204-20261016-a3 host_os=Darwin 24.6.0
+2026-10-16 04:08:42.582 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:222 - Agent hello | id=personal-e2e-android-app-install-9034204-20261016-a3 devices=[]
+2026-10-16 04:08:42.582 | WARNING  | ai_phone.server.ws.agent_ws:agent_ws:236 - 向 Agent personal-e2e-android-app-install-9034204-20261016-a3 下发配置失败（VLM Run 未应用配置会拒绝执行，等待后续补发）：新版 PHONE_VLM 配置缺失，无法派生模型执行链路：AI_PHONE_PHONE_VLM_PROVIDER, AI_PHONE_PHONE_VLM_BASE_URL, AI_PHONE_PHONE_VLM_API_KEY, AI_PHONE_PHONE_VLM_MODEL。请配置 AI_PHONE_PHONE_VLM_*；不再回退旧式 AI_PHONE_VLM_*。
+2026-10-16 04:08:42.587 | INFO     | ai_phone.agent.ws_client:_rescan_loop:508 - rescan_loop 启动，间隔 5.0s
+2026-10-16 04:08:42.589 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-e2e-android-app-install-9034204-20261016-a3 devices=['emulator-5666']
+2026-10-16 04:08:42.978 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-e2e-android-app-install-9034204-20261016-a3 devices=['emulator-5666']
+2026-10-16 04:08:43.233 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:273 - Agent 断开 | id=personal-e2e-android-app-install-9034204-20261016-a3
+2026-10-16 04:08:43.233 | INFO     | ai_phone.server.hub:unregister_agent:201 - Agent 下线 | id=personal-e2e-android-app-install-9034204-20261016-a3 serials=['emulator-5666']
+2026-10-16 04:08:43.234 | INFO     | ai_phone.agent.ws_client:run_forever:221 - 连接 Server WS ws://127.0.0.1:58995/ws/agent?token=***
+2026-10-16 04:08:43.235 | INFO     | ai_phone.server.ws.agent_ws:op:808 - Agent personal-e2e-android-app-install-9034204-20261016-a3 断开，删除其名下设备 1 条
+2026-10-16 04:08:43.242 | INFO     | ai_phone.server.ws.agent_ws:_on_disconnect:1088 - Agent personal-e2e-android-app-install-9034204-20261016-a3 断开，已标记 VM unavailable 1 台
+2026-10-16 04:08:43.330 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['emulator-5666']
+2026-10-16 04:08:43.330 | INFO     | ai_phone.agent.ws_client:_on_connected:275 - hello sent | devices=['emulator-5666']
+2026-10-16 04:08:43.335 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=personal-e2e-restart-android-app-install-9034204-20261016-a3 name=personal-e2e-restart-android-app-install-9034204-20261016-a3 host_os=Darwin 24.6.0
+2026-10-16 04:08:43.336 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:222 - Agent hello | id=personal-e2e-restart-android-app-install-9034204-20261016-a3 devices=[]
+2026-10-16 04:08:43.336 | WARNING  | ai_phone.server.ws.agent_ws:agent_ws:236 - 向 Agent personal-e2e-restart-android-app-install-9034204-20261016-a3 下发配置失败（VLM Run 未应用配置会拒绝执行，等待后续补发）：新版 PHONE_VLM 配置缺失，无法派生模型执行链路：AI_PHONE_PHONE_VLM_PROVIDER, AI_PHONE_PHONE_VLM_BASE_URL, AI_PHONE_PHONE_VLM_API_KEY, AI_PHONE_PHONE_VLM_MODEL。请配置 AI_PHONE_PHONE_VLM_*；不再回退旧式 AI_PHONE_VLM_*。
+2026-10-16 04:08:43.342 | INFO     | ai_phone.agent.ws_client:_rescan_loop:508 - rescan_loop 启动，间隔 5.0s
+2026-10-16 04:08:43.345 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-e2e-restart-android-app-install-9034204-20261016-a3 devices=['emulator-5666']
+2026-10-16 04:08:43.726 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-e2e-restart-android-app-install-9034204-20261016-a3 devices=['emulator-5666']
+2026-10-16 04:08:44.898 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['emulator-5666'] → []
+2026-10-16 04:08:44.900 | INFO     | ai_phone.server.ws.agent_ws:op:763 - Agent personal-e2e-restart-android-app-install-9034204-20261016-a3 移除已拔出设备 ['emulator-5666']
+2026-10-16 04:08:44.900 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-e2e-restart-android-app-install-9034204-20261016-a3 devices=[]
+2026-10-16 04:09:00.929 | INFO     | ai_phone.agent.android_vm.manager:_provision_device:1209 - VM emulator-5666 开机预置完成 locale=- tz=Asia/Shanghai optimize=True
+2026-10-16 04:09:00.953 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['emulator-5666']
+2026-10-16 04:09:00.956 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-e2e-restart-android-app-install-9034204-20261016-a3 devices=['emulator-5666']
+2026-10-16 04:09:01.968 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-e2e-restart-android-app-install-9034204-20261016-a3 devices=['emulator-5666']
+2026-10-16 04:09:08.050 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['emulator-5666'] → []
+2026-10-16 04:09:08.052 | INFO     | ai_phone.server.ws.agent_ws:op:763 - Agent personal-e2e-restart-android-app-install-9034204-20261016-a3 移除已拔出设备 ['emulator-5666']
+2026-10-16 04:09:08.052 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-e2e-restart-android-app-install-9034204-20261016-a3 devices=[]
+2026-10-16 04:09:08.757 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-e2e-restart-android-app-install-9034204-20261016-a3 devices=[]
+2026-10-16 04:09:09.105 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:273 - Agent 断开 | id=personal-e2e-restart-android-app-install-9034204-20261016-a3
+2026-10-16 04:09:09.105 | INFO     | ai_phone.server.hub:unregister_agent:201 - Agent 下线 | id=personal-e2e-restart-android-app-install-9034204-20261016-a3 serials=[]
+2026-10-16 04:09:09.302 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+{"status": "native_checks_passed_visual_review_pending", "evidence": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a3/evidence.json", "remaining_owned_runtimes": [], "protected_metadata_changed": []}

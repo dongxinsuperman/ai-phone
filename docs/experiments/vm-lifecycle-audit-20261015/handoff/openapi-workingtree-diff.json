@@ -1,0 +1,14 @@
+{
+  "POST /api/internal/harmony-vm/instances/{vm_id}/force-release": {
+    "description": {
+      "old": "Explicit operator escape hatch; never called automatically.",
+      "new": "Compatibility endpoint: a confirmation string is not cleanup evidence."
+    }
+  },
+  "POST /api/internal/ios-sim/instances/{vm_id}/dispatch": {
+    "description": {
+      "old": "把实例下发给指定 Agent 并启动。",
+      "new": null
+    }
+  }
+}

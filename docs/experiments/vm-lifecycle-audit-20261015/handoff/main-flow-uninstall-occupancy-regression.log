@@ -1,0 +1,84 @@
+F
+=================================== FAILURES ===================================
+_ test_native_package_work_keeps_device_occupied_after_async_timeout[uninstall] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1045a1c10>
+operation = 'uninstall'
+
+    @pytest.mark.parametrize("operation", ["install", "uninstall"])
+    @pytest.mark.asyncio
+    async def test_native_package_work_keeps_device_occupied_after_async_timeout(monkeypatch, operation):
+        module = install_handler if operation == "install" else uninstall_handler
+        activity = DeviceActivity()
+        entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+        sent = []
+        tasks = set()
+    
+        class Client:
+            async def send(self, payload):
+                sent.append(payload)
+                return True
+    
+        def native_work(*_args):
+            entered.set()
+            try:
+                assert release.wait(2)
+                return True, "", "stub native work completed"
+            finally:
+                finished.set()
+    
+        async def short_wait_for(awaitable, *, timeout):
+            # Fault injection of the existing outer async timeout, not a change to
+            # native behavior: the native stub deliberately remains in-flight.
+            return await asyncio.wait_for(awaitable, timeout=0.05)
+    
+        monkeypatch.setattr(module, "device_activity", activity)
+        monkeypatch.setattr(module, "_TASKS", tasks)
+        monkeypatch.setattr(module, "asyncio", SimpleNamespace(
+            create_task=asyncio.create_task, to_thread=asyncio.to_thread,
+            wait_for=short_wait_for, TimeoutError=asyncio.TimeoutError,
+        ))
+        message = {
+            "serial": "isolated-physical-or-vm", "platform": "android",
+            "request_id": "fixture-request", "task_id": "fixture-task", "item_id": "fixture-item",
+            "package_name": "example.personal.fixture", "filename": "fixture.apk", "timeout_sec": 10,
+        }
+        if operation == "install":
+            async def download(_client, _url, local_path):
+                local_path.write_bytes(b"fixture bytes; never passed to a native installer")
+    
+            monkeypatch.setattr(module, "_download_package", download)
+            monkeypatch.setattr(module, "install_apk", native_work)
+            start = module.handle_app_install_start
+        else:
+            monkeypatch.setattr(module, "uninstall_by_platform", native_work)
+            start = module.handle_app_uninstall_start
+    
+        pending = []
+        try:
+            await start(Client(), message)
+            pending = list(tasks)
+            assert await asyncio.to_thread(entered.wait, 1)
+            await asyncio.gather(*pending)
+            await asyncio.sleep(0)
+            assert sent and sent[-1]["reason"] == "timeout"
+            assert not finished.is_set(), "the test requires native work to still be in-flight"
+            acquired = activity.acquire(message["serial"], maintenance=True)
+            if acquired:
+                activity.release(message["serial"], maintenance=True)
+>           assert not acquired, "native install/uninstall is still running but VM stop/delete can now acquire maintenance"
+E           AssertionError: native install/uninstall is still running but VM stop/delete can now acquire maintenance
+E           assert not True
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/test_main_flow_native_occupancy.py:80: AssertionError
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 02:27:15.770 | INFO     | ai_phone.agent.app_uninstall.handler:_run_app_uninstall:86 - app_uninstall result sent=True request_id=fixture-request serial=isolated-physical-or-vm success=False reason=timeout
+============================= slowest 15 durations =============================
+0.05s call     ::test_native_package_work_keeps_device_occupied_after_async_timeout[uninstall]
+
+(2 durations < 0.005s hidden.  Use -vv to show these durations.)
+=========================== short test summary info ============================
+FAILED ../../var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-main-flow-74f209d-d1j_qf4_/backend::test_native_package_work_keeps_device_occupied_after_async_timeout[uninstall]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.23s
+{"pytest_exit_code": 1, "collected": 1, "blocked_external_calls": 1, "product_source_unchanged": true}

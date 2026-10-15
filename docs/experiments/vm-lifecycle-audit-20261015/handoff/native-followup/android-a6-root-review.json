@@ -1,0 +1,21 @@
+{
+  "at": "2026-10-15T22:26:42.663243+00:00",
+  "reviewer": "root",
+  "status": "passed",
+  "product_commit": "2dc9844ffd86b88f2e41acfc79fae87ae222d631",
+  "vm_id": "49cc71b3076c",
+  "checks": [
+    "All six declared coverage conditions true, matching frozen product and harness.",
+    "Save and discard restore exact initial boot ID and marker A PID/starttick/cmdline.",
+    "Discard does not restore marker B even though its numeric PID is reused by a different process.",
+    "Both cold starts have distinct kernel boot IDs and no old marker signatures.",
+    "Six native starts and thirteen correlated operations: twelve success, one intended image mismatch failure.",
+    "Installed API34 mismatch ends the exact operation failed with zero native launches and byte/metadata-identical original AVD.",
+    "Restoring original API33 succeeds, then ledger/AVD/PIDs/private ports are cleared."
+  ],
+  "avd_fingerprint_files": 33,
+  "negative_before_after_identical": true,
+  "reviewed_owner_summary_before_root_annotation_sha256": "0c34c1e0d3e7a7e23006490177a384f0d66cea37d556168e94d9d55c4b090e3f",
+  "summary_hash_stage": "Owner summary before adding root_independent_review; immutable evidence hash below identifies the unchanged raw capture.",
+  "immutable_raw_evidence_sha256": "a482e6dbcaad7c34c0898b3962432795955313dc83417eeba2edad6b11d328d5"
+}

@@ -1,0 +1,1010 @@
+{
+  "452e7d7": {
+    "android_vm": [
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/instances",
+        "function": "list_instances",
+        "line": 68,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "f459e69c125f860afa2c4a97fcef2b5d430e9d522851bbeeb3c1bade3d2f035b"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/instances",
+        "function": "create_instance",
+        "line": 94,
+        "args": "body: AndroidVmCreateReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "7dacf7f28a73be12c1ee59b9f18ec53dbd736ee6f2be141d208e81595faea941"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/instances/{vm_id}",
+        "function": "get_instance",
+        "line": 158,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession",
+        "body_ast_sha256": "ec24b7deb8744b195a8d3f41dc96eee98d0cd6c8f39b9ea66d262a0f3cb8318b"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/internal/vm/instances/{vm_id}",
+        "function": "patch_instance",
+        "line": 170,
+        "args": "body: AndroidVmPatchReq, vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession",
+        "body_ast_sha256": "0d1404515b4d7845eb278f9331df2ada533aef4e5b7d947c184a708c1cda1138"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/device-profiles",
+        "function": "list_device_profiles",
+        "line": 365,
+        "args": "q: str='', form_factor: str='', brand: str='', sdk: str='', resolution: str='', ram: str='', offset: int=0, limit: int=60, session: AsyncSession=DBSession",
+        "body_ast_sha256": "62a1c41c581f0afaa88f17ac36824e6b6aaa9e5f0b207a30b365561be3e11551"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/device-profiles/import-play-catalog",
+        "function": "import_play_device_catalog",
+        "line": 454,
+        "args": "body: AndroidDeviceProfileImportReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "4688a955b2c2e4facae35894a8884cb58270398786f6ebbe25d2a6444477ee10"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/device-profiles/import-google-supported-devices",
+        "function": "import_google_supported_devices",
+        "line": 489,
+        "args": "body: AndroidDeviceProfileImportReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "9bd6838e100bb803e6f9c629c51361426d7825cd991136ee32d15481770d351a"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/device-brands",
+        "function": "list_device_brands",
+        "line": 523,
+        "args": "form_factor: str='', session: AsyncSession=DBSession",
+        "body_ast_sha256": "4253f35ad2a8ca11429c9c1ca34af304c412e995686e5fccbefbc8bf8bcdc086"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/device-facets",
+        "function": "list_device_facets",
+        "line": 548,
+        "args": "q: str='', form_factor: str='', brand: str='', sdk: str='', resolution: str='', ram: str='', session: AsyncSession=DBSession",
+        "body_ast_sha256": "7286400cc529499e13b5494d448ac1fbd88813c948a50a945ea7658000af29a7"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/coverage-profiles",
+        "function": "list_coverage_profiles",
+        "line": 620,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "376e2a0baebb5ce87afe88c48487fbe57bb740915d2cd2313e271334f80e7c64"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/internal/vm/instances/{vm_id}",
+        "function": "delete_instance",
+        "line": 637,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "7226092237315fe2a195b2ab1347278a337e44f8f0545074795b138cf3797278"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/instances/{vm_id}/dispatch-candidates",
+        "function": "dispatch_candidates",
+        "line": 695,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "44035357c4a821ad39d84272f87ceae9e24707a1acb883f36610c04a5afd6bb4"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/instances/{vm_id}/dispatch",
+        "function": "dispatch_instance",
+        "line": 708,
+        "args": "body: AndroidVmDispatchReq, vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "ed437044cad34d2e40c4bdfa65f392296c30a9f9a3ee1b7ef0a29293a1163040"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/instances/{vm_id}/start",
+        "function": "start_instance",
+        "line": 727,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "8a0c0878a8ee6fc69d97c113d7dd76c789332f734625fce91a7d6a780286fa71"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/instances/{vm_id}/stop",
+        "function": "stop_instance",
+        "line": 752,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "fbe287f53d63ea0b5ce8fae4a82d3ffa17fa18e5e7a07053e6b621e6d589e2bf"
+      }
+    ],
+    "ios_sim": [
+      {
+        "method": "GET",
+        "path": "/api/internal/ios-sim/catalog",
+        "function": "get_catalog",
+        "line": 125,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "885167d8a6a7239e73ba225d3cb06b58670b13819795549c15d6eefd755dff98"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/ios-sim/health",
+        "function": "health",
+        "line": 145,
+        "args": "",
+        "body_ast_sha256": "43cffcacfa1cfe53f052194dc998ce5cb1d1a2beafb59e156510c8bcbebb794a"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/ios-sim/instances",
+        "function": "list_instances",
+        "line": 151,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "e658391afa28300dcda2a9c7aa79a4c81b0a7e9cbcfaca237dbdc3ab566a27e5"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances",
+        "function": "create_instance",
+        "line": 161,
+        "args": "body: IosSimVmCreateReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "4103b18d02c810b2fd4afa1294a757a24441e900e22689486fcb9cb0356a2e2e"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/ios-sim/instances/{vm_id}",
+        "function": "get_instance",
+        "line": 193,
+        "args": "vm_id: str, session: AsyncSession=DBSession",
+        "body_ast_sha256": "4ec1729037c8426f3979af4a06d26f7a210774bfe5cfaf3980186cec06ce1ea9"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/internal/ios-sim/instances/{vm_id}",
+        "function": "patch_instance",
+        "line": 202,
+        "args": "vm_id: str, body: IosSimVmPatchReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "2a61279bef3a15fcbc4392c88e9daa316c78de381515e24afc26c42544fb2608"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/internal/ios-sim/instances/{vm_id}",
+        "function": "delete_instance",
+        "line": 272,
+        "args": "vm_id: str, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "f33b53b64434640bfb0f19dff76c47e7168854c386b4a50f0cbe674761327537"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances/{vm_id}/copy",
+        "function": "copy_instance",
+        "line": 304,
+        "args": "vm_id: str, body: IosSimVmCreateReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "d54039c02a0eee64178985aa6be720022cd2066c1bb3a56f49511a33706911f9"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances/{vm_id}/dispatch-candidates",
+        "function": "dispatch_candidates",
+        "line": 344,
+        "args": "vm_id: str, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "ed80b73f6e5a1e6cf213eb6a4be4cc47bcdc8c6cb2f794a3a3171dbf522e377d"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances/{vm_id}/dispatch",
+        "function": "dispatch",
+        "line": 361,
+        "args": "vm_id: str, body: IosSimVmDispatchReq, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "d6506991ad46ae123ba6d5d3f31e250a264637a61cac49a6c6b6108b0e75ae2b"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances/{vm_id}/start",
+        "function": "start",
+        "line": 534,
+        "args": "vm_id: str, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "c8c2a354e6eeb696321431f15558d1b43c85242c8657a4c6885726e7570f8416"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances/{vm_id}/stop",
+        "function": "stop",
+        "line": 569,
+        "args": "vm_id: str, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "fec927f243dd746dfcea9941fbfb00f53d9f70d58427f20482437904fe6fad2c"
+      }
+    ],
+    "harmony_vm": [
+      {
+        "method": "GET",
+        "path": "/api/internal/harmony-vm/settings",
+        "function": "get_settings",
+        "line": 226,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "d908844423fb0fe91067a06446fefca9ed546496f4295c29bdb7c06b663cca64"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/internal/harmony-vm/settings",
+        "function": "put_settings",
+        "line": 233,
+        "args": "body: HarmonyVmSettingReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "03020b711bec9aeb7beba84048e0227a908ed703644ca2e8400e9195d65bec50"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/harmony-vm/catalog",
+        "function": "get_catalog",
+        "line": 263,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "56fd47c097a456052caf22308d2cdf5e2e882e17df9e53058ed7d4737bff0955"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/catalog/import",
+        "function": "import_catalog",
+        "line": 292,
+        "args": "body: HarmonyVmCatalogImportReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "57f49d7a29ac28f65a8cfd4b28651b25d5327bd83b3b8cc6a00e502f5616b144"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/harmony-vm/instances",
+        "function": "list_instances",
+        "line": 341,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "32c921198a0cd298777bcf431b8ac637f828582894e68d55a62bb67141a79bfb"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances",
+        "function": "create_instance",
+        "line": 351,
+        "args": "body: HarmonyVmCreateReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "9931f9281e9288488448928fd55548d9719136432b2992e7447a6b0bc8f8ffb1"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}",
+        "function": "get_instance",
+        "line": 520,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession",
+        "body_ast_sha256": "03fdef988af7280ba2e7c5c6bf467cd359be58a264bc9fb536a0708f8172f24c"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}",
+        "function": "patch_instance",
+        "line": 531,
+        "args": "body: HarmonyVmPatchReq, vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession",
+        "body_ast_sha256": "08ea90a94de747a760ce7d872e31345cf611862d833ea59b7bb62e702f3a13b9"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}",
+        "function": "delete_instance",
+        "line": 591,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "47d8e0d5a16d1ce0eaf5be47e2229cb35b7bf773c9c1db28ac5ad68ec50dea49"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}/force-release",
+        "function": "force_release_instance_lease",
+        "line": 649,
+        "args": "body: HarmonyVmForceReleaseReq, vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "f8f6490db70b6e7ec14b3b9716bd85887679c11880bc2e6b5b3a3be4f3e55b4a"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}/dispatch-candidates",
+        "function": "dispatch_candidates",
+        "line": 705,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "e8c151342b345b069be264bbfadaa362414fe85ec05cddce9efe1a19502e08ac"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}/dispatch",
+        "function": "dispatch_instance",
+        "line": 718,
+        "args": "body: HarmonyVmDispatchReq, vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "8844cee1fed0fc6c8d7ff1a5372de0cfc1fb4626e623d73c174763e6c7480ab2"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}/start",
+        "function": "start_instance",
+        "line": 731,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "3e8fe9a456ae0b33057987443ff4fc07b4a9494af38013de954b9eb21ec6daf8"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}/stop",
+        "function": "stop_instance",
+        "line": 754,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "2308a4467fa6755873b0b1ac484b111e2505a0675c662c107d52712b57c39c88"
+      }
+    ]
+  },
+  "74f209d": {
+    "android_vm": [
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/instances",
+        "function": "list_instances",
+        "line": 76,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "f459e69c125f860afa2c4a97fcef2b5d430e9d522851bbeeb3c1bade3d2f035b"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/instances",
+        "function": "create_instance",
+        "line": 102,
+        "args": "body: AndroidVmCreateReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "7dacf7f28a73be12c1ee59b9f18ec53dbd736ee6f2be141d208e81595faea941"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/instances/{vm_id}",
+        "function": "get_instance",
+        "line": 166,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession",
+        "body_ast_sha256": "ec24b7deb8744b195a8d3f41dc96eee98d0cd6c8f39b9ea66d262a0f3cb8318b"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/internal/vm/instances/{vm_id}",
+        "function": "patch_instance",
+        "line": 178,
+        "args": "body: AndroidVmPatchReq, vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession",
+        "body_ast_sha256": "24cc956b4bcd6413e55497a025bdc427dc1df398c1ea685cc32cf3c0d7a761ae"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/device-profiles",
+        "function": "list_device_profiles",
+        "line": 375,
+        "args": "q: str='', form_factor: str='', brand: str='', sdk: str='', resolution: str='', ram: str='', offset: int=0, limit: int=60, session: AsyncSession=DBSession",
+        "body_ast_sha256": "62a1c41c581f0afaa88f17ac36824e6b6aaa9e5f0b207a30b365561be3e11551"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/device-profiles/import-play-catalog",
+        "function": "import_play_device_catalog",
+        "line": 464,
+        "args": "body: AndroidDeviceProfileImportReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "4688a955b2c2e4facae35894a8884cb58270398786f6ebbe25d2a6444477ee10"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/device-profiles/import-google-supported-devices",
+        "function": "import_google_supported_devices",
+        "line": 499,
+        "args": "body: AndroidDeviceProfileImportReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "9bd6838e100bb803e6f9c629c51361426d7825cd991136ee32d15481770d351a"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/device-brands",
+        "function": "list_device_brands",
+        "line": 533,
+        "args": "form_factor: str='', session: AsyncSession=DBSession",
+        "body_ast_sha256": "4253f35ad2a8ca11429c9c1ca34af304c412e995686e5fccbefbc8bf8bcdc086"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/device-facets",
+        "function": "list_device_facets",
+        "line": 558,
+        "args": "q: str='', form_factor: str='', brand: str='', sdk: str='', resolution: str='', ram: str='', session: AsyncSession=DBSession",
+        "body_ast_sha256": "7286400cc529499e13b5494d448ac1fbd88813c948a50a945ea7658000af29a7"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/coverage-profiles",
+        "function": "list_coverage_profiles",
+        "line": 630,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "376e2a0baebb5ce87afe88c48487fbe57bb740915d2cd2313e271334f80e7c64"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/internal/vm/instances/{vm_id}",
+        "function": "delete_instance",
+        "line": 647,
+        "args": "vm_id: str, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "cf0016e9ab37f72f3eb0aa58c9c2e10ed47c226fa34442494b9ae0cf7b9e03fc"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/instances/{vm_id}/dispatch-candidates",
+        "function": "dispatch_candidates",
+        "line": 674,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "44035357c4a821ad39d84272f87ceae9e24707a1acb883f36610c04a5afd6bb4"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/instances/{vm_id}/dispatch",
+        "function": "dispatch_instance",
+        "line": 687,
+        "args": "body: AndroidVmDispatchReq, vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "ca351d204913b878ce00dd8b6dbadc3d7f3926788931ffdfdfc205a1238f4c5f"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/instances/{vm_id}/start",
+        "function": "start_instance",
+        "line": 705,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "6fec5537fe0f52b2e381325b39ac3201d168161a703b1823dfa443c0ad11f235"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/instances/{vm_id}/stop",
+        "function": "stop_instance",
+        "line": 726,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "f749d78cf47345aae0a10be242fdef4bf8d009696ec31fcefddbf07b106f1535"
+      }
+    ],
+    "ios_sim": [
+      {
+        "method": "GET",
+        "path": "/api/internal/ios-sim/catalog",
+        "function": "get_catalog",
+        "line": 133,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "885167d8a6a7239e73ba225d3cb06b58670b13819795549c15d6eefd755dff98"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/ios-sim/health",
+        "function": "health",
+        "line": 153,
+        "args": "",
+        "body_ast_sha256": "43cffcacfa1cfe53f052194dc998ce5cb1d1a2beafb59e156510c8bcbebb794a"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/ios-sim/instances",
+        "function": "list_instances",
+        "line": 159,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "e658391afa28300dcda2a9c7aa79a4c81b0a7e9cbcfaca237dbdc3ab566a27e5"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances",
+        "function": "create_instance",
+        "line": 169,
+        "args": "body: IosSimVmCreateReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "4103b18d02c810b2fd4afa1294a757a24441e900e22689486fcb9cb0356a2e2e"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/ios-sim/instances/{vm_id}",
+        "function": "get_instance",
+        "line": 201,
+        "args": "vm_id: str, session: AsyncSession=DBSession",
+        "body_ast_sha256": "4ec1729037c8426f3979af4a06d26f7a210774bfe5cfaf3980186cec06ce1ea9"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/internal/ios-sim/instances/{vm_id}",
+        "function": "patch_instance",
+        "line": 210,
+        "args": "vm_id: str, body: IosSimVmPatchReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "bdd44586f87814330df3ddd52029dcd9800158e51e63712d1aabdfca4afe399a"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/internal/ios-sim/instances/{vm_id}",
+        "function": "delete_instance",
+        "line": 282,
+        "args": "vm_id: str, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "d6bb3348fdb45e0c8db53a79fabe5b0849c036b0f9d99fc66645a24b2d863022"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances/{vm_id}/copy",
+        "function": "copy_instance",
+        "line": 309,
+        "args": "vm_id: str, body: IosSimVmCreateReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "d54039c02a0eee64178985aa6be720022cd2066c1bb3a56f49511a33706911f9"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances/{vm_id}/dispatch-candidates",
+        "function": "dispatch_candidates",
+        "line": 349,
+        "args": "vm_id: str, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "ed80b73f6e5a1e6cf213eb6a4be4cc47bcdc8c6cb2f794a3a3171dbf522e377d"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances/{vm_id}/dispatch",
+        "function": "dispatch",
+        "line": 366,
+        "args": "vm_id: str, body: IosSimVmDispatchReq, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "239e7b91704ae70cb7c1638681d6271969d4844f1a3f14beae0f037f25617a65"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances/{vm_id}/start",
+        "function": "start",
+        "line": 473,
+        "args": "vm_id: str, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "20af14e89ef370a46cbf2e54872e8f061a0ad8cedd1f03c74e8aafce8df7201d"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances/{vm_id}/stop",
+        "function": "stop",
+        "line": 485,
+        "args": "vm_id: str, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "6271eab3501f7a5a12c90434b1a06ed6666f05f9be56e843e2542f563dbf65d8"
+      }
+    ],
+    "harmony_vm": [
+      {
+        "method": "GET",
+        "path": "/api/internal/harmony-vm/settings",
+        "function": "get_settings",
+        "line": 224,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "d908844423fb0fe91067a06446fefca9ed546496f4295c29bdb7c06b663cca64"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/internal/harmony-vm/settings",
+        "function": "put_settings",
+        "line": 231,
+        "args": "body: HarmonyVmSettingReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "03020b711bec9aeb7beba84048e0227a908ed703644ca2e8400e9195d65bec50"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/harmony-vm/catalog",
+        "function": "get_catalog",
+        "line": 261,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "56fd47c097a456052caf22308d2cdf5e2e882e17df9e53058ed7d4737bff0955"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/catalog/import",
+        "function": "import_catalog",
+        "line": 290,
+        "args": "body: HarmonyVmCatalogImportReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "57f49d7a29ac28f65a8cfd4b28651b25d5327bd83b3b8cc6a00e502f5616b144"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/harmony-vm/instances",
+        "function": "list_instances",
+        "line": 339,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "32c921198a0cd298777bcf431b8ac637f828582894e68d55a62bb67141a79bfb"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances",
+        "function": "create_instance",
+        "line": 349,
+        "args": "body: HarmonyVmCreateReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "9931f9281e9288488448928fd55548d9719136432b2992e7447a6b0bc8f8ffb1"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}",
+        "function": "get_instance",
+        "line": 518,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession",
+        "body_ast_sha256": "03fdef988af7280ba2e7c5c6bf467cd359be58a264bc9fb536a0708f8172f24c"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}",
+        "function": "patch_instance",
+        "line": 529,
+        "args": "body: HarmonyVmPatchReq, vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession",
+        "body_ast_sha256": "a26487dbb6d392834d9c0ce75fed723ef4ffa6082161acd822f760b5ed9d1532"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}",
+        "function": "delete_instance",
+        "line": 597,
+        "args": "vm_id: str, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "f0aa4fed428322c0c0558752f2f7a3e68c2e7a0cf94d448260eda032d7548ff9"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}/force-release",
+        "function": "force_release_instance_lease",
+        "line": 625,
+        "args": "body: HarmonyVmForceReleaseReq, vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "079e0c896d9420b9028000284d2653a0abe2b9a4f56e1aca2680d42311af36ea"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}/dispatch-candidates",
+        "function": "dispatch_candidates",
+        "line": 644,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "e8c151342b345b069be264bbfadaa362414fe85ec05cddce9efe1a19502e08ac"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}/dispatch",
+        "function": "dispatch_instance",
+        "line": 657,
+        "args": "body: HarmonyVmDispatchReq, vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "8844cee1fed0fc6c8d7ff1a5372de0cfc1fb4626e623d73c174763e6c7480ab2"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}/start",
+        "function": "start_instance",
+        "line": 670,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "5bb277855c9b7cf7be2249f67f209dc792668aaac9084abd5075c748c3778cde"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}/stop",
+        "function": "stop_instance",
+        "line": 685,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "ba9cb84c79a24bc4b3d03a954a6b70901c04105b6a496272ebba745a9bbc2e8e"
+      }
+    ]
+  },
+  "workingtree": {
+    "android_vm": [
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/instances",
+        "function": "list_instances",
+        "line": 77,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "f459e69c125f860afa2c4a97fcef2b5d430e9d522851bbeeb3c1bade3d2f035b"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/instances",
+        "function": "create_instance",
+        "line": 103,
+        "args": "body: AndroidVmCreateReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "7dacf7f28a73be12c1ee59b9f18ec53dbd736ee6f2be141d208e81595faea941"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/instances/{vm_id}",
+        "function": "get_instance",
+        "line": 167,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession",
+        "body_ast_sha256": "ec24b7deb8744b195a8d3f41dc96eee98d0cd6c8f39b9ea66d262a0f3cb8318b"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/internal/vm/instances/{vm_id}",
+        "function": "patch_instance",
+        "line": 179,
+        "args": "body: AndroidVmPatchReq, vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession",
+        "body_ast_sha256": "24cc956b4bcd6413e55497a025bdc427dc1df398c1ea685cc32cf3c0d7a761ae"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/device-profiles",
+        "function": "list_device_profiles",
+        "line": 376,
+        "args": "q: str='', form_factor: str='', brand: str='', sdk: str='', resolution: str='', ram: str='', offset: int=0, limit: int=60, session: AsyncSession=DBSession",
+        "body_ast_sha256": "62a1c41c581f0afaa88f17ac36824e6b6aaa9e5f0b207a30b365561be3e11551"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/device-profiles/import-play-catalog",
+        "function": "import_play_device_catalog",
+        "line": 465,
+        "args": "body: AndroidDeviceProfileImportReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "4688a955b2c2e4facae35894a8884cb58270398786f6ebbe25d2a6444477ee10"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/device-profiles/import-google-supported-devices",
+        "function": "import_google_supported_devices",
+        "line": 500,
+        "args": "body: AndroidDeviceProfileImportReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "9bd6838e100bb803e6f9c629c51361426d7825cd991136ee32d15481770d351a"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/device-brands",
+        "function": "list_device_brands",
+        "line": 534,
+        "args": "form_factor: str='', session: AsyncSession=DBSession",
+        "body_ast_sha256": "4253f35ad2a8ca11429c9c1ca34af304c412e995686e5fccbefbc8bf8bcdc086"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/device-facets",
+        "function": "list_device_facets",
+        "line": 559,
+        "args": "q: str='', form_factor: str='', brand: str='', sdk: str='', resolution: str='', ram: str='', session: AsyncSession=DBSession",
+        "body_ast_sha256": "7286400cc529499e13b5494d448ac1fbd88813c948a50a945ea7658000af29a7"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/vm/coverage-profiles",
+        "function": "list_coverage_profiles",
+        "line": 631,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "376e2a0baebb5ce87afe88c48487fbe57bb740915d2cd2313e271334f80e7c64"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/internal/vm/instances/{vm_id}",
+        "function": "delete_instance",
+        "line": 648,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "cf0016e9ab37f72f3eb0aa58c9c2e10ed47c226fa34442494b9ae0cf7b9e03fc"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/instances/{vm_id}/dispatch-candidates",
+        "function": "dispatch_candidates",
+        "line": 675,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "44035357c4a821ad39d84272f87ceae9e24707a1acb883f36610c04a5afd6bb4"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/instances/{vm_id}/dispatch",
+        "function": "dispatch_instance",
+        "line": 688,
+        "args": "body: AndroidVmDispatchReq, vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "ca351d204913b878ce00dd8b6dbadc3d7f3926788931ffdfdfc205a1238f4c5f"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/instances/{vm_id}/start",
+        "function": "start_instance",
+        "line": 706,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "8333ddfca6c81a0cbf79f0f13199a86586c4a05e159c00195994ecdc146ef6ca"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/vm/instances/{vm_id}/stop",
+        "function": "stop_instance",
+        "line": 728,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "7387247a04a93fa47a25f05a41f06e851a4f08a3d910e32435f182d392981c0a"
+      }
+    ],
+    "ios_sim": [
+      {
+        "method": "GET",
+        "path": "/api/internal/ios-sim/catalog",
+        "function": "get_catalog",
+        "line": 134,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "885167d8a6a7239e73ba225d3cb06b58670b13819795549c15d6eefd755dff98"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/ios-sim/health",
+        "function": "health",
+        "line": 154,
+        "args": "",
+        "body_ast_sha256": "43cffcacfa1cfe53f052194dc998ce5cb1d1a2beafb59e156510c8bcbebb794a"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/ios-sim/instances",
+        "function": "list_instances",
+        "line": 160,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "e658391afa28300dcda2a9c7aa79a4c81b0a7e9cbcfaca237dbdc3ab566a27e5"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances",
+        "function": "create_instance",
+        "line": 170,
+        "args": "body: IosSimVmCreateReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "4103b18d02c810b2fd4afa1294a757a24441e900e22689486fcb9cb0356a2e2e"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/ios-sim/instances/{vm_id}",
+        "function": "get_instance",
+        "line": 202,
+        "args": "vm_id: str, session: AsyncSession=DBSession",
+        "body_ast_sha256": "4ec1729037c8426f3979af4a06d26f7a210774bfe5cfaf3980186cec06ce1ea9"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/internal/ios-sim/instances/{vm_id}",
+        "function": "patch_instance",
+        "line": 211,
+        "args": "vm_id: str, body: IosSimVmPatchReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "bdd44586f87814330df3ddd52029dcd9800158e51e63712d1aabdfca4afe399a"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/internal/ios-sim/instances/{vm_id}",
+        "function": "delete_instance",
+        "line": 283,
+        "args": "vm_id: str, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "d6bb3348fdb45e0c8db53a79fabe5b0849c036b0f9d99fc66645a24b2d863022"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances/{vm_id}/copy",
+        "function": "copy_instance",
+        "line": 310,
+        "args": "vm_id: str, body: IosSimVmCreateReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "d54039c02a0eee64178985aa6be720022cd2066c1bb3a56f49511a33706911f9"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances/{vm_id}/dispatch-candidates",
+        "function": "dispatch_candidates",
+        "line": 350,
+        "args": "vm_id: str, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "ed80b73f6e5a1e6cf213eb6a4be4cc47bcdc8c6cb2f794a3a3171dbf522e377d"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances/{vm_id}/dispatch",
+        "function": "dispatch",
+        "line": 367,
+        "args": "vm_id: str, body: IosSimVmDispatchReq, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "239e7b91704ae70cb7c1638681d6271969d4844f1a3f14beae0f037f25617a65"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances/{vm_id}/start",
+        "function": "start",
+        "line": 491,
+        "args": "vm_id: str, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "883eac310234d88f235df4ffafcf444d7c774931602e238f1ed1c1c9f7d26b50"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/ios-sim/instances/{vm_id}/stop",
+        "function": "stop",
+        "line": 503,
+        "args": "vm_id: str, session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "d132c0758a5ea6a5dcbd7f05f73382c6892980762baf0294c5b1577f52a04ed3"
+      }
+    ],
+    "harmony_vm": [
+      {
+        "method": "GET",
+        "path": "/api/internal/harmony-vm/settings",
+        "function": "get_settings",
+        "line": 225,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "d908844423fb0fe91067a06446fefca9ed546496f4295c29bdb7c06b663cca64"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/internal/harmony-vm/settings",
+        "function": "put_settings",
+        "line": 232,
+        "args": "body: HarmonyVmSettingReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "03020b711bec9aeb7beba84048e0227a908ed703644ca2e8400e9195d65bec50"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/harmony-vm/catalog",
+        "function": "get_catalog",
+        "line": 262,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "56fd47c097a456052caf22308d2cdf5e2e882e17df9e53058ed7d4737bff0955"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/catalog/import",
+        "function": "import_catalog",
+        "line": 291,
+        "args": "body: HarmonyVmCatalogImportReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "57f49d7a29ac28f65a8cfd4b28651b25d5327bd83b3b8cc6a00e502f5616b144"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/harmony-vm/instances",
+        "function": "list_instances",
+        "line": 340,
+        "args": "session: AsyncSession=DBSession",
+        "body_ast_sha256": "32c921198a0cd298777bcf431b8ac637f828582894e68d55a62bb67141a79bfb"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances",
+        "function": "create_instance",
+        "line": 350,
+        "args": "body: HarmonyVmCreateReq, session: AsyncSession=DBSession",
+        "body_ast_sha256": "9931f9281e9288488448928fd55548d9719136432b2992e7447a6b0bc8f8ffb1"
+      },
+      {
+        "method": "GET",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}",
+        "function": "get_instance",
+        "line": 519,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession",
+        "body_ast_sha256": "03fdef988af7280ba2e7c5c6bf467cd359be58a264bc9fb536a0708f8172f24c"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}",
+        "function": "patch_instance",
+        "line": 530,
+        "args": "body: HarmonyVmPatchReq, vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession",
+        "body_ast_sha256": "a26487dbb6d392834d9c0ce75fed723ef4ffa6082161acd822f760b5ed9d1532"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}",
+        "function": "delete_instance",
+        "line": 598,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "f0aa4fed428322c0c0558752f2f7a3e68c2e7a0cf94d448260eda032d7548ff9"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}/force-release",
+        "function": "force_release_instance_lease",
+        "line": 626,
+        "args": "body: HarmonyVmForceReleaseReq, vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "079e0c896d9420b9028000284d2653a0abe2b9a4f56e1aca2680d42311af36ea"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}/dispatch-candidates",
+        "function": "dispatch_candidates",
+        "line": 645,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "e8c151342b345b069be264bbfadaa362414fe85ec05cddce9efe1a19502e08ac"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}/dispatch",
+        "function": "dispatch_instance",
+        "line": 658,
+        "args": "body: HarmonyVmDispatchReq, vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "8844cee1fed0fc6c8d7ff1a5372de0cfc1fb4626e623d73c174763e6c7480ab2"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}/start",
+        "function": "start_instance",
+        "line": 671,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "a0f781bf67812883ee82d862ecf294c41d3ceebb072d62411b3b7c69cdb2be3d"
+      },
+      {
+        "method": "POST",
+        "path": "/api/internal/harmony-vm/instances/{vm_id}/stop",
+        "function": "stop_instance",
+        "line": 686,
+        "args": "vm_id: str=Path(..., min_length=1, max_length=64), session: AsyncSession=DBSession, hub: Hub=HubDep",
+        "body_ast_sha256": "732b45904451f5437884f95a87e23b4885841a84df7de2dc1f0b2069fc9174e2"
+      }
+    ]
+  }
+}

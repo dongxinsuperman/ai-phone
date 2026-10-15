@@ -1,0 +1,55 @@
+{"ts": 1792093822.996171, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093823.926892, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093824.0126138, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093824.308356, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "runtimes", "-j"]}
+{"ts": 1792093824.395621, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devicetypes", "-j"]}
+{"ts": 1792093824.534749, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "runtimes", "-j"]}
+{"ts": 1792093824.6172931, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devicetypes", "-j"]}
+{"ts": 1792093824.750268, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "runtimes", "-j"]}
+{"ts": 1792093824.832128, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devicetypes", "-j"]}
+{"ts": 1792093824.913672, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093825.1757371, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "create", "aiphone_sim_7b6b1c8a6085", "com.apple.CoreSimulator.SimDeviceType.iPhone-16e", "com.apple.CoreSimulator.SimRuntime.iOS-26-0"], "returncode": 0}
+{"ts": 1792093825.279884, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "boot", "3FFD282D-0846-4B8E-8437-CF522201D796"]}
+{"ts": 1792093825.958833, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "bootstatus", "3FFD282D-0846-4B8E-8437-CF522201D796"]}
+{"ts": 1792093898.970186, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "get_app_container", "3FFD282D-0846-4B8E-8437-CF522201D796", "com.example.wda.xctrunner", "app"]}
+{"ts": 1792093899.20374, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "install", "3FFD282D-0846-4B8E-8437-CF522201D796", "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8/storage/ios_sim_wda_build/Build/Products/Debug-iphonesimulator/WebDriverAgentRunner-Runner.app"]}
+{"ts": 1792093902.747633, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "launch", "--terminate-running-process", "3FFD282D-0846-4B8E-8437-CF522201D796", "com.example.wda.xctrunner"]}
+{"ts": 1792093908.234271, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "help"]}
+{"ts": 1792093908.382045, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093908.4884381, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "runtimes", "-j"]}
+{"ts": 1792093908.6524339, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "io", "3FFD282D-0846-4B8E-8437-CF522201D796", "enumerate"]}
+{"ts": 1792093908.784309, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devicetypes", "-j"]}
+{"ts": 1792093909.280373, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "openurl", "3FFD282D-0846-4B8E-8437-CF522201D796", "http://127.0.0.1:56907/fixture/?run=ios-20261016-035022-ddd0e8&platform=ios"]}
+{"ts": 1792093914.148923, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093929.183004, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093937.975949, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093938.212658, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "terminate", "3FFD282D-0846-4B8E-8437-CF522201D796", "com.example.wda.xctrunner"]}
+{"ts": 1792093938.4293911, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "shutdown", "3FFD282D-0846-4B8E-8437-CF522201D796"]}
+{"ts": 1792093941.622069, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093941.908716, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093942.217958, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "runtimes", "-j"]}
+{"ts": 1792093942.306207, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devicetypes", "-j"]}
+{"ts": 1792093942.3951051, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093942.547307, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "boot", "3FFD282D-0846-4B8E-8437-CF522201D796"]}
+{"ts": 1792093943.167603, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "bootstatus", "3FFD282D-0846-4B8E-8437-CF522201D796"]}
+{"ts": 1792093953.876524, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "get_app_container", "3FFD282D-0846-4B8E-8437-CF522201D796", "com.example.wda.xctrunner", "app"]}
+{"ts": 1792093954.1498969, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "launch", "--terminate-running-process", "3FFD282D-0846-4B8E-8437-CF522201D796", "com.example.wda.xctrunner"]}
+{"ts": 1792093960.512002, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093960.65662, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "openurl", "3FFD282D-0846-4B8E-8437-CF522201D796", "http://127.0.0.1:56907/fixture/?run=ios-20261016-035022-ddd0e8&platform=ios"]}
+{"ts": 1792093966.543248, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093966.757167, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "terminate", "3FFD282D-0846-4B8E-8437-CF522201D796", "com.example.wda.xctrunner"]}
+{"ts": 1792093966.962188, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "shutdown", "3FFD282D-0846-4B8E-8437-CF522201D796"]}
+{"ts": 1792093970.146341, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093970.40766, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093970.49948, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093970.717618, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093970.808874, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093970.844631, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093970.901367, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093970.9906821, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093971.145828, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "delete", "3FFD282D-0846-4B8E-8437-CF522201D796"]}
+{"ts": 1792093971.1878982, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093971.236615, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093971.289997, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093971.393961, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}
+{"ts": 1792093971.495347, "command": ["/usr/bin/xcrun", "simctl", "--set", "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8", "list", "devices", "-j"]}

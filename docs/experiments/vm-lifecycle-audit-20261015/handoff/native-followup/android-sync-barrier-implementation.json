@@ -1,0 +1,42 @@
+{
+  "recorded_at": "2026-10-15T21:15:04.039043+00:00",
+  "status": "candidate-frozen-tests-passed-independent-review-pending",
+  "base_product_commit": "8a2a3be1bb60f719282349e6135be3c226c3a7fe",
+  "sha256": {
+    "backend/ai_phone/agent/android_vm/manager.py": "c609f1b69eb7af48fa34ecaf757d1617d46e4afc3356e30344322d1fb521a0d0",
+    "backend/tests/test_android_vm_stop_budget.py": "d96e0da4ed0f827d31618b60735dc3895d020d724b0c9ce37531a4972828f453",
+    "backend/tests/test_android_vm_manager_reliability.py": "4653954a03965945d257126f89822efce46ff69fafbb90012deff10bd484cf44",
+    "backend/tests/test_android_vm.py": "cdca04b964d3906b95571d3841e29199de59c342138f332b08362e5762d0ca56"
+  },
+  "product_scope": [
+    "backend/ai_phone/agent/android_vm/manager.py"
+  ],
+  "tests": "325 passed, 2 existing skipped in 5.00s across five relevant files",
+  "log": "android-sync-barrier-tests.log",
+  "native_execution": false,
+  "committed": false,
+  "normal_stop": [
+    "Already confirmed exited remains idempotent without guest command",
+    "Every matched process must resolve to one unambiguous emulator serial before sync",
+    "One fixed /system/bin/sync and internal uuid4 hex completion marker in one shell command",
+    "Only rc0 plus exact marker newline before the existing deadline permits original emu kill; identity rechecked after sync",
+    "Unconfirmed sync/identity/native exit request retains runtime and never falls through to terminate/kill",
+    "Existing SDK exit/grace and snapshot/start flags stay unchanged after confirmed sync"
+  ],
+  "destroy": [
+    "Only private delete path sets destroy=True; remote stop fields cannot enable it",
+    "Explicit delete and proved first-bind rollback skip guest sync and preserve existing exact owned cleanup",
+    "Existing-instance start-failure cleanup and stop_all keep normal data-preserving stop mode"
+  ],
+  "limits": [
+    "sync_completed means command returned through its completion marker, not data_durable",
+    "No claim that WebView user-space batches are committed or every I/O error is surfaced",
+    "a2/a4 cause remains unproven; this is a candidate kernel-writeback barrier requiring native validation",
+    "No svc power shutdown implemented"
+  ],
+  "preserved_review_evidence": [
+    "android-sync-ambiguous-process-independent.json",
+    "android-sync-independent-replay.json",
+    "android-sync-independent-replay.py"
+  ]
+}

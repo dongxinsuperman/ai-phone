@@ -1,0 +1,155 @@
+{
+  "commit": "74f209dc6556d4678291b0dce63a9817741b6bea",
+  "source_files": {
+    "backend/ai_phone/agent/android_vm/capability.py": {
+      "manifest_sha256": "ed8630cb9f20d1791eea36d142bce755e73147b50a6e1621b2f6b4192d210b31",
+      "commit_sha256": "ed8630cb9f20d1791eea36d142bce755e73147b50a6e1621b2f6b4192d210b31",
+      "disk_sha256": "ed8630cb9f20d1791eea36d142bce755e73147b50a6e1621b2f6b4192d210b31"
+    },
+    "backend/ai_phone/agent/android_vm/manager.py": {
+      "manifest_sha256": "74121870ea9ca663e9e171d8ed146ef86f30c1e9bd0abd65f2d38ddf8318221c",
+      "commit_sha256": "74121870ea9ca663e9e171d8ed146ef86f30c1e9bd0abd65f2d38ddf8318221c",
+      "disk_sha256": "74121870ea9ca663e9e171d8ed146ef86f30c1e9bd0abd65f2d38ddf8318221c"
+    },
+    "backend/ai_phone/agent/app_install/handler.py": {
+      "manifest_sha256": "dd8f9610f5bca49030ccb0a066400766042830884ca9099827f5136119b802a8",
+      "commit_sha256": "dd8f9610f5bca49030ccb0a066400766042830884ca9099827f5136119b802a8",
+      "disk_sha256": "dd8f9610f5bca49030ccb0a066400766042830884ca9099827f5136119b802a8"
+    },
+    "backend/ai_phone/agent/app_uninstall/handler.py": {
+      "manifest_sha256": "29065d9cb1072bba65e614c782379584c64380f1c7cea42f8215387a50b7b6a0",
+      "commit_sha256": "29065d9cb1072bba65e614c782379584c64380f1c7cea42f8215387a50b7b6a0",
+      "disk_sha256": "29065d9cb1072bba65e614c782379584c64380f1c7cea42f8215387a50b7b6a0"
+    },
+    "backend/ai_phone/agent/device_activity.py": {
+      "manifest_sha256": "cc2e96d66080f7aa60fa8d0b9956e433e186fd892dfc26c00a8c904060395e31",
+      "commit_sha256": "cc2e96d66080f7aa60fa8d0b9956e433e186fd892dfc26c00a8c904060395e31",
+      "disk_sha256": "cc2e96d66080f7aa60fa8d0b9956e433e186fd892dfc26c00a8c904060395e31"
+    },
+    "backend/ai_phone/agent/drivers/__init__.py": {
+      "manifest_sha256": "9dc7c913234161dee17ef11b81967081f1e3b0170117812e184d32ae85fc8cc0",
+      "commit_sha256": "9dc7c913234161dee17ef11b81967081f1e3b0170117812e184d32ae85fc8cc0",
+      "disk_sha256": "9dc7c913234161dee17ef11b81967081f1e3b0170117812e184d32ae85fc8cc0"
+    },
+    "backend/ai_phone/agent/drivers/ios_simulator_wda.py": {
+      "manifest_sha256": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+      "commit_sha256": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+      "disk_sha256": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968"
+    },
+    "backend/ai_phone/agent/harmony_vm/capability.py": {
+      "manifest_sha256": "0b55a6dd74febed56efae177f82091c0d84607d090ba2122114bce1f1812035b",
+      "commit_sha256": "0b55a6dd74febed56efae177f82091c0d84607d090ba2122114bce1f1812035b",
+      "disk_sha256": "0b55a6dd74febed56efae177f82091c0d84607d090ba2122114bce1f1812035b"
+    },
+    "backend/ai_phone/agent/harmony_vm/manager.py": {
+      "manifest_sha256": "66ae26ef9619ca721cff0b137e6d060d683b540590fdaee31f9faa6a5022bc14",
+      "commit_sha256": "66ae26ef9619ca721cff0b137e6d060d683b540590fdaee31f9faa6a5022bc14",
+      "disk_sha256": "66ae26ef9619ca721cff0b137e6d060d683b540590fdaee31f9faa6a5022bc14"
+    },
+    "backend/ai_phone/agent/health/probe.py": {
+      "manifest_sha256": "a4ec72f21e4dc6b1bf4b0c3bcfcdde37b74b57305cc57b9d2ce738fc91139c33",
+      "commit_sha256": "a4ec72f21e4dc6b1bf4b0c3bcfcdde37b74b57305cc57b9d2ce738fc91139c33",
+      "disk_sha256": "a4ec72f21e4dc6b1bf4b0c3bcfcdde37b74b57305cc57b9d2ce738fc91139c33"
+    },
+    "backend/ai_phone/agent/health/supervisor.py": {
+      "manifest_sha256": "8393340453f02129d1c342e1815806cfe4f039ff00d7f117fbab94c462678858",
+      "commit_sha256": "8393340453f02129d1c342e1815806cfe4f039ff00d7f117fbab94c462678858",
+      "disk_sha256": "8393340453f02129d1c342e1815806cfe4f039ff00d7f117fbab94c462678858"
+    },
+    "backend/ai_phone/agent/identity.py": {
+      "manifest_sha256": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+      "commit_sha256": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+      "disk_sha256": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e"
+    },
+    "backend/ai_phone/agent/ios_sim/manager.py": {
+      "manifest_sha256": "6401fce688f697450099204f8c96c8995ffb2f2dcc65912b265e7ff1362bda60",
+      "commit_sha256": "6401fce688f697450099204f8c96c8995ffb2f2dcc65912b265e7ff1362bda60",
+      "disk_sha256": "6401fce688f697450099204f8c96c8995ffb2f2dcc65912b265e7ff1362bda60"
+    },
+    "backend/ai_phone/agent/main.py": {
+      "manifest_sha256": "9808bfb8ffaab1a2d647c311019709fbe2b0987685b83a96937dc9098ffd5a0f",
+      "commit_sha256": "9808bfb8ffaab1a2d647c311019709fbe2b0987685b83a96937dc9098ffd5a0f",
+      "disk_sha256": "9808bfb8ffaab1a2d647c311019709fbe2b0987685b83a96937dc9098ffd5a0f"
+    },
+    "backend/ai_phone/agent/ws_client.py": {
+      "manifest_sha256": "c9d6b39b48952b4c10adf8d124a210adc014f89525af9008586d2a7bdffcc04d",
+      "commit_sha256": "c9d6b39b48952b4c10adf8d124a210adc014f89525af9008586d2a7bdffcc04d",
+      "disk_sha256": "c9d6b39b48952b4c10adf8d124a210adc014f89525af9008586d2a7bdffcc04d"
+    },
+    "backend/ai_phone/server/android_vm/api.py": {
+      "manifest_sha256": "86405049beae3d4668b235f48ce32e1ba51b52a597ba3fcd18c5763233c97c38",
+      "commit_sha256": "86405049beae3d4668b235f48ce32e1ba51b52a597ba3fcd18c5763233c97c38",
+      "disk_sha256": "fd1161dfe3848bd86b230e7631ff981f0e1ed650ca8fd220613fd5f30b5c19e6"
+    },
+    "backend/ai_phone/server/android_vm/service.py": {
+      "manifest_sha256": "7a5799c4d386895ab9d4440708a4e7d1673ab8535f5154b2abac99c0dbd7edcd",
+      "commit_sha256": "7a5799c4d386895ab9d4440708a4e7d1673ab8535f5154b2abac99c0dbd7edcd",
+      "disk_sha256": "7a5799c4d386895ab9d4440708a4e7d1673ab8535f5154b2abac99c0dbd7edcd"
+    },
+    "backend/ai_phone/server/api/_deps.py": {
+      "manifest_sha256": "83e8ecdb97ae92480c6034200039d080ad0e024bcd26f6cf361e68c3b9ea6bd7",
+      "commit_sha256": "83e8ecdb97ae92480c6034200039d080ad0e024bcd26f6cf361e68c3b9ea6bd7",
+      "disk_sha256": "83e8ecdb97ae92480c6034200039d080ad0e024bcd26f6cf361e68c3b9ea6bd7"
+    },
+    "backend/ai_phone/server/app.py": {
+      "manifest_sha256": "2db57a8e7f596d36cbc4772808ad840d59ec134767d7e8ce8837bf5100435f73",
+      "commit_sha256": "2db57a8e7f596d36cbc4772808ad840d59ec134767d7e8ce8837bf5100435f73",
+      "disk_sha256": "2db57a8e7f596d36cbc4772808ad840d59ec134767d7e8ce8837bf5100435f73"
+    },
+    "backend/ai_phone/server/harmony_vm/api.py": {
+      "manifest_sha256": "f7a970d83620f52b4d0d48db8d7765e4bf5100f414626636e30618028a8b8dbd",
+      "commit_sha256": "f7a970d83620f52b4d0d48db8d7765e4bf5100f414626636e30618028a8b8dbd",
+      "disk_sha256": "a6e76f9d45659fe8bbfb6c54c15900f8282bba3065a74792bf7e45730c36e345"
+    },
+    "backend/ai_phone/server/harmony_vm/service.py": {
+      "manifest_sha256": "68f363acf0f78843219d92beb29ee7ddad37ac98dec299af57feb9b8e04fc2be",
+      "commit_sha256": "68f363acf0f78843219d92beb29ee7ddad37ac98dec299af57feb9b8e04fc2be",
+      "disk_sha256": "68f363acf0f78843219d92beb29ee7ddad37ac98dec299af57feb9b8e04fc2be"
+    },
+    "backend/ai_phone/server/hub.py": {
+      "manifest_sha256": "7252018d5468f7e0ccc3f7b28e3fa238053751e61925cef1b3538050c6ee4b33",
+      "commit_sha256": "7252018d5468f7e0ccc3f7b28e3fa238053751e61925cef1b3538050c6ee4b33",
+      "disk_sha256": "7252018d5468f7e0ccc3f7b28e3fa238053751e61925cef1b3538050c6ee4b33"
+    },
+    "backend/ai_phone/server/ios_sim/api.py": {
+      "manifest_sha256": "913f2411086fd9fb6a0d0b3bbbd443693f07c554056a73af294dcda14fcff343",
+      "commit_sha256": "913f2411086fd9fb6a0d0b3bbbd443693f07c554056a73af294dcda14fcff343",
+      "disk_sha256": "b560b50defeafa81fba350637fbfc3fd0300737b1f521a4ae8fb49de16b80f8f"
+    },
+    "backend/ai_phone/server/ios_sim/service.py": {
+      "manifest_sha256": "0671048c1217994e6fdb53c846e96afd99123d27f92b1325dcb50874ddad1fef",
+      "commit_sha256": "0671048c1217994e6fdb53c846e96afd99123d27f92b1325dcb50874ddad1fef",
+      "disk_sha256": "0671048c1217994e6fdb53c846e96afd99123d27f92b1325dcb50874ddad1fef"
+    },
+    "backend/ai_phone/server/vm_lifecycle.py": {
+      "manifest_sha256": "573d1a9005265736d08caf2891a81958004052a5bd27a8e53fed37bed497181b",
+      "commit_sha256": "573d1a9005265736d08caf2891a81958004052a5bd27a8e53fed37bed497181b",
+      "disk_sha256": "573d1a9005265736d08caf2891a81958004052a5bd27a8e53fed37bed497181b"
+    },
+    "backend/ai_phone/server/ws/_deps.py": {
+      "manifest_sha256": "a35024e4a79af02d098e71ab3f5a6f1ae5bad0130d35097a6a97ead977bacfcf",
+      "commit_sha256": "a35024e4a79af02d098e71ab3f5a6f1ae5bad0130d35097a6a97ead977bacfcf",
+      "disk_sha256": "a35024e4a79af02d098e71ab3f5a6f1ae5bad0130d35097a6a97ead977bacfcf"
+    },
+    "backend/ai_phone/server/ws/agent_ws.py": {
+      "manifest_sha256": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+      "commit_sha256": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+      "disk_sha256": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50"
+    },
+    "web/src/pages/HarmonyVirtualMachines.vue": {
+      "manifest_sha256": "82e63b570bdcf259516df5d3786a7b2c41388901918e580b9653dff10646643e",
+      "commit_sha256": "82e63b570bdcf259516df5d3786a7b2c41388901918e580b9653dff10646643e",
+      "disk_sha256": "82e63b570bdcf259516df5d3786a7b2c41388901918e580b9653dff10646643e"
+    },
+    "web/src/pages/IosSimVirtualMachines.vue": {
+      "manifest_sha256": "ae8aae0a5bff4e13246c3c37c44f0ecb9c1771ab1846c30e88f248a5202a996c",
+      "commit_sha256": "ae8aae0a5bff4e13246c3c37c44f0ecb9c1771ab1846c30e88f248a5202a996c",
+      "disk_sha256": "ae8aae0a5bff4e13246c3c37c44f0ecb9c1771ab1846c30e88f248a5202a996c"
+    },
+    "web/src/pages/VirtualMachines.vue": {
+      "manifest_sha256": "43482657da46fc1ea061e1c5ca349db8e1a807da9f0f60626023b7213fad3204",
+      "commit_sha256": "43482657da46fc1ea061e1c5ca349db8e1a807da9f0f60626023b7213fad3204",
+      "disk_sha256": "43482657da46fc1ea061e1c5ca349db8e1a807da9f0f60626023b7213fad3204"
+    }
+  }
+}

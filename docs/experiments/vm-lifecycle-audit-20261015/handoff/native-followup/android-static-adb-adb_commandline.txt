@@ -1,0 +1,105 @@
+Read-only disassembly. Target binary was not executed.
+Command: ['/usr/bin/xcrun', 'llvm-objdump', '--arch=arm64', '--disassemble-symbols=__Z15adb_commandlineiPPKc', '/Users/dongxin/Library/Android/sdk/platform-tools/adb']
+/Users/dongxin/Library/Android/sdk/platform-tools/adb:
+(__TEXT,__text) section
+100001fe8:	f6 57 bd a9	stp	x22, x21, [sp, #-0x30]!
+100001fec:	f4 4f 01 a9	stp	x20, x19, [sp, #0x10]
+100001ff0:	fd 7b 02 a9	stp	x29, x30, [sp, #0x20]
+100001ff4:	fd 83 00 91	add	x29, sp, #0x20
+
+Selected ARM64 commandline environment-parsing range only; full-image intermediate output intentionally removed.
+100007d68:	1a 00 80 d2	mov	x26, #0x0
+100007d6c:	19 00 80 d2	mov	x25, #0x0
+100007d70:	ff 23 00 f9	str	xzr, [sp, #0x40]
+100007d74:	17 00 80 12	mov	w23, #-0x1
+100007d78:	4a 00 80 52	mov	w10, #0x2
+100007d7c:	ea 27 00 b9	str	w10, [sp, #0x24]
+100007d80:	c9 00 00 37	tbnz	w9, #0x0, 0x100007d98
+100007d84:	a8 00 00 37	tbnz	w8, #0x0, 0x100007d98
+100007d88:	20 30 00 f0	adrp	x0, 1543 ; 0x10060e000
+100007d8c:	00 24 3c 91	add	x0, x0, #0xf09 ; literal pool for: "ADB_SERVER_SOCKET"
+100007d90:	27 0f 18 94	bl	0x10060ba2c ; symbol stub for: _getenv
+100007d94:	fa 03 00 aa	mov	x26, x0
+100007d98:	3a 0a 00 b5	cbnz	x26, 0x100007edc
+100007d9c:	fa 0f 40 f9	ldr	x26, [sp, #0x18]
+100007da0:	b8 00 00 37	tbnz	w24, #0x0, 0x100007db4
+100007da4:	20 30 00 f0	adrp	x0, 1543 ; 0x10060e000
+100007da8:	00 6c 3c 91	add	x0, x0, #0xf1b ; literal pool for: "ANDROID_ADB_SERVER_ADDRESS"
+100007dac:	20 0f 18 94	bl	0x10060ba2c ; symbol stub for: _getenv
+100007db0:	fa 03 00 aa	mov	x26, x0
+100007db4:	d6 00 00 37	tbnz	w22, #0x0, 0x100007dcc
+100007db8:	20 30 00 f0	adrp	x0, 1543 ; 0x10060e000
+100007dbc:	00 d8 3c 91	add	x0, x0, #0xf36 ; literal pool for: "ANDROID_ADB_SERVER_PORT"
+100007dc0:	1b 0f 18 94	bl	0x10060ba2c ; symbol stub for: _getenv
+100007dc4:	e0 17 00 f9	str	x0, [sp, #0x28]
+100007dc8:	e0 06 00 b4	cbz	x0, 0x100007ea4
+100007dcc:	f6 17 40 f9	ldr	x22, [sp, #0x28]
+100007dd0:	c8 02 40 39	ldrb	w8, [x22]
+100007dd4:	88 06 00 34	cbz	w8, 0x100007ea4
+100007dd8:	58 39 00 b0	adrp	x24, 1833 ; 0x100730000
+100007ddc:	18 0f 40 f9	ldr	x24, [x24, #0x18] ; literal pool symbol address: __DefaultRuneLocale
+100007de0:	00 1d 00 13	sxtb	w0, w8
+100007de4:	c8 00 38 37	tbnz	w8, #0x7, 0x100007dfc
+100007de8:	08 4b 20 8b	add	x8, x24, w0, uxtw #2
+100007dec:	08 3d 40 b9	ldr	w8, [x8, #0x3c]
+100007df0:	00 01 12 12	and	w0, w8, #0x4000
+100007df4:	a0 00 00 35	cbnz	w0, 0x100007e08
+100007df8:	08 00 00 14	b	0x100007e18
+100007dfc:	01 00 88 52	mov	w1, #0x4000
+100007e00:	ed 0e 18 94	bl	0x10060b9b4 ; symbol stub for: ___maskrune
+100007e04:	a0 00 00 34	cbz	w0, 0x100007e18
+100007e08:	c8 1e 40 38	ldrb	w8, [x22, #0x1]!
+100007e0c:	00 1d 00 13	sxtb	w0, w8
+100007e10:	c8 fe 3f 36	tbz	w8, #0x7, 0x100007de8
+100007e14:	fa ff ff 17	b	0x100007dfc
+100007e18:	c8 02 40 39	ldrb	w8, [x22]
+100007e1c:	58 01 80 52	mov	w24, #0xa
+100007e20:	1f c1 00 71	cmp	w8, #0x30
+100007e24:	e1 00 00 54	b.ne	0x100007e40
+100007e28:	c8 06 40 39	ldrb	w8, [x22, #0x1]
+100007e2c:	09 02 80 52	mov	w9, #0x10
+100007e30:	1f 61 01 71	cmp	w8, #0x58
+100007e34:	2a 01 98 1a	csel	w10, w9, w24, eq
+100007e38:	1f e1 01 71	cmp	w8, #0x78
+100007e3c:	38 01 8a 1a	csel	w24, w9, w10, eq
+100007e40:	a7 0e 18 94	bl	0x10060b8dc ; symbol stub for: ___error
+100007e44:	1f 00 00 b9	str	wzr, [x0]
+100007e48:	ff 7b 00 f9	str	xzr, [sp, #0xf0]
+100007e4c:	e1 c3 03 91	add	x1, sp, #0xf0
+100007e50:	e0 03 16 aa	mov	x0, x22
+100007e54:	e2 03 18 aa	mov	x2, x24
+100007e58:	10 0f 18 94	bl	0x10060ba98 ; symbol stub for: _strtoll
+100007e5c:	f8 03 00 aa	mov	x24, x0
+100007e60:	9f 0e 18 94	bl	0x10060b8dc ; symbol stub for: ___error
+100007e64:	08 00 40 b9	ldr	w8, [x0]
+100007e68:	28 b6 00 35	cbnz	w8, 0x10000952c
+100007e6c:	e8 7b 40 f9	ldr	x8, [sp, #0xf0]
+100007e70:	df 02 08 eb	cmp	x22, x8
+100007e74:	e0 ac 00 54	b.eq	0x100009410
+100007e78:	08 01 40 39	ldrb	w8, [x8]
+100007e7c:	a8 ac 00 35	cbnz	w8, 0x100009410
+100007e80:	08 43 40 d1	sub	x8, x24, #0x10, lsl #12
+100007e84:	1f 41 40 b1	cmn	x8, #0x10, lsl #12
+100007e88:	c9 b4 00 54	b.ls	0x100009520
+100007e8c:	ff 7b 00 f9	str	xzr, [sp, #0xf0]
+100007e90:	1a 01 00 b4	cbz	x26, 0x100007eb0
+100007e94:	fa 63 00 a9	stp	x26, x24, [sp]
+100007e98:	21 30 00 f0	adrp	x1, 1543 ; 0x10060e000
+100007e9c:	21 6c 3e 91	add	x1, x1, #0xf9b ; literal pool for: "tcp:%s:%d"
+100007ea0:	07 00 00 14	b	0x100007ebc
+100007ea4:	b8 75 82 52	mov	w24, #0x13ad
+100007ea8:	ff 7b 00 f9	str	xzr, [sp, #0xf0]
+100007eac:	5a ff ff b5	cbnz	x26, 0x100007e94
+100007eb0:	f8 03 00 f9	str	x24, [sp]
+100007eb4:	21 30 00 f0	adrp	x1, 1543 ; 0x10060e000
+100007eb8:	21 94 3e 91	add	x1, x1, #0xfa5 ; literal pool for: "tcp:%d"
+100007ebc:	e0 c3 03 91	add	x0, sp, #0xf0
+100007ec0:	ff 0e 18 94	bl	0x10060babc ; symbol stub for: _asprintf
+100007ec4:	a0 00 f8 36	tbz	w0, #0x1f, 0x100007ed8
+100007ec8:	c0 00 80 52	mov	w0, #0x6
+100007ecc:	01 00 80 d2	mov	x1, #0x0
+100007ed0:	a3 f4 11 94	bl	__ZN7android4base9ShouldLogENS0_11LogSeverityEPKc
+100007ed4:	60 82 00 35	cbnz	w0, 0x100008f20
+100007ed8:	fa 7b 40 f9	ldr	x26, [sp, #0xf0]
+100007edc:	c8 3c 00 d0	adrp	x8, 1946 ; 0x1007a1000
+100007ee0:	08 01 08 91	add	x8, x8, #0x200

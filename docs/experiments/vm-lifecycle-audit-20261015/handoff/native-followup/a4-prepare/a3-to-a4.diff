@@ -1,0 +1,348 @@
+--- /Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_diagnostic_a3.py
++++ /Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_visual_a4.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Opt-in a3 diagnosis: real installation + original page + durable private witness.
++"""Opt-in a4 calibration: retain a3 data checks and require rendered restart evidence.
+ 
+ Default: print the plan only. No imports of ai_phone, network, directory creation,
+ ADB daemon, emulator, or package build occur without --execute.
+@@ -26,6 +26,7 @@
+ import subprocess
+ import sys
+ import tempfile
++import threading
+ import time
+ import urllib.parse
+ import uuid
+@@ -47,6 +48,8 @@
+ ADB_PORT = 15037
+ EMULATOR_PORT = 5666
+ FIXTURE_GUEST_PORT = 19080
++RESTART_VISUAL_TIMEOUT_SEC = 30.0
++A4_ADB_READ_PATH_MANIFEST = HERE / "a4-prepare/adbutils-read-path.json"
+ 
+ MANIFEST = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  package="org.personal.aiphone.lifecycle" android:versionCode="1" android:versionName="1.0">
+@@ -227,6 +230,13 @@
+             "raw_storage": "Asynchronous read-only evaluateJavascript on page load and original receipt POST; no HTML modification.",
+             "confirmation_stop": "No new wait, guest command, sync, force-stop or reinstall after confirmation; monotonic timing only.",
+             "a2_avd": "Never inspected or changed by this new harness; a new run root is mandatory."},
++        "restart_visual_gate": {"position": "Only after original restart load receipt/count1, before saving final screenshot",
++            "budget_sec": RESTART_VISUAL_TIMEOUT_SEC, "xml_read_budget_sec": 8, "screenshot_budget_sec": 5,
++            "requires": "Exact native result label/token/count1 excluding input nodes, plus substantial solid blue button and green result border in real PNG",
++            "read_connection": "Exact private ADB/serial; no CLI, no implicit start-server, deadline closes only observation sockets",
++            "selected_frame": "Save the exact passing PNG/XML pair; do not take a replacement screenshot",
++            "failure": "Read/identity errors fail immediately; not-yet-drawn valid samples poll until bounded timeout; no UI/device recovery",
++            "root_visual_review": "Still required; pixel text is not automatically verified by the gate"},
+         "ownership": "Only VM IDs returned by this fresh local Server and recorded before dispatch.",
+         "server": "Fresh SQLite and loopback-only HTTP/WS, ephemeral port and token. No project .env or CLI defaults.",
+         "agent": "Restricted AgentWSClient + AndroidVmManager. No agent.main, global provider, foreign reclaim or orphan cleanup.",
+@@ -317,6 +327,129 @@
+         raise RuntimeError("Fixture control pixels did not form the expected large control")
+     return {"bounds": box, "center": ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
+             "pixel_count": len(points), "rgb": color}
++
++
++def inspect_visual_sample(xml_text: str, png: bytes, expected_token: str):
++    """Require native saved text plus both large markers in the same raw frame."""
++    result = {"ready": False, "reasons": [], "native_saved_token": False, "native_count_one": False,
++              "png_sha256": hashlib.sha256(png).hexdigest(),
++              "xml_sha256": hashlib.sha256(xml_text.encode()).hexdigest()}
++    try:
++        from io import BytesIO
++        from PIL import Image
++        with Image.open(BytesIO(png)) as native_frame:
++            if native_frame.size != (540, 960):
++                result["reasons"].append("unexpected dimensions for this exact 540x960 test VM")
++                return result
++        button = fixture_color_bounds(png, (21, 90, 182))
++        saved = fixture_color_bounds(png, (10, 121, 91))
++        result.update(button=button, result_region=saved)
++        for marker in (button, saved):
++            box = marker["bounds"]
++            marker["fill_ratio"] = marker["pixel_count"] / ((box[2] - box[0]) * (box[3] - box[1]))
++        if button["fill_ratio"] < 0.6 or saved["fill_ratio"] > 0.25:
++            result["reasons"].append("marker pixels do not form the fixed solid button and result border")
++            return result
++        if button["bounds"][3] >= saved["bounds"][1]:
++            result["reasons"].append("result region is not below the fixture button")
++            return result
++    except Exception as exc:
++        result["reasons"].append("fixture pixels absent or invalid: " + str(exc))
++        return result
++    try:
++        tree = ET.fromstring(xml_text[xml_text.index("<?xml"):])
++    except Exception as exc:
++        result["reasons"].append("native XML unavailable or invalid: " + str(exc))
++        return result
++    region = saved["bounds"]
++    fragments = []
++    for node in tree.iter("node"):
++        if "EditText" in node.attrib.get("class", "") or node.attrib.get("editable") == "true" or node.attrib.get("visible-to-user") == "false":
++            continue
++        bounds = [int(value) for value in re.findall(r"-?\d+", node.attrib.get("bounds", ""))]
++        if len(bounds) != 4 or bounds[2] <= bounds[0] or bounds[3] <= bounds[1] or \
++                bounds[2] <= region[0] or bounds[0] >= region[2] or bounds[3] <= region[1] or bounds[1] >= region[3]:
++            continue
++        for attribute in ("text", "content-desc"):
++            value = re.sub(r"\s+", "", node.attrib.get(attribute, ""))
++            if value:
++                fragments.append(value)
++    joined = "".join(fragments)
++    result["native_result_fragments"] = fragments
++    result["native_saved_token"] = bool(re.search(r"已保存标记[:：]" + re.escape(expected_token) + r"(?=$|[^A-Za-z0-9])", joined))
++    result["native_count_one"] = bool(re.search(r"确认次数[:：]1(?=$|[^0-9A-Za-z])", joined))
++    if not result["native_saved_token"]:
++        result["reasons"].append("exact saved token is not exposed by native result nodes")
++    if not result["native_count_one"]:
++        result["reasons"].append("native result count is not exactly one")
++    result["ready"] = result["native_saved_token"] and result["native_count_one"]
++    return result
++
++
++def bounded_private_observation(driver, action, timeout):
++    """Keep the real native read; bound only its private ADB connections.
++
++    Installed adbutils.shell otherwise replaces the client timeout with 600s.
++    A deadline closes only connections opened by this one private driver call.
++    The connection factory also omits adbutils' implicit start-server recovery.
++    The real screenshot code/command and captured pixels remain unchanged.
++    """
++    if timeout <= 0:
++        raise TimeoutError("Positive observation budget required")
++    deadline = time.monotonic() + timeout
++    client = driver._device._client
++    if client.host != "127.0.0.1" or client.port != ADB_PORT or driver._device.serial != f"emulator-{EMULATOR_PORT}":
++        raise RuntimeError("Visual sampler requires the exact private ADB client")
++    original_make_connection = client.make_connection
++    connections = []
++    lock = threading.Lock()
++
++    def close_connections():
++        with lock:
++            current = list(connections)
++        for connection in current:
++            with contextlib.suppress(Exception):
++                connection.conn.shutdown(socket.SHUT_RDWR)
++            with contextlib.suppress(Exception):
++                connection.close()
++
++    from adbutils import AdbConnection
++
++    class ObservationConnection(AdbConnection):
++        def _safe_connect(self):
++            remaining = deadline - time.monotonic()
++            if remaining <= 0:
++                raise TimeoutError("Private observation connection deadline expired")
++            connection = socket.create_connection(("127.0.0.1", ADB_PORT), timeout=remaining)
++            connection.settimeout(remaining)
++            return connection
++
++    def make_connection(timeout=None):
++        remaining = deadline - time.monotonic()
++        if remaining <= 0:
++            raise TimeoutError("Private observation connection deadline expired")
++        connection = ObservationConnection("127.0.0.1", ADB_PORT)
++        connection.conn.settimeout(min(float(timeout or remaining), remaining))
++        with lock:
++            connections.append(connection)
++        if time.monotonic() >= deadline:
++            close_connections()
++            raise TimeoutError("Private observation connection exceeded its deadline")
++        return connection
++
++    client.make_connection = make_connection
++    timer = threading.Timer(max(0.001, timeout), close_connections)
++    timer.daemon = True
++    timer.start()
++    try:
++        value = action()
++        if time.monotonic() >= deadline:
++            raise TimeoutError("Native read exceeded its observation budget")
++        return value
++    finally:
++        timer.cancel()
++        client.make_connection = original_make_connection
++        close_connections()
+ 
+ 
+ def protected_fingerprint():
+@@ -442,6 +575,9 @@
+ async def execute(run_id: str):
+     if digest(FIXTURE_HTML) != EXPECTED_FIXTURE_SHA256:
+         raise RuntimeError("Original shared HTML changed; refusing diagnostic execution")
++    adb_read_path = json.loads(A4_ADB_READ_PATH_MANIFEST.read_text())
++    if any(digest(Path(record["path"])) != record["sha256"] for record in adb_read_path["files"].values()):
++        raise RuntimeError("Reviewed private screenshot library changed; refusing native execution")
+     product_freeze = frozen_products()
+     if product_freeze["mismatches"]:
+         raise RuntimeError("Frozen product source changed; refusing native execution: " + ", ".join(product_freeze["mismatches"]))
+@@ -459,14 +595,17 @@
+     evidence = Evidence(root, run_id)
+     source_snapshot = root / "diagnostic-sources"
+     source_snapshot.mkdir()
+-    for original in (Path(__file__).resolve(), FIXTURE_HTML, JAVA_TEMPLATE, STORAGE_PROBE_JS):
++    for original in (Path(__file__).resolve(), FIXTURE_HTML, JAVA_TEMPLATE, STORAGE_PROBE_JS, A4_ADB_READ_PATH_MANIFEST):
+         (source_snapshot / original.name).write_bytes(original.read_bytes())
+     (source_snapshot / "MainActivity.generated.java").write_text(JAVA)
++    for name, record in adb_read_path["files"].items():
++        (source_snapshot / ("adbutils-" + name)).write_bytes(Path(record["path"]).read_bytes())
++    evidence.value["a4_adb_read_path"] = adb_read_path
+     evidence.value["paths"] = planned_paths(run_id)
+     evidence.value["protected_before"] = before
+     evidence.value["frozen_products_at_start"] = product_freeze
+     source_files = [
+-        Path(__file__).resolve(), FIXTURE_HTML, JAVA_TEMPLATE, STORAGE_PROBE_JS,
++        Path(__file__).resolve(), FIXTURE_HTML, JAVA_TEMPLATE, STORAGE_PROBE_JS, A4_ADB_READ_PATH_MANIFEST,
+         REPO / "backend/ai_phone/agent/android_vm/manager.py",
+         REPO / "backend/ai_phone/agent/ws_client.py",
+         REPO / "backend/ai_phone/agent/identity.py",
+@@ -618,9 +757,9 @@
+                 record.update(error=type(exc).__name__ + ": " + str(exc), returned_at=utc_now(), returned_monotonic_ns=time.monotonic_ns())
+                 raise
+ 
+-    def observed_stop_owned_process(process, *, graceful):
++    def observed_stop_owned_process(process, *, graceful, **kwargs):
+         record = {"kind": "owned-process-stop", "pid": process.pid, "emu_kill_succeeded": graceful,
+-                  "at": utc_now(), "monotonic_ns": time.monotonic_ns(), "calls": []}
++                  "at": utc_now(), "monotonic_ns": time.monotonic_ns(), "calls": [], "forwarded_kwargs": dict(kwargs)}
+         diagnostic_state["native_calls"].append(record)
+ 
+         class ProcessObserver:
+@@ -640,7 +779,7 @@
+                         raise
+                 return invoke
+         try:
+-            return original_stop_owned_process(ProcessObserver(), graceful=graceful)
++            return original_stop_owned_process(ProcessObserver(), graceful=graceful, **kwargs)
+         finally:
+             record.update(returned_at=utc_now(), returned_monotonic_ns=time.monotonic_ns(),
+                           fallback_signals=[call["method"] for call in record["calls"] if call["method"] in {"terminate", "kill"}])
+@@ -908,6 +1047,69 @@
+         adb_command("-s", serial, "shell", "uiautomator", "dump", "/sdcard/personal-e2e.xml", timeout=20)
+         text = adb_command("-s", serial, "shell", "cat", "/sdcard/personal-e2e.xml", timeout=10)
+         return text, ET.fromstring(text[text.index("<?xml"):])
++
++    async def restart_visual_sample(vm_id, driver):
++        started = time.monotonic()
++        deadline = started + RESTART_VISUAL_TIMEOUT_SEC
++        record = {"vm_id": vm_id, "started_at": utc_now(), "timeout_sec": RESTART_VISUAL_TIMEOUT_SEC,
++                  "scope": "read-only native XML and real PNG after original restart receipt/count1", "samples": [], "selected_sample": None}
++        evidence.value["restart_visual_gate"] = record
++        folder = root / "restart-visual-samples"
++        folder.mkdir()
++        while time.monotonic() < deadline:
++            index = len(record["samples"]) + 1
++            sample = {"index": index, "started_at": utc_now(), "started_monotonic_ns": time.monotonic_ns()}
++            record["samples"].append(sample)
++            try:
++                guest_xml = f"/sdcard/personal-a4-{run_id}-{index:02d}.xml"
++                sample["guest_xml_path"] = guest_xml
++                def native_xml_read():
++                    # All calls use the existing private device through the
++                    # same no-auto-start connection factory and one deadline.
++                    assert_owned(vm_id)
++                    runtime = manager._runtimes.get(vm_id)
++                    if runtime is None or runtime.adb_serial != driver._device.serial:
++                        raise RuntimeError("Native XML target no longer matches the verified owned runtime")
++                    dump = driver._device.shell(["uiautomator", "dump", guest_xml])
++                    if "dumped to: " + guest_xml not in str(dump):
++                        raise RuntimeError("Native XML dump did not report a fresh successful capture")
++                    text = driver._device.shell(["cat", guest_xml])
++                    return text, ET.fromstring(text[text.index("<?xml"):])
++                remaining = deadline - time.monotonic()
++                if remaining <= 0:
++                    raise TimeoutError("Visual observation deadline expired before native XML")
++                text, tree = await asyncio.to_thread(bounded_private_observation, driver, native_xml_read, min(8.0, remaining))
++                xml_path = folder / f"sample-{index:02d}.xml"
++                xml_path.write_text(text)
++                sample.update(xml=str(xml_path), xml_read_at=utc_now())
++                remaining = deadline - time.monotonic()
++                if remaining <= 0:
++                    raise TimeoutError("Visual observation deadline expired after native XML")
++                png = await asyncio.to_thread(bounded_private_observation, driver, driver.screenshot_png, min(5.0, remaining))
++                image_path = folder / f"sample-{index:02d}.png"
++                image_path.write_bytes(png)
++                assessment = inspect_visual_sample(text, png, expected_token)
++                sample.update(assessment=assessment, png=str(image_path), xml=str(xml_path))
++                if assessment["ready"] and time.monotonic() <= deadline:
++                    record.update(selected_sample=index, finished_at=utc_now(), elapsed_sec=time.monotonic() - started,
++                                  outcome="native-tree-and-frame-ready-root-pixel-review-required")
++                    sample.update(finished_at=utc_now(), elapsed_sec=(time.monotonic_ns() - sample["started_monotonic_ns"]) / 1e9)
++                    evidence.flush()
++                    return png, text, tree
++            except Exception as exc:
++                sample["observation_error"] = type(exc).__name__ + ": " + str(exc)
++                sample.update(finished_at=utc_now(), elapsed_sec=(time.monotonic_ns() - sample["started_monotonic_ns"]) / 1e9)
++                record.update(finished_at=utc_now(), elapsed_sec=time.monotonic() - started, outcome="failed-read-error")
++                evidence.flush()
++                raise RuntimeError("Read-only visual observation failed; no connection or UI recovery attempted") from exc
++            sample.update(finished_at=utc_now(), elapsed_sec=(time.monotonic_ns() - sample["started_monotonic_ns"]) / 1e9)
++            evidence.flush()
++            remaining = deadline - time.monotonic()
++            if remaining > 0:
++                await asyncio.sleep(min(0.25, remaining))
++        record.update(finished_at=utc_now(), elapsed_sec=time.monotonic() - started, outcome="failed-timeout")
++        evidence.flush()
++        raise TimeoutError("Restart visual evidence timeout: exact native saved token/count1 and both real frame markers were not jointly observed; no UI recovery attempted")
+ 
+     def center(node):
+         numbers = [int(x) for x in re.findall(r"\d+", node.attrib.get("bounds", ""))]
+@@ -980,11 +1182,15 @@
+             await asyncio.to_thread(driver.click, *button_position)
+             timing("confirm-click-returned")
+             await receipt("confirm", 1, start)
+-        image = await asyncio.to_thread(driver.screenshot_png)
++        if expect_existing:
++            image, text, _ = await restart_visual_sample(vm_id, driver)
++        else:
++            image = await asyncio.to_thread(driver.screenshot_png)
+         label = "fixture-persisted" if expect_existing else "fixture-confirmed"
+         path = root / (label + ".png")
+         path.write_bytes(image)
+-        text, _ = await asyncio.to_thread(ui_xml, vm_id)
++        if not expect_existing:
++            text, _ = await asyncio.to_thread(ui_xml, vm_id)
+         (root / (label + ".xml")).write_text(text)
+         native_ui_token_exposed = expected_token in text
+         evidence.add(label, status="native-control-and-receipt-passed", vm_id=vm_id,
+@@ -1355,7 +1561,10 @@
+         evidence.add("failure", status="failed", error=type(exc).__name__ + ": " + str(exc))
+         # Capture the exact owned screen before normal cleanup; diagnostics do
+         # not retry the failed lifecycle operation or broaden device selection.
+-        for key in sorted(owned & set(manager._runtimes)):
++        gate_failed = str(evidence.value.get("restart_visual_gate", {}).get("outcome") or "").startswith("failed")
++        if gate_failed:
++            evidence.add("failure-screen", skipped=True, reason="Use saved observation samples; no extra screenshot or connection recovery after visual-gate failure")
++        for key in ([] if gate_failed else sorted(owned & set(manager._runtimes))):
+             try:
+                 driver = await asyncio.to_thread(fresh_driver, key)
+                 png = await asyncio.to_thread(driver.screenshot_png)
+@@ -1453,6 +1662,8 @@
+         android_manager_module.subprocess = original_manager_subprocess
+         android_manager_module._stop_owned_process = original_stop_owned_process
+         diagnostic_state["summary"] = summarize_diagnostic()
++        adb_read_path["source_mismatches_at_finish"] = [name for name, record in adb_read_path["files"].items()
++            if digest(Path(record["path"])) != record["sha256"]]
+         try:
+             all_source_hashes = {name: digest(REPO / name) for name in evidence.value["source_hashes_at_start"]}
+             evidence.value["source_hashes_at_finish"] = all_source_hashes
+@@ -1466,7 +1677,7 @@
+         except Exception as exc:
+             freeze_changed = True
+             evidence.value["frozen_product_check_error"] = str(exc)
+-        if changed or manager._runtimes or remaining_avds or not private_adb_stopped or install_work_active or freeze_changed or diagnostic_state["source_mismatches"]:
++        if changed or manager._runtimes or remaining_avds or not private_adb_stopped or install_work_active or freeze_changed or diagnostic_state["source_mismatches"] or adb_read_path["source_mismatches_at_finish"]:
+             evidence.value["status"] = "failed"
+         evidence.flush()
+         print(json.dumps({"status": evidence.value["status"], "evidence": str(root / "evidence.json"),
+@@ -1481,7 +1692,7 @@
+     mode = parser.add_mutually_exclusive_group()
+     mode.add_argument("--execute", action="store_true", help="Run only the isolated personal Android test")
+     mode.add_argument("--dry-run", action="store_true", help="Print plan; default")
+-    parser.add_argument("--run-id", default="android-app-install-a3-" + dt.datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6])
++    parser.add_argument("--run-id", default="android-app-install-a4-" + dt.datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6])
+     args = parser.parse_args()
+     if not re.fullmatch(r"android-[A-Za-z0-9_-]{8,70}", args.run_id):
+         parser.error("run-id must be an ASCII android- test identifier")

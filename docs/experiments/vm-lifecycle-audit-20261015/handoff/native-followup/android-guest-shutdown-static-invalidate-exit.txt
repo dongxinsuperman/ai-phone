@@ -1,0 +1,10 @@
+
+/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+00000001001c5468 <_qemu_system_invalidate_exit_snapshot>:
+1001c5468: 52800028    	mov	w8, #0x1                ; =1
+1001c546c: 9000d329    	adrp	x9, 0x101c29000 <_mac_slots+0x4710>
+1001c5470: b9099128    	str	w8, [x9, #0x990]
+1001c5474: d65f03c0    	ret

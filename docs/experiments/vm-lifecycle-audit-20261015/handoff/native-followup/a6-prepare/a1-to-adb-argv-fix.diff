@@ -1,0 +1,42 @@
+--- a6-a1-frozen
++++ a6-adb-argv-fixed
+@@ -40,6 +40,28 @@
+ MAX_RUN_SECONDS = 900
+ IMAGE_33 = "system-images;android-33;google_apis;arm64-v8a"
+ IMAGE_34 = "system-images;android-34;google_apis;arm64-v8a"
++
++
++def private_adb_argv(args, *, run_id, environment):
++    expected_environment = {"ADB_SERVER_SOCKET": f"tcp:127.0.0.1:{ADB_PORT}",
++                            "ANDROID_ADB_SERVER_HOST": "127.0.0.1",
++                            "ANDROID_ADB_SERVER_PORT": str(ADB_PORT), "ADB_SERVER_PORT": str(ADB_PORT)}
++    if any(environment.get(key) != value for key, value in expected_environment.items()):
++        raise RuntimeError("Private ADB environment is missing or points elsewhere")
++    if not re.fullmatch(r"android-snapshot-a6-[A-Za-z0-9_-]{8,70}", run_id):
++        raise RuntimeError("Private ADB requires this a6 run identity")
++    args = list(args)
++    base = [str(SDK / "platform-tools/adb"), "-P", str(ADB_PORT)]
++    if args == ["start-server"]:
++        return [*base, "--one-device", "personal-a6-no-usb-" + run_id, "start-server"]
++    allowed = args in (["devices"], ["kill-server"]) or (
++        len(args) >= 3 and args[:2] == ["-s", SERIAL] and
++        (args[2:] == ["emu", "avd", "name"] or (len(args) == 4 and args[2] == "shell")))
++    if not allowed:
++        raise RuntimeError("Unexpected ADB client command or target")
++    # --one-device is a server-start option; the installed SDK rejects it on
++    # ordinary clients. Match the already-tested a5 private TCP invocation.
++    return [*base, *args]
+ 
+ 
+ def installed_image(package_id):
+@@ -335,9 +357,7 @@
+         return checked_avd(root, vm_id)
+ 
+     def adb_command(*args, timeout=15, binary=False):
+-        # Every CLI invocation retains the private port and no-USB selector,
+-        # including a possible daemon auto-start. No default ADB is used.
+-        return B["command"]([adb, "-P", str(ADB_PORT), "--one-device", "personal-a6-no-usb-" + run_id, *args],
++        return B["command"](private_adb_argv(args, run_id=run_id, environment=os.environ),
+                             timeout=timeout, binary=binary)
+ 
+     def target(vm_id):

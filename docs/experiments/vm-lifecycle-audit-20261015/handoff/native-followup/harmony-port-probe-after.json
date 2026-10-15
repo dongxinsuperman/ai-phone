@@ -1,0 +1,190 @@
+{
+  "platform": "macOS-15.7-arm64-arm-64bit",
+  "scope": "owned ephemeral local sockets; specific/wildcard/dual-stack bind; loopback-only connects",
+  "constants": {
+    "SOL_SOCKET": 65535,
+    "SO_REUSEADDR": 4
+  },
+  "results": [
+    {
+      "case": "closed_active_connection",
+      "original_reuse": true,
+      "port": 54811,
+      "plain": {
+        "bindable": false,
+        "errno": 48
+      },
+      "reuse": {
+        "bindable": true,
+        "errno": null
+      },
+      "manager_current_free": true,
+      "android_current_free": true,
+      "shared_current_free": true,
+      "capability_current_excludes": false,
+      "owned_tcp_rows": [
+        "tcp4       0      0  127.0.0.1.54811        127.0.0.1.54812        TIME_WAIT"
+      ]
+    },
+    {
+      "case": "closed_active_connection",
+      "original_reuse": false,
+      "port": 54817,
+      "plain": {
+        "bindable": false,
+        "errno": 48
+      },
+      "reuse": {
+        "bindable": true,
+        "errno": null
+      },
+      "manager_current_free": true,
+      "android_current_free": true,
+      "shared_current_free": true,
+      "capability_current_excludes": false,
+      "owned_tcp_rows": [
+        "tcp4       0      0  127.0.0.1.54817        127.0.0.1.54818        TIME_WAIT"
+      ]
+    },
+    {
+      "case": "active_listener",
+      "host": "127.0.0.1",
+      "dualstack": false,
+      "port": 54823,
+      "plain": {
+        "bindable": false,
+        "errno": 48
+      },
+      "reuse": {
+        "bindable": false,
+        "errno": 48
+      },
+      "manager_current_free": false,
+      "android_current_free": false,
+      "shared_current_free": false,
+      "capability_current_excludes": true,
+      "owned_tcp_rows": [
+        "tcp4       0      0  127.0.0.1.54823        *.*                    LISTEN"
+      ]
+    },
+    {
+      "case": "active_listener",
+      "host": "0.0.0.0",
+      "dualstack": false,
+      "port": 54824,
+      "plain": {
+        "bindable": false,
+        "errno": 48
+      },
+      "reuse": {
+        "bindable": true,
+        "errno": null
+      },
+      "manager_current_free": false,
+      "android_current_free": false,
+      "shared_current_free": false,
+      "capability_current_excludes": true,
+      "owned_tcp_rows": [
+        "tcp4       0      0  127.0.0.1.54824        127.0.0.1.54828        CLOSE_WAIT",
+        "tcp4       0      0  127.0.0.1.54824        127.0.0.1.54827        CLOSE_WAIT",
+        "tcp4       0      0  127.0.0.1.54824        127.0.0.1.54826        CLOSE_WAIT",
+        "tcp4       0      0  127.0.0.1.54824        127.0.0.1.54825        CLOSE_WAIT",
+        "tcp4       0      0  *.54824                *.*                    LISTEN"
+      ]
+    },
+    {
+      "case": "active_listener",
+      "host": "::",
+      "dualstack": true,
+      "port": 54829,
+      "plain": {
+        "bindable": false,
+        "errno": 48
+      },
+      "reuse": {
+        "bindable": true,
+        "errno": null
+      },
+      "manager_current_free": false,
+      "android_current_free": false,
+      "shared_current_free": false,
+      "capability_current_excludes": true,
+      "owned_tcp_rows": [
+        "tcp4       0      0  127.0.0.1.54829        127.0.0.1.54833        CLOSE_WAIT",
+        "tcp4       0      0  127.0.0.1.54829        127.0.0.1.54832        CLOSE_WAIT",
+        "tcp4       0      0  127.0.0.1.54829        127.0.0.1.54831        CLOSE_WAIT",
+        "tcp4       0      0  127.0.0.1.54829        127.0.0.1.54830        CLOSE_WAIT",
+        "tcp46      0      0  *.54829                *.*                    LISTEN"
+      ]
+    },
+    {
+      "case": "bound_not_listening",
+      "host": "127.0.0.1",
+      "dualstack": false,
+      "port": 54834,
+      "plain": {
+        "bindable": false,
+        "errno": 48
+      },
+      "reuse": {
+        "bindable": false,
+        "errno": 48
+      },
+      "manager_current_free": false,
+      "android_current_free": false,
+      "shared_current_free": false,
+      "capability_current_excludes": true,
+      "owned_tcp_rows": [
+        "tcp4       0      0  127.0.0.1.54834        *.*                    CLOSED"
+      ]
+    },
+    {
+      "case": "bound_not_listening",
+      "host": "0.0.0.0",
+      "dualstack": false,
+      "port": 54835,
+      "plain": {
+        "bindable": false,
+        "errno": 48
+      },
+      "reuse": {
+        "bindable": true,
+        "errno": null
+      },
+      "manager_current_free": false,
+      "android_current_free": false,
+      "shared_current_free": false,
+      "capability_current_excludes": true,
+      "owned_tcp_rows": [
+        "tcp4       0      0  *.54835                *.*                    CLOSED"
+      ]
+    },
+    {
+      "case": "bound_not_listening",
+      "host": "::",
+      "dualstack": true,
+      "port": 54840,
+      "plain": {
+        "bindable": false,
+        "errno": 48
+      },
+      "reuse": {
+        "bindable": true,
+        "errno": null
+      },
+      "manager_current_free": false,
+      "android_current_free": false,
+      "shared_current_free": false,
+      "capability_current_excludes": true,
+      "owned_tcp_rows": [
+        "tcp46      0      0  *.54840                *.*                    CLOSED"
+      ]
+    }
+  ],
+  "free_path_benchmark": {
+    "iterations": 1000,
+    "same_released_owned_port": 54848,
+    "plain_bind_sec": 0.021085,
+    "shared_probe_sec": 0.031358
+  }
+}

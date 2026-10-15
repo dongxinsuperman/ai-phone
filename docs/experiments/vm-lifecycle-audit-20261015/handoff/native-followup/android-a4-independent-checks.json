@@ -1,0 +1,33 @@
+{
+  "reviewed_at": "2026-10-15T20:24:17.794745+00:00",
+  "scope": "Independent offline a4 guard run and actual a3 image-copy hash verification; no ADB/VM/network calls.",
+  "status": "passed",
+  "script_sha256": "0c156d1ec8783a975bce3626a3db248b2ee4dcb012074690692b120ebdf605ba",
+  "test_sha256": "119e6f8fc093461f11b4944fa2ef1e24f21a6f3ae3d05314572710ae867624b9",
+  "guard_exit_code": 0,
+  "guard_output": ".......................................\n----------------------------------------------------------------------\nRan 39 tests in 4.154s\n\nOK\n",
+  "actual_a3_fixtures": [
+    {
+      "name": "fixture-confirmed.png",
+      "sha256": "95bb74234f9a010067079fd41f2534ca190f30483ea23aa3a3b71be4ee4e365a",
+      "unaltered_copy": true
+    },
+    {
+      "name": "fixture-persisted.png",
+      "sha256": "30d6f03fff2dc260bb185f9438cf41f836f36b0077e0f4fa867ce40966e4b615",
+      "unaltered_copy": true
+    }
+  ],
+  "unchanged_functions_ast": {
+    "target": true,
+    "ui_xml": true,
+    "receipt": true,
+    "ready": true,
+    "configure": true,
+    "build_fixture": true,
+    "diagnostic_summary": true,
+    "api": true
+  },
+  "original_case_prefix_ast_unchanged": true,
+  "candidate_hashes_match_after_review": true
+}

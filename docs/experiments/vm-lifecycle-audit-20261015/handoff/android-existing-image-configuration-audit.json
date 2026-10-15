@@ -1,0 +1,61 @@
+{
+  "source_commit": "e26e3d77e88b6a769ce80ccd86807e92ec7c881f",
+  "source_git_blobs": {
+    "backend/ai_phone/server/android_vm/api.py": "b6e82fff7f75cc5ceab2011b9d4c270df9310c1d",
+    "backend/ai_phone/server/android_vm/service.py": "e2475c7c0ad102119a70106def645bb63f191f6c",
+    "backend/ai_phone/agent/android_vm/manager.py": "42a7ddca7ae7cc9f935b4069b97b8890d7c9cad7",
+    "backend/ai_phone/agent/android_vm/capability.py": "518485d20dbe14e257207d816c4f0ca4cfc1c5b2"
+  },
+  "method": "Existing functions extracted from committed Git AST; actual function bodies, memory-only AVD file and fake list response. No HTTP/WS requests, database writes, native commands or real AVD/filesystem changes.",
+  "observed_scope": "apply_vm_patch/vm_payload/config normalization/image computation/existing _ensure_avd and config writer only; not a native boot or full HTTP integration run",
+  "native_commands_executed": 0,
+  "cases": [
+    {
+      "case": "explicit_image_and_api",
+      "server_api_level": 35,
+      "config_json_api_level": 33,
+      "payload_api_level": 35,
+      "requested_system_image": "system-images;android-35;google_apis;arm64-v8a",
+      "retained_avd_image": "system-images/android-33/google_apis/arm64-v8a/",
+      "retained_avd_target": "android-33",
+      "new_avd_created": false,
+      "screen_write_executed": true
+    },
+    {
+      "case": "implicit_image_from_api",
+      "server_api_level": 35,
+      "config_json_api_level": 33,
+      "payload_api_level": 35,
+      "requested_system_image": "system-images;android-35;google_apis;arm64-v8a",
+      "retained_avd_image": "system-images/android-33/google_apis/arm64-v8a/",
+      "retained_avd_target": "android-33",
+      "new_avd_created": false,
+      "screen_write_executed": true
+    },
+    {
+      "case": "config_json_system_only",
+      "server_api_level": 33,
+      "config_json_api_level": 35,
+      "payload_api_level": 33,
+      "requested_system_image": "system-images;android-33;google_apis;arm64-v8a",
+      "retained_avd_image": "system-images/android-33/google_apis/arm64-v8a/",
+      "retained_avd_target": "android-33",
+      "new_avd_created": false,
+      "screen_write_executed": true
+    },
+    {
+      "case": "profile_metadata_only",
+      "server_api_level": 33,
+      "config_json_api_level": 33,
+      "payload_api_level": 33,
+      "requested_system_image": "system-images;android-33;google_apis;arm64-v8a",
+      "retained_avd_image": "system-images/android-33/google_apis/arm64-v8a/",
+      "retained_avd_target": "android-33",
+      "new_avd_created": false,
+      "screen_write_executed": true
+    }
+  ],
+  "static_follow_on": "Startup command uses the existing -avd name with no -system override; running details.system_image echoes the requested package ID rather than reading the existing native image.",
+  "authorized_followup": "Agent existing-AVD image identity guard before any config write; Server PATCH remains available to repair old incorrect configuration; no product edit performed by this audit",
+  "fix_validation_status": "Pending Android owner evidence; this artifact records the e26 pre-fix behavior only"
+}

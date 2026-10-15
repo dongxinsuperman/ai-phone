@@ -1,0 +1,37 @@
+{
+  "scope": "ONE personal local Harmony Phone; new isolated SQLite/WS/storage/registry/instance root",
+  "default_action": "plan only; explicit --execute after root hardware approval",
+  "reuse": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/execution/harmony_personal_e2e.py",
+  "native_steps": [
+    "create unbound VM via API",
+    "real capability/bind/start",
+    "write random guest marker",
+    "real stop while dropping exactly its terminal stop ACK",
+    "disconnect old Agent session",
+    "inject legacy format in only owned registry and SQLite row",
+    "new Agent + fresh Manager, same real host identity file and real pre-hello reclaim",
+    "actual private inventory -> owner handoff only, no state or lease release",
+    "ordinary stop freshly checks native absence; direct old port/token row query proves lease deleted",
+    "restart original VM/UUID and read guest marker",
+    "disconnect only the second WS session; fresh third Manager/session reclaims the still-running private instance with process=None",
+    "ordinary stop, immediate ledger delete, independent native cleanup"
+  ],
+  "injections": [
+    "Drop exactly one own terminal stopped ACK with cleanup_confirmed=true; preserve the real receipt as evidence.",
+    "After actual stop and old-session disconnect, only own registry row: ready=false; remove cleanup_confirmed and exit_evidence; keep instance/UUID/port/lease.",
+    "Only the freshly-created isolated SQLite VM row: remove runtime.owner_host_id; preserve state/error/last_status/lease and operation facts."
+  ],
+  "guards": [
+    "fresh ASCII /tmp root, no .env inheritance",
+    "Python network loopback only",
+    "one exact VM ID and canonical private instance path",
+    "refuse existing emulator processes or connected unowned HDC targets",
+    "private inventory only; never default instance roots",
+    "no global HDC kill/restart or image changes",
+    "default DevEco/config metadata hashes before and after",
+    "product/source hashes before and after",
+    "one scoped emergency delete on failure; preserve failed outcome"
+  ],
+  "running_reclaim_boundary": "Fresh Manager and Agent session in this harness process; this does not simulate killing the Agent OS process or host.",
+  "shared_port_helper": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/vm_ports.py"
+}

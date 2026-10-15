@@ -1,0 +1,57 @@
+{
+  "at": "2026-10-15T22:24:29.411527+00:00",
+  "processes": {
+    "76148": {
+      "exists": false
+    },
+    "76296": {
+      "exists": false
+    },
+    "76376": {
+      "exists": false
+    },
+    "76458": {
+      "exists": false
+    },
+    "76526": {
+      "exists": false
+    },
+    "76662": {
+      "exists": false
+    },
+    "76097": {
+      "exists": false
+    }
+  },
+  "ports": {
+    "15037": {
+      "127.0.0.1": {
+        "bindable": true
+      },
+      "::1": {
+        "bindable": true
+      }
+    },
+    "5666": {
+      "127.0.0.1": {
+        "bindable": true
+      },
+      "::1": {
+        "bindable": true
+      }
+    },
+    "5667": {
+      "127.0.0.1": {
+        "bindable": true
+      },
+      "::1": {
+        "bindable": true
+      }
+    }
+  },
+  "avd_exists": false,
+  "ini_exists": false,
+  "ledger_rows": 0,
+  "native_handlers_active": 0,
+  "protected_metadata_changed": []
+}

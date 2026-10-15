@@ -1,0 +1,17 @@
+Inherited guard SHA256: 215fa9de852b259f27213a7e8462ad48e08a5e5088ea225d1d21d7210cbe072a
+..................                                                       [100%]
+============================= slowest 12 durations =============================
+0.08s setup    tests/test_harmony_vm_recovery.py::test_offline_vm_switch_creates_new_id_before_old_orphan_cleanup[False]
+0.07s setup    tests/test_harmony_vm_identity.py::test_deleted_vm_and_new_vm_reusing_10007_keep_all_identities_apart
+0.05s setup    tests/test_harmony_vm_recovery.py::test_offline_vm_switch_creates_new_id_before_old_orphan_cleanup[True]
+0.05s setup    tests/test_harmony_vm_recovery.py::test_failed_first_binding_cannot_be_revived_by_late_status_or_inventory
+0.05s setup    tests/test_harmony_vm_identity.py::test_only_managed_harmony_vm_uses_vm_identity
+0.05s setup    tests/test_harmony_vm_recovery.py::test_start_on_offline_agent_preserves_old_lease
+0.05s setup    tests/test_harmony_vm_recovery.py::test_stop_without_assigned_agent_keeps_unconfirmed_lease
+0.05s setup    tests/test_harmony_vm_recovery.py::test_same_agent_cannot_redispatch_with_unconfirmed_old_lease
+0.05s call     tests/test_harmony_vm_identity.py::test_deleted_vm_and_new_vm_reusing_10007_keep_all_identities_apart
+0.03s call     tests/test_harmony_vm_recovery.py::test_offline_vm_switch_creates_new_id_before_old_orphan_cleanup[False]
+0.03s call     tests/test_harmony_vm_recovery.py::test_offline_vm_switch_creates_new_id_before_old_orphan_cleanup[True]
+0.02s setup    tests/test_harmony_vm_recovery.py::test_stale_port_lease_row_cannot_be_reused_by_new_dispatch
+18 passed in 0.76s
+{"final_exit_code": 0, "source_unchanged": true, "duration_seconds": 1.404}

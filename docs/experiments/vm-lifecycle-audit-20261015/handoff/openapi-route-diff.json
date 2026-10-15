@@ -1,0 +1,134 @@
+{
+  "DELETE /api/internal/vm/instances/{vm_id}": {
+    "parameters": {
+      "old": [
+        {
+          "name": "vm_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "title": "Vm Id"
+          }
+        },
+        {
+          "name": "authorization",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization"
+          }
+        }
+      ],
+      "new": [
+        {
+          "name": "vm_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "title": "Vm Id"
+          }
+        },
+        {
+          "name": "authorization",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization"
+          }
+        }
+      ]
+    }
+  },
+  "DELETE /api/internal/harmony-vm/instances/{vm_id}": {
+    "parameters": {
+      "old": [
+        {
+          "name": "vm_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "title": "Vm Id"
+          }
+        },
+        {
+          "name": "authorization",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization"
+          }
+        }
+      ],
+      "new": [
+        {
+          "name": "vm_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "title": "Vm Id"
+          }
+        },
+        {
+          "name": "authorization",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization"
+          }
+        }
+      ]
+    }
+  },
+  "POST /api/internal/harmony-vm/instances/{vm_id}/force-release": {
+    "description": {
+      "old": "Explicit operator escape hatch; never called automatically.",
+      "new": "Compatibility endpoint: a confirmation string is not cleanup evidence."
+    }
+  },
+  "POST /api/internal/ios-sim/instances/{vm_id}/dispatch": {
+    "description": {
+      "old": "把实例下发给指定 Agent 并启动。",
+      "new": null
+    }
+  }
+}

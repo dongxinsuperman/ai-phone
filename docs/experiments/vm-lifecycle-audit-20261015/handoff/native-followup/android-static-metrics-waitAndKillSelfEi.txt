@@ -1,0 +1,686 @@
+Read-only disassembly. Target binary was not executed.
+Command: ['/usr/bin/xcrun', 'llvm-objdump', '--arch=arm64', '--disassemble-symbols=__ZN7android4base6System15waitAndKillSelfEi', '/Users/dongxin/Library/Android/sdk/emulator/lib64/libandroid-emu-metrics.dylib']
+
+/Users/dongxin/Library/Android/sdk/emulator/lib64/libandroid-emu-metrics.dylib:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+00000000001b7b30 <__ZN7android4base6System15waitAndKillSelfEi>:
+  1b7b30: d10503ff     	sub	sp, sp, #0x140
+  1b7b34: a90e6ffc     	stp	x28, x27, [sp, #0xe0]
+  1b7b38: a90f67fa     	stp	x26, x25, [sp, #0xf0]
+  1b7b3c: a9105ff8     	stp	x24, x23, [sp, #0x100]
+  1b7b40: a91157f6     	stp	x22, x21, [sp, #0x110]
+  1b7b44: a9124ff4     	stp	x20, x19, [sp, #0x120]
+  1b7b48: a9137bfd     	stp	x29, x30, [sp, #0x130]
+  1b7b4c: 9104c3fd     	add	x29, sp, #0x130
+  1b7b50: aa0003f3     	mov	x19, x0
+  1b7b54: d503201f     	nop
+  1b7b58: 586c2588     	ldr	x8, 0x290008 <dyld_stub_binder+0x290008>
+  1b7b5c: f9400108     	ldr	x8, [x8]
+  1b7b60: f81a03a8     	stur	x8, [x29, #-0x60]
+  1b7b64: 9000097a     	adrp	x26, 0x2e3000 <__ZL59file_level_enum_descriptors_protos_2fstudio_5fstats_2eproto+0x388>
+  1b7b68: f946c340     	ldr	x0, [x26, #0xd80]
+  1b7b6c: b5000440     	cbnz	x0, 0x1b7bf4 <__ZN7android4base6System15waitAndKillSelfEi+0xc4>
+  1b7b70: 90000974     	adrp	x20, 0x2e3000 <__ZL59file_level_enum_descriptors_protos_2fstudio_5fstats_2eproto+0x388>
+  1b7b74: 9136a294     	add	x20, x20, #0xda8
+  1b7b78: aa1403e0     	mov	x0, x20
+  1b7b7c: 940184ed     	bl	0x218f30 <__ZN7android4base8internal17LazyInstanceState16needConstructionEv>
+  1b7b80: 34000380     	cbz	w0, 0x1b7bf0 <__ZN7android4base6System15waitAndKillSelfEi+0xc0>
+  1b7b84: 10753f28     	adr	x8, 0x2a2368 <__ZTVN7android4base12_GLOBAL__N_110HostSystemE+0x10>
+  1b7b88: d503201f     	nop
+  1b7b8c: aa1403f5     	mov	x21, x20
+  1b7b90: f8008ea8     	str	x8, [x21, #0x8]!
+  1b7b94: d503201f     	nop
+  1b7b98: 9c69d6c0     	ldr	q0, 0x28b670 <dyld_stub_binder+0x28b670>
+  1b7b9c: 6f00e401     	movi.2d	v1, #0000000000000000
+  1b7ba0: ad008680     	stp	q0, q1, [x20, #0x10]
+  1b7ba4: ad018681     	stp	q1, q1, [x20, #0x30]
+  1b7ba8: ad028681     	stp	q1, q1, [x20, #0x50]
+  1b7bac: f9003a9f     	str	xzr, [x20, #0x70]
+  1b7bb0: 52a7f008     	mov	w8, #0x3f800000         ; =1065353216
+  1b7bb4: b9007a88     	str	w8, [x20, #0x78]
+  1b7bb8: ad040681     	stp	q1, q1, [x20, #0x80]
+  1b7bbc: ad050681     	stp	q1, q1, [x20, #0xa0]
+  1b7bc0: ad060681     	stp	q1, q1, [x20, #0xc0]
+  1b7bc4: 100065e0     	adr	x0, 0x1b8880 <__ZN7android4base12_GLOBAL__N_110HostSystem17atexit_HostSystemEv>
+  1b7bc8: d503201f     	nop
+  1b7bcc: 94018c4e     	bl	0x21ad04 <dyld_stub_binder+0x21ad04>
+  1b7bd0: f94002a8     	ldr	x8, [x21]
+  1b7bd4: f940dd08     	ldr	x8, [x8, #0x1b8]
+  1b7bd8: aa1503e0     	mov	x0, x21
+  1b7bdc: d63f0100     	blr	x8
+  1b7be0: aa1403e0     	mov	x0, x20
+  1b7be4: 940184f1     	bl	0x218fa8 <__ZN7android4base8internal17LazyInstanceState16doneConstructingEv>
+  1b7be8: aa1503e0     	mov	x0, x21
+  1b7bec: 14000002     	b	0x1b7bf4 <__ZN7android4base6System15waitAndKillSelfEi+0xc4>
+  1b7bf0: 91002280     	add	x0, x20, #0x8
+  1b7bf4: 92800217     	mov	x23, #-0x11             ; =-17
+  1b7bf8: f2effff7     	movk	x23, #0x7fff, lsl #48
+  1b7bfc: f9400008     	ldr	x8, [x0]
+  1b7c00: f940a108     	ldr	x8, [x8, #0x140]
+  1b7c04: d63f0100     	blr	x8
+  1b7c08: aa0003e1     	mov	x1, x0
+  1b7c0c: 910143e0     	add	x0, sp, #0x50
+  1b7c10: 94018a48     	bl	0x21a530 <dyld_stub_binder+0x21a530>
+  1b7c14: 39419fe8     	ldrb	w8, [sp, #0x67]
+  1b7c18: 13001d18     	sxtb	w24, w8
+  1b7c1c: f9402fe9     	ldr	x9, [sp, #0x58]
+  1b7c20: 7100031f     	cmp	w24, #0x0
+  1b7c24: 9a884134     	csel	x20, x9, x8, mi
+  1b7c28: 91002699     	add	x25, x20, #0x9
+  1b7c2c: eb17033f     	cmp	x25, x23
+  1b7c30: 54004c88     	b.hi	0x1b85c0 <__ZN7android4base6System15waitAndKillSelfEi+0xa90>
+  1b7c34: f1005f3f     	cmp	x25, #0x17
+  1b7c38: 54000143     	b.lo	0x1b7c60 <__ZN7android4base6System15waitAndKillSelfEi+0x130>
+  1b7c3c: b2400f36     	orr	x22, x25, #0xf
+  1b7c40: 910006c0     	add	x0, x22, #0x1
+  1b7c44: 94018a05     	bl	0x21a458 <dyld_stub_binder+0x21a458>
+  1b7c48: aa0003f5     	mov	x21, x0
+  1b7c4c: b24107e8     	mov	x8, #-0x7fffffffffffffff ; =-9223372036854775807
+  1b7c50: 8b0802c8     	add	x8, x22, x8
+  1b7c54: a90423f9     	stp	x25, x8, [sp, #0x40]
+  1b7c58: f9001fe0     	str	x0, [sp, #0x38]
+  1b7c5c: 14000006     	b	0x1b7c74 <__ZN7android4base6System15waitAndKillSelfEi+0x144>
+  1b7c60: a9047fff     	stp	xzr, xzr, [sp, #0x40]
+  1b7c64: f9001fff     	str	xzr, [sp, #0x38]
+  1b7c68: 9100e3f5     	add	x21, sp, #0x38
+  1b7c6c: 39013ff9     	strb	w25, [sp, #0x4f]
+  1b7c70: b4000114     	cbz	x20, 0x1b7c90 <__ZN7android4base6System15waitAndKillSelfEi+0x160>
+  1b7c74: f9402be8     	ldr	x8, [sp, #0x50]
+  1b7c78: 7100031f     	cmp	w24, #0x0
+  1b7c7c: 910143e9     	add	x9, sp, #0x50
+  1b7c80: 9a894101     	csel	x1, x8, x9, mi
+  1b7c84: aa1503e0     	mov	x0, x21
+  1b7c88: aa1403e2     	mov	x2, x20
+  1b7c8c: 94018a2f     	bl	0x21a548 <dyld_stub_binder+0x21a548>
+  1b7c90: d0000328     	adrp	x8, 0x21d000 <dyld_stub_binder+0x21d000>
+  1b7c94: 91282d08     	add	x8, x8, #0xa0b
+  1b7c98: 8b1402a9     	add	x9, x21, x20
+  1b7c9c: f9400108     	ldr	x8, [x8]
+  1b7ca0: f9000128     	str	x8, [x9]
+  1b7ca4: 52800e48     	mov	w8, #0x72               ; =114
+  1b7ca8: 79001128     	strh	w8, [x9, #0x8]
+  1b7cac: f946c348     	ldr	x8, [x26, #0xd80]
+  1b7cb0: b50003e8     	cbnz	x8, 0x1b7d2c <__ZN7android4base6System15waitAndKillSelfEi+0x1fc>
+  1b7cb4: 90000974     	adrp	x20, 0x2e3000 <__ZL59file_level_enum_descriptors_protos_2fstudio_5fstats_2eproto+0x388>
+  1b7cb8: 9136a294     	add	x20, x20, #0xda8
+  1b7cbc: aa1403e0     	mov	x0, x20
+  1b7cc0: 9401849c     	bl	0x218f30 <__ZN7android4base8internal17LazyInstanceState16needConstructionEv>
+  1b7cc4: 34000340     	cbz	w0, 0x1b7d2c <__ZN7android4base6System15waitAndKillSelfEi+0x1fc>
+  1b7cc8: 10753508     	adr	x8, 0x2a2368 <__ZTVN7android4base12_GLOBAL__N_110HostSystemE+0x10>
+  1b7ccc: d503201f     	nop
+  1b7cd0: aa1403f5     	mov	x21, x20
+  1b7cd4: f8008ea8     	str	x8, [x21, #0x8]!
+  1b7cd8: d503201f     	nop
+  1b7cdc: 9c69cca0     	ldr	q0, 0x28b670 <dyld_stub_binder+0x28b670>
+  1b7ce0: 6f00e401     	movi.2d	v1, #0000000000000000
+  1b7ce4: ad008680     	stp	q0, q1, [x20, #0x10]
+  1b7ce8: ad018681     	stp	q1, q1, [x20, #0x30]
+  1b7cec: ad028681     	stp	q1, q1, [x20, #0x50]
+  1b7cf0: f9003a9f     	str	xzr, [x20, #0x70]
+  1b7cf4: 52a7f008     	mov	w8, #0x3f800000         ; =1065353216
+  1b7cf8: b9007a88     	str	w8, [x20, #0x78]
+  1b7cfc: ad040681     	stp	q1, q1, [x20, #0x80]
+  1b7d00: ad050681     	stp	q1, q1, [x20, #0xa0]
+  1b7d04: ad060681     	stp	q1, q1, [x20, #0xc0]
+  1b7d08: 10005bc0     	adr	x0, 0x1b8880 <__ZN7android4base12_GLOBAL__N_110HostSystem17atexit_HostSystemEv>
+  1b7d0c: d503201f     	nop
+  1b7d10: 94018bfd     	bl	0x21ad04 <dyld_stub_binder+0x21ad04>
+  1b7d14: f94002a8     	ldr	x8, [x21]
+  1b7d18: f940dd08     	ldr	x8, [x8, #0x1b8]
+  1b7d1c: aa1503e0     	mov	x0, x21
+  1b7d20: d63f0100     	blr	x8
+  1b7d24: aa1403e0     	mov	x0, x20
+  1b7d28: 940184a0     	bl	0x218fa8 <__ZN7android4base8internal17LazyInstanceState16doneConstructingEv>
+  1b7d2c: 3032e740     	adr	x0, 0x21da15 <dyld_stub_binder+0x21da15>
+  1b7d30: d503201f     	nop
+  1b7d34: 910083f4     	add	x20, sp, #0x20
+  1b7d38: 910083e8     	add	x8, sp, #0x20
+  1b7d3c: 528004c1     	mov	w1, #0x26               ; =38
+  1b7d40: 97fffae4     	bl	0x1b68d0 <__ZN7android4base6System22getEnvironmentVariableENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEE>
+  1b7d44: 3940dfe8     	ldrb	w8, [sp, #0x37]
+  1b7d48: 13001d09     	sxtb	w9, w8
+  1b7d4c: f94017ea     	ldr	x10, [sp, #0x28]
+  1b7d50: 7100013f     	cmp	w9, #0x0
+  1b7d54: aa1a03f9     	mov	x25, x26
+  1b7d58: 9a884148     	csel	x8, x10, x8, mi
+  1b7d5c: b40000c8     	cbz	x8, 0x1b7d74 <__ZN7android4base6System15waitAndKillSelfEi+0x244>
+  1b7d60: f94013e8     	ldr	x8, [sp, #0x20]
+  1b7d64: 9a944100     	csel	x0, x8, x20, mi
+  1b7d68: 94018c2c     	bl	0x21ae18 <dyld_stub_binder+0x21ae18>
+  1b7d6c: 7100001f     	cmp	w0, #0x0
+  1b7d70: 1a93c013     	csel	w19, w0, w19, gt
+  1b7d74: b201f3f8     	mov	x24, #-0x5555555555555556 ; =-6148914691236517206
+  1b7d78: f2e15558     	movk	x24, #0xaaa, lsl #48
+  1b7d7c: a900ffff     	stp	xzr, xzr, [sp, #0x8]
+  1b7d80: f9000fff     	str	xzr, [sp, #0x18]
+  1b7d84: 910023e0     	add	x0, sp, #0x8
+  1b7d88: 9100e3e1     	add	x1, sp, #0x38
+  1b7d8c: 97ffede7     	bl	0x1b3528 <__ZNSt3__16vectorINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEENS4_IS6_EEE21__push_back_slow_pathIRKS6_EEvOT_>
+  1b7d90: a9416ffa     	ldp	x26, x27, [sp, #0x10]
+  1b7d94: eb1b035f     	cmp	x26, x27
+  1b7d98: 54000142     	b.hs	0x1b7dc0 <__ZN7android4base6System15waitAndKillSelfEi+0x290>
+  1b7d9c: d28d65a8     	mov	x8, #0x6b2d             ; =27437
+  1b7da0: f2ad8d28     	movk	x8, #0x6c69, lsl #16
+  1b7da4: f2c00d88     	movk	x8, #0x6c, lsl #32
+  1b7da8: f9000348     	str	x8, [x26]
+  1b7dac: d2e0a008     	mov	x8, #0x500000000000000  ; =360287970189639680
+  1b7db0: f9000b48     	str	x8, [x26, #0x10]
+  1b7db4: 91006348     	add	x8, x26, #0x18
+  1b7db8: f9000be8     	str	x8, [sp, #0x10]
+  1b7dbc: 14000039     	b	0x1b7ea0 <__ZN7android4base6System15waitAndKillSelfEi+0x370>
+  1b7dc0: f94007f4     	ldr	x20, [sp, #0x8]
+  1b7dc4: cb14035c     	sub	x28, x26, x20
+  1b7dc8: 9343ff88     	asr	x8, x28, #3
+  1b7dcc: b201f3e9     	mov	x9, #-0x5555555555555556 ; =-6148914691236517206
+  1b7dd0: f2955569     	movk	x9, #0xaaab
+  1b7dd4: d280002a     	mov	x10, #0x1               ; =1
+  1b7dd8: 9b092908     	madd	x8, x8, x9, x10
+  1b7ddc: eb18011f     	cmp	x8, x24
+  1b7de0: 54003f08     	b.hi	0x1b85c0 <__ZN7android4base6System15waitAndKillSelfEi+0xa90>
+  1b7de4: cb14036a     	sub	x10, x27, x20
+  1b7de8: 9343fd4a     	asr	x10, x10, #3
+  1b7dec: 9b097d49     	mul	x9, x10, x9
+  1b7df0: d37ff92a     	lsl	x10, x9, #1
+  1b7df4: eb08015f     	cmp	x10, x8
+  1b7df8: 9a888148     	csel	x8, x10, x8, hi
+  1b7dfc: b200f3ea     	mov	x10, #0x5555555555555555 ; =6148914691236517205
+  1b7e00: f2e0aaaa     	movk	x10, #0x555, lsl #48
+  1b7e04: eb0a013f     	cmp	x9, x10
+  1b7e08: 9a983108     	csel	x8, x8, x24, lo
+  1b7e0c: eb18011f     	cmp	x8, x24
+  1b7e10: 54003da8     	b.hi	0x1b85c4 <__ZN7android4base6System15waitAndKillSelfEi+0xa94>
+  1b7e14: 8b080508     	add	x8, x8, x8, lsl #1
+  1b7e18: d37df115     	lsl	x21, x8, #3
+  1b7e1c: aa1503e0     	mov	x0, x21
+  1b7e20: 9401898e     	bl	0x21a458 <dyld_stub_binder+0x21a458>
+  1b7e24: 8b1c000a     	add	x10, x0, x28
+  1b7e28: 8b150008     	add	x8, x0, x21
+  1b7e2c: d28d65a9     	mov	x9, #0x6b2d             ; =27437
+  1b7e30: f2ad8d29     	movk	x9, #0x6c69, lsl #16
+  1b7e34: f2c00d89     	movk	x9, #0x6c, lsl #32
+  1b7e38: f9000149     	str	x9, [x10]
+  1b7e3c: d2e0a009     	mov	x9, #0x500000000000000  ; =360287970189639680
+  1b7e40: f9000949     	str	x9, [x10, #0x10]
+  1b7e44: 91006149     	add	x9, x10, #0x18
+  1b7e48: eb14035f     	cmp	x26, x20
+  1b7e4c: 540001a0     	b.eq	0x1b7e80 <__ZN7android4base6System15waitAndKillSelfEi+0x350>
+  1b7e50: 3cde8340     	ldur	q0, [x26, #-0x18]
+  1b7e54: f85f834b     	ldur	x11, [x26, #-0x8]
+  1b7e58: f81f814b     	stur	x11, [x10, #-0x8]
+  1b7e5c: 3c9e8140     	stur	q0, [x10, #-0x18]
+  1b7e60: d100614a     	sub	x10, x10, #0x18
+  1b7e64: a93f7f5f     	stp	xzr, xzr, [x26, #-0x10]
+  1b7e68: f81e835f     	stur	xzr, [x26, #-0x18]
+  1b7e6c: d100635a     	sub	x26, x26, #0x18
+  1b7e70: eb14035f     	cmp	x26, x20
+  1b7e74: 54fffee1     	b.ne	0x1b7e50 <__ZN7android4base6System15waitAndKillSelfEi+0x320>
+  1b7e78: a940ebf4     	ldp	x20, x26, [sp, #0x8]
+  1b7e7c: f9400ffb     	ldr	x27, [sp, #0x18]
+  1b7e80: a900a7ea     	stp	x10, x9, [sp, #0x8]
+  1b7e84: f9000fe8     	str	x8, [sp, #0x18]
+  1b7e88: eb1a029f     	cmp	x20, x26
+  1b7e8c: 540004a1     	b.ne	0x1b7f20 <__ZN7android4base6System15waitAndKillSelfEi+0x3f0>
+  1b7e90: b4000094     	cbz	x20, 0x1b7ea0 <__ZN7android4base6System15waitAndKillSelfEi+0x370>
+  1b7e94: cb140361     	sub	x1, x27, x20
+  1b7e98: aa1403e0     	mov	x0, x20
+  1b7e9c: 94018978     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1b7ea0: 94018bcc     	bl	0x21add0 <dyld_stub_binder+0x21add0>
+  1b7ea4: f90003e0     	str	x0, [sp]
+  1b7ea8: 1032dca2     	adr	x2, 0x21da3c <dyld_stub_binder+0x21da3c>
+  1b7eac: d503201f     	nop
+  1b7eb0: 910203e0     	add	x0, sp, #0x80
+  1b7eb4: 52800401     	mov	w1, #0x20               ; =32
+  1b7eb8: 94018bd5     	bl	0x21ae0c <dyld_stub_binder+0x21ae0c>
+  1b7ebc: 910203e0     	add	x0, sp, #0x80
+  1b7ec0: 940189b1     	bl	0x21a584 <dyld_stub_binder+0x21a584>
+  1b7ec4: eb17001f     	cmp	x0, x23
+  1b7ec8: 540037c8     	b.hi	0x1b85c0 <__ZN7android4base6System15waitAndKillSelfEi+0xa90>
+  1b7ecc: aa0003f4     	mov	x20, x0
+  1b7ed0: f1005c1f     	cmp	x0, #0x17
+  1b7ed4: 54000342     	b.hs	0x1b7f3c <__ZN7android4base6System15waitAndKillSelfEi+0x40c>
+  1b7ed8: 381873b4     	sturb	w20, [x29, #-0x79]
+  1b7edc: d10243b5     	sub	x21, x29, #0x90
+  1b7ee0: b50003f4     	cbnz	x20, 0x1b7f5c <__ZN7android4base6System15waitAndKillSelfEi+0x42c>
+  1b7ee4: d10243ba     	sub	x26, x29, #0x90
+  1b7ee8: 38346abf     	strb	wzr, [x21, x20]
+  1b7eec: a94173fb     	ldp	x27, x28, [sp, #0x10]
+  1b7ef0: eb1c037f     	cmp	x27, x28
+  1b7ef4: 54000462     	b.hs	0x1b7f80 <__ZN7android4base6System15waitAndKillSelfEi+0x450>
+  1b7ef8: 3dc00340     	ldr	q0, [x26]
+  1b7efc: 3d800360     	str	q0, [x27]
+  1b7f00: f85803a8     	ldur	x8, [x29, #-0x80]
+  1b7f04: f9000b68     	str	x8, [x27, #0x10]
+  1b7f08: 91006368     	add	x8, x27, #0x18
+  1b7f0c: f9000be8     	str	x8, [sp, #0x10]
+  1b7f10: 14000052     	b	0x1b8058 <__ZN7android4base6System15waitAndKillSelfEi+0x528>
+  1b7f14: d100635a     	sub	x26, x26, #0x18
+  1b7f18: eb14035f     	cmp	x26, x20
+  1b7f1c: 54fffba0     	b.eq	0x1b7e90 <__ZN7android4base6System15waitAndKillSelfEi+0x360>
+  1b7f20: 38dff348     	ldursb	w8, [x26, #-0x1]
+  1b7f24: 36ffff88     	tbz	w8, #0x1f, 0x1b7f14 <__ZN7android4base6System15waitAndKillSelfEi+0x3e4>
+  1b7f28: f85e8340     	ldur	x0, [x26, #-0x18]
+  1b7f2c: f85f8348     	ldur	x8, [x26, #-0x8]
+  1b7f30: 9240f901     	and	x1, x8, #0x7fffffffffffffff
+  1b7f34: 94018952     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1b7f38: 17fffff7     	b	0x1b7f14 <__ZN7android4base6System15waitAndKillSelfEi+0x3e4>
+  1b7f3c: b2400e96     	orr	x22, x20, #0xf
+  1b7f40: 910006c0     	add	x0, x22, #0x1
+  1b7f44: 94018945     	bl	0x21a458 <dyld_stub_binder+0x21a458>
+  1b7f48: aa0003f5     	mov	x21, x0
+  1b7f4c: b24107e8     	mov	x8, #-0x7fffffffffffffff ; =-9223372036854775807
+  1b7f50: 8b0802c8     	add	x8, x22, x8
+  1b7f54: a937a3b4     	stp	x20, x8, [x29, #-0x88]
+  1b7f58: f81703a0     	stur	x0, [x29, #-0x90]
+  1b7f5c: 910203e1     	add	x1, sp, #0x80
+  1b7f60: aa1503e0     	mov	x0, x21
+  1b7f64: aa1403e2     	mov	x2, x20
+  1b7f68: 940189cc     	bl	0x21a698 <dyld_stub_binder+0x21a698>
+  1b7f6c: d10243ba     	sub	x26, x29, #0x90
+  1b7f70: 38346abf     	strb	wzr, [x21, x20]
+  1b7f74: a94173fb     	ldp	x27, x28, [sp, #0x10]
+  1b7f78: eb1c037f     	cmp	x27, x28
+  1b7f7c: 54fffbe3     	b.lo	0x1b7ef8 <__ZN7android4base6System15waitAndKillSelfEi+0x3c8>
+  1b7f80: f94007f4     	ldr	x20, [sp, #0x8]
+  1b7f84: cb140376     	sub	x22, x27, x20
+  1b7f88: 9343fec8     	asr	x8, x22, #3
+  1b7f8c: b201f3e9     	mov	x9, #-0x5555555555555556 ; =-6148914691236517206
+  1b7f90: f2955569     	movk	x9, #0xaaab
+  1b7f94: d280002a     	mov	x10, #0x1               ; =1
+  1b7f98: 9b092908     	madd	x8, x8, x9, x10
+  1b7f9c: eb18011f     	cmp	x8, x24
+  1b7fa0: 54003108     	b.hi	0x1b85c0 <__ZN7android4base6System15waitAndKillSelfEi+0xa90>
+  1b7fa4: cb14038a     	sub	x10, x28, x20
+  1b7fa8: 9343fd4a     	asr	x10, x10, #3
+  1b7fac: 9b097d49     	mul	x9, x10, x9
+  1b7fb0: d37ff92a     	lsl	x10, x9, #1
+  1b7fb4: eb08015f     	cmp	x10, x8
+  1b7fb8: 9a888148     	csel	x8, x10, x8, hi
+  1b7fbc: b200f3ea     	mov	x10, #0x5555555555555555 ; =6148914691236517205
+  1b7fc0: f2e0aaaa     	movk	x10, #0x555, lsl #48
+  1b7fc4: eb0a013f     	cmp	x9, x10
+  1b7fc8: 9a983108     	csel	x8, x8, x24, lo
+  1b7fcc: eb18011f     	cmp	x8, x24
+  1b7fd0: 54002fa8     	b.hi	0x1b85c4 <__ZN7android4base6System15waitAndKillSelfEi+0xa94>
+  1b7fd4: 8b080508     	add	x8, x8, x8, lsl #1
+  1b7fd8: d37df115     	lsl	x21, x8, #3
+  1b7fdc: aa1503e0     	mov	x0, x21
+  1b7fe0: 9401891e     	bl	0x21a458 <dyld_stub_binder+0x21a458>
+  1b7fe4: 8b16000a     	add	x10, x0, x22
+  1b7fe8: 8b150008     	add	x8, x0, x21
+  1b7fec: 3dc00340     	ldr	q0, [x26]
+  1b7ff0: 3d800140     	str	q0, [x10]
+  1b7ff4: f85803a9     	ldur	x9, [x29, #-0x80]
+  1b7ff8: f9000949     	str	x9, [x10, #0x10]
+  1b7ffc: 91006149     	add	x9, x10, #0x18
+  1b8000: eb14037f     	cmp	x27, x20
+  1b8004: 540001a0     	b.eq	0x1b8038 <__ZN7android4base6System15waitAndKillSelfEi+0x508>
+  1b8008: 3cde8360     	ldur	q0, [x27, #-0x18]
+  1b800c: f85f836b     	ldur	x11, [x27, #-0x8]
+  1b8010: f81f814b     	stur	x11, [x10, #-0x8]
+  1b8014: 3c9e8140     	stur	q0, [x10, #-0x18]
+  1b8018: d100614a     	sub	x10, x10, #0x18
+  1b801c: a93f7f7f     	stp	xzr, xzr, [x27, #-0x10]
+  1b8020: f81e837f     	stur	xzr, [x27, #-0x18]
+  1b8024: d100637b     	sub	x27, x27, #0x18
+  1b8028: eb14037f     	cmp	x27, x20
+  1b802c: 54fffee1     	b.ne	0x1b8008 <__ZN7android4base6System15waitAndKillSelfEi+0x4d8>
+  1b8030: a940eff4     	ldp	x20, x27, [sp, #0x8]
+  1b8034: f9400ffc     	ldr	x28, [sp, #0x18]
+  1b8038: a900a7ea     	stp	x10, x9, [sp, #0x8]
+  1b803c: f9000fe8     	str	x8, [sp, #0x18]
+  1b8040: eb1b029f     	cmp	x20, x27
+  1b8044: 54000281     	b.ne	0x1b8094 <__ZN7android4base6System15waitAndKillSelfEi+0x564>
+  1b8048: b4000094     	cbz	x20, 0x1b8058 <__ZN7android4base6System15waitAndKillSelfEi+0x528>
+  1b804c: cb140381     	sub	x1, x28, x20
+  1b8050: aa1403e0     	mov	x0, x20
+  1b8054: 9401890a     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1b8058: a94173fb     	ldp	x27, x28, [sp, #0x10]
+  1b805c: eb1c037f     	cmp	x27, x28
+  1b8060: 54000282     	b.hs	0x1b80b0 <__ZN7android4base6System15waitAndKillSelfEi+0x580>
+  1b8064: d28e65a8     	mov	x8, #0x732d             ; =29485
+  1b8068: f2acad88     	movk	x8, #0x656c, lsl #16
+  1b806c: f2ce0ca8     	movk	x8, #0x7065, lsl #32
+  1b8070: f9000368     	str	x8, [x27]
+  1b8074: d2e0c008     	mov	x8, #0x600000000000000  ; =432345564227567616
+  1b8078: f9000b68     	str	x8, [x27, #0x10]
+  1b807c: 91006368     	add	x8, x27, #0x18
+  1b8080: f9000be8     	str	x8, [sp, #0x10]
+  1b8084: 14000043     	b	0x1b8190 <__ZN7android4base6System15waitAndKillSelfEi+0x660>
+  1b8088: d100637b     	sub	x27, x27, #0x18
+  1b808c: eb14037f     	cmp	x27, x20
+  1b8090: 54fffdc0     	b.eq	0x1b8048 <__ZN7android4base6System15waitAndKillSelfEi+0x518>
+  1b8094: 38dff368     	ldursb	w8, [x27, #-0x1]
+  1b8098: 36ffff88     	tbz	w8, #0x1f, 0x1b8088 <__ZN7android4base6System15waitAndKillSelfEi+0x558>
+  1b809c: f85e8360     	ldur	x0, [x27, #-0x18]
+  1b80a0: f85f8368     	ldur	x8, [x27, #-0x8]
+  1b80a4: 9240f901     	and	x1, x8, #0x7fffffffffffffff
+  1b80a8: 940188f5     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1b80ac: 17fffff7     	b	0x1b8088 <__ZN7android4base6System15waitAndKillSelfEi+0x558>
+  1b80b0: f94007f4     	ldr	x20, [sp, #0x8]
+  1b80b4: cb140376     	sub	x22, x27, x20
+  1b80b8: 9343fec8     	asr	x8, x22, #3
+  1b80bc: b201f3e9     	mov	x9, #-0x5555555555555556 ; =-6148914691236517206
+  1b80c0: f2955569     	movk	x9, #0xaaab
+  1b80c4: d280002a     	mov	x10, #0x1               ; =1
+  1b80c8: 9b092908     	madd	x8, x8, x9, x10
+  1b80cc: eb18011f     	cmp	x8, x24
+  1b80d0: 54002788     	b.hi	0x1b85c0 <__ZN7android4base6System15waitAndKillSelfEi+0xa90>
+  1b80d4: cb14038a     	sub	x10, x28, x20
+  1b80d8: 9343fd4a     	asr	x10, x10, #3
+  1b80dc: 9b097d49     	mul	x9, x10, x9
+  1b80e0: d37ff92a     	lsl	x10, x9, #1
+  1b80e4: eb08015f     	cmp	x10, x8
+  1b80e8: 9a888148     	csel	x8, x10, x8, hi
+  1b80ec: b200f3ea     	mov	x10, #0x5555555555555555 ; =6148914691236517205
+  1b80f0: f2e0aaaa     	movk	x10, #0x555, lsl #48
+  1b80f4: eb0a013f     	cmp	x9, x10
+  1b80f8: 9a983108     	csel	x8, x8, x24, lo
+  1b80fc: eb18011f     	cmp	x8, x24
+  1b8100: 54002628     	b.hi	0x1b85c4 <__ZN7android4base6System15waitAndKillSelfEi+0xa94>
+  1b8104: 8b080508     	add	x8, x8, x8, lsl #1
+  1b8108: d37df115     	lsl	x21, x8, #3
+  1b810c: aa1503e0     	mov	x0, x21
+  1b8110: 940188d2     	bl	0x21a458 <dyld_stub_binder+0x21a458>
+  1b8114: 8b16000a     	add	x10, x0, x22
+  1b8118: 8b150008     	add	x8, x0, x21
+  1b811c: d28e65a9     	mov	x9, #0x732d             ; =29485
+  1b8120: f2acad89     	movk	x9, #0x656c, lsl #16
+  1b8124: f2ce0ca9     	movk	x9, #0x7065, lsl #32
+  1b8128: f9000149     	str	x9, [x10]
+  1b812c: d2e0c009     	mov	x9, #0x600000000000000  ; =432345564227567616
+  1b8130: f9000949     	str	x9, [x10, #0x10]
+  1b8134: 91006149     	add	x9, x10, #0x18
+  1b8138: eb14037f     	cmp	x27, x20
+  1b813c: 540001a0     	b.eq	0x1b8170 <__ZN7android4base6System15waitAndKillSelfEi+0x640>
+  1b8140: 3cde8360     	ldur	q0, [x27, #-0x18]
+  1b8144: f85f836b     	ldur	x11, [x27, #-0x8]
+  1b8148: f81f814b     	stur	x11, [x10, #-0x8]
+  1b814c: 3c9e8140     	stur	q0, [x10, #-0x18]
+  1b8150: d100614a     	sub	x10, x10, #0x18
+  1b8154: a93f7f7f     	stp	xzr, xzr, [x27, #-0x10]
+  1b8158: f81e837f     	stur	xzr, [x27, #-0x18]
+  1b815c: d100637b     	sub	x27, x27, #0x18
+  1b8160: eb14037f     	cmp	x27, x20
+  1b8164: 54fffee1     	b.ne	0x1b8140 <__ZN7android4base6System15waitAndKillSelfEi+0x610>
+  1b8168: a940eff4     	ldp	x20, x27, [sp, #0x8]
+  1b816c: f9400ffc     	ldr	x28, [sp, #0x18]
+  1b8170: a900a7ea     	stp	x10, x9, [sp, #0x8]
+  1b8174: f9000fe8     	str	x8, [sp, #0x18]
+  1b8178: eb1b029f     	cmp	x20, x27
+  1b817c: 54000461     	b.ne	0x1b8208 <__ZN7android4base6System15waitAndKillSelfEi+0x6d8>
+  1b8180: b4000094     	cbz	x20, 0x1b8190 <__ZN7android4base6System15waitAndKillSelfEi+0x660>
+  1b8184: cb140381     	sub	x1, x28, x20
+  1b8188: aa1403e0     	mov	x0, x20
+  1b818c: 940188bc     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1b8190: f90003f3     	str	x19, [sp]
+  1b8194: 1032c542     	adr	x2, 0x21da3c <dyld_stub_binder+0x21da3c>
+  1b8198: d503201f     	nop
+  1b819c: 910203e0     	add	x0, sp, #0x80
+  1b81a0: 52800401     	mov	w1, #0x20               ; =32
+  1b81a4: 94018b1a     	bl	0x21ae0c <dyld_stub_binder+0x21ae0c>
+  1b81a8: 910203e0     	add	x0, sp, #0x80
+  1b81ac: 940188f6     	bl	0x21a584 <dyld_stub_binder+0x21a584>
+  1b81b0: eb17001f     	cmp	x0, x23
+  1b81b4: 54002068     	b.hi	0x1b85c0 <__ZN7android4base6System15waitAndKillSelfEi+0xa90>
+  1b81b8: aa0003f4     	mov	x20, x0
+  1b81bc: f1005c1f     	cmp	x0, #0x17
+  1b81c0: 54000322     	b.hs	0x1b8224 <__ZN7android4base6System15waitAndKillSelfEi+0x6f4>
+  1b81c4: 381873b4     	sturb	w20, [x29, #-0x79]
+  1b81c8: d10243b5     	sub	x21, x29, #0x90
+  1b81cc: b50003d4     	cbnz	x20, 0x1b8244 <__ZN7android4base6System15waitAndKillSelfEi+0x714>
+  1b81d0: 38346abf     	strb	wzr, [x21, x20]
+  1b81d4: a9416ff7     	ldp	x23, x27, [sp, #0x10]
+  1b81d8: eb1b02ff     	cmp	x23, x27
+  1b81dc: 54000442     	b.hs	0x1b8264 <__ZN7android4base6System15waitAndKillSelfEi+0x734>
+  1b81e0: 3dc00340     	ldr	q0, [x26]
+  1b81e4: 3d8002e0     	str	q0, [x23]
+  1b81e8: f85803a8     	ldur	x8, [x29, #-0x80]
+  1b81ec: f9000ae8     	str	x8, [x23, #0x10]
+  1b81f0: 910062e8     	add	x8, x23, #0x18
+  1b81f4: f9000be8     	str	x8, [sp, #0x10]
+  1b81f8: 14000051     	b	0x1b833c <__ZN7android4base6System15waitAndKillSelfEi+0x80c>
+  1b81fc: d100637b     	sub	x27, x27, #0x18
+  1b8200: eb14037f     	cmp	x27, x20
+  1b8204: 54fffbe0     	b.eq	0x1b8180 <__ZN7android4base6System15waitAndKillSelfEi+0x650>
+  1b8208: 38dff368     	ldursb	w8, [x27, #-0x1]
+  1b820c: 36ffff88     	tbz	w8, #0x1f, 0x1b81fc <__ZN7android4base6System15waitAndKillSelfEi+0x6cc>
+  1b8210: f85e8360     	ldur	x0, [x27, #-0x18]
+  1b8214: f85f8368     	ldur	x8, [x27, #-0x8]
+  1b8218: 9240f901     	and	x1, x8, #0x7fffffffffffffff
+  1b821c: 94018898     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1b8220: 17fffff7     	b	0x1b81fc <__ZN7android4base6System15waitAndKillSelfEi+0x6cc>
+  1b8224: b2400e96     	orr	x22, x20, #0xf
+  1b8228: 910006c0     	add	x0, x22, #0x1
+  1b822c: 9401888b     	bl	0x21a458 <dyld_stub_binder+0x21a458>
+  1b8230: aa0003f5     	mov	x21, x0
+  1b8234: b24107e8     	mov	x8, #-0x7fffffffffffffff ; =-9223372036854775807
+  1b8238: 8b0802c8     	add	x8, x22, x8
+  1b823c: a937a3b4     	stp	x20, x8, [x29, #-0x88]
+  1b8240: f81703a0     	stur	x0, [x29, #-0x90]
+  1b8244: 910203e1     	add	x1, sp, #0x80
+  1b8248: aa1503e0     	mov	x0, x21
+  1b824c: aa1403e2     	mov	x2, x20
+  1b8250: 94018912     	bl	0x21a698 <dyld_stub_binder+0x21a698>
+  1b8254: 38346abf     	strb	wzr, [x21, x20]
+  1b8258: a9416ff7     	ldp	x23, x27, [sp, #0x10]
+  1b825c: eb1b02ff     	cmp	x23, x27
+  1b8260: 54fffc03     	b.lo	0x1b81e0 <__ZN7android4base6System15waitAndKillSelfEi+0x6b0>
+  1b8264: f94007f4     	ldr	x20, [sp, #0x8]
+  1b8268: cb1402f6     	sub	x22, x23, x20
+  1b826c: 9343fec8     	asr	x8, x22, #3
+  1b8270: b201f3e9     	mov	x9, #-0x5555555555555556 ; =-6148914691236517206
+  1b8274: f2955569     	movk	x9, #0xaaab
+  1b8278: d280002a     	mov	x10, #0x1               ; =1
+  1b827c: 9b092908     	madd	x8, x8, x9, x10
+  1b8280: eb18011f     	cmp	x8, x24
+  1b8284: 540019e8     	b.hi	0x1b85c0 <__ZN7android4base6System15waitAndKillSelfEi+0xa90>
+  1b8288: cb14036a     	sub	x10, x27, x20
+  1b828c: 9343fd4a     	asr	x10, x10, #3
+  1b8290: 9b097d49     	mul	x9, x10, x9
+  1b8294: d37ff92a     	lsl	x10, x9, #1
+  1b8298: eb08015f     	cmp	x10, x8
+  1b829c: 9a888148     	csel	x8, x10, x8, hi
+  1b82a0: b200f3ea     	mov	x10, #0x5555555555555555 ; =6148914691236517205
+  1b82a4: f2e0aaaa     	movk	x10, #0x555, lsl #48
+  1b82a8: eb0a013f     	cmp	x9, x10
+  1b82ac: 9a983108     	csel	x8, x8, x24, lo
+  1b82b0: eb18011f     	cmp	x8, x24
+  1b82b4: 54001888     	b.hi	0x1b85c4 <__ZN7android4base6System15waitAndKillSelfEi+0xa94>
+  1b82b8: 8b080508     	add	x8, x8, x8, lsl #1
+  1b82bc: d37df115     	lsl	x21, x8, #3
+  1b82c0: aa1503e0     	mov	x0, x21
+  1b82c4: 94018865     	bl	0x21a458 <dyld_stub_binder+0x21a458>
+  1b82c8: 8b16000a     	add	x10, x0, x22
+  1b82cc: 8b150008     	add	x8, x0, x21
+  1b82d0: 3dc00340     	ldr	q0, [x26]
+  1b82d4: 3d800140     	str	q0, [x10]
+  1b82d8: f85803a9     	ldur	x9, [x29, #-0x80]
+  1b82dc: f9000949     	str	x9, [x10, #0x10]
+  1b82e0: 91006149     	add	x9, x10, #0x18
+  1b82e4: eb1402ff     	cmp	x23, x20
+  1b82e8: 540001a0     	b.eq	0x1b831c <__ZN7android4base6System15waitAndKillSelfEi+0x7ec>
+  1b82ec: 3cde82e0     	ldur	q0, [x23, #-0x18]
+  1b82f0: f85f82eb     	ldur	x11, [x23, #-0x8]
+  1b82f4: f81f814b     	stur	x11, [x10, #-0x8]
+  1b82f8: 3c9e8140     	stur	q0, [x10, #-0x18]
+  1b82fc: d100614a     	sub	x10, x10, #0x18
+  1b8300: a93f7eff     	stp	xzr, xzr, [x23, #-0x10]
+  1b8304: f81e82ff     	stur	xzr, [x23, #-0x18]
+  1b8308: d10062f7     	sub	x23, x23, #0x18
+  1b830c: eb1402ff     	cmp	x23, x20
+  1b8310: 54fffee1     	b.ne	0x1b82ec <__ZN7android4base6System15waitAndKillSelfEi+0x7bc>
+  1b8314: a940dff4     	ldp	x20, x23, [sp, #0x8]
+  1b8318: f9400ffb     	ldr	x27, [sp, #0x18]
+  1b831c: a900a7ea     	stp	x10, x9, [sp, #0x8]
+  1b8320: f9000fe8     	str	x8, [sp, #0x18]
+  1b8324: eb17029f     	cmp	x20, x23
+  1b8328: 540008a1     	b.ne	0x1b843c <__ZN7android4base6System15waitAndKillSelfEi+0x90c>
+  1b832c: b4000094     	cbz	x20, 0x1b833c <__ZN7android4base6System15waitAndKillSelfEi+0x80c>
+  1b8330: cb140361     	sub	x1, x27, x20
+  1b8334: aa1403e0     	mov	x0, x20
+  1b8338: 94018851     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1b833c: 94018859     	bl	0x21a4a0 <dyld_stub_binder+0x21a4a0>
+  1b8340: 7100001f     	cmp	w0, #0x0
+  1b8344: 5400032c     	b.gt	0x1b83a8 <__ZN7android4base6System15waitAndKillSelfEi+0x878>
+  1b8348: 94018aa2     	bl	0x21add0 <dyld_stub_binder+0x21add0>
+  1b834c: d503201f     	nop
+  1b8350: 586c0508     	ldr	x8, 0x2903f0 <dyld_stub_binder+0x2903f0>
+  1b8354: 2a0003e9     	mov	w9, w0
+  1b8358: a93723a9     	stp	x9, x8, [x29, #-0x90]
+  1b835c: 2a1303e9     	mov	w9, w19
+  1b8360: a93823a9     	stp	x9, x8, [x29, #-0x80]
+  1b8364: 52800289     	mov	w9, #0x14               ; =20
+  1b8368: a93923a9     	stp	x9, x8, [x29, #-0x70]
+  1b836c: 7032b680     	adr	x0, 0x21da3f <dyld_stub_binder+0x21da3f>
+  1b8370: d503201f     	nop
+  1b8374: 9101a3e8     	add	x8, sp, #0x68
+  1b8378: d10243a2     	sub	x2, x29, #0x90
+  1b837c: 528018c1     	mov	w1, #0xc6               ; =198
+  1b8380: 52800063     	mov	w3, #0x3                ; =3
+  1b8384: 94018844     	bl	0x21a494 <dyld_stub_binder+0x21a494>
+  1b8388: 1032a421     	adr	x1, 0x21d80c <dyld_stub_binder+0x21d80c>
+  1b838c: d503201f     	nop
+  1b8390: 9101a3e3     	add	x3, sp, #0x68
+  1b8394: 52800000     	mov	w0, #0x0                ; =0
+  1b8398: 5281cf82     	mov	w2, #0xe7c              ; =3708
+  1b839c: 9401883b     	bl	0x21a488 <dyld_stub_binder+0x21a488>
+  1b83a0: 39c1ffe8     	ldrsb	w8, [sp, #0x7f]
+  1b83a4: 37f805e8     	tbnz	w8, #0x1f, 0x1b8460 <__ZN7android4base6System15waitAndKillSelfEi+0x930>
+  1b83a8: f946c320     	ldr	x0, [x25, #0xd80]
+  1b83ac: b5000660     	cbnz	x0, 0x1b8478 <__ZN7android4base6System15waitAndKillSelfEi+0x948>
+  1b83b0: f0000953     	adrp	x19, 0x2e3000 <__ZL59file_level_enum_descriptors_protos_2fstudio_5fstats_2eproto+0x388>
+  1b83b4: 9136a273     	add	x19, x19, #0xda8
+  1b83b8: aa1303e0     	mov	x0, x19
+  1b83bc: 940182dd     	bl	0x218f30 <__ZN7android4base8internal17LazyInstanceState16needConstructionEv>
+  1b83c0: 340004c0     	cbz	w0, 0x1b8458 <__ZN7android4base6System15waitAndKillSelfEi+0x928>
+  1b83c4: 1074fd28     	adr	x8, 0x2a2368 <__ZTVN7android4base12_GLOBAL__N_110HostSystemE+0x10>
+  1b83c8: d503201f     	nop
+  1b83cc: aa1303f4     	mov	x20, x19
+  1b83d0: f8008e88     	str	x8, [x20, #0x8]!
+  1b83d4: d503201f     	nop
+  1b83d8: 9c6994c0     	ldr	q0, 0x28b670 <dyld_stub_binder+0x28b670>
+  1b83dc: 6f00e401     	movi.2d	v1, #0000000000000000
+  1b83e0: ad008660     	stp	q0, q1, [x19, #0x10]
+  1b83e4: ad018661     	stp	q1, q1, [x19, #0x30]
+  1b83e8: ad028661     	stp	q1, q1, [x19, #0x50]
+  1b83ec: f9003a7f     	str	xzr, [x19, #0x70]
+  1b83f0: 52a7f008     	mov	w8, #0x3f800000         ; =1065353216
+  1b83f4: b9007a68     	str	w8, [x19, #0x78]
+  1b83f8: ad040661     	stp	q1, q1, [x19, #0x80]
+  1b83fc: ad050661     	stp	q1, q1, [x19, #0xa0]
+  1b8400: ad060661     	stp	q1, q1, [x19, #0xc0]
+  1b8404: 100023e0     	adr	x0, 0x1b8880 <__ZN7android4base12_GLOBAL__N_110HostSystem17atexit_HostSystemEv>
+  1b8408: d503201f     	nop
+  1b840c: 94018a3e     	bl	0x21ad04 <dyld_stub_binder+0x21ad04>
+  1b8410: f9400288     	ldr	x8, [x20]
+  1b8414: f940dd08     	ldr	x8, [x8, #0x1b8]
+  1b8418: aa1403e0     	mov	x0, x20
+  1b841c: d63f0100     	blr	x8
+  1b8420: aa1303e0     	mov	x0, x19
+  1b8424: 940182e1     	bl	0x218fa8 <__ZN7android4base8internal17LazyInstanceState16doneConstructingEv>
+  1b8428: aa1403e0     	mov	x0, x20
+  1b842c: 14000013     	b	0x1b8478 <__ZN7android4base6System15waitAndKillSelfEi+0x948>
+  1b8430: d10062f7     	sub	x23, x23, #0x18
+  1b8434: eb1402ff     	cmp	x23, x20
+  1b8438: 54fff7a0     	b.eq	0x1b832c <__ZN7android4base6System15waitAndKillSelfEi+0x7fc>
+  1b843c: 38dff2e8     	ldursb	w8, [x23, #-0x1]
+  1b8440: 36ffff88     	tbz	w8, #0x1f, 0x1b8430 <__ZN7android4base6System15waitAndKillSelfEi+0x900>
+  1b8444: f85e82e0     	ldur	x0, [x23, #-0x18]
+  1b8448: f85f82e8     	ldur	x8, [x23, #-0x8]
+  1b844c: 9240f901     	and	x1, x8, #0x7fffffffffffffff
+  1b8450: 9401880b     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1b8454: 17fffff7     	b	0x1b8430 <__ZN7android4base6System15waitAndKillSelfEi+0x900>
+  1b8458: 91002260     	add	x0, x19, #0x8
+  1b845c: 14000007     	b	0x1b8478 <__ZN7android4base6System15waitAndKillSelfEi+0x948>
+  1b8460: f94037e0     	ldr	x0, [sp, #0x68]
+  1b8464: f9403fe8     	ldr	x8, [sp, #0x78]
+  1b8468: 9240f901     	and	x1, x8, #0x7fffffffffffffff
+  1b846c: 94018804     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1b8470: f946c320     	ldr	x0, [x25, #0xd80]
+  1b8474: b4fff9e0     	cbz	x0, 0x1b83b0 <__ZN7android4base6System15waitAndKillSelfEi+0x880>
+  1b8478: 381873bf     	sturb	wzr, [x29, #-0x79]
+  1b847c: 381703bf     	sturb	wzr, [x29, #-0x90]
+  1b8480: f9400008     	ldr	x8, [x0]
+  1b8484: f940e508     	ldr	x8, [x8, #0x1c8]
+  1b8488: 910023e1     	add	x1, sp, #0x8
+  1b848c: d10243a6     	sub	x6, x29, #0x90
+  1b8490: 52800002     	mov	w2, #0x0                ; =0
+  1b8494: d2800003     	mov	x3, #0x0                ; =0
+  1b8498: d2800004     	mov	x4, #0x0                ; =0
+  1b849c: d2800005     	mov	x5, #0x0                ; =0
+  1b84a0: d63f0100     	blr	x8
+  1b84a4: 38d873a8     	ldursb	w8, [x29, #-0x79]
+  1b84a8: 36f800a8     	tbz	w8, #0x1f, 0x1b84bc <__ZN7android4base6System15waitAndKillSelfEi+0x98c>
+  1b84ac: f85703a0     	ldur	x0, [x29, #-0x90]
+  1b84b0: f85803a8     	ldur	x8, [x29, #-0x80]
+  1b84b4: 9240f901     	and	x1, x8, #0x7fffffffffffffff
+  1b84b8: 940187f1     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1b84bc: f94007f3     	ldr	x19, [sp, #0x8]
+  1b84c0: b40002b3     	cbz	x19, 0x1b8514 <__ZN7android4base6System15waitAndKillSelfEi+0x9e4>
+  1b84c4: f9400bf4     	ldr	x20, [sp, #0x10]
+  1b84c8: aa1303e0     	mov	x0, x19
+  1b84cc: eb14027f     	cmp	x19, x20
+  1b84d0: 540000a1     	b.ne	0x1b84e4 <__ZN7android4base6System15waitAndKillSelfEi+0x9b4>
+  1b84d4: 1400000c     	b	0x1b8504 <__ZN7android4base6System15waitAndKillSelfEi+0x9d4>
+  1b84d8: d1006294     	sub	x20, x20, #0x18
+  1b84dc: eb13029f     	cmp	x20, x19
+  1b84e0: 54000100     	b.eq	0x1b8500 <__ZN7android4base6System15waitAndKillSelfEi+0x9d0>
+  1b84e4: 38dff288     	ldursb	w8, [x20, #-0x1]
+  1b84e8: 36ffff88     	tbz	w8, #0x1f, 0x1b84d8 <__ZN7android4base6System15waitAndKillSelfEi+0x9a8>
+  1b84ec: f85e8280     	ldur	x0, [x20, #-0x18]
+  1b84f0: f85f8288     	ldur	x8, [x20, #-0x8]
+  1b84f4: 9240f901     	and	x1, x8, #0x7fffffffffffffff
+  1b84f8: 940187e1     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1b84fc: 17fffff7     	b	0x1b84d8 <__ZN7android4base6System15waitAndKillSelfEi+0x9a8>
+  1b8500: f94007e0     	ldr	x0, [sp, #0x8]
+  1b8504: f9000bf3     	str	x19, [sp, #0x10]
+  1b8508: f9400fe8     	ldr	x8, [sp, #0x18]
+  1b850c: cb000101     	sub	x1, x8, x0
+  1b8510: 940187db     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1b8514: 39c0dfe8     	ldrsb	w8, [sp, #0x37]
+  1b8518: 37f80268     	tbnz	w8, #0x1f, 0x1b8564 <__ZN7android4base6System15waitAndKillSelfEi+0xa34>
+  1b851c: 39c13fe8     	ldrsb	w8, [sp, #0x4f]
+  1b8520: 37f802e8     	tbnz	w8, #0x1f, 0x1b857c <__ZN7android4base6System15waitAndKillSelfEi+0xa4c>
+  1b8524: 39c19fe8     	ldrsb	w8, [sp, #0x67]
+  1b8528: 37f80368     	tbnz	w8, #0x1f, 0x1b8594 <__ZN7android4base6System15waitAndKillSelfEi+0xa64>
+  1b852c: f85a03a8     	ldur	x8, [x29, #-0x60]
+  1b8530: d503201f     	nop
+  1b8534: 586bd6a9     	ldr	x9, 0x290008 <dyld_stub_binder+0x290008>
+  1b8538: f9400129     	ldr	x9, [x9]
+  1b853c: eb08013f     	cmp	x9, x8
+  1b8540: 540003e1     	b.ne	0x1b85bc <__ZN7android4base6System15waitAndKillSelfEi+0xa8c>
+  1b8544: a9537bfd     	ldp	x29, x30, [sp, #0x130]
+  1b8548: a9524ff4     	ldp	x20, x19, [sp, #0x120]
+  1b854c: a95157f6     	ldp	x22, x21, [sp, #0x110]
+  1b8550: a9505ff8     	ldp	x24, x23, [sp, #0x100]
+  1b8554: a94f67fa     	ldp	x26, x25, [sp, #0xf0]
+  1b8558: a94e6ffc     	ldp	x28, x27, [sp, #0xe0]
+  1b855c: 910503ff     	add	sp, sp, #0x140
+  1b8560: d65f03c0     	ret
+  1b8564: f94013e0     	ldr	x0, [sp, #0x20]
+  1b8568: f9401be8     	ldr	x8, [sp, #0x30]
+  1b856c: 9240f901     	and	x1, x8, #0x7fffffffffffffff
+  1b8570: 940187c3     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1b8574: 39c13fe8     	ldrsb	w8, [sp, #0x4f]
+  1b8578: 36fffd68     	tbz	w8, #0x1f, 0x1b8524 <__ZN7android4base6System15waitAndKillSelfEi+0x9f4>
+  1b857c: f9401fe0     	ldr	x0, [sp, #0x38]
+  1b8580: f94027e8     	ldr	x8, [sp, #0x48]
+  1b8584: 9240f901     	and	x1, x8, #0x7fffffffffffffff
+  1b8588: 940187bd     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1b858c: 39c19fe8     	ldrsb	w8, [sp, #0x67]
+  1b8590: 36fffce8     	tbz	w8, #0x1f, 0x1b852c <__ZN7android4base6System15waitAndKillSelfEi+0x9fc>
+  1b8594: f9402be0     	ldr	x0, [sp, #0x50]
+  1b8598: f94033e8     	ldr	x8, [sp, #0x60]
+  1b859c: 9240f901     	and	x1, x8, #0x7fffffffffffffff
+  1b85a0: 940187b7     	bl	0x21a47c <dyld_stub_binder+0x21a47c>
+  1b85a4: f85a03a8     	ldur	x8, [x29, #-0x60]
+  1b85a8: d503201f     	nop
+  1b85ac: 586bd2e9     	ldr	x9, 0x290008 <dyld_stub_binder+0x290008>
+  1b85b0: f9400129     	ldr	x9, [x9]
+  1b85b4: eb08013f     	cmp	x9, x8
+  1b85b8: 54fffc60     	b.eq	0x1b8544 <__ZN7android4base6System15waitAndKillSelfEi+0xa14>
+  1b85bc: 940187ad     	bl	0x21a470 <dyld_stub_binder+0x21a470>
+  1b85c0: 940187c7     	bl	0x21a4dc <dyld_stub_binder+0x21a4dc>
+  1b85c4: 97f9403b     	bl	0x86b0 <__ZSt28__throw_bad_array_new_lengthB6v15006v>

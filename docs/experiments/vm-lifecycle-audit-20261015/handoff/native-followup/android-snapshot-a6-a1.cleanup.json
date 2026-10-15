@@ -1,0 +1,46 @@
+{
+  "at": "2026-10-15T21:57:06.272973+00:00",
+  "scope": "exact run-owned ADB daemon only; no VM existed",
+  "original_failure_unchanged": true,
+  "argv": [
+    "/Users/dongxin/Library/Android/sdk/platform-tools/adb",
+    "-P",
+    "15037",
+    "kill-server"
+  ],
+  "returncode": 0,
+  "stdout": "",
+  "stderr": "",
+  "pid": 70814,
+  "create_time": 1792101390.489498,
+  "original_process_gone": true,
+  "ports": {
+    "15037": {
+      "127.0.0.1": {
+        "bindable": true
+      },
+      "::1": {
+        "bindable": true
+      }
+    },
+    "5666": {
+      "127.0.0.1": {
+        "bindable": true
+      },
+      "::1": {
+        "bindable": true
+      }
+    },
+    "5667": {
+      "127.0.0.1": {
+        "bindable": true
+      },
+      "::1": {
+        "bindable": true
+      }
+    }
+  },
+  "vm_ids": [],
+  "native_call_count": 0,
+  "private_avd_entries": []
+}

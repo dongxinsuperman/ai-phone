@@ -1,0 +1,81 @@
+F
+=================================== FAILURES ===================================
+_ test_old_cleanup_confirmation_cannot_bypass_fresh_process_evidence[legacy-unknown-delete] _
+
+tmp_path = PosixPath('/private/tmp/ai-phone-main-flow-impact-yundggte/pytest/test_old_cleanup_confirmation_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x105b4e050>
+native_state = 'unknown', action = 'delete'
+
+    @pytest.mark.parametrize(("native_state", "action"), [
+        ("running", "stop"), ("unknown", "stop"),
+        ("running", "delete"), ("unknown", "delete"),
+    ], ids=["legacy-running-stop", "legacy-unknown-stop", "legacy-running-delete", "legacy-unknown-delete"])
+    def test_old_cleanup_confirmation_cannot_bypass_fresh_process_evidence(
+        tmp_path, monkeypatch, native_state, action,
+    ):
+        manager = lifecycle.HarmonyVmManager(runtime_dir=tmp_path)
+        runtime = hardening._runtime(tmp_path)
+        vm_id, serial, token = runtime.vm_id, runtime.hdc_serial, runtime.lease_token
+        manager._known[vm_id] = {
+            **runtime.persistent_dict(), "created": True,
+            "ready": False, "cleanup_pending": False, "cleanup_confirmed": True,
+            # This is the old false-positive shape produced by the original case.
+            "exit_evidence": {"process_handle_present": False, "process_return_code": None},
+        }
+        private_file = Path(runtime.instance_path) / runtime.instance_name / "config.ini"
+        private_file.parent.mkdir(parents=True)
+        private_file.write_text("historical private data")
+        commands, samples = [], []
+        exact_process = SimpleNamespace(info={
+            "name": "Emulator", "cmdline": [
+                "/fake/Emulator", "-start", runtime.instance_name,
+                "-instancePath", runtime.instance_path, "-hdcPort", str(runtime.hdc_port),
+            ],
+        })
+    
+        def process_iter(_attrs):
+            samples.append(list(commands))
+            if native_state == "unknown":
+                raise PermissionError("fixture process inventory is unavailable")
+            return iter([exact_process])
+    
+        def native(args, **_kwargs):
+            assert args[0] == "/fake/Emulator" and args[2] == runtime.instance_name
+            commands.append(args[1])
+            if args[1] == "-stop":
+                return SimpleNamespace(returncode=1, stdout="", stderr="fixture process did not stop")
+            assert args[1] == "-delete"
+            shutil.rmtree(private_file.parent)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+    
+        monkeypatch.setattr(psutil, "process_iter", process_iter)
+        monkeypatch.setattr(lifecycle, "find_harmony_tools", lambda: (cap.HarmonyVmTools("/fake/Emulator"), []))
+        monkeypatch.setattr(lifecycle.subprocess, "run", native)
+        monkeypatch.setattr(lifecycle, "hdc_run", lambda *_a, **_kw: "[Fail]No target available")
+        monkeypatch.setattr(lifecycle, "hdc_list_targets", lambda: [])
+        monkeypatch.setattr(manager, "_port_is_free", lambda _port, **_kwargs: True)
+        monkeypatch.setattr(manager, "_remove_fport", lambda _runtime: None)
+        monkeypatch.setattr(manager, "_cleanup_crash_service", lambda *_args: (True, []))
+        try:
+            operation = manager.stop_sync if action == "stop" else manager.delete_sync
+            result = operation(vm_id, serial, token)
+            print(json.dumps({
+                "origin": "legacy_confirmed_registry", "action": action, "native_state": native_state,
+                "native_commands": commands, "native_process_samples_in_lifecycle": len(samples),
+                "private_definition_exists": private_file.exists(), "result": result,
+            }, ensure_ascii=False, default=str))
+>           assert result["ok"] is False, "a historical confirmation is not proof of current process exit"
+E           AssertionError: a historical confirmation is not proof of current process exit
+E           assert True is False
+
+../../var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-harmony-stop-proof-13s6j6v7/backend/tests/test_harmony_vm_stop_identity.py:165: AssertionError
+----------------------------- Captured stdout call -----------------------------
+{"origin": "legacy_confirmed_registry", "action": "delete", "native_state": "unknown", "native_commands": ["-delete"], "native_process_samples_in_lifecycle": 0, "private_definition_exists": false, "result": {"ok": true, "reason": "deleted", "details": {"cleanup_confirmed": true, "crash_service_cleanup_confirmed": true, "crash_service_cleanup_errors": [], "instance_name": "aiphone_harmony_transport_vm", "instance_directory_absent": true}}}
+============================= slowest 15 durations =============================
+
+(3 durations < 0.005s hidden.  Use -vv to show these durations.)
+=========================== short test summary info ============================
+FAILED ../../var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-harmony-stop-proof-13s6j6v7/backend/tests/test_harmony_vm_stop_identity.py::test_old_cleanup_confirmation_cannot_bypass_fresh_process_evidence[legacy-unknown-delete]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.06s
+{"pytest_exit_code": 1, "collected": 1, "blocked_external_calls": 1, "product_source_unchanged": true}

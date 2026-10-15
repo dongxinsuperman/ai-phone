@@ -1,0 +1,16 @@
+
+/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+00000001001c52ec <_qemu_system_shutdown_request>:
+1001c52ec: a9be4ff4    	stp	x20, x19, [sp, #-0x20]!
+1001c52f0: a9017bfd    	stp	x29, x30, [sp, #0x10]
+1001c52f4: 910043fd    	add	x29, sp, #0x10
+1001c52f8: aa0003f3    	mov	x19, x0
+1001c52fc: 94085691    	bl	0x1003dad40 <_replay_shutdown_request>
+1001c5300: f000d3c8    	adrp	x8, 0x101c40000 <__MergedGlobals+0x60>
+1001c5304: b908f913    	str	w19, [x8, #0x8f8]
+1001c5308: a9417bfd    	ldp	x29, x30, [sp, #0x10]
+1001c530c: a8c24ff4    	ldp	x20, x19, [sp], #0x20
+1001c5310: 140a4ed5    	b	0x100458e64 <_qemu_notify_event>

@@ -1,0 +1,93 @@
+Read-only disassembly. Target binary was not executed.
+Command: ['/usr/bin/xcrun', 'llvm-objdump', '--arch=arm64', '--disassemble-symbols=__ZN7android9emulation13AdbHostServer13getClientPortEv', '/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless']
+
+/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+0000000100a07dd0 <__ZN7android9emulation13AdbHostServer13getClientPortEv>:
+100a07dd0: d10103ff    	sub	sp, sp, #0x40
+100a07dd4: a9024ff4    	stp	x20, x19, [sp, #0x20]
+100a07dd8: a9037bfd    	stp	x29, x30, [sp, #0x30]
+100a07ddc: 9100c3fd    	add	x29, sp, #0x30
+100a07de0: 942cde16    	bl	0x10153f638 <dyld_stub_binder+0x10153f638>
+100a07de4: f9400008    	ldr	x8, [x0]
+100a07de8: f9403109    	ldr	x9, [x8, #0x60]
+100a07dec: b0006181    	adrp	x1, 0x101638000 <_sms_numeric_address_to_str.dialdigits+0x2952>
+100a07df0: 911bec21    	add	x1, x1, #0x6fb
+100a07df4: 910023f3    	add	x19, sp, #0x8
+100a07df8: 910023e8    	add	x8, sp, #0x8
+100a07dfc: 528002e2    	mov	w2, #0x17               ; =23
+100a07e00: d63f0120    	blr	x9
+100a07e04: 39407fe9    	ldrb	w9, [sp, #0x1f]
+100a07e08: 13001d28    	sxtb	w8, w9
+100a07e0c: f9400bea    	ldr	x10, [sp, #0x10]
+100a07e10: 7100011f    	cmp	w8, #0x0
+100a07e14: 9a894149    	csel	x9, x10, x9, mi
+100a07e18: b4000269    	cbz	x9, 0x100a07e64 <__ZN7android9emulation13AdbHostServer13getClientPortEv+0x94>
+100a07e1c: f94007e9    	ldr	x9, [sp, #0x8]
+100a07e20: 7100011f    	cmp	w8, #0x0
+100a07e24: 9a934120    	csel	x0, x9, x19, mi
+100a07e28: d2800001    	mov	x1, #0x0                ; =0
+100a07e2c: 52800002    	mov	w2, #0x0                ; =0
+100a07e30: 942cdc2e    	bl	0x10153eee8 <dyld_stub_binder+0x10153eee8>
+100a07e34: aa0003f3    	mov	x19, x0
+100a07e38: d1000408    	sub	x8, x0, #0x1
+100a07e3c: 529fffe9    	mov	w9, #0xffff             ; =65535
+100a07e40: eb09011f    	cmp	x8, x9
+100a07e44: 54000182    	b.hs	0x100a07e74 <__ZN7android9emulation13AdbHostServer13getClientPortEv+0xa4>
+100a07e48: 39c07fe8    	ldrsb	w8, [sp, #0x1f]
+100a07e4c: 37f805a8    	tbnz	w8, #0x1f, 0x100a07f00 <__ZN7android9emulation13AdbHostServer13getClientPortEv+0x130>
+100a07e50: aa1303e0    	mov	x0, x19
+100a07e54: a9437bfd    	ldp	x29, x30, [sp, #0x30]
+100a07e58: a9424ff4    	ldp	x20, x19, [sp, #0x20]
+100a07e5c: 910103ff    	add	sp, sp, #0x40
+100a07e60: d65f03c0    	ret
+100a07e64: 528275b3    	mov	w19, #0x13ad            ; =5037
+100a07e68: 39c07fe8    	ldrsb	w8, [sp, #0x1f]
+100a07e6c: 36ffff28    	tbz	w8, #0x1f, 0x100a07e50 <__ZN7android9emulation13AdbHostServer13getClientPortEv+0x80>
+100a07e70: 14000024    	b	0x100a07f00 <__ZN7android9emulation13AdbHostServer13getClientPortEv+0x130>
+100a07e74: 942cdddc    	bl	0x10153f5e4 <dyld_stub_binder+0x10153f5e4>
+100a07e78: 7100081f    	cmp	w0, #0x2
+100a07e7c: 540003cc    	b.gt	0x100a07ef4 <__ZN7android9emulation13AdbHostServer13getClientPortEv+0x124>
+100a07e80: b0006181    	adrp	x1, 0x101638000 <_sms_numeric_address_to_str.dialdigits+0x2952>
+100a07e84: 91188421    	add	x1, x1, #0x621
+100a07e88: 910003e0    	mov	x0, sp
+100a07e8c: 52801382    	mov	w2, #0x9c               ; =156
+100a07e90: 52800043    	mov	w3, #0x2                ; =2
+100a07e94: 52800004    	mov	w4, #0x0                ; =0
+100a07e98: 942ce1fc    	bl	0x101540688 <dyld_stub_binder+0x101540688>
+100a07e9c: f94003e8    	ldr	x8, [sp]
+100a07ea0: b0006181    	adrp	x1, 0x101638000 <_sms_numeric_address_to_str.dialdigits+0x2952>
+100a07ea4: 911c4c21    	add	x1, x1, #0x713
+100a07ea8: 9105c100    	add	x0, x8, #0x170
+100a07eac: 52800122    	mov	w2, #0x9                ; =9
+100a07eb0: 97e81f09    	bl	0x10040fad4 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+100a07eb4: b0006181    	adrp	x1, 0x101638000 <_sms_numeric_address_to_str.dialdigits+0x2952>
+100a07eb8: 911bec21    	add	x1, x1, #0x6fb
+100a07ebc: 528002e2    	mov	w2, #0x17               ; =23
+100a07ec0: 97e81f05    	bl	0x10040fad4 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+100a07ec4: b0006181    	adrp	x1, 0x101638000 <_sms_numeric_address_to_str.dialdigits+0x2952>
+100a07ec8: 911c7421    	add	x1, x1, #0x71d
+100a07ecc: 52800242    	mov	w2, #0x12               ; =18
+100a07ed0: 97e81f01    	bl	0x10040fad4 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+100a07ed4: b0006181    	adrp	x1, 0x101638000 <_sms_numeric_address_to_str.dialdigits+0x2952>
+100a07ed8: 911cc021    	add	x1, x1, #0x730
+100a07edc: 528002e2    	mov	w2, #0x17               ; =23
+100a07ee0: 97e81efd    	bl	0x10040fad4 <__ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m>
+100a07ee4: aa1303e1    	mov	x1, x19
+100a07ee8: 942cead0    	bl	0x101542a28 <dyld_stub_binder+0x101542a28>
+100a07eec: 910003e0    	mov	x0, sp
+100a07ef0: 942ce1e3    	bl	0x10154067c <dyld_stub_binder+0x10154067c>
+100a07ef4: 12800013    	mov	w19, #-0x1              ; =-1
+100a07ef8: 39c07fe8    	ldrsb	w8, [sp, #0x1f]
+100a07efc: 36fffaa8    	tbz	w8, #0x1f, 0x100a07e50 <__ZN7android9emulation13AdbHostServer13getClientPortEv+0x80>
+100a07f00: f94007e0    	ldr	x0, [sp, #0x8]
+100a07f04: f9400fe8    	ldr	x8, [sp, #0x18]
+100a07f08: 9240f901    	and	x1, x8, #0x7fffffffffffffff
+100a07f0c: 942cddb9    	bl	0x10153f5f0 <dyld_stub_binder+0x10153f5f0>
+100a07f10: aa1303e0    	mov	x0, x19
+100a07f14: a9437bfd    	ldp	x29, x30, [sp, #0x30]
+100a07f18: a9424ff4    	ldp	x20, x19, [sp, #0x20]
+100a07f1c: 910103ff    	add	sp, sp, #0x40
+100a07f20: d65f03c0    	ret

@@ -1,0 +1,2188 @@
+{
+  "run_id": "android-snapshot-a6-f263af3a-20261016-a2",
+  "platform": "android",
+  "started_at": "2026-10-15T22:01:49.313325+00:00",
+  "classification": "single-AVD native QuickBoot snapshot-policy matrix; no App/VLM acceptance",
+  "not_covered": [
+    "a2/a4 sealed disks",
+    "App persistence",
+    "external networking",
+    "VLM/business Case"
+  ],
+  "status": "failed",
+  "stages": [
+    {
+      "stage": "isolated-services",
+      "at": "2026-10-15T22:01:53.532425+00:00",
+      "monotonic_ns": 110025871954500,
+      "base_url": "http://127.0.0.1:56283",
+      "agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+      "host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+      "private_adb_pid": 71871,
+      "private_adb_port": 15037
+    },
+    {
+      "stage": "agent-command",
+      "at": "2026-10-15T22:01:53.588030+00:00",
+      "monotonic_ns": 110025927538750,
+      "command": {
+        "type": "vm_capability_probe",
+        "vm_id": "779481a8a016",
+        "name": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "alias": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "profile_ref_type": "custom",
+        "profile_ref_id": "",
+        "profile_id": "",
+        "profile_name": "",
+        "config_version": 1,
+        "config_json": {
+          "system": {
+            "api_level": 33,
+            "system_type": "google_apis",
+            "abi": "arm64"
+          },
+          "display": {
+            "screen_width": 540,
+            "screen_height": 960,
+            "density": 240,
+            "orientation": "portrait",
+            "screen_size_in": "",
+            "cutout": "",
+            "shape_note": ""
+          },
+          "performance": {
+            "ram_mb": 2048,
+            "cpu_cores": 2,
+            "vm_heap_mb": 384,
+            "gpu_mode": "host"
+          },
+          "storage": {
+            "internal_storage_mb": 4096,
+            "sdcard_mb": 0,
+            "wipe_data": false,
+            "snapshot_policy": "save"
+          },
+          "network": {
+            "speed": "full",
+            "delay": "none",
+            "dns_server": "",
+            "http_proxy": ""
+          },
+          "hardware": {
+            "back_camera": "emulated",
+            "front_camera": "none",
+            "gps": true,
+            "accelerometer": true,
+            "gyroscope": true,
+            "proximity": false,
+            "hardware_keyboard": false,
+            "navigation_style": "none"
+          },
+          "startup": {
+            "no_window": true,
+            "no_audio": true,
+            "no_boot_anim": true,
+            "writable_system": false
+          },
+          "identity": {}
+        },
+        "capability_marks": {},
+        "api_level": 33,
+        "abi": "arm64",
+        "system_type": "google_apis",
+        "system_image": "",
+        "screen_width": 540,
+        "screen_height": 960,
+        "density": 240,
+        "orientation": "portrait",
+        "screen_size_in": "",
+        "ram_mb": 2048,
+        "cpu_cores": 2,
+        "vm_heap_mb": 384,
+        "gpu_mode": "host",
+        "internal_storage_mb": 4096,
+        "sdcard_mb": 0,
+        "wipe_data": false,
+        "snapshot_policy": "save",
+        "network_speed": "full",
+        "network_delay": "none",
+        "dns_server": "",
+        "http_proxy": "",
+        "back_camera": "emulated",
+        "front_camera": "none",
+        "gps": true,
+        "accelerometer": true,
+        "gyroscope": true,
+        "proximity": false,
+        "hardware_keyboard": false,
+        "navigation_style": "none",
+        "no_window": true,
+        "no_audio": true,
+        "no_boot_anim": true,
+        "writable_system": false,
+        "request_id": "c6f687e5567e4c11"
+      }
+    },
+    {
+      "stage": "agent-command",
+      "at": "2026-10-15T22:01:53.596303+00:00",
+      "monotonic_ns": 110025935809625,
+      "command": {
+        "type": "vm_start",
+        "vm_id": "779481a8a016",
+        "name": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "alias": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "profile_ref_type": "custom",
+        "profile_ref_id": "",
+        "profile_id": "",
+        "profile_name": "",
+        "config_version": 1,
+        "config_json": {
+          "system": {
+            "api_level": 33,
+            "system_type": "google_apis",
+            "abi": "arm64"
+          },
+          "display": {
+            "screen_width": 540,
+            "screen_height": 960,
+            "density": 240,
+            "orientation": "portrait",
+            "screen_size_in": "",
+            "cutout": "",
+            "shape_note": ""
+          },
+          "performance": {
+            "ram_mb": 2048,
+            "cpu_cores": 2,
+            "vm_heap_mb": 384,
+            "gpu_mode": "host"
+          },
+          "storage": {
+            "internal_storage_mb": 4096,
+            "sdcard_mb": 0,
+            "wipe_data": false,
+            "snapshot_policy": "save"
+          },
+          "network": {
+            "speed": "full",
+            "delay": "none",
+            "dns_server": "",
+            "http_proxy": ""
+          },
+          "hardware": {
+            "back_camera": "emulated",
+            "front_camera": "none",
+            "gps": true,
+            "accelerometer": true,
+            "gyroscope": true,
+            "proximity": false,
+            "hardware_keyboard": false,
+            "navigation_style": "none"
+          },
+          "startup": {
+            "no_window": true,
+            "no_audio": true,
+            "no_boot_anim": true,
+            "writable_system": false
+          },
+          "identity": {}
+        },
+        "capability_marks": {},
+        "api_level": 33,
+        "abi": "arm64",
+        "system_type": "google_apis",
+        "system_image": "",
+        "screen_width": 540,
+        "screen_height": 960,
+        "density": 240,
+        "orientation": "portrait",
+        "screen_size_in": "",
+        "ram_mb": 2048,
+        "cpu_cores": 2,
+        "vm_heap_mb": 384,
+        "gpu_mode": "host",
+        "internal_storage_mb": 4096,
+        "sdcard_mb": 0,
+        "wipe_data": false,
+        "snapshot_policy": "save",
+        "network_speed": "full",
+        "network_delay": "none",
+        "dns_server": "",
+        "http_proxy": "",
+        "back_camera": "emulated",
+        "front_camera": "none",
+        "gps": true,
+        "accelerometer": true,
+        "gyroscope": true,
+        "proximity": false,
+        "hardware_keyboard": false,
+        "navigation_style": "none",
+        "no_window": true,
+        "no_audio": true,
+        "no_boot_anim": true,
+        "writable_system": false,
+        "request_id": "8fc97dc265bc4bbc",
+        "assigned_port": 5666,
+        "exclude_ports": [],
+        "require_existing_instance": false,
+        "rollback_new_instance": true,
+        "operation_timeout_sec": 299.9999615410052
+      }
+    },
+    {
+      "stage": "01-save-first-start",
+      "at": "2026-10-15T22:02:17.019765+00:00",
+      "monotonic_ns": 110049359221750,
+      "status": "passed",
+      "policy": "save",
+      "vm_id": "779481a8a016",
+      "generation": "71919:110026518991625",
+      "native_pid": 71919
+    },
+    {
+      "stage": "marker-created",
+      "at": "2026-10-15T22:02:17.223366+00:00",
+      "monotonic_ns": 110049562832291,
+      "label": "A",
+      "signature": {
+        "pid": 2531,
+        "present": true,
+        "state": "S",
+        "starttick": 1889,
+        "cmdline_hex": "2f73797374656d2f62696e2f736c656570003131333100",
+        "cmdline": "/system/bin/sleep 1131",
+        "raw_stat": "2531 (sleep) S 1 2521 2521 0 -1 1077936128 537 0 1 0 0 0 0 0 20 0 1 0 1889 11118100480 858 18446744073709551615 381791735808 381792020976 548719158576 0 0 0 0 1 1073775864 1 0 0 17 1 0 0 0 0 0 381792041712 381792052232 382568140800 548719161861 548719161884 548719161884 548719165414 0"
+      },
+      "lifetime_seconds": 1131
+    },
+    {
+      "stage": "agent-command",
+      "at": "2026-10-15T22:02:17.228879+00:00",
+      "monotonic_ns": 110049568331666,
+      "command": {
+        "type": "vm_stop",
+        "request_id": "7b702c36938643c5",
+        "vm_id": "779481a8a016",
+        "adb_serial": "emulator-5666",
+        "operation_timeout_sec": 119.99996383399412
+      }
+    },
+    {
+      "stage": "01-save-first-stop",
+      "at": "2026-10-15T22:02:20.555798+00:00",
+      "monotonic_ns": 110052895244750,
+      "status": "passed",
+      "policy": "save",
+      "native_exit_confirmed": true,
+      "avd_preserved": true,
+      "snapshot": {
+        "path": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/snapshots/default_boot",
+        "exists": true,
+        "files": [
+          {
+            "name": "compatible.pb",
+            "size": 0,
+            "inode": 84415714,
+            "mtime_ns": 1792101739816848488,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "hardware.ini",
+            "size": 4708,
+            "inode": 84415713,
+            "mtime_ns": 1792101739805424337,
+            "sha256": "75f99829b54f966a3954d8b4f2af359972cb1facd3087d325f60798c62120f93"
+          },
+          {
+            "name": "ram.bin",
+            "size": 2027467354,
+            "inode": 84415708,
+            "mtime_ns": 1792101739560740612
+          },
+          {
+            "name": "screenshot.png",
+            "size": 562631,
+            "inode": 84415712,
+            "mtime_ns": 1792101739816394112,
+            "sha256": "89e2aaeb38a101ae059f48df802e64a8737d8b1b074a36598af9525e9e14afc2"
+          },
+          {
+            "name": "snapshot.pb",
+            "size": 1688,
+            "inode": 84415660,
+            "mtime_ns": 1792101739806235672,
+            "sha256": "644da27bd23574990a502512d0e4ff2a62fe232529eb4b31ceebc38fbc8fbe0e"
+          },
+          {
+            "name": "textures.bin",
+            "size": 7774915,
+            "inode": 84415709,
+            "mtime_ns": 1792101739802997081,
+            "sha256": "4e34a82cc6f940b1751ff46855e0e83c536c873fecfdb03dfbbb9fe55fca8c47"
+          }
+        ]
+      }
+    },
+    {
+      "stage": "agent-command",
+      "at": "2026-10-15T22:02:20.560138+00:00",
+      "monotonic_ns": 110052899582291,
+      "command": {
+        "type": "vm_start",
+        "vm_id": "779481a8a016",
+        "name": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "alias": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "profile_ref_type": "custom",
+        "profile_ref_id": "",
+        "profile_id": "",
+        "profile_name": "",
+        "config_version": 1,
+        "config_json": {
+          "system": {
+            "api_level": 33,
+            "system_type": "google_apis",
+            "abi": "arm64"
+          },
+          "display": {
+            "screen_width": 540,
+            "screen_height": 960,
+            "density": 240,
+            "orientation": "portrait",
+            "screen_size_in": "",
+            "cutout": "",
+            "shape_note": ""
+          },
+          "performance": {
+            "ram_mb": 2048,
+            "cpu_cores": 2,
+            "vm_heap_mb": 384,
+            "gpu_mode": "host"
+          },
+          "storage": {
+            "internal_storage_mb": 4096,
+            "sdcard_mb": 0,
+            "wipe_data": false,
+            "snapshot_policy": "save"
+          },
+          "network": {
+            "speed": "full",
+            "delay": "none",
+            "dns_server": "",
+            "http_proxy": ""
+          },
+          "hardware": {
+            "back_camera": "emulated",
+            "front_camera": "none",
+            "gps": true,
+            "accelerometer": true,
+            "gyroscope": true,
+            "proximity": false,
+            "hardware_keyboard": false,
+            "navigation_style": "none"
+          },
+          "startup": {
+            "no_window": true,
+            "no_audio": true,
+            "no_boot_anim": true,
+            "writable_system": false
+          },
+          "identity": {}
+        },
+        "capability_marks": {},
+        "api_level": 33,
+        "abi": "arm64",
+        "system_type": "google_apis",
+        "system_image": "",
+        "screen_width": 540,
+        "screen_height": 960,
+        "density": 240,
+        "orientation": "portrait",
+        "screen_size_in": "",
+        "ram_mb": 2048,
+        "cpu_cores": 2,
+        "vm_heap_mb": 384,
+        "gpu_mode": "host",
+        "internal_storage_mb": 4096,
+        "sdcard_mb": 0,
+        "wipe_data": false,
+        "snapshot_policy": "save",
+        "network_speed": "full",
+        "network_delay": "none",
+        "dns_server": "",
+        "http_proxy": "",
+        "back_camera": "emulated",
+        "front_camera": "none",
+        "gps": true,
+        "accelerometer": true,
+        "gyroscope": true,
+        "proximity": false,
+        "hardware_keyboard": false,
+        "navigation_style": "none",
+        "no_window": true,
+        "no_audio": true,
+        "no_boot_anim": true,
+        "writable_system": false,
+        "request_id": "44894bb498944510",
+        "assigned_port": 5666,
+        "exclude_ports": [],
+        "require_existing_instance": true,
+        "rollback_new_instance": false,
+        "operation_timeout_sec": 299.99996283299697
+      }
+    },
+    {
+      "stage": "02-save-restore-start",
+      "at": "2026-10-15T22:02:36.749750+00:00",
+      "monotonic_ns": 110069089163083,
+      "status": "passed",
+      "policy": "save",
+      "vm_id": "779481a8a016",
+      "generation": "72067:110053342241458",
+      "native_pid": 72067
+    },
+    {
+      "stage": "failed",
+      "at": "2026-10-15T22:02:36.894471+00:00",
+      "monotonic_ns": 110069233881291,
+      "error": "RuntimeError('QuickBoot did not restore the exact original kernel and RAM marker A')",
+      "snapshot_saved": true
+    },
+    {
+      "stage": "protective-stop-once",
+      "at": "2026-10-15T22:02:39.087040+00:00",
+      "monotonic_ns": 110071426445083,
+      "vm_id": "779481a8a016",
+      "result": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5666",
+        "details": {
+          "avd_name": "aiphone_vm_779481a8a016",
+          "port": 5666,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "sync_completed": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": -6,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "avd_preserved": true
+    }
+  ],
+  "owned_vm_ids": [
+    "779481a8a016"
+  ],
+  "receipts": [],
+  "plan": {
+    "mode": "dry-run",
+    "run_id": "android-snapshot-a6-f263af3a-20261016-a2",
+    "platform": "android",
+    "source_repo": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone",
+    "root": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2",
+    "base_helpers": {
+      "path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_sync_a5.py",
+      "sha256": "43356f481dea68c8adcd7b5fb7344b08912f2b2e4f678075533f2a15856eaf51"
+    },
+    "frozen_products": {
+      "manifest": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/frozen-products.json",
+      "manifest_sha256": "3cb3842671dd3ea50d007e887d1fdccb2ae4ec79c162f27269d9d92f72fa44a5",
+      "count": 33,
+      "source_sha256": {
+        "backend/ai_phone/agent/android_vm/capability.py": "ed8630cb9f20d1791eea36d142bce755e73147b50a6e1621b2f6b4192d210b31",
+        "backend/ai_phone/agent/android_vm/manager.py": "a9fc524cf2206baa1295557e936a05781d4d584e96e334e685f3e01c84e1a5db",
+        "backend/ai_phone/agent/app_install/handler.py": "31abda8902919971a2879a3b6e262ddb16509213b7a1a249392a560ba7a81d22",
+        "backend/ai_phone/agent/app_uninstall/handler.py": "b373f34caf73043d54bc297cacd929c18783342486b8330acbb97c0c44b7714d",
+        "backend/ai_phone/agent/device_activity.py": "cc2e96d66080f7aa60fa8d0b9956e433e186fd892dfc26c00a8c904060395e31",
+        "backend/ai_phone/agent/drivers/__init__.py": "67dd1c2ac123154794e17d584ec5fb5335baec68293f16acea0fd1f14de506c8",
+        "backend/ai_phone/agent/drivers/android.py": "af3b1fe42b0ce93e2ad1717143e8959bc2a438e2a73955a2a7ca0c6224136d9a",
+        "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+        "backend/ai_phone/agent/harmony_vm/capability.py": "6716584a4ee555fd49b2297db5136e004679806d2af0b12a2c4edb3eac5003fa",
+        "backend/ai_phone/agent/harmony_vm/manager.py": "efac19845e45b5c0a7aa2faefc95f8c6dc9cecd6842442fee303765dc9a3999e",
+        "backend/ai_phone/agent/health/probe.py": "a4ec72f21e4dc6b1bf4b0c3bcfcdde37b74b57305cc57b9d2ce738fc91139c33",
+        "backend/ai_phone/agent/health/supervisor.py": "8393340453f02129d1c342e1815806cfe4f039ff00d7f117fbab94c462678858",
+        "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+        "backend/ai_phone/agent/ios_sim/manager.py": "6401fce688f697450099204f8c96c8995ffb2f2dcc65912b265e7ff1362bda60",
+        "backend/ai_phone/agent/main.py": "33941428605993c5c6b4ec709e2bb4f42d014ea57634a5133d5e3bd2d8e33d99",
+        "backend/ai_phone/agent/native_operation.py": "1fbc78e1560cf21ba3dc6e68d50adfc9a025831fba3d3848c407e291ff901255",
+        "backend/ai_phone/agent/vm_ports.py": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+        "backend/ai_phone/agent/ws_client.py": "aadad560bfa0788b0b6eefe6636be7b7f2e95cae96b31d423f2dcaa34252592e",
+        "backend/ai_phone/server/android_vm/api.py": "3bdcfa84b46262ca974be0e29ba9352986d6e0a350df109c8d09aa2d69116d3d",
+        "backend/ai_phone/server/android_vm/service.py": "b7f9aa7149dbf196b71e63076cf3469b80d6f35845f5caf25143f3ff0a318621",
+        "backend/ai_phone/server/api/_deps.py": "83e8ecdb97ae92480c6034200039d080ad0e024bcd26f6cf361e68c3b9ea6bd7",
+        "backend/ai_phone/server/app.py": "2db57a8e7f596d36cbc4772808ad840d59ec134767d7e8ce8837bf5100435f73",
+        "backend/ai_phone/server/harmony_vm/api.py": "00b4665fda0e96e110b2fcb6ef236edc0af62a4a956abd76ca156c94e96793a6",
+        "backend/ai_phone/server/harmony_vm/service.py": "cef15701e1c3d6260a2e681911fa200dda10f27114225ab85994417e67008460",
+        "backend/ai_phone/server/hub.py": "7252018d5468f7e0ccc3f7b28e3fa238053751e61925cef1b3538050c6ee4b33",
+        "backend/ai_phone/server/ios_sim/api.py": "5df873d042daadb1a7b7f71a9ab642acdb276dd93835219548cd329736f0d1df",
+        "backend/ai_phone/server/ios_sim/service.py": "687dcf0c157300f37c1d825d4d55ca83ecbfa07cba3efa3190467dd2a4164647",
+        "backend/ai_phone/server/vm_lifecycle.py": "232cf364266b1e344a7d29e87ebce39709994a1b0aa790db582ef33602af56aa",
+        "backend/ai_phone/server/ws/_deps.py": "a35024e4a79af02d098e71ab3f5a6f1ae5bad0130d35097a6a97ead977bacfcf",
+        "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+        "web/src/pages/HarmonyVirtualMachines.vue": "d702050463af50e3ecd2aa6a7866fd7ba6855d197527e303271650aa69f11d35",
+        "web/src/pages/IosSimVirtualMachines.vue": "4b99e783884daf6ff8a9eaa918f568a0e3976a31ef38545e43d9400e1e1f6c29",
+        "web/src/pages/VirtualMachines.vue": "2a78c051715bf1ecc9e8dcb29e60f098e714e89cfd77d8320659ae47daac4abf"
+      },
+      "mismatches": []
+    },
+    "private_adb_port": 15037,
+    "serial": "emulator-5666",
+    "http": "Fresh loopback-only Server/WS + token + SQLite; no CLI/profile or default Agent",
+    "matrix": [
+      "1 save: create one fresh AVD; record boot_id; create bounded sleep A; stop; require real default_boot",
+      "2 save: start same AVD; same boot_id and exact A; stop to save again",
+      "3 stopped PATCH discard_changes; start; require A; create bounded sleep B; stop without saving",
+      "4 discard_changes: start; require original boot_id/A and absent exact B; stop",
+      "5 stopped PATCH cold_boot; start; new boot_id and neither original marker; stop; exact VM delete"
+    ],
+    "markers": {
+      "A": 1131,
+      "B": 1133
+    },
+    "max_run_seconds": 900,
+    "existing_image_negative": {
+      "installed_api34": {
+        "installed": true,
+        "package_id": "system-images;android-34;google_apis;arm64-v8a",
+        "package_xml": "/Users/dongxin/Library/Android/sdk/system-images/android-34/google_apis/arm64-v8a/package.xml",
+        "package_xml_sha256": "d7dee35ea8edd16a820feeffd46eff92ab781c00b5895761970e4eb73f5d9be9",
+        "source_properties": "Pkg.Desc=System Image arm64-v8a with Google APIs.\nPkg.Revision=14\nPkg.Dependencies=emulator#34.2.16\nAndroidVersion.ApiLevel=34\nAndroidVersion.ExtensionLevel=7\nAndroidVersion.IsBaseSdk=true\nSystemImage.Abi=arm64-v8a\nSystemImage.TagId=google_apis\nSystemImage.TagDisplay=Google APIs\nSystemImage.GpuSupport=true\nAddon.VendorId=google\nAddon.VendorDisplay=Google Inc.\n\n",
+        "source_properties_sha256": "1e64d5cf821e898a2af4677e55b477567ea56d0c5681cd50add5f8b95db08cf2"
+      },
+      "sequence": "After cold stop: save full Server config and fingerprint all owned AVD bytes; PATCH only system_image=installed34; one start must fail the exact operation on image identity before launch or writes; explicitly PATCH back original33 and issue a separate successful cold start/stop",
+      "failure_is_not_retry": true,
+      "extra_native_launches": 1,
+      "missing_image": "Mark this phase not covered; missing SDK cannot count as mismatch proof"
+    },
+    "proof": [
+      "Each dispatch/start/stop uses its own exact request_id/action/outcome",
+      "Each native launch has the exact expected policy flags and original owned AVD",
+      "PID, /proc starttick and byte-exact cmdline distinguish marker restoration from PID reuse",
+      "Snapshot metadata and full native per-generation logs are kept; logs alone are not success",
+      "Failed/unresolved stop is never retried in finally; failure preserves the current AVD"
+    ],
+    "excluded": [
+      "a2/a4 sealed disks",
+      "App persistence",
+      "external networking",
+      "VLM/business Case"
+    ],
+    "execute_authorization": "Prepared only; root must explicitly release a unique hardware slot before --execute"
+  },
+  "product_freeze_at_start": {
+    "manifest": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/frozen-products.json",
+    "manifest_sha256": "3cb3842671dd3ea50d007e887d1fdccb2ae4ec79c162f27269d9d92f72fa44a5",
+    "count": 33,
+    "source_sha256": {
+      "backend/ai_phone/agent/android_vm/capability.py": "ed8630cb9f20d1791eea36d142bce755e73147b50a6e1621b2f6b4192d210b31",
+      "backend/ai_phone/agent/android_vm/manager.py": "a9fc524cf2206baa1295557e936a05781d4d584e96e334e685f3e01c84e1a5db",
+      "backend/ai_phone/agent/app_install/handler.py": "31abda8902919971a2879a3b6e262ddb16509213b7a1a249392a560ba7a81d22",
+      "backend/ai_phone/agent/app_uninstall/handler.py": "b373f34caf73043d54bc297cacd929c18783342486b8330acbb97c0c44b7714d",
+      "backend/ai_phone/agent/device_activity.py": "cc2e96d66080f7aa60fa8d0b9956e433e186fd892dfc26c00a8c904060395e31",
+      "backend/ai_phone/agent/drivers/__init__.py": "67dd1c2ac123154794e17d584ec5fb5335baec68293f16acea0fd1f14de506c8",
+      "backend/ai_phone/agent/drivers/android.py": "af3b1fe42b0ce93e2ad1717143e8959bc2a438e2a73955a2a7ca0c6224136d9a",
+      "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+      "backend/ai_phone/agent/harmony_vm/capability.py": "6716584a4ee555fd49b2297db5136e004679806d2af0b12a2c4edb3eac5003fa",
+      "backend/ai_phone/agent/harmony_vm/manager.py": "efac19845e45b5c0a7aa2faefc95f8c6dc9cecd6842442fee303765dc9a3999e",
+      "backend/ai_phone/agent/health/probe.py": "a4ec72f21e4dc6b1bf4b0c3bcfcdde37b74b57305cc57b9d2ce738fc91139c33",
+      "backend/ai_phone/agent/health/supervisor.py": "8393340453f02129d1c342e1815806cfe4f039ff00d7f117fbab94c462678858",
+      "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+      "backend/ai_phone/agent/ios_sim/manager.py": "6401fce688f697450099204f8c96c8995ffb2f2dcc65912b265e7ff1362bda60",
+      "backend/ai_phone/agent/main.py": "33941428605993c5c6b4ec709e2bb4f42d014ea57634a5133d5e3bd2d8e33d99",
+      "backend/ai_phone/agent/native_operation.py": "1fbc78e1560cf21ba3dc6e68d50adfc9a025831fba3d3848c407e291ff901255",
+      "backend/ai_phone/agent/vm_ports.py": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+      "backend/ai_phone/agent/ws_client.py": "aadad560bfa0788b0b6eefe6636be7b7f2e95cae96b31d423f2dcaa34252592e",
+      "backend/ai_phone/server/android_vm/api.py": "3bdcfa84b46262ca974be0e29ba9352986d6e0a350df109c8d09aa2d69116d3d",
+      "backend/ai_phone/server/android_vm/service.py": "b7f9aa7149dbf196b71e63076cf3469b80d6f35845f5caf25143f3ff0a318621",
+      "backend/ai_phone/server/api/_deps.py": "83e8ecdb97ae92480c6034200039d080ad0e024bcd26f6cf361e68c3b9ea6bd7",
+      "backend/ai_phone/server/app.py": "2db57a8e7f596d36cbc4772808ad840d59ec134767d7e8ce8837bf5100435f73",
+      "backend/ai_phone/server/harmony_vm/api.py": "00b4665fda0e96e110b2fcb6ef236edc0af62a4a956abd76ca156c94e96793a6",
+      "backend/ai_phone/server/harmony_vm/service.py": "cef15701e1c3d6260a2e681911fa200dda10f27114225ab85994417e67008460",
+      "backend/ai_phone/server/hub.py": "7252018d5468f7e0ccc3f7b28e3fa238053751e61925cef1b3538050c6ee4b33",
+      "backend/ai_phone/server/ios_sim/api.py": "5df873d042daadb1a7b7f71a9ab642acdb276dd93835219548cd329736f0d1df",
+      "backend/ai_phone/server/ios_sim/service.py": "687dcf0c157300f37c1d825d4d55ca83ecbfa07cba3efa3190467dd2a4164647",
+      "backend/ai_phone/server/vm_lifecycle.py": "232cf364266b1e344a7d29e87ebce39709994a1b0aa790db582ef33602af56aa",
+      "backend/ai_phone/server/ws/_deps.py": "a35024e4a79af02d098e71ab3f5a6f1ae5bad0130d35097a6a97ead977bacfcf",
+      "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+      "web/src/pages/HarmonyVirtualMachines.vue": "d702050463af50e3ecd2aa6a7866fd7ba6855d197527e303271650aa69f11d35",
+      "web/src/pages/IosSimVirtualMachines.vue": "4b99e783884daf6ff8a9eaa918f568a0e3976a31ef38545e43d9400e1e1f6c29",
+      "web/src/pages/VirtualMachines.vue": "2a78c051715bf1ecc9e8dcb29e60f098e714e89cfd77d8320659ae47daac4abf"
+    },
+    "mismatches": []
+  },
+  "protected_before": {
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_harmony_8ef590502d89/config.ini": "d9e02a36096d3684498346cf70e5bf053a6bbf9817ce34a6f8eb1007a1b00641",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_harmony_8ef590502d89.ini": "8d04b5680ba467e1c059dbb7d0463b6a3edbc72698e879eae6161b83f7530ce2",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_hdc_test/config.ini": "2d8e0eddf338e0a8ff9b571985221ade1efaac556930aaa869a9cfa3ced45d18",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_hdc_test.ini": "c614dfdb3328e5c48612050084f08b9ea8f5453757333262a3a0406a82ca6933",
+    "/Users/dongxin/.Huawei/Emulator/deployed/lists.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "/Users/dongxin/.android/avd/aiphone_vm_d553e2ea1fde.avd/config.ini": "e6595b4119a9cf5c47bbc679ae9f25f38a319a44d1ca2461ff6c3165ea794fbd",
+    "/Users/dongxin/.android/avd/aiphone_vm_d553e2ea1fde.ini": "93c1f2299159212b765c362642324c762cc050b49964e2a729b11a52f70950ad",
+    "/Users/dongxin/.android/avd/aiphone_vm_d948f0dc999a.avd/config.ini": "0c9da58b8fb261f800e42e0291687707917be931345f2abccb8aa98c6f6c7b61",
+    "/Users/dongxin/.android/avd/aiphone_vm_d948f0dc999a.ini": "33b2da0b472680b7c623c170d3fba138269ead145a2d162b1d0e93b8e69198be",
+    "/Users/dongxin/.android/avd/aiphone_vm_test.avd/config.ini": "b3e9998e584cc43be815ab13c4b744d7848eeb0eb37258cc4847db6b8854c02a",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/1CF23D80-F81F-4342-8B9B-CE0F19B0E6A9/device.plist": "8a4f5122dec24c29506fe812d49a6eb46ad53f103c14b76910c8b78686142aaa",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/33D6A401-5F36-4F06-9306-A6CE108897DF/device.plist": "4a6bb0be4a60b30503171afc3ce05bc70a377fb6fbb1b04bfb381ec03634f739",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/3CEA6065-BACE-4303-9206-F4494D2A250F/device.plist": "99d5bf0c8903312ff97c45d4a04503417c7364eb6639a23a449bd76577181134",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/4FE2080C-9969-4322-895C-BD533F1AAEF1/device.plist": "924c29fda4385ef935f17a78fd6a44e0db4e443b474c4c543b417e7715afb43d",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/583611BB-5D51-4366-BAE1-E01396F8E6A9/device.plist": "830a244bec1c3e880a12758fcc3fe8aaa0525d31cbd6531ee28aed88e631a406",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/61859972-B787-415F-979B-93FEF439D231/device.plist": "0f283b2d7fec63b24657ca2ddd7e81e2b6fb880ac216f855a174ee5b7149d255",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/65147217-9B6E-4FAA-8B3D-A5FB7C82346E/device.plist": "8bdf06e233c125104c13f594476e41f085f263361d638b02ffb3d3d952a383c4",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/74340A76-2933-4F43-A931-83B56604EB64/device.plist": "879ddd7b2dda101a845fb0c57bb4620f97288db6543260dfa38847da34e51816",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/AA23F9B5-52E7-4577-9481-B0B8CEDD081D/device.plist": "38dfc87cdaecffb99928295b4db860b5bbdaef323755ee952ea67a48221a99a4",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/B8358AD3-D445-426D-9F51-2F8D7D627FD6/device.plist": "15572dc944d2d23b759213eb0efb28e840fa547952551d86aff227519bfe56b6",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/C028A098-1CB0-4797-BC34-B999FE0B9E56/device.plist": "08912f85db5df2495e8ce92049d732c46a5d89d44f473c993e9e520a906894b1",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/C1C16134-3F25-4E80-88CD-FC65DC0DF8C1/device.plist": "ac434b38f456562c0f8cb5d8c6eed7ad985433c354f6dc25888a2145ff11df02",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/D50173E3-9F20-4DEB-B117-608349BB613F/device.plist": "ee4ff3dc9c13cfbfecfd2bd0fee5d4d9aedafac8c416b6c145af548856135b85",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/F27146F2-A4B0-4F9A-B731-7C1759B25941/device.plist": "72e342a566a56e207c37d024c82aa1449cd822a0570522029ec88c77d625fa01",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/FA446F28-83BD-4DE3-B65B-A4392B13BEC4/device.plist": "12d40c8e4a9478e042ad4f9ab1299542fa876b6f30b2306f15a413fa77b5c9ba"
+  },
+  "native_calls": [
+    {
+      "kind": "command",
+      "argv": [
+        "/Users/dongxin/Library/Android/sdk/cmdline-tools/latest/bin/avdmanager",
+        "create",
+        "avd",
+        "-n",
+        "aiphone_vm_779481a8a016",
+        "-k",
+        "system-images;android-33;google_apis;arm64-v8a"
+      ],
+      "sync": false,
+      "at": "2026-10-15T22:01:53.809871+00:00",
+      "monotonic_ns": 110026149385708,
+      "returncode": 0,
+      "stdout": "Auto-selecting single ABI arm64-v8a\nDo you wish to create a custom hardware profile? [no] ",
+      "stderr": "Warning: This version only understands SDK XML versions up to 3 but an SDK XML file of version 4 was encountered. This can happen if you use versions of Android Studio and the command-line tools that were released at different times.\n",
+      "finished_monotonic_ns": 110026518484083
+    },
+    {
+      "kind": "launch",
+      "vm_id": "779481a8a016",
+      "policy": "save",
+      "argv": [
+        "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+        "-avd",
+        "aiphone_vm_779481a8a016",
+        "-port",
+        "5666",
+        "-skin",
+        "540x960",
+        "-prop",
+        "qemu.sf.lcd_density=240",
+        "-prop",
+        "debug.aiphone.vmid=779481a8a016",
+        "-prop",
+        "debug.aiphone.alias=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "-prop",
+        "persist.sys.timezone=Asia/Shanghai",
+        "-no-audio",
+        "-no-boot-anim",
+        "-no-window",
+        "-memory",
+        "2048",
+        "-cores",
+        "2",
+        "-gpu",
+        "host",
+        "-camera-back",
+        "emulated",
+        "-camera-front",
+        "none"
+      ],
+      "at": "2026-10-15T22:01:54.179480+00:00",
+      "monotonic_ns": 110026518991625,
+      "pid": 71919
+    },
+    {
+      "kind": "command",
+      "argv": [
+        "/Users/dongxin/Library/Android/sdk/platform-tools/adb",
+        "-s",
+        "emulator-5666",
+        "shell",
+        "/system/bin/sync && printf '%s\\n' 'a8b0e99978e54ff596a39bf6c12964e2'"
+      ],
+      "sync": {
+        "ack_marker": "a8b0e99978e54ff596a39bf6c12964e2",
+        "expected_stdout": "a8b0e99978e54ff596a39bf6c12964e2\n"
+      },
+      "at": "2026-10-15T22:02:17.257930+00:00",
+      "monotonic_ns": 110049597389333,
+      "returncode": 0,
+      "stdout": "a8b0e99978e54ff596a39bf6c12964e2\n",
+      "stderr": "",
+      "finished_monotonic_ns": 110049695981458
+    },
+    {
+      "kind": "command",
+      "argv": [
+        "/Users/dongxin/Library/Android/sdk/platform-tools/adb",
+        "-s",
+        "emulator-5666",
+        "emu",
+        "kill"
+      ],
+      "sync": false,
+      "at": "2026-10-15T22:02:17.367548+00:00",
+      "monotonic_ns": 110049707028041,
+      "returncode": 0,
+      "stdout": "OK: killing emulator, bye bye\r\nOK\r\n",
+      "stderr": "",
+      "finished_monotonic_ns": 110049719075666
+    },
+    {
+      "kind": "process-stop",
+      "pid": 71919,
+      "graceful": true,
+      "kwargs": {
+        "deadline": 110169.56913412499,
+        "grace_deadline": 110069.719095083
+      },
+      "calls": [
+        {
+          "name": "wait",
+          "args": [],
+          "kwargs": {
+            "timeout": 19.999795249997987
+          },
+          "monotonic_ns": 110049719314333,
+          "result": -6
+        }
+      ],
+      "monotonic_ns": 110049719263833
+    },
+    {
+      "kind": "launch",
+      "vm_id": "779481a8a016",
+      "policy": "save",
+      "argv": [
+        "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+        "-avd",
+        "aiphone_vm_779481a8a016",
+        "-port",
+        "5666",
+        "-skin",
+        "540x960",
+        "-prop",
+        "qemu.sf.lcd_density=240",
+        "-prop",
+        "debug.aiphone.vmid=779481a8a016",
+        "-prop",
+        "debug.aiphone.alias=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "-prop",
+        "persist.sys.timezone=Asia/Shanghai",
+        "-no-audio",
+        "-no-boot-anim",
+        "-no-window",
+        "-memory",
+        "2048",
+        "-cores",
+        "2",
+        "-gpu",
+        "host",
+        "-camera-back",
+        "emulated",
+        "-camera-front",
+        "none"
+      ],
+      "at": "2026-10-15T22:02:21.002791+00:00",
+      "monotonic_ns": 110053342241458,
+      "pid": 72067
+    },
+    {
+      "kind": "command",
+      "argv": [
+        "/Users/dongxin/Library/Android/sdk/platform-tools/adb",
+        "-s",
+        "emulator-5666",
+        "shell",
+        "/system/bin/sync && printf '%s\\n' 'fb6c0f0229ca42098d696009283ca1c4'"
+      ],
+      "sync": {
+        "ack_marker": "fb6c0f0229ca42098d696009283ca1c4",
+        "expected_stdout": "fb6c0f0229ca42098d696009283ca1c4\n"
+      },
+      "at": "2026-10-15T22:02:36.920452+00:00",
+      "monotonic_ns": 110069259869458,
+      "returncode": 0,
+      "stdout": "fb6c0f0229ca42098d696009283ca1c4\n",
+      "stderr": "",
+      "finished_monotonic_ns": 110069299984625
+    },
+    {
+      "kind": "command",
+      "argv": [
+        "/Users/dongxin/Library/Android/sdk/platform-tools/adb",
+        "-s",
+        "emulator-5666",
+        "emu",
+        "kill"
+      ],
+      "sync": false,
+      "at": "2026-10-15T22:02:36.971186+00:00",
+      "monotonic_ns": 110069310607875,
+      "returncode": 0,
+      "stdout": "OK: killing emulator, bye bye\r\nOK\r\n",
+      "stderr": "",
+      "finished_monotonic_ns": 110069321028125
+    },
+    {
+      "kind": "process-stop",
+      "pid": 72067,
+      "graceful": true,
+      "kwargs": {
+        "deadline": 110189.235199708,
+        "grace_deadline": 110089.32104375
+      },
+      "calls": [
+        {
+          "name": "wait",
+          "args": [],
+          "kwargs": {
+            "timeout": 19.999771374990814
+          },
+          "monotonic_ns": 110069321295625,
+          "result": -6
+        }
+      ],
+      "monotonic_ns": 110069321217875
+    }
+  ],
+  "lifecycle_attempts": [
+    {
+      "vm_id": "779481a8a016",
+      "generation_id": null,
+      "action": "start",
+      "endpoint": "dispatch",
+      "outcome": "succeeded",
+      "monotonic_ns": 110025931163833,
+      "request_id": "8fc97dc265bc4bbc",
+      "response_operation": {
+        "action": "start",
+        "request_id": "8fc97dc265bc4bbc",
+        "pending": true,
+        "outcome": "pending",
+        "target_agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "target_host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+        "first_bind": true,
+        "started_at": "2026-10-15T22:01:53.595033+00:00",
+        "deadline_at": "2026-10-15T22:06:53.595033+00:00",
+        "timeout_sec": 300.0
+      },
+      "terminal_instance": {
+        "id": "779481a8a016",
+        "name": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "alias": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "profile_ref_type": "custom",
+        "profile_ref_id": "",
+        "profile_id": "",
+        "profile_name": "",
+        "config_version": 1,
+        "config_json": {
+          "system": {
+            "api_level": 33,
+            "system_type": "google_apis",
+            "abi": "arm64"
+          },
+          "display": {
+            "screen_width": 540,
+            "screen_height": 960,
+            "density": 240,
+            "orientation": "portrait",
+            "screen_size_in": "",
+            "cutout": "",
+            "shape_note": ""
+          },
+          "performance": {
+            "ram_mb": 2048,
+            "cpu_cores": 2,
+            "vm_heap_mb": 384,
+            "gpu_mode": "host"
+          },
+          "storage": {
+            "internal_storage_mb": 4096,
+            "sdcard_mb": 0,
+            "wipe_data": false,
+            "snapshot_policy": "save"
+          },
+          "network": {
+            "speed": "full",
+            "delay": "none",
+            "dns_server": "",
+            "http_proxy": ""
+          },
+          "hardware": {
+            "back_camera": "emulated",
+            "front_camera": "none",
+            "gps": true,
+            "accelerometer": true,
+            "gyroscope": true,
+            "proximity": false,
+            "hardware_keyboard": false,
+            "navigation_style": "none"
+          },
+          "startup": {
+            "no_window": true,
+            "no_audio": true,
+            "no_boot_anim": true,
+            "writable_system": false
+          },
+          "identity": {}
+        },
+        "capability_marks": {},
+        "api_level": 33,
+        "abi": "arm64",
+        "system_type": "google_apis",
+        "system_image": "",
+        "screen_width": 540,
+        "screen_height": 960,
+        "density": 240,
+        "orientation": "portrait",
+        "state": "running",
+        "assigned_agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "adb_serial": "emulator-5666",
+        "error_message": "",
+        "runtime": {
+          "operation": {
+            "action": "start",
+            "request_id": "8fc97dc265bc4bbc",
+            "pending": false,
+            "outcome": "succeeded",
+            "target_agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+            "target_host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+            "first_bind": true,
+            "started_at": "2026-10-15T22:01:53.595033+00:00",
+            "deadline_at": "2026-10-15T22:06:53.595033+00:00",
+            "timeout_sec": 300.0,
+            "created_in_attempt": true,
+            "completed_at": "2026-10-15T22:02:16.591663+00:00"
+          },
+          "last_status": {
+            "state": "running",
+            "ok": true,
+            "reason": "running",
+            "details": {
+              "avd_name": "aiphone_vm_779481a8a016",
+              "instance_created": true,
+              "created_in_attempt": true,
+              "port": 5666,
+              "system_image": "system-images;android-33;google_apis;arm64-v8a",
+              "no_window": true,
+              "screen_width": 540,
+              "screen_height": 960,
+              "density": 240,
+              "orientation": "portrait",
+              "ram_mb": 2048,
+              "cpu_cores": 2,
+              "vm_heap_mb": 384,
+              "internal_storage_mb": 4096,
+              "sdcard_mb": 0,
+              "gpu_mode": "host",
+              "network_speed": "full",
+              "network_delay": "none",
+              "snapshot_policy": "save"
+            },
+            "ts": "2026-10-15T22:02:16.591705+00:00"
+          },
+          "owner_host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+          "instance_created": true
+        },
+        "created_at": "2026-10-15T22:01:53.581259",
+        "updated_at": "2026-10-15T22:02:16.592579",
+        "started_at": "2026-10-15T22:02:16.591710",
+        "stopped_at": null
+      }
+    },
+    {
+      "vm_id": "779481a8a016",
+      "generation_id": "71919:110026518991625",
+      "action": "stop",
+      "endpoint": "stop",
+      "outcome": "succeeded",
+      "monotonic_ns": 110049563759166,
+      "request_id": "7b702c36938643c5",
+      "response_operation": {
+        "action": "stop",
+        "request_id": "7b702c36938643c5",
+        "pending": true,
+        "outcome": "pending",
+        "target_agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "target_host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+        "first_bind": false,
+        "started_at": "2026-10-15T22:02:17.227373+00:00",
+        "deadline_at": "2026-10-15T22:04:17.227373+00:00",
+        "timeout_sec": 120.0
+      },
+      "terminal_instance": {
+        "id": "779481a8a016",
+        "name": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "alias": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "profile_ref_type": "custom",
+        "profile_ref_id": "",
+        "profile_id": "",
+        "profile_name": "",
+        "config_version": 1,
+        "config_json": {
+          "system": {
+            "api_level": 33,
+            "system_type": "google_apis",
+            "abi": "arm64"
+          },
+          "display": {
+            "screen_width": 540,
+            "screen_height": 960,
+            "density": 240,
+            "orientation": "portrait",
+            "screen_size_in": "",
+            "cutout": "",
+            "shape_note": ""
+          },
+          "performance": {
+            "ram_mb": 2048,
+            "cpu_cores": 2,
+            "vm_heap_mb": 384,
+            "gpu_mode": "host"
+          },
+          "storage": {
+            "internal_storage_mb": 4096,
+            "sdcard_mb": 0,
+            "wipe_data": false,
+            "snapshot_policy": "save"
+          },
+          "network": {
+            "speed": "full",
+            "delay": "none",
+            "dns_server": "",
+            "http_proxy": ""
+          },
+          "hardware": {
+            "back_camera": "emulated",
+            "front_camera": "none",
+            "gps": true,
+            "accelerometer": true,
+            "gyroscope": true,
+            "proximity": false,
+            "hardware_keyboard": false,
+            "navigation_style": "none"
+          },
+          "startup": {
+            "no_window": true,
+            "no_audio": true,
+            "no_boot_anim": true,
+            "writable_system": false
+          },
+          "identity": {}
+        },
+        "capability_marks": {},
+        "api_level": 33,
+        "abi": "arm64",
+        "system_type": "google_apis",
+        "system_image": "",
+        "screen_width": 540,
+        "screen_height": 960,
+        "density": 240,
+        "orientation": "portrait",
+        "state": "stopped",
+        "assigned_agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "adb_serial": "emulator-5666",
+        "error_message": "",
+        "runtime": {
+          "operation": {
+            "action": "stop",
+            "request_id": "7b702c36938643c5",
+            "pending": false,
+            "outcome": "succeeded",
+            "target_agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+            "target_host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+            "first_bind": false,
+            "started_at": "2026-10-15T22:02:17.227373+00:00",
+            "deadline_at": "2026-10-15T22:04:17.227373+00:00",
+            "timeout_sec": 120.0,
+            "completed_at": "2026-10-15T22:02:20.498976+00:00"
+          },
+          "last_status": {
+            "state": "stopped",
+            "ok": true,
+            "reason": "stopped",
+            "details": {
+              "avd_name": "aiphone_vm_779481a8a016",
+              "port": 5666,
+              "cleanup_confirmed": true,
+              "instance_created": true,
+              "sync_completed": true,
+              "exit_evidence": {
+                "confirmed": true,
+                "owned_process_exit_code": -6,
+                "process_inventory_complete": true,
+                "matching_process_ids": [],
+                "blocked_ports": [],
+                "reason": "exit_confirmed"
+              }
+            },
+            "ts": "2026-10-15T22:02:20.499004+00:00"
+          },
+          "owner_host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+          "instance_created": true
+        },
+        "created_at": "2026-10-15T22:01:53.581259",
+        "updated_at": "2026-10-15T22:02:20.499517",
+        "started_at": "2026-10-15T22:02:16.591710",
+        "stopped_at": "2026-10-15T22:02:20.499008"
+      }
+    },
+    {
+      "vm_id": "779481a8a016",
+      "generation_id": "71919:110026518991625",
+      "action": "start",
+      "endpoint": "start",
+      "outcome": "succeeded",
+      "monotonic_ns": 110052896037750,
+      "request_id": "44894bb498944510",
+      "response_operation": {
+        "action": "start",
+        "request_id": "44894bb498944510",
+        "pending": true,
+        "outcome": "pending",
+        "target_agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "target_host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+        "first_bind": false,
+        "started_at": "2026-10-15T22:02:20.558972+00:00",
+        "deadline_at": "2026-10-15T22:07:20.558972+00:00",
+        "timeout_sec": 300.0
+      },
+      "terminal_instance": {
+        "id": "779481a8a016",
+        "name": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "alias": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "profile_ref_type": "custom",
+        "profile_ref_id": "",
+        "profile_id": "",
+        "profile_name": "",
+        "config_version": 1,
+        "config_json": {
+          "system": {
+            "api_level": 33,
+            "system_type": "google_apis",
+            "abi": "arm64"
+          },
+          "display": {
+            "screen_width": 540,
+            "screen_height": 960,
+            "density": 240,
+            "orientation": "portrait",
+            "screen_size_in": "",
+            "cutout": "",
+            "shape_note": ""
+          },
+          "performance": {
+            "ram_mb": 2048,
+            "cpu_cores": 2,
+            "vm_heap_mb": 384,
+            "gpu_mode": "host"
+          },
+          "storage": {
+            "internal_storage_mb": 4096,
+            "sdcard_mb": 0,
+            "wipe_data": false,
+            "snapshot_policy": "save"
+          },
+          "network": {
+            "speed": "full",
+            "delay": "none",
+            "dns_server": "",
+            "http_proxy": ""
+          },
+          "hardware": {
+            "back_camera": "emulated",
+            "front_camera": "none",
+            "gps": true,
+            "accelerometer": true,
+            "gyroscope": true,
+            "proximity": false,
+            "hardware_keyboard": false,
+            "navigation_style": "none"
+          },
+          "startup": {
+            "no_window": true,
+            "no_audio": true,
+            "no_boot_anim": true,
+            "writable_system": false
+          },
+          "identity": {}
+        },
+        "capability_marks": {},
+        "api_level": 33,
+        "abi": "arm64",
+        "system_type": "google_apis",
+        "system_image": "",
+        "screen_width": 540,
+        "screen_height": 960,
+        "density": 240,
+        "orientation": "portrait",
+        "state": "running",
+        "assigned_agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "adb_serial": "emulator-5666",
+        "error_message": "",
+        "runtime": {
+          "operation": {
+            "action": "start",
+            "request_id": "44894bb498944510",
+            "pending": false,
+            "outcome": "succeeded",
+            "target_agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+            "target_host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+            "first_bind": false,
+            "started_at": "2026-10-15T22:02:20.558972+00:00",
+            "deadline_at": "2026-10-15T22:07:20.558972+00:00",
+            "timeout_sec": 300.0,
+            "completed_at": "2026-10-15T22:02:36.422645+00:00"
+          },
+          "last_status": {
+            "state": "running",
+            "ok": true,
+            "reason": "running",
+            "details": {
+              "avd_name": "aiphone_vm_779481a8a016",
+              "instance_created": true,
+              "created_in_attempt": false,
+              "port": 5666,
+              "system_image": "system-images;android-33;google_apis;arm64-v8a",
+              "no_window": true,
+              "screen_width": 540,
+              "screen_height": 960,
+              "density": 240,
+              "orientation": "portrait",
+              "ram_mb": 2048,
+              "cpu_cores": 2,
+              "vm_heap_mb": 384,
+              "internal_storage_mb": 4096,
+              "sdcard_mb": 0,
+              "gpu_mode": "host",
+              "network_speed": "full",
+              "network_delay": "none",
+              "snapshot_policy": "save"
+            },
+            "ts": "2026-10-15T22:02:36.422671+00:00"
+          },
+          "owner_host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+          "instance_created": true
+        },
+        "created_at": "2026-10-15T22:01:53.581259",
+        "updated_at": "2026-10-15T22:02:36.422982",
+        "started_at": "2026-10-15T22:02:16.591710",
+        "stopped_at": null
+      }
+    }
+  ],
+  "stop_attempts": [
+    {
+      "vm_id": "779481a8a016",
+      "generation_id": "71919:110026518991625",
+      "outcome": "succeeded",
+      "at": "2026-10-15T22:02:17.229946+00:00",
+      "monotonic_ns": 110049569399958,
+      "args": [
+        "emulator-5666",
+        "7b702c36938643c5"
+      ],
+      "forwarded_kwargs": {
+        "deadline": 110169.56913412499
+      },
+      "result": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5666",
+        "details": {
+          "avd_name": "aiphone_vm_779481a8a016",
+          "port": 5666,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "sync_completed": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": -6,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "finished_at": "2026-10-15T22:02:20.495463+00:00",
+      "finished_monotonic_ns": 110052834912583
+    },
+    {
+      "vm_id": "779481a8a016",
+      "generation_id": "72067:110053342241458",
+      "outcome": "succeeded",
+      "at": "2026-10-15T22:02:36.895704+00:00",
+      "monotonic_ns": 110069235117833,
+      "args": [],
+      "forwarded_kwargs": {},
+      "result": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5666",
+        "details": {
+          "avd_name": "aiphone_vm_779481a8a016",
+          "port": 5666,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "sync_completed": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": -6,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "finished_at": "2026-10-15T22:02:39.086940+00:00",
+      "finished_monotonic_ns": 110071426351875
+    }
+  ],
+  "guest_observations": [
+    {
+      "phase": "01-initial-boot",
+      "boot_id": "77cd7c76-2423-4e9e-9632-1f19014a60c5",
+      "markers": {},
+      "at": "2026-10-15T22:02:17.060414+00:00",
+      "monotonic_ns": 110049399877541
+    },
+    {
+      "phase": "02-save-restored-A",
+      "boot_id": "583dd626-79cb-4190-8bca-34b37107ba0e",
+      "markers": {
+        "A": {
+          "pid": 2531,
+          "present": true,
+          "state": "S",
+          "starttick": 1194,
+          "cmdline_hex": "636f6d2e676f6f676c652e616e64726f69642e61732e6f73730000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "cmdline": "com.google.android.as.oss",
+          "raw_stat": "2531 (pool-3-thread-1) S 271 271 0 0 -1 1077936192 6265 0 49 0 0 2 0 0 20 0 17 0 1194 15097163776 21494 18446744073709551615 418163367936 418163371872 549740620672 0 0 0 20996 1 1073775864 0 0 0 -1 0 0 0 0 0 0 418163372032 418163373304 418598424576 549740622353 549740622431 549740622431 549740625886 0"
+        }
+      },
+      "at": "2026-10-15T22:02:36.892558+00:00",
+      "monotonic_ns": 110069231977500
+    }
+  ],
+  "snapshot_inventory": [
+    {
+      "phase": "01-save-first-start",
+      "at": "2026-10-15T22:02:17.018228+00:00",
+      "snapshot": {
+        "path": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/snapshots/default_boot",
+        "exists": true,
+        "files": [
+          {
+            "name": "snapshot.pb",
+            "size": 11,
+            "inode": 84415660,
+            "mtime_ns": 1792101718157457578,
+            "sha256": "ca146d7f7327021f3634653a121e9e5e2e421d89231d08c43abc5ff79dabd290"
+          }
+        ]
+      },
+      "avd_path": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd",
+      "avd_files": [
+        {
+          "name": "config.ini",
+          "inode": 84415593,
+          "size": 3747,
+          "mtime_ns": 1792101714508930089,
+          "birth_time": 1792101714.508886,
+          "sha256": "c680eb0752ab0f64c41bca3b244f1b17b01a996160b9c70ccaf87ae7dffa2185",
+          "text": "PlayStore.enabled = no\nabi.type = arm64-v8a\navd.id = <build>\navd.ini.encoding = UTF-8\navd.name = <build>\ndisk.cachePartition = yes\ndisk.cachePartition.size = 66MB\ndisk.dataPartition.path = <temp>\ndisk.dataPartition.size = 6442450944\ndisk.systemPartition.size = 0\ndisk.vendorPartition.size = 0\nenvironment.height = 0\nenvironment.width = 0\nfastboot.forceChosenSnapshotBoot = no\nfastboot.forceColdBoot = no\nfastboot.forceFastBoot = yes\nfirstboot.bootFromDownloadableSnapshot = yes\nfirstboot.bootFromLocalSnapshot = yes\nfirstboot.saveToLocalSnapshot = yes\nhw.accelerometer = yes\nhw.accelerometer_uncalibrated = yes\nhw.arc = false\nhw.audioInput = yes\nhw.audioOutput = yes\nhw.battery = yes\nhw.camera.back = emulated\nhw.camera.back.orientation = 90\nhw.camera.front = none\nhw.camera.front.orientation = 90\nhw.cpu.arch = arm64\nhw.cpu.ncore = 4\nhw.dPad = no\nhw.display1.density = 0\nhw.display1.flag = 0\nhw.display1.height = 0\nhw.display1.width = 0\nhw.display1.xOffset = -1\nhw.display1.yOffset = -1\nhw.display2.density = 0\nhw.display2.flag = 0\nhw.display2.height = 0\nhw.display2.width = 0\nhw.display2.xOffset = -1\nhw.display2.yOffset = -1\nhw.display3.density = 0\nhw.display3.flag = 0\nhw.display3.height = 0\nhw.display3.width = 0\nhw.display3.xOffset = -1\nhw.display3.yOffset = -1\nhw.displayRegion.0.1.height = 0\nhw.displayRegion.0.1.width = 0\nhw.displayRegion.0.1.xOffset = -1\nhw.displayRegion.0.1.yOffset = -1\nhw.displayRegion.0.2.height = 0\nhw.displayRegion.0.2.width = 0\nhw.displayRegion.0.2.xOffset = -1\nhw.displayRegion.0.2.yOffset = -1\nhw.displayRegion.0.3.height = 0\nhw.displayRegion.0.3.width = 0\nhw.displayRegion.0.3.xOffset = -1\nhw.displayRegion.0.3.yOffset = -1\nhw.gltransport = pipe\nhw.gltransport.asg.dataRingSize = 32768\nhw.gltransport.asg.writeBufferSize = 1048576\nhw.gltransport.asg.writeStepSize = 4096\nhw.gltransport.drawFlushInterval = 800\nhw.gps = yes\nhw.gpu.enabled = no\nhw.gpu.mode = auto\nhw.gsmModem = yes\nhw.gyroscope = yes\nhw.hotplug_multi_display = no\nhw.initialOrientation = portrait\nhw.keyboard = no\nhw.keyboard.charmap = qwerty2\nhw.keyboard.lid = yes\nhw.lcd.backlight = yes\nhw.lcd.circular = false\nhw.lcd.density = 240\nhw.lcd.depth = 32\nhw.lcd.height = 960\nhw.lcd.transparent = false\nhw.lcd.vsync = 60\nhw.lcd.width = 540\nhw.mainKeys = yes\nhw.multi_display_window = no\nhw.ramSize = 2048\nhw.rotaryInput = no\nhw.screen = multi-touch\nhw.sdCard = yes\nhw.sensor.hinge = no\nhw.sensor.hinge.count = 0\nhw.sensor.hinge.fold_to_displayRegion.0.1_at_posture = 1\nhw.sensor.hinge.resizable.config = 1\nhw.sensor.hinge.sub_type = 0\nhw.sensor.hinge.type = 0\nhw.sensor.roll = no\nhw.sensor.roll.count = 0\nhw.sensor.roll.resize_to_displayRegion.0.1_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.2_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.3_at_posture = 6\nhw.sensors.gyroscope_uncalibrated = yes\nhw.sensors.heading = no\nhw.sensors.heart_rate = no\nhw.sensors.humidity = yes\nhw.sensors.light = yes\nhw.sensors.magnetic_field = yes\nhw.sensors.magnetic_field_uncalibrated = yes\nhw.sensors.orientation = yes\nhw.sensors.pressure = yes\nhw.sensors.proximity = no\nhw.sensors.rgbclight = no\nhw.sensors.temperature = yes\nhw.sensors.wrist_tilt = no\nhw.touchpad0 = no\nhw.touchpad0.height = 400\nhw.touchpad0.width = 600\nhw.trackBall = yes\nhw.useext4 = yes\nimage.sysdir.1 = system-images/android-33/google_apis/arm64-v8a/\nkernel.newDeviceNaming = autodetect\nkernel.supportsYaffs2 = autodetect\nruntime.network.latency = none\nruntime.network.speed = full\nsdcard.size = 512 MB\nshowDeviceFrame = yes\ntag.display = Google APIs\ntag.displaynames = Google APIs\ntag.id = google_apis\ntag.ids = google_apis\ntarget = android-33\ntest.delayAdbTillBootComplete = 0\ntest.monitorAdb = 0\ntest.quitAfterBootTimeOut = -1\nuserdata.useQcow2 = no\nvm.heapSize = 384\n"
+        },
+        {
+          "name": "hardware-qemu.ini",
+          "inode": 84415640,
+          "size": 4708,
+          "mtime_ns": 1792101715001192795,
+          "birth_time": 1792101715.0011263,
+          "sha256": "75f99829b54f966a3954d8b4f2af359972cb1facd3087d325f60798c62120f93",
+          "text": "hw.cpu.arch = arm64\nhw.cpu.ncore = 2\nhw.ramSize = 2048\nhw.screen = multi-touch\nhw.mainKeys = true\nhw.touchpad0 = false\nhw.touchpad0.width = 600\nhw.touchpad0.height = 400\nhw.trackBall = true\nhw.keyboard = false\nhw.keyboard.lid = true\nhw.keyboard.charmap = qwerty2\nhw.dPad = false\nhw.rotaryInput = false\nhw.gsmModem = true\nhw.gps = true\nhw.battery = true\nhw.accelerometer = true\nhw.accelerometer_uncalibrated = true\nhw.gyroscope = true\nhw.audioInput = true\nhw.audioOutput = true\nhw.sdCard = true\ndisk.cachePartition = true\ndisk.cachePartition.path = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/cache.img\ndisk.cachePartition.size = 66m\ntest.quitAfterBootTimeOut = -1\ntest.delayAdbTillBootComplete = 0\ntest.monitorAdb = 0\nhw.lcd.width = 540\nhw.lcd.height = 960\nhw.lcd.depth = 32\nhw.lcd.circular = false\nhw.lcd.density = 240\nhw.lcd.transparent = false\nhw.lcd.backlight = true\nhw.lcd.vsync = 60\nhw.gltransport = pipe\nhw.gltransport.asg.writeBufferSize = 1048576\nhw.gltransport.asg.writeStepSize = 4096\nhw.gltransport.asg.dataRingSize = 32768\nhw.gltransport.drawFlushInterval = 800\nhw.displayRegion.0.1.xOffset = -1\nhw.displayRegion.0.1.yOffset = -1\nhw.displayRegion.0.1.width = 0\nhw.displayRegion.0.1.height = 0\nhw.displayRegion.0.2.xOffset = -1\nhw.displayRegion.0.2.yOffset = -1\nhw.displayRegion.0.2.width = 0\nhw.displayRegion.0.2.height = 0\nhw.displayRegion.0.3.xOffset = -1\nhw.displayRegion.0.3.yOffset = -1\nhw.displayRegion.0.3.width = 0\nhw.displayRegion.0.3.height = 0\nhw.display1.width = 0\nhw.display1.height = 0\nhw.display1.density = 0\nhw.display1.xOffset = -1\nhw.display1.yOffset = -1\nhw.display1.flag = 0\nhw.display2.width = 0\nhw.display2.height = 0\nhw.display2.density = 0\nhw.display2.xOffset = -1\nhw.display2.yOffset = -1\nhw.display2.flag = 0\nhw.display3.width = 0\nhw.display3.height = 0\nhw.display3.density = 0\nhw.display3.xOffset = -1\nhw.display3.yOffset = -1\nhw.display3.flag = 0\nhw.multi_display_window = false\nhw.hotplug_multi_display = false\nhw.gpu.enabled = true\nhw.gpu.mode = host\nhw.initialOrientation = portrait\nhw.camera.back = emulated\nhw.camera.back.orientation = 90\nhw.camera.front = none\nhw.camera.front.orientation = 90\nvm.heapSize = 512\nhw.sensors.light = true\nhw.sensors.pressure = true\nhw.sensors.humidity = true\nhw.sensors.proximity = false\nhw.sensors.magnetic_field = true\nhw.sensors.magnetic_field_uncalibrated = true\nhw.sensors.gyroscope_uncalibrated = true\nhw.sensors.orientation = true\nhw.sensors.temperature = true\nhw.sensors.rgbclight = false\nhw.sensor.hinge = false\nhw.sensor.hinge.count = 0\nhw.sensor.hinge.type = 0\nhw.sensor.hinge.sub_type = 0\nhw.sensor.hinge.resizable.config = 1\nhw.sensor.hinge.fold_to_displayRegion.0.1_at_posture = 1\nhw.sensor.roll = false\nhw.sensor.roll.count = 0\nhw.sensor.roll.resize_to_displayRegion.0.1_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.2_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.3_at_posture = 6\nhw.sensors.heart_rate = false\nhw.sensors.wrist_tilt = false\nhw.sensors.heading = false\nhw.useext4 = true\nkernel.path = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//kernel-ranchu\nkernel.newDeviceNaming = yes\nkernel.supportsYaffs2 = no\ndisk.ramdisk.path = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//ramdisk.img\ndisk.systemPartition.initPath = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//system.img\ndisk.systemPartition.size = 8203m\ndisk.vendorPartition.initPath = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//vendor.img\ndisk.vendorPartition.size = 800m\ndisk.dataPartition.path = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/userdata-qemu.img\ndisk.dataPartition.initPath = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/userdata.img\ndisk.dataPartition.size = 6g\ndisk.encryptionKeyPartition.path = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/encryptionkey.img\nPlayStore.enabled = false\navd.name = aiphone_vm_779481a8a016\navd.id = aiphone_vm_779481a8a016\nfastboot.forceColdBoot = false\nuserdata.useQcow2 = true\nfirstboot.bootFromDownloadableSnapshot = true\nfirstboot.bootFromLocalSnapshot = true\nfirstboot.saveToLocalSnapshot = true\nandroid.sdk.root = /Users/dongxin/Library/Android/sdk\nandroid.avd.home = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd\nenvironment.width = 0\nenvironment.height = 0\n"
+        },
+        {
+          "name": "userdata-qemu.img",
+          "inode": 84415615,
+          "size": 6422528,
+          "mtime_ns": 1792101714606170227,
+          "birth_time": 1792101714.6035516
+        },
+        {
+          "name": "userdata-qemu.img.qcow2",
+          "inode": 84415642,
+          "size": 712048640,
+          "mtime_ns": 1792101737017742727,
+          "birth_time": 1792101715.0141332
+        }
+      ],
+      "emulator_log": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/01-save-first-start.emulator.log",
+      "emulator_log_sha256": "910e2a1af56b80c50c9c78ca306f91ae6b390481f745cfc059a3f13a419e851e",
+      "emulator_log_delta": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/01-save-first-start.emulator.delta.log",
+      "delta_start_offset": 0,
+      "delta_end_offset": 9171,
+      "snapshot_log_lines": [
+        "WARNING      | unexpected '-prop' value ('debug.aiphone.alias=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2'), only 'qemu.*' properties are supported",
+        "INFO         | Loading snapshot 'default_boot'...",
+        "WARNING      | Device 'encrypt' does not have the requested snapshot 'default_boot'",
+        "WARNING      | Failed to load snapshot 'default_boot'",
+        "USER_INFO    | The emulator is performing a cold boot without a saved state because there's no snapshot and you have configured it not to save on exit.",
+        "WARNING      | Failed to process .ini file /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/user/emu-update-last-check.ini for reading.",
+        "WARNING      | Failed to process .ini file /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/user/emu-update-last-check.ini for reading."
+      ]
+    },
+    {
+      "phase": "01-save-first-stop",
+      "at": "2026-10-15T22:02:20.554455+00:00",
+      "snapshot": {
+        "path": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/snapshots/default_boot",
+        "exists": true,
+        "files": [
+          {
+            "name": "compatible.pb",
+            "size": 0,
+            "inode": 84415714,
+            "mtime_ns": 1792101739816848488,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "hardware.ini",
+            "size": 4708,
+            "inode": 84415713,
+            "mtime_ns": 1792101739805424337,
+            "sha256": "75f99829b54f966a3954d8b4f2af359972cb1facd3087d325f60798c62120f93"
+          },
+          {
+            "name": "ram.bin",
+            "size": 2027467354,
+            "inode": 84415708,
+            "mtime_ns": 1792101739560740612
+          },
+          {
+            "name": "screenshot.png",
+            "size": 562631,
+            "inode": 84415712,
+            "mtime_ns": 1792101739816394112,
+            "sha256": "89e2aaeb38a101ae059f48df802e64a8737d8b1b074a36598af9525e9e14afc2"
+          },
+          {
+            "name": "snapshot.pb",
+            "size": 1688,
+            "inode": 84415660,
+            "mtime_ns": 1792101739806235672,
+            "sha256": "644da27bd23574990a502512d0e4ff2a62fe232529eb4b31ceebc38fbc8fbe0e"
+          },
+          {
+            "name": "textures.bin",
+            "size": 7774915,
+            "inode": 84415709,
+            "mtime_ns": 1792101739802997081,
+            "sha256": "4e34a82cc6f940b1751ff46855e0e83c536c873fecfdb03dfbbb9fe55fca8c47"
+          }
+        ]
+      },
+      "avd_path": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd",
+      "avd_files": [
+        {
+          "name": "config.ini",
+          "inode": 84415593,
+          "size": 3747,
+          "mtime_ns": 1792101714508930089,
+          "birth_time": 1792101714.508886,
+          "sha256": "c680eb0752ab0f64c41bca3b244f1b17b01a996160b9c70ccaf87ae7dffa2185",
+          "text": "PlayStore.enabled = no\nabi.type = arm64-v8a\navd.id = <build>\navd.ini.encoding = UTF-8\navd.name = <build>\ndisk.cachePartition = yes\ndisk.cachePartition.size = 66MB\ndisk.dataPartition.path = <temp>\ndisk.dataPartition.size = 6442450944\ndisk.systemPartition.size = 0\ndisk.vendorPartition.size = 0\nenvironment.height = 0\nenvironment.width = 0\nfastboot.forceChosenSnapshotBoot = no\nfastboot.forceColdBoot = no\nfastboot.forceFastBoot = yes\nfirstboot.bootFromDownloadableSnapshot = yes\nfirstboot.bootFromLocalSnapshot = yes\nfirstboot.saveToLocalSnapshot = yes\nhw.accelerometer = yes\nhw.accelerometer_uncalibrated = yes\nhw.arc = false\nhw.audioInput = yes\nhw.audioOutput = yes\nhw.battery = yes\nhw.camera.back = emulated\nhw.camera.back.orientation = 90\nhw.camera.front = none\nhw.camera.front.orientation = 90\nhw.cpu.arch = arm64\nhw.cpu.ncore = 4\nhw.dPad = no\nhw.display1.density = 0\nhw.display1.flag = 0\nhw.display1.height = 0\nhw.display1.width = 0\nhw.display1.xOffset = -1\nhw.display1.yOffset = -1\nhw.display2.density = 0\nhw.display2.flag = 0\nhw.display2.height = 0\nhw.display2.width = 0\nhw.display2.xOffset = -1\nhw.display2.yOffset = -1\nhw.display3.density = 0\nhw.display3.flag = 0\nhw.display3.height = 0\nhw.display3.width = 0\nhw.display3.xOffset = -1\nhw.display3.yOffset = -1\nhw.displayRegion.0.1.height = 0\nhw.displayRegion.0.1.width = 0\nhw.displayRegion.0.1.xOffset = -1\nhw.displayRegion.0.1.yOffset = -1\nhw.displayRegion.0.2.height = 0\nhw.displayRegion.0.2.width = 0\nhw.displayRegion.0.2.xOffset = -1\nhw.displayRegion.0.2.yOffset = -1\nhw.displayRegion.0.3.height = 0\nhw.displayRegion.0.3.width = 0\nhw.displayRegion.0.3.xOffset = -1\nhw.displayRegion.0.3.yOffset = -1\nhw.gltransport = pipe\nhw.gltransport.asg.dataRingSize = 32768\nhw.gltransport.asg.writeBufferSize = 1048576\nhw.gltransport.asg.writeStepSize = 4096\nhw.gltransport.drawFlushInterval = 800\nhw.gps = yes\nhw.gpu.enabled = no\nhw.gpu.mode = auto\nhw.gsmModem = yes\nhw.gyroscope = yes\nhw.hotplug_multi_display = no\nhw.initialOrientation = portrait\nhw.keyboard = no\nhw.keyboard.charmap = qwerty2\nhw.keyboard.lid = yes\nhw.lcd.backlight = yes\nhw.lcd.circular = false\nhw.lcd.density = 240\nhw.lcd.depth = 32\nhw.lcd.height = 960\nhw.lcd.transparent = false\nhw.lcd.vsync = 60\nhw.lcd.width = 540\nhw.mainKeys = yes\nhw.multi_display_window = no\nhw.ramSize = 2048\nhw.rotaryInput = no\nhw.screen = multi-touch\nhw.sdCard = yes\nhw.sensor.hinge = no\nhw.sensor.hinge.count = 0\nhw.sensor.hinge.fold_to_displayRegion.0.1_at_posture = 1\nhw.sensor.hinge.resizable.config = 1\nhw.sensor.hinge.sub_type = 0\nhw.sensor.hinge.type = 0\nhw.sensor.roll = no\nhw.sensor.roll.count = 0\nhw.sensor.roll.resize_to_displayRegion.0.1_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.2_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.3_at_posture = 6\nhw.sensors.gyroscope_uncalibrated = yes\nhw.sensors.heading = no\nhw.sensors.heart_rate = no\nhw.sensors.humidity = yes\nhw.sensors.light = yes\nhw.sensors.magnetic_field = yes\nhw.sensors.magnetic_field_uncalibrated = yes\nhw.sensors.orientation = yes\nhw.sensors.pressure = yes\nhw.sensors.proximity = no\nhw.sensors.rgbclight = no\nhw.sensors.temperature = yes\nhw.sensors.wrist_tilt = no\nhw.touchpad0 = no\nhw.touchpad0.height = 400\nhw.touchpad0.width = 600\nhw.trackBall = yes\nhw.useext4 = yes\nimage.sysdir.1 = system-images/android-33/google_apis/arm64-v8a/\nkernel.newDeviceNaming = autodetect\nkernel.supportsYaffs2 = autodetect\nruntime.network.latency = none\nruntime.network.speed = full\nsdcard.size = 512 MB\nshowDeviceFrame = yes\ntag.display = Google APIs\ntag.displaynames = Google APIs\ntag.id = google_apis\ntag.ids = google_apis\ntarget = android-33\ntest.delayAdbTillBootComplete = 0\ntest.monitorAdb = 0\ntest.quitAfterBootTimeOut = -1\nuserdata.useQcow2 = no\nvm.heapSize = 384\n"
+        },
+        {
+          "name": "hardware-qemu.ini",
+          "inode": 84415640,
+          "size": 4708,
+          "mtime_ns": 1792101715001192795,
+          "birth_time": 1792101715.0011263,
+          "sha256": "75f99829b54f966a3954d8b4f2af359972cb1facd3087d325f60798c62120f93",
+          "text": "hw.cpu.arch = arm64\nhw.cpu.ncore = 2\nhw.ramSize = 2048\nhw.screen = multi-touch\nhw.mainKeys = true\nhw.touchpad0 = false\nhw.touchpad0.width = 600\nhw.touchpad0.height = 400\nhw.trackBall = true\nhw.keyboard = false\nhw.keyboard.lid = true\nhw.keyboard.charmap = qwerty2\nhw.dPad = false\nhw.rotaryInput = false\nhw.gsmModem = true\nhw.gps = true\nhw.battery = true\nhw.accelerometer = true\nhw.accelerometer_uncalibrated = true\nhw.gyroscope = true\nhw.audioInput = true\nhw.audioOutput = true\nhw.sdCard = true\ndisk.cachePartition = true\ndisk.cachePartition.path = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/cache.img\ndisk.cachePartition.size = 66m\ntest.quitAfterBootTimeOut = -1\ntest.delayAdbTillBootComplete = 0\ntest.monitorAdb = 0\nhw.lcd.width = 540\nhw.lcd.height = 960\nhw.lcd.depth = 32\nhw.lcd.circular = false\nhw.lcd.density = 240\nhw.lcd.transparent = false\nhw.lcd.backlight = true\nhw.lcd.vsync = 60\nhw.gltransport = pipe\nhw.gltransport.asg.writeBufferSize = 1048576\nhw.gltransport.asg.writeStepSize = 4096\nhw.gltransport.asg.dataRingSize = 32768\nhw.gltransport.drawFlushInterval = 800\nhw.displayRegion.0.1.xOffset = -1\nhw.displayRegion.0.1.yOffset = -1\nhw.displayRegion.0.1.width = 0\nhw.displayRegion.0.1.height = 0\nhw.displayRegion.0.2.xOffset = -1\nhw.displayRegion.0.2.yOffset = -1\nhw.displayRegion.0.2.width = 0\nhw.displayRegion.0.2.height = 0\nhw.displayRegion.0.3.xOffset = -1\nhw.displayRegion.0.3.yOffset = -1\nhw.displayRegion.0.3.width = 0\nhw.displayRegion.0.3.height = 0\nhw.display1.width = 0\nhw.display1.height = 0\nhw.display1.density = 0\nhw.display1.xOffset = -1\nhw.display1.yOffset = -1\nhw.display1.flag = 0\nhw.display2.width = 0\nhw.display2.height = 0\nhw.display2.density = 0\nhw.display2.xOffset = -1\nhw.display2.yOffset = -1\nhw.display2.flag = 0\nhw.display3.width = 0\nhw.display3.height = 0\nhw.display3.density = 0\nhw.display3.xOffset = -1\nhw.display3.yOffset = -1\nhw.display3.flag = 0\nhw.multi_display_window = false\nhw.hotplug_multi_display = false\nhw.gpu.enabled = true\nhw.gpu.mode = host\nhw.initialOrientation = portrait\nhw.camera.back = emulated\nhw.camera.back.orientation = 90\nhw.camera.front = none\nhw.camera.front.orientation = 90\nvm.heapSize = 512\nhw.sensors.light = true\nhw.sensors.pressure = true\nhw.sensors.humidity = true\nhw.sensors.proximity = false\nhw.sensors.magnetic_field = true\nhw.sensors.magnetic_field_uncalibrated = true\nhw.sensors.gyroscope_uncalibrated = true\nhw.sensors.orientation = true\nhw.sensors.temperature = true\nhw.sensors.rgbclight = false\nhw.sensor.hinge = false\nhw.sensor.hinge.count = 0\nhw.sensor.hinge.type = 0\nhw.sensor.hinge.sub_type = 0\nhw.sensor.hinge.resizable.config = 1\nhw.sensor.hinge.fold_to_displayRegion.0.1_at_posture = 1\nhw.sensor.roll = false\nhw.sensor.roll.count = 0\nhw.sensor.roll.resize_to_displayRegion.0.1_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.2_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.3_at_posture = 6\nhw.sensors.heart_rate = false\nhw.sensors.wrist_tilt = false\nhw.sensors.heading = false\nhw.useext4 = true\nkernel.path = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//kernel-ranchu\nkernel.newDeviceNaming = yes\nkernel.supportsYaffs2 = no\ndisk.ramdisk.path = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//ramdisk.img\ndisk.systemPartition.initPath = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//system.img\ndisk.systemPartition.size = 8203m\ndisk.vendorPartition.initPath = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//vendor.img\ndisk.vendorPartition.size = 800m\ndisk.dataPartition.path = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/userdata-qemu.img\ndisk.dataPartition.initPath = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/userdata.img\ndisk.dataPartition.size = 6g\ndisk.encryptionKeyPartition.path = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/encryptionkey.img\nPlayStore.enabled = false\navd.name = aiphone_vm_779481a8a016\navd.id = aiphone_vm_779481a8a016\nfastboot.forceColdBoot = false\nuserdata.useQcow2 = true\nfirstboot.bootFromDownloadableSnapshot = true\nfirstboot.bootFromLocalSnapshot = true\nfirstboot.saveToLocalSnapshot = true\nandroid.sdk.root = /Users/dongxin/Library/Android/sdk\nandroid.avd.home = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd\nenvironment.width = 0\nenvironment.height = 0\n"
+        },
+        {
+          "name": "userdata-qemu.img",
+          "inode": 84415615,
+          "size": 6422528,
+          "mtime_ns": 1792101714606170227,
+          "birth_time": 1792101714.6035516
+        },
+        {
+          "name": "userdata-qemu.img.qcow2",
+          "inode": 84415642,
+          "size": 720896069,
+          "mtime_ns": 1792101739802683789,
+          "birth_time": 1792101715.0141332
+        }
+      ],
+      "emulator_log": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/01-save-first-stop.emulator.log",
+      "emulator_log_sha256": "0f8d034facdbdc423e47d273a1fd277462130c60001826b8f1bfaf0de765b347",
+      "emulator_log_delta": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/01-save-first-stop.emulator.delta.log",
+      "delta_start_offset": 9171,
+      "delta_end_offset": 9623,
+      "snapshot_log_lines": [
+        "WARNING      | unexpected '-prop' value ('debug.aiphone.alias=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2'), only 'qemu.*' properties are supported",
+        "INFO         | Loading snapshot 'default_boot'...",
+        "WARNING      | Device 'encrypt' does not have the requested snapshot 'default_boot'",
+        "WARNING      | Failed to load snapshot 'default_boot'",
+        "USER_INFO    | The emulator is performing a cold boot without a saved state because there's no snapshot and you have configured it not to save on exit.",
+        "WARNING      | Failed to process .ini file /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/user/emu-update-last-check.ini for reading.",
+        "WARNING      | Failed to process .ini file /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/user/emu-update-last-check.ini for reading.",
+        "saving arm snapshot.... !!!",
+        "INFO         | Saving snapshot 'default_boot' using 2437 ms"
+      ]
+    },
+    {
+      "phase": "02-save-restore-start",
+      "at": "2026-10-15T22:02:36.747420+00:00",
+      "snapshot": {
+        "path": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/snapshots/default_boot",
+        "exists": true,
+        "files": [
+          {
+            "name": "compatible.pb",
+            "size": 0,
+            "inode": 84415714,
+            "mtime_ns": 1792101739816848488,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "hardware.ini",
+            "size": 4708,
+            "inode": 84415713,
+            "mtime_ns": 1792101739805424337,
+            "sha256": "75f99829b54f966a3954d8b4f2af359972cb1facd3087d325f60798c62120f93"
+          },
+          {
+            "name": "ram.bin",
+            "size": 2027467354,
+            "inode": 84415708,
+            "mtime_ns": 1792101739560740612
+          },
+          {
+            "name": "screenshot.png",
+            "size": 562631,
+            "inode": 84415712,
+            "mtime_ns": 1792101739816394112,
+            "sha256": "89e2aaeb38a101ae059f48df802e64a8737d8b1b074a36598af9525e9e14afc2"
+          },
+          {
+            "name": "snapshot.pb",
+            "size": 1691,
+            "inode": 84415660,
+            "mtime_ns": 1792101744772385709,
+            "sha256": "03f319fbbc60160bb6b3479086a88de517a66e10e63503eec0602e62b12a1d6c"
+          },
+          {
+            "name": "textures.bin",
+            "size": 7774915,
+            "inode": 84415709,
+            "mtime_ns": 1792101739802997081,
+            "sha256": "4e34a82cc6f940b1751ff46855e0e83c536c873fecfdb03dfbbb9fe55fca8c47"
+          }
+        ]
+      },
+      "avd_path": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd",
+      "avd_files": [
+        {
+          "name": "config.ini",
+          "inode": 84415593,
+          "size": 3468,
+          "mtime_ns": 1792101741002646568,
+          "birth_time": 1792101714.508886,
+          "sha256": "60877e8b38278859ca87ea92e5039a2be5bd5c66f1a39d67364d54e0e4b97dc6",
+          "text": "PlayStore.enabled=no\nabi.type=arm64-v8a\navd.id=<build>\navd.ini.encoding=UTF-8\navd.name=<build>\ndisk.cachePartition=yes\ndisk.cachePartition.size=66MB\ndisk.dataPartition.path=<temp>\ndisk.dataPartition.size=4096M\ndisk.systemPartition.size=0\ndisk.vendorPartition.size=0\nenvironment.height=0\nenvironment.width=0\nfastboot.forceChosenSnapshotBoot=no\nfastboot.forceColdBoot=no\nfastboot.forceFastBoot=yes\nfirstboot.bootFromDownloadableSnapshot=yes\nfirstboot.bootFromLocalSnapshot=yes\nfirstboot.saveToLocalSnapshot=yes\nhw.accelerometer=yes\nhw.accelerometer_uncalibrated=yes\nhw.arc=false\nhw.audioInput=yes\nhw.audioOutput=yes\nhw.battery=yes\nhw.camera.back=emulated\nhw.camera.back.orientation=90\nhw.camera.front=none\nhw.camera.front.orientation=90\nhw.cpu.arch=arm64\nhw.cpu.ncore=4\nhw.dPad=no\nhw.display1.density=0\nhw.display1.flag=0\nhw.display1.height=0\nhw.display1.width=0\nhw.display1.xOffset=-1\nhw.display1.yOffset=-1\nhw.display2.density=0\nhw.display2.flag=0\nhw.display2.height=0\nhw.display2.width=0\nhw.display2.xOffset=-1\nhw.display2.yOffset=-1\nhw.display3.density=0\nhw.display3.flag=0\nhw.display3.height=0\nhw.display3.width=0\nhw.display3.xOffset=-1\nhw.display3.yOffset=-1\nhw.displayRegion.0.1.height=0\nhw.displayRegion.0.1.width=0\nhw.displayRegion.0.1.xOffset=-1\nhw.displayRegion.0.1.yOffset=-1\nhw.displayRegion.0.2.height=0\nhw.displayRegion.0.2.width=0\nhw.displayRegion.0.2.xOffset=-1\nhw.displayRegion.0.2.yOffset=-1\nhw.displayRegion.0.3.height=0\nhw.displayRegion.0.3.width=0\nhw.displayRegion.0.3.xOffset=-1\nhw.displayRegion.0.3.yOffset=-1\nhw.gltransport=pipe\nhw.gltransport.asg.dataRingSize=32768\nhw.gltransport.asg.writeBufferSize=1048576\nhw.gltransport.asg.writeStepSize=4096\nhw.gltransport.drawFlushInterval=800\nhw.gps=yes\nhw.gpu.enabled=no\nhw.gpu.mode=auto\nhw.gsmModem=yes\nhw.gyroscope=yes\nhw.hotplug_multi_display=no\nhw.initialOrientation=portrait\nhw.keyboard=no\nhw.keyboard.charmap=qwerty2\nhw.keyboard.lid=yes\nhw.lcd.backlight=yes\nhw.lcd.circular=false\nhw.lcd.density=240\nhw.lcd.depth=32\nhw.lcd.height=960\nhw.lcd.transparent=false\nhw.lcd.vsync=60\nhw.lcd.width=540\nhw.mainKeys=yes\nhw.multi_display_window=no\nhw.ramSize=2048\nhw.rotaryInput=no\nhw.screen=multi-touch\nhw.sdCard=yes\nhw.sensor.hinge=no\nhw.sensor.hinge.count=0\nhw.sensor.hinge.fold_to_displayRegion.0.1_at_posture=1\nhw.sensor.hinge.resizable.config=1\nhw.sensor.hinge.sub_type=0\nhw.sensor.hinge.type=0\nhw.sensor.roll=no\nhw.sensor.roll.count=0\nhw.sensor.roll.resize_to_displayRegion.0.1_at_posture=6\nhw.sensor.roll.resize_to_displayRegion.0.2_at_posture=6\nhw.sensor.roll.resize_to_displayRegion.0.3_at_posture=6\nhw.sensors.gyroscope_uncalibrated=yes\nhw.sensors.heading=no\nhw.sensors.heart_rate=no\nhw.sensors.humidity=yes\nhw.sensors.light=yes\nhw.sensors.magnetic_field=yes\nhw.sensors.magnetic_field_uncalibrated=yes\nhw.sensors.orientation=yes\nhw.sensors.pressure=yes\nhw.sensors.proximity=no\nhw.sensors.rgbclight=no\nhw.sensors.temperature=yes\nhw.sensors.wrist_tilt=no\nhw.touchpad0=no\nhw.touchpad0.height=400\nhw.touchpad0.width=600\nhw.trackBall=yes\nhw.useext4=yes\nimage.sysdir.1=system-images/android-33/google_apis/arm64-v8a/\nkernel.newDeviceNaming=autodetect\nkernel.supportsYaffs2=autodetect\nruntime.network.latency=none\nruntime.network.speed=full\nsdcard.size=512 MB\nshowDeviceFrame=yes\ntag.display=Google APIs\ntag.displaynames=Google APIs\ntag.id=google_apis\ntag.ids=google_apis\ntarget=android-33\ntest.delayAdbTillBootComplete=0\ntest.monitorAdb=0\ntest.quitAfterBootTimeOut=-1\nuserdata.useQcow2=no\nvm.heapSize=384\n"
+        },
+        {
+          "name": "hardware-qemu.ini",
+          "inode": 84415748,
+          "size": 4541,
+          "mtime_ns": 1792101741604737858,
+          "birth_time": 1792101741.604667,
+          "sha256": "4dfefe9aa2acfd281760e57b6304c623c332b6c61c248a725a18c61803b7d391",
+          "text": "hw.cpu.arch = arm64\nhw.cpu.ncore = 2\nhw.ramSize = 2048\nhw.screen = multi-touch\nhw.mainKeys = true\nhw.touchpad0 = false\nhw.touchpad0.width = 600\nhw.touchpad0.height = 400\nhw.trackBall = true\nhw.keyboard = false\nhw.keyboard.lid = true\nhw.keyboard.charmap = qwerty2\nhw.dPad = false\nhw.rotaryInput = false\nhw.gsmModem = true\nhw.gps = true\nhw.battery = true\nhw.accelerometer = true\nhw.accelerometer_uncalibrated = true\nhw.gyroscope = true\nhw.audioInput = true\nhw.audioOutput = true\nhw.sdCard = true\ndisk.cachePartition = true\ndisk.cachePartition.path = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/cache.img\ndisk.cachePartition.size = 66m\ntest.quitAfterBootTimeOut = -1\ntest.delayAdbTillBootComplete = 0\ntest.monitorAdb = 0\nhw.lcd.width = 540\nhw.lcd.height = 960\nhw.lcd.depth = 32\nhw.lcd.circular = false\nhw.lcd.density = 240\nhw.lcd.transparent = false\nhw.lcd.backlight = true\nhw.lcd.vsync = 60\nhw.gltransport = pipe\nhw.gltransport.asg.writeBufferSize = 1048576\nhw.gltransport.asg.writeStepSize = 4096\nhw.gltransport.asg.dataRingSize = 32768\nhw.gltransport.drawFlushInterval = 800\nhw.displayRegion.0.1.xOffset = -1\nhw.displayRegion.0.1.yOffset = -1\nhw.displayRegion.0.1.width = 0\nhw.displayRegion.0.1.height = 0\nhw.displayRegion.0.2.xOffset = -1\nhw.displayRegion.0.2.yOffset = -1\nhw.displayRegion.0.2.width = 0\nhw.displayRegion.0.2.height = 0\nhw.displayRegion.0.3.xOffset = -1\nhw.displayRegion.0.3.yOffset = -1\nhw.displayRegion.0.3.width = 0\nhw.displayRegion.0.3.height = 0\nhw.display1.width = 0\nhw.display1.height = 0\nhw.display1.density = 0\nhw.display1.xOffset = -1\nhw.display1.yOffset = -1\nhw.display1.flag = 0\nhw.display2.width = 0\nhw.display2.height = 0\nhw.display2.density = 0\nhw.display2.xOffset = -1\nhw.display2.yOffset = -1\nhw.display2.flag = 0\nhw.display3.width = 0\nhw.display3.height = 0\nhw.display3.density = 0\nhw.display3.xOffset = -1\nhw.display3.yOffset = -1\nhw.display3.flag = 0\nhw.multi_display_window = false\nhw.hotplug_multi_display = false\nhw.gpu.enabled = true\nhw.gpu.mode = host\nhw.initialOrientation = portrait\nhw.camera.back = emulated\nhw.camera.back.orientation = 90\nhw.camera.front = none\nhw.camera.front.orientation = 90\nvm.heapSize = 512\nhw.sensors.light = true\nhw.sensors.pressure = true\nhw.sensors.humidity = true\nhw.sensors.proximity = false\nhw.sensors.magnetic_field = true\nhw.sensors.magnetic_field_uncalibrated = true\nhw.sensors.gyroscope_uncalibrated = true\nhw.sensors.orientation = true\nhw.sensors.temperature = true\nhw.sensors.rgbclight = false\nhw.sensor.hinge = false\nhw.sensor.hinge.count = 0\nhw.sensor.hinge.type = 0\nhw.sensor.hinge.sub_type = 0\nhw.sensor.hinge.resizable.config = 1\nhw.sensor.hinge.fold_to_displayRegion.0.1_at_posture = 1\nhw.sensor.roll = false\nhw.sensor.roll.count = 0\nhw.sensor.roll.resize_to_displayRegion.0.1_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.2_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.3_at_posture = 6\nhw.sensors.heart_rate = false\nhw.sensors.wrist_tilt = false\nhw.sensors.heading = false\nhw.useext4 = true\nkernel.path = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//kernel-ranchu\nkernel.newDeviceNaming = yes\nkernel.supportsYaffs2 = no\ndisk.ramdisk.path = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//ramdisk.img\ndisk.systemPartition.initPath = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//system.img\ndisk.systemPartition.size = 8203m\ndisk.vendorPartition.initPath = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//vendor.img\ndisk.vendorPartition.size = 800m\ndisk.dataPartition.path = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/userdata-qemu.img\ndisk.dataPartition.size = 4g\ndisk.encryptionKeyPartition.path = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/encryptionkey.img\nPlayStore.enabled = false\navd.name = aiphone_vm_779481a8a016\navd.id = aiphone_vm_779481a8a016\nfastboot.forceColdBoot = false\nuserdata.useQcow2 = true\nfirstboot.bootFromDownloadableSnapshot = true\nfirstboot.bootFromLocalSnapshot = true\nfirstboot.saveToLocalSnapshot = true\nandroid.sdk.root = /Users/dongxin/Library/Android/sdk\nandroid.avd.home = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd\nenvironment.width = 0\nenvironment.height = 0\n"
+        },
+        {
+          "name": "userdata-qemu.img",
+          "inode": 84415615,
+          "size": 6422528,
+          "mtime_ns": 1792101714606170227,
+          "birth_time": 1792101714.6035516
+        },
+        {
+          "name": "userdata-qemu.img.qcow2",
+          "inode": 84415642,
+          "size": 782827520,
+          "mtime_ns": 1792101756743506891,
+          "birth_time": 1792101715.0141332
+        }
+      ],
+      "emulator_log": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/02-save-restore-start.emulator.log",
+      "emulator_log_sha256": "6348574f0f3566832383df82cc6d18b0ffa2b458c8977737e3e1c35fc96d7e4f",
+      "emulator_log_delta": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/02-save-restore-start.emulator.delta.log",
+      "delta_start_offset": 9623,
+      "delta_end_offset": 18128,
+      "snapshot_log_lines": [
+        "WARNING      | unexpected '-prop' value ('debug.aiphone.alias=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2'), only 'qemu.*' properties are supported",
+        "INFO         | Loading snapshot 'default_boot'...",
+        "WARNING      | Device 'encrypt' does not have the requested snapshot 'default_boot'",
+        "WARNING      | Failed to load snapshot 'default_boot'",
+        "USER_INFO    | The emulator is performing a cold boot without a saved state because there's no snapshot and you have configured it not to save on exit.",
+        "WARNING      | Failed to process .ini file /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/user/emu-update-last-check.ini for reading.",
+        "WARNING      | Failed to process .ini file /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/user/emu-update-last-check.ini for reading.",
+        "saving arm snapshot.... !!!",
+        "INFO         | Saving snapshot 'default_boot' using 2437 ms",
+        "WARNING      | unexpected '-prop' value ('debug.aiphone.alias=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2'), only 'qemu.*' properties are supported",
+        "INFO         | Loading snapshot 'default_boot'...",
+        "ERROR        | The emulator hardware cannot load snapshot: default_boot",
+        "WARNING      | Error -1 from the snapshot callback",
+        "WARNING      | Failed to load snapshot 'default_boot'"
+      ]
+    },
+    {
+      "phase": "final-protected-inventory",
+      "at": "2026-10-15T22:02:39.208222+00:00",
+      "snapshot": {
+        "path": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/snapshots/default_boot",
+        "exists": true,
+        "files": [
+          {
+            "name": "compatible.pb",
+            "size": 0,
+            "inode": 84415714,
+            "mtime_ns": 1792101758825149764,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "hardware.ini",
+            "size": 4541,
+            "inode": 84415713,
+            "mtime_ns": 1792101758813406612,
+            "sha256": "4dfefe9aa2acfd281760e57b6304c623c332b6c61c248a725a18c61803b7d391"
+          },
+          {
+            "name": "ram.bin",
+            "size": 2026106078,
+            "inode": 84415708,
+            "mtime_ns": 1792101758618032833
+          },
+          {
+            "name": "screenshot.png",
+            "size": 562881,
+            "inode": 84415712,
+            "mtime_ns": 1792101758824753680,
+            "sha256": "ac48974bdcd6889b9fd4b0b7cbc84306761aa49c671711437ac8f1584b28b774"
+          },
+          {
+            "name": "snapshot.pb",
+            "size": 1698,
+            "inode": 84415660,
+            "mtime_ns": 1792101758813843238,
+            "sha256": "91c53d8c7870268e058fdb7495a19b1d564f9516f78f8171a5dacb87c32a62e6"
+          },
+          {
+            "name": "textures.bin",
+            "size": 8772443,
+            "inode": 84415709,
+            "mtime_ns": 1792101758813101694
+          }
+        ]
+      },
+      "avd_path": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd",
+      "avd_files": [
+        {
+          "name": "config.ini",
+          "inode": 84415593,
+          "size": 3468,
+          "mtime_ns": 1792101741002646568,
+          "birth_time": 1792101714.508886,
+          "sha256": "60877e8b38278859ca87ea92e5039a2be5bd5c66f1a39d67364d54e0e4b97dc6",
+          "text": "PlayStore.enabled=no\nabi.type=arm64-v8a\navd.id=<build>\navd.ini.encoding=UTF-8\navd.name=<build>\ndisk.cachePartition=yes\ndisk.cachePartition.size=66MB\ndisk.dataPartition.path=<temp>\ndisk.dataPartition.size=4096M\ndisk.systemPartition.size=0\ndisk.vendorPartition.size=0\nenvironment.height=0\nenvironment.width=0\nfastboot.forceChosenSnapshotBoot=no\nfastboot.forceColdBoot=no\nfastboot.forceFastBoot=yes\nfirstboot.bootFromDownloadableSnapshot=yes\nfirstboot.bootFromLocalSnapshot=yes\nfirstboot.saveToLocalSnapshot=yes\nhw.accelerometer=yes\nhw.accelerometer_uncalibrated=yes\nhw.arc=false\nhw.audioInput=yes\nhw.audioOutput=yes\nhw.battery=yes\nhw.camera.back=emulated\nhw.camera.back.orientation=90\nhw.camera.front=none\nhw.camera.front.orientation=90\nhw.cpu.arch=arm64\nhw.cpu.ncore=4\nhw.dPad=no\nhw.display1.density=0\nhw.display1.flag=0\nhw.display1.height=0\nhw.display1.width=0\nhw.display1.xOffset=-1\nhw.display1.yOffset=-1\nhw.display2.density=0\nhw.display2.flag=0\nhw.display2.height=0\nhw.display2.width=0\nhw.display2.xOffset=-1\nhw.display2.yOffset=-1\nhw.display3.density=0\nhw.display3.flag=0\nhw.display3.height=0\nhw.display3.width=0\nhw.display3.xOffset=-1\nhw.display3.yOffset=-1\nhw.displayRegion.0.1.height=0\nhw.displayRegion.0.1.width=0\nhw.displayRegion.0.1.xOffset=-1\nhw.displayRegion.0.1.yOffset=-1\nhw.displayRegion.0.2.height=0\nhw.displayRegion.0.2.width=0\nhw.displayRegion.0.2.xOffset=-1\nhw.displayRegion.0.2.yOffset=-1\nhw.displayRegion.0.3.height=0\nhw.displayRegion.0.3.width=0\nhw.displayRegion.0.3.xOffset=-1\nhw.displayRegion.0.3.yOffset=-1\nhw.gltransport=pipe\nhw.gltransport.asg.dataRingSize=32768\nhw.gltransport.asg.writeBufferSize=1048576\nhw.gltransport.asg.writeStepSize=4096\nhw.gltransport.drawFlushInterval=800\nhw.gps=yes\nhw.gpu.enabled=no\nhw.gpu.mode=auto\nhw.gsmModem=yes\nhw.gyroscope=yes\nhw.hotplug_multi_display=no\nhw.initialOrientation=portrait\nhw.keyboard=no\nhw.keyboard.charmap=qwerty2\nhw.keyboard.lid=yes\nhw.lcd.backlight=yes\nhw.lcd.circular=false\nhw.lcd.density=240\nhw.lcd.depth=32\nhw.lcd.height=960\nhw.lcd.transparent=false\nhw.lcd.vsync=60\nhw.lcd.width=540\nhw.mainKeys=yes\nhw.multi_display_window=no\nhw.ramSize=2048\nhw.rotaryInput=no\nhw.screen=multi-touch\nhw.sdCard=yes\nhw.sensor.hinge=no\nhw.sensor.hinge.count=0\nhw.sensor.hinge.fold_to_displayRegion.0.1_at_posture=1\nhw.sensor.hinge.resizable.config=1\nhw.sensor.hinge.sub_type=0\nhw.sensor.hinge.type=0\nhw.sensor.roll=no\nhw.sensor.roll.count=0\nhw.sensor.roll.resize_to_displayRegion.0.1_at_posture=6\nhw.sensor.roll.resize_to_displayRegion.0.2_at_posture=6\nhw.sensor.roll.resize_to_displayRegion.0.3_at_posture=6\nhw.sensors.gyroscope_uncalibrated=yes\nhw.sensors.heading=no\nhw.sensors.heart_rate=no\nhw.sensors.humidity=yes\nhw.sensors.light=yes\nhw.sensors.magnetic_field=yes\nhw.sensors.magnetic_field_uncalibrated=yes\nhw.sensors.orientation=yes\nhw.sensors.pressure=yes\nhw.sensors.proximity=no\nhw.sensors.rgbclight=no\nhw.sensors.temperature=yes\nhw.sensors.wrist_tilt=no\nhw.touchpad0=no\nhw.touchpad0.height=400\nhw.touchpad0.width=600\nhw.trackBall=yes\nhw.useext4=yes\nimage.sysdir.1=system-images/android-33/google_apis/arm64-v8a/\nkernel.newDeviceNaming=autodetect\nkernel.supportsYaffs2=autodetect\nruntime.network.latency=none\nruntime.network.speed=full\nsdcard.size=512 MB\nshowDeviceFrame=yes\ntag.display=Google APIs\ntag.displaynames=Google APIs\ntag.id=google_apis\ntag.ids=google_apis\ntarget=android-33\ntest.delayAdbTillBootComplete=0\ntest.monitorAdb=0\ntest.quitAfterBootTimeOut=-1\nuserdata.useQcow2=no\nvm.heapSize=384\n"
+        },
+        {
+          "name": "hardware-qemu.ini",
+          "inode": 84415748,
+          "size": 4541,
+          "mtime_ns": 1792101741604737858,
+          "birth_time": 1792101741.604667,
+          "sha256": "4dfefe9aa2acfd281760e57b6304c623c332b6c61c248a725a18c61803b7d391",
+          "text": "hw.cpu.arch = arm64\nhw.cpu.ncore = 2\nhw.ramSize = 2048\nhw.screen = multi-touch\nhw.mainKeys = true\nhw.touchpad0 = false\nhw.touchpad0.width = 600\nhw.touchpad0.height = 400\nhw.trackBall = true\nhw.keyboard = false\nhw.keyboard.lid = true\nhw.keyboard.charmap = qwerty2\nhw.dPad = false\nhw.rotaryInput = false\nhw.gsmModem = true\nhw.gps = true\nhw.battery = true\nhw.accelerometer = true\nhw.accelerometer_uncalibrated = true\nhw.gyroscope = true\nhw.audioInput = true\nhw.audioOutput = true\nhw.sdCard = true\ndisk.cachePartition = true\ndisk.cachePartition.path = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/cache.img\ndisk.cachePartition.size = 66m\ntest.quitAfterBootTimeOut = -1\ntest.delayAdbTillBootComplete = 0\ntest.monitorAdb = 0\nhw.lcd.width = 540\nhw.lcd.height = 960\nhw.lcd.depth = 32\nhw.lcd.circular = false\nhw.lcd.density = 240\nhw.lcd.transparent = false\nhw.lcd.backlight = true\nhw.lcd.vsync = 60\nhw.gltransport = pipe\nhw.gltransport.asg.writeBufferSize = 1048576\nhw.gltransport.asg.writeStepSize = 4096\nhw.gltransport.asg.dataRingSize = 32768\nhw.gltransport.drawFlushInterval = 800\nhw.displayRegion.0.1.xOffset = -1\nhw.displayRegion.0.1.yOffset = -1\nhw.displayRegion.0.1.width = 0\nhw.displayRegion.0.1.height = 0\nhw.displayRegion.0.2.xOffset = -1\nhw.displayRegion.0.2.yOffset = -1\nhw.displayRegion.0.2.width = 0\nhw.displayRegion.0.2.height = 0\nhw.displayRegion.0.3.xOffset = -1\nhw.displayRegion.0.3.yOffset = -1\nhw.displayRegion.0.3.width = 0\nhw.displayRegion.0.3.height = 0\nhw.display1.width = 0\nhw.display1.height = 0\nhw.display1.density = 0\nhw.display1.xOffset = -1\nhw.display1.yOffset = -1\nhw.display1.flag = 0\nhw.display2.width = 0\nhw.display2.height = 0\nhw.display2.density = 0\nhw.display2.xOffset = -1\nhw.display2.yOffset = -1\nhw.display2.flag = 0\nhw.display3.width = 0\nhw.display3.height = 0\nhw.display3.density = 0\nhw.display3.xOffset = -1\nhw.display3.yOffset = -1\nhw.display3.flag = 0\nhw.multi_display_window = false\nhw.hotplug_multi_display = false\nhw.gpu.enabled = true\nhw.gpu.mode = host\nhw.initialOrientation = portrait\nhw.camera.back = emulated\nhw.camera.back.orientation = 90\nhw.camera.front = none\nhw.camera.front.orientation = 90\nvm.heapSize = 512\nhw.sensors.light = true\nhw.sensors.pressure = true\nhw.sensors.humidity = true\nhw.sensors.proximity = false\nhw.sensors.magnetic_field = true\nhw.sensors.magnetic_field_uncalibrated = true\nhw.sensors.gyroscope_uncalibrated = true\nhw.sensors.orientation = true\nhw.sensors.temperature = true\nhw.sensors.rgbclight = false\nhw.sensor.hinge = false\nhw.sensor.hinge.count = 0\nhw.sensor.hinge.type = 0\nhw.sensor.hinge.sub_type = 0\nhw.sensor.hinge.resizable.config = 1\nhw.sensor.hinge.fold_to_displayRegion.0.1_at_posture = 1\nhw.sensor.roll = false\nhw.sensor.roll.count = 0\nhw.sensor.roll.resize_to_displayRegion.0.1_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.2_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.3_at_posture = 6\nhw.sensors.heart_rate = false\nhw.sensors.wrist_tilt = false\nhw.sensors.heading = false\nhw.useext4 = true\nkernel.path = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//kernel-ranchu\nkernel.newDeviceNaming = yes\nkernel.supportsYaffs2 = no\ndisk.ramdisk.path = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//ramdisk.img\ndisk.systemPartition.initPath = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//system.img\ndisk.systemPartition.size = 8203m\ndisk.vendorPartition.initPath = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//vendor.img\ndisk.vendorPartition.size = 800m\ndisk.dataPartition.path = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/userdata-qemu.img\ndisk.dataPartition.size = 4g\ndisk.encryptionKeyPartition.path = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/encryptionkey.img\nPlayStore.enabled = false\navd.name = aiphone_vm_779481a8a016\navd.id = aiphone_vm_779481a8a016\nfastboot.forceColdBoot = false\nuserdata.useQcow2 = true\nfirstboot.bootFromDownloadableSnapshot = true\nfirstboot.bootFromLocalSnapshot = true\nfirstboot.saveToLocalSnapshot = true\nandroid.sdk.root = /Users/dongxin/Library/Android/sdk\nandroid.avd.home = /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd\nenvironment.width = 0\nenvironment.height = 0\n"
+        },
+        {
+          "name": "userdata-qemu.img",
+          "inode": 84415615,
+          "size": 6422528,
+          "mtime_ns": 1792101714606170227,
+          "birth_time": 1792101714.6035516
+        },
+        {
+          "name": "userdata-qemu.img.qcow2",
+          "inode": 84415642,
+          "size": 788922368,
+          "mtime_ns": 1792101758812821110,
+          "birth_time": 1792101715.0141332
+        }
+      ],
+      "emulator_log": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/final-protected-inventory.emulator.log",
+      "emulator_log_sha256": "1a73ff022d62c82fefe0d7e121d37a9539f65d41c399eaf568380b01ffb3cb39",
+      "emulator_log_delta": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/final-protected-inventory.emulator.delta.log",
+      "delta_start_offset": 18128,
+      "delta_end_offset": 18608,
+      "snapshot_log_lines": [
+        "WARNING      | unexpected '-prop' value ('debug.aiphone.alias=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2'), only 'qemu.*' properties are supported",
+        "INFO         | Loading snapshot 'default_boot'...",
+        "WARNING      | Device 'encrypt' does not have the requested snapshot 'default_boot'",
+        "WARNING      | Failed to load snapshot 'default_boot'",
+        "USER_INFO    | The emulator is performing a cold boot without a saved state because there's no snapshot and you have configured it not to save on exit.",
+        "WARNING      | Failed to process .ini file /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/user/emu-update-last-check.ini for reading.",
+        "WARNING      | Failed to process .ini file /Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/user/emu-update-last-check.ini for reading.",
+        "saving arm snapshot.... !!!",
+        "INFO         | Saving snapshot 'default_boot' using 2437 ms",
+        "WARNING      | unexpected '-prop' value ('debug.aiphone.alias=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2'), only 'qemu.*' properties are supported",
+        "INFO         | Loading snapshot 'default_boot'...",
+        "ERROR        | The emulator hardware cannot load snapshot: default_boot",
+        "WARNING      | Error -1 from the snapshot callback",
+        "WARNING      | Failed to load snapshot 'default_boot'",
+        "saving arm snapshot.... !!!",
+        "INFO         | Saving snapshot 'default_boot' using 1843 ms"
+      ]
+    }
+  ],
+  "vm_readbacks": [
+    {
+      "id": "779481a8a016",
+      "name": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+      "alias": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+      "profile_ref_type": "custom",
+      "profile_ref_id": "",
+      "profile_id": "",
+      "profile_name": "",
+      "config_version": 1,
+      "config_json": {
+        "system": {
+          "api_level": 33,
+          "system_type": "google_apis",
+          "abi": "arm64"
+        },
+        "display": {
+          "screen_width": 540,
+          "screen_height": 960,
+          "density": 240,
+          "orientation": "portrait",
+          "screen_size_in": "",
+          "cutout": "",
+          "shape_note": ""
+        },
+        "performance": {
+          "ram_mb": 2048,
+          "cpu_cores": 2,
+          "vm_heap_mb": 384,
+          "gpu_mode": "host"
+        },
+        "storage": {
+          "internal_storage_mb": 4096,
+          "sdcard_mb": 0,
+          "wipe_data": false,
+          "snapshot_policy": "save"
+        },
+        "network": {
+          "speed": "full",
+          "delay": "none",
+          "dns_server": "",
+          "http_proxy": ""
+        },
+        "hardware": {
+          "back_camera": "emulated",
+          "front_camera": "none",
+          "gps": true,
+          "accelerometer": true,
+          "gyroscope": true,
+          "proximity": false,
+          "hardware_keyboard": false,
+          "navigation_style": "none"
+        },
+        "startup": {
+          "no_window": true,
+          "no_audio": true,
+          "no_boot_anim": true,
+          "writable_system": false
+        },
+        "identity": {}
+      },
+      "capability_marks": {},
+      "api_level": 33,
+      "abi": "arm64",
+      "system_type": "google_apis",
+      "system_image": "",
+      "screen_width": 540,
+      "screen_height": 960,
+      "density": 240,
+      "orientation": "portrait",
+      "state": "running",
+      "assigned_agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+      "adb_serial": "emulator-5666",
+      "error_message": "",
+      "runtime": {
+        "operation": {
+          "action": "start",
+          "request_id": "8fc97dc265bc4bbc",
+          "pending": false,
+          "outcome": "succeeded",
+          "target_agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+          "target_host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+          "first_bind": true,
+          "started_at": "2026-10-15T22:01:53.595033+00:00",
+          "deadline_at": "2026-10-15T22:06:53.595033+00:00",
+          "timeout_sec": 300.0,
+          "created_in_attempt": true,
+          "completed_at": "2026-10-15T22:02:16.591663+00:00"
+        },
+        "last_status": {
+          "state": "running",
+          "ok": true,
+          "reason": "running",
+          "details": {
+            "avd_name": "aiphone_vm_779481a8a016",
+            "instance_created": true,
+            "created_in_attempt": true,
+            "port": 5666,
+            "system_image": "system-images;android-33;google_apis;arm64-v8a",
+            "no_window": true,
+            "screen_width": 540,
+            "screen_height": 960,
+            "density": 240,
+            "orientation": "portrait",
+            "ram_mb": 2048,
+            "cpu_cores": 2,
+            "vm_heap_mb": 384,
+            "internal_storage_mb": 4096,
+            "sdcard_mb": 0,
+            "gpu_mode": "host",
+            "network_speed": "full",
+            "network_delay": "none",
+            "snapshot_policy": "save"
+          },
+          "ts": "2026-10-15T22:02:16.591705+00:00"
+        },
+        "owner_host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+        "instance_created": true
+      },
+      "created_at": "2026-10-15T22:01:53.581259",
+      "updated_at": "2026-10-15T22:02:16.592579",
+      "started_at": "2026-10-15T22:02:16.591710",
+      "stopped_at": null
+    },
+    {
+      "id": "779481a8a016",
+      "name": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+      "alias": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+      "profile_ref_type": "custom",
+      "profile_ref_id": "",
+      "profile_id": "",
+      "profile_name": "",
+      "config_version": 1,
+      "config_json": {
+        "system": {
+          "api_level": 33,
+          "system_type": "google_apis",
+          "abi": "arm64"
+        },
+        "display": {
+          "screen_width": 540,
+          "screen_height": 960,
+          "density": 240,
+          "orientation": "portrait",
+          "screen_size_in": "",
+          "cutout": "",
+          "shape_note": ""
+        },
+        "performance": {
+          "ram_mb": 2048,
+          "cpu_cores": 2,
+          "vm_heap_mb": 384,
+          "gpu_mode": "host"
+        },
+        "storage": {
+          "internal_storage_mb": 4096,
+          "sdcard_mb": 0,
+          "wipe_data": false,
+          "snapshot_policy": "save"
+        },
+        "network": {
+          "speed": "full",
+          "delay": "none",
+          "dns_server": "",
+          "http_proxy": ""
+        },
+        "hardware": {
+          "back_camera": "emulated",
+          "front_camera": "none",
+          "gps": true,
+          "accelerometer": true,
+          "gyroscope": true,
+          "proximity": false,
+          "hardware_keyboard": false,
+          "navigation_style": "none"
+        },
+        "startup": {
+          "no_window": true,
+          "no_audio": true,
+          "no_boot_anim": true,
+          "writable_system": false
+        },
+        "identity": {}
+      },
+      "capability_marks": {},
+      "api_level": 33,
+      "abi": "arm64",
+      "system_type": "google_apis",
+      "system_image": "",
+      "screen_width": 540,
+      "screen_height": 960,
+      "density": 240,
+      "orientation": "portrait",
+      "state": "stopped",
+      "assigned_agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+      "adb_serial": "emulator-5666",
+      "error_message": "",
+      "runtime": {
+        "operation": {
+          "action": "stop",
+          "request_id": "7b702c36938643c5",
+          "pending": false,
+          "outcome": "succeeded",
+          "target_agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+          "target_host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+          "first_bind": false,
+          "started_at": "2026-10-15T22:02:17.227373+00:00",
+          "deadline_at": "2026-10-15T22:04:17.227373+00:00",
+          "timeout_sec": 120.0,
+          "completed_at": "2026-10-15T22:02:20.498976+00:00"
+        },
+        "last_status": {
+          "state": "stopped",
+          "ok": true,
+          "reason": "stopped",
+          "details": {
+            "avd_name": "aiphone_vm_779481a8a016",
+            "port": 5666,
+            "cleanup_confirmed": true,
+            "instance_created": true,
+            "sync_completed": true,
+            "exit_evidence": {
+              "confirmed": true,
+              "owned_process_exit_code": -6,
+              "process_inventory_complete": true,
+              "matching_process_ids": [],
+              "blocked_ports": [],
+              "reason": "exit_confirmed"
+            }
+          },
+          "ts": "2026-10-15T22:02:20.499004+00:00"
+        },
+        "owner_host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+        "instance_created": true
+      },
+      "created_at": "2026-10-15T22:01:53.581259",
+      "updated_at": "2026-10-15T22:02:20.499517",
+      "started_at": "2026-10-15T22:02:16.591710",
+      "stopped_at": "2026-10-15T22:02:20.499008"
+    },
+    {
+      "id": "779481a8a016",
+      "name": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+      "alias": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+      "profile_ref_type": "custom",
+      "profile_ref_id": "",
+      "profile_id": "",
+      "profile_name": "",
+      "config_version": 1,
+      "config_json": {
+        "system": {
+          "api_level": 33,
+          "system_type": "google_apis",
+          "abi": "arm64"
+        },
+        "display": {
+          "screen_width": 540,
+          "screen_height": 960,
+          "density": 240,
+          "orientation": "portrait",
+          "screen_size_in": "",
+          "cutout": "",
+          "shape_note": ""
+        },
+        "performance": {
+          "ram_mb": 2048,
+          "cpu_cores": 2,
+          "vm_heap_mb": 384,
+          "gpu_mode": "host"
+        },
+        "storage": {
+          "internal_storage_mb": 4096,
+          "sdcard_mb": 0,
+          "wipe_data": false,
+          "snapshot_policy": "save"
+        },
+        "network": {
+          "speed": "full",
+          "delay": "none",
+          "dns_server": "",
+          "http_proxy": ""
+        },
+        "hardware": {
+          "back_camera": "emulated",
+          "front_camera": "none",
+          "gps": true,
+          "accelerometer": true,
+          "gyroscope": true,
+          "proximity": false,
+          "hardware_keyboard": false,
+          "navigation_style": "none"
+        },
+        "startup": {
+          "no_window": true,
+          "no_audio": true,
+          "no_boot_anim": true,
+          "writable_system": false
+        },
+        "identity": {}
+      },
+      "capability_marks": {},
+      "api_level": 33,
+      "abi": "arm64",
+      "system_type": "google_apis",
+      "system_image": "",
+      "screen_width": 540,
+      "screen_height": 960,
+      "density": 240,
+      "orientation": "portrait",
+      "state": "running",
+      "assigned_agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+      "adb_serial": "emulator-5666",
+      "error_message": "",
+      "runtime": {
+        "operation": {
+          "action": "start",
+          "request_id": "44894bb498944510",
+          "pending": false,
+          "outcome": "succeeded",
+          "target_agent_id": "personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+          "target_host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+          "first_bind": false,
+          "started_at": "2026-10-15T22:02:20.558972+00:00",
+          "deadline_at": "2026-10-15T22:07:20.558972+00:00",
+          "timeout_sec": 300.0,
+          "completed_at": "2026-10-15T22:02:36.422645+00:00"
+        },
+        "last_status": {
+          "state": "running",
+          "ok": true,
+          "reason": "running",
+          "details": {
+            "avd_name": "aiphone_vm_779481a8a016",
+            "instance_created": true,
+            "created_in_attempt": false,
+            "port": 5666,
+            "system_image": "system-images;android-33;google_apis;arm64-v8a",
+            "no_window": true,
+            "screen_width": 540,
+            "screen_height": 960,
+            "density": 240,
+            "orientation": "portrait",
+            "ram_mb": 2048,
+            "cpu_cores": 2,
+            "vm_heap_mb": 384,
+            "internal_storage_mb": 4096,
+            "sdcard_mb": 0,
+            "gpu_mode": "host",
+            "network_speed": "full",
+            "network_delay": "none",
+            "snapshot_policy": "save"
+          },
+          "ts": "2026-10-15T22:02:36.422671+00:00"
+        },
+        "owner_host_id": "e3a96b1cca1f4bc6964affc6b3d5baa2",
+        "instance_created": true
+      },
+      "created_at": "2026-10-15T22:01:53.581259",
+      "updated_at": "2026-10-15T22:02:36.422982",
+      "started_at": "2026-10-15T22:02:16.591710",
+      "stopped_at": null
+    }
+  ],
+  "harness_sources_at_start": {
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_snapshot_a6.py": "6aefde1f42ca4b3861c48771d34a6fdeef4dafe4325e30244c5d16ea2521fb16",
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_sync_a5.py": "43356f481dea68c8adcd7b5fb7344b08912f2b2e4f678075533f2a15856eaf51",
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/frozen-products.json": "3cb3842671dd3ea50d007e887d1fdccb2ae4ec79c162f27269d9d92f72fa44a5"
+  },
+  "error": "RuntimeError('QuickBoot did not restore the exact original kernel and RAM marker A')",
+  "native_handlers_active_at_cleanup": 0,
+  "finished_at": "2026-10-15T22:02:39.226103+00:00",
+  "duration_sec": 49.40200679100235,
+  "protected_metadata_changed": [],
+  "product_freeze_at_finish": {
+    "manifest": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/frozen-products.json",
+    "manifest_sha256": "3cb3842671dd3ea50d007e887d1fdccb2ae4ec79c162f27269d9d92f72fa44a5",
+    "count": 33,
+    "source_sha256": {
+      "backend/ai_phone/agent/android_vm/capability.py": "ed8630cb9f20d1791eea36d142bce755e73147b50a6e1621b2f6b4192d210b31",
+      "backend/ai_phone/agent/android_vm/manager.py": "a9fc524cf2206baa1295557e936a05781d4d584e96e334e685f3e01c84e1a5db",
+      "backend/ai_phone/agent/app_install/handler.py": "31abda8902919971a2879a3b6e262ddb16509213b7a1a249392a560ba7a81d22",
+      "backend/ai_phone/agent/app_uninstall/handler.py": "b373f34caf73043d54bc297cacd929c18783342486b8330acbb97c0c44b7714d",
+      "backend/ai_phone/agent/device_activity.py": "cc2e96d66080f7aa60fa8d0b9956e433e186fd892dfc26c00a8c904060395e31",
+      "backend/ai_phone/agent/drivers/__init__.py": "67dd1c2ac123154794e17d584ec5fb5335baec68293f16acea0fd1f14de506c8",
+      "backend/ai_phone/agent/drivers/android.py": "af3b1fe42b0ce93e2ad1717143e8959bc2a438e2a73955a2a7ca0c6224136d9a",
+      "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+      "backend/ai_phone/agent/harmony_vm/capability.py": "6716584a4ee555fd49b2297db5136e004679806d2af0b12a2c4edb3eac5003fa",
+      "backend/ai_phone/agent/harmony_vm/manager.py": "efac19845e45b5c0a7aa2faefc95f8c6dc9cecd6842442fee303765dc9a3999e",
+      "backend/ai_phone/agent/health/probe.py": "a4ec72f21e4dc6b1bf4b0c3bcfcdde37b74b57305cc57b9d2ce738fc91139c33",
+      "backend/ai_phone/agent/health/supervisor.py": "8393340453f02129d1c342e1815806cfe4f039ff00d7f117fbab94c462678858",
+      "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+      "backend/ai_phone/agent/ios_sim/manager.py": "6401fce688f697450099204f8c96c8995ffb2f2dcc65912b265e7ff1362bda60",
+      "backend/ai_phone/agent/main.py": "33941428605993c5c6b4ec709e2bb4f42d014ea57634a5133d5e3bd2d8e33d99",
+      "backend/ai_phone/agent/native_operation.py": "1fbc78e1560cf21ba3dc6e68d50adfc9a025831fba3d3848c407e291ff901255",
+      "backend/ai_phone/agent/vm_ports.py": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+      "backend/ai_phone/agent/ws_client.py": "aadad560bfa0788b0b6eefe6636be7b7f2e95cae96b31d423f2dcaa34252592e",
+      "backend/ai_phone/server/android_vm/api.py": "3bdcfa84b46262ca974be0e29ba9352986d6e0a350df109c8d09aa2d69116d3d",
+      "backend/ai_phone/server/android_vm/service.py": "b7f9aa7149dbf196b71e63076cf3469b80d6f35845f5caf25143f3ff0a318621",
+      "backend/ai_phone/server/api/_deps.py": "83e8ecdb97ae92480c6034200039d080ad0e024bcd26f6cf361e68c3b9ea6bd7",
+      "backend/ai_phone/server/app.py": "2db57a8e7f596d36cbc4772808ad840d59ec134767d7e8ce8837bf5100435f73",
+      "backend/ai_phone/server/harmony_vm/api.py": "00b4665fda0e96e110b2fcb6ef236edc0af62a4a956abd76ca156c94e96793a6",
+      "backend/ai_phone/server/harmony_vm/service.py": "cef15701e1c3d6260a2e681911fa200dda10f27114225ab85994417e67008460",
+      "backend/ai_phone/server/hub.py": "7252018d5468f7e0ccc3f7b28e3fa238053751e61925cef1b3538050c6ee4b33",
+      "backend/ai_phone/server/ios_sim/api.py": "5df873d042daadb1a7b7f71a9ab642acdb276dd93835219548cd329736f0d1df",
+      "backend/ai_phone/server/ios_sim/service.py": "687dcf0c157300f37c1d825d4d55ca83ecbfa07cba3efa3190467dd2a4164647",
+      "backend/ai_phone/server/vm_lifecycle.py": "232cf364266b1e344a7d29e87ebce39709994a1b0aa790db582ef33602af56aa",
+      "backend/ai_phone/server/ws/_deps.py": "a35024e4a79af02d098e71ab3f5a6f1ae5bad0130d35097a6a97ead977bacfcf",
+      "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+      "web/src/pages/HarmonyVirtualMachines.vue": "d702050463af50e3ecd2aa6a7866fd7ba6855d197527e303271650aa69f11d35",
+      "web/src/pages/IosSimVirtualMachines.vue": "4b99e783884daf6ff8a9eaa918f568a0e3976a31ef38545e43d9400e1e1f6c29",
+      "web/src/pages/VirtualMachines.vue": "2a78c051715bf1ecc9e8dcb29e60f098e714e89cfd77d8320659ae47daac4abf"
+    },
+    "mismatches": []
+  },
+  "harness_source_changes": [],
+  "private_adb_stopped": true,
+  "live_native_pids": [],
+  "blocked_cleanup_vm_ids": [],
+  "remaining_owned_runtimes": [],
+  "remaining_owned_avds": [
+    "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd"
+  ],
+  "native_ports_free": true
+}

@@ -1,0 +1,1038 @@
+{
+  "status": "passed",
+  "root": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-2dc9844f-20261016-a3",
+  "vm_id": "49cc71b3076c",
+  "raw_evidence": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-2dc9844f-20261016-a3/evidence.json",
+  "archive_evidence": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-snapshot-a6-a3.evidence.json",
+  "source_commit": "2dc9844ffd86b88f2e41acfc79fae87ae222d631",
+  "harness_sha256": "6aefde1f42ca4b3861c48771d34a6fdeef4dafe4325e30244c5d16ea2521fb16",
+  "duration_sec": 98.59581183399132,
+  "coverage": {
+    "save_ram_restore": true,
+    "discard_does_not_save_later_B": true,
+    "cold_boot_new_kernel_no_old_markers": true,
+    "installed34_rejected_before_launch_and_original_bytes_unchanged": true,
+    "explicit_original33_recovery": true,
+    "immediate_ledger_and_native_delete": true
+  },
+  "launches": [
+    {
+      "kind": "launch",
+      "vm_id": "49cc71b3076c",
+      "policy": "save",
+      "argv": [
+        "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+        "-avd",
+        "aiphone_vm_49cc71b3076c",
+        "-port",
+        "5666",
+        "-skin",
+        "540x960",
+        "-prop",
+        "qemu.sf.lcd_density=240",
+        "-prop",
+        "debug.aiphone.vmid=49cc71b3076c",
+        "-prop",
+        "debug.aiphone.alias=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3",
+        "-prop",
+        "persist.sys.timezone=Asia/Shanghai",
+        "-no-audio",
+        "-no-boot-anim",
+        "-no-window",
+        "-memory",
+        "2048",
+        "-cores",
+        "2",
+        "-gpu",
+        "host",
+        "-camera-back",
+        "emulated",
+        "-camera-front",
+        "none"
+      ],
+      "at": "2026-10-15T22:22:29.953701+00:00",
+      "monotonic_ns": 111262262090958,
+      "pid": 76148
+    },
+    {
+      "kind": "launch",
+      "vm_id": "49cc71b3076c",
+      "policy": "save",
+      "argv": [
+        "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+        "-avd",
+        "aiphone_vm_49cc71b3076c",
+        "-port",
+        "5666",
+        "-skin",
+        "540x960",
+        "-prop",
+        "qemu.sf.lcd_density=240",
+        "-prop",
+        "debug.aiphone.vmid=49cc71b3076c",
+        "-prop",
+        "debug.aiphone.alias=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3",
+        "-prop",
+        "persist.sys.timezone=Asia/Shanghai",
+        "-no-audio",
+        "-no-boot-anim",
+        "-no-window",
+        "-memory",
+        "2048",
+        "-cores",
+        "2",
+        "-gpu",
+        "host",
+        "-camera-back",
+        "emulated",
+        "-camera-front",
+        "none"
+      ],
+      "at": "2026-10-15T22:22:57.605156+00:00",
+      "monotonic_ns": 111289913373375,
+      "pid": 76296
+    },
+    {
+      "kind": "launch",
+      "vm_id": "49cc71b3076c",
+      "policy": "discard_changes",
+      "argv": [
+        "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+        "-avd",
+        "aiphone_vm_49cc71b3076c",
+        "-port",
+        "5666",
+        "-skin",
+        "540x960",
+        "-prop",
+        "qemu.sf.lcd_density=240",
+        "-prop",
+        "debug.aiphone.vmid=49cc71b3076c",
+        "-prop",
+        "debug.aiphone.alias=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3",
+        "-prop",
+        "persist.sys.timezone=Asia/Shanghai",
+        "-no-audio",
+        "-no-boot-anim",
+        "-no-snapshot-save",
+        "-no-window",
+        "-memory",
+        "2048",
+        "-cores",
+        "2",
+        "-gpu",
+        "host",
+        "-camera-back",
+        "emulated",
+        "-camera-front",
+        "none"
+      ],
+      "at": "2026-10-15T22:23:07.367809+00:00",
+      "monotonic_ns": 111299675968500,
+      "pid": 76376
+    },
+    {
+      "kind": "launch",
+      "vm_id": "49cc71b3076c",
+      "policy": "discard_changes",
+      "argv": [
+        "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+        "-avd",
+        "aiphone_vm_49cc71b3076c",
+        "-port",
+        "5666",
+        "-skin",
+        "540x960",
+        "-prop",
+        "qemu.sf.lcd_density=240",
+        "-prop",
+        "debug.aiphone.vmid=49cc71b3076c",
+        "-prop",
+        "debug.aiphone.alias=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3",
+        "-prop",
+        "persist.sys.timezone=Asia/Shanghai",
+        "-no-audio",
+        "-no-boot-anim",
+        "-no-snapshot-save",
+        "-no-window",
+        "-memory",
+        "2048",
+        "-cores",
+        "2",
+        "-gpu",
+        "host",
+        "-camera-back",
+        "emulated",
+        "-camera-front",
+        "none"
+      ],
+      "at": "2026-10-15T22:23:15.216609+00:00",
+      "monotonic_ns": 111307524719875,
+      "pid": 76458
+    },
+    {
+      "kind": "launch",
+      "vm_id": "49cc71b3076c",
+      "policy": "cold_boot",
+      "argv": [
+        "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+        "-avd",
+        "aiphone_vm_49cc71b3076c",
+        "-port",
+        "5666",
+        "-skin",
+        "540x960",
+        "-prop",
+        "qemu.sf.lcd_density=240",
+        "-prop",
+        "debug.aiphone.vmid=49cc71b3076c",
+        "-prop",
+        "debug.aiphone.alias=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3",
+        "-prop",
+        "persist.sys.timezone=Asia/Shanghai",
+        "-no-audio",
+        "-no-boot-anim",
+        "-no-snapshot-load",
+        "-no-window",
+        "-memory",
+        "2048",
+        "-cores",
+        "2",
+        "-gpu",
+        "host",
+        "-camera-back",
+        "emulated",
+        "-camera-front",
+        "none"
+      ],
+      "at": "2026-10-15T22:23:23.228659+00:00",
+      "monotonic_ns": 111315536722708,
+      "pid": 76526
+    },
+    {
+      "kind": "launch",
+      "vm_id": "49cc71b3076c",
+      "policy": "cold_boot",
+      "argv": [
+        "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+        "-avd",
+        "aiphone_vm_49cc71b3076c",
+        "-port",
+        "5666",
+        "-skin",
+        "540x960",
+        "-prop",
+        "qemu.sf.lcd_density=240",
+        "-prop",
+        "debug.aiphone.vmid=49cc71b3076c",
+        "-prop",
+        "debug.aiphone.alias=personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3",
+        "-prop",
+        "persist.sys.timezone=Asia/Shanghai",
+        "-no-audio",
+        "-no-boot-anim",
+        "-no-snapshot-load",
+        "-no-window",
+        "-memory",
+        "2048",
+        "-cores",
+        "2",
+        "-gpu",
+        "host",
+        "-camera-back",
+        "emulated",
+        "-camera-front",
+        "none"
+      ],
+      "at": "2026-10-15T22:23:45.172361+00:00",
+      "monotonic_ns": 111337480283333,
+      "pid": 76662
+    }
+  ],
+  "operations": [
+    {
+      "endpoint": "dispatch",
+      "action": "start",
+      "request_id": "28e4e99cd0f94add",
+      "outcome": "succeeded",
+      "generation_id": null,
+      "expected_failure": null
+    },
+    {
+      "endpoint": "stop",
+      "action": "stop",
+      "request_id": "8a18ce6542734486",
+      "outcome": "succeeded",
+      "generation_id": "76148:111262262090958",
+      "expected_failure": null
+    },
+    {
+      "endpoint": "start",
+      "action": "start",
+      "request_id": "a5e72fec2376412d",
+      "outcome": "succeeded",
+      "generation_id": "76148:111262262090958",
+      "expected_failure": null
+    },
+    {
+      "endpoint": "stop",
+      "action": "stop",
+      "request_id": "ca66468e791941c4",
+      "outcome": "succeeded",
+      "generation_id": "76296:111289913373375",
+      "expected_failure": null
+    },
+    {
+      "endpoint": "start",
+      "action": "start",
+      "request_id": "52df9643dae54f76",
+      "outcome": "succeeded",
+      "generation_id": "76296:111289913373375",
+      "expected_failure": null
+    },
+    {
+      "endpoint": "stop",
+      "action": "stop",
+      "request_id": "b6ae2d2ae3fc4bd6",
+      "outcome": "succeeded",
+      "generation_id": "76376:111299675968500",
+      "expected_failure": null
+    },
+    {
+      "endpoint": "start",
+      "action": "start",
+      "request_id": "766e52a080614bb3",
+      "outcome": "succeeded",
+      "generation_id": "76376:111299675968500",
+      "expected_failure": null
+    },
+    {
+      "endpoint": "stop",
+      "action": "stop",
+      "request_id": "471ed4193e4d41b8",
+      "outcome": "succeeded",
+      "generation_id": "76458:111307524719875",
+      "expected_failure": null
+    },
+    {
+      "endpoint": "start",
+      "action": "start",
+      "request_id": "6b7f169e31554a44",
+      "outcome": "succeeded",
+      "generation_id": "76458:111307524719875",
+      "expected_failure": null
+    },
+    {
+      "endpoint": "stop",
+      "action": "stop",
+      "request_id": "e5c356d63d514181",
+      "outcome": "succeeded",
+      "generation_id": "76526:111315536722708",
+      "expected_failure": null
+    },
+    {
+      "endpoint": "start",
+      "action": "start",
+      "request_id": "4d6ffa095b8945d2",
+      "outcome": "expected-failed",
+      "generation_id": "76526:111315536722708",
+      "expected_failure": "existing-image-mismatch"
+    },
+    {
+      "endpoint": "start",
+      "action": "start",
+      "request_id": "9bbd7a6b27cc4767",
+      "outcome": "succeeded",
+      "generation_id": "76526:111315536722708",
+      "expected_failure": null
+    },
+    {
+      "endpoint": "stop",
+      "action": "stop",
+      "request_id": "3c2f160954774aa0",
+      "outcome": "succeeded",
+      "generation_id": "76662:111337480283333",
+      "expected_failure": null
+    }
+  ],
+  "guest_observations": [
+    {
+      "phase": "01-initial-boot",
+      "boot_id": "463aca3b-4198-463b-8e05-b55d93606d91",
+      "markers": {},
+      "at": "2026-10-15T22:22:53.563913+00:00",
+      "monotonic_ns": 111285872166500
+    },
+    {
+      "phase": "02-save-restored-A",
+      "boot_id": "463aca3b-4198-463b-8e05-b55d93606d91",
+      "markers": {
+        "A": {
+          "pid": 2725,
+          "present": true,
+          "state": "S",
+          "starttick": 1959,
+          "cmdline_hex": "2f73797374656d2f62696e2f736c656570003131333100",
+          "cmdline": "/system/bin/sleep 1131",
+          "raw_stat": "2725 (sleep) S 1 2722 2722 0 -1 1077936128 533 0 1 0 0 0 0 0 20 0 1 0 1959 11155849216 833 18446744073709551615 423132487680 423132772848 548845352256 0 0 0 0 1 1073775864 1 0 0 17 0 0 0 0 0 0 423132793584 423132804104 423763779584 548845355525 548845355548 548845355548 548845359078 0"
+        }
+      },
+      "at": "2026-10-15T22:23:03.583798+00:00",
+      "monotonic_ns": 111295891991083
+    },
+    {
+      "phase": "03-discard-restored-A",
+      "boot_id": "463aca3b-4198-463b-8e05-b55d93606d91",
+      "markers": {
+        "A": {
+          "pid": 2725,
+          "present": true,
+          "state": "S",
+          "starttick": 1959,
+          "cmdline_hex": "2f73797374656d2f62696e2f736c656570003131333100",
+          "cmdline": "/system/bin/sleep 1131",
+          "raw_stat": "2725 (sleep) S 1 2722 2722 0 -1 1077936128 533 0 1 0 0 0 0 0 20 0 1 0 1959 11155849216 833 18446744073709551615 423132487680 423132772848 548845352256 0 0 0 0 1 1073775864 1 0 0 17 0 0 0 0 0 0 423132793584 423132804104 423763779584 548845355525 548845355548 548845355548 548845359078 0"
+        }
+      },
+      "at": "2026-10-15T22:23:13.426756+00:00",
+      "monotonic_ns": 111305734884416
+    },
+    {
+      "phase": "04-discard-restored-A-not-B",
+      "boot_id": "463aca3b-4198-463b-8e05-b55d93606d91",
+      "markers": {
+        "A": {
+          "pid": 2725,
+          "present": true,
+          "state": "S",
+          "starttick": 1959,
+          "cmdline_hex": "2f73797374656d2f62696e2f736c656570003131333100",
+          "cmdline": "/system/bin/sleep 1131",
+          "raw_stat": "2725 (sleep) S 1 2722 2722 0 -1 1077936128 533 0 1 0 0 0 0 0 20 0 1 0 1959 11155849216 833 18446744073709551615 423132487680 423132772848 548845352256 0 0 0 0 1 1073775864 1 0 0 17 0 0 0 0 0 0 423132793584 423132804104 423763779584 548845355525 548845355548 548845355548 548845359078 0"
+        },
+        "B": {
+          "pid": 3342,
+          "present": true,
+          "state": "S",
+          "starttick": 2751,
+          "cmdline_hex": "636f6d2e676f6f676c652e616e64726f69642e61732e6f73730000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "cmdline": "com.google.android.as.oss",
+          "raw_stat": "3342 (pool-3-thread-5) S 275 275 0 0 -1 1077936192 8337 0 51 0 3 2 0 0 20 0 37 0 2751 14979280896 19008 18446744073709551615 392764841984 392764845920 549646874128 0 0 0 20996 1 1073775864 0 0 0 -1 0 0 0 0 0 0 392764846080 392764847352 393734660096 549646877201 549646877279 549646877279 549646880734 0"
+        }
+      },
+      "at": "2026-10-15T22:23:21.225965+00:00",
+      "monotonic_ns": 111313534046416
+    },
+    {
+      "phase": "05-cold-new-boot-no-old-markers",
+      "boot_id": "c13e54c0-2ac4-4c8d-b210-e99a7f690599",
+      "markers": {
+        "A": {
+          "pid": 2725,
+          "present": false
+        },
+        "B": {
+          "pid": 3342,
+          "present": false
+        }
+      },
+      "at": "2026-10-15T22:23:39.698444+00:00",
+      "monotonic_ns": 111332006414166
+    },
+    {
+      "phase": "06-original-image-recovered-cold",
+      "boot_id": "bf4398f4-1dcf-4b2a-96dd-a5e191c39644",
+      "markers": {
+        "A": {
+          "pid": 2725,
+          "present": false
+        },
+        "B": {
+          "pid": 3342,
+          "present": false
+        }
+      },
+      "at": "2026-10-15T22:24:00.475919+00:00",
+      "monotonic_ns": 111352783754791
+    }
+  ],
+  "marker_creation": [
+    {
+      "stage": "marker-created",
+      "at": "2026-10-15T22:22:53.817454+00:00",
+      "monotonic_ns": 111286125705458,
+      "label": "A",
+      "signature": {
+        "pid": 2725,
+        "present": true,
+        "state": "S",
+        "starttick": 1959,
+        "cmdline_hex": "2f73797374656d2f62696e2f736c656570003131333100",
+        "cmdline": "/system/bin/sleep 1131",
+        "raw_stat": "2725 (sleep) S 1 2722 2722 0 -1 1077936128 533 0 1 0 0 0 0 0 20 0 1 0 1959 11155849216 833 18446744073709551615 423132487680 423132772848 548845352256 0 0 0 0 1 1073775864 1 0 0 17 0 0 0 0 0 0 423132793584 423132804104 423763779584 548845355525 548845355548 548845355548 548845359078 0"
+      },
+      "lifetime_seconds": 1131
+    },
+    {
+      "stage": "marker-created",
+      "at": "2026-10-15T22:23:13.513640+00:00",
+      "monotonic_ns": 111305821768708,
+      "label": "B",
+      "signature": {
+        "pid": 3342,
+        "present": true,
+        "state": "S",
+        "starttick": 2787,
+        "cmdline_hex": "2f73797374656d2f62696e2f736c656570003131333300",
+        "cmdline": "/system/bin/sleep 1133",
+        "raw_stat": "3342 (sleep) S 1 3336 3336 0 -1 1077936128 537 0 0 0 0 0 0 0 20 0 1 0 2787 11113906176 865 18446744073709551615 375905579008 375905864176 549712677248 0 0 0 0 1 1073775864 1 0 0 17 0 0 0 0 0 0 375905884912 375905895432 376646299648 549712679429 549712679452 549712679452 549712682982 0"
+      },
+      "lifetime_seconds": 1133
+    }
+  ],
+  "image_negative": {
+    "stage": "06-existing-image-negative",
+    "at": "2026-10-15T22:23:44.862047+00:00",
+    "monotonic_ns": 111337169976583,
+    "status": "passed",
+    "operation": {
+      "vm_id": "49cc71b3076c",
+      "action": "start",
+      "endpoint": "start",
+      "outcome": "expected-failed",
+      "expected_failure": "existing-image-mismatch",
+      "generation_id": "76526:111315536722708",
+      "request_id": "4d6ffa095b8945d2",
+      "terminal_instance": {
+        "id": "49cc71b3076c",
+        "name": "personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3",
+        "alias": "personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3",
+        "profile_ref_type": "custom",
+        "profile_ref_id": "",
+        "profile_id": "",
+        "profile_name": "",
+        "config_version": 1,
+        "config_json": {
+          "system": {
+            "api_level": 33,
+            "system_type": "google_apis",
+            "abi": "arm64"
+          },
+          "display": {
+            "screen_width": 540,
+            "screen_height": 960,
+            "density": 240,
+            "orientation": "portrait",
+            "screen_size_in": "",
+            "cutout": "",
+            "shape_note": ""
+          },
+          "performance": {
+            "ram_mb": 2048,
+            "cpu_cores": 2,
+            "vm_heap_mb": 384,
+            "gpu_mode": "host"
+          },
+          "storage": {
+            "internal_storage_mb": 4096,
+            "sdcard_mb": 0,
+            "wipe_data": false,
+            "snapshot_policy": "cold_boot"
+          },
+          "network": {
+            "speed": "full",
+            "delay": "none",
+            "dns_server": "",
+            "http_proxy": ""
+          },
+          "hardware": {
+            "back_camera": "emulated",
+            "front_camera": "none",
+            "gps": true,
+            "accelerometer": true,
+            "gyroscope": true,
+            "proximity": false,
+            "hardware_keyboard": false,
+            "navigation_style": "none"
+          },
+          "startup": {
+            "no_window": true,
+            "no_audio": true,
+            "no_boot_anim": true,
+            "writable_system": false
+          },
+          "identity": {}
+        },
+        "capability_marks": {},
+        "api_level": 33,
+        "abi": "arm64",
+        "system_type": "google_apis",
+        "system_image": "system-images;android-34;google_apis;arm64-v8a",
+        "screen_width": 540,
+        "screen_height": 960,
+        "density": 240,
+        "orientation": "portrait",
+        "state": "error",
+        "assigned_agent_id": "personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3",
+        "adb_serial": "emulator-5666",
+        "error_message": "无法核实已有虚拟机的镜像，未修改或启动：实际镜像 system-images;android-33;google_apis;arm64-v8a 与请求 system-images;android-34;google_apis;arm64-v8a 不一致",
+        "runtime": {
+          "operation": {
+            "action": "start",
+            "request_id": "4d6ffa095b8945d2",
+            "pending": false,
+            "outcome": "failed",
+            "target_agent_id": "personal-snapshot-android-snapshot-a6-2dc9844f-20261016-a3",
+            "target_host_id": "f0db77a171d943bb9e11e70b11d505dd",
+            "first_bind": false,
+            "started_at": "2026-10-15T22:23:43.236230+00:00",
+            "deadline_at": "2026-10-15T22:28:43.236230+00:00",
+            "timeout_sec": 300.0,
+            "completed_at": "2026-10-15T22:23:43.596328+00:00"
+          },
+          "last_status": {
+            "state": "error",
+            "ok": false,
+            "reason": "start_failed",
+            "details": {
+              "cleanup_confirmed": true,
+              "instance_created": true,
+              "created_in_attempt": false
+            },
+            "ts": "2026-10-15T22:23:43.596353+00:00"
+          },
+          "owner_host_id": "f0db77a171d943bb9e11e70b11d505dd",
+          "instance_created": true
+        },
+        "created_at": "2026-10-15T22:22:29.352809",
+        "updated_at": "2026-10-15T22:23:43.596756",
+        "started_at": "2026-10-15T22:22:53.094732",
+        "stopped_at": null
+      },
+      "native_launches_added": 0,
+      "original_avd_bytes_unchanged": true
+    },
+    "installed_image": {
+      "installed": true,
+      "package_id": "system-images;android-34;google_apis;arm64-v8a",
+      "package_xml": "/Users/dongxin/Library/Android/sdk/system-images/android-34/google_apis/arm64-v8a/package.xml",
+      "package_xml_sha256": "d7dee35ea8edd16a820feeffd46eff92ab781c00b5895761970e4eb73f5d9be9",
+      "source_properties": "Pkg.Desc=System Image arm64-v8a with Google APIs.\nPkg.Revision=14\nPkg.Dependencies=emulator#34.2.16\nAndroidVersion.ApiLevel=34\nAndroidVersion.ExtensionLevel=7\nAndroidVersion.IsBaseSdk=true\nSystemImage.Abi=arm64-v8a\nSystemImage.TagId=google_apis\nSystemImage.TagDisplay=Google APIs\nSystemImage.GpuSupport=true\nAddon.VendorId=google\nAddon.VendorDisplay=Google Inc.\n\n",
+      "source_properties_sha256": "1e64d5cf821e898a2af4677e55b477567ea56d0c5681cd50add5f8b95db08cf2"
+    }
+  },
+  "negative_original_avd_file_count": 33,
+  "negative_original_avd_bytes": 3037101983,
+  "stop_attempts": [
+    {
+      "vm_id": "49cc71b3076c",
+      "generation_id": "76148:111262262090958",
+      "outcome": "succeeded",
+      "at": "2026-10-15T22:22:53.824589+00:00",
+      "monotonic_ns": 111286132827333,
+      "args": [
+        "emulator-5666",
+        "8a18ce6542734486"
+      ],
+      "forwarded_kwargs": {
+        "deadline": 111406.132543916
+      },
+      "result": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5666",
+        "details": {
+          "avd_name": "aiphone_vm_49cc71b3076c",
+          "port": 5666,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "sync_completed": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": -6,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "finished_at": "2026-10-15T22:22:57.105996+00:00",
+      "finished_monotonic_ns": 111289414219708
+    },
+    {
+      "vm_id": "49cc71b3076c",
+      "generation_id": "76296:111289913373375",
+      "outcome": "succeeded",
+      "at": "2026-10-15T22:23:03.591265+00:00",
+      "monotonic_ns": 111295899444500,
+      "args": [
+        "emulator-5666",
+        "ca66468e791941c4"
+      ],
+      "forwarded_kwargs": {
+        "deadline": 111415.899176791
+      },
+      "result": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5666",
+        "details": {
+          "avd_name": "aiphone_vm_49cc71b3076c",
+          "port": 5666,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "sync_completed": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": -6,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "finished_at": "2026-10-15T22:23:06.863858+00:00",
+      "finished_monotonic_ns": 111299172021041
+    },
+    {
+      "vm_id": "49cc71b3076c",
+      "generation_id": "76376:111299675968500",
+      "outcome": "succeeded",
+      "at": "2026-10-15T22:23:13.523038+00:00",
+      "monotonic_ns": 111305831155708,
+      "args": [
+        "emulator-5666",
+        "b6ae2d2ae3fc4bd6"
+      ],
+      "forwarded_kwargs": {
+        "deadline": 111425.83078366601
+      },
+      "result": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5666",
+        "details": {
+          "avd_name": "aiphone_vm_49cc71b3076c",
+          "port": 5666,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "sync_completed": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": 0,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "finished_at": "2026-10-15T22:23:14.782069+00:00",
+      "finished_monotonic_ns": 111307090181875
+    },
+    {
+      "vm_id": "49cc71b3076c",
+      "generation_id": "76458:111307524719875",
+      "outcome": "succeeded",
+      "at": "2026-10-15T22:23:21.236634+00:00",
+      "monotonic_ns": 111313544706750,
+      "args": [
+        "emulator-5666",
+        "471ed4193e4d41b8"
+      ],
+      "forwarded_kwargs": {
+        "deadline": 111433.544341916
+      },
+      "result": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5666",
+        "details": {
+          "avd_name": "aiphone_vm_49cc71b3076c",
+          "port": 5666,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "sync_completed": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": 0,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "finished_at": "2026-10-15T22:23:22.687340+00:00",
+      "finished_monotonic_ns": 111314995401833
+    },
+    {
+      "vm_id": "49cc71b3076c",
+      "generation_id": "76526:111315536722708",
+      "outcome": "succeeded",
+      "at": "2026-10-15T22:23:39.710702+00:00",
+      "monotonic_ns": 111332018657916,
+      "args": [
+        "emulator-5666",
+        "e5c356d63d514181"
+      ],
+      "forwarded_kwargs": {
+        "deadline": 111452.01830691601
+      },
+      "result": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5666",
+        "details": {
+          "avd_name": "aiphone_vm_49cc71b3076c",
+          "port": 5666,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "sync_completed": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": -6,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "finished_at": "2026-10-15T22:23:41.920046+00:00",
+      "finished_monotonic_ns": 111334227990125
+    },
+    {
+      "vm_id": "49cc71b3076c",
+      "generation_id": "76662:111337480283333",
+      "outcome": "succeeded",
+      "at": "2026-10-15T22:24:00.536379+00:00",
+      "monotonic_ns": 111352844206583,
+      "args": [
+        "emulator-5666",
+        "3c2f160954774aa0"
+      ],
+      "forwarded_kwargs": {
+        "deadline": 111472.843820125
+      },
+      "result": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5666",
+        "details": {
+          "avd_name": "aiphone_vm_49cc71b3076c",
+          "port": 5666,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "sync_completed": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": -6,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "finished_at": "2026-10-15T22:24:02.867859+00:00",
+      "finished_monotonic_ns": 111355175673833
+    }
+  ],
+  "process_stops": [
+    {
+      "kind": "process-stop",
+      "pid": 76148,
+      "graceful": true,
+      "kwargs": {
+        "deadline": 111406.132543916,
+        "grace_deadline": 111306.249223916
+      },
+      "calls": [
+        {
+          "name": "wait",
+          "args": [],
+          "kwargs": {
+            "timeout": 19.999654458006262
+          },
+          "monotonic_ns": 111286249593583,
+          "result": -6
+        }
+      ],
+      "monotonic_ns": 111286249504958
+    },
+    {
+      "kind": "process-stop",
+      "pid": 76296,
+      "graceful": true,
+      "kwargs": {
+        "deadline": 111415.899176791,
+        "grace_deadline": 111316.012748666
+      },
+      "calls": [
+        {
+          "name": "wait",
+          "args": [],
+          "kwargs": {
+            "timeout": 19.999784625004395
+          },
+          "monotonic_ns": 111296012979875,
+          "result": -6
+        }
+      ],
+      "monotonic_ns": 111296012923666
+    },
+    {
+      "kind": "process-stop",
+      "pid": 76376,
+      "graceful": true,
+      "kwargs": {
+        "deadline": 111425.83078366601,
+        "grace_deadline": 111325.956398541
+      },
+      "calls": [
+        {
+          "name": "wait",
+          "args": [],
+          "kwargs": {
+            "timeout": 19.999823666003067
+          },
+          "monotonic_ns": 111305956585250,
+          "result": 0
+        }
+      ],
+      "monotonic_ns": 111305956541791
+    },
+    {
+      "kind": "process-stop",
+      "pid": 76458,
+      "graceful": true,
+      "kwargs": {
+        "deadline": 111433.544341916,
+        "grace_deadline": 111333.637133791
+      },
+      "calls": [
+        {
+          "name": "wait",
+          "args": [],
+          "kwargs": {
+            "timeout": 19.999834540998563
+          },
+          "monotonic_ns": 111313637306833,
+          "result": 0
+        }
+      ],
+      "monotonic_ns": 111313637270250
+    },
+    {
+      "kind": "process-stop",
+      "pid": 76526,
+      "graceful": true,
+      "kwargs": {
+        "deadline": 111452.01830691601,
+        "grace_deadline": 111352.106756166
+      },
+      "calls": [
+        {
+          "name": "wait",
+          "args": [],
+          "kwargs": {
+            "timeout": 19.999796749994857
+          },
+          "monotonic_ns": 111332106969791,
+          "result": -6
+        }
+      ],
+      "monotonic_ns": 111332106929333
+    },
+    {
+      "kind": "process-stop",
+      "pid": 76662,
+      "graceful": true,
+      "kwargs": {
+        "deadline": 111472.843820125,
+        "grace_deadline": 111372.977470958
+      },
+      "calls": [
+        {
+          "name": "wait",
+          "args": [],
+          "kwargs": {
+            "timeout": 19.999774374999106
+          },
+          "monotonic_ns": 111352977708791,
+          "result": -6
+        }
+      ],
+      "monotonic_ns": 111352977635291
+    }
+  ],
+  "cleanup": {
+    "at": "2026-10-15T22:24:29.411527+00:00",
+    "processes": {
+      "76148": {
+        "exists": false
+      },
+      "76296": {
+        "exists": false
+      },
+      "76376": {
+        "exists": false
+      },
+      "76458": {
+        "exists": false
+      },
+      "76526": {
+        "exists": false
+      },
+      "76662": {
+        "exists": false
+      },
+      "76097": {
+        "exists": false
+      }
+    },
+    "ports": {
+      "15037": {
+        "127.0.0.1": {
+          "bindable": true
+        },
+        "::1": {
+          "bindable": true
+        }
+      },
+      "5666": {
+        "127.0.0.1": {
+          "bindable": true
+        },
+        "::1": {
+          "bindable": true
+        }
+      },
+      "5667": {
+        "127.0.0.1": {
+          "bindable": true
+        },
+        "::1": {
+          "bindable": true
+        }
+      }
+    },
+    "avd_exists": false,
+    "ini_exists": false,
+    "ledger_rows": 0,
+    "native_handlers_active": 0,
+    "protected_metadata_changed": []
+  },
+  "source_mismatches": [],
+  "harness_changes": [],
+  "limits": "Snapshot policy and existing-image identity on the dedicated local SDK/host. App case is a separately authorized subsequent run. Original native -6 exits remain recorded; no criteria/GPU/flags were changed.",
+  "conditional_a7_permitted_by_observed_facts": true,
+  "automatic_reruns": 0,
+  "root_independent_review": {
+    "status": "passed",
+    "evidence": "android-a6-root-review.json"
+  }
+}

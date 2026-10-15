@@ -1,0 +1,47 @@
+2026-10-16 03:44:55.635 | DEBUG    | ai_phone.agent.drivers.harmony:_neutralize_hmdriver_del_once:114 - hmdriver2.Driver.__del__ 已阉割（去除 _instance.clear + fport 副作用）
+2026-10-16 03:45:00.427 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:////Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a1/server.sqlite3
+2026-10-16 03:45:00.777 | INFO     | ai_phone.agent.ws_client:run_forever:221 - 连接 Server WS ws://127.0.0.1:55732/ws/agent?token=***
+2026-10-16 03:45:00.817 | INFO     | ai_phone.agent.ws_client:_on_connected:275 - hello sent | devices=[]
+2026-10-16 03:45:00.818 | INFO     | ai_phone.agent.ws_client:_rescan_loop:508 - rescan_loop 启动，间隔 5.0s
+2026-10-16 03:45:00.818 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=personal-e2e-android-app-install-9034204-20261016-a1 name=personal-e2e-android-app-install-9034204-20261016-a1 host_os=Darwin 24.6.0
+2026-10-16 03:45:00.832 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:222 - Agent hello | id=personal-e2e-android-app-install-9034204-20261016-a1 devices=[]
+2026-10-16 03:45:00.833 | WARNING  | ai_phone.server.ws.agent_ws:agent_ws:236 - 向 Agent personal-e2e-android-app-install-9034204-20261016-a1 下发配置失败（VLM Run 未应用配置会拒绝执行，等待后续补发）：新版 PHONE_VLM 配置缺失，无法派生模型执行链路：AI_PHONE_PHONE_VLM_PROVIDER, AI_PHONE_PHONE_VLM_BASE_URL, AI_PHONE_PHONE_VLM_API_KEY, AI_PHONE_PHONE_VLM_MODEL。请配置 AI_PHONE_PHONE_VLM_*；不再回退旧式 AI_PHONE_VLM_*。
+2026-10-16 03:45:23.683 | INFO     | ai_phone.agent.android_vm.manager:_provision_device:1209 - VM emulator-5666 开机预置完成 locale=- tz=Asia/Shanghai optimize=True
+2026-10-16 03:45:23.706 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['emulator-5666']
+2026-10-16 03:45:23.715 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-e2e-android-app-install-9034204-20261016-a1 devices=['emulator-5666']
+2026-10-16 03:45:24.541 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-e2e-android-app-install-9034204-20261016-a1 devices=['emulator-5666']
+2026-10-16 03:45:27.819 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:273 - Agent 断开 | id=personal-e2e-android-app-install-9034204-20261016-a1
+2026-10-16 03:45:27.819 | INFO     | ai_phone.server.hub:unregister_agent:201 - Agent 下线 | id=personal-e2e-android-app-install-9034204-20261016-a1 serials=['emulator-5666']
+2026-10-16 03:45:27.821 | INFO     | ai_phone.server.ws.agent_ws:op:808 - Agent personal-e2e-android-app-install-9034204-20261016-a1 断开，删除其名下设备 1 条
+2026-10-16 03:45:27.824 | INFO     | ai_phone.server.ws.agent_ws:_on_disconnect:1088 - Agent personal-e2e-android-app-install-9034204-20261016-a1 断开，已标记 VM unavailable 1 台
+2026-10-16 03:45:27.997 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+{"status": "failed", "evidence": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a1/evidence.json", "remaining_owned_runtimes": [], "protected_metadata_changed": []}
+Traceback (most recent call last):
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_e2e.py", line 1252, in <module>
+    main()
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_e2e.py", line 1248, in main
+    asyncio.run(execute(args.run_id))
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_e2e.py", line 967, in execute
+    before_package = await asyncio.to_thread(adb_command, "-s", serial, "shell", "pm", "path", APP_ID)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_e2e.py", line 570, in adb_command
+    return command([adb, "-P", str(ADB_PORT), *args], timeout=timeout, binary=binary)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_e2e.py", line 220, in command
+    raise RuntimeError(f"{Path(str(args[0])).name} exited {result.returncode}: {stderr[-3000:]}")
+RuntimeError: adb exited 1: 

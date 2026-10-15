@@ -1,0 +1,45 @@
+/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+FF........F                                                              [100%]
+=================================== FAILURES ===================================
+_ test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None] _
+backend/tests/test_harmony_legacy_lease_upgrade.py:83: in test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence
+    assert vm.assigned_agent_id == "restarted"
+E   AssertionError: assert 'old' == 'restarted'
+E     
+E     - restarted
+E     + old
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 03:04:58.800 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-6a0ebbf1ba474f21a5c66a359c55b3d9?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 03:04:58.884 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one] _
+backend/tests/test_harmony_legacy_lease_upgrade.py:106: in test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence
+    assert inspected == [vm.id], "legacy ready=False alone is not fresh stop evidence"
+E   AssertionError: legacy ready=False alone is not fresh stop evidence
+E   assert [] == ['abc012def345']
+E     
+E     Right contains one more item: 'abc012def345'
+E     Use -v to get more diff
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 03:04:58.885 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-0e7e33676ede4c66be061989d2f0cc5f?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 03:04:58.923 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+___________ test_legacy_stop_still_connected_does_not_claim_cleanup ____________
+backend/tests/test_harmony_legacy_lease_upgrade.py:161: in test_legacy_stop_still_connected_does_not_claim_cleanup
+    assert inspected == [vm.id]
+E   AssertionError: assert [] == ['abc012def345']
+E     
+E     Right contains one more item: 'abc012def345'
+E     Use -v to get more diff
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 03:04:59.188 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-7d9088d0463c4fa8bf3712cac64b120f?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 03:04:59.221 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+=========================== short test summary info ============================
+FAILED backend/tests/test_harmony_legacy_lease_upgrade.py::test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]
+FAILED backend/tests/test_harmony_legacy_lease_upgrade.py::test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]
+FAILED backend/tests/test_harmony_legacy_lease_upgrade.py::test_legacy_stop_still_connected_does_not_claim_cleanup
+3 failed, 8 passed in 0.46s

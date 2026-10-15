@@ -1,0 +1,423 @@
+{
+  "finding": "P1 missing post-stop exact process evidence for process=None runtimes",
+  "source_manifest": "harmony-reclaimed-stop-manifest.json",
+  "frozen_source_root": "/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-harmony-stop-proof-13s6j6v7",
+  "tests": [
+    {
+      "case": "registry-stop",
+      "pytest_exit_code": 1,
+      "product_source_unchanged": true,
+      "blocked_external_calls": [
+        {
+          "event": "socket.bind",
+          "description": "('::1', 0)",
+          "test": "collection/import"
+        }
+      ],
+      "observation": {
+        "origin": "registry",
+        "action": "stop",
+        "runtime_process_is_none": true,
+        "native_commands": [
+          "-stop"
+        ],
+        "native_process_samples_in_lifecycle": 1,
+        "exact_process_still_alive": true,
+        "private_definition_exists": true,
+        "result": {
+          "ok": true,
+          "reason": "stopped",
+          "error": "Emulator -stop rc=1:fixture stop failed; process still alive; hdc tconn -remove: [Fail]No target available",
+          "hdc_serial": "127.0.0.1:12341",
+          "details": {
+            "cleanup_confirmed": true,
+            "cleanup_mode": "removed",
+            "stale_hdc_target": "",
+            "stop_errors": [
+              "Emulator -stop rc=1:fixture stop failed; process still alive",
+              "hdc tconn -remove: [Fail]No target available"
+            ],
+            "crash_service_cleanup_confirmed": true,
+            "hdc_port": 12341,
+            "exit_evidence": {
+              "hdc_serial": "127.0.0.1:12341",
+              "hdc_port": 12341,
+              "started_unix": 1792092888.49227,
+              "budget_sec": 15.0,
+              "sample_count": 1,
+              "max_sample_duration_sec": 0.0,
+              "max_offline_free_samples": 0,
+              "last_sample": {
+                "target_status": "absent",
+                "port_bindable": true,
+                "duration_sec": 0.0,
+                "elapsed_sec": 0.0
+              },
+              "elapsed_sec": 0.0,
+              "result": "removed",
+              "process_handle_present": false,
+              "process_return_code": null,
+              "process_sampled_unix": 1792092888.492276
+            }
+          }
+        },
+        "registry_after": {
+          "vm_id": "transport-vm",
+          "name": "transport",
+          "instance_name": "aiphone_harmony_transport_vm",
+          "instance_path": "/private/tmp/ai-phone-main-flow-impact-4khzrx8l/pytest/test_live_exact_instance_block0/instances",
+          "image_root": "",
+          "hdc_port": 12341,
+          "hdc_serial": "127.0.0.1:12341",
+          "lease_token": "lease-transport",
+          "observed_request_id": "start-operation",
+          "driver_fport_port": null,
+          "started_at": 1792092888.492259,
+          "ready": false,
+          "missing_ticks": 0,
+          "created": true,
+          "cleanup_pending": false,
+          "cleanup_confirmed": true,
+          "exit_evidence": {
+            "hdc_serial": "127.0.0.1:12341",
+            "hdc_port": 12341,
+            "started_unix": 1792092888.49227,
+            "budget_sec": 15.0,
+            "sample_count": 1,
+            "max_sample_duration_sec": 0.0,
+            "max_offline_free_samples": 0,
+            "last_sample": {
+              "target_status": "absent",
+              "port_bindable": true,
+              "duration_sec": 0.0,
+              "elapsed_sec": 0.0
+            },
+            "elapsed_sec": 0.0,
+            "result": "removed",
+            "process_handle_present": false,
+            "process_return_code": null,
+            "process_sampled_unix": 1792092888.492276
+          }
+        }
+      }
+    },
+    {
+      "case": "reclaimed-stop",
+      "pytest_exit_code": 1,
+      "product_source_unchanged": true,
+      "blocked_external_calls": [
+        {
+          "event": "socket.bind",
+          "description": "('::1', 0)",
+          "test": "collection/import"
+        }
+      ],
+      "observation": {
+        "origin": "reclaimed",
+        "action": "stop",
+        "runtime_process_is_none": true,
+        "native_commands": [
+          "-stop"
+        ],
+        "native_process_samples_in_lifecycle": 0,
+        "exact_process_still_alive": true,
+        "private_definition_exists": true,
+        "result": {
+          "ok": true,
+          "reason": "stopped",
+          "error": "Emulator -stop rc=1:fixture stop failed; process still alive; hdc tconn -remove: [Fail]No target available",
+          "hdc_serial": "127.0.0.1:12341",
+          "details": {
+            "cleanup_confirmed": true,
+            "cleanup_mode": "removed",
+            "stale_hdc_target": "",
+            "stop_errors": [
+              "Emulator -stop rc=1:fixture stop failed; process still alive",
+              "hdc tconn -remove: [Fail]No target available"
+            ],
+            "crash_service_cleanup_confirmed": true,
+            "hdc_port": 12341,
+            "exit_evidence": {
+              "hdc_serial": "127.0.0.1:12341",
+              "hdc_port": 12341,
+              "started_unix": 1792092910.4547992,
+              "budget_sec": 15.0,
+              "sample_count": 1,
+              "max_sample_duration_sec": 0.0,
+              "max_offline_free_samples": 0,
+              "last_sample": {
+                "target_status": "absent",
+                "port_bindable": true,
+                "duration_sec": 0.0,
+                "elapsed_sec": 0.0
+              },
+              "elapsed_sec": 0.0,
+              "result": "removed",
+              "process_handle_present": false,
+              "process_return_code": null,
+              "process_sampled_unix": 1792092910.454805
+            }
+          }
+        },
+        "registry_after": {
+          "vm_id": "transport-vm",
+          "name": "transport",
+          "instance_name": "aiphone_harmony_transport_vm",
+          "instance_path": "/private/tmp/ai-phone-main-flow-impact-c4lx3nzc/pytest/test_live_exact_instance_block0/instances",
+          "image_root": "",
+          "hdc_port": 12341,
+          "hdc_serial": "127.0.0.1:12341",
+          "lease_token": "lease-transport",
+          "observed_request_id": "start-operation",
+          "driver_fport_port": null,
+          "started_at": 1792092910.454595,
+          "ready": false,
+          "missing_ticks": 0,
+          "created": true,
+          "cleanup_pending": false,
+          "cleanup_confirmed": true,
+          "exit_evidence": {
+            "hdc_serial": "127.0.0.1:12341",
+            "hdc_port": 12341,
+            "started_unix": 1792092910.4547992,
+            "budget_sec": 15.0,
+            "sample_count": 1,
+            "max_sample_duration_sec": 0.0,
+            "max_offline_free_samples": 0,
+            "last_sample": {
+              "target_status": "absent",
+              "port_bindable": true,
+              "duration_sec": 0.0,
+              "elapsed_sec": 0.0
+            },
+            "elapsed_sec": 0.0,
+            "result": "removed",
+            "process_handle_present": false,
+            "process_return_code": null,
+            "process_sampled_unix": 1792092910.454805
+          }
+        }
+      }
+    },
+    {
+      "case": "registry-delete",
+      "pytest_exit_code": 1,
+      "product_source_unchanged": true,
+      "blocked_external_calls": [
+        {
+          "event": "socket.bind",
+          "description": "('::1', 0)",
+          "test": "collection/import"
+        }
+      ],
+      "observation": {
+        "origin": "registry",
+        "action": "delete",
+        "runtime_process_is_none": true,
+        "native_commands": [
+          "-stop",
+          "-delete"
+        ],
+        "native_process_samples_in_lifecycle": 1,
+        "exact_process_still_alive": true,
+        "private_definition_exists": false,
+        "result": {
+          "ok": true,
+          "reason": "deleted",
+          "details": {
+            "exit_evidence": {
+              "hdc_serial": "127.0.0.1:12341",
+              "hdc_port": 12341,
+              "started_unix": 1792092910.824736,
+              "budget_sec": 15.0,
+              "sample_count": 1,
+              "max_sample_duration_sec": 0.0,
+              "max_offline_free_samples": 0,
+              "last_sample": {
+                "target_status": "absent",
+                "port_bindable": true,
+                "duration_sec": 0.0,
+                "elapsed_sec": 0.0
+              },
+              "elapsed_sec": 0.0,
+              "result": "removed",
+              "process_handle_present": false,
+              "process_return_code": null,
+              "process_sampled_unix": 1792092910.8247418
+            },
+            "cleanup_confirmed": true,
+            "crash_service_cleanup_confirmed": true,
+            "crash_service_cleanup_errors": [],
+            "instance_name": "aiphone_harmony_transport_vm",
+            "instance_directory_absent": true
+          }
+        },
+        "registry_after": null
+      }
+    },
+    {
+      "case": "reclaimed-delete",
+      "pytest_exit_code": 1,
+      "product_source_unchanged": true,
+      "blocked_external_calls": [
+        {
+          "event": "socket.bind",
+          "description": "('::1', 0)",
+          "test": "collection/import"
+        }
+      ],
+      "observation": {
+        "origin": "reclaimed",
+        "action": "delete",
+        "runtime_process_is_none": true,
+        "native_commands": [
+          "-stop",
+          "-delete"
+        ],
+        "native_process_samples_in_lifecycle": 0,
+        "exact_process_still_alive": true,
+        "private_definition_exists": false,
+        "result": {
+          "ok": true,
+          "reason": "deleted",
+          "details": {
+            "exit_evidence": {
+              "hdc_serial": "127.0.0.1:12341",
+              "hdc_port": 12341,
+              "started_unix": 1792092911.2042172,
+              "budget_sec": 15.0,
+              "sample_count": 1,
+              "max_sample_duration_sec": 0.0,
+              "max_offline_free_samples": 0,
+              "last_sample": {
+                "target_status": "absent",
+                "port_bindable": true,
+                "duration_sec": 0.0,
+                "elapsed_sec": 0.0
+              },
+              "elapsed_sec": 0.0,
+              "result": "removed",
+              "process_handle_present": false,
+              "process_return_code": null,
+              "process_sampled_unix": 1792092911.204222
+            },
+            "cleanup_confirmed": true,
+            "crash_service_cleanup_confirmed": true,
+            "crash_service_cleanup_errors": [],
+            "instance_name": "aiphone_harmony_transport_vm",
+            "instance_directory_absent": true
+          }
+        },
+        "registry_after": null
+      }
+    }
+  ],
+  "current_workspace_manager_sha256": "795c53191765a8eba3769bf5e9875548032b122cc25aece99407a573e9ee492f",
+  "additional_legacy_regressions_before_fix": [
+    {
+      "case": "legacy-running-stop",
+      "pytest_exit_code": 1,
+      "product_source_unchanged": true,
+      "observation": {
+        "origin": "legacy_confirmed_registry",
+        "action": "stop",
+        "native_state": "running",
+        "native_commands": [],
+        "native_process_samples_in_lifecycle": 0,
+        "private_definition_exists": true,
+        "result": {
+          "ok": true,
+          "reason": "not_running",
+          "hdc_serial": "127.0.0.1:12341",
+          "details": {
+            "cleanup_confirmed": true
+          }
+        }
+      }
+    },
+    {
+      "case": "legacy-unknown-stop",
+      "pytest_exit_code": 1,
+      "product_source_unchanged": true,
+      "observation": {
+        "origin": "legacy_confirmed_registry",
+        "action": "stop",
+        "native_state": "unknown",
+        "native_commands": [],
+        "native_process_samples_in_lifecycle": 0,
+        "private_definition_exists": true,
+        "result": {
+          "ok": true,
+          "reason": "not_running",
+          "hdc_serial": "127.0.0.1:12341",
+          "details": {
+            "cleanup_confirmed": true
+          }
+        }
+      }
+    },
+    {
+      "case": "legacy-running-delete",
+      "pytest_exit_code": 1,
+      "product_source_unchanged": true,
+      "observation": {
+        "origin": "legacy_confirmed_registry",
+        "action": "delete",
+        "native_state": "running",
+        "native_commands": [
+          "-delete"
+        ],
+        "native_process_samples_in_lifecycle": 0,
+        "private_definition_exists": false,
+        "result": {
+          "ok": true,
+          "reason": "deleted",
+          "details": {
+            "cleanup_confirmed": true,
+            "crash_service_cleanup_confirmed": true,
+            "crash_service_cleanup_errors": [],
+            "instance_name": "aiphone_harmony_transport_vm",
+            "instance_directory_absent": true
+          }
+        }
+      }
+    },
+    {
+      "case": "legacy-unknown-delete",
+      "pytest_exit_code": 1,
+      "product_source_unchanged": true,
+      "observation": {
+        "origin": "legacy_confirmed_registry",
+        "action": "delete",
+        "native_state": "unknown",
+        "native_commands": [
+          "-delete"
+        ],
+        "native_process_samples_in_lifecycle": 0,
+        "private_definition_exists": false,
+        "result": {
+          "ok": true,
+          "reason": "deleted",
+          "details": {
+            "cleanup_confirmed": true,
+            "crash_service_cleanup_confirmed": true,
+            "crash_service_cleanup_errors": [],
+            "instance_name": "aiphone_harmony_transport_vm",
+            "instance_directory_absent": true
+          }
+        }
+      }
+    }
+  ],
+  "fix_verification": {
+    "pytest_exit_code": 0,
+    "testcases": 89,
+    "product_source_unchanged": true,
+    "manager_sha256": "efac19845e45b5c0a7aa2faefc95f8c6dc9cecd6842442fee303765dc9a3999e",
+    "formal_test_file": "backend/tests/test_harmony_vm_stop_identity.py",
+    "independent_cases": 8,
+    "other_hardening_cases": 81,
+    "native_or_external_calls_allowed": false
+  },
+  "discarded_calibration": "An initial legacy run selected tests from current worktree while declaring frozen source root; pytest import path selected current product. These are preserved under import-calibration prefix and excluded. Legacy failure evidence reruns copied tests inside the frozen snapshot."
+}

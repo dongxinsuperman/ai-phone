@@ -1,0 +1,40 @@
+{
+  "classification": "P2 cache follow-up; isolated native-free validation",
+  "source_sha256": {
+    "backend/ai_phone/agent/main.py": "33941428605993c5c6b4ec709e2bb4f42d014ea57634a5133d5e3bd2d8e33d99",
+    "backend/ai_phone/agent/drivers/__init__.py": "67dd1c2ac123154794e17d584ec5fb5335baec68293f16acea0fd1f14de506c8",
+    "backend/ai_phone/agent/drivers/android.py": "af3b1fe42b0ce93e2ad1717143e8959bc2a438e2a73955a2a7ca0c6224136d9a",
+    "backend/tests/test_android_vm_driver_cache_identity.py": "41ed52f60b5d3e700c19130cbb15cfacf8c0434dac8e8dea192887a1571ca971"
+  },
+  "prior_failure_proof": "android-driver-cache-before.json",
+  "independent_p2_failure_proof": "android-cache-independent-review.md",
+  "dedicated_tests": 28,
+  "related_regression": {
+    "passed": 168,
+    "failed": 0,
+    "warnings": 30,
+    "duration_seconds": 28.51
+  },
+  "lint": {
+    "new_product_issues": 0,
+    "main_existing_issues": 30,
+    "driver_factory_issues": 0,
+    "new_tests_passed": true,
+    "diff_check_passed": true
+  },
+  "fixes": [
+    "managed Android constructor receives setup_power=False; physical default unchanged",
+    "managed identity checked before/after direct power initialization; stale serial marker never skips current VM setup",
+    "first managed identity discards unowned metadata",
+    "VM identity token includes existing serial lifecycle epoch and rejects same-ID older runtime cache"
+  ],
+  "native_operations_executed": false,
+  "independent_recheck": {
+    "status": "P2 closed by independent reviewer",
+    "report": "android-cache-independent-review.md",
+    "raw_results": "android-cache-independent-recheck.json",
+    "scenario_count": 4,
+    "pytest_passed": 55,
+    "product_source_unchanged_during_review": true
+  }
+}

@@ -1,0 +1,24 @@
+
+/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+000000010012f1d0 <_hvf_smp_cpu_exec>:
+10012f1d0: a9be4ff4    	stp	x20, x19, [sp, #-0x20]!
+10012f1d4: a9017bfd    	stp	x29, x30, [sp, #0x10]
+10012f1d8: 910043fd    	add	x29, sp, #0x10
+10012f1dc: aa0003f3    	mov	x19, x0
+10012f1e0: 52905594    	mov	w20, #0x82ac            ; =33452
+10012f1e4: b8746800    	ldr	w0, [x0, x20]
+10012f1e8: 7140401f    	cmp	w0, #0x10, lsl #12      ; =0x10000
+10012f1ec: 540000ca    	b.ge	0x10012f204 <_hvf_smp_cpu_exec+0x34>
+10012f1f0: aa1303e0    	mov	x0, x19
+10012f1f4: 97ffff9a    	bl	0x10012f05c <_hvf_vcpu_exec>
+10012f1f8: b8746a60    	ldr	w0, [x19, x20]
+10012f1fc: 7140401f    	cmp	w0, #0x10, lsl #12      ; =0x10000
+10012f200: 54ffff8b    	b.lt	0x10012f1f0 <_hvf_smp_cpu_exec+0x20>
+10012f204: 12800008    	mov	w8, #-0x1               ; =-1
+10012f208: b8346a68    	str	w8, [x19, x20]
+10012f20c: a9417bfd    	ldp	x29, x30, [sp, #0x10]
+10012f210: a8c24ff4    	ldp	x20, x19, [sp], #0x20
+10012f214: d65f03c0    	ret

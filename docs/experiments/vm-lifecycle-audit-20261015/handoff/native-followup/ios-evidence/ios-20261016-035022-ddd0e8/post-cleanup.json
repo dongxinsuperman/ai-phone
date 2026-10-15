@@ -1,0 +1,27 @@
+{
+  "checked_at": "2026-10-15T19:54:25.853721+00:00",
+  "device_set": "/private/tmp/aiphone-personal-ios-20261016-035022-ddd0e8",
+  "native_set_empty": true,
+  "owned_data_absent": true,
+  "private_ports": {
+    "18303": "free",
+    "19303": "free",
+    "56907": "free"
+  },
+  "guarded_native_commands": 55,
+  "all_commands_use_private_set": true,
+  "default_set_lifecycle_commands": 0,
+  "host_identity_unchanged": true,
+  "host_identity_mode": "0600",
+  "source_count": 26,
+  "source_mismatches": [],
+  "frozen_product_count": 33,
+  "frozen_product_mismatches": [],
+  "old_evidence_changed": [],
+  "sqlite_vm_rows": 0,
+  "sqlite_run_terminal": {
+    "status": "success",
+    "serial": "3FFD282D-0846-4B8E-8437-CF522201D796",
+    "agent_id": "personal-ios-ios-20261016-035022-ddd0e8"
+  }
+}

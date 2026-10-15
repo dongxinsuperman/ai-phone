@@ -1,0 +1,49 @@
+2026-10-16 03:40:50.285 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:////tmp/aiphone-personal-harmony-legacy-20261016b2/server.sqlite3
+2026-10-16 03:40:50.670 | INFO     | ai_phone.agent.ws_client:run_forever:221 - 连接 Server WS ws://127.0.0.1:55128/ws/agent?token=***
+2026-10-16 03:40:50.676 | INFO     | ai_phone.agent.ws_client:_on_connected:275 - hello sent | devices=[]
+2026-10-16 03:40:50.677 | INFO     | ai_phone.agent.ws_client:_rescan_loop:508 - rescan_loop 启动，间隔 15.0s
+2026-10-16 03:40:50.677 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=personal-legacy-old-49f683c2be87 name=personal-legacy-old-49f683c2be87 host_os=Darwin 24.6.0
+2026-10-16 03:40:50.681 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:222 - Agent hello | id=personal-legacy-old-49f683c2be87 devices=[]
+2026-10-16 03:40:50.681 | WARNING  | ai_phone.server.ws.agent_ws:agent_ws:236 - 向 Agent personal-legacy-old-49f683c2be87 下发配置失败（VLM Run 未应用配置会拒绝执行，等待后续补发）：新版 PHONE_VLM 配置缺失，无法派生模型执行链路：AI_PHONE_PHONE_VLM_PROVIDER, AI_PHONE_PHONE_VLM_BASE_URL, AI_PHONE_PHONE_VLM_API_KEY, AI_PHONE_PHONE_VLM_MODEL。请配置 AI_PHONE_PHONE_VLM_*；不再回退旧式 AI_PHONE_VLM_*。
+2026-10-16 03:41:20.686 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-legacy-old-49f683c2be87 devices=[]
+2026-10-16 03:41:46.057 | INFO     | ai_phone.agent.drivers.harmony:_setup_stay_awake:442 - 设备 127.0.0.1:10001 已禁自动息屏（power-shell timeout=24h，每 10 分钟续约一次）
+2026-10-16 03:41:54.217 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['harmony-vm:8c5348377bf8']
+2026-10-16 03:41:54.220 | ERROR    | ai_phone.server.harmony_vm.service:filter_managed_devices_for_agent:392 - 拒绝无当前租约的受管 Harmony VM 设备上报：agent=personal-legacy-old-49f683c2be87 vm_id=8c5348377bf8 serial=harmony-vm:8c5348377bf8
+2026-10-16 03:41:54.224 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-legacy-old-49f683c2be87 devices=[]
+2026-10-16 03:41:54.225 | ERROR    | ai_phone.server.harmony_vm.service:filter_managed_devices_for_agent:392 - 拒绝无当前租约的受管 Harmony VM 设备上报：agent=personal-legacy-old-49f683c2be87 vm_id=8c5348377bf8 serial=harmony-vm:8c5348377bf8
+2026-10-16 03:41:54.226 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-legacy-old-49f683c2be87 devices=[]
+2026-10-16 03:42:05.684 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['harmony-vm:8c5348377bf8'] → []
+2026-10-16 03:42:05.691 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-legacy-old-49f683c2be87 devices=[]
+2026-10-16 03:42:09.189 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-legacy-old-49f683c2be87 devices=[]
+2026-10-16 03:42:09.189 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:273 - Agent 断开 | id=personal-legacy-old-49f683c2be87
+2026-10-16 03:42:09.189 | INFO     | ai_phone.server.hub:unregister_agent:201 - Agent 下线 | id=personal-legacy-old-49f683c2be87 serials=[]
+2026-10-16 03:42:09.198 | INFO     | ai_phone.server.ws.agent_ws:_on_disconnect:1094 - Agent personal-legacy-old-49f683c2be87 断开，已标记 Harmony VM agent_offline 1 台
+2026-10-16 03:42:09.452 | INFO     | ai_phone.agent.ws_client:run_forever:221 - 连接 Server WS ws://127.0.0.1:55128/ws/agent?token=***
+2026-10-16 03:42:10.803 | INFO     | ai_phone.agent.ws_client:_on_connected:275 - hello sent | devices=[]
+2026-10-16 03:42:10.806 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=personal-legacy-new-90f48880860f name=personal-legacy-new-90f48880860f host_os=Darwin 24.6.0
+2026-10-16 03:42:10.807 | INFO     | ai_phone.agent.ws_client:_rescan_loop:508 - rescan_loop 启动，间隔 15.0s
+2026-10-16 03:42:10.810 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:222 - Agent hello | id=personal-legacy-new-90f48880860f devices=[]
+2026-10-16 03:42:10.811 | WARNING  | ai_phone.server.ws.agent_ws:agent_ws:236 - 向 Agent personal-legacy-new-90f48880860f 下发配置失败（VLM Run 未应用配置会拒绝执行，等待后续补发）：新版 PHONE_VLM 配置缺失，无法派生模型执行链路：AI_PHONE_PHONE_VLM_PROVIDER, AI_PHONE_PHONE_VLM_BASE_URL, AI_PHONE_PHONE_VLM_API_KEY, AI_PHONE_PHONE_VLM_MODEL。请配置 AI_PHONE_PHONE_VLM_*；不再回退旧式 AI_PHONE_VLM_*。
+2026-10-16 03:42:12.432 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-legacy-new-90f48880860f devices=[]
+2026-10-16 03:42:40.818 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-legacy-new-90f48880860f devices=[]
+2026-10-16 03:42:55.164 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:273 - Agent 断开 | id=personal-legacy-new-90f48880860f
+2026-10-16 03:42:55.164 | INFO     | ai_phone.server.hub:unregister_agent:201 - Agent 下线 | id=personal-legacy-new-90f48880860f serials=[]
+2026-10-16 03:42:55.173 | INFO     | ai_phone.server.ws.agent_ws:_on_disconnect:1094 - Agent personal-legacy-new-90f48880860f 断开，已标记 Harmony VM agent_offline 1 台
+2026-10-16 03:42:55.426 | INFO     | ai_phone.agent.ws_client:run_forever:221 - 连接 Server WS ws://127.0.0.1:55128/ws/agent?token=***
+2026-10-16 03:43:01.693 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['harmony-vm:8c5348377bf8']
+2026-10-16 03:43:01.693 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['harmony-vm:8c5348377bf8']
+2026-10-16 03:43:01.693 | INFO     | ai_phone.agent.ws_client:_on_connected:275 - hello sent | devices=['harmony-vm:8c5348377bf8']
+2026-10-16 03:43:01.696 | ERROR    | ai_phone.server.harmony_vm.service:filter_managed_devices_for_agent:392 - 拒绝无当前租约的受管 Harmony VM 设备上报：agent=personal-running-reclaim-1e9f92784883 vm_id=8c5348377bf8 serial=harmony-vm:8c5348377bf8
+2026-10-16 03:43:01.697 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=personal-running-reclaim-1e9f92784883 name=personal-running-reclaim-1e9f92784883 host_os=Darwin 24.6.0
+2026-10-16 03:43:01.698 | INFO     | ai_phone.agent.ws_client:_rescan_loop:508 - rescan_loop 启动，间隔 15.0s
+2026-10-16 03:43:01.699 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:222 - Agent hello | id=personal-running-reclaim-1e9f92784883 devices=[]
+2026-10-16 03:43:01.699 | WARNING  | ai_phone.server.ws.agent_ws:agent_ws:236 - 向 Agent personal-running-reclaim-1e9f92784883 下发配置失败（VLM Run 未应用配置会拒绝执行，等待后续补发）：新版 PHONE_VLM 配置缺失，无法派生模型执行链路：AI_PHONE_PHONE_VLM_PROVIDER, AI_PHONE_PHONE_VLM_BASE_URL, AI_PHONE_PHONE_VLM_API_KEY, AI_PHONE_PHONE_VLM_MODEL。请配置 AI_PHONE_PHONE_VLM_*；不再回退旧式 AI_PHONE_VLM_*。
+2026-10-16 03:43:01.709 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-running-reclaim-1e9f92784883 devices=['harmony-vm:8c5348377bf8']
+2026-10-16 03:43:16.700 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['harmony-vm:8c5348377bf8'] → []
+2026-10-16 03:43:16.709 | INFO     | ai_phone.server.ws.agent_ws:op:763 - Agent personal-running-reclaim-1e9f92784883 移除已拔出设备 ['harmony-vm:8c5348377bf8']
+2026-10-16 03:43:16.711 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-running-reclaim-1e9f92784883 devices=[]
+2026-10-16 03:43:20.172 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-running-reclaim-1e9f92784883 devices=[]
+2026-10-16 03:43:21.963 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-running-reclaim-1e9f92784883 devices=[]
+2026-10-16 03:43:22.191 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:273 - Agent 断开 | id=personal-running-reclaim-1e9f92784883
+2026-10-16 03:43:22.191 | INFO     | ai_phone.server.hub:unregister_agent:201 - Agent 下线 | id=personal-running-reclaim-1e9f92784883 serials=[]
+2026-10-16 03:43:22.329 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放

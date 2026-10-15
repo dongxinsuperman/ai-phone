@@ -1,0 +1,20 @@
+{
+  "at": "2026-10-15T21:48:49.102994+00:00",
+  "reviewer": "root",
+  "method": "independent direct visual inspection of all three original PNGs and terminal receipts",
+  "status": "passed",
+  "vm_id": "c25177d4311c",
+  "product_commit": "f263af3a0b8ed6aea556c63354747a79e52a4f86",
+  "token": "personal11a45b500f0f",
+  "visual_findings": [
+    "Before: empty input, no saved marker, count 0.",
+    "Confirmed: expected token in input and saved-result area, count 1.",
+    "After restart: input empty, expected saved-result token intact, count 1, page visibly rendered."
+  ],
+  "scope": "The original no_snapshot personal synthetic Case passed on f263af3a; this does not prove a unique cause for historical a2/a4 failures or arbitrary app userland durability.",
+  "image_sha256": {
+    "/Users/dongxin/.codex/personal-vm-followup/android-app-install-f263af3a-20261016-a5/fixture-before.png": "0ce11a341fc3894b00a0fa6379804e4bc50310a6c357f9c25fcf8b7c6908696f",
+    "/Users/dongxin/.codex/personal-vm-followup/android-app-install-f263af3a-20261016-a5/fixture-confirmed.png": "11aa153281bd2edad933cbe4d034d52755139e0a072bc05f09b5575d9d33d93d",
+    "/Users/dongxin/.codex/personal-vm-followup/android-app-install-f263af3a-20261016-a5/fixture-persisted.png": "9a8d69f9daa39fbcd2b6ee15053a23db3a19adea657e3668f9017271bccafdbc"
+  }
+}

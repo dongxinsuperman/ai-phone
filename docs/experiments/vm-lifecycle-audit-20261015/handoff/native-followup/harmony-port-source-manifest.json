@@ -1,0 +1,12 @@
+{
+  "base_commit": "d7cbac0",
+  "source_sha256": {
+    "backend/ai_phone/agent/vm_ports.py": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+    "backend/ai_phone/agent/android_vm/manager.py": "0d4528d299c67ca244c207ae678cab8c616824d82ef38f12d21469a7e12beb0d",
+    "backend/ai_phone/agent/harmony_vm/manager.py": "efac19845e45b5c0a7aa2faefc95f8c6dc9cecd6842442fee303765dc9a3999e",
+    "backend/ai_phone/agent/harmony_vm/capability.py": "6716584a4ee555fd49b2297db5136e004679806d2af0b12a2c4edb3eac5003fa",
+    "backend/tests/test_vm_port_availability.py": "87a797c4f8ee1a9c5153e2b80b641a111b6f27bc9a5bc6a94dde46131512ffbc",
+    "backend/tests/test_harmony_vm_agent_hardening.py": "2d0b4d3c89bfb2d169ad31eb85334ff4436effc1c36753beef86f833c781f200",
+    "backend/tests/test_android_vm_manager_reliability.py": "76736a367591c11afdc32607dcb470dba9b840b66cf764971cda74e0d14ec059"
+  }
+}

@@ -1,0 +1,33 @@
+2026-10-16 05:56:30.358 | DEBUG    | ai_phone.agent.drivers.harmony:_neutralize_hmdriver_del_once:114 - hmdriver2.Driver.__del__ 已阉割（去除 _instance.clear + fport 副作用）
+{"status": "failed", "evidence": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a1/evidence.json", "live_native_pids": [], "preserved_avds": []}
+Traceback (most recent call last):
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_snapshot_a6.py", line 506, in execute
+    if adb_command("devices").strip() != "List of devices attached":
+       ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_snapshot_a6.py", line 340, in adb_command
+    return B["command"]([adb, "-P", str(ADB_PORT), "--one-device", "personal-a6-no-usb-" + run_id, *args],
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_sync_a5.py", line 381, in command
+    raise RuntimeError(f"{Path(str(args[0])).name} exited {result.returncode}: {stderr[-3000:]}")
+RuntimeError: adb exited 1: adb: --one-device is only allowed when starting a server.
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_snapshot_a6.py", line 850, in <module>
+    main()
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_snapshot_a6.py", line 844, in main
+    asyncio.run(execute(args.run_id))
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_snapshot_a6.py", line 831, in execute
+    raise RuntimeError("a6 failed once; inspect the preserved evidence; no automatic rerun") from failure
+RuntimeError: a6 failed once; inspect the preserved evidence; no automatic rerun

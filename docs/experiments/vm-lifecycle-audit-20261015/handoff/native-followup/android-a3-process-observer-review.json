@@ -1,0 +1,167 @@
+{
+  "recorded_at": "2026-10-15T20:05:54.016704+00:00",
+  "scope": "Independent offline observation-proxy behavior comparison and pure harness guards; no native device commands or backend imports.",
+  "status": "passed",
+  "harness_sha256": "4ab5904ea8262a27994eae4a90dd969372caea5142ba4fd063ba52b725731fee",
+  "manager_sha256": "0d4528d299c67ca244c207ae678cab8c616824d82ef38f12d21469a7e12beb0d",
+  "process_observer_cases": [
+    {
+      "case": "graceful-exit",
+      "outcome": [
+        "returned",
+        null
+      ],
+      "unchanged_calls": [
+        [
+          "wait",
+          {
+            "timeout": 5
+          }
+        ]
+      ],
+      "fallback_signals": []
+    },
+    {
+      "case": "graceful-timeout-terminate",
+      "outcome": [
+        "returned",
+        null
+      ],
+      "unchanged_calls": [
+        [
+          "wait",
+          {
+            "timeout": 5
+          }
+        ],
+        [
+          "poll",
+          {}
+        ],
+        [
+          "terminate",
+          {}
+        ],
+        [
+          "wait",
+          {
+            "timeout": 5
+          }
+        ]
+      ],
+      "fallback_signals": [
+        "terminate"
+      ]
+    },
+    {
+      "case": "terminate-timeout-kill",
+      "outcome": [
+        "returned",
+        null
+      ],
+      "unchanged_calls": [
+        [
+          "poll",
+          {}
+        ],
+        [
+          "terminate",
+          {}
+        ],
+        [
+          "wait",
+          {
+            "timeout": 5
+          }
+        ],
+        [
+          "kill",
+          {}
+        ],
+        [
+          "wait",
+          {
+            "timeout": 5
+          }
+        ]
+      ],
+      "fallback_signals": [
+        "terminate",
+        "kill"
+      ]
+    },
+    {
+      "case": "adopted-terminate",
+      "outcome": [
+        "returned",
+        null
+      ],
+      "unchanged_calls": [
+        [
+          "is_running",
+          {}
+        ],
+        [
+          "terminate",
+          {}
+        ],
+        [
+          "wait",
+          {
+            "timeout": 5
+          }
+        ]
+      ],
+      "fallback_signals": [
+        "terminate"
+      ]
+    },
+    {
+      "case": "already-exited",
+      "outcome": [
+        "returned",
+        null
+      ],
+      "unchanged_calls": [
+        [
+          "poll",
+          {}
+        ]
+      ],
+      "fallback_signals": []
+    },
+    {
+      "case": "process-vanished",
+      "outcome": [
+        "returned",
+        null
+      ],
+      "unchanged_calls": [
+        [
+          "wait",
+          {
+            "timeout": 5
+          }
+        ]
+      ],
+      "fallback_signals": []
+    },
+    {
+      "case": "unexpected-error-propagates",
+      "outcome": [
+        "raised",
+        "RuntimeError",
+        "probe failure"
+      ],
+      "unchanged_calls": [
+        [
+          "poll",
+          {}
+        ]
+      ],
+      "fallback_signals": []
+    }
+  ],
+  "pure_guard_exit_code": 0,
+  "pure_guard_output": "..........................\n----------------------------------------------------------------------\nRan 26 tests in 0.003s\n\nOK\n"
+}

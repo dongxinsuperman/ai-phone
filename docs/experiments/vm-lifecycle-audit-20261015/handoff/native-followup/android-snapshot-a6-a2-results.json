@@ -1,0 +1,420 @@
+{
+  "status": "failed_snapshot_restore",
+  "root": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2",
+  "raw_evidence": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/evidence.json",
+  "archive_evidence": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-snapshot-a6-a2.evidence.json",
+  "vm_id": "779481a8a016",
+  "duration_sec": 49.40200679100235,
+  "source_commit": "f263af3a0b8ed6aea556c63354747a79e52a4f86",
+  "harness_sha256": "6aefde1f42ca4b3861c48771d34a6fdeef4dafe4325e30244c5d16ea2521fb16",
+  "error": "RuntimeError('QuickBoot did not restore the exact original kernel and RAM marker A')",
+  "coverage": {
+    "fresh_save_start": true,
+    "save_stop_native_exit": true,
+    "real_snapshot_files_created": true,
+    "save_ram_restore": false,
+    "discard_changes": false,
+    "cold_boot": false,
+    "image34_negative": false,
+    "original33_recovery": false,
+    "final_delete": false
+  },
+  "launches": [
+    {
+      "kind": "launch",
+      "vm_id": "779481a8a016",
+      "policy": "save",
+      "argv": [
+        "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+        "-avd",
+        "aiphone_vm_779481a8a016",
+        "-port",
+        "5666",
+        "-skin",
+        "540x960",
+        "-prop",
+        "qemu.sf.lcd_density=240",
+        "-prop",
+        "debug.aiphone.vmid=779481a8a016",
+        "-prop",
+        "debug.aiphone.alias=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "-prop",
+        "persist.sys.timezone=Asia/Shanghai",
+        "-no-audio",
+        "-no-boot-anim",
+        "-no-window",
+        "-memory",
+        "2048",
+        "-cores",
+        "2",
+        "-gpu",
+        "host",
+        "-camera-back",
+        "emulated",
+        "-camera-front",
+        "none"
+      ],
+      "at": "2026-10-15T22:01:54.179480+00:00",
+      "monotonic_ns": 110026518991625,
+      "pid": 71919
+    },
+    {
+      "kind": "launch",
+      "vm_id": "779481a8a016",
+      "policy": "save",
+      "argv": [
+        "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+        "-avd",
+        "aiphone_vm_779481a8a016",
+        "-port",
+        "5666",
+        "-skin",
+        "540x960",
+        "-prop",
+        "qemu.sf.lcd_density=240",
+        "-prop",
+        "debug.aiphone.vmid=779481a8a016",
+        "-prop",
+        "debug.aiphone.alias=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2",
+        "-prop",
+        "persist.sys.timezone=Asia/Shanghai",
+        "-no-audio",
+        "-no-boot-anim",
+        "-no-window",
+        "-memory",
+        "2048",
+        "-cores",
+        "2",
+        "-gpu",
+        "host",
+        "-camera-back",
+        "emulated",
+        "-camera-front",
+        "none"
+      ],
+      "at": "2026-10-15T22:02:21.002791+00:00",
+      "monotonic_ns": 110053342241458,
+      "pid": 72067
+    }
+  ],
+  "operation_results": [
+    {
+      "endpoint": "dispatch",
+      "action": "start",
+      "request_id": "8fc97dc265bc4bbc",
+      "outcome": "succeeded",
+      "generation_id": null
+    },
+    {
+      "endpoint": "stop",
+      "action": "stop",
+      "request_id": "7b702c36938643c5",
+      "outcome": "succeeded",
+      "generation_id": "71919:110026518991625"
+    },
+    {
+      "endpoint": "start",
+      "action": "start",
+      "request_id": "44894bb498944510",
+      "outcome": "succeeded",
+      "generation_id": "71919:110026518991625"
+    }
+  ],
+  "guest_observations": [
+    {
+      "phase": "01-initial-boot",
+      "boot_id": "77cd7c76-2423-4e9e-9632-1f19014a60c5",
+      "markers": {},
+      "at": "2026-10-15T22:02:17.060414+00:00",
+      "monotonic_ns": 110049399877541
+    },
+    {
+      "phase": "02-save-restored-A",
+      "boot_id": "583dd626-79cb-4190-8bca-34b37107ba0e",
+      "markers": {
+        "A": {
+          "pid": 2531,
+          "present": true,
+          "state": "S",
+          "starttick": 1194,
+          "cmdline_hex": "636f6d2e676f6f676c652e616e64726f69642e61732e6f73730000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "cmdline": "com.google.android.as.oss",
+          "raw_stat": "2531 (pool-3-thread-1) S 271 271 0 0 -1 1077936192 6265 0 49 0 0 2 0 0 20 0 17 0 1194 15097163776 21494 18446744073709551615 418163367936 418163371872 549740620672 0 0 0 20996 1 1073775864 0 0 0 -1 0 0 0 0 0 0 418163372032 418163373304 418598424576 549740622353 549740622431 549740622431 549740625886 0"
+        }
+      },
+      "at": "2026-10-15T22:02:36.892558+00:00",
+      "monotonic_ns": 110069231977500
+    }
+  ],
+  "marker_creation": [
+    {
+      "stage": "marker-created",
+      "at": "2026-10-15T22:02:17.223366+00:00",
+      "monotonic_ns": 110049562832291,
+      "label": "A",
+      "signature": {
+        "pid": 2531,
+        "present": true,
+        "state": "S",
+        "starttick": 1889,
+        "cmdline_hex": "2f73797374656d2f62696e2f736c656570003131333100",
+        "cmdline": "/system/bin/sleep 1131",
+        "raw_stat": "2531 (sleep) S 1 2521 2521 0 -1 1077936128 537 0 1 0 0 0 0 0 20 0 1 0 1889 11118100480 858 18446744073709551615 381791735808 381792020976 548719158576 0 0 0 0 1 1073775864 1 0 0 17 1 0 0 0 0 0 381792041712 381792052232 382568140800 548719161861 548719161884 548719161884 548719165414 0"
+      },
+      "lifetime_seconds": 1131
+    }
+  ],
+  "stop_attempts": [
+    {
+      "vm_id": "779481a8a016",
+      "generation_id": "71919:110026518991625",
+      "outcome": "succeeded",
+      "at": "2026-10-15T22:02:17.229946+00:00",
+      "monotonic_ns": 110049569399958,
+      "args": [
+        "emulator-5666",
+        "7b702c36938643c5"
+      ],
+      "forwarded_kwargs": {
+        "deadline": 110169.56913412499
+      },
+      "result": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5666",
+        "details": {
+          "avd_name": "aiphone_vm_779481a8a016",
+          "port": 5666,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "sync_completed": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": -6,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "finished_at": "2026-10-15T22:02:20.495463+00:00",
+      "finished_monotonic_ns": 110052834912583
+    },
+    {
+      "vm_id": "779481a8a016",
+      "generation_id": "72067:110053342241458",
+      "outcome": "succeeded",
+      "at": "2026-10-15T22:02:36.895704+00:00",
+      "monotonic_ns": 110069235117833,
+      "args": [],
+      "forwarded_kwargs": {},
+      "result": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5666",
+        "details": {
+          "avd_name": "aiphone_vm_779481a8a016",
+          "port": 5666,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "sync_completed": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": -6,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "finished_at": "2026-10-15T22:02:39.086940+00:00",
+      "finished_monotonic_ns": 110071426351875
+    }
+  ],
+  "process_stops": [
+    {
+      "kind": "process-stop",
+      "pid": 71919,
+      "graceful": true,
+      "kwargs": {
+        "deadline": 110169.56913412499,
+        "grace_deadline": 110069.719095083
+      },
+      "calls": [
+        {
+          "name": "wait",
+          "args": [],
+          "kwargs": {
+            "timeout": 19.999795249997987
+          },
+          "monotonic_ns": 110049719314333,
+          "result": -6
+        }
+      ],
+      "monotonic_ns": 110049719263833
+    },
+    {
+      "kind": "process-stop",
+      "pid": 72067,
+      "graceful": true,
+      "kwargs": {
+        "deadline": 110189.235199708,
+        "grace_deadline": 110089.32104375
+      },
+      "calls": [
+        {
+          "name": "wait",
+          "args": [],
+          "kwargs": {
+            "timeout": 19.999771374990814
+          },
+          "monotonic_ns": 110069321295625,
+          "result": -6
+        }
+      ],
+      "monotonic_ns": 110069321217875
+    }
+  ],
+  "first_saved_snapshot": {
+    "path": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/snapshots/default_boot",
+    "exists": true,
+    "files": [
+      {
+        "name": "compatible.pb",
+        "size": 0,
+        "inode": 84415714,
+        "mtime_ns": 1792101739816848488,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "hardware.ini",
+        "size": 4708,
+        "inode": 84415713,
+        "mtime_ns": 1792101739805424337,
+        "sha256": "75f99829b54f966a3954d8b4f2af359972cb1facd3087d325f60798c62120f93"
+      },
+      {
+        "name": "ram.bin",
+        "size": 2027467354,
+        "inode": 84415708,
+        "mtime_ns": 1792101739560740612
+      },
+      {
+        "name": "screenshot.png",
+        "size": 562631,
+        "inode": 84415712,
+        "mtime_ns": 1792101739816394112,
+        "sha256": "89e2aaeb38a101ae059f48df802e64a8737d8b1b074a36598af9525e9e14afc2"
+      },
+      {
+        "name": "snapshot.pb",
+        "size": 1688,
+        "inode": 84415660,
+        "mtime_ns": 1792101739806235672,
+        "sha256": "644da27bd23574990a502512d0e4ff2a62fe232529eb4b31ceebc38fbc8fbe0e"
+      },
+      {
+        "name": "textures.bin",
+        "size": 7774915,
+        "inode": 84415709,
+        "mtime_ns": 1792101739802997081,
+        "sha256": "4e34a82cc6f940b1751ff46855e0e83c536c873fecfdb03dfbbb9fe55fca8c47"
+      }
+    ]
+  },
+  "normalized_config_delta": {
+    "config.ini": {
+      "disk.dataPartition.size": {
+        "first_stop": "6442450944",
+        "second_start": "4096M"
+      }
+    },
+    "hardware-qemu.ini": {
+      "disk.dataPartition.initPath": {
+        "first_stop": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd/userdata.img",
+        "second_start": null
+      },
+      "disk.dataPartition.size": {
+        "first_stop": "6g",
+        "second_start": "4g"
+      }
+    },
+    "emulator-user.ini": {}
+  },
+  "native_log_claims": {
+    "first_save_line": 112,
+    "second_load_error_lines": [
+      212,
+      213,
+      214,
+      216,
+      217
+    ],
+    "second_load_reason": "different AVD configuration"
+  },
+  "interpretation": "Snapshot restore failed with a real SDK load rejection and changed boot_id. Requested 4096M was rewritten after SDK expanded partition to 6GiB; whether this fully explains load failure and both SIGABRT exits is not yet proved.",
+  "cleanup": {
+    "at": "2026-10-15T22:04:27.195417+00:00",
+    "processes": {
+      "71919": {
+        "exists": false
+      },
+      "72067": {
+        "exists": false
+      },
+      "71871": {
+        "exists": false
+      }
+    },
+    "ports": {
+      "15037": {
+        "127.0.0.1": {
+          "bindable": true
+        },
+        "::1": {
+          "bindable": true
+        }
+      },
+      "5666": {
+        "127.0.0.1": {
+          "bindable": true
+        },
+        "::1": {
+          "bindable": true
+        }
+      },
+      "5667": {
+        "127.0.0.1": {
+          "bindable": true
+        },
+        "::1": {
+          "bindable": true
+        }
+      }
+    },
+    "preserved_avd": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd",
+    "avd_exists": true,
+    "ini_exists": true,
+    "native_handlers_active": 0,
+    "remaining_runtimes": [],
+    "default_metadata_changed": []
+  },
+  "server_final_state": "agent_offline",
+  "source_mismatches": [],
+  "harness_changes": [],
+  "automatic_reruns": 0,
+  "failed_disk_preserved": true,
+  "interpretation_is_capture_time": true,
+  "later_findings": {
+    "capacity_rewrite": "Fixed by 2dc9844; a6-a3 verifies actual snapshot restoration and existing AVD preservation. The original failure capture and interpretation above remain unchanged.",
+    "exit_minus_6": "The two captured exits were independently traced to an intentional abort in this installed ARM headless SDK snapshot shutdown path; this is separate from the later configuration mismatch and is not a general exit-code whitelist.",
+    "evidence": [
+      "android-a6-a2-independent-cause-review.md",
+      "android-a6-sdk-quit-excerpts.json",
+      "android-snapshot-a6-a3-results.json",
+      "android-a6-root-review.json"
+    ]
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "sample_index": 1,
+  "vm_id": "8c5348377bf8",
+  "port": 10001,
+  "probe_unix": 1792093323.572974,
+  "real_product_return": true,
+  "plain_bind": {
+    "bindable": false,
+    "errno": 48,
+    "error": "[Errno 48] Address already in use"
+  },
+  "reuse_bind": {
+    "bindable": true
+  },
+  "synchronous_observer_sec": 9.1e-05,
+  "side_channel_started_unix": 1792093323.573704,
+  "connect_ex": 61,
+  "plain_bind_at_snapshot": {
+    "bindable": false,
+    "errno": 48,
+    "error": "[Errno 48] Address already in use"
+  },
+  "reuse_bind_at_snapshot": {
+    "bindable": true
+  },
+  "netstat": {
+    "args": [
+      "/usr/sbin/netstat",
+      "-anv",
+      "-p",
+      "tcp"
+    ],
+    "returncode": 0,
+    "lines": [
+      "tcp4       0      0  127.0.0.1.10001        127.0.0.1.55197        TIME_WAIT         313006        19068  518425  146988  37601      0 02131 00000004 00000000005c55f5 00000080 01000900      0      0 000000"
+    ],
+    "stderr": "",
+    "elapsed_sec": 0.015247
+  },
+  "lsof": {
+    "args": [
+      "/usr/sbin/lsof",
+      "-nP",
+      "-iTCP:10001"
+    ],
+    "returncode": 1,
+    "lines": [],
+    "stderr": "",
+    "elapsed_sec": 0.0495
+  },
+  "owned_processes": [],
+  "side_channel_finished_unix": 1792093323.6563
+}

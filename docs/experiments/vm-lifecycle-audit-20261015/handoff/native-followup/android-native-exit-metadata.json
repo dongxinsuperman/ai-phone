@@ -1,0 +1,65 @@
+{
+  "mode": "read-only static analysis; no emulator, adb or guest/native lifecycle command executed",
+  "files": {
+    "launcher": {
+      "path": "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+      "sha256": "c12c8d72da94cb5abd7f9d2578923d05ff94ea827f0ee593c6e563c96edc0d42"
+    },
+    "headless": {
+      "path": "/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless",
+      "sha256": "4324b12002d535af88f0f4a3e8267730dd495ddfa704c0f5cb141abf679c9b08"
+    },
+    "metrics": {
+      "path": "/Users/dongxin/Library/Android/sdk/emulator/lib64/libandroid-emu-metrics.dylib",
+      "sha256": "54a4d18dcde810a7f8f1c8755130d2fbaddf06b68dea6d27c9d3d213aecd4434"
+    },
+    "agents": {
+      "path": "/Users/dongxin/Library/Android/sdk/emulator/lib64/libandroid-emu-agents.dylib",
+      "sha256": "31113994857cafd07523b15ad5f59343c2ac4eb8902918aa82f656c8a8820bfb"
+    },
+    "sdk_adb": {
+      "path": "/Users/dongxin/Library/Android/sdk/platform-tools/adb",
+      "sha256": "5759ea07285e5a5b66d84f489c118a3fa3998e69cd37725e5a3dc7cbe0597278"
+    },
+    "host_features": {
+      "path": "/Users/dongxin/Library/Android/sdk/emulator/lib/advancedFeatures.ini",
+      "sha256": "f4b27be7c3f994435b70ef7f007a6a753e1e079a1b7dcbc5462c603627f8da6c"
+    },
+    "guest_features": {
+      "path": "/Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a/advancedFeatures.ini",
+      "sha256": "4a16df2817b3c5ceb48f75ca6b59686526116ed3e355e277cc2d727f1550c191"
+    }
+  },
+  "observed_version": "36.6.11.0 build_id 15507667",
+  "project_commit_at_capture": "6da8a953b54362fc81fc519391752459edc9e051",
+  "project_manager_sha256_at_capture": "0d4528d299c67ca244c207ae678cab8c616824d82ef38f12d21469a7e12beb0d",
+  "a2_log": {
+    "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a2/android/runtime/d499f403dffb/emulator.log",
+    "sha256": "7a274c08c787c796302a7ca912d46761b588a916cb80a963e340ac72be5a79fc",
+    "selected_lines": [
+      1,
+      102,
+      103,
+      104,
+      106,
+      107,
+      209,
+      211,
+      212
+    ]
+  },
+  "feature7": {
+    "name": "FastSnapshotV1",
+    "host_default_ini": "on",
+    "a2_effective_runtime_value": "not established by this static analysis"
+  },
+  "a2_reported_sdk_grace_seconds": 20,
+  "embedded_version_strings": {
+    "launcher": "36.6.11.0 (build_id 15507667)",
+    "headless": [
+      "36.6.11.0",
+      "15507667"
+    ]
+  },
+  "sdk_and_config_sha256_unchanged_after_analysis": true
+}

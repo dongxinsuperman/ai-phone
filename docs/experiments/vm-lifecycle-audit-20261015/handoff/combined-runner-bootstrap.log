@@ -1,0 +1,86 @@
+........................................................................ [  5%]
+........................................................................ [ 10%]
+.FFFFF
+=================================== FAILURES ===================================
+_______________________ test_android_vm_create_and_list ________________________
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 03:04:27.502 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-fe2315b8c91a4c0b8f3890f32647bc65?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 03:04:27.567 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+___________ test_android_vm_coverage_profiles_are_internal_strategy ____________
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 03:04:27.567 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-1878a40884914e038898aaabb45ca36f?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 03:04:27.618 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+________ test_android_vm_imports_official_device_catalog_before_search _________
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 03:04:27.619 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-6488e19388c14d80a6c493619f053b46?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 03:04:27.669 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+________________ test_android_vm_dispatch_sends_start_to_agent _________________
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 03:04:27.670 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-720392f1c9a04bd7b7b59701b637fcd6?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 03:04:27.722 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_________ test_android_vm_active_instance_is_not_dispatched_or_deleted _________
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 03:04:27.723 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-b66e41baa2da460c978a420dff045554?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 03:04:27.774 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+============================= slowest 12 durations =============================
+0.06s setup    tests/test_android_vm.py::test_android_vm_create_and_list
+0.05s setup    tests/test_android_vm.py::test_android_vm_dispatch_sends_start_to_agent
+0.05s setup    tests/test_android_vm.py::test_android_vm_active_instance_is_not_dispatched_or_deleted
+0.05s setup    tests/test_android_vm.py::test_android_vm_coverage_profiles_are_internal_strategy
+0.05s setup    tests/test_android_vm.py::test_android_vm_imports_official_device_catalog_before_search
+0.05s call     tests/test_agent_cancellation.py::test_stop_during_prepare_reports_cancelled_after_prepare_exits[False-False]
+0.03s call     tests/test_agent_cancellation.py::test_stop_during_prepare_reports_cancelled_after_prepare_exits[True-True]
+0.02s setup    tests/test_agent_ws_client.py::test_failed_vm_status_is_retained_until_reconnected_hello
+0.02s call     tests/test_agent_cancellation.py::test_run_blocking_waits_for_inflight_device_call_before_cancel
+0.01s call     tests/test_agent_ws_client.py::test_vm_handler_exception_reports_failure_and_does_not_break_lane
+0.01s call     tests/test_agent_config_distribution.py::test_context_switch_and_rounds_are_server_distributed
+0.01s call     tests/test_agent_config_distribution.py::test_default_window_five_is_downlinked_and_explicit_session_can_override
+=========================== short test summary info ============================
+FAILED ../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_android_vm.py::test_android_vm_create_and_list
+FAILED ../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_android_vm.py::test_android_vm_coverage_profiles_are_internal_strategy
+FAILED ../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_android_vm.py::test_android_vm_imports_official_device_catalog_before_search
+FAILED ../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_android_vm.py::test_android_vm_dispatch_sends_start_to_agent
+FAILED ../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_android_vm.py::test_android_vm_active_instance_is_not_dispatched_or_deleted
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 5 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+5 failed, 145 passed in 1.27s
+{"final_exit_code": 1, "source_unchanged": true, "duration_seconds": 1.915}

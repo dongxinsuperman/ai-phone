@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/run_main_flow_isolated.py", line 176, in <module>
+    raise SystemExit(run())
+                     ^^^^^
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/run_main_flow_isolated.py", line 93, in run
+    raise RuntimeError(f"Product source differs from frozen manifest: {drift}")
+RuntimeError: Product source differs from frozen manifest: ['backend/ai_phone/server/android_vm/api.py', 'backend/ai_phone/server/harmony_vm/api.py', 'backend/ai_phone/server/ios_sim/api.py']

@@ -1,0 +1,38 @@
+{
+  "classification": "isolated regression validation; no native device or company calls",
+  "source_file": "backend/ai_phone/agent/main.py",
+  "before_source_sha256": "9808bfb8ffaab1a2d647c311019709fbe2b0987685b83a96937dc9098ffd5a0f",
+  "after_source_sha256": "bb8fb4d5127bd30f9621ba5105877ffdb17c247d532dffa6ff219fbac42ea84b",
+  "before_proof": "android-driver-cache-before.json",
+  "new_test_file": "backend/tests/test_android_vm_driver_cache_identity.py",
+  "new_test_count": 18,
+  "selected_suite_result": {
+    "passed": 158,
+    "failed": 0,
+    "warnings": 30,
+    "warning_type": "existing Pillow getdata deprecation in V3 fixtures",
+    "duration_seconds": 28.68
+  },
+  "selected_suite_files": [
+    "test_android_vm_driver_cache_identity.py",
+    "test_agent_device_cache.py",
+    "test_power_preflight.py",
+    "test_android_driver.py",
+    "test_agent_cancellation.py",
+    "test_cache_replay_orchestrate.py",
+    "test_v3_restart.py",
+    "test_v3_long_rescue.py",
+    "test_harmony_vm_transport.py",
+    "test_ios_sim_agent_wiring.py",
+    "test_agent_ios_disconnect.py"
+  ],
+  "lint": {
+    "main_baseline_issues": 30,
+    "main_after_issues": 30,
+    "new_main_issues": 0,
+    "new_tests_passed": true,
+    "diff_check_passed": true
+  },
+  "scope": "Android managed VM cache identity and corresponding stay-awake/screen metadata only; no retry or native close added",
+  "native_e2e_executed": false
+}

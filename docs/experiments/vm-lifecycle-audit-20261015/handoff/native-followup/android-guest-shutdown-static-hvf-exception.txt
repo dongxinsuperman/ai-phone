@@ -1,0 +1,195 @@
+
+/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+000000010012ec04 <_hvf_handle_exception>:
+10012ec04: d101c3ff    	sub	sp, sp, #0x70
+10012ec08: a90457f6    	stp	x22, x21, [sp, #0x40]
+10012ec0c: a9054ff4    	stp	x20, x19, [sp, #0x50]
+10012ec10: a9067bfd    	stp	x29, x30, [sp, #0x60]
+10012ec14: 910183fd    	add	x29, sp, #0x60
+10012ec18: aa0003f3    	mov	x19, x0
+10012ec1c: 91402016    	add	x22, x0, #0x8, lsl #12  ; =0x8000
+10012ec20: 97fffc6b    	bl	0x10012ddcc <_hvf_get_registers>
+10012ec24: f94166c8    	ldr	x8, [x22, #0x2c8]
+10012ec28: f9400508    	ldr	x8, [x8, #0x8]
+10012ec2c: 531a7d01    	lsr	w1, w8, #26
+10012ec30: 51000429    	sub	w9, w1, #0x1
+10012ec34: 7100ed3f    	cmp	w9, #0x3b
+10012ec38: 54001568    	b.hi	0x10012eee4 <_hvf_handle_exception+0x2e0>
+10012ec3c: b000adca    	adrp	x10, 0x1016e7000 <_helper_crypto_aesmc.mc+0x3a4>
+10012ec40: 9122314a    	add	x10, x10, #0x88c
+10012ec44: 1000000b    	adr	x11, 0x10012ec44 <_hvf_handle_exception+0x40>
+10012ec48: b8a9794c    	ldrsw	x12, [x10, x9, lsl #2]
+10012ec4c: 8b0c016b    	add	x11, x11, x12
+10012ec50: d61f0160    	br	x11
+10012ec54: 9000a0e1    	adrp	x1, 0x10154a000 <_scan_1x1+0x48>
+10012ec58: 911f7421    	add	x1, x1, #0x7dd
+10012ec5c: d000a1e2    	adrp	x2, 0x10156c000 <_hex+0x8557>
+10012ec60: 91208c42    	add	x2, x2, #0x823
+10012ec64: 9000a204    	adrp	x4, 0x10156e000 <_hex+0xa557>
+10012ec68: 91274484    	add	x4, x4, #0x9d1
+10012ec6c: aa1303e0    	mov	x0, x19
+10012ec70: 52809f63    	mov	w3, #0x4fb              ; =1275
+10012ec74: 940a92f5    	bl	0x1003d3848 <_object_dynamic_cast_assert>
+10012ec78: aa0003f4    	mov	x20, x0
+10012ec7c: 52800161    	mov	w1, #0xb                ; =11
+10012ec80: 940036b7    	bl	0x10013c75c <_arm_is_psci_call>
+10012ec84: 34000540    	cbz	w0, 0x10012ed2c <_hvf_handle_exception+0x128>
+10012ec88: aa1403e0    	mov	x0, x20
+10012ec8c: 940036dc    	bl	0x10013c7fc <_arm_handle_psci_call>
+10012ec90: 1400008d    	b	0x10012eec4 <_hvf_handle_exception+0x2c0>
+10012ec94: aa1303e0    	mov	x0, x19
+10012ec98: 97ffff41    	bl	0x10012e99c <_hvf_handle_guest_abort>
+10012ec9c: 1400008a    	b	0x10012eec4 <_hvf_handle_exception+0x2c0>
+10012eca0: d3452514    	ubfx	x20, x8, #5, #5
+10012eca4: 927f5109    	and	x9, x8, #0x3ffffe
+10012eca8: 9276e929    	and	x9, x9, #0xfffffffffffffc1f
+10012ecac: 5284836a    	mov	w10, #0x241b            ; =9243
+10012ecb0: 72a0068a    	movk	w10, #0x34, lsl #16
+10012ecb4: eb0a013f    	cmp	x9, x10
+10012ecb8: 54000bac    	b.gt	0x10012ee2c <_hvf_handle_exception+0x228>
+10012ecbc: 5280800a    	mov	w10, #0x400             ; =1024
+10012ecc0: 72a0050a    	movk	w10, #0x28, lsl #16
+10012ecc4: eb0a013f    	cmp	x9, x10
+10012ecc8: 528080ca    	mov	w10, #0x406             ; =1030
+10012eccc: 72a0050a    	movk	w10, #0x28, lsl #16
+10012ecd0: fa4a1124    	ccmp	x9, x10, #0x4, ne
+10012ecd4: 529c830a    	mov	w10, #0xe418            ; =58392
+10012ecd8: 72a0060a    	movk	w10, #0x30, lsl #16
+10012ecdc: fa4a1124    	ccmp	x9, x10, #0x4, ne
+10012ece0: 54000ba0    	b.eq	0x10012ee54 <_hvf_handle_exception+0x250>
+10012ece4: 36000108    	tbz	w8, #0x0, 0x10012ed04 <_hvf_handle_exception+0x100>
+10012ece8: 12162d28    	and	w8, w9, #0x3ffc00
+10012ecec: 120c7108    	and	w8, w8, #0xfff1ffff
+10012ecf0: 5301112a    	ubfx	w10, w9, #1, #4
+10012ecf4: 5100054a    	sub	w10, w10, #0x1
+10012ecf8: 714c011f    	cmp	w8, #0x300, lsl #12     ; =0x300000
+10012ecfc: 7a460942    	ccmp	w10, #0x6, #0x2, eq
+10012ed00: 54000ac9    	b.ls	0x10012ee58 <_hvf_handle_exception+0x254>
+10012ed04: d000bfe8    	adrp	x8, 0x10192c000 <dyld_stub_binder+0x10192c000>
+10012ed08: f9400508    	ldr	x8, [x8, #0x8]
+10012ed0c: f9400100    	ldr	x0, [x8]
+10012ed10: 9000a208    	adrp	x8, 0x10156e000 <_hex+0xa557>
+10012ed14: 9127f508    	add	x8, x8, #0x9fd
+10012ed18: a90027e8    	stp	x8, x9, [sp]
+10012ed1c: 9000a201    	adrp	x1, 0x10156e000 <_hex+0xa557>
+10012ed20: 91278021    	add	x1, x1, #0x9e0
+10012ed24: 9450401a    	bl	0x10153ed8c <dyld_stub_binder+0x10153ed8c>
+10012ed28: 94504016    	bl	0x10153ed80 <dyld_stub_binder+0x10153ed80>
+10012ed2c: 52906608    	mov	w8, #0x8330             ; =33584
+10012ed30: 92800009    	mov	x9, #-0x1               ; =-1
+10012ed34: f8286a89    	str	x9, [x20, x8]
+10012ed38: 14000063    	b	0x10012eec4 <_hvf_handle_exception+0x2c0>
+10012ed3c: 9000a0e1    	adrp	x1, 0x10154a000 <_scan_1x1+0x48>
+10012ed40: 911f7421    	add	x1, x1, #0x7dd
+10012ed44: d000a1e2    	adrp	x2, 0x10156c000 <_hex+0x8557>
+10012ed48: 91208c42    	add	x2, x2, #0x823
+10012ed4c: 9000a215    	adrp	x21, 0x10156e000 <_hex+0xa557>
+10012ed50: 912592b5    	add	x21, x21, #0x964
+10012ed54: aa1303e0    	mov	x0, x19
+10012ed58: 52809ac3    	mov	w3, #0x4d6              ; =1238
+10012ed5c: aa1503e4    	mov	x4, x21
+10012ed60: 940a92ba    	bl	0x1003d3848 <_object_dynamic_cast_assert>
+10012ed64: aa0003f4    	mov	x20, x0
+10012ed68: b942b6c0    	ldr	w0, [x22, #0x2b4]
+10012ed6c: d100a3a2    	sub	x2, x29, #0x28
+10012ed70: 529be341    	mov	w1, #0xdf1a             ; =57114
+10012ed74: 945041f8    	bl	0x10153f554 <dyld_stub_binder+0x10153f554>
+10012ed78: 34000160    	cbz	w0, 0x10012eda4 <_hvf_handle_exception+0x1a0>
+10012ed7c: d000bfe8    	adrp	x8, 0x10192c000 <dyld_stub_binder+0x10192c000>
+10012ed80: f9400508    	ldr	x8, [x8, #0x8]
+10012ed84: f9400108    	ldr	x8, [x8]
+10012ed88: 52809b49    	mov	w9, #0x4da              ; =1242
+10012ed8c: a90083e9    	stp	x9, x0, [sp, #0x8]
+10012ed90: f90003f5    	str	x21, [sp]
+10012ed94: 9000a201    	adrp	x1, 0x10156e000 <_hex+0xa557>
+10012ed98: 9125cc21    	add	x1, x1, #0x973
+10012ed9c: aa0803e0    	mov	x0, x8
+10012eda0: 94503ffb    	bl	0x10153ed8c <dyld_stub_binder+0x10153ed8c>
+10012eda4: f85d83b5    	ldur	x21, [x29, #-0x28]
+10012eda8: 945041b5    	bl	0x10153f47c <dyld_stub_binder+0x10153f47c>
+10012edac: 52910808    	mov	w8, #0x8840             ; =34880
+10012edb0: f8686a88    	ldr	x8, [x20, x8]
+10012edb4: cb000108    	sub	x8, x8, x0
+10012edb8: ab150108    	adds	x8, x8, x21
+10012edbc: 54000844    	b.mi	0x10012eec4 <_hvf_handle_exception+0x2c0>
+10012edc0: d53be009    	mrs	x9, CNTFRQ_EL0
+10012edc4: 9ac9090a    	udiv	x10, x8, x9
+10012edc8: 9b09a148    	msub	x8, x10, x9, x8
+10012edcc: 5299400b    	mov	w11, #0xca00            ; =51712
+10012edd0: 72a7734b    	movk	w11, #0x3b9a, lsl #16
+10012edd4: 9b0b7d08    	mul	x8, x8, x11
+10012edd8: 9ac90908    	udiv	x8, x8, x9
+10012eddc: a902a3ea    	stp	x10, x8, [sp, #0x28]
+10012ede0: 1909827f    	stlurb	wzr, [x19, #0x98]
+10012ede4: d5033bbf    	dmb	ish
+10012ede8: 97fbc50e    	bl	0x100020220 <_qemu_mutex_unlock_iothread>
+10012edec: 910093e2    	add	x2, sp, #0x24
+10012edf0: 52800060    	mov	w0, #0x3                ; =3
+10012edf4: d2800001    	mov	x1, #0x0                ; =0
+10012edf8: 945041e6    	bl	0x10153f590 <dyld_stub_binder+0x10153f590>
+10012edfc: b94027e8    	ldr	w8, [sp, #0x24]
+10012ee00: 12027908    	and	w8, w8, #0xdfffffff
+10012ee04: b90027e8    	str	w8, [sp, #0x24]
+10012ee08: 9100a3e4    	add	x4, sp, #0x28
+10012ee0c: 910093e5    	add	x5, sp, #0x24
+10012ee10: 52800000    	mov	w0, #0x0                ; =0
+10012ee14: d2800001    	mov	x1, #0x0                ; =0
+10012ee18: d2800002    	mov	x2, #0x0                ; =0
+10012ee1c: d2800003    	mov	x3, #0x0                ; =0
+10012ee20: 945041d9    	bl	0x10153f584 <dyld_stub_binder+0x10153f584>
+10012ee24: 97fbc4e0    	bl	0x1000201a4 <_qemu_mutex_lock_iothread>
+10012ee28: 14000027    	b	0x10012eec4 <_hvf_handle_exception+0x2c0>
+10012ee2c: 5284838a    	mov	w10, #0x241c            ; =9244
+10012ee30: 72a0068a    	movk	w10, #0x34, lsl #16
+10012ee34: eb0a013f    	cmp	x9, x10
+10012ee38: 529c830a    	mov	w10, #0xe418            ; =58392
+10012ee3c: 72a006ca    	movk	w10, #0x36, lsl #16
+10012ee40: fa4a1124    	ccmp	x9, x10, #0x4, ne
+10012ee44: 529c830a    	mov	w10, #0xe418            ; =58392
+10012ee48: 72a0068a    	movk	w10, #0x34, lsl #16
+10012ee4c: fa4a1124    	ccmp	x9, x10, #0x4, ne
+10012ee50: 54fff4a1    	b.ne	0x10012ece4 <_hvf_handle_exception+0xe0>
+10012ee54: 360001e8    	tbz	w8, #0x0, 0x10012ee90 <_hvf_handle_exception+0x28c>
+10012ee58: f1007e9f    	cmp	x20, #0x1f
+10012ee5c: 540001a0    	b.eq	0x10012ee90 <_hvf_handle_exception+0x28c>
+10012ee60: 9000a0e1    	adrp	x1, 0x10154a000 <_scan_1x1+0x48>
+10012ee64: 911f7421    	add	x1, x1, #0x7dd
+10012ee68: d000a1e2    	adrp	x2, 0x10156c000 <_hex+0x8557>
+10012ee6c: 91208c42    	add	x2, x2, #0x823
+10012ee70: 9000a204    	adrp	x4, 0x10156e000 <_hex+0xa557>
+10012ee74: 91255c84    	add	x4, x4, #0x957
+10012ee78: aa1303e0    	mov	x0, x19
+10012ee7c: 52809a23    	mov	w3, #0x4d1              ; =1233
+10012ee80: 940a9272    	bl	0x1003d3848 <_object_dynamic_cast_assert>
+10012ee84: 8b140c08    	add	x8, x0, x20, lsl #3
+10012ee88: 52906609    	mov	w9, #0x8330             ; =33584
+10012ee8c: f829691f    	str	xzr, [x8, x9]
+10012ee90: 9000a0e1    	adrp	x1, 0x10154a000 <_scan_1x1+0x48>
+10012ee94: 911f7421    	add	x1, x1, #0x7dd
+10012ee98: d000a1e2    	adrp	x2, 0x10156c000 <_hex+0x8557>
+10012ee9c: 91208c42    	add	x2, x2, #0x823
+10012eea0: 9000a204    	adrp	x4, 0x10156e000 <_hex+0xa557>
+10012eea4: 9124f084    	add	x4, x4, #0x93c
+10012eea8: aa1303e0    	mov	x0, x19
+10012eeac: 528098c3    	mov	w3, #0x4c6              ; =1222
+10012eeb0: 940a9266    	bl	0x1003d3848 <_object_dynamic_cast_assert>
+10012eeb4: 52908608    	mov	w8, #0x8430             ; =33840
+10012eeb8: f8686809    	ldr	x9, [x0, x8]
+10012eebc: 91001129    	add	x9, x9, #0x4
+10012eec0: f8286809    	str	x9, [x0, x8]
+10012eec4: aa1303e0    	mov	x0, x19
+10012eec8: 97fff950    	bl	0x10012d408 <_hvf_put_registers>
+10012eecc: a9467bfd    	ldp	x29, x30, [sp, #0x60]
+10012eed0: a9454ff4    	ldp	x20, x19, [sp, #0x50]
+10012eed4: a94457f6    	ldp	x22, x21, [sp, #0x40]
+10012eed8: 9101c3ff    	add	sp, sp, #0x70
+10012eedc: d65f03c0    	ret
+10012eee0: 94503fa8    	bl	0x10153ed80 <dyld_stub_binder+0x10153ed80>
+10012eee4: aa1303e0    	mov	x0, x19
+10012eee8: 97fffbb9    	bl	0x10012ddcc <_hvf_get_registers>
+10012eeec: aa1303e0    	mov	x0, x19
+10012eef0: 97fff946    	bl	0x10012d408 <_hvf_put_registers>
+10012eef4: 94503fa3    	bl	0x10153ed80 <dyld_stub_binder+0x10153ed80>

@@ -1,0 +1,19 @@
+{
+  "version": "2.12.0",
+  "files": {
+    "screenshot.py": {
+      "path": "/Users/dongxin/\u4ee3\u7801\u6587\u4ef6/sonic\u5408\u96c6/ai-phone/backend/.venv/lib/python3.11/site-packages/adbutils/screenshot.py",
+      "sha256": "d529adfa7bf979528842704bd94ebd23a4efca75313656307a5ee73195d10d6f"
+    },
+    "_device_base.py": {
+      "path": "/Users/dongxin/\u4ee3\u7801\u6587\u4ef6/sonic\u5408\u96c6/ai-phone/backend/.venv/lib/python3.11/site-packages/adbutils/_device_base.py",
+      "sha256": "69fba33b2f3c3766df857650a2f179e0b14fea352903f9bd438eb64a9630018a"
+    },
+    "_adb.py": {
+      "path": "/Users/dongxin/\u4ee3\u7801\u6587\u4ef6/sonic\u5408\u96c6/ai-phone/backend/.venv/lib/python3.11/site-packages/adbutils/_adb.py",
+      "sha256": "10aff30a6779ee4b172378dbb63777960b9af477c345e1296e1b1d28ee4e6466"
+    }
+  },
+  "actual_screenshot": "screencap -p via shell; invalid image can return black after window_size; no helper installation/start in this installed screenshot code",
+  "sample_factory": "does not use _safe_connect automatic adb start-server fallback; private TCP only"
+}

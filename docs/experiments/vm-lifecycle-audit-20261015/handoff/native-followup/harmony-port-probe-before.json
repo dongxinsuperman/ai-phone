@@ -1,0 +1,103 @@
+{
+  "platform": "macOS-15.7-arm64-arm-64bit",
+  "scope": "owned ephemeral loopback only",
+  "constants": {
+    "SOL_SOCKET": 65535,
+    "SO_REUSEADDR": 4
+  },
+  "results": [
+    {
+      "case": "closed_active_connection",
+      "original_reuse": true,
+      "port": 53756,
+      "plain": {
+        "bindable": false,
+        "errno": 48
+      },
+      "reuse": {
+        "bindable": true,
+        "errno": null
+      },
+      "manager_current_free": false,
+      "capability_current_excludes": true,
+      "owned_tcp_rows": [
+        "tcp4       0      0  127.0.0.1.53756        127.0.0.1.53757        TIME_WAIT"
+      ]
+    },
+    {
+      "case": "closed_active_connection",
+      "original_reuse": false,
+      "port": 53758,
+      "plain": {
+        "bindable": false,
+        "errno": 48
+      },
+      "reuse": {
+        "bindable": true,
+        "errno": null
+      },
+      "manager_current_free": false,
+      "capability_current_excludes": true,
+      "owned_tcp_rows": [
+        "tcp4       0      0  127.0.0.1.53758        127.0.0.1.53759        TIME_WAIT"
+      ]
+    },
+    {
+      "case": "active_listener",
+      "host": "127.0.0.1",
+      "dualstack": false,
+      "port": 53760,
+      "plain": {
+        "bindable": false,
+        "errno": 48
+      },
+      "reuse": {
+        "bindable": false,
+        "errno": 48
+      },
+      "manager_current_free": false,
+      "capability_current_excludes": true,
+      "owned_tcp_rows": [
+        "tcp4       0      0  127.0.0.1.53760        *.*                    LISTEN"
+      ]
+    },
+    {
+      "case": "active_listener",
+      "host": "0.0.0.0",
+      "dualstack": false,
+      "port": 53761,
+      "plain": {
+        "bindable": false,
+        "errno": 48
+      },
+      "reuse": {
+        "bindable": true,
+        "errno": null
+      },
+      "manager_current_free": false,
+      "capability_current_excludes": true,
+      "owned_tcp_rows": [
+        "tcp4       0      0  *.53761                *.*                    LISTEN"
+      ]
+    },
+    {
+      "case": "active_listener",
+      "host": "::",
+      "dualstack": true,
+      "port": 53762,
+      "plain": {
+        "bindable": false,
+        "errno": 48
+      },
+      "reuse": {
+        "bindable": true,
+        "errno": null
+      },
+      "manager_current_free": false,
+      "capability_current_excludes": true,
+      "owned_tcp_rows": [
+        "tcp46      0      0  *.53762                *.*                    LISTEN"
+      ]
+    }
+  ]
+}

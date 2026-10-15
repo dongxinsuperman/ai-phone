@@ -1,0 +1,34 @@
+{
+  "source_sha256": "87fa428ac3eeb44a17a8341bf47ce7f5a03f03bd403408533d96bd0c6002b057",
+  "result": {
+    "ok": true,
+    "reason": "stopped",
+    "adb_serial": "emulator-5554",
+    "details": {
+      "avd_name": "aiphone_vm_a",
+      "port": 5554,
+      "cleanup_confirmed": true,
+      "instance_created": true,
+      "sync_completed": true,
+      "exit_evidence": {}
+    }
+  },
+  "calls": [
+    {
+      "action": "sync_completed",
+      "serial": "emulator-5554"
+    },
+    {
+      "action": "emu_kill",
+      "serial": "emulator-5554"
+    },
+    {
+      "pid": 222,
+      "port": 5556,
+      "at": 20.0,
+      "action": "terminate"
+    }
+  ],
+  "unsynced_second_process_forced": true,
+  "scope": "unchanged production method AST; all processes/time/tool responses fake; no native"
+}

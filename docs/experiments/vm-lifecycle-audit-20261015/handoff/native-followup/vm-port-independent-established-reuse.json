@@ -1,0 +1,7 @@
+{
+  "owned_ephemeral_port": 54249,
+  "old_accepted_connection_alive": true,
+  "new_listener_bind_and_listen": true,
+  "old_connection_received_only_old_marker": true,
+  "new_connection_received_only_new_marker": true
+}

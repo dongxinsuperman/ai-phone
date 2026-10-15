@@ -1,0 +1,17 @@
+{
+  "exit_code": 0,
+  "manager_sha256": "c609f1b69eb7af48fa34ecaf757d1617d46e4afc3356e30344322d1fb521a0d0",
+  "metrics": {
+    "tests": "139",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "0.484"
+  },
+  "tests_sha256": {
+    "tests/test_android_vm_stop_budget.py": "d96e0da4ed0f827d31618b60735dc3895d020d724b0c9ce37531a4972828f453",
+    "tests/test_android_vm_manager_reliability.py": "4653954a03965945d257126f89822efce46ff69fafbb90012deff10bd484cf44"
+  },
+  "scope": "empty env and private temp cwd/storage; SQLite memory; fake process/ADB; only test-owned socket cases; no native device commands or company endpoints",
+  "independent_boundaries": "/tmp/android-sync-independent-replay.json"
+}

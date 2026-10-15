@@ -1,0 +1,30 @@
+{
+  "at": "2026-10-15T22:31:33.505883+00:00",
+  "reviewer": "root",
+  "method": "Independent direct visual inspection of all three original PNGs completed before this annotation; direct assertions of raw evidence, correlated operation receipts, sync acknowledgments and cleanup.",
+  "status": "passed",
+  "vm_id": "810137b52abc",
+  "product_commit": "2dc9844ffd86b88f2e41acfc79fae87ae222d631",
+  "harness_sha256": "43356f481dea68c8adcd7b5fb7344b08912f2b2e4f678075533f2a15856eaf51",
+  "token": "personalb672882c4a58",
+  "visual_findings": [
+    "Before: empty input, no saved marker, count 0.",
+    "Confirmed: exact token in input and saved-result area, count 1.",
+    "After restart: input empty, exact saved-result token intact, count 1, page visibly rendered."
+  ],
+  "terminal_checks": [
+    "One actual package upload/install task and one native install invocation.",
+    "Four distinct request IDs matched succeeded outcomes; two exact sync acknowledgments; no Agent fallback TERM/KILL.",
+    "Same raw localStorage value and durable witness after restart; WebView identity unchanged.",
+    "Owned VM and private ADB PIDs absent, all private IPv4/IPv6 ports bindable, ledger empty, AVD and ini absent.",
+    "Product, fixture and protected metadata unchanged."
+  ],
+  "image_sha256": {
+    "fixture-before.png": "166ac5869cf285193d77c023a5f131c73fb1c9573630fdb86d9c8b862b5b0fc1",
+    "fixture-confirmed.png": "0b4f1bf3f5bbca5554f78b64356f8a2b81763477461cc539cfb8e6789966eceb",
+    "fixture-persisted.png": "8be9dd8951a6962ff42e3dba2f15a8deefec44edf228c738c8c25b4b3327df51"
+  },
+  "immutable_raw_evidence_sha256": "2982fba5ac74630b4408d004623cc4c0da865660560c7560fa0225f664989e6c",
+  "cleanup_sha256": "b4a2256bacb882bfdfca20ea707fec981c9eda9aba24c279be730d5259e09736",
+  "scope": "Final 2dc9844 original personal synthetic no_snapshot App case. No external networking/VLM/company acceptance, process-crash survival proof, arbitrary app userland durability, or unique cause attribution for historical a2/a4 failures."
+}

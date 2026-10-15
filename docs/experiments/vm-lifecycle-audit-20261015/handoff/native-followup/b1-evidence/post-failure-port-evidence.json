@@ -1,0 +1,16 @@
+{
+  "at_unix": 1792092297.889259,
+  "ports": {
+    "10001": {
+      "connect_ex": 61,
+      "bind_reuse_False": true,
+      "bind_reuse_True": true
+    },
+    "16556": {
+      "connect_ex": 61,
+      "bind_reuse_False": true,
+      "bind_reuse_True": true
+    }
+  },
+  "owned_processes": []
+}

@@ -1,0 +1,27 @@
+{
+  "prepared_at": "2026-10-15T20:04:27.834648+00:00",
+  "status": "prepared-not-executed",
+  "native_execution_started": false,
+  "product_source_commit": "90342046a932273e54d7f96cb2947d753476477b",
+  "product_count": 33,
+  "product_mismatches": [],
+  "diagnostic_source_sha256": {
+    "android_app_install_diagnostic_a3.py": "4ab5904ea8262a27994eae4a90dd969372caea5142ba4fd063ba52b725731fee",
+    "a3_MainActivity.java": "9219cf05d043b476d802cc0b5e5b02b2827d013d13f73d5fab6a39ac03ba906d",
+    "a3_storage_diagnostic.js": "7a2bd86efcb92da3a63956b34e24948e1399bc48cc4e42cb2d284981d2db80cf",
+    "test_android_diagnostic_a3_guards.py": "5b270bc11ad2517d5e2fc7895c00084560fcca78df3c1b987929909ff3ea999b"
+  },
+  "original_fixture_html_sha256": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+  "expected_original_fixture_html_sha256": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+  "original_a2_source_unchanged": true,
+  "generated_java_sha256": "8621209db9723f052191963bc35b6b66f96a57fb2d74fd18e499a129d4b418c6",
+  "javac_exit_code": 0,
+  "javac_log": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a3-prepare/javac.log",
+  "guard_log": "..........................\n----------------------------------------------------------------------\nRan 26 tests in 0.003s\n\nOK\n",
+  "dry_run_root_created": false,
+  "js_independent_review": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-a3-readonly-js-review.json",
+  "run_sources_preserved": true,
+  "count_1_assertion_preserved": true,
+  "new_wait_or_guest_command_after_confirm": false,
+  "required_next_step": "root and independent review, then explicit one-run native authorization"
+}

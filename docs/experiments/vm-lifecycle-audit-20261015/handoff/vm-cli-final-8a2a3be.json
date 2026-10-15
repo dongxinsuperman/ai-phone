@@ -1,0 +1,397 @@
+{
+  "cli_commit": "e65dad549d2d667972c44718962d6c6f87bf8eb9",
+  "scope": "actual current FastAPI VM routers, isolated SQLite, fake Agents, actual CLI child; no native",
+  "passed": 12,
+  "results": [
+    {
+      "platform": "android",
+      "action": "start",
+      "exit": 1,
+      "http_status": 409,
+      "id_promoted": true,
+      "request_id_promoted": true,
+      "new_id_preserved": false,
+      "operation_outcome": "failed",
+      "guard": {
+        "profileReads": 0,
+        "requests": 2,
+        "loopbackOnly": true
+      },
+      "http_trace": [
+        {
+          "method": "GET",
+          "path": "/api/internal/vm/instances",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/vm/instances/74f7333195de/start",
+          "status": 409
+        }
+      ],
+      "fake_messages": [
+        "vm_start"
+      ]
+    },
+    {
+      "platform": "android",
+      "action": "stop",
+      "exit": 1,
+      "http_status": 409,
+      "id_promoted": true,
+      "request_id_promoted": true,
+      "new_id_preserved": false,
+      "operation_outcome": "failed",
+      "guard": {
+        "profileReads": 0,
+        "requests": 2,
+        "loopbackOnly": true
+      },
+      "http_trace": [
+        {
+          "method": "GET",
+          "path": "/api/internal/vm/instances",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/vm/instances/91d95a677ff2/stop",
+          "status": 409
+        }
+      ],
+      "fake_messages": [
+        "vm_stop"
+      ]
+    },
+    {
+      "platform": "android",
+      "action": "dispatch",
+      "exit": 1,
+      "http_status": 409,
+      "id_promoted": true,
+      "request_id_promoted": true,
+      "new_id_preserved": true,
+      "operation_outcome": "failed",
+      "guard": {
+        "profileReads": 0,
+        "requests": 3,
+        "loopbackOnly": true
+      },
+      "http_trace": [
+        {
+          "method": "GET",
+          "path": "/api/internal/vm/instances",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/vm/instances/30cf94af4554/dispatch-candidates",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/vm/instances/30cf94af4554/dispatch",
+          "status": 409
+        }
+      ],
+      "fake_messages": [
+        "vm_delete",
+        "vm_start"
+      ]
+    },
+    {
+      "platform": "android",
+      "action": "delete",
+      "exit": 0,
+      "deleted": true,
+      "cleanup_sent": false,
+      "guard": {
+        "profileReads": 0,
+        "requests": 3,
+        "loopbackOnly": true
+      },
+      "http_trace": [
+        {
+          "method": "GET",
+          "path": "/api/internal/vm/instances",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/vm/instances/e6e7c8f04e8d",
+          "status": 200
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/internal/vm/instances/e6e7c8f04e8d",
+          "status": 200
+        }
+      ],
+      "fake_messages": [
+        "vm_delete"
+      ]
+    },
+    {
+      "platform": "ios",
+      "action": "start",
+      "exit": 1,
+      "http_status": 502,
+      "id_promoted": true,
+      "request_id_promoted": true,
+      "new_id_preserved": false,
+      "operation_outcome": "failed",
+      "guard": {
+        "profileReads": 0,
+        "requests": 2,
+        "loopbackOnly": true
+      },
+      "http_trace": [
+        {
+          "method": "GET",
+          "path": "/api/internal/ios-sim/instances",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/ios-sim/instances/7c1fe0e0e4b8/start",
+          "status": 502
+        }
+      ],
+      "fake_messages": [
+        "ios_sim_vm_start"
+      ]
+    },
+    {
+      "platform": "ios",
+      "action": "stop",
+      "exit": 1,
+      "http_status": 502,
+      "id_promoted": true,
+      "request_id_promoted": true,
+      "new_id_preserved": false,
+      "operation_outcome": "failed",
+      "guard": {
+        "profileReads": 0,
+        "requests": 2,
+        "loopbackOnly": true
+      },
+      "http_trace": [
+        {
+          "method": "GET",
+          "path": "/api/internal/ios-sim/instances",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/ios-sim/instances/716d74a5b6c6/stop",
+          "status": 502
+        }
+      ],
+      "fake_messages": [
+        "ios_sim_vm_stop"
+      ]
+    },
+    {
+      "platform": "ios",
+      "action": "dispatch",
+      "exit": 1,
+      "http_status": 409,
+      "id_promoted": true,
+      "request_id_promoted": true,
+      "new_id_preserved": true,
+      "operation_outcome": "failed",
+      "guard": {
+        "profileReads": 0,
+        "requests": 3,
+        "loopbackOnly": true
+      },
+      "http_trace": [
+        {
+          "method": "GET",
+          "path": "/api/internal/ios-sim/instances",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/ios-sim/instances/988ffcad453b/dispatch-candidates",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/ios-sim/instances/988ffcad453b/dispatch",
+          "status": 409
+        }
+      ],
+      "fake_messages": [
+        "ios_sim_vm_delete",
+        "ios_sim_vm_start"
+      ]
+    },
+    {
+      "platform": "ios",
+      "action": "delete",
+      "exit": 0,
+      "deleted": true,
+      "cleanup_sent": false,
+      "guard": {
+        "profileReads": 0,
+        "requests": 3,
+        "loopbackOnly": true
+      },
+      "http_trace": [
+        {
+          "method": "GET",
+          "path": "/api/internal/ios-sim/instances",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/ios-sim/instances/5cb6ee903eb8",
+          "status": 200
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/internal/ios-sim/instances/5cb6ee903eb8",
+          "status": 200
+        }
+      ],
+      "fake_messages": [
+        "ios_sim_vm_delete"
+      ]
+    },
+    {
+      "platform": "harmony",
+      "action": "start",
+      "exit": 1,
+      "http_status": 409,
+      "id_promoted": true,
+      "request_id_promoted": true,
+      "new_id_preserved": false,
+      "operation_outcome": "failed",
+      "guard": {
+        "profileReads": 0,
+        "requests": 2,
+        "loopbackOnly": true
+      },
+      "http_trace": [
+        {
+          "method": "GET",
+          "path": "/api/internal/harmony-vm/instances",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/harmony-vm/instances/72015f4613d5/start",
+          "status": 409
+        }
+      ],
+      "fake_messages": [
+        "harmony_vm_start"
+      ]
+    },
+    {
+      "platform": "harmony",
+      "action": "stop",
+      "exit": 1,
+      "http_status": 409,
+      "id_promoted": true,
+      "request_id_promoted": true,
+      "new_id_preserved": false,
+      "operation_outcome": "failed",
+      "guard": {
+        "profileReads": 0,
+        "requests": 2,
+        "loopbackOnly": true
+      },
+      "http_trace": [
+        {
+          "method": "GET",
+          "path": "/api/internal/harmony-vm/instances",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/harmony-vm/instances/dff92faf953a/stop",
+          "status": 409
+        }
+      ],
+      "fake_messages": [
+        "harmony_vm_stop"
+      ]
+    },
+    {
+      "platform": "harmony",
+      "action": "dispatch",
+      "exit": 1,
+      "http_status": 409,
+      "id_promoted": true,
+      "request_id_promoted": true,
+      "new_id_preserved": true,
+      "operation_outcome": "failed",
+      "guard": {
+        "profileReads": 0,
+        "requests": 3,
+        "loopbackOnly": true
+      },
+      "http_trace": [
+        {
+          "method": "GET",
+          "path": "/api/internal/harmony-vm/instances",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/harmony-vm/instances/03ba1cbc9fc1/dispatch-candidates",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/internal/harmony-vm/instances/03ba1cbc9fc1/dispatch",
+          "status": 409
+        }
+      ],
+      "fake_messages": [
+        "harmony_vm_delete",
+        "harmony_vm_start"
+      ]
+    },
+    {
+      "platform": "harmony",
+      "action": "delete",
+      "exit": 0,
+      "deleted": true,
+      "cleanup_sent": false,
+      "guard": {
+        "profileReads": 0,
+        "requests": 3,
+        "loopbackOnly": true
+      },
+      "http_trace": [
+        {
+          "method": "GET",
+          "path": "/api/internal/harmony-vm/instances",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/internal/harmony-vm/instances/8ebab2dd832e",
+          "status": 200
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/internal/harmony-vm/instances/8ebab2dd832e",
+          "status": 200
+        }
+      ],
+      "fake_messages": [
+        "harmony_vm_delete"
+      ]
+    }
+  ],
+  "server_source_sha256": {
+    "backend/ai_phone/server/vm_lifecycle.py": "232cf364266b1e344a7d29e87ebce39709994a1b0aa790db582ef33602af56aa",
+    "backend/ai_phone/server/android_vm/api.py": "3bdcfa84b46262ca974be0e29ba9352986d6e0a350df109c8d09aa2d69116d3d",
+    "backend/ai_phone/server/ios_sim/api.py": "5df873d042daadb1a7b7f71a9ab642acdb276dd93835219548cd329736f0d1df",
+    "backend/ai_phone/server/harmony_vm/api.py": "00b4665fda0e96e110b2fcb6ef236edc0af62a4a956abd76ca156c94e96793a6"
+  }
+}

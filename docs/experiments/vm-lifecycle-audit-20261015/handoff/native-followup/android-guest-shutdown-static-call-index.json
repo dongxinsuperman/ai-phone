@@ -1,0 +1,138 @@
+[
+  {
+    "at": "0x10005d4b0",
+    "kind": "bl",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "_hb_regs_write",
+    "caller_base": "0x10005d450",
+    "offset": "0x60"
+  },
+  {
+    "at": "0x10006c59c",
+    "kind": "bl",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "_omap_clkm_idlect1_update",
+    "caller_base": "0x10006c520",
+    "offset": "0x7c"
+  },
+  {
+    "at": "0x1000ccfb4",
+    "kind": "bl",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "_vexpress_cfgctrl_write",
+    "caller_base": "0x1000ccf1c",
+    "offset": "0x98"
+  },
+  {
+    "at": "0x1000d02dc",
+    "kind": "b",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "_retu_io",
+    "caller_base": "0x1000d010c",
+    "offset": "0x1d0"
+  },
+  {
+    "at": "0x1000d0cd0",
+    "kind": "b",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "_exynos4210_pmu_write",
+    "caller_base": "0x1000d0c88",
+    "offset": "0x48"
+  },
+  {
+    "at": "0x1000d6eb0",
+    "kind": "b",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "_imx7_snvs_write",
+    "caller_base": "0x1000d6e98",
+    "offset": "0x18"
+  },
+  {
+    "at": "0x10013c9bc",
+    "kind": "bl",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "_arm_handle_psci_call",
+    "caller_base": "0x10013c7fc",
+    "offset": "0x1c0"
+  },
+  {
+    "at": "0x1001ccfc0",
+    "kind": "bl",
+    "target": "_androidSnapshot_quickbootSave",
+    "caller": "_main_loop",
+    "caller_base": "0x1001ccdfc",
+    "offset": "0x1c4"
+  },
+  {
+    "at": "0x1003d058c",
+    "kind": "b",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "_qmp_quit",
+    "caller_base": "0x1003d057c",
+    "offset": "0x10"
+  },
+  {
+    "at": "0x1003da808",
+    "kind": "bl",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "_replay_next_event_is",
+    "caller_base": "0x1003da7a4",
+    "offset": "0x64"
+  },
+  {
+    "at": "0x1003da8a0",
+    "kind": "bl",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "_replay_get_instructions",
+    "caller_base": "0x1003da840",
+    "offset": "0x60"
+  },
+  {
+    "at": "0x1003daaf4",
+    "kind": "bl",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "_replay_has_exception",
+    "caller_base": "0x1003daa20",
+    "offset": "0xd4"
+  },
+  {
+    "at": "0x1003dacd4",
+    "kind": "bl",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "_replay_has_interrupt",
+    "caller_base": "0x1003dac00",
+    "offset": "0xd4"
+  },
+  {
+    "at": "0x1003daea4",
+    "kind": "bl",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "_replay_checkpoint",
+    "caller_base": "0x1003dadac",
+    "offset": "0xf8"
+  },
+  {
+    "at": "0x100420944",
+    "kind": "b",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "__ZN7android4qemu12_GLOBAL__N_110QemuLooper9forceQuitEv",
+    "caller_base": "0x100420940",
+    "offset": "0x4"
+  },
+  {
+    "at": "0x10043d454",
+    "kind": "b",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "__ZL23system_shutdown_requestv",
+    "caller_base": "0x10043d450",
+    "offset": "0x4"
+  },
+  {
+    "at": "0x10043fff4",
+    "kind": "b",
+    "target": "_qemu_system_shutdown_request",
+    "caller": "__ZN3$_18__invokeE17QemuShutdownCause",
+    "caller_base": "0x10043fff4",
+    "offset": "0x0"
+  }
+]

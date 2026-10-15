@@ -1,0 +1,23 @@
+{
+  "status": "failed-preserved",
+  "files": [
+    {
+      "name": "result.json",
+      "original": "/tmp/aiphone-personal-harmony-legacy-20261016b1/result.json",
+      "archive": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/b1-evidence/result.json",
+      "sha256": "6d84e12248fae95a683a0bf2d2a7d1b39be8aff2e63acfbdf835f88e5e699943"
+    },
+    {
+      "name": "post-failure-port-evidence.json",
+      "original": "/tmp/aiphone-personal-harmony-legacy-20261016b1/post-failure-port-evidence.json",
+      "archive": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/b1-evidence/post-failure-port-evidence.json",
+      "sha256": "b5f504cf328c86914b1db618f63815f24e344c75ec12e3aa7e37c892aff5a919"
+    },
+    {
+      "name": "guarded-final-cleanup-receipt.json",
+      "original": "/tmp/aiphone-personal-harmony-legacy-20261016b1/guarded-final-cleanup-receipt.json",
+      "archive": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/b1-evidence/guarded-final-cleanup-receipt.json",
+      "sha256": "77c0add10a6a45ddbd89b80d704e8b9eb58e68282d68de62c68f57cc3202abd0"
+    }
+  ]
+}

@@ -1,0 +1,204 @@
+{
+  "status": "failed",
+  "failure_class": "same-origin fixture storage missing after stop/start; cause unresolved",
+  "run_id": "android-app-install-9034204-20261016-a2",
+  "run_root": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a2",
+  "product_commit": "90342046a932273e54d7f96cb2947d753476477b",
+  "product_file_count": 33,
+  "product_hashes_match_at_start_and_finish": true,
+  "source_snapshot": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_e2e.a2.py",
+  "source_sha256": "cb051f17dbad98d44361ef1b9b7cb3c89b7e0c34a4940e64c2384fdb916e3609",
+  "source_snapshot_matches_run": true,
+  "install_chain": {
+    "status": "passed",
+    "package_id": "21c4eb408c0e",
+    "task_id": "61a65307dcbc",
+    "item_id": "c9a03ce77406",
+    "handler_calls": 1,
+    "native_calls": 1,
+    "native_finished": true,
+    "task": {
+      "id": "61a65307dcbc",
+      "package_id": "21c4eb408c0e",
+      "state": "done",
+      "created_at": "2026-10-15T19:47:08.661816",
+      "finished_at": "2026-10-15T19:47:12.059052",
+      "package": {
+        "id": "21c4eb408c0e",
+        "filename": "personal-lifecycle.apk",
+        "platform": "android",
+        "created_at": "2026-10-15T19:47:08.651082"
+      },
+      "items": [
+        {
+          "id": "c9a03ce77406",
+          "task_id": "61a65307dcbc",
+          "serial": "emulator-5666",
+          "platform": "android",
+          "state": "success",
+          "reason": null,
+          "message": "安装成功",
+          "timeout_sec": 600,
+          "started_at": "2026-10-15T19:47:08.662698",
+          "finished_at": "2026-10-15T19:47:12.057747"
+        }
+      ],
+      "summary": {
+        "total": 1,
+        "pending": 0,
+        "running": 0,
+        "success": 1,
+        "failed": 0,
+        "timeout": 0,
+        "unknown": 0
+      }
+    },
+    "native_path": "package:/data/app/~~Q-QqHOzvFuS8rdfGR2wWCg==/org.personal.aiphone.lifecycle-1EoKqAQwTGi_pSSWXm8OUg==/base.apk",
+    "activity_users_after": 0,
+    "result_messages": [
+      {
+        "type": "app_install_result",
+        "task_id": "61a65307dcbc",
+        "item_id": "c9a03ce77406",
+        "serial": "emulator-5666",
+        "success": true,
+        "reason": "",
+        "message": "安装成功",
+        "observed_at": "2026-10-15T19:47:12.055261+00:00",
+        "native_finished": true,
+        "temporary_files_removed": true
+      }
+    ],
+    "trace": [
+      {
+        "event": "native-install-enter",
+        "at": "2026-10-15T19:47:08.740567+00:00",
+        "serial": "emulator-5666",
+        "local_path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a2/tmp/ai-phone-app-install-wg_11tlu/personal-lifecycle.apk",
+        "sha256": "09c729a88c4d12fb2b55d59fc179aed729f9df1a344a1d1e107dec851118a20c",
+        "real_native_operation_in_stack": true,
+        "activity_users": 2
+      },
+      {
+        "event": "native-install-return",
+        "at": "2026-10-15T19:47:12.054824+00:00",
+        "success": true,
+        "reason": "",
+        "temporary_file_present_until_native_return": true
+      }
+    ]
+  },
+  "vm_id": "d499f403dffb",
+  "host_id": "f46e701b2b8c415291082c718acab5d9",
+  "same_vm_second_start_created_in_attempt": false,
+  "current_native_argv": [
+    "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+    "-avd",
+    "aiphone_vm_d499f403dffb",
+    "-port",
+    "5666",
+    "-skin",
+    "540x960",
+    "-prop",
+    "qemu.sf.lcd_density=240",
+    "-prop",
+    "debug.aiphone.vmid=d499f403dffb",
+    "-prop",
+    "debug.aiphone.alias=personal-e2e-android-app-install-9034204-20261016-a2",
+    "-prop",
+    "persist.sys.timezone=Asia/Shanghai",
+    "-no-audio",
+    "-no-boot-anim",
+    "-no-snapshot",
+    "-no-window",
+    "-memory",
+    "2048",
+    "-cores",
+    "2",
+    "-gpu",
+    "host",
+    "-camera-back",
+    "emulated",
+    "-camera-front",
+    "none"
+  ],
+  "native_argv_source": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a2/android/avd/aiphone_vm_d499f403dffb.avd/emu-launch-params.txt",
+  "previous_native_argv_captured": false,
+  "guest_origin": "http://127.0.0.1:19080",
+  "storage_key": "personal-vm-e2e:android-app-install-9034204-20261016-a2",
+  "receipts": [
+    {
+      "run": "android-app-install-9034204-20261016-a2",
+      "platform": "android",
+      "event": "load",
+      "token": "",
+      "count": 0
+    },
+    {
+      "run": "android-app-install-9034204-20261016-a2",
+      "platform": "android",
+      "event": "confirm",
+      "token": "personal05598c7fa9de",
+      "count": 1
+    },
+    {
+      "run": "android-app-install-9034204-20261016-a2",
+      "platform": "android",
+      "event": "load",
+      "token": "",
+      "count": 0
+    }
+  ],
+  "visual_review": {
+    "reviewer": "fleet_inventory",
+    "before": "empty token, count 0",
+    "confirmed": "personal05598c7fa9de, count 1",
+    "after_restart": "empty token, count 0",
+    "root_review_pending": true
+  },
+  "images": [
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a2-fixture-before.png",
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a2-fixture-confirmed.png",
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a2-failure-d499f403dffb.png"
+  ],
+  "cleanup": {
+    "checked_at": "2026-10-15T19:49:12.819367+00:00",
+    "owned_processes": [],
+    "native_compatible_bind_errno": {
+      "15037": {
+        "127.0.0.1": 0,
+        "::1": 0
+      },
+      "5666": {
+        "127.0.0.1": 0,
+        "::1": 0
+      },
+      "5667": {
+        "127.0.0.1": 0,
+        "::1": 0
+      }
+    },
+    "preserved_private_avd_paths": [
+      "/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a2/android/avd/aiphone_vm_d499f403dffb.avd",
+      "/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a2/android/avd/aiphone_vm_d499f403dffb.ini"
+    ]
+  },
+  "private_adb_stopped": true,
+  "native_install_active_at_cleanup": false,
+  "protected_metadata_changed": [],
+  "avd_preserved_for_forensics": true,
+  "delete_test_reached": false,
+  "native_hardware_slot_released": true,
+  "new_native_attempt_authorized": false,
+  "evidence": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a2/evidence.json",
+  "file_metadata": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a2/read-only-avd-file-manifest.json",
+  "read_only_vm_record": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-9034204-20261016-a2/read-only-server-vm.json",
+  "not_covered": [
+    "full lifecycle acceptance after package install",
+    "agent.main driver cache reuse on real device",
+    "external guest network",
+    "VLM/company business Case",
+    "OS Agent process crash"
+  ],
+  "duration_seconds": 102.416369
+}

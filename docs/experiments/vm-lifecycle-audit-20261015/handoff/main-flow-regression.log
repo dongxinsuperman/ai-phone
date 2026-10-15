@@ -1,0 +1,90 @@
+........................................................................ [ 33%]
+........................................................................ [ 67%]
+.....................................................................    [100%]
+=============================== warnings summary ===============================
+tests/test_ws_integration.py::test_file_upload_and_fetch
+tests/test_ws_integration.py::test_file_upload_rejects_empty
+tests/test_ws_integration.py::test_agent_ws_bad_token_rejected
+tests/test_ws_integration.py::test_agent_ws_hello_registers_device[None]
+tests/test_ws_integration.py::test_agent_ws_hello_registers_device[capabilities1]
+tests/test_ws_integration.py::test_browser_receives_agent_log
+tests/test_ws_integration.py::test_start_run_dispatched_to_agent
+tests/test_ws_integration.py::test_stop_run_forwarded
+tests/test_ws_integration.py::test_device_update_propagates
+  /private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-main-flow-74f209d-d1j_qf4_/backend/tests/test_ws_integration.py:59: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_ws_integration.py: 18 warnings
+  /Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/fastapi/applications.py:4495: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+tests/test_ws_integration.py::test_file_upload_and_fetch
+tests/test_ws_integration.py::test_file_upload_rejects_empty
+tests/test_ws_integration.py::test_agent_ws_bad_token_rejected
+tests/test_ws_integration.py::test_agent_ws_hello_registers_device[None]
+tests/test_ws_integration.py::test_agent_ws_hello_registers_device[capabilities1]
+tests/test_ws_integration.py::test_browser_receives_agent_log
+tests/test_ws_integration.py::test_start_run_dispatched_to_agent
+tests/test_ws_integration.py::test_stop_run_forwarded
+tests/test_ws_integration.py::test_device_update_propagates
+  /private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-main-flow-74f209d-d1j_qf4_/backend/tests/test_ws_integration.py:69: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+tests/test_ws_integration.py::test_agent_ws_hello_registers_device[capabilities1]
+  /Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:369: SAWarning: The garbage collector is trying to clean up non-checked-in connection <AdaptedConnection <aiosqlite.core.Connection object at 0x10d44c590>>, which will be terminated.  Please ensure that SQLAlchemy pooled connections are returned to the pool explicitly, either by calling ``close()`` or by using appropriate context managers to manage their lifecycle.
+    self._config_wrapper_stack = ConfigWrapperStack(config_wrapper)
+
+tests/test_ws_integration.py::test_browser_receives_agent_log
+  /Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:374: SAWarning: The garbage collector is trying to clean up non-checked-in connection <AdaptedConnection <aiosqlite.core.Connection object at 0x10d287fd0>>, which will be terminated.  Please ensure that SQLAlchemy pooled connections are returned to the pool explicitly, either by calling ``close()`` or by using appropriate context managers to manage their lifecycle.
+    self.defs = _Definitions()
+
+tests/test_ws_integration.py::test_start_run_dispatched_to_agent
+  /Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:2757: SAWarning: The garbage collector is trying to clean up non-checked-in connection <AdaptedConnection <aiosqlite.core.Connection object at 0x10d429e10>>, which will be terminated.  Please ensure that SQLAlchemy pooled connections are returned to the pool explicitly, either by calling ``close()`` or by using appropriate context managers to manage their lifecycle.
+    self._recursively_seen = set()
+
+tests/test_ws_integration.py::test_stop_run_forwarded
+  /Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:2757: SAWarning: The garbage collector is trying to clean up non-checked-in connection <AdaptedConnection <aiosqlite.core.Connection object at 0x10d4e5e90>>, which will be terminated.  Please ensure that SQLAlchemy pooled connections are returned to the pool explicitly, either by calling ``close()`` or by using appropriate context managers to manage their lifecycle.
+    self._recursively_seen = set()
+
+tests/test_ws_integration.py::test_device_update_propagates
+  /Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:372: SAWarning: The garbage collector is trying to clean up non-checked-in connection <AdaptedConnection <aiosqlite.core.Connection object at 0x10d2fa410>>, which will be terminated.  Please ensure that SQLAlchemy pooled connections are returned to the pool explicitly, either by calling ``close()`` or by using appropriate context managers to manage their lifecycle.
+    self.field_name_stack = _FieldNameStack()
+
+tests/test_v3_capture_sources.py::test_independent_source_initializes_once_and_owns_only_its_client
+  /private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-main-flow-74f209d-d1j_qf4_/backend/tests/test_v3_capture_sources.py:70: SAWarning: The garbage collector is trying to clean up non-checked-in connection <AdaptedConnection <aiosqlite.core.Connection object at 0x10cf933d0>>, which will be terminated.  Please ensure that SQLAlchemy pooled connections are returned to the pool explicitly, either by calling ``close()`` or by using appropriate context managers to manage their lifecycle.
+    monkeypatch.setattr(adb, "device_list", lambda: [SimpleNamespace(serial="unit")])
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 15 durations =============================
+2.02s call     tests/test_v3_capture_sources.py::test_shared_locator_connection_survives_final_capture
+0.55s call     tests/test_harmony_driver_concurrency.py::test_call_with_reconnect_serializes_same_serial
+0.13s call     tests/test_ws_integration.py::test_start_run_dispatched_to_agent
+0.13s call     tests/test_ws_integration.py::test_stop_run_forwarded
+0.12s call     tests/test_ws_integration.py::test_browser_receives_agent_log
+0.12s call     tests/test_ws_integration.py::test_agent_ws_hello_registers_device[None]
+0.12s call     tests/test_ws_integration.py::test_device_update_propagates
+0.12s call     tests/test_ws_integration.py::test_agent_ws_hello_registers_device[capabilities1]
+0.09s call     tests/test_v3_screenshot_provider.py::test_bad_source_does_not_silently_take_second_screenshot
+0.09s setup    tests/test_server_api.py::test_list_agents
+0.09s setup    tests/test_server_api.py::test_stop_run_releases_lock
+0.08s setup    tests/test_server_api.py::test_create_run_rejects_function_map_context_when_limit_is_finite
+0.07s setup    tests/test_ws_integration.py::test_browser_receives_agent_log
+0.06s setup    tests/test_server_api.py::test_lock_full_flow
+0.06s setup    tests/test_device_wake_policies.py::test_device_wake_policy_crud
+213 passed, 1 deselected, 42 warnings in 6.86s
+{"pytest_exit_code": 0, "collected": 213, "blocked_external_calls": 1, "product_source_unchanged": true}

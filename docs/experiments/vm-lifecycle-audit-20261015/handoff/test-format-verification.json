@@ -1,0 +1,7 @@
+{
+  "path": "backend/tests/test_vm_upgrade_independent_review.py",
+  "change": "remove blank line at EOF after passing regression; AST identical",
+  "tested_sha256": "cee224e7a77e0cdf38795fa9a7e4818e34fa0ba113ebd4e7ed30a6e05b68413d",
+  "final_sha256": "3b4ca375f412b5fdd157ff251b7c41006aa85fc8cf2bbdf65175d96156e3a9cf",
+  "ast_identical": true
+}

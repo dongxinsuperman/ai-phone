@@ -1,0 +1,232 @@
+# Independent upgrade review baseline
+Command: PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_vm_upgrade_independent_review.py
+Reviewed commit: 74f209dc6556d4678291b0dce63a9817741b6bea (before follow-up upgrade fixes)
+Native or company operations: none
+
+........                                                   [100%]
+=================================== FAILURES ===================================
+_ test_same_native_host_new_storage_identity_must_not_delete_existing_vm[android-False] _
+
+session = <sqlalchemy.ext.asyncio.session.AsyncSession object at 0x1099545d0>
+platform = namespace(name='android', model=<class 'ai_phone.server.models.AndroidVmInstance'>, svc=<module 'ai_phone.server.andro...n/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/android_vm/service.py'>, delete='vm_delete')
+tmp_path = PosixPath('/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/pytest-of-dongxin/pytest-157/test_same_native_host_new_stor0')
+old_online = False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("old_online", [False, True])
+    async def test_same_native_host_new_storage_identity_must_not_delete_existing_vm(session, platform, tmp_path, old_online):
+        """Both storage directories belong to ONE native host, not two VM copies.
+    
+        Online old Agent covers overlap/blue-green starts. Its presence cannot
+        prove that the new installation sees a separate disposable native copy.
+        """
+        original_host_id = load_host_identity(tmp_path / "original-installation")
+        replacement_host_id = load_host_identity(tmp_path / "new-empty-storage")
+        assert original_host_id != replacement_host_id
+        vm = await stored_vm(session, platform, host_id=original_host_id)
+        hub = UpgradeHub(new_host_id=replacement_host_id, old_online=old_online)
+        await platform.svc.handle_vm_reconcile("personal-new-session", stopped_inventory(platform, vm), hub)
+        await session.refresh(vm)
+        assert vm.assigned_agent_id == "personal-old-session", "do not silently migrate ledger ownership"
+        destructive = [message for _target, message in hub.sent if message["type"] == platform.delete]
+>       assert destructive == [], f"storage identity loss authorized deletion of existing native VM: {destructive}"
+E       AssertionError: storage identity loss authorized deletion of existing native VM: [{'request_id': '8779497909fc424c', 'vm_id': '2e57f980102a', 'type': 'vm_delete', 'adb_serial': ''}]
+E       assert [{'adb_serial...e57f980102a'}] == []
+E         
+E         Left contains one more item: {'adb_serial': '', 'request_id': '8779497909fc424c', 'type': 'vm_delete', 'vm_id': '2e57f980102a'}
+E         Use -v to get more diff
+
+tests/test_vm_upgrade_independent_review.py:112: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 02:21:41.675 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-e6143d811114483a9d815c0d89f05499?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 02:21:41.755 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_same_native_host_new_storage_identity_must_not_delete_existing_vm[android-True] _
+
+session = <sqlalchemy.ext.asyncio.session.AsyncSession object at 0x109910d50>
+platform = namespace(name='android', model=<class 'ai_phone.server.models.AndroidVmInstance'>, svc=<module 'ai_phone.server.andro...n/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/android_vm/service.py'>, delete='vm_delete')
+tmp_path = PosixPath('/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/pytest-of-dongxin/pytest-157/test_same_native_host_new_stor1')
+old_online = True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("old_online", [False, True])
+    async def test_same_native_host_new_storage_identity_must_not_delete_existing_vm(session, platform, tmp_path, old_online):
+        """Both storage directories belong to ONE native host, not two VM copies.
+    
+        Online old Agent covers overlap/blue-green starts. Its presence cannot
+        prove that the new installation sees a separate disposable native copy.
+        """
+        original_host_id = load_host_identity(tmp_path / "original-installation")
+        replacement_host_id = load_host_identity(tmp_path / "new-empty-storage")
+        assert original_host_id != replacement_host_id
+        vm = await stored_vm(session, platform, host_id=original_host_id)
+        hub = UpgradeHub(new_host_id=replacement_host_id, old_online=old_online)
+        await platform.svc.handle_vm_reconcile("personal-new-session", stopped_inventory(platform, vm), hub)
+        await session.refresh(vm)
+        assert vm.assigned_agent_id == "personal-old-session", "do not silently migrate ledger ownership"
+        destructive = [message for _target, message in hub.sent if message["type"] == platform.delete]
+>       assert destructive == [], f"storage identity loss authorized deletion of existing native VM: {destructive}"
+E       AssertionError: storage identity loss authorized deletion of existing native VM: [{'request_id': '1478ae4bdef94ac1', 'vm_id': 'f78db8917c9e', 'type': 'vm_delete', 'adb_serial': ''}]
+E       assert [{'adb_serial...78db8917c9e'}] == []
+E         
+E         Left contains one more item: {'adb_serial': '', 'request_id': '1478ae4bdef94ac1', 'type': 'vm_delete', 'vm_id': 'f78db8917c9e'}
+E         Use -v to get more diff
+
+tests/test_vm_upgrade_independent_review.py:112: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 02:21:41.756 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-814222f276bd4eec906d06601c9a70f2?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 02:21:41.790 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_same_native_host_new_storage_identity_must_not_delete_existing_vm[ios-False] _
+
+session = <sqlalchemy.ext.asyncio.session.AsyncSession object at 0x109b89450>
+platform = namespace(name='ios', model=<class 'ai_phone.server.ios_sim.models.IosSimVmInstance'>, svc=<module 'ai_phone.server.io...dex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/ios_sim/service.py'>, delete='ios_sim_vm_delete')
+tmp_path = PosixPath('/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/pytest-of-dongxin/pytest-157/test_same_native_host_new_stor2')
+old_online = False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("old_online", [False, True])
+    async def test_same_native_host_new_storage_identity_must_not_delete_existing_vm(session, platform, tmp_path, old_online):
+        """Both storage directories belong to ONE native host, not two VM copies.
+    
+        Online old Agent covers overlap/blue-green starts. Its presence cannot
+        prove that the new installation sees a separate disposable native copy.
+        """
+        original_host_id = load_host_identity(tmp_path / "original-installation")
+        replacement_host_id = load_host_identity(tmp_path / "new-empty-storage")
+        assert original_host_id != replacement_host_id
+        vm = await stored_vm(session, platform, host_id=original_host_id)
+        hub = UpgradeHub(new_host_id=replacement_host_id, old_online=old_online)
+        await platform.svc.handle_vm_reconcile("personal-new-session", stopped_inventory(platform, vm), hub)
+        await session.refresh(vm)
+        assert vm.assigned_agent_id == "personal-old-session", "do not silently migrate ledger ownership"
+        destructive = [message for _target, message in hub.sent if message["type"] == platform.delete]
+>       assert destructive == [], f"storage identity loss authorized deletion of existing native VM: {destructive}"
+E       AssertionError: storage identity loss authorized deletion of existing native VM: [{'request_id': '777afd51bdf746c6', 'vm_id': '62667c759117', 'type': 'ios_sim_vm_delete', 'udid': 'PERSONAL-PERSISTED-UDID'}]
+E       assert [{'request_id...2667c759117'}] == []
+E         
+E         Left contains one more item: {'request_id': '777afd51bdf746c6', 'type': 'ios_sim_vm_delete', 'udid': 'PERSONAL-PERSISTED-UDID', 'vm_id': '62667c759117'}
+E         Use -v to get more diff
+
+tests/test_vm_upgrade_independent_review.py:112: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 02:21:41.791 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-7e0f34e453de441e8450253e0f925132?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 02:21:41.824 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_same_native_host_new_storage_identity_must_not_delete_existing_vm[ios-True] _
+
+session = <sqlalchemy.ext.asyncio.session.AsyncSession object at 0x109bdfa90>
+platform = namespace(name='ios', model=<class 'ai_phone.server.ios_sim.models.IosSimVmInstance'>, svc=<module 'ai_phone.server.io...dex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/ios_sim/service.py'>, delete='ios_sim_vm_delete')
+tmp_path = PosixPath('/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/pytest-of-dongxin/pytest-157/test_same_native_host_new_stor3')
+old_online = True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("old_online", [False, True])
+    async def test_same_native_host_new_storage_identity_must_not_delete_existing_vm(session, platform, tmp_path, old_online):
+        """Both storage directories belong to ONE native host, not two VM copies.
+    
+        Online old Agent covers overlap/blue-green starts. Its presence cannot
+        prove that the new installation sees a separate disposable native copy.
+        """
+        original_host_id = load_host_identity(tmp_path / "original-installation")
+        replacement_host_id = load_host_identity(tmp_path / "new-empty-storage")
+        assert original_host_id != replacement_host_id
+        vm = await stored_vm(session, platform, host_id=original_host_id)
+        hub = UpgradeHub(new_host_id=replacement_host_id, old_online=old_online)
+        await platform.svc.handle_vm_reconcile("personal-new-session", stopped_inventory(platform, vm), hub)
+        await session.refresh(vm)
+        assert vm.assigned_agent_id == "personal-old-session", "do not silently migrate ledger ownership"
+        destructive = [message for _target, message in hub.sent if message["type"] == platform.delete]
+>       assert destructive == [], f"storage identity loss authorized deletion of existing native VM: {destructive}"
+E       AssertionError: storage identity loss authorized deletion of existing native VM: [{'request_id': '88816cfeee8f46c8', 'vm_id': '7bacbab0cb19', 'type': 'ios_sim_vm_delete', 'udid': 'PERSONAL-PERSISTED-UDID'}]
+E       assert [{'request_id...bacbab0cb19'}] == []
+E         
+E         Left contains one more item: {'request_id': '88816cfeee8f46c8', 'type': 'ios_sim_vm_delete', 'udid': 'PERSONAL-PERSISTED-UDID', 'vm_id': '7bacbab0cb19'}
+E         Use -v to get more diff
+
+tests/test_vm_upgrade_independent_review.py:112: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 02:21:41.825 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-efd5965fb8a84ac9a7999e65a24184f5?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 02:21:41.855 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_same_native_host_new_storage_identity_must_not_delete_existing_vm[harmony-False] _
+
+session = <sqlalchemy.ext.asyncio.session.AsyncSession object at 0x109c3c090>
+platform = namespace(name='harmony', model=<class 'ai_phone.server.harmony_vm.models.HarmonyVmInstance'>, svc=<module 'ai_phone.s.../worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/harmony_vm/service.py'>, delete='harmony_vm_delete')
+tmp_path = PosixPath('/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/pytest-of-dongxin/pytest-157/test_same_native_host_new_stor4')
+old_online = False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("old_online", [False, True])
+    async def test_same_native_host_new_storage_identity_must_not_delete_existing_vm(session, platform, tmp_path, old_online):
+        """Both storage directories belong to ONE native host, not two VM copies.
+    
+        Online old Agent covers overlap/blue-green starts. Its presence cannot
+        prove that the new installation sees a separate disposable native copy.
+        """
+        original_host_id = load_host_identity(tmp_path / "original-installation")
+        replacement_host_id = load_host_identity(tmp_path / "new-empty-storage")
+        assert original_host_id != replacement_host_id
+        vm = await stored_vm(session, platform, host_id=original_host_id)
+        hub = UpgradeHub(new_host_id=replacement_host_id, old_online=old_online)
+        await platform.svc.handle_vm_reconcile("personal-new-session", stopped_inventory(platform, vm), hub)
+        await session.refresh(vm)
+        assert vm.assigned_agent_id == "personal-old-session", "do not silently migrate ledger ownership"
+        destructive = [message for _target, message in hub.sent if message["type"] == platform.delete]
+>       assert destructive == [], f"storage identity loss authorized deletion of existing native VM: {destructive}"
+E       AssertionError: storage identity loss authorized deletion of existing native VM: [{'request_id': 'e6f209b4b4394b25', 'vm_id': '66a9e1d12dca', 'type': 'harmony_vm_delete', 'hdc_serial': '', 'lease_token': ''}]
+E       assert [{'hdc_serial...delete', ...}] == []
+E         
+E         Left contains one more item: {'hdc_serial': '', 'lease_token': '', 'request_id': 'e6f209b4b4394b25', 'type': 'harmony_vm_delete', ...}
+E         Use -v to get more diff
+
+tests/test_vm_upgrade_independent_review.py:112: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 02:21:41.856 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-2e4ebb56bdfc4b4bac6f84a2a1519db7?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 02:21:41.888 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_same_native_host_new_storage_identity_must_not_delete_existing_vm[harmony-True] _
+
+session = <sqlalchemy.ext.asyncio.session.AsyncSession object at 0x109bef410>
+platform = namespace(name='harmony', model=<class 'ai_phone.server.harmony_vm.models.HarmonyVmInstance'>, svc=<module 'ai_phone.s.../worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/harmony_vm/service.py'>, delete='harmony_vm_delete')
+tmp_path = PosixPath('/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/pytest-of-dongxin/pytest-157/test_same_native_host_new_stor5')
+old_online = True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("old_online", [False, True])
+    async def test_same_native_host_new_storage_identity_must_not_delete_existing_vm(session, platform, tmp_path, old_online):
+        """Both storage directories belong to ONE native host, not two VM copies.
+    
+        Online old Agent covers overlap/blue-green starts. Its presence cannot
+        prove that the new installation sees a separate disposable native copy.
+        """
+        original_host_id = load_host_identity(tmp_path / "original-installation")
+        replacement_host_id = load_host_identity(tmp_path / "new-empty-storage")
+        assert original_host_id != replacement_host_id
+        vm = await stored_vm(session, platform, host_id=original_host_id)
+        hub = UpgradeHub(new_host_id=replacement_host_id, old_online=old_online)
+        await platform.svc.handle_vm_reconcile("personal-new-session", stopped_inventory(platform, vm), hub)
+        await session.refresh(vm)
+        assert vm.assigned_agent_id == "personal-old-session", "do not silently migrate ledger ownership"
+        destructive = [message for _target, message in hub.sent if message["type"] == platform.delete]
+>       assert destructive == [], f"storage identity loss authorized deletion of existing native VM: {destructive}"
+E       AssertionError: storage identity loss authorized deletion of existing native VM: [{'request_id': '330d0dc8a7324a2a', 'vm_id': 'bcbc8abfccf9', 'type': 'harmony_vm_delete', 'hdc_serial': '', 'lease_token': ''}]
+E       assert [{'hdc_serial...delete', ...}] == []
+E         
+E         Left contains one more item: {'hdc_serial': '', 'lease_token': '', 'request_id': '330d0dc8a7324a2a', 'type': 'harmony_vm_delete', ...}
+E         Use -v to get more diff
+
+tests/test_vm_upgrade_independent_review.py:112: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 02:21:41.889 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-7dd0823601f147cb97f2f9597d4e5704?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 02:21:41.921 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+=========================== short test summary info ============================
+FAILED tests/test_vm_upgrade_independent_review.py::test_same_native_host_new_storage_identity_must_not_delete_existing_vm[android-False]
+FAILED tests/test_vm_upgrade_independent_review.py::test_same_native_host_new_storage_identity_must_not_delete_existing_vm[android-True]
+FAILED tests/test_vm_upgrade_independent_review.py::test_same_native_host_new_storage_identity_must_not_delete_existing_vm[ios-False]
+FAILED tests/test_vm_upgrade_independent_review.py::test_same_native_host_new_storage_identity_must_not_delete_existing_vm[ios-True]
+FAILED tests/test_vm_upgrade_independent_review.py::test_same_native_host_new_storage_identity_must_not_delete_existing_vm[harmony-False]
+FAILED tests/test_vm_upgrade_independent_review.py::test_same_native_host_new_storage_identity_must_not_delete_existing_vm[harmony-True]
+6 failed, 16 passed in 0.76s
+

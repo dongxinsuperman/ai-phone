@@ -1,0 +1,163 @@
+2026-10-16 03:40:48.787 | DEBUG    | ai_phone.agent.drivers.harmony:_neutralize_hmdriver_del_once:114 - hmdriver2.Driver.__del__ 已阉割（去除 _instance.clear + fport 副作用）
+2026-10-16 03:40:50.285 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:////tmp/aiphone-personal-harmony-legacy-20261016b2/server.sqlite3
+2026-10-16 03:40:50.670 | INFO     | ai_phone.agent.ws_client:run_forever:221 - 连接 Server WS ws://127.0.0.1:55128/ws/agent?token=***
+2026-10-16 03:40:50.676 | INFO     | ai_phone.agent.ws_client:_on_connected:275 - hello sent | devices=[]
+2026-10-16 03:40:50.677 | INFO     | ai_phone.agent.ws_client:_rescan_loop:508 - rescan_loop 启动，间隔 15.0s
+2026-10-16 03:40:50.677 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=personal-legacy-old-49f683c2be87 name=personal-legacy-old-49f683c2be87 host_os=Darwin 24.6.0
+2026-10-16 03:40:50.681 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:222 - Agent hello | id=personal-legacy-old-49f683c2be87 devices=[]
+2026-10-16 03:40:50.681 | WARNING  | ai_phone.server.ws.agent_ws:agent_ws:236 - 向 Agent personal-legacy-old-49f683c2be87 下发配置失败（VLM Run 未应用配置会拒绝执行，等待后续补发）：新版 PHONE_VLM 配置缺失，无法派生模型执行链路：AI_PHONE_PHONE_VLM_PROVIDER, AI_PHONE_PHONE_VLM_BASE_URL, AI_PHONE_PHONE_VLM_API_KEY, AI_PHONE_PHONE_VLM_MODEL。请配置 AI_PHONE_PHONE_VLM_*；不再回退旧式 AI_PHONE_VLM_*。
+2026-10-15T19:40:50.976886+00:00 http
+2026-10-15T19:40:52.323718+00:00 agent_receive
+2026-10-15T19:40:53.883858+00:00 agent_send
+2026-10-15T19:40:53.894601+00:00 http
+2026-10-15T19:40:55.230130+00:00 agent_receive
+2026-10-15T19:40:55.230345+00:00 agent_send
+2026-10-16 03:41:20.686 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-legacy-old-49f683c2be87 devices=[]
+[2026-10-16 03:41:24]          hdc.py[line:  23]                               [DEBUG] hdc list targets
+[2026-10-16 03:41:25]          hdc.py[line:  23]                               [DEBUG] hdc list targets
+[2026-10-16 03:41:27]      _client.py[line: 142]                               [INFO] Start HmClient connection
+[2026-10-16 03:41:27]      _client.py[line: 185]                               [DEBUG] Initializing UITest service
+[2026-10-16 03:41:27]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "ps -ef"
+[2026-10-16 03:41:28]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "[ -f /data/local/tmp/agent.so ] && echo 'exists' || echo 'not exists'"
+[2026-10-16 03:41:30]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "md5sum /data/local/tmp/agent.so"
+[2026-10-16 03:41:31]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "rm /data/local/tmp/agent.so"
+[2026-10-16 03:41:32]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 file send /Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/hmdriver2/assets/uitest_agent_v1.1.0.so /data/local/tmp/agent.so
+[2026-10-16 03:41:34]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "chmod +x /data/local/tmp/agent.so"
+[2026-10-16 03:41:35]      _client.py[line: 232]                               [DEBUG] Updated remote agent file
+[2026-10-16 03:41:35]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "uitest start-daemon singleness"
+[2026-10-16 03:41:36]      _client.py[line: 253]                               [DEBUG] Started UITest daemon
+[2026-10-16 03:41:37]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 fport ls
+[2026-10-16 03:41:44]      _client.py[line: 162]                               [DEBUG] Create uitest driver
+[2026-10-16 03:41:44]      _client.py[line:  62]                               [DEBUG] sendMsg: {"module":"com.ohos.devicetest.hypiumApiHelper","method":"callHypiumApi","params":{"api":"Driver.create","this":"Driver#0","args":[],"message_type":"hypium"},"request_id":"20261016034144129921"}
+[2026-10-16 03:41:44]      _client.py[line:  73]                               [DEBUG] recvMsg: {"result":"Driver#0"}
+2026-10-16 03:41:46.057 | INFO     | ai_phone.agent.drivers.harmony:_setup_stay_awake:442 - 设备 127.0.0.1:10001 已禁自动息屏（power-shell timeout=24h，每 10 分钟续约一次）
+[2026-10-16 03:41:46]      _client.py[line:  62]                               [DEBUG] sendMsg: {"module":"com.ohos.devicetest.hypiumApiHelper","method":"callHypiumApi","params":{"api":"Driver.getDisplaySize","this":"Driver#0","args":[],"message_type":"hypium"},"request_id":"20261016034146057816"}
+[2026-10-16 03:41:46]      _client.py[line:  73]                               [DEBUG] recvMsg: {"result":{"displayId":0,"x":1320,"y":2856}}
+2026-10-15T19:41:46.062899+00:00 agent_send
+[2026-10-16 03:41:46]      _client.py[line:  62]                               [DEBUG] sendMsg: {"module":"com.ohos.devicetest.hypiumApiHelper","method":"callHypiumApi","params":{"api":"Driver.getDisplaySize","this":"Driver#0","args":[],"message_type":"hypium"},"request_id":"20261016034146063737"}
+[2026-10-16 03:41:46]      _client.py[line:  73]                               [DEBUG] recvMsg: {"result":{"displayId":0,"x":1320,"y":2856}}
+[2026-10-16 03:41:46]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "param get const.product.name"
+[2026-10-16 03:41:47]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "param get const.product.model"
+2026-10-15T19:41:47.685668+00:00 own_guest_shell
+[2026-10-16 03:41:48]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "param get const.ohos.apiversion"
+2026-10-15T19:41:49.023462+00:00 own_guest_shell
+2026-10-15T19:41:49.035493+00:00 http
+[2026-10-16 03:41:50]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "param get const.product.software.version"
+[2026-10-16 03:41:51]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "param get const.product.cpu.abilist"
+[2026-10-16 03:41:52]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "ifconfig"
+[2026-10-16 03:41:54]      _client.py[line:  62]                               [DEBUG] sendMsg: {"module":"com.ohos.devicetest.hypiumApiHelper","method":"callHypiumApi","params":{"api":"Driver.getDisplayRotation","this":"Driver#0","args":[],"message_type":"hypium"},"request_id":"20261016034154214707"}
+[2026-10-16 03:41:54]      _client.py[line:  73]                               [DEBUG] recvMsg: {"result":0}
+2026-10-16 03:41:54.217 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['harmony-vm:8c5348377bf8']
+[2026-10-16 03:41:54]      _client.py[line:  62]                               [DEBUG] sendMsg: {"module":"com.ohos.devicetest.hypiumApiHelper","method":"callHypiumApi","params":{"api":"Driver.getDisplaySize","this":"Driver#0","args":[],"message_type":"hypium"},"request_id":"20261016034154218929"}
+2026-10-16 03:41:54.220 | ERROR    | ai_phone.server.harmony_vm.service:filter_managed_devices_for_agent:392 - 拒绝无当前租约的受管 Harmony VM 设备上报：agent=personal-legacy-old-49f683c2be87 vm_id=8c5348377bf8 serial=harmony-vm:8c5348377bf8
+[2026-10-16 03:41:54]      _client.py[line:  73]                               [DEBUG] recvMsg: {"result":{"displayId":0,"x":1320,"y":2856}}
+2026-10-15T19:41:54.221579+00:00 agent_receive
+2026-10-15T19:41:54.221633+00:00 agent_send
+[2026-10-16 03:41:54]      _client.py[line: 150]                               [INFO] Release HmClient connection
+[2026-10-16 03:41:54]      _client.py[line:  36]                               [DEBUG] rm fport local port
+[2026-10-16 03:41:54]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 fport rm tcp:16556 tcp:8012
+2026-10-16 03:41:54.224 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-legacy-old-49f683c2be87 devices=[]
+2026-10-16 03:41:54.225 | ERROR    | ai_phone.server.harmony_vm.service:filter_managed_devices_for_agent:392 - 拒绝无当前租约的受管 Harmony VM 设备上报：agent=personal-legacy-old-49f683c2be87 vm_id=8c5348377bf8 serial=harmony-vm:8c5348377bf8
+2026-10-16 03:41:54.226 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-legacy-old-49f683c2be87 devices=[]
+2026-10-16 03:42:05.684 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['harmony-vm:8c5348377bf8'] → []
+2026-10-16 03:42:05.691 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-legacy-old-49f683c2be87 devices=[]
+2026-10-15T19:42:09.163026+00:00 injected_lost_terminal_stop_ack
+2026-10-15T19:42:09.185721+00:00 native_stopped_server_ack_missing
+2026-10-16 03:42:09.189 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-legacy-old-49f683c2be87 devices=[]
+2026-10-16 03:42:09.189 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:273 - Agent 断开 | id=personal-legacy-old-49f683c2be87
+2026-10-16 03:42:09.189 | INFO     | ai_phone.server.hub:unregister_agent:201 - Agent 下线 | id=personal-legacy-old-49f683c2be87 serials=[]
+2026-10-16 03:42:09.198 | INFO     | ai_phone.server.ws.agent_ws:_on_disconnect:1094 - Agent personal-legacy-old-49f683c2be87 断开，已标记 Harmony VM agent_offline 1 台
+2026-10-15T19:42:09.450386+00:00 injected_legacy_owned_data_only
+2026-10-16 03:42:09.452 | INFO     | ai_phone.agent.ws_client:run_forever:221 - 连接 Server WS ws://127.0.0.1:55128/ws/agent?token=***
+2026-10-15T19:42:10.801961+00:00 real_prehello_reclaim
+2026-10-16 03:42:10.803 | INFO     | ai_phone.agent.ws_client:_on_connected:275 - hello sent | devices=[]
+2026-10-15T19:42:10.805848+00:00 agent_send
+2026-10-16 03:42:10.806 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=personal-legacy-new-90f48880860f name=personal-legacy-new-90f48880860f host_os=Darwin 24.6.0
+2026-10-16 03:42:10.807 | INFO     | ai_phone.agent.ws_client:_rescan_loop:508 - rescan_loop 启动，间隔 15.0s
+2026-10-16 03:42:10.810 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:222 - Agent hello | id=personal-legacy-new-90f48880860f devices=[]
+2026-10-16 03:42:10.811 | WARNING  | ai_phone.server.ws.agent_ws:agent_ws:236 - 向 Agent personal-legacy-new-90f48880860f 下发配置失败（VLM Run 未应用配置会拒绝执行，等待后续补发）：新版 PHONE_VLM 配置缺失，无法派生模型执行链路：AI_PHONE_PHONE_VLM_PROVIDER, AI_PHONE_PHONE_VLM_BASE_URL, AI_PHONE_PHONE_VLM_API_KEY, AI_PHONE_PHONE_VLM_MODEL。请配置 AI_PHONE_PHONE_VLM_*；不再回退旧式 AI_PHONE_VLM_*。
+2026-10-15T19:42:11.000784+00:00 ownership_only_handoff_confirmed
+2026-10-15T19:42:11.013467+00:00 agent_receive
+2026-10-15T19:42:11.013605+00:00 agent_send
+2026-10-15T19:42:11.050173+00:00 http
+2026-10-15T19:42:12.425780+00:00 agent_send
+2026-10-16 03:42:12.432 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-legacy-new-90f48880860f devices=[]
+2026-10-15T19:42:13.920286+00:00 agent_receive
+2026-10-15T19:42:15.467507+00:00 agent_send
+2026-10-15T19:42:15.476784+00:00 http
+2026-10-15T19:42:16.813276+00:00 agent_receive
+2026-10-15T19:42:16.813615+00:00 agent_send
+[2026-10-16 03:42:36]          hdc.py[line:  23]                               [DEBUG] hdc list targets
+[2026-10-16 03:42:37]          hdc.py[line:  23]                               [DEBUG] hdc list targets
+[2026-10-16 03:42:38]      _client.py[line: 142]                               [INFO] Start HmClient connection
+[2026-10-16 03:42:38]      _client.py[line: 185]                               [DEBUG] Initializing UITest service
+[2026-10-16 03:42:38]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "ps -ef"
+[2026-10-16 03:42:40]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "[ -f /data/local/tmp/agent.so ] && echo 'exists' || echo 'not exists'"
+2026-10-16 03:42:40.818 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-legacy-new-90f48880860f devices=[]
+[2026-10-16 03:42:41]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "md5sum /data/local/tmp/agent.so"
+[2026-10-16 03:42:42]      _client.py[line: 225]                               [DEBUG] Remote agent file is up-to-date
+[2026-10-16 03:42:42]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "chmod +x /data/local/tmp/agent.so"
+[2026-10-16 03:42:44]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "uitest start-daemon singleness"
+[2026-10-16 03:42:45]      _client.py[line: 253]                               [DEBUG] Started UITest daemon
+[2026-10-16 03:42:46]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 fport ls
+[2026-10-16 03:42:52]      _client.py[line: 162]                               [DEBUG] Create uitest driver
+[2026-10-16 03:42:52]      _client.py[line:  62]                               [DEBUG] sendMsg: {"module":"com.ohos.devicetest.hypiumApiHelper","method":"callHypiumApi","params":{"api":"Driver.create","this":"Driver#0","args":[],"message_type":"hypium"},"request_id":"20261016034252963874"}
+[2026-10-16 03:42:53]      _client.py[line:  73]                               [DEBUG] recvMsg: {"result":"Driver#0"}
+[2026-10-16 03:42:53]      _client.py[line:  62]                               [DEBUG] sendMsg: {"module":"com.ohos.devicetest.hypiumApiHelper","method":"callHypiumApi","params":{"api":"Driver.getDisplaySize","this":"Driver#0","args":[],"message_type":"hypium"},"request_id":"20261016034253528142"}
+[2026-10-16 03:42:53]      _client.py[line:  73]                               [DEBUG] recvMsg: {"result":{"displayId":0,"x":1320,"y":2856}}
+2026-10-15T19:42:53.538543+00:00 agent_send
+[2026-10-16 03:42:53]      _client.py[line:  62]                               [DEBUG] sendMsg: {"module":"com.ohos.devicetest.hypiumApiHelper","method":"callHypiumApi","params":{"api":"Driver.getDisplaySize","this":"Driver#0","args":[],"message_type":"hypium"},"request_id":"20261016034253540788"}
+[2026-10-16 03:42:53]      _client.py[line:  73]                               [DEBUG] recvMsg: {"result":{"displayId":0,"x":1320,"y":2856}}
+[2026-10-16 03:42:53]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "param get const.product.name"
+[2026-10-16 03:42:54]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "param get const.product.model"
+2026-10-15T19:42:55.163063+00:00 own_guest_shell
+2026-10-15T19:42:55.163213+00:00 restart_marker_and_uuid_preserved
+2026-10-16 03:42:55.164 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:273 - Agent 断开 | id=personal-legacy-new-90f48880860f
+2026-10-16 03:42:55.164 | INFO     | ai_phone.server.hub:unregister_agent:201 - Agent 下线 | id=personal-legacy-new-90f48880860f serials=[]
+2026-10-16 03:42:55.173 | INFO     | ai_phone.server.ws.agent_ws:_on_disconnect:1094 - Agent personal-legacy-new-90f48880860f 断开，已标记 Harmony VM agent_offline 1 台
+2026-10-16 03:42:55.426 | INFO     | ai_phone.agent.ws_client:run_forever:221 - 连接 Server WS ws://127.0.0.1:55128/ws/agent?token=***
+[2026-10-16 03:42:56]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "param get const.ohos.apiversion"
+[2026-10-16 03:42:56]      _client.py[line:  62]                               [DEBUG] sendMsg: {"module":"com.ohos.devicetest.hypiumApiHelper","method":"callHypiumApi","params":{"api":"Driver.getDisplaySize","this":"Driver#0","args":[],"message_type":"hypium"},"request_id":"20261016034256789080"}
+[2026-10-16 03:42:56]      _client.py[line:  73]                               [DEBUG] recvMsg: {"result":{"displayId":0,"x":1320,"y":2856}}
+2026-10-15T19:42:56.792594+00:00 real_prehello_reclaim
+[2026-10-16 03:42:56]      _client.py[line:  62]                               [DEBUG] sendMsg: {"module":"com.ohos.devicetest.hypiumApiHelper","method":"callHypiumApi","params":{"api":"Driver.getDisplaySize","this":"Driver#0","args":[],"message_type":"hypium"},"request_id":"20261016034256792931"}
+[2026-10-16 03:42:56]      _client.py[line:  73]                               [DEBUG] recvMsg: {"result":{"displayId":0,"x":1320,"y":2856}}
+[2026-10-16 03:42:57]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "param get const.product.software.version"
+[2026-10-16 03:42:58]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "param get const.product.cpu.abilist"
+[2026-10-16 03:43:00]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 shell "ifconfig"
+[2026-10-16 03:43:01]      _client.py[line:  62]                               [DEBUG] sendMsg: {"module":"com.ohos.devicetest.hypiumApiHelper","method":"callHypiumApi","params":{"api":"Driver.getDisplayRotation","this":"Driver#0","args":[],"message_type":"hypium"},"request_id":"20261016034301688782"}
+[2026-10-16 03:43:01]      _client.py[line:  73]                               [DEBUG] recvMsg: {"result":0}
+2026-10-16 03:43:01.693 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['harmony-vm:8c5348377bf8']
+2026-10-16 03:43:01.693 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['harmony-vm:8c5348377bf8']
+2026-10-16 03:43:01.693 | INFO     | ai_phone.agent.ws_client:_on_connected:275 - hello sent | devices=['harmony-vm:8c5348377bf8']
+2026-10-15T19:43:01.694625+00:00 agent_send
+[2026-10-16 03:43:01]      _client.py[line:  62]                               [DEBUG] sendMsg: {"module":"com.ohos.devicetest.hypiumApiHelper","method":"callHypiumApi","params":{"api":"Driver.getDisplaySize","this":"Driver#0","args":[],"message_type":"hypium"},"request_id":"20261016034301695566"}
+2026-10-16 03:43:01.696 | ERROR    | ai_phone.server.harmony_vm.service:filter_managed_devices_for_agent:392 - 拒绝无当前租约的受管 Harmony VM 设备上报：agent=personal-running-reclaim-1e9f92784883 vm_id=8c5348377bf8 serial=harmony-vm:8c5348377bf8
+[2026-10-16 03:43:01]      _client.py[line:  73]                               [DEBUG] recvMsg: {"result":{"displayId":0,"x":1320,"y":2856}}
+2026-10-16 03:43:01.697 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=personal-running-reclaim-1e9f92784883 name=personal-running-reclaim-1e9f92784883 host_os=Darwin 24.6.0
+2026-10-15T19:43:01.697890+00:00 agent_send
+2026-10-16 03:43:01.698 | INFO     | ai_phone.agent.ws_client:_rescan_loop:508 - rescan_loop 启动，间隔 15.0s
+2026-10-16 03:43:01.699 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:222 - Agent hello | id=personal-running-reclaim-1e9f92784883 devices=[]
+2026-10-16 03:43:01.699 | WARNING  | ai_phone.server.ws.agent_ws:agent_ws:236 - 向 Agent personal-running-reclaim-1e9f92784883 下发配置失败（VLM Run 未应用配置会拒绝执行，等待后续补发）：新版 PHONE_VLM 配置缺失，无法派生模型执行链路：AI_PHONE_PHONE_VLM_PROVIDER, AI_PHONE_PHONE_VLM_BASE_URL, AI_PHONE_PHONE_VLM_API_KEY, AI_PHONE_PHONE_VLM_MODEL。请配置 AI_PHONE_PHONE_VLM_*；不再回退旧式 AI_PHONE_VLM_*。
+2026-10-16 03:43:01.709 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-running-reclaim-1e9f92784883 devices=['harmony-vm:8c5348377bf8']
+2026-10-15T19:43:03.148841+00:00 own_guest_shell
+2026-10-15T19:43:03.149595+00:00 running_reclaim_without_process_handle_confirmed
+2026-10-15T19:43:03.160602+00:00 agent_receive
+2026-10-15T19:43:03.160716+00:00 agent_send
+[2026-10-16 03:43:03]      _client.py[line: 150]                               [INFO] Release HmClient connection
+[2026-10-16 03:43:03]      _client.py[line:  36]                               [DEBUG] rm fport local port
+[2026-10-16 03:43:03]          hdc.py[line:  23]                               [DEBUG] hdc -t 127.0.0.1:10001 fport rm tcp:16556 tcp:8012
+2026-10-15T19:43:03.169650+00:00 http
+2026-10-16 03:43:16.700 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['harmony-vm:8c5348377bf8'] → []
+2026-10-16 03:43:16.709 | INFO     | ai_phone.server.ws.agent_ws:op:763 - Agent personal-running-reclaim-1e9f92784883 移除已拔出设备 ['harmony-vm:8c5348377bf8']
+2026-10-16 03:43:16.711 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-running-reclaim-1e9f92784883 devices=[]
+2026-10-15T19:43:20.166082+00:00 agent_send
+2026-10-16 03:43:20.172 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-running-reclaim-1e9f92784883 devices=[]
+2026-10-15T19:43:20.437447+00:00 agent_receive
+2026-10-15T19:43:20.456377+00:00 http
+2026-10-15T19:43:21.961284+00:00 agent_send
+2026-10-16 03:43:21.963 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-running-reclaim-1e9f92784883 devices=[]
+2026-10-16 03:43:22.191 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:273 - Agent 断开 | id=personal-running-reclaim-1e9f92784883
+2026-10-16 03:43:22.191 | INFO     | ai_phone.server.hub:unregister_agent:201 - Agent 下线 | id=personal-running-reclaim-1e9f92784883 serials=[]
+2026-10-16 03:43:22.329 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+{"status": "passed", "result": "/tmp/aiphone-personal-harmony-legacy-20261016b2/result.json"}

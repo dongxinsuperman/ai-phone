@@ -1,0 +1,35 @@
+..............F
+=================================== FAILURES ===================================
+__________ test_install_preserves_each_platform_native_entry[android] __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x108f62710>
+platform = 'android'
+
+    @pytest.mark.parametrize("platform", ["android", "harmony", "ios", "ios_sim"])
+    async def test_install_preserves_each_platform_native_entry(monkeypatch, platform):
+        calls = []
+        f = _package_setup(
+            monkeypatch, "install", lambda *args: calls.append(args) or (True, "", "ok"), platform=platform,
+        )
+        await f.handler(f.client, f.message)
+        await asyncio.gather(*list(f.tasks))
+        await _wait_released(f.activity, "package-device")
+        assert len(calls) == 1
+>       assert calls[0][0] == "package-device" and calls[0][2] == 10
+E       AssertionError: assert ('package-device' == 'package-device'
+E         
+E           package-device and 30 == 10)
+
+/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-package-occupancy-fix-rx9jbhes/backend/tests/test_native_package_occupancy.py:267: AssertionError
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 02:38:24.293 | INFO     | ai_phone.agent.app_install.handler:_run_app_install:103 - app_install result sent=True task_id=task-1 item_id=item-1 serial=package-device success=True reason=
+============================= slowest 15 durations =============================
+0.05s call     ::test_timeout_keeps_native_lease_and_temp_package_until_actual_exit[install]
+0.05s call     ::test_timeout_keeps_native_lease_and_temp_package_until_actual_exit[uninstall]
+
+(13 durations < 0.005s hidden.  Use -vv to show these durations.)
+=========================== short test summary info ============================
+FAILED ../../var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-package-occupancy-fix-rx9jbhes/backend::test_install_preserves_each_platform_native_entry[android]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 14 passed in 0.73s
+{"pytest_exit_code": 1, "collected": 63, "blocked_external_calls": 1, "product_source_unchanged": true}

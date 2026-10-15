@@ -1,0 +1,45 @@
+{
+  "at": "2026-10-15T22:27:15.969959+00:00",
+  "processes": {
+    "77088": {
+      "exists": false
+    },
+    "77313": {
+      "exists": false
+    },
+    "77029": {
+      "exists": false
+    }
+  },
+  "ports": {
+    "15037": {
+      "127.0.0.1": {
+        "bindable": true
+      },
+      "::1": {
+        "bindable": true
+      }
+    },
+    "5666": {
+      "127.0.0.1": {
+        "bindable": true
+      },
+      "::1": {
+        "bindable": true
+      }
+    },
+    "5667": {
+      "127.0.0.1": {
+        "bindable": true
+      },
+      "::1": {
+        "bindable": true
+      }
+    }
+  },
+  "avd_exists": false,
+  "ini_exists": false,
+  "ledger_rows": 0,
+  "remaining_runtimes": [],
+  "protected_metadata_changed": []
+}

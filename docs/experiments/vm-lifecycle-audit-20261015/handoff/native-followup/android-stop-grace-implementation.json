@@ -1,0 +1,37 @@
+{
+  "recorded_at": "2026-10-15T20:39:35.940312+00:00",
+  "status": "implemented-tests-and-independent-review-passed",
+  "product_files": [
+    "backend/ai_phone/agent/android_vm/manager.py",
+    "backend/ai_phone/agent/ws_client.py",
+    "backend/ai_phone/server/android_vm/api.py"
+  ],
+  "test_file": "backend/tests/test_android_vm_stop_budget.py",
+  "sha256": {
+    "backend/ai_phone/agent/android_vm/manager.py": "13bf99f44a4fa566bbfab44258cd4ab8a0eac2d000613fe149ed9fef33b26bd3",
+    "backend/ai_phone/agent/ws_client.py": "aadad560bfa0788b0b6eefe6636be7b7f2e95cae96b31d423f2dcaa34252592e",
+    "backend/ai_phone/server/android_vm/api.py": "3bdcfa84b46262ca974be0e29ba9352986d6e0a350df109c8d09aa2d69116d3d",
+    "backend/tests/test_android_vm_stop_budget.py": "42747b8f555aad8d43d0ca301f6901feef7abcdfa2ae7b088a5bd40295955520"
+  },
+  "validation": "307 passed, 2 skipped in 4.95s; five isolated test files; no native commands",
+  "log": "android-stop-grace-tests.log",
+  "native_execution": false,
+  "committed": false,
+  "semantics": [
+    "Single 120s Android stop/delete budget including WS queue, progress send, executor queue, VM lock, native command, process wait and exit verification",
+    "SDK20s only when exact managed process env omits override; positive integer override otherwise; unknown/invalid env uses remaining bounded budget",
+    "Multiple exact owned PIDs share one grace deadline, including the last accepted native request; duplicate PID handled once",
+    "No force signal or new AVD delete starts after deadline; failed/unconfirmed resources retain identity",
+    "One separate bounded failure-cleanup after failed start; only newly created first-bind instance may be deleted; no restart retry",
+    "Existing adb emu kill strategy and native exit/port verification preserved; no svc power shutdown",
+    "Not a diagnosis or fix attribution for a2 persistence"
+  ],
+  "independent_validation": "186 passed / 0 skipped; stop-budget, existing manager reliability and WS tests; frozen source hashes matched",
+  "independent_evidence": [
+    "android-stop-independent-final-manifest.json",
+    "android-stop-independent-final.xml",
+    "android-stop-independent-final.log"
+  ],
+  "native_harness_requirement": "a4 observer must accept and transparently forward internal deadline/grace_deadline before refreeze; historical a3 untouched",
+  "updated_at": "2026-10-15T20:40:58.133783+00:00"
+}

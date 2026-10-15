@@ -1,0 +1,161 @@
+--- harness-before-operation-outcome-fix.py
++++ /Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_sync_a5.py
+@@ -185,6 +185,33 @@
+             record.update(finished_at=utc_now(), finished_monotonic_ns=time.monotonic_ns())
+ 
+     manager.stop_sync = observed
++
++
++def require_operation(instance, *, vm_id, action, request_id=None):
++    if not isinstance(instance, dict) or instance.get("id") != vm_id:
++        raise RuntimeError("Lifecycle response is missing the exact requested VM identity")
++    runtime = instance.get("runtime")
++    operation = runtime.get("operation") if isinstance(runtime, dict) else None
++    if not isinstance(operation, dict) or operation.get("action") != action:
++        raise RuntimeError("Lifecycle response is missing the requested operation")
++    observed_id = operation.get("request_id")
++    if not isinstance(observed_id, str) or not observed_id or observed_id.strip() != observed_id:
++        raise RuntimeError("Lifecycle operation request_id is missing or invalid")
++    if request_id is not None and observed_id != request_id:
++        raise RuntimeError("Lifecycle readback belongs to another operation request_id")
++    return operation
++
++
++def operation_snapshot_ready(instance, *, vm_id, action, request_id, desired_state):
++    operation = require_operation(instance, vm_id=vm_id, action=action, request_id=request_id)
++    outcome = operation.get("outcome")
++    if outcome in {"failed", "timeout", "timed_out", "cancelled"}:
++        raise RuntimeError(f"This {action} operation {request_id} ended as {outcome}; physical {instance.get('state')} is not success")
++    if outcome == "pending" and operation.get("pending") is True:
++        return False
++    if outcome != "succeeded" or operation.get("pending") is not False:
++        raise RuntimeError("Lifecycle operation has no explicit successful terminal outcome")
++    return instance.get("state") == desired_state
+ 
+ 
+ def diagnostic_summary(records, *, witness_name, witness_sha256, witness_bytes, fixture_url, storage_key, token):
+@@ -740,7 +767,7 @@
+     witness_sha256 = hashlib.sha256(witness_payload).hexdigest()
+     fixture_url = f"http://127.0.0.1:{FIXTURE_GUEST_PORT}/fixture/?" + urllib.parse.urlencode({"run": run_id, "platform": "android"})
+     diagnostic_state = {"records": [], "first_write_error": None, "host_timing": [], "receipt_timing": [],
+-                        "native_calls": [], "avd_snapshots": [], "stop_sync_attempts": [], "api_stop_attempts": [],
++                        "native_calls": [], "avd_snapshots": [], "stop_sync_attempts": [], "api_stop_attempts": [], "api_lifecycle_attempts": [],
+                         "witness_name": witness_name, "expected_witness_sha256": witness_sha256,
+                         "expected_witness_bytes": len(witness_payload), "fixture_url": fixture_url,
+                         "storage_key": "personal-vm-e2e:" + run_id,
+@@ -788,12 +815,20 @@
+         return cleanup_stop_decision(vm_id, native_generation(vm_id),
+             diagnostic_state["stop_sync_attempts"] + diagnostic_state["api_stop_attempts"])
+ 
++    def latest_api_operation(vm_id, action):
++        matches = [row for row in diagnostic_state["api_lifecycle_attempts"] if row["vm_id"] == vm_id and row["action"] == action]
++        if not matches:
++            raise RuntimeError("No current HTTP lifecycle operation was recorded for this VM")
++        return matches[-1]
++
++    def finish_api_operation(vm_id, action, outcome, **details):
++        record = latest_api_operation(vm_id, action)
++        if outcome == "succeeded" and record["outcome"] in {"failed", "timeout", "timed_out", "cancelled"}:
++            raise RuntimeError("A failed lifecycle attempt cannot be promoted by later physical facts")
++        record.update(outcome=outcome, finished_at=utc_now(), finished_monotonic_ns=time.monotonic_ns(), **details)
++
+     def finish_api_stop(vm_id, outcome, **details):
+-        generation = native_generation(vm_id)
+-        matches = [row for row in diagnostic_state["api_stop_attempts"]
+-                   if row["vm_id"] == vm_id and row["generation_id"] == generation]
+-        if matches:
+-            matches[-1].update(outcome=outcome, finished_at=utc_now(), finished_monotonic_ns=time.monotonic_ns(), **details)
++        finish_api_operation(vm_id, "stop", outcome, **details)
+ 
+     class ManagerSubprocessObserver:
+         """Delegate unchanged calls; observe existing argv/results, not new probes."""
+@@ -1440,42 +1475,73 @@
+ 
+         async with AsyncClient(base_url=base_url, timeout=300, trust_env=False) as http:
+             async def api(method, path, **kwargs):
+-                stop_record = None
++                operation_record = None
+                 if method == "POST" and path.endswith("/stop"):
+                     timing("server-stop-requested", path=path)
+-                    stop_id = path.rsplit("/", 2)[-2]
+-                    stop_record = {"vm_id": stop_id, "generation_id": native_generation(stop_id),
+-                                   "kind": "http-stop", "outcome": "requested", "at": utc_now(),
+-                                   "monotonic_ns": time.monotonic_ns()}
+-                    diagnostic_state["api_stop_attempts"].append(stop_record)
++                endpoint = path.rsplit("/", 1)[-1]
++                if method == "POST" and endpoint in {"dispatch", "start", "stop"}:
++                    operation_vm_id = path.rsplit("/", 2)[-2]
++                    action = "stop" if endpoint == "stop" else "start"
++                    operation_record = {"vm_id": operation_vm_id, "generation_id": native_generation(operation_vm_id),
++                        "kind": "http-" + action, "action": action, "endpoint": endpoint, "outcome": "requested",
++                        "at": utc_now(), "monotonic_ns": time.monotonic_ns()}
++                    diagnostic_state["api_lifecycle_attempts"].append(operation_record)
++                    if action == "stop":
++                        diagnostic_state["api_stop_attempts"].append(operation_record)
+                 try:
+                     response = await http.request(method, path, headers=auth, **kwargs)
+                 except BaseException as exc:
+-                    if stop_record is not None:
+-                        stop_record.update(outcome="failed", error=type(exc).__name__ + ": " + str(exc))
++                    if operation_record is not None:
++                        operation_record.update(outcome="failed", error=type(exc).__name__ + ": " + str(exc))
+                     raise
+                 if method == "POST" and path.endswith("/stop"):
+                     timing("server-stop-returned", status_code=response.status_code)
+                 if response.status_code >= 400:
+-                    if stop_record is not None:
+-                        stop_record.update(outcome="failed", status_code=response.status_code)
++                    if operation_record is not None:
++                        operation_record.update(outcome="failed", status_code=response.status_code)
+                     raise RuntimeError(f"{method} {path}: {response.status_code} {response.text[:2000]}")
+-                return response.json()
++                try:
++                    body = response.json()
++                    if operation_record is not None:
++                        if not isinstance(body, dict) or body.get("sent") is not True:
++                            raise RuntimeError("Lifecycle HTTP response did not explicitly send this operation")
++                        instance = body.get("instance")
++                        operation = require_operation(instance, vm_id=operation_record["vm_id"], action=operation_record["action"])
++                        operation_record.update(request_id=operation["request_id"], response_operation=dict(operation))
++                        operation_snapshot_ready(instance, vm_id=operation_record["vm_id"], action=operation_record["action"],
++                            request_id=operation_record["request_id"], desired_state="stopped" if operation_record["action"] == "stop" else "running")
++                    return body
++                except BaseException as exc:
++                    if operation_record is not None:
++                        operation_record.update(outcome="failed", error=type(exc).__name__ + ": " + str(exc))
++                    raise
+ 
+             async def wait_vm(vm_id, state, timeout=240):
++                action = "stop" if state == "stopped" else "start" if state == "running" else None
++                expected_request_id = None
+                 async def read():
+                     value = await api("GET", prefix + "/" + vm_id)
++                    if action is not None:
++                        operation_snapshot_ready(value, vm_id=vm_id, action=action, request_id=expected_request_id, desired_state=state)
+                     if value["state"] == "error":
+                         raise RuntimeError(f"VM operation failed: {value.get('error_message')}")
+                     return value
+                 try:
+-                    value = await eventually(read, lambda v: v["state"] == state, timeout=timeout)
++                    if action is not None:
++                        attempt = latest_api_operation(vm_id, action)
++                        if attempt["outcome"] in {"failed", "timeout", "timed_out", "cancelled"}:
++                            raise RuntimeError("This HTTP lifecycle attempt already failed")
++                        expected_request_id = attempt.get("request_id")
++                        if not expected_request_id:
++                            raise RuntimeError("This HTTP lifecycle attempt has no confirmed request_id")
++                    value = await eventually(read, lambda v: operation_snapshot_ready(v, vm_id=vm_id, action=action,
++                        request_id=expected_request_id, desired_state=state) if action is not None else v["state"] == state, timeout=timeout)
++                    if action is not None:
++                        finish_api_operation(vm_id, action, "succeeded", server_state_observed=state, verified_request_id=expected_request_id)
+                 except BaseException as exc:
+-                    if state == "stopped":
+-                        finish_api_stop(vm_id, "failed", error=type(exc).__name__ + ": " + str(exc))
++                    if action is not None:
++                        finish_api_operation(vm_id, action, "failed", error=type(exc).__name__ + ": " + str(exc))
+                     raise
+-                if state == "stopped":
+-                    finish_api_stop(vm_id, "succeeded", server_stopped_observed=True)
+                 return value
+ 
+             config = {"alias": "personal-e2e-" + run_id, "api_level": 33, "abi": "arm64",

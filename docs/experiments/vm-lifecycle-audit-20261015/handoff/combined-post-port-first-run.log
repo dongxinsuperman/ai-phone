@@ -1,0 +1,403 @@
+........................................................................ [  5%]
+........................................................................ [ 10%]
+........................................................................ [ 15%]
+........................................................................ [ 20%]
+........................................................................ [ 26%]
+........................................................................ [ 31%]
+........................................................................ [ 36%]
+..........FF......F.FF
+=================================== FAILURES ===================================
+____ test_delayed_old_vm_cleanup_cannot_touch_new_owner_of_reused_hdc[stop] ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12222d950>
+tmp_path = PosixPath('/private/tmp/aiphone-handoff-combined-d25cyi9o/pytest/test_delayed_old_vm_cleanup_ca0')
+operation = 'stop'
+
+    @pytest.mark.parametrize("operation", ["stop", "delete"])
+    def test_delayed_old_vm_cleanup_cannot_touch_new_owner_of_reused_hdc(monkeypatch, tmp_path, operation):
+        """A's late command may affect A's files, never B's current connection."""
+        import ai_phone.agent.harmony_vm.manager as manager_module
+    
+        manager = HarmonyVmManager(runtime_dir=tmp_path)
+        old_path = tmp_path / "instances" / "aiphone_harmony_vm_a"
+        old_path.mkdir(parents=True)
+        manager._known["vm-a"] = {  # noqa: SLF001
+            "vm_id": "vm-a",
+            "instance_name": "aiphone_harmony_vm_a",
+            "instance_path": str(old_path.parent),
+            "hdc_port": 10007,
+            "hdc_serial": HDC_SERIAL,
+            "lease_token": "old-lease",
+            "ready": False,
+            "cleanup_confirmed": True,
+        }
+        current = HarmonyVmRuntime(
+            vm_id="vm-b",
+            name="vm-b",
+            instance_name="aiphone_harmony_vm_b",
+            instance_path=str(tmp_path / "instances"),
+            image_root="",
+            hdc_port=10007,
+            hdc_serial=HDC_SERIAL,
+            lease_token="new-lease",
+            ready=True,
+        )
+        manager._runtimes["vm-b"] = current  # noqa: SLF001
+        manager._known["vm-b"] = {  # noqa: SLF001
+            "vm_id": "vm-b",
+            "instance_name": "aiphone_harmony_vm_b",
+            "instance_path": str(tmp_path / "instances"),
+            "hdc_port": 10007,
+            "hdc_serial": HDC_SERIAL,
+            "lease_token": "new-lease",
+            "ready": True,
+        }
+    
+        def forbidden_hdc(*_args, **_kwargs):
+            pytest.fail("old VM cleanup touched B's HDC connection")
+    
+        def fake_emulator(args, **_kwargs):
+            assert args[1] == "-delete"
+            assert args[2] == "aiphone_harmony_vm_a"
+            old_path.rmdir()
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+    
+        monkeypatch.setattr(manager_module, "hdc_run", forbidden_hdc)
+        monkeypatch.setattr(
+            manager_module, "find_harmony_tools", lambda: (SimpleNamespace(emulator="Emulator"), [])
+        )
+        monkeypatch.setattr(manager_module.subprocess, "run", fake_emulator)
+        if operation == "stop":
+>           result = manager.stop_sync("vm-a", HDC_SERIAL, "old-lease")
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_identity.py:524: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/harmony_vm/manager.py:1164: in stop_sync
+    target_rows = hdc_list_targets()
+                  ^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/drivers/hdc.py:381: in hdc_list_targets
+    raw = hdc_run("list", "targets", "-v", timeout=5.0)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/drivers/hdc.py:307: in hdc_run
+    proc = subprocess.run(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ['/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/toolchains/hdc', 'list', 'targets', '-v']
+_kwargs = {'capture_output': True, 'encoding': 'utf-8', 'errors': 'replace', 'text': True, ...}
+@py_assert0 = 'list', @py_assert3 = '-delete', @py_assert2 = False
+@py_format5 = "'list' == '-delete'\n~\n~- -delete\n~+ list"
+@py_format7 = "assert 'list' == '-delete'\n~\n~- -delete\n~+ list"
+
+    def fake_emulator(args, **_kwargs):
+>       assert args[1] == "-delete"
+E       AssertionError: assert 'list' == '-delete'
+E         
+E         - -delete
+E         + list
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_identity.py:513: AssertionError
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 03:40:13.444 | INFO     | ai_phone.agent.drivers.hdc:_resolve_hdc_binary:169 - hdc 未在 PATH 里，但在默认路径发现：/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/toolchains/hdc；已自动把 /Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/toolchains prepend 进 os.environ['PATH']（免去 source ~/.zshrc）
+___ test_delayed_old_vm_cleanup_cannot_touch_new_owner_of_reused_hdc[delete] ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12266c750>
+tmp_path = PosixPath('/private/tmp/aiphone-handoff-combined-d25cyi9o/pytest/test_delayed_old_vm_cleanup_ca1')
+operation = 'delete'
+
+    @pytest.mark.parametrize("operation", ["stop", "delete"])
+    def test_delayed_old_vm_cleanup_cannot_touch_new_owner_of_reused_hdc(monkeypatch, tmp_path, operation):
+        """A's late command may affect A's files, never B's current connection."""
+        import ai_phone.agent.harmony_vm.manager as manager_module
+    
+        manager = HarmonyVmManager(runtime_dir=tmp_path)
+        old_path = tmp_path / "instances" / "aiphone_harmony_vm_a"
+        old_path.mkdir(parents=True)
+        manager._known["vm-a"] = {  # noqa: SLF001
+            "vm_id": "vm-a",
+            "instance_name": "aiphone_harmony_vm_a",
+            "instance_path": str(old_path.parent),
+            "hdc_port": 10007,
+            "hdc_serial": HDC_SERIAL,
+            "lease_token": "old-lease",
+            "ready": False,
+            "cleanup_confirmed": True,
+        }
+        current = HarmonyVmRuntime(
+            vm_id="vm-b",
+            name="vm-b",
+            instance_name="aiphone_harmony_vm_b",
+            instance_path=str(tmp_path / "instances"),
+            image_root="",
+            hdc_port=10007,
+            hdc_serial=HDC_SERIAL,
+            lease_token="new-lease",
+            ready=True,
+        )
+        manager._runtimes["vm-b"] = current  # noqa: SLF001
+        manager._known["vm-b"] = {  # noqa: SLF001
+            "vm_id": "vm-b",
+            "instance_name": "aiphone_harmony_vm_b",
+            "instance_path": str(tmp_path / "instances"),
+            "hdc_port": 10007,
+            "hdc_serial": HDC_SERIAL,
+            "lease_token": "new-lease",
+            "ready": True,
+        }
+    
+        def forbidden_hdc(*_args, **_kwargs):
+            pytest.fail("old VM cleanup touched B's HDC connection")
+    
+        def fake_emulator(args, **_kwargs):
+            assert args[1] == "-delete"
+            assert args[2] == "aiphone_harmony_vm_a"
+            old_path.rmdir()
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+    
+        monkeypatch.setattr(manager_module, "hdc_run", forbidden_hdc)
+        monkeypatch.setattr(
+            manager_module, "find_harmony_tools", lambda: (SimpleNamespace(emulator="Emulator"), [])
+        )
+        monkeypatch.setattr(manager_module.subprocess, "run", fake_emulator)
+        if operation == "stop":
+            result = manager.stop_sync("vm-a", HDC_SERIAL, "old-lease")
+        else:
+>           result = manager.delete_sync("vm-a", HDC_SERIAL, "old-lease")
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_identity.py:526: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/harmony_vm/manager.py:1418: in delete_sync
+    stop = self.stop_sync(vm_id, hdc_serial, lease_token)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/harmony_vm/manager.py:1164: in stop_sync
+    target_rows = hdc_list_targets()
+                  ^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/drivers/hdc.py:381: in hdc_list_targets
+    raw = hdc_run("list", "targets", "-v", timeout=5.0)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/drivers/hdc.py:307: in hdc_run
+    proc = subprocess.run(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ['/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/toolchains/hdc', 'list', 'targets', '-v']
+_kwargs = {'capture_output': True, 'encoding': 'utf-8', 'errors': 'replace', 'text': True, ...}
+@py_assert0 = 'list', @py_assert3 = '-delete', @py_assert2 = False
+@py_format5 = "'list' == '-delete'\n~\n~- -delete\n~+ list"
+@py_format7 = "assert 'list' == '-delete'\n~\n~- -delete\n~+ list"
+
+    def fake_emulator(args, **_kwargs):
+>       assert args[1] == "-delete"
+E       AssertionError: assert 'list' == '-delete'
+E         
+E         - -delete
+E         + list
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_identity.py:513: AssertionError
+__ test_agent_stop_retry_never_confirms_unverified_old_port_or_touches_new_vm __
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12241d4d0>
+tmp_path = PosixPath('/private/tmp/aiphone-handoff-combined-d25cyi9o/pytest/test_agent_stop_retry_never_co0')
+
+    def test_agent_stop_retry_never_confirms_unverified_old_port_or_touches_new_vm(
+        monkeypatch, tmp_path
+    ):
+        import ai_phone.agent.harmony_vm.manager as manager_module
+    
+        serial = "127.0.0.1:10007"
+        vm_id = "old-vm"
+        old_token = "old-lease"
+        manager = HarmonyVmManager(runtime_dir=tmp_path)
+        runtime = HarmonyVmRuntime(
+            vm_id=vm_id,
+            name=vm_id,
+            instance_name="aiphone_harmony_old_vm",
+            instance_path=str(tmp_path / "instances"),
+            image_root="",
+            hdc_port=10007,
+            hdc_serial=serial,
+            lease_token=old_token,
+            ready=True,
+        )
+        manager._runtimes[vm_id] = runtime  # noqa: SLF001
+        manager._known[vm_id] = {**runtime.persistent_dict(), "created": True}  # noqa: SLF001
+        register_managed_vm(vm_id, serial, old_token)
+        register_managed_serial(serial)
+    
+        calls: list[tuple[str, tuple[Any, ...]]] = []
+        confirmations = iter([(False, "unconfirmed"), (False, "unconfirmed"), (True, "removed")])
+        monkeypatch.setattr(
+            manager_module,
+            "find_harmony_tools",
+            lambda: (HarmonyVmTools(emulator="/fake/Emulator"), []),
+        )
+        monkeypatch.setattr(
+            manager_module.subprocess,
+            "run",
+            lambda args, **_kwargs: calls.append(("emulator", tuple(args)))
+            or SimpleNamespace(returncode=0, stdout="", stderr=""),
+        )
+        monkeypatch.setattr(
+            manager_module,
+            "hdc_run",
+            lambda *args, **_kwargs: calls.append(("hdc", args)) or "",
+        )
+        monkeypatch.setattr(manager, "_wait_removed", lambda *_args: next(confirmations))
+        monkeypatch.setattr(manager, "_active_instance_serial", lambda *_args: serial)
+    
+        try:
+            first = manager.stop_sync(vm_id, serial, old_token)
+            assert first["ok"] is False
+            assert first["details"]["cleanup_confirmed"] is False
+            assert manager._known[vm_id]["cleanup_pending"] is True  # noqa: SLF001
+    
+            # A process restart must not turn ready=False into a false cleanup ack.
+            manager = HarmonyVmManager(runtime_dir=tmp_path)
+            monkeypatch.setattr(manager, "_wait_removed", lambda *_args: next(confirmations))
+            monkeypatch.setattr(manager, "_active_instance_serial", lambda *_args: serial)
+            assert manager._known[vm_id]["cleanup_pending"] is True  # noqa: SLF001
+    
+            second = manager.stop_sync(vm_id, serial, old_token)
+            assert second["ok"] is False
+            assert second["details"]["cleanup_confirmed"] is False
+            assert manager._known[vm_id]["cleanup_pending"] is True  # noqa: SLF001
+    
+            register_managed_vm("new-vm", serial, "new-lease")
+            calls_before_old_retry = list(calls)
+            blocked = manager.stop_sync(vm_id, serial, old_token)
+            assert blocked["ok"] is False
+            assert blocked["reason"] == "hdc_owned_by_another_vm"
+            assert calls == calls_before_old_retry
+            assert manager._known[vm_id]["cleanup_pending"] is True  # noqa: SLF001
+    
+            unregister_managed_vm("new-vm", "new-lease")
+            confirmed = manager.stop_sync(vm_id, serial, old_token)
+>           assert confirmed["ok"] is True
+E           assert False is True
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_recovery.py:438: AssertionError
+____________ test_delete_rechecks_crash_service_that_outlives_stop _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12639cdd0>
+tmp_path = PosixPath('/private/tmp/aiphone-handoff-combined-d25cyi9o/pytest/test_delete_rechecks_crash_ser0')
+
+    def test_delete_rechecks_crash_service_that_outlives_stop(monkeypatch, tmp_path):
+        import psutil
+        import ai_phone.agent.harmony_vm.manager as manager_module
+    
+        vm_id = "vm-b"
+        instance_name = "aiphone_harmony_vm_b"
+        instance_root = tmp_path / "instances"
+        orphan = _FakeCrashProcess(
+            201,
+            [
+                "/Applications/DevEco/Emulator.app/Contents/MacOS/emulator-crash-service",
+                "-socket",
+                f"{instance_name}_crash",
+                "-data-dir",
+                str(instance_root / instance_name),
+                "-ppid",
+                "1",
+            ],
+        )
+        scans = iter([[], [orphan]])
+        monkeypatch.setattr(psutil, "process_iter", lambda _attrs: next(scans))
+        monkeypatch.setattr(
+            manager_module,
+            "find_harmony_tools",
+            lambda: (HarmonyVmTools(emulator="/fake/Emulator"), []),
+        )
+        monkeypatch.setattr(
+            manager_module.subprocess,
+            "run",
+            lambda _args, **_kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+        )
+        manager = HarmonyVmManager(runtime_dir=tmp_path)
+        manager._known[vm_id] = {  # noqa: SLF001
+            "vm_id": vm_id,
+            "instance_name": instance_name,
+            "instance_path": str(instance_root),
+            "ready": False,
+            "cleanup_confirmed": True,
+        }
+    
+        result = manager.delete_sync(vm_id)
+    
+        assert result["ok"] is True
+>       assert result["details"]["crash_service_cleanup_confirmed"] is True
+E       assert False is True
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_recovery.py:562: AssertionError
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 03:40:14.060 | WARNING  | ai_phone.agent.harmony_vm.manager:delete_sync:1487 - Harmony VM 删除后 crash-service 清理未确认 vm_id=vm-b errors=['crash service process scan unavailable: ']
+______ test_crash_service_scan_failure_does_not_block_confirmed_hdc_stop _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1265a5350>
+tmp_path = PosixPath('/private/tmp/aiphone-handoff-combined-d25cyi9o/pytest/test_crash_service_scan_failur0')
+
+    def test_crash_service_scan_failure_does_not_block_confirmed_hdc_stop(
+        monkeypatch, tmp_path
+    ):
+        import psutil
+        import ai_phone.agent.harmony_vm.manager as manager_module
+    
+        def scan_unavailable(_attrs):
+            raise PermissionError("process list unavailable")
+    
+        monkeypatch.setattr(psutil, "process_iter", scan_unavailable)
+        monkeypatch.setattr(
+            manager_module,
+            "find_harmony_tools",
+            lambda: (HarmonyVmTools(emulator="/fake/Emulator"), []),
+        )
+        monkeypatch.setattr(
+            manager_module.subprocess,
+            "run",
+            lambda _args, **_kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+        )
+        monkeypatch.setattr(manager_module, "hdc_run", lambda *_args, **_kwargs: "")
+        manager = HarmonyVmManager(runtime_dir=tmp_path)
+        runtime = HarmonyVmRuntime(
+            vm_id="vm-c",
+            name="vm-c",
+            instance_name="aiphone_harmony_vm_c",
+            instance_path=str(tmp_path / "instances"),
+            image_root="",
+            hdc_port=10007,
+            hdc_serial="127.0.0.1:10007",
+            lease_token="lease-c",
+        )
+        manager._runtimes[runtime.vm_id] = runtime  # noqa: SLF001
+        monkeypatch.setattr(manager, "_wait_removed", lambda *_args: (True, "removed"))
+    
+        result = manager.stop_sync(runtime.vm_id)
+    
+>       assert result["ok"] is True
+E       assert False is True
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_recovery.py:603: AssertionError
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 03:40:14.118 | WARNING  | ai_phone.agent.harmony_vm.manager:_active_instance_serial:1954 - Harmony VM 进程归属不可查 vm_id=vm-c: process list unavailable
+2026-10-16 03:40:14.118 | WARNING  | ai_phone.agent.harmony_vm.manager:_stop_runtime_locked:1355 - Harmony VM crash-service 清理未确认 vm_id=vm-c errors=['crash service process scan unavailable: process list unavailable']
+============================= slowest 12 durations =============================
+2.00s call     tests/test_cache_replay_orchestrate.py::test_v3_replay_success_then_assertion_pass
+2.00s call     tests/test_cache_replay_orchestrate.py::test_v3_replay_success_but_assertion_fail_marks_suspect[FAIL-3]
+2.00s call     tests/test_cache_replay_orchestrate.py::test_v3_replay_success_but_assertion_fail_marks_suspect[FAIL-1]
+2.00s call     tests/test_cache_replay_orchestrate.py::test_v3_assertion_receives_this_runs_history_separately_from_cached_plan
+2.00s call     tests/test_cache_replay_orchestrate.py::test_v3_replay_forwards_current_goal_and_map_without_mutating_cache
+2.00s call     tests/test_cache_replay_orchestrate.py::test_v3_replay_success_but_assertion_fail_marks_suspect[FAIL-2]
+2.00s call     tests/test_cache_replay_orchestrate.py::test_v3_replay_success_but_assertion_fail_marks_suspect[SKIP-1]
+2.00s call     tests/test_cache_replay_orchestrate.py::test_v3_replay_success_but_assertion_fail_marks_suspect[SKIP-3]
+2.00s call     tests/test_cache_replay_orchestrate.py::test_v3_replay_success_but_assertion_fail_marks_suspect[SKIP-2]
+0.56s call     tests/test_harmony_driver_concurrency.py::test_call_with_reconnect_serializes_same_serial
+0.09s setup    tests/test_harmony_vm_recovery.py::test_offline_vm_switch_creates_new_id_before_old_orphan_cleanup[True]
+0.09s setup    tests/test_app_install.py::test_create_task_dispatches_to_device_agent
+=========================== short test summary info ============================
+FAILED ../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_identity.py::test_delayed_old_vm_cleanup_cannot_touch_new_owner_of_reused_hdc[stop]
+FAILED ../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_identity.py::test_delayed_old_vm_cleanup_cannot_touch_new_owner_of_reused_hdc[delete]
+FAILED ../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_recovery.py::test_agent_stop_retry_never_confirms_unverified_old_port_or_touches_new_vm
+FAILED ../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_recovery.py::test_delete_rechecks_crash_service_that_outlives_stop
+FAILED ../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_recovery.py::test_crash_service_scan_failure_does_not_block_confirmed_hdc_stop
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 5 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+5 failed, 521 passed in 26.46s
+{"final_exit_code": 1, "source_unchanged": true, "duration_seconds": 27.145}

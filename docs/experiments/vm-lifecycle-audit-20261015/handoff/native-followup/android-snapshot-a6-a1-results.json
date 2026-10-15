@@ -1,0 +1,67 @@
+{
+  "status": "failed_harness_preflight",
+  "root": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a1",
+  "raw_evidence": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a1/evidence.json",
+  "archive_evidence": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-snapshot-a6-a1.evidence.json",
+  "product_commit": "f263af3a0b8ed6aea556c63354747a79e52a4f86",
+  "harness_sha256": "4a394c4d6ea4cb4b0611103e42bef3579b8818d3fab4f2e095313f7e4c467197",
+  "error": "RuntimeError('adb exited 1: adb: --one-device is only allowed when starting a server.\\n')",
+  "duration_sec": 8.160476417004247,
+  "vm_count": 0,
+  "vm_native_call_count": 0,
+  "lifecycle_attempts": 0,
+  "snapshot_matrix_covered": false,
+  "image_guard_covered": false,
+  "root_review_required": false,
+  "failed_raw_evidence_unchanged": true,
+  "cleanup_after_failure": {
+    "at": "2026-10-15T21:57:06.272973+00:00",
+    "scope": "exact run-owned ADB daemon only; no VM existed",
+    "original_failure_unchanged": true,
+    "argv": [
+      "/Users/dongxin/Library/Android/sdk/platform-tools/adb",
+      "-P",
+      "15037",
+      "kill-server"
+    ],
+    "returncode": 0,
+    "stdout": "",
+    "stderr": "",
+    "pid": 70814,
+    "create_time": 1792101390.489498,
+    "original_process_gone": true,
+    "ports": {
+      "15037": {
+        "127.0.0.1": {
+          "bindable": true
+        },
+        "::1": {
+          "bindable": true
+        }
+      },
+      "5666": {
+        "127.0.0.1": {
+          "bindable": true
+        },
+        "::1": {
+          "bindable": true
+        }
+      },
+      "5667": {
+        "127.0.0.1": {
+          "bindable": true
+        },
+        "::1": {
+          "bindable": true
+        }
+      }
+    },
+    "vm_ids": [],
+    "native_call_count": 0,
+    "private_avd_entries": []
+  },
+  "protected_metadata_changed": [],
+  "product_freeze_mismatches": [],
+  "harness_source_changes": [],
+  "automatic_reruns": 0
+}

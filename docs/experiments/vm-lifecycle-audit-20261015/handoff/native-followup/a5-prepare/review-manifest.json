@@ -1,0 +1,413 @@
+{
+  "prepared_at": "2026-10-15T21:45:25.198387+00:00",
+  "status": "final-f263-freeze-guards-passed-root-authorized-one-run",
+  "native_execution_started": true,
+  "source_sha256": {
+    "android_app_install_sync_a5.py": "43356f481dea68c8adcd7b5fb7344b08912f2b2e4f678075533f2a15856eaf51",
+    "test_android_sync_a5_guards.py": "1a891d2b296dc99c25e45ccf54d17dba3a5ce3892b2fe300603b2214f37222dd",
+    "test_android_a5_stop_observer_equivalence.py": "d7b2cbd225e2827b30ccb507e8ba9a6f491c5023c00c671ded42925d9ba7210a",
+    "a3_MainActivity.java": "9219cf05d043b476d802cc0b5e5b02b2827d013d13f73d5fab6a39ac03ba906d",
+    "a3_storage_diagnostic.js": "7a2bd86efcb92da3a63956b34e24948e1399bc48cc4e42cb2d284981d2db80cf"
+  },
+  "previous_a4_source_sha256": "a958493a2f746d209eba4b7dbd7a0982de35da157120a9f599532872d6016f9a",
+  "previous_a4_source_unchanged": true,
+  "original_html_sha256": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+  "original_html_unchanged": true,
+  "unchanged_case_and_capture_functions_ast": {
+    "visible_case": true,
+    "receipt": true,
+    "ready": true,
+    "ui_xml": true,
+    "target": true,
+    "configure": true,
+    "build_fixture": true,
+    "restart_visual_sample": true,
+    "inspect_visual_sample": true,
+    "bounded_private_observation": true,
+    "diagnostic_summary": true
+  },
+  "product_candidate_manager_sha256": "a9fc524cf2206baa1295557e936a05781d4d584e96e334e685f3e01c84e1a5db",
+  "current_freeze_mismatches": [],
+  "guard_results": {
+    "tests_run": 57,
+    "passed": true,
+    "log": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a5-prepare/guard-tests-f263-final.log"
+  },
+  "observer_equivalence": {
+    "at": "2026-10-15T21:45:11.323074+00:00",
+    "scope": "Offline real-function AST plus fake process/clock; no native commands or backend import",
+    "status": "passed",
+    "case_count": 14,
+    "harness_sha256": "43356f481dea68c8adcd7b5fb7344b08912f2b2e4f678075533f2a15856eaf51",
+    "manager_sha256": "a9fc524cf2206baa1295557e936a05781d4d584e96e334e685f3e01c84e1a5db",
+    "cases": [
+      {
+        "case": "expired-total-budget-no-process-call",
+        "forwarded_kwargs": {
+          "deadline": 100.0,
+          "grace_deadline": 120.0
+        },
+        "identical": true,
+        "outcome": {
+          "kind": "raised",
+          "type": "TimeoutError",
+          "message": "Android VM startup deadline exceeded"
+        },
+        "clock_after": 100.0,
+        "calls": [],
+        "signals": []
+      },
+      {
+        "case": "shared-grace-only-two-seconds-remain",
+        "forwarded_kwargs": {
+          "deadline": 140.0,
+          "grace_deadline": 120.0
+        },
+        "identical": true,
+        "outcome": {
+          "kind": "returned",
+          "value": null
+        },
+        "clock_after": 119.0,
+        "calls": [
+          {
+            "method": "wait",
+            "at": 118.0,
+            "timeout": 2.0
+          }
+        ],
+        "signals": []
+      },
+      {
+        "case": "normal-native-exit",
+        "forwarded_kwargs": {
+          "deadline": 140.0,
+          "grace_deadline": 120.0
+        },
+        "identical": true,
+        "outcome": {
+          "kind": "returned",
+          "value": null
+        },
+        "clock_after": 107.0,
+        "calls": [
+          {
+            "method": "wait",
+            "at": 100.0,
+            "timeout": 20.0
+          }
+        ],
+        "signals": []
+      },
+      {
+        "case": "native-grace-consumes-whole-total-budget-no-signal",
+        "forwarded_kwargs": {
+          "deadline": 102.0,
+          "grace_deadline": 102.0
+        },
+        "identical": true,
+        "outcome": {
+          "kind": "raised",
+          "type": "TimeoutError",
+          "message": "Android VM cleanup deadline exceeded during native exit"
+        },
+        "clock_after": 102.0,
+        "calls": [
+          {
+            "method": "wait",
+            "at": 100.0,
+            "timeout": 2.0
+          }
+        ],
+        "signals": []
+      },
+      {
+        "case": "shared-grace-expired-not-renewed",
+        "forwarded_kwargs": {
+          "deadline": 130.0,
+          "grace_deadline": 99.0
+        },
+        "identical": true,
+        "outcome": {
+          "kind": "returned",
+          "value": null
+        },
+        "clock_after": 101.0,
+        "calls": [
+          {
+            "method": "poll",
+            "at": 100.0
+          },
+          {
+            "method": "terminate",
+            "at": 100.0
+          },
+          {
+            "method": "wait",
+            "at": 100.0,
+            "timeout": 5
+          }
+        ],
+        "signals": [
+          "terminate"
+        ]
+      },
+      {
+        "case": "native-timeout-then-terminate",
+        "forwarded_kwargs": {
+          "deadline": 140.0,
+          "grace_deadline": 120.0
+        },
+        "identical": true,
+        "outcome": {
+          "kind": "returned",
+          "value": null
+        },
+        "clock_after": 121.0,
+        "calls": [
+          {
+            "method": "wait",
+            "at": 100.0,
+            "timeout": 20.0
+          },
+          {
+            "method": "poll",
+            "at": 120.0
+          },
+          {
+            "method": "terminate",
+            "at": 120.0
+          },
+          {
+            "method": "wait",
+            "at": 120.0,
+            "timeout": 5
+          }
+        ],
+        "signals": [
+          "terminate"
+        ]
+      },
+      {
+        "case": "terminate-exhausts-total-budget-no-kill",
+        "forwarded_kwargs": {
+          "deadline": 104.0
+        },
+        "identical": true,
+        "outcome": {
+          "kind": "raised",
+          "type": "TimeoutError",
+          "message": "Android VM startup deadline exceeded"
+        },
+        "clock_after": 104.0,
+        "calls": [
+          {
+            "method": "poll",
+            "at": 100.0
+          },
+          {
+            "method": "terminate",
+            "at": 100.0
+          },
+          {
+            "method": "wait",
+            "at": 100.0,
+            "timeout": 4.0
+          }
+        ],
+        "signals": [
+          "terminate"
+        ]
+      },
+      {
+        "case": "terminate-timeout-then-kill",
+        "forwarded_kwargs": {
+          "deadline": 130.0
+        },
+        "identical": true,
+        "outcome": {
+          "kind": "returned",
+          "value": null
+        },
+        "clock_after": 106.0,
+        "calls": [
+          {
+            "method": "poll",
+            "at": 100.0
+          },
+          {
+            "method": "terminate",
+            "at": 100.0
+          },
+          {
+            "method": "wait",
+            "at": 100.0,
+            "timeout": 5
+          },
+          {
+            "method": "kill",
+            "at": 105.0
+          },
+          {
+            "method": "wait",
+            "at": 105.0,
+            "timeout": 5
+          }
+        ],
+        "signals": [
+          "terminate",
+          "kill"
+        ]
+      },
+      {
+        "case": "already-exited",
+        "forwarded_kwargs": {
+          "deadline": 130.0
+        },
+        "identical": true,
+        "outcome": {
+          "kind": "returned",
+          "value": null
+        },
+        "clock_after": 100.0,
+        "calls": [
+          {
+            "method": "poll",
+            "at": 100.0
+          }
+        ],
+        "signals": []
+      },
+      {
+        "case": "adopted-process-without-poll",
+        "forwarded_kwargs": {
+          "deadline": 130.0
+        },
+        "identical": true,
+        "outcome": {
+          "kind": "returned",
+          "value": null
+        },
+        "clock_after": 101.0,
+        "calls": [
+          {
+            "method": "is_running",
+            "at": 100.0
+          },
+          {
+            "method": "terminate",
+            "at": 100.0
+          },
+          {
+            "method": "wait",
+            "at": 100.0,
+            "timeout": 5
+          }
+        ],
+        "signals": [
+          "terminate"
+        ]
+      },
+      {
+        "case": "process-vanished-during-grace",
+        "forwarded_kwargs": {
+          "deadline": 130.0,
+          "grace_deadline": 120.0
+        },
+        "identical": true,
+        "outcome": {
+          "kind": "returned",
+          "value": null
+        },
+        "clock_after": 100.0,
+        "calls": [
+          {
+            "method": "wait",
+            "at": 100.0,
+            "timeout": 20.0
+          }
+        ],
+        "signals": []
+      },
+      {
+        "case": "default-budgets-not-invented-by-observer",
+        "forwarded_kwargs": {},
+        "identical": true,
+        "outcome": {
+          "kind": "returned",
+          "value": null
+        },
+        "clock_after": 101.0,
+        "calls": [
+          {
+            "method": "wait",
+            "at": 100.0,
+            "timeout": 120.0
+          }
+        ],
+        "signals": []
+      },
+      {
+        "case": "explicit-none-budgets-forwarded",
+        "forwarded_kwargs": {
+          "deadline": null,
+          "grace_deadline": null
+        },
+        "identical": true,
+        "outcome": {
+          "kind": "returned",
+          "value": null
+        },
+        "clock_after": 101.0,
+        "calls": [
+          {
+            "method": "wait",
+            "at": 100.0,
+            "timeout": 120.0
+          }
+        ],
+        "signals": []
+      },
+      {
+        "case": "unexpected-error-propagates",
+        "forwarded_kwargs": {
+          "deadline": 130.0
+        },
+        "identical": true,
+        "outcome": {
+          "kind": "raised",
+          "type": "RuntimeError",
+          "message": "probe failure"
+        },
+        "clock_after": 100.0,
+        "calls": [
+          {
+            "method": "poll",
+            "at": 100.0
+          }
+        ],
+        "signals": []
+      }
+    ]
+  },
+  "dry_run_root_created": false,
+  "stop_strategy": "product-issued exact nonce-marked /system/bin/sync then existing emu kill; no fixture sync or guest power shutdown",
+  "snapshot_coverage": "no_snapshot only; future independent existing-snapshot matrix is not covered",
+  "cleanup_rule": "same native generation failed/unknown stop blocks automatic repeat and retains resources; new native generation permits one protective stop",
+  "next_step": "Root final product image-guard freeze, final freeze guard and explicit single-run native authorization",
+  "product_commit": "f263af3a0b8ed6aea556c63354747a79e52a4f86",
+  "product_count": 33,
+  "product_freeze_sha256": "23181a92b0e7be9dc643de432b9c600946ad9f08989a93fb724341a987af0eec",
+  "guard_log": ".........................................................\n----------------------------------------------------------------------\nRan 57 tests in 3.712s\n\nOK\n",
+  "operation_counterexample_replay": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a5-prepare/operation-outcome-replay.json",
+  "independent_operation_review": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a5-prepare/independent-operation-outcome-after.json",
+  "prior_rejected_harness_sha256": "9c5cea9afd5983d88de46c63ec7005a04fb68316f364bbc3c5d94eb0cdfdcd22",
+  "operation_contract": "HTTP dispatch/start/stop exact instance ID and operation request_id/action/outcome; terminal failure is sticky despite late physical state",
+  "git_blob_mismatches": [],
+  "plan_path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a5-prepare/plan-f263-final.json",
+  "native_run_root": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-f263af3a-20261016-a5",
+  "native_run_status": "passed",
+  "native_finished_at": "2026-10-15T21:46:52.693179+00:00",
+  "hardware_slot_released": true,
+  "root_review_path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-a5-root-review.json"
+}

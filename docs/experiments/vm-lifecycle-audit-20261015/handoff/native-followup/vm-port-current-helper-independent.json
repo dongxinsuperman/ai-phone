@@ -1,0 +1,51 @@
+{
+  "helper_sha256": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+  "cases": [
+    {
+      "host": "127.0.0.1",
+      "v6only": null,
+      "listen": false,
+      "available": false
+    },
+    {
+      "host": "127.0.0.1",
+      "v6only": null,
+      "listen": true,
+      "available": false
+    },
+    {
+      "host": "0.0.0.0",
+      "v6only": null,
+      "listen": false,
+      "available": false
+    },
+    {
+      "host": "0.0.0.0",
+      "v6only": null,
+      "listen": true,
+      "available": false
+    },
+    {
+      "host": "::",
+      "v6only": 0,
+      "listen": false,
+      "available": false
+    },
+    {
+      "host": "::",
+      "v6only": 0,
+      "listen": true,
+      "available": false
+    },
+    {
+      "state": "ESTABLISHED-no-listener",
+      "available": true
+    },
+    {
+      "state": "TIME_WAIT",
+      "available": true
+    }
+  ],
+  "passed": 8,
+  "scope": "owned loopback sockets; direct current product helper import; no native or external network"
+}

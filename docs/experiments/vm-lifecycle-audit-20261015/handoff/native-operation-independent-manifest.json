@@ -1,0 +1,14 @@
+{
+  "tested_source_label": "Current worktree native package operation fix; independent counters and thread race review",
+  "source_sha256": {
+    "backend/ai_phone/agent/native_operation.py": "1fbc78e1560cf21ba3dc6e68d50adfc9a025831fba3d3848c407e291ff901255",
+    "backend/ai_phone/agent/device_activity.py": "cc2e96d66080f7aa60fa8d0b9956e433e186fd892dfc26c00a8c904060395e31",
+    "backend/ai_phone/agent/app_install/handler.py": "31abda8902919971a2879a3b6e262ddb16509213b7a1a249392a560ba7a81d22",
+    "backend/ai_phone/agent/app_uninstall/handler.py": "b373f34caf73043d54bc297cacd929c18783342486b8330acbb97c0c44b7714d",
+    "backend/ai_phone/agent/app_install/android.py": "52aa206c26fe1961a279add9eacd8e707d247d357245e8b799f8704a1ae690fa",
+    "backend/ai_phone/agent/app_install/harmony.py": "ed62fccba993866f2f7c50ad9bf93af567c762c94eed2170d39c94f9efdb2ebf",
+    "backend/ai_phone/agent/app_install/ios.py": "42af7874f2eec4984a31228b16e86cb2c5fb1a1869321af1ab744a0a83ac7eda",
+    "backend/ai_phone/agent/app_install/ios_sim.py": "ff3de08bed578d426e4b87a0585b70ee4dfb53c1dfb3e1927ec5191346e75fc6",
+    "backend/ai_phone/agent/app_uninstall/platforms.py": "502e7f30821a94182ad1b7222d81e158e0183f35cae7047bf03e8ab1f8ee89b9"
+  }
+}

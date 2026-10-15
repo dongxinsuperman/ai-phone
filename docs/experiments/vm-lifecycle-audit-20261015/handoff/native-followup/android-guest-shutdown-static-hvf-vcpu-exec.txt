@@ -1,0 +1,99 @@
+
+/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+000000010012f05c <_hvf_vcpu_exec>:
+10012f05c: d10183ff    	sub	sp, sp, #0x60
+10012f060: a90167fa    	stp	x26, x25, [sp, #0x10]
+10012f064: a9025ff8    	stp	x24, x23, [sp, #0x20]
+10012f068: a90357f6    	stp	x22, x21, [sp, #0x30]
+10012f06c: a9044ff4    	stp	x20, x19, [sp, #0x40]
+10012f070: a9057bfd    	stp	x29, x30, [sp, #0x50]
+10012f074: 910143fd    	add	x29, sp, #0x50
+10012f078: aa0003f3    	mov	x19, x0
+10012f07c: 91402017    	add	x23, x0, #0x8, lsl #12  ; =0x8000
+10012f080: f000a0c1    	adrp	x1, 0x10154a000 <_scan_1x1+0x48>
+10012f084: 911f7421    	add	x1, x1, #0x7dd
+10012f088: b000a1e2    	adrp	x2, 0x10156c000 <_hex+0x8557>
+10012f08c: 91208c42    	add	x2, x2, #0x823
+10012f090: f000a1f4    	adrp	x20, 0x10156e000 <_hex+0xa557>
+10012f094: 9123be94    	add	x20, x20, #0x8ef
+10012f098: 5280cb43    	mov	w3, #0x65a              ; =1626
+10012f09c: aa1403e4    	mov	x4, x20
+10012f0a0: 940a91ea    	bl	0x1003d3848 <_object_dynamic_cast_assert>
+10012f0a4: aa0003f5    	mov	x21, x0
+10012f0a8: b902a6ff    	str	wzr, [x23, #0x2a4]
+10012f0ac: 9000cc00    	adrp	x0, 0x101aaf000 <dyld_stub_binder+0x101aaf000>
+10012f0b0: 9118e000    	add	x0, x0, #0x638
+10012f0b4: f9400008    	ldr	x8, [x0]
+10012f0b8: d63f0100    	blr	x8
+10012f0bc: aa0003f6    	mov	x22, x0
+10012f0c0: 5287b918    	mov	w24, #0x3dc8            ; =15816
+10012f0c4: 72a00058    	movk	w24, #0x2, lsl #16
+10012f0c8: 52800039    	mov	w25, #0x1               ; =1
+10012f0cc: 394acee8    	ldrb	w8, [x23, #0x2b3]
+10012f0d0: 7100051f    	cmp	w8, #0x1
+10012f0d4: 54000161    	b.ne	0x10012f100 <_hvf_vcpu_exec+0xa4>
+10012f0d8: 14000007    	b	0x10012f0f4 <_hvf_vcpu_exec+0x98>
+10012f0dc: aa1303e0    	mov	x0, x19
+10012f0e0: 97fffec9    	bl	0x10012ec04 <_hvf_handle_exception>
+10012f0e4: 390acef9    	strb	w25, [x23, #0x2b3]
+10012f0e8: 12001f28    	and	w8, w25, #0xff
+10012f0ec: 7100051f    	cmp	w8, #0x1
+10012f0f0: 54000081    	b.ne	0x10012f100 <_hvf_vcpu_exec+0xa4>
+10012f0f4: aa1303e0    	mov	x0, x19
+10012f0f8: 97fff8c4    	bl	0x10012d408 <_hvf_put_registers>
+10012f0fc: 390aceff    	strb	wzr, [x23, #0x2b3]
+10012f100: b942b6e0    	ldr	w0, [x23, #0x2b4]
+10012f104: 394b42e2    	ldrb	w2, [x23, #0x2d0]
+10012f108: 52800001    	mov	w1, #0x0                ; =0
+10012f10c: 94504103    	bl	0x10153f518 <dyld_stub_binder+0x10153f518>
+10012f110: b942b6e0    	ldr	w0, [x23, #0x2b4]
+10012f114: 394b46e2    	ldrb	w2, [x23, #0x2d1]
+10012f118: 52800021    	mov	w1, #0x1                ; =1
+10012f11c: 945040ff    	bl	0x10153f518 <dyld_stub_binder+0x10153f518>
+10012f120: b942a6e8    	ldr	w8, [x23, #0x2a4]
+10012f124: 35000288    	cbnz	w8, 0x10012f174 <_hvf_vcpu_exec+0x118>
+10012f128: 97fbc43e    	bl	0x100020220 <_qemu_mutex_unlock_iothread>
+10012f12c: b942b6e0    	ldr	w0, [x23, #0x2b4]
+10012f130: 9450411e    	bl	0x10153f5a8 <dyld_stub_binder+0x10153f5a8>
+10012f134: 35000360    	cbnz	w0, 0x10012f1a0 <_hvf_vcpu_exec+0x144>
+10012f138: 97fbc41b    	bl	0x1000201a4 <_qemu_mutex_lock_iothread>
+10012f13c: f90002d3    	str	x19, [x22]
+10012f140: f94166e8    	ldr	x8, [x23, #0x2c8]
+10012f144: b9400108    	ldr	w8, [x8]
+10012f148: 7100051f    	cmp	w8, #0x1
+10012f14c: 54fffc80    	b.eq	0x10012f0dc <_hvf_vcpu_exec+0x80>
+10012f150: 7100091f    	cmp	w8, #0x2
+10012f154: 54000141    	b.ne	0x10012f17c <_hvf_vcpu_exec+0x120>
+10012f158: f8786aa0    	ldr	x0, [x21, x24]
+10012f15c: 52800021    	mov	w1, #0x1                ; =1
+10012f160: 9405fde9    	bl	0x1002ae904 <_qemu_set_irq>
+10012f164: 394acee8    	ldrb	w8, [x23, #0x2b3]
+10012f168: 7100051f    	cmp	w8, #0x1
+10012f16c: 54fffc40    	b.eq	0x10012f0f4 <_hvf_vcpu_exec+0x98>
+10012f170: 17ffffe4    	b	0x10012f100 <_hvf_vcpu_exec+0xa4>
+10012f174: 320083e0    	mov	w0, #0x10001            ; =65537
+10012f178: 14000003    	b	0x10012f184 <_hvf_vcpu_exec+0x128>
+10012f17c: 350001a8    	cbnz	w8, 0x10012f1b0 <_hvf_vcpu_exec+0x154>
+10012f180: 52a00020    	mov	w0, #0x10000            ; =65536
+10012f184: a9457bfd    	ldp	x29, x30, [sp, #0x50]
+10012f188: a9444ff4    	ldp	x20, x19, [sp, #0x40]
+10012f18c: a94357f6    	ldp	x22, x21, [sp, #0x30]
+10012f190: a9425ff8    	ldp	x24, x23, [sp, #0x20]
+10012f194: a94167fa    	ldp	x26, x25, [sp, #0x10]
+10012f198: 910183ff    	add	sp, sp, #0x60
+10012f19c: d65f03c0    	ret
+10012f1a0: a90003f4    	stp	x20, x0, [sp]
+10012f1a4: f000a1e0    	adrp	x0, 0x10156e000 <_hex+0xa557>
+10012f1a8: 9123f400    	add	x0, x0, #0x8fd
+10012f1ac: 940cc798    	bl	0x10046100c <_qemu_abort>
+10012f1b0: b000bfe9    	adrp	x9, 0x10192c000 <dyld_stub_binder+0x10192c000>
+10012f1b4: f9400529    	ldr	x9, [x9, #0x8]
+10012f1b8: f9400120    	ldr	x0, [x9]
+10012f1bc: f90003e8    	str	x8, [sp]
+10012f1c0: f000a1e1    	adrp	x1, 0x10156e000 <_hex+0xa557>
+10012f1c4: 91245c21    	add	x1, x1, #0x917
+10012f1c8: 94503ef1    	bl	0x10153ed8c <dyld_stub_binder+0x10153ed8c>
+10012f1cc: 94503eed    	bl	0x10153ed80 <dyld_stub_binder+0x10153ed80>

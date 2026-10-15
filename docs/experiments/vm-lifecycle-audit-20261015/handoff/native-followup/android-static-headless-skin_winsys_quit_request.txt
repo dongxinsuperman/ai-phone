@@ -1,0 +1,151 @@
+Read-only disassembly. Target binary was not executed.
+Command: ['/usr/bin/xcrun', 'llvm-objdump', '--arch=arm64', '--disassemble-symbols=_skin_winsys_quit_request', '/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless']
+
+/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+00000001005a1760 <_skin_winsys_quit_request>:
+1005a1760: d10183ff    	sub	sp, sp, #0x60
+1005a1764: a9044ff4    	stp	x20, x19, [sp, #0x40]
+1005a1768: a9057bfd    	stp	x29, x30, [sp, #0x50]
+1005a176c: 910143fd    	add	x29, sp, #0x50
+1005a1770: f0009c48    	adrp	x8, 0x10192c000 <dyld_stub_binder+0x10192c000>
+1005a1774: f9400108    	ldr	x8, [x8]
+1005a1778: f9400108    	ldr	x8, [x8]
+1005a177c: f81e83a8    	stur	x8, [x29, #-0x18]
+1005a1780: 528001a0    	mov	w0, #0xd                ; =13
+1005a1784: 943e77c5    	bl	0x10153f698 <dyld_stub_binder+0x10153f698>
+1005a1788: 34000240    	cbz	w0, 0x1005a17d0 <_skin_winsys_quit_request+0x70>
+1005a178c: 943e7796    	bl	0x10153f5e4 <dyld_stub_binder+0x10153f5e4>
+1005a1790: 36f80200    	tbz	w0, #0x1f, 0x1005a17d0 <_skin_winsys_quit_request+0x70>
+1005a1794: 900082c0    	adrp	x0, 0x1015f9000 <__ZN7android9emulationL3hdrE+0x741a>
+1005a1798: 912cfc00    	add	x0, x0, #0xb3f
+1005a179c: 910063e8    	add	x8, sp, #0x18
+1005a17a0: 52800301    	mov	w1, #0x18               ; =24
+1005a17a4: d2800002    	mov	x2, #0x0                ; =0
+1005a17a8: d2800003    	mov	x3, #0x0                ; =0
+1005a17ac: 943e7797    	bl	0x10153f608 <dyld_stub_binder+0x10153f608>
+1005a17b0: 900082c1    	adrp	x1, 0x1015f9000 <__ZN7android9emulationL3hdrE+0x741a>
+1005a17b4: 9120d021    	add	x1, x1, #0x834
+1005a17b8: 910063e3    	add	x3, sp, #0x18
+1005a17bc: 12800000    	mov	w0, #-0x1               ; =-1
+1005a17c0: 52802362    	mov	w2, #0x11b              ; =283
+1005a17c4: 943e778e    	bl	0x10153f5fc <dyld_stub_binder+0x10153f5fc>
+1005a17c8: 39c0bfe8    	ldrsb	w8, [sp, #0x2f]
+1005a17cc: 37f80868    	tbnz	w8, #0x1f, 0x1005a18d8 <_skin_winsys_quit_request+0x178>
+1005a17d0: 52800008    	mov	w8, #0x0                ; =0
+1005a17d4: f000d569    	adrp	x9, 0x102050000 <__ZL15sMachExcHandler+0x1d48>
+1005a17d8: 912c4129    	add	x9, x9, #0xb10
+1005a17dc: 5280002a    	mov	w10, #0x1               ; =1
+1005a17e0: 08e8fd2a    	casalb	w8, w10, [x9]
+1005a17e4: 350008e8    	cbnz	w8, 0x1005a1900 <_skin_winsys_quit_request+0x1a0>
+1005a17e8: 943e77be    	bl	0x10153f6e0 <dyld_stub_binder+0x10153f6e0>
+1005a17ec: f9405808    	ldr	x8, [x0, #0xb0]
+1005a17f0: f9400508    	ldr	x8, [x8, #0x8]
+1005a17f4: d63f0100    	blr	x8
+1005a17f8: b40002c0    	cbz	x0, 0x1005a1850 <_skin_winsys_quit_request+0xf0>
+1005a17fc: 943e77b9    	bl	0x10153f6e0 <dyld_stub_binder+0x10153f6e0>
+1005a1800: f9405808    	ldr	x8, [x0, #0xb0]
+1005a1804: f9400508    	ldr	x8, [x8, #0x8]
+1005a1808: d63f0100    	blr	x8
+1005a180c: 9437d405    	bl	0x101396820 <_avdInfo_getTargetCpuArch>
+1005a1810: aa0003f3    	mov	x19, x0
+1005a1814: f0007ee1    	adrp	x1, 0x101580000 <_hex+0x1c557>
+1005a1818: 910ebc21    	add	x1, x1, #0x3af
+1005a181c: 943e75a7    	bl	0x10153eeb8 <dyld_stub_binder+0x10153eeb8>
+1005a1820: 34000180    	cbz	w0, 0x1005a1850 <_skin_winsys_quit_request+0xf0>
+1005a1824: d00081c1    	adrp	x1, 0x1015db000 <__ZN8crashpad12_GLOBAL__N_119kCompletedDirectoryE+0x5ab6d>
+1005a1828: 913ce421    	add	x1, x1, #0xf39
+1005a182c: aa1303e0    	mov	x0, x19
+1005a1830: 943e75a2    	bl	0x10153eeb8 <dyld_stub_binder+0x10153eeb8>
+1005a1834: 340000e0    	cbz	w0, 0x1005a1850 <_skin_winsys_quit_request+0xf0>
+1005a1838: 943e77aa    	bl	0x10153f6e0 <dyld_stub_binder+0x10153f6e0>
+1005a183c: f9405808    	ldr	x8, [x0, #0xb0]
+1005a1840: f9403908    	ldr	x8, [x8, #0x70]
+1005a1844: d63f0100    	blr	x8
+1005a1848: b940c408    	ldr	w8, [x0, #0xc4]
+1005a184c: 34000708    	cbz	w8, 0x1005a192c <_skin_winsys_quit_request+0x1cc>
+1005a1850: 943e7ae9    	bl	0x1015403f4 <dyld_stub_binder+0x1015403f4>
+1005a1854: 528003c1    	mov	w1, #0x1e               ; =30
+1005a1858: 943e79c7    	bl	0x10153ff74 <dyld_stub_binder+0x10153ff74>
+1005a185c: 34000520    	cbz	w0, 0x1005a1900 <_skin_winsys_quit_request+0x1a0>
+1005a1860: 943e7761    	bl	0x10153f5e4 <dyld_stub_binder+0x10153f5e4>
+1005a1864: 7100081f    	cmp	w0, #0x2
+1005a1868: 540004cc    	b.gt	0x1005a1900 <_skin_winsys_quit_request+0x1a0>
+1005a186c: 900082d3    	adrp	x19, 0x1015f9000 <__ZN7android9emulationL3hdrE+0x741a>
+1005a1870: 9120d273    	add	x19, x19, #0x834
+1005a1874: f0009c48    	adrp	x8, 0x10192c000 <dyld_stub_binder+0x10192c000>
+1005a1878: f9402908    	ldr	x8, [x8, #0x50]
+1005a187c: a901a3f3    	stp	x19, x8, [sp, #0x18]
+1005a1880: 900082c9    	adrp	x9, 0x1015f9000 <__ZN7android9emulationL3hdrE+0x741a>
+1005a1884: 912cfd29    	add	x9, x9, #0xb3f
+1005a1888: a902a3e9    	stp	x9, x8, [sp, #0x28]
+1005a188c: 900082c0    	adrp	x0, 0x1015f9000 <__ZN7android9emulationL3hdrE+0x741a>
+1005a1890: 912d6000    	add	x0, x0, #0xb58
+1005a1894: 910003e8    	mov	x8, sp
+1005a1898: 910063e2    	add	x2, sp, #0x18
+1005a189c: 528002c1    	mov	w1, #0x16               ; =22
+1005a18a0: 52800043    	mov	w3, #0x2                ; =2
+1005a18a4: 943e7759    	bl	0x10153f608 <dyld_stub_binder+0x10153f608>
+1005a18a8: 910003e3    	mov	x3, sp
+1005a18ac: 52800040    	mov	w0, #0x2                ; =2
+1005a18b0: aa1303e1    	mov	x1, x19
+1005a18b4: 52802942    	mov	w2, #0x14a              ; =330
+1005a18b8: 943e7751    	bl	0x10153f5fc <dyld_stub_binder+0x10153f5fc>
+1005a18bc: 39c05fe8    	ldrsb	w8, [sp, #0x17]
+1005a18c0: 36f80208    	tbz	w8, #0x1f, 0x1005a1900 <_skin_winsys_quit_request+0x1a0>
+1005a18c4: f94003e0    	ldr	x0, [sp]
+1005a18c8: f9400be8    	ldr	x8, [sp, #0x10]
+1005a18cc: 9240f901    	and	x1, x8, #0x7fffffffffffffff
+1005a18d0: 943e7748    	bl	0x10153f5f0 <dyld_stub_binder+0x10153f5f0>
+1005a18d4: 1400000b    	b	0x1005a1900 <_skin_winsys_quit_request+0x1a0>
+1005a18d8: f9400fe0    	ldr	x0, [sp, #0x18]
+1005a18dc: f94017e8    	ldr	x8, [sp, #0x28]
+1005a18e0: 9240f901    	and	x1, x8, #0x7fffffffffffffff
+1005a18e4: 943e7743    	bl	0x10153f5f0 <dyld_stub_binder+0x10153f5f0>
+1005a18e8: 52800008    	mov	w8, #0x0                ; =0
+1005a18ec: f000d569    	adrp	x9, 0x102050000 <__ZL15sMachExcHandler+0x1d48>
+1005a18f0: 912c4129    	add	x9, x9, #0xb10
+1005a18f4: 5280002a    	mov	w10, #0x1               ; =1
+1005a18f8: 08e8fd2a    	casalb	w8, w10, [x9]
+1005a18fc: 34fff768    	cbz	w8, 0x1005a17e8 <_skin_winsys_quit_request+0x88>
+1005a1900: f85e83a8    	ldur	x8, [x29, #-0x18]
+1005a1904: f0009c49    	adrp	x9, 0x10192c000 <dyld_stub_binder+0x10192c000>
+1005a1908: f9400129    	ldr	x9, [x9]
+1005a190c: f9400129    	ldr	x9, [x9]
+1005a1910: eb08013f    	cmp	x9, x8
+1005a1914: 540000a1    	b.ne	0x1005a1928 <_skin_winsys_quit_request+0x1c8>
+1005a1918: a9457bfd    	ldp	x29, x30, [sp, #0x50]
+1005a191c: a9444ff4    	ldp	x20, x19, [sp, #0x40]
+1005a1920: 910183ff    	add	sp, sp, #0x60
+1005a1924: d65f03c0    	ret
+1005a1928: 943e7507    	bl	0x10153ed44 <dyld_stub_binder+0x10153ed44>
+1005a192c: 900082c0    	adrp	x0, 0x1015f9000 <__ZN7android9emulationL3hdrE+0x741a>
+1005a1930: 9132f800    	add	x0, x0, #0xcbe
+1005a1934: 943e7627    	bl	0x10153f1d0 <dyld_stub_binder+0x10153f1d0>
+1005a1938: 943e776a    	bl	0x10153f6e0 <dyld_stub_binder+0x10153f6e0>
+1005a193c: f9405808    	ldr	x8, [x0, #0xb0]
+1005a1940: f9406908    	ldr	x8, [x8, #0xd0]
+1005a1944: 52800000    	mov	w0, #0x0                ; =0
+1005a1948: d63f0100    	blr	x8
+1005a194c: 97fff1b8    	bl	0x10059e02c <__ZN20EmulatorNoQtNoWindow11getInstanceEv>
+1005a1950: 97fff433    	bl	0x10059ea1c <__ZN20EmulatorNoQtNoWindow12requestCloseEv>
+1005a1954: 52800768    	mov	w8, #0x3b               ; =59
+1005a1958: aa0803f3    	mov	x19, x8
+1005a195c: 943e7737    	bl	0x10153f638 <dyld_stub_binder+0x10153f638>
+1005a1960: f9400008    	ldr	x8, [x0]
+1005a1964: f940cd08    	ldr	x8, [x8, #0x198]
+1005a1968: 52807d01    	mov	w1, #0x3e8              ; =1000
+1005a196c: d63f0100    	blr	x8
+1005a1970: 943e775c    	bl	0x10153f6e0 <dyld_stub_binder+0x10153f6e0>
+1005a1974: f9405808    	ldr	x8, [x0, #0xb0]
+1005a1978: f9401508    	ldr	x8, [x8, #0x28]
+1005a197c: d63f0100    	blr	x8
+1005a1980: 37000060    	tbnz	w0, #0x0, 0x1005a198c <_skin_winsys_quit_request+0x22c>
+1005a1984: 51000668    	sub	w8, w19, #0x1
+1005a1988: 35fffe93    	cbnz	w19, 0x1005a1958 <_skin_winsys_quit_request+0x1f8>
+1005a198c: 900082c0    	adrp	x0, 0x1015f9000 <__ZN7android9emulationL3hdrE+0x741a>
+1005a1990: 91336c00    	add	x0, x0, #0xcdb
+1005a1994: 943e760f    	bl	0x10153f1d0 <dyld_stub_binder+0x10153f1d0>
+1005a1998: 943e74fa    	bl	0x10153ed80 <dyld_stub_binder+0x10153ed80>

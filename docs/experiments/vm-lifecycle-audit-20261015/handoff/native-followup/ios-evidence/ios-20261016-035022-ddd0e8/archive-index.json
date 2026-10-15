@@ -1,0 +1,59 @@
+{
+  "created_at": "2026-10-15T19:54:25.974047+00:00",
+  "source_runtime": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/ios-runs/ios-20261016-035022-ddd0e8",
+  "no_database_or_binary_cache_in_archive": true,
+  "files": {
+    "after-restart.png": {
+      "bytes": 197514,
+      "sha256": "d21136f0a80fd84f6dd569dd08f9d9f8062a7104533f8c7958def1374d7c4096"
+    },
+    "approved-product-freeze.json": {
+      "bytes": 4110,
+      "sha256": "202a3b6391b5eb619282cd8e58fb87c2da3c7eec9575da74bd396654a86a941d"
+    },
+    "build-cache-cleanup.json": {
+      "bytes": 441,
+      "sha256": "701029325d6acc2c24eeff188716a770f59250fb7cf7ea415b37462580b0eb04"
+    },
+    "confirmed.png": {
+      "bytes": 202877,
+      "sha256": "fb587afb2225a98bc5ecafa8dcd5350e25a8ad2d67fb7da78142e064dccf7fef"
+    },
+    "console.log": {
+      "bytes": 16928,
+      "sha256": "6f4ffcc1c2d964538f1f6ea3d7dec312fa1d39cb66f6d7a884cbc69a17ca10d9"
+    },
+    "native-commands.ndjson": {
+      "bytes": 10146,
+      "sha256": "ebddeb643a6240824243116d86b804b40a4a1d1a90b1371fec789141b390b3c4"
+    },
+    "native-ui.ndjson": {
+      "bytes": 5266,
+      "sha256": "15e2c6cf46f9ec02c11d5a8b10949ca42e204c4e0d5148a21319816a9aa53ba7"
+    },
+    "post-cleanup.json": {
+      "bytes": 790,
+      "sha256": "b27a09be3fcb3cfb945138e6da1960e121726f3cf312b7f48cbc984d5204bf38"
+    },
+    "product-freeze-before-check.json": {
+      "bytes": 160,
+      "sha256": "391a8534cbfd2484ccb2cbbdabced2fc302ff1b012903aab8a546ef98f2edb9d"
+    },
+    "receipts.json": {
+      "bytes": 590,
+      "sha256": "c534e35e5b38fa092a9745fe78b9fa7d5e5131aa82f7244ce4a2ed3507181e31"
+    },
+    "result.json": {
+      "bytes": 8836,
+      "sha256": "7149269519e9609fa1d68fee10fe720d5d69c3d6ace95a612931125ec03ee0e0"
+    },
+    "source-hashes.json": {
+      "bytes": 7181,
+      "sha256": "6fbe71fc2e1e452d5a3a78b70ede572d58721a8cbd0a0fc82eeb1e9d58d1c10a"
+    },
+    "summary.json": {
+      "bytes": 2631,
+      "sha256": "4b16c7dcbc12f5a20db5cc8cad33b0fb25bf81c86279d68e9cd40fe7dbae2001"
+    }
+  }
+}

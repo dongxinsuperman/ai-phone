@@ -1,0 +1,31 @@
+{
+  "source_sha256": "4a394c4d6ea4cb4b0611103e42bef3579b8818d3fab4f2e095313f7e4c467197",
+  "scope": "offline temporary files, no product import, native or network",
+  "frozen_products_matched": 33,
+  "cases": [
+    {
+      "case": "avd-file-symlink",
+      "rejected": true,
+      "error": "AVD content fingerprint encountered a foreign path",
+      "foreign_file_reads": []
+    },
+    {
+      "case": "avd-directory-symlink",
+      "rejected": true,
+      "error": "AVD content fingerprint encountered a foreign path",
+      "foreign_file_reads": []
+    },
+    {
+      "case": "avd-index-symlink",
+      "rejected": true,
+      "error": "AVD content fingerprint encountered a foreign path",
+      "foreign_file_reads": []
+    },
+    {
+      "case": "snapshot-directory-symlink",
+      "rejected": true,
+      "error": "Snapshot path is a symlink",
+      "foreign_file_reads": []
+    }
+  ]
+}

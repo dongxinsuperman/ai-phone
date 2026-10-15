@@ -1,0 +1,63 @@
+{
+  "headless": {
+    "requestCloseEv": {
+      "file": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-static-headless-requestCloseEv.txt",
+      "symbols": [
+        "__ZN20EmulatorNoQtNoWindow12requestCloseEv",
+        "__ZNSt3__110__function6__funcIZN20EmulatorNoQtNoWindow12requestCloseEvE3$_0NS_9allocatorIS3_EEFvRKN7android4base8OptionalINS6_9emulation16AdbCommandResultEEEEEclESD_"
+      ]
+    },
+    "skin_winsys_quit_request": {
+      "file": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-static-headless-skin_winsys_quit_request.txt",
+      "symbols": [
+        "_skin_winsys_quit_request"
+      ]
+    },
+    "__ZN3$_18__invokeEiPKc": {
+      "file": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-static-headless-__ZN3lambda_18__invokeEiPKc.txt",
+      "symbols": [
+        "__ZN3$_18__invokeEiPKc"
+      ]
+    },
+    "AdbThroughExeC2": {
+      "file": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-static-headless-AdbThroughExeC2.txt",
+      "symbols": [
+        "__ZN7android9emulation13AdbThroughExeC2EPNS_4base6LooperERKNSt3__112basic_stringIcNS5_11char_traitsIcEENS5_9allocatorIcEEEESD_RKNS5_6vectorISB_NS9_ISB_EEEEbxNS5_8functionIFvRKNS2_8OptionalINS0_16AdbCommandResultEEEEEE"
+      ]
+    },
+    "AdbHostServer13getClientPort": {
+      "file": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-static-headless-AdbHostServer13getClientPort.txt",
+      "symbols": [
+        "__ZN7android9emulation13AdbHostServer13getClientPortEv"
+      ]
+    },
+    "FeatureControlImpl8toString": {
+      "file": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-static-headless-FeatureControlImpl8toString.txt",
+      "symbols": [
+        "__ZN7android14featurecontrol18FeatureControlImpl8toStringENS0_7FeatureE"
+      ]
+    }
+  },
+  "metrics": {
+    "HostSystem10runCommand": {
+      "file": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-static-metrics-HostSystem10runCommand.txt",
+      "symbols": [
+        "__ZN7android4base12_GLOBAL__N_110HostSystem10runCommandERKNSt3__16vectorINS3_12basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEENS8_ISA_EEEENS0_10RunOptionsExPiSG_RKSA_"
+      ]
+    },
+    "waitAndKillSelfEi": {
+      "file": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-static-metrics-waitAndKillSelfEi.txt",
+      "symbols": [
+        "__ZN7android4base6System15waitAndKillSelfEi"
+      ]
+    }
+  },
+  "adb": {
+    "adb_commandline": {
+      "file": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-static-adb-adb_commandline.txt",
+      "symbols": [
+        "__Z15adb_commandlineiPPKc"
+      ]
+    }
+  }
+}

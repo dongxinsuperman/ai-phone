@@ -1,0 +1,113 @@
+{
+  "status": "failed",
+  "scope": "Personal isolated native regression for legacy stopped registry, lost stop ACK and same-host new Agent session. Product code not changed by harness.",
+  "evidence_root": "/tmp/aiphone-personal-harmony-legacy-20261016b1",
+  "original_result": {
+    "path": "/tmp/aiphone-personal-harmony-legacy-20261016b1/result.json",
+    "sha256": "6d84e12248fae95a683a0bf2d2a7d1b39be8aff2e63acfbdf835f88e5e699943",
+    "status": "failed"
+  },
+  "targeted_upgrade_checks": {
+    "real_prehello_reclaim": true,
+    "prehello_preserved_legacy_registry": true,
+    "private_inventory_complete": true,
+    "owner_only_handoff": true,
+    "state_error_last_status_old_lease_preserved": true,
+    "fresh_normal_stop_exit_evidence": {
+      "source": "registry_instance_absence",
+      "hdc_serial": "127.0.0.1:10001",
+      "hdc_port": 10001,
+      "started_unix": 1792092178.202036,
+      "instance_process_status": "absent",
+      "process_handle_present": false,
+      "sample_count": 1,
+      "last_sample": {
+        "target_status": "offline",
+        "port_bindable": true,
+        "duration_sec": 1.368
+      },
+      "elapsed_sec": 1.368
+    },
+    "independent_saved_old_lease_query": {
+      "port": 10001,
+      "token": "cb48e0050f984b17acc968cc31315402",
+      "row": null
+    },
+    "same_uuid_and_guest_marker_after_restart": {
+      "vm_id": "06aebef10af4",
+      "uuid": "6f109238-fedd-44e6-b5e0-0a750a73d5a4",
+      "marker_sha256": "682623137564f13dabb7e00184013eed7edcf39fef0015a81e3b6e175f155b31",
+      "matched": true
+    }
+  },
+  "failure": {
+    "stage": "final ordinary stop after successful restart and marker readback",
+    "reason": "cleanup_unconfirmed: HDC Offline; bare port bind remained false for the original bounded observation window",
+    "native_process_return_code": 5,
+    "original_failure": "AssertionError({'state': 'error', 'assigned_agent_id': 'personal-legacy-new-43587006ce3d', 'error_code': 'cleanup_unconfirmed', 'error_message': 'hdc tconn -remove: [Fail]No target available', 'runtime': {'operation': {'action': 'stop', 'request_id': 'b4f040808e1a43c8', 'pending': False, 'outcome': 'failed', 'target_agent_id': 'personal-legacy-new-43587006ce3d', 'target_host_id': '84cd287bbf8e498cbf46e7243d3ca86b', 'first_bind': False, 'started_at': '2026-10-15T19:23:42.888160+00:00', 'deadline_at': '2026-10-15T19:25:42.888160+00:00', 'timeout_sec': 120.0, 'completed_at': '2026-10-15T19:24:13.684023+00:00'}, 'last_status': {'state': 'error', 'ok': False, 'reason': 'cleanup_unconfirmed', 'details': {'cleanup_confirmed': False, 'cleanup_mode': 'unconfirmed', 'stale_hdc_target': '', 'stop_errors': ['hdc tconn -remove: [Fail]No target available'], 'crash_service_cleanup_confirmed': True, 'hdc_port': 10001, 'exit_evidence': {'hdc_serial': '127.0.0.1:10001', 'hdc_port': 10001, 'started_unix': 1792092236.9524648, 'budget_sec': 15.0, 'sample_count': 9, 'max_sample_duration_sec': 1.349, 'max_offline_free_samples': 0, 'last_sample': {'target_status': 'offline', 'port_bindable': False, 'duration_sec': 1.346, 'elapsed_sec': 16.168}, 'elapsed_sec': 16.676, 'result': 'unconfirmed', 'process_handle_present': True, 'process_return_code': 5, 'process_sampled_unix': 1792092253.629034}}, 'ts': '2026-10-15T19:24:13.678575+00:00'}, 'instance_created': True, 'details': {'cleanup_confirmed': False}, 'owner_host_id': '84cd287bbf8e498cbf46e7243d3ca86b', 'lease_history': [{'lease_token': 'cb48e0050f984b17acc968cc31315402', 'port': 10001, 'released_at': '2026-10-15T19:22:59.612234+00:00', 'reason': 'stopped'}]}, 'lease_token': 'd65d623228e54494824d6834e0f7b628', 'hdc_serial': '127.0.0.1:10001', 'hdc_port': 10001, 'lease_row': {'vm_id': '06aebef10af4', 'agent_id': 'personal-legacy-new-43587006ce3d', 'lease_token': 'd65d623228e54494824d6834e0f7b628', 'state': 'quarantined'}})",
+    "interpretation": "No verified listening owner at the final harness snapshot; temporary kernel TCP state is possible but TIME_WAIT was not captured during b1. Do not label the original run passed."
+  },
+  "post_failure_readonly": {
+    "path": "/tmp/aiphone-personal-harmony-legacy-20261016b1/post-failure-port-evidence.json",
+    "sha256": "b5f504cf328c86914b1db618f63815f24e344c75ec12e3aa7e37c892aff5a919"
+  },
+  "separate_guarded_disposal": {
+    "path": "/tmp/aiphone-personal-harmony-legacy-20261016b1/guarded-final-cleanup-receipt.json",
+    "sha256": "77c0add10a6a45ddbd89b80d704e8b9eb58e68282d68de62c68f57cc3202abd0",
+    "calls": 1,
+    "result": {
+      "ok": true,
+      "reason": "deleted",
+      "details": {
+        "exit_evidence": {
+          "source": "registry_instance_absence",
+          "hdc_serial": "127.0.0.1:10001",
+          "hdc_port": 10001,
+          "started_unix": 1792092365.4405959,
+          "instance_process_status": "absent",
+          "process_handle_present": false,
+          "sample_count": 1,
+          "last_sample": {
+            "target_status": "offline",
+            "port_bindable": true,
+            "duration_sec": 1.362
+          },
+          "elapsed_sec": 1.362
+        },
+        "cleanup_confirmed": true,
+        "crash_service_cleanup_confirmed": true,
+        "crash_service_cleanup_errors": [],
+        "instance_name": "aiphone_harmony_06aebef10af4",
+        "instance_directory_absent": true
+      }
+    },
+    "after": {
+      "instance_directory_absent": true,
+      "registry_absent": true,
+      "runtime_absent": true
+    },
+    "original_failed_result_unchanged": true
+  },
+  "protected_metadata_unchanged": true,
+  "sources_unchanged_during_b1": true,
+  "source_hashes_at_b1_start": {
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/harmony_personal_e2e.py": "d951bc304dff6a9c23694035abc2b481b167a5cdad344ac5698c62a4912d5e70",
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/personal-fixture.html": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+    "backend/ai_phone/agent/harmony_vm/manager.py": "f9927f728d5efb185cfddc25de9fcb530b57c137c62926ba8458daa3a1c105f5",
+    "backend/ai_phone/agent/harmony_vm/capability.py": "0b55a6dd74febed56efae177f82091c0d84607d090ba2122114bce1f1812035b",
+    "backend/ai_phone/agent/harmony_vm/registry.py": "bebe6a5f0db459782b74721a753b4a7faeb26943beb7e8c60194e4403f997d80",
+    "backend/ai_phone/agent/ws_client.py": "c9d6b39b48952b4c10adf8d124a210adc014f89525af9008586d2a7bdffcc04d",
+    "backend/ai_phone/agent/drivers/harmony.py": "3dbab0a5cc082928492c09d15711f1b73705399a72a7fe199dc5b7d7c21fbec4",
+    "backend/ai_phone/agent/drivers/hdc.py": "440df7e7dd2795b6b0bffd2942efb4a161550bfe8877085973006c88601a5e7c",
+    "backend/ai_phone/server/harmony_vm/api.py": "00b4665fda0e96e110b2fcb6ef236edc0af62a4a956abd76ca156c94e96793a6",
+    "backend/ai_phone/server/harmony_vm/service.py": "cef15701e1c3d6260a2e681911fa200dda10f27114225ab85994417e67008460",
+    "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+    "backend/ai_phone/server/vm_lifecycle.py": "232cf364266b1e344a7d29e87ebce39709994a1b0aa790db582ef33602af56aa",
+    "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/harmony_legacy_native.py": "6af039a58f34224b34733d5f087ec2a67e6c67d8917d0321ad19268cbf9f5622",
+    "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+    "backend/ai_phone/server/harmony_vm/models.py": "b82d52e8c663d1202aab25ef5be878145ebb2bcc94c26dd73a1759b1f8bb939e"
+  },
+  "resources_now": "No own native process/port listener; separate guarded disposal removed the private instance and registry. Isolated SQLite/logs remain for evidence.",
+  "next_harness_observation": "Prepared only, not executed: exact own assigned port; at most three real/plain-false samples; synchronous plain/reuse bind comparisons; off-thread connect/netstat/lsof with short bounds; no timeout or return-value changes.",
+  "archived_at_utc": "2026-10-15T19:28:25.158557+00:00"
+}

@@ -1,0 +1,275 @@
+Read-only static evidence from the installed macOS arm64 Android Emulator 36.6.11.0 build15507667.
+No target binary was executed.
+
+{
+  "mode": "read-only static analysis; no emulator, adb or guest/native lifecycle command executed",
+  "files": {
+    "launcher": {
+      "path": "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+      "sha256": "c12c8d72da94cb5abd7f9d2578923d05ff94ea827f0ee593c6e563c96edc0d42"
+    },
+    "headless": {
+      "path": "/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless",
+      "sha256": "4324b12002d535af88f0f4a3e8267730dd495ddfa704c0f5cb141abf679c9b08"
+    },
+    "metrics": {
+      "path": "/Users/dongxin/Library/Android/sdk/emulator/lib64/libandroid-emu-metrics.dylib",
+      "sha256": "54a4d18dcde810a7f8f1c8755130d2fbaddf06b68dea6d27c9d3d213aecd4434"
+    },
+    "agents": {
+      "path": "/Users/dongxin/Library/Android/sdk/emulator/lib64/libandroid-emu-agents.dylib",
+      "sha256": "31113994857cafd07523b15ad5f59343c2ac4eb8902918aa82f656c8a8820bfb"
+    },
+    "sdk_adb": {
+      "path": "/Users/dongxin/Library/Android/sdk/platform-tools/adb",
+      "sha256": "5759ea07285e5a5b66d84f489c118a3fa3998e69cd37725e5a3dc7cbe0597278"
+    },
+    "host_features": {
+      "path": "/Users/dongxin/Library/Android/sdk/emulator/lib/advancedFeatures.ini",
+      "sha256": "f4b27be7c3f994435b70ef7f007a6a753e1e079a1b7dcbc5462c603627f8da6c"
+    },
+    "guest_features": {
+      "path": "/Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a/advancedFeatures.ini",
+      "sha256": "4a16df2817b3c5ceb48f75ca6b59686526116ed3e355e277cc2d727f1550c191"
+    }
+  },
+  "observed_version": "36.6.11.0 build_id 15507667",
+  "project_commit_at_capture": "6da8a953b54362fc81fc519391752459edc9e051",
+  "project_manager_sha256_at_capture": "0d4528d299c67ca244c207ae678cab8c616824d82ef38f12d21469a7e12beb0d"
+}
+
+[requestClose feature decision and direct QEMU route]
+10059ea50: 97ffffba    	bl	0x10059e938 <__ZN20EmulatorNoQtNoWindow24saveMultidisplayToConfigEv>
+10059ea54: 528000e0    	mov	w0, #0x7                ; =7
+10059ea58: 943773d1    	bl	0x10137b99c <__ZN7android14featurecontrol9isEnabledENS0_7FeatureE>
+10059ea5c: 340005c0    	cbz	w0, 0x10059eb14 <__ZN20EmulatorNoQtNoWindow12requestCloseEv+0xf8>
+10059ead8: 943e82d8    	bl	0x10153f638 <dyld_stub_binder+0x10153f638>
+10059eadc: 52800280    	mov	w0, #0x14               ; =20
+10059eae0: 943e8348    	bl	0x10153f800 <dyld_stub_binder+0x10153f800>
+10059eae4: 943e82ff    	bl	0x10153f6e0 <dyld_stub_binder+0x10153f6e0>
+10059eae8: f9404808    	ldr	x8, [x0, #0x90]
+10059eaec: f9408108    	ldr	x8, [x8, #0x100]
+10059eaf0: 52800080    	mov	w0, #0x4                ; =4
+10059eaf4: d63f0100    	blr	x8
+
+Feature enum 7 proof: FeatureControlImpl::toString uses pointer table 0x101a930d0, index 7 -> *(0x101a93108)=0x1016ada4e -> "FastSnapshotV1"; length table 0x101895b28 index7 contains 14.
+VM dispatch proof: _gQAndroidVmOperations@0x1019e4178 -> table0x1019e4030; table+0x100@0x1019e4130 -> 0x10043fff4; that thunk branches directly to _qemu_system_shutdown_request@0x1001c52ec.
+
+[alternate branch constructs shell / reboot / -p; command timeout 5000ms]
+10059eb14: 943e82c9    	bl	0x10153f638 <dyld_stub_binder+0x10153f638>
+10059eb18: 52800280    	mov	w0, #0x14               ; =20
+10059eb1c: 943e8339    	bl	0x10153f800 <dyld_stub_binder+0x10153f800>
+10059eb20: f9400673    	ldr	x19, [x19, #0x8]
+10059eb24: 528000a8    	mov	w8, #0x5                ; =5
+10059eb28: 39019fe8    	strb	w8, [sp, #0x67]
+10059eb2c: 528d0e68    	mov	w8, #0x6873             ; =26739
+10059eb30: 72ad8ca8    	movk	w8, #0x6c65, lsl #16
+10059eb34: b90053e8    	str	w8, [sp, #0x50]
+10059eb38: 52800d88    	mov	w8, #0x6c               ; =108
+10059eb3c: 7900abe8    	strh	w8, [sp, #0x54]
+10059eb40: 910143f5    	add	x21, sp, #0x50
+10059eb44: 528000c8    	mov	w8, #0x6                ; =6
+10059eb48: 3901ffe8    	strb	w8, [sp, #0x7f]
+10059eb4c: 528cae48    	mov	w8, #0x6572             ; =25970
+10059eb50: 72adec48    	movk	w8, #0x6f62, lsl #16
+10059eb54: b9006be8    	str	w8, [sp, #0x68]
+10059eb58: 528e8de8    	mov	w8, #0x746f             ; =29807
+10059eb5c: 7900dbe8    	strh	w8, [sp, #0x6c]
+10059eb60: 3901bbff    	strb	wzr, [sp, #0x6e]
+10059eb64: 52800048    	mov	w8, #0x2                ; =2
+10059eb68: 39025fe8    	strb	w8, [sp, #0x97]
+10059eb6c: 528e05a8    	mov	w8, #0x702d             ; =28717
+10059eb70: 790103e8    	strh	w8, [sp, #0x80]
+10059eb74: 39020bff    	strb	wzr, [sp, #0x82]
+10059ebc8: f9400268    	ldr	x8, [x19]
+10059ebcc: f9402109    	ldr	x9, [x8, #0x40]
+10059ebd0: 910083e8    	add	x8, sp, #0x20
+10059ebd4: 910023e1    	add	x1, sp, #0x8
+10059ebd8: 9100c3e2    	add	x2, sp, #0x30
+10059ebdc: aa1303e0    	mov	x0, x19
+10059ebe0: 52827103    	mov	w3, #0x1388             ; =5000
+10059ebe4: 52800004    	mov	w4, #0x0                ; =0
+10059ebe8: d63f0120    	blr	x9
+
+[callback unconditionally asks QEMU shutdown after the adb callback; no result check]
+10059f828: a9bf7bfd    	stp	x29, x30, [sp, #-0x10]!
+10059f82c: 910003fd    	mov	x29, sp
+10059f830: 943e7fac    	bl	0x10153f6e0 <dyld_stub_binder+0x10153f6e0>
+10059f834: f9404808    	ldr	x8, [x0, #0x90]
+10059f838: f9408101    	ldr	x1, [x8, #0x100]
+10059f83c: 52800080    	mov	w0, #0x4                ; =4
+10059f840: a8c17bfd    	ldp	x29, x30, [sp], #0x10
+10059f844: d61f0020    	br	x1
+
+[console exit route]
+LibuiAgent pointer _gQAndroidLibuiAgent@0x1019f0698 -> kLibuiAgent@0x1019f0680; slot+8 is 0x10059d21c, branching to skin_winsys_quit_request@0x1005a1760. libandroid-emu-agents getConsoleAgents returns0x8050, its Libui getter reads0x8098 (=+0x48); do_kill reads client.agents+0x48 then slot+8. requestClose also has a direct call at0x1005a0c48 inside skin_winsys_enter_main_loop.
+10059d21c: 14001151    	b	0x1005a1760 <_skin_winsys_quit_request>
+
+[SDK watchdog budget: positive atoi(env) replaces argument20]
+  1b7b50: aa0003f3     	mov	x19, x0
+  1b7d2c: 3032e740     	adr	x0, 0x21da15 <dyld_stub_binder+0x21da15>
+  1b7d30: d503201f     	nop
+  1b7d34: 910083f4     	add	x20, sp, #0x20
+  1b7d38: 910083e8     	add	x8, sp, #0x20
+  1b7d3c: 528004c1     	mov	w1, #0x26               ; =38
+  1b7d40: 97fffae4     	bl	0x1b68d0 <__ZN7android4base6System22getEnvironmentVariableENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEE>
+  1b7d44: 3940dfe8     	ldrb	w8, [sp, #0x37]
+  1b7d48: 13001d09     	sxtb	w9, w8
+  1b7d4c: f94017ea     	ldr	x10, [sp, #0x28]
+  1b7d50: 7100013f     	cmp	w9, #0x0
+  1b7d54: aa1a03f9     	mov	x25, x26
+  1b7d58: 9a884148     	csel	x8, x10, x8, mi
+  1b7d5c: b40000c8     	cbz	x8, 0x1b7d74 <__ZN7android4base6System15waitAndKillSelfEi+0x244>
+  1b7d60: f94013e8     	ldr	x8, [sp, #0x20]
+  1b7d64: 9a944100     	csel	x0, x8, x20, mi
+  1b7d68: 94018c2c     	bl	0x21ae18 <dyld_stub_binder+0x21ae18>
+  1b7d6c: 7100001f     	cmp	w0, #0x0
+  1b7d70: 1a93c013     	csel	w19, w0, w19, gt
+CString@0x21da15 = ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL; indirect stub0x21ae18 = _atoi. Empty/non-positive parsed value leaves original20; positive parsed value replaces it.
+
+[effective value logged before watchdog spawn]
+  1b8348: 94018aa2     	bl	0x21add0 <dyld_stub_binder+0x21add0>
+  1b834c: d503201f     	nop
+  1b8350: 586c0508     	ldr	x8, 0x2903f0 <dyld_stub_binder+0x2903f0>
+  1b8354: 2a0003e9     	mov	w9, w0
+  1b8358: a93723a9     	stp	x9, x8, [x29, #-0x90]
+  1b835c: 2a1303e9     	mov	w9, w19
+  1b8360: a93823a9     	stp	x9, x8, [x29, #-0x80]
+  1b8364: 52800289     	mov	w9, #0x14               ; =20
+  1b8368: a93923a9     	stp	x9, x8, [x29, #-0x70]
+  1b836c: 7032b680     	adr	x0, 0x21da3f <dyld_stub_binder+0x21da3f>
+  1b8370: d503201f     	nop
+  1b8374: 9101a3e8     	add	x8, sp, #0x68
+Format@0x21da3f = Wait for emulator (pid %d) %d seconds to shutdown gracefully before kill;you can set environment variable ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL(in seconds) to change the default value (%d seconds). The effective second argument is w19; the last default argument is literal20.
+
+[launcher watchdog checks PID each second, then SIGKILL]
+10000965c: 360002fb    	tbz	w27, #0x0, 0x1000096b8 <__Z19handle_kill_commandiPPc+0x140>
+100009660: 7100029f    	cmp	w20, #0x0
+100009664: 1a9fd7e8    	cset	w8, gt
+100009668: 0a080348    	and	w8, w26, w8
+10000966c: 7100051f    	cmp	w8, #0x1
+100009670: b9400ff3    	ldr	w19, [sp, #0xc]
+100009674: 54000181    	b.ne	0x1000096a4 <__Z19handle_kill_commandiPPc+0x12c>
+100009678: 940084a5    	bl	0x10002a90c <__ZN7android4base6System3getEv>
+10000967c: aa1303e0    	mov	x0, x19
+100009680: 940094a5    	bl	0x10002e914 <__ZN7android4base6System10isPidAliveEi>
+100009684: 34000160    	cbz	w0, 0x1000096b0 <__Z19handle_kill_commandiPPc+0x138>
+100009688: 940084a1    	bl	0x10002a90c <__ZN7android4base6System3getEv>
+10000968c: f9400008    	ldr	x8, [x0]
+100009690: f940cd08    	ldr	x8, [x8, #0x198]
+100009694: 52807d01    	mov	w1, #0x3e8              ; =1000
+100009698: d63f0100    	blr	x8
+10000969c: 71000694    	subs	w20, w20, #0x1
+1000096a0: 54fffec1    	b.ne	0x100009678 <__Z19handle_kill_commandiPPc+0x100>
+1000096a4: 9400849a    	bl	0x10002a90c <__ZN7android4base6System3getEv>
+1000096a8: aa1303e0    	mov	x0, x19
+1000096ac: 940094a2    	bl	0x10002e934 <__ZN7android4base6System11killProcessEi>
+1000096b0: 52800020    	mov	w0, #0x1                ; =1
+1000096b4: 14000002    	b	0x1000096bc <__Z19handle_kill_commandiPPc+0x144>
+Launcher strings: 0x1000a2138="-kill", 0x1000a213e="-sleep". killProcess@0x10002e934: mov w1,#9; branch stub0x1000a07b8=_kill.
+
+[internal AdbHostServer port]
+100a07de0: 942cde16    	bl	0x10153f638 <dyld_stub_binder+0x10153f638>
+100a07de4: f9400008    	ldr	x8, [x0]
+100a07de8: f9403109    	ldr	x9, [x8, #0x60]
+100a07dec: b0006181    	adrp	x1, 0x101638000 <_sms_numeric_address_to_str.dialdigits+0x2952>
+100a07df0: 911bec21    	add	x1, x1, #0x6fb
+100a07df4: 910023f3    	add	x19, sp, #0x8
+100a07df8: 910023e8    	add	x8, sp, #0x8
+100a07dfc: 528002e2    	mov	w2, #0x17               ; =23
+100a07e00: d63f0120    	blr	x9
+100a07e04: 39407fe9    	ldrb	w9, [sp, #0x1f]
+100a07e08: 13001d28    	sxtb	w8, w9
+100a07e0c: f9400bea    	ldr	x10, [sp, #0x10]
+100a07e10: 7100011f    	cmp	w8, #0x0
+100a07e14: 9a894149    	csel	x9, x10, x9, mi
+100a07e18: b4000269    	cbz	x9, 0x100a07e64 <__ZN7android9emulation13AdbHostServer13getClientPortEv+0x94>
+100a07e1c: f94007e9    	ldr	x9, [sp, #0x8]
+100a07e20: 7100011f    	cmp	w8, #0x0
+100a07e24: 9a934120    	csel	x0, x9, x19, mi
+100a07e28: d2800001    	mov	x1, #0x0                ; =0
+100a07e2c: 52800002    	mov	w2, #0x0                ; =0
+100a07e30: 942cdc2e    	bl	0x10153eee8 <dyld_stub_binder+0x10153eee8>
+100a07e34: aa0003f3    	mov	x19, x0
+100a07e38: d1000408    	sub	x8, x0, #0x1
+100a07e3c: 529fffe9    	mov	w9, #0xffff             ; =65535
+100a07e40: eb09011f    	cmp	x8, x9
+100a07e44: 54000182    	b.hs	0x100a07e74 <__ZN7android9emulation13AdbHostServer13getClientPortEv+0xa4>
+100a07e48: 39c07fe8    	ldrsb	w8, [sp, #0x1f]
+100a07e4c: 37f805a8    	tbnz	w8, #0x1f, 0x100a07f00 <__ZN7android9emulation13AdbHostServer13getClientPortEv+0x130>
+100a07e50: aa1303e0    	mov	x0, x19
+100a07e54: a9437bfd    	ldp	x29, x30, [sp, #0x30]
+100a07e58: a9424ff4    	ldp	x20, x19, [sp, #0x20]
+100a07e5c: 910103ff    	add	sp, sp, #0x40
+100a07e60: d65f03c0    	ret
+100a07e64: 528275b3    	mov	w19, #0x13ad            ; =5037
+CString@0x1016386fb = ANDROID_ADB_SERVER_PORT; missing value falls back5037; valid parsed1..65535 returns that port.
+
+[external adb child inherits emulator environment]
+  1bb598: 94017e68     	bl	0x21af38 <dyld_stub_binder+0x21af38>
+  1bb59c: f9400005     	ldr	x5, [x0]
+  1bb5a0: 910153e0     	add	x0, sp, #0x54
+  1bb5a4: 910183e2     	add	x2, sp, #0x60
+  1bb5a8: d10163a3     	sub	x3, x29, #0x58
+  1bb5ac: aa1403e1     	mov	x1, x20
+  1bb5b0: aa1a03e4     	mov	x4, x26
+  1bb5b4: 94017e91     	bl	0x21aff8 <dyld_stub_binder+0x21aff8>
+Stub0x21af38=__NSGetEnviron; x5 is the envp argument passed into posix_spawnp@stub0x21aff8.
+
+[SDK adb commandline reads private-server env]
+100007d80:	c9 00 00 37	tbnz	w9, #0x0, 0x100007d98
+100007d84:	a8 00 00 37	tbnz	w8, #0x0, 0x100007d98
+100007d88:	20 30 00 f0	adrp	x0, 1543 ; 0x10060e000
+100007d8c:	00 24 3c 91	add	x0, x0, #0xf09 ; literal pool for: "ADB_SERVER_SOCKET"
+100007d90:	27 0f 18 94	bl	0x10060ba2c ; symbol stub for: _getenv
+100007d94:	fa 03 00 aa	mov	x26, x0
+100007d98:	3a 0a 00 b5	cbnz	x26, 0x100007edc
+100007d9c:	fa 0f 40 f9	ldr	x26, [sp, #0x18]
+100007da0:	b8 00 00 37	tbnz	w24, #0x0, 0x100007db4
+100007da4:	20 30 00 f0	adrp	x0, 1543 ; 0x10060e000
+100007da8:	00 6c 3c 91	add	x0, x0, #0xf1b ; literal pool for: "ANDROID_ADB_SERVER_ADDRESS"
+100007dac:	20 0f 18 94	bl	0x10060ba2c ; symbol stub for: _getenv
+100007db0:	fa 03 00 aa	mov	x26, x0
+100007db4:	d6 00 00 37	tbnz	w22, #0x0, 0x100007dcc
+100007db8:	20 30 00 f0	adrp	x0, 1543 ; 0x10060e000
+100007dbc:	00 d8 3c 91	add	x0, x0, #0xf36 ; literal pool for: "ANDROID_ADB_SERVER_PORT"
+100007dc0:	1b 0f 18 94	bl	0x10060ba2c ; symbol stub for: _getenv
+100007dc4:	e0 17 00 f9	str	x0, [sp, #0x28]
+100007dc8:	e0 06 00 b4	cbz	x0, 0x100007ea4
+SDK adb strings: ADB_SERVER_SOCKET@0x10060ef09; ANDROID_ADB_SERVER_PORT@0x10060ef36. The exact SDK adb arm64 slice was read, never executed. AdbInterfaceImpl also contains a runtime-dependent AdbDirect backend; static evidence does not prove the a2 close used the external child.
+
+[a2 selected historical log lines; public keys omitted]
+1: INFO         | Android emulator version 36.6.11.0 (build_id 15507667) (CL:N/A)
+102: WARNING      | adb command '/Users/dongxin/Library/Android/sdk/platform-tools/adb -s emulator-5666 shell settings put system accelerometer_rotation 1 ' failed: 'adb: device offline'
+103: WARNING      | adb command '/opt/homebrew/bin/adb -s emulator-5666 shell settings put system accelerometer_rotation 1 ' failed: 'adb: device 'emulator-5666' not found'
+104: INFO         | Wait for emulator (pid 39771) 20 seconds to shutdown gracefully before kill;you can set environment variable ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL(in seconds) to change the default value (20 seconds)
+106: USER_INFO    | Snapshots have been disabled by the user, save request is ignored.
+107: INFO         | Saving snapshot 'default_boot' using 0 ms
+209: INFO         | Wait for emulator (pid 39992) 20 seconds to shutdown gracefully before kill;you can set environment variable ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL(in seconds) to change the default value (20 seconds)
+211: USER_INFO    | Snapshots have been disabled by the user, save request is ignored.
+212: INFO         | Saving snapshot 'default_boot' using 0 ms
+
+[direct QEMU thunk and shutdown request body]
+Command: ['/usr/bin/xcrun', 'llvm-objdump', '--disassemble-symbols=__ZN3$_18__invokeE17QemuShutdownCause,_qemu_system_shutdown_request', '/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless']
+
+/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+00000001001c52ec <_qemu_system_shutdown_request>:
+1001c52ec: a9be4ff4    	stp	x20, x19, [sp, #-0x20]!
+1001c52f0: a9017bfd    	stp	x29, x30, [sp, #0x10]
+1001c52f4: 910043fd    	add	x29, sp, #0x10
+1001c52f8: aa0003f3    	mov	x19, x0
+1001c52fc: 94085691    	bl	0x1003dad40 <_replay_shutdown_request>
+1001c5300: f000d3c8    	adrp	x8, 0x101c40000 <__MergedGlobals+0x60>
+1001c5304: b908f913    	str	w19, [x8, #0x8f8]
+1001c5308: a9417bfd    	ldp	x29, x30, [sp, #0x10]
+1001c530c: a8c24ff4    	ldp	x20, x19, [sp], #0x20
+1001c5310: 140a4ed5    	b	0x100458e64 <_qemu_notify_event>
+
+000000010043fff4 <__ZN3$_18__invokeE17QemuShutdownCause>:
+10043fff4: 17f614be    	b	0x1001c52ec <_qemu_system_shutdown_request>
+
+[read-only final identity check]
+Installed launcher strings contain 36.6.11.0 (build_id 15507667); headless strings contain 36.6.11.0 and15507667. All SDK/config SHA256 values above were rechecked unchanged after analysis.

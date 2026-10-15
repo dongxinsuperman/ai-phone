@@ -1,0 +1,213 @@
+
+/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+000000010013c7fc <_arm_handle_psci_call>:
+10013c7fc: a9be4ff4    	stp	x20, x19, [sp, #-0x20]!
+10013c800: a9017bfd    	stp	x29, x30, [sp, #0x10]
+10013c804: 910043fd    	add	x29, sp, #0x10
+10013c808: aa0003e8    	mov	x8, x0
+10013c80c: 52905e09    	mov	w9, #0x82f0             ; =33520
+10013c810: 8b090013    	add	x19, x0, x9
+10013c814: b9414e6a    	ldr	w10, [x19, #0x14c]
+10013c818: 3400030a    	cbz	w10, 0x10013c878 <_arm_handle_psci_call+0x7c>
+10013c81c: a9440269    	ldp	x9, x0, [x19, #0x40]
+10013c820: a9450a61    	ldp	x1, x2, [x19, #0x50]
+10013c824: 91408d08    	add	x8, x8, #0x23, lsl #12  ; =0x23000
+10013c828: 91334114    	add	x20, x8, #0xcd0
+10013c82c: 52800108    	mov	w8, #0x8                ; =8
+10013c830: 72b08008    	movk	w8, #0x8400, lsl #16
+10013c834: eb08013f    	cmp	x9, x8
+10013c838: 5400034c    	b.gt	0x10013c8a0 <_arm_handle_psci_call+0xa4>
+10013c83c: 52800048    	mov	w8, #0x2                ; =2
+10013c840: 5280006b    	mov	w11, #0x3               ; =3
+10013c844: 72b0800b    	movk	w11, #0x8400, lsl #16
+10013c848: eb0b013f    	cmp	x9, x11
+10013c84c: 5400048c    	b.gt	0x10013c8dc <_arm_handle_psci_call+0xe0>
+10013c850: 5280002b    	mov	w11, #0x1               ; =1
+10013c854: 72b0800b    	movk	w11, #0x8400, lsl #16
+10013c858: eb0b013f    	cmp	x9, x11
+10013c85c: 540007ec    	b.gt	0x10013c958 <_arm_handle_psci_call+0x15c>
+10013c860: 52b0800b    	mov	w11, #-0x7c000000       ; =-2080374784
+10013c864: eb0b013f    	cmp	x9, x11
+10013c868: 54001100    	b.eq	0x10013ca88 <_arm_handle_psci_call+0x28c>
+10013c86c: 52800028    	mov	w8, #0x1                ; =1
+10013c870: 72b08008    	movk	w8, #0x8400, lsl #16
+10013c874: 14000031    	b	0x10013c938 <_arm_handle_psci_call+0x13c>
+10013c878: b9400269    	ldr	w9, [x19]
+10013c87c: 37f00669    	tbnz	w9, #0x1e, 0x10013c948 <_arm_handle_psci_call+0x14c>
+10013c880: 29408660    	ldp	w0, w1, [x19, #0x4]
+10013c884: b9400e62    	ldr	w2, [x19, #0xc]
+10013c888: 91408d08    	add	x8, x8, #0x23, lsl #12  ; =0x23000
+10013c88c: 91334114    	add	x20, x8, #0xcd0
+10013c890: 52800108    	mov	w8, #0x8                ; =8
+10013c894: 72b08008    	movk	w8, #0x8400, lsl #16
+10013c898: eb08013f    	cmp	x9, x8
+10013c89c: 54fffd0d    	b.le	0x10013c83c <_arm_handle_psci_call+0x40>
+10013c8a0: 52974c08    	mov	w8, #0xba60             ; =47712
+10013c8a4: 72b2b828    	movk	w8, #0x95c1, lsl #16
+10013c8a8: eb08013f    	cmp	x9, x8
+10013c8ac: 5400032c    	b.gt	0x10013c910 <_arm_handle_psci_call+0x114>
+10013c8b0: 52974bc8    	mov	w8, #0xba5e             ; =47710
+10013c8b4: 72b2b828    	movk	w8, #0x95c1, lsl #16
+10013c8b8: eb08013f    	cmp	x9, x8
+10013c8bc: 540005cc    	b.gt	0x10013c974 <_arm_handle_psci_call+0x178>
+10013c8c0: 52800128    	mov	w8, #0x9                ; =9
+10013c8c4: 72b08008    	movk	w8, #0x8400, lsl #16
+10013c8c8: eb08013f    	cmp	x9, x8
+10013c8cc: 54000f20    	b.eq	0x10013cab0 <_arm_handle_psci_call+0x2b4>
+10013c8d0: 52974bc8    	mov	w8, #0xba5e             ; =47710
+10013c8d4: 72b2b828    	movk	w8, #0x95c1, lsl #16
+10013c8d8: 14000018    	b	0x10013c938 <_arm_handle_psci_call+0x13c>
+10013c8dc: 528000aa    	mov	w10, #0x5               ; =5
+10013c8e0: 72b0800a    	movk	w10, #0x8400, lsl #16
+10013c8e4: eb0a013f    	cmp	x9, x10
+10013c8e8: 5400058c    	b.gt	0x10013c998 <_arm_handle_psci_call+0x19c>
+10013c8ec: 52800088    	mov	w8, #0x4                ; =4
+10013c8f0: 72b08008    	movk	w8, #0x8400, lsl #16
+10013c8f4: eb08013f    	cmp	x9, x8
+10013c8f8: 540007c0    	b.eq	0x10013c9f0 <_arm_handle_psci_call+0x1f4>
+10013c8fc: 528000a8    	mov	w8, #0x5                ; =5
+10013c900: 72b08008    	movk	w8, #0x8400, lsl #16
+10013c904: eb08013f    	cmp	x9, x8
+10013c908: 54000be0    	b.eq	0x10013ca84 <_arm_handle_psci_call+0x288>
+10013c90c: 14000083    	b	0x10013cb18 <_arm_handle_psci_call+0x31c>
+10013c910: 52800048    	mov	w8, #0x2                ; =2
+10013c914: 72b88008    	movk	w8, #0xc400, lsl #16
+10013c918: eb08013f    	cmp	x9, x8
+10013c91c: 540005ac    	b.gt	0x10013c9d0 <_arm_handle_psci_call+0x1d4>
+10013c920: 52974c28    	mov	w8, #0xba61             ; =47713
+10013c924: 72b2b828    	movk	w8, #0x95c1, lsl #16
+10013c928: eb08013f    	cmp	x9, x8
+10013c92c: 54000ac0    	b.eq	0x10013ca84 <_arm_handle_psci_call+0x288>
+10013c930: 52800028    	mov	w8, #0x1                ; =1
+10013c934: 72b88008    	movk	w8, #0xc400, lsl #16
+10013c938: eb08013f    	cmp	x9, x8
+10013c93c: 54000ee1    	b.ne	0x10013cb18 <_arm_handle_psci_call+0x31c>
+10013c940: f26f381f    	tst	x0, #0xfffe0000
+10013c944: 54000b00    	b.eq	0x10013caa4 <_arm_handle_psci_call+0x2a8>
+10013c948: 12800028    	mov	w8, #-0x2               ; =-2
+10013c94c: b9414e69    	ldr	w9, [x19, #0x14c]
+10013c950: 35000a09    	cbnz	w9, 0x10013ca90 <_arm_handle_psci_call+0x294>
+10013c954: 14000064    	b	0x10013cae4 <_arm_handle_psci_call+0x2e8>
+10013c958: 52800048    	mov	w8, #0x2                ; =2
+10013c95c: 72b08008    	movk	w8, #0x8400, lsl #16
+10013c960: eb08013f    	cmp	x9, x8
+10013c964: 540002e0    	b.eq	0x10013c9c0 <_arm_handle_psci_call+0x1c4>
+10013c968: 52800068    	mov	w8, #0x3                ; =3
+10013c96c: 72b08008    	movk	w8, #0x8400, lsl #16
+10013c970: 14000007    	b	0x10013c98c <_arm_handle_psci_call+0x190>
+10013c974: 52974be8    	mov	w8, #0xba5f             ; =47711
+10013c978: 72b2b828    	movk	w8, #0x95c1, lsl #16
+10013c97c: eb08013f    	cmp	x9, x8
+10013c980: 54000200    	b.eq	0x10013c9c0 <_arm_handle_psci_call+0x1c4>
+10013c984: 52974c08    	mov	w8, #0xba60             ; =47712
+10013c988: 72b2b828    	movk	w8, #0x95c1, lsl #16
+10013c98c: eb08013f    	cmp	x9, x8
+10013c990: 54000560    	b.eq	0x10013ca3c <_arm_handle_psci_call+0x240>
+10013c994: 14000061    	b	0x10013cb18 <_arm_handle_psci_call+0x31c>
+10013c998: 528000ca    	mov	w10, #0x6               ; =6
+10013c99c: 72b0800a    	movk	w10, #0x8400, lsl #16
+10013c9a0: eb0a013f    	cmp	x9, x10
+10013c9a4: 54000720    	b.eq	0x10013ca88 <_arm_handle_psci_call+0x28c>
+10013c9a8: 52800108    	mov	w8, #0x8                ; =8
+10013c9ac: 72b08008    	movk	w8, #0x8400, lsl #16
+10013c9b0: eb08013f    	cmp	x9, x8
+10013c9b4: 54000b21    	b.ne	0x10013cb18 <_arm_handle_psci_call+0x31c>
+10013c9b8: 528000a0    	mov	w0, #0x5                ; =5
+10013c9bc: 9402224c    	bl	0x1001c52ec <_qemu_system_shutdown_request>
+10013c9c0: f9412680    	ldr	x0, [x20, #0x248]
+10013c9c4: a9417bfd    	ldp	x29, x30, [sp, #0x10]
+10013c9c8: a8c24ff4    	ldp	x20, x19, [sp], #0x20
+10013c9cc: 17ff4fe9    	b	0x100110970 <_arm_set_cpu_off>
+10013c9d0: 52800068    	mov	w8, #0x3                ; =3
+10013c9d4: 72b88008    	movk	w8, #0xc400, lsl #16
+10013c9d8: eb08013f    	cmp	x9, x8
+10013c9dc: 54000300    	b.eq	0x10013ca3c <_arm_handle_psci_call+0x240>
+10013c9e0: 52800088    	mov	w8, #0x4                ; =4
+10013c9e4: 72b88008    	movk	w8, #0xc400, lsl #16
+10013c9e8: eb08013f    	cmp	x9, x8
+10013c9ec: 54000961    	b.ne	0x10013cb18 <_arm_handle_psci_call+0x31c>
+10013c9f0: b5000741    	cbnz	x1, 0x10013cad8 <_arm_handle_psci_call+0x2dc>
+10013c9f4: 97ff4ebf    	bl	0x1001104f0 <_arm_get_cpu_by_id>
+10013c9f8: b4fffa80    	cbz	x0, 0x10013c948 <_arm_handle_psci_call+0x14c>
+10013c9fc: d000a061    	adrp	x1, 0x10154a000 <_scan_1x1+0x48>
+10013ca00: 911f7421    	add	x1, x1, #0x7dd
+10013ca04: f000a182    	adrp	x2, 0x10156f000 <_hex+0xb557>
+10013ca08: 91177842    	add	x2, x2, #0x5de
+10013ca0c: f000a184    	adrp	x4, 0x10156f000 <_hex+0xb557>
+10013ca10: 91190084    	add	x4, x4, #0x640
+10013ca14: 52801023    	mov	w3, #0x81               ; =129
+10013ca18: 940a5b8c    	bl	0x1003d3848 <_object_dynamic_cast_assert>
+10013ca1c: aa0003f4    	mov	x20, x0
+10013ca20: 97fb8dd8    	bl	0x100020180 <_qemu_mutex_iothread_locked>
+10013ca24: 36000680    	tbz	w0, #0x0, 0x10013caf4 <_arm_handle_psci_call+0x2f8>
+10013ca28: 91408288    	add	x8, x20, #0x20, lsl #12 ; =0x20000
+10013ca2c: b97e1908    	ldr	w8, [x8, #0x3e18]
+10013ca30: b9414e69    	ldr	w9, [x19, #0x14c]
+10013ca34: 350002e9    	cbnz	w9, 0x10013ca90 <_arm_handle_psci_call+0x294>
+10013ca38: 1400002b    	b	0x10013cae4 <_arm_handle_psci_call+0x2e8>
+10013ca3c: f9400288    	ldr	x8, [x20]
+10013ca40: f25a011f    	tst	x8, #0x4000000000
+10013ca44: 52800029    	mov	w9, #0x1                ; =1
+10013ca48: 1a890523    	cinc	w3, w9, ne
+10013ca4c: d2c01049    	mov	x9, #0x8200000000       ; =558345748480
+10013ca50: 8a090108    	and	x8, x8, x9
+10013ca54: d2c0004a    	mov	x10, #0x200000000       ; =8589934592
+10013ca58: eb0a011f    	cmp	x8, x10
+10013ca5c: 1a9f17e4    	cset	w4, eq
+10013ca60: eb09011f    	cmp	x8, x9
+10013ca64: 54000061    	b.ne	0x10013ca70 <_arm_handle_psci_call+0x274>
+10013ca68: 394ec668    	ldrb	w8, [x19, #0x3b1]
+10013ca6c: 53020904    	ubfx	w4, w8, #2, #1
+10013ca70: 97ff4ed4    	bl	0x1001105c0 <_arm_set_cpu_on>
+10013ca74: aa0003e8    	mov	x8, x0
+10013ca78: b9414e69    	ldr	w9, [x19, #0x14c]
+10013ca7c: 350000a9    	cbnz	w9, 0x10013ca90 <_arm_handle_psci_call+0x294>
+10013ca80: 14000019    	b	0x10013cae4 <_arm_handle_psci_call+0x2e8>
+10013ca84: 12800008    	mov	w8, #-0x1               ; =-1
+10013ca88: b9414e69    	ldr	w9, [x19, #0x14c]
+10013ca8c: 340002c9    	cbz	w9, 0x10013cae4 <_arm_handle_psci_call+0x2e8>
+10013ca90: 93407d08    	sxtw	x8, w8
+10013ca94: f9002268    	str	x8, [x19, #0x40]
+10013ca98: a9417bfd    	ldp	x29, x30, [sp, #0x10]
+10013ca9c: a8c24ff4    	ldp	x20, x19, [sp], #0x20
+10013caa0: d65f03c0    	ret
+10013caa4: 3400012a    	cbz	w10, 0x10013cac8 <_arm_handle_psci_call+0x2cc>
+10013caa8: f900227f    	str	xzr, [x19, #0x40]
+10013caac: 14000008    	b	0x10013cacc <_arm_handle_psci_call+0x2d0>
+10013cab0: 528000c0    	mov	w0, #0x6                ; =6
+10013cab4: 94022218    	bl	0x1001c5314 <_qemu_system_reset_request>
+10013cab8: f9412680    	ldr	x0, [x20, #0x248]
+10013cabc: a9417bfd    	ldp	x29, x30, [sp, #0x10]
+10013cac0: a8c24ff4    	ldp	x20, x19, [sp], #0x20
+10013cac4: 17ff4fab    	b	0x100110970 <_arm_set_cpu_off>
+10013cac8: b900027f    	str	wzr, [x19]
+10013cacc: aa1303e0    	mov	x0, x19
+10013cad0: 52800081    	mov	w1, #0x4                ; =4
+10013cad4: 97fff3d1    	bl	0x100139a18 <_helper_wfi>
+10013cad8: 52800008    	mov	w8, #0x0                ; =0
+10013cadc: b9414e69    	ldr	w9, [x19, #0x14c]
+10013cae0: 35fffd89    	cbnz	w9, 0x10013ca90 <_arm_handle_psci_call+0x294>
+10013cae4: b9000268    	str	w8, [x19]
+10013cae8: a9417bfd    	ldp	x29, x30, [sp, #0x10]
+10013caec: a8c24ff4    	ldp	x20, x19, [sp], #0x20
+10013caf0: d65f03c0    	ret
+10013caf4: f000a181    	adrp	x1, 0x10156f000 <_hex+0xb557>
+10013caf8: 91177821    	add	x1, x1, #0x5de
+10013cafc: f000a183    	adrp	x3, 0x10156f000 <_hex+0xb557>
+10013cb00: 91190063    	add	x3, x3, #0x640
+10013cb04: b000a064    	adrp	x4, 0x101549000 <dyld_stub_binder+0x101549000>
+10013cb08: 91143084    	add	x4, x4, #0x50c
+10013cb0c: d2800000    	mov	x0, #0x0                ; =0
+10013cb10: 52801062    	mov	w2, #0x83               ; =131
+10013cb14: 945008ad    	bl	0x10153edc8 <dyld_stub_binder+0x10153edc8>
+10013cb18: f000a181    	adrp	x1, 0x10156f000 <_hex+0xb557>
+10013cb1c: 91177821    	add	x1, x1, #0x5de
+10013cb20: f000a183    	adrp	x3, 0x10156f000 <_hex+0xb557>
+10013cb24: 91190063    	add	x3, x3, #0x640
+10013cb28: d2800000    	mov	x0, #0x0                ; =0
+10013cb2c: 528018e2    	mov	w2, #0xc7               ; =199
+10013cb30: d2800004    	mov	x4, #0x0                ; =0
+10013cb34: 945008a5    	bl	0x10153edc8 <dyld_stub_binder+0x10153edc8>

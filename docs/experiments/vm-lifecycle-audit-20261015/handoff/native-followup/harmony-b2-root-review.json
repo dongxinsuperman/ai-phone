@@ -1,0 +1,24 @@
+{
+  "reviewer": "root",
+  "result": "accepted",
+  "scope": "real personal Harmony legacy ledger/registry, same-instance data preservation, new-session runtime without Popen handle, TCP TIME_WAIT probe, stop/delete",
+  "product_commit": "90342046a932273e54d7f96cb2947d753476477b",
+  "summary_sha256": "0159de6b10d180f76078f787f331124ac1f73b9ad56ed31b0fb51aa90ddf1a4a",
+  "original_result_equals_archived": true,
+  "confirmed": [
+    "owner-only legacy handoff",
+    "saved old lease actually removed",
+    "same UUID and random guest data retained",
+    "running native instance reclaimed without process handle",
+    "fresh exact-process absence after stop",
+    "independent native process absence",
+    "one exact native deletion and Server 404",
+    "three real TIME_WAIT windows",
+    "test resources removed; protected baseline unchanged"
+  ],
+  "limits": [
+    "not OS process termination",
+    "not Windows",
+    "not application permission or VLM business acceptance"
+  ]
+}

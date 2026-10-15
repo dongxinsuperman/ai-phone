@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="13" time="0.370" timestamp="2026-10-16T02:22:09.033663+08:00" hostname="dongxindeMacBook-Pro.local"><testcase classname="tests.test_agent_cancellation" name="test_run_blocking_waits_for_inflight_device_call_before_cancel" time="0.024" /><testcase classname="tests.test_agent_cancellation" name="test_stop_during_prepare_reports_cancelled_after_prepare_exits[False-False]" time="0.038" /><testcase classname="tests.test_agent_cancellation" name="test_stop_during_prepare_reports_cancelled_after_prepare_exits[True-True]" time="0.027" /><testcase classname="tests.test_agent_cancellation" name="test_start_run_requires_explicit_sleep_policy" time="0.001" /><testcase classname="tests.test_agent_cancellation" name="test_stop_missing_run_reports_cancelled_via_reliable_queue" time="0.001" /><testcase classname="tests.test_agent_config_distribution" name="test_downlink_excludes_local_and_server_only" time="0.000" /><testcase classname="tests.test_agent_config_distribution" name="test_sensitive_fields_never_distributed" time="0.003" /><testcase classname="tests.test_agent_config_distribution" name="test_context_switch_and_rounds_are_server_distributed" time="0.005" /><testcase classname="tests.test_agent_config_distribution" name="test_older_server_without_context_fields_uses_new_agent_window_default" time="0.002" /><testcase classname="tests.test_agent_config_distribution" name="test_older_agent_filters_new_context_fields" time="0.004" /><testcase classname="tests.test_agent_config_distribution" name="test_default_window_five_is_downlinked_and_explicit_session_can_override" time="0.006" /><testcase classname="tests.test_agent_config_distribution" name="test_settings_loads_env_defaults_before_env_and_env_local" time="0.004" /><testcase classname="tests.test_agent_config_distribution" name="test_env_defaults_contains_only_public_runtime_defaults" time="0.001"><failure message="PermissionError: isolated main-flow test blocked open: non-fixture environment file: /private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-main-flow-74f209d-d1j_qf4_/backend/.env.defaults">def test_env_defaults_contains_only_public_runtime_defaults():
+        """进 git 的 .env.defaults 只能放公开默认策略，不能放密钥/真实部署值。"""
+        path = Path(__file__).resolve().parents[1] / ".env.defaults"
+        active: dict[str, str] = {}
+&gt;       for line in path.read_text(encoding="utf-8").splitlines():
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../../var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-main-flow-74f209d-d1j_qf4_/backend/tests/test_agent_config_distribution.py:213: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/pathlib.py:1058: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/pathlib.py:1044: in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/run_main_flow_isolated.py:129: in audit
+    deny(event, f"non-fixture environment file: {resolved}")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+event = 'open'
+description = 'non-fixture environment file: /private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-main-flow-74f209d-d1j_qf4_/backend/.env.defaults'
+
+    def deny(event: str, description: str) -&gt; None:
+        evidence["blocked_external_calls"].append({
+            "event": event, "description": description, "test": current_test[0],
+        })
+&gt;       raise PermissionError(f"isolated main-flow test blocked {event}: {description}")
+E       PermissionError: isolated main-flow test blocked open: non-fixture environment file: /private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-main-flow-74f209d-d1j_qf4_/backend/.env.defaults
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/run_main_flow_isolated.py:115: PermissionError</failure></testcase></testsuite></testsuites>

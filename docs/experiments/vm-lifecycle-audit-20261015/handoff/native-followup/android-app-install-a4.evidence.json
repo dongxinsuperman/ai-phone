@@ -1,0 +1,1785 @@
+{
+  "run_id": "android-app-install-8a2a3be1-20261016-a4",
+  "platform": "android",
+  "started_at": "2026-10-15T20:49:32.307046+00:00",
+  "classification": "synthetic real Server package/task/WS/NativeOperation installation + native lifecycle E2E; not VLM/business acceptance",
+  "not_covered": [
+    "external guest networking",
+    "VLM/company business Case",
+    "physical device control",
+    "agent.main._get_driver live cache eviction and serial/port reuse"
+  ],
+  "status": "failed",
+  "stages": [
+    {
+      "stage": "preflight",
+      "at": "2026-10-15T20:49:32.311089+00:00",
+      "monotonic_ns": 105684578364958,
+      "status": "passed",
+      "api_scope": "loopback only",
+      "default_adb_untouched": true
+    },
+    {
+      "stage": "fixture-build",
+      "at": "2026-10-15T20:49:34.479117+00:00",
+      "monotonic_ns": 105686746372875,
+      "status": "passed",
+      "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/fixture/personal-lifecycle.apk",
+      "sha256": "0d92edbb4b41b13645f23fd52c4934ea467d02cc9820855084af6f301008c10b",
+      "source": "self-contained personal Java WebView; no company package"
+    },
+    {
+      "stage": "isolated-services",
+      "at": "2026-10-15T20:49:38.181193+00:00",
+      "monotonic_ns": 105690448406375,
+      "status": "passed",
+      "base_url": "http://127.0.0.1:62769",
+      "agent_id": "personal-e2e-android-app-install-8a2a3be1-20261016-a4",
+      "host_id": "88aa9d9e3a6846f3abff69a9968d7e78",
+      "host_id_path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/storage/agent-host-id",
+      "proxy_environment_cleared": true,
+      "private_adb_port": 15037,
+      "private_adb_pid": 54671,
+      "shared_main_invoked": false
+    },
+    {
+      "stage": "create",
+      "at": "2026-10-15T20:49:38.212951+00:00",
+      "monotonic_ns": 105690480157250,
+      "status": "passed",
+      "vm_id": "b834fac98cc2",
+      "state": "draft",
+      "bound": false
+    },
+    {
+      "stage": "agent-command",
+      "at": "2026-10-15T20:49:38.215554+00:00",
+      "monotonic_ns": 105690482758791,
+      "message_type": "vm_capability_probe",
+      "vm_id": "b834fac98cc2",
+      "request_id": "6bdf42e03df0471c"
+    },
+    {
+      "stage": "capability",
+      "at": "2026-10-15T20:49:38.218184+00:00",
+      "monotonic_ns": 105690485388416,
+      "status": "passed",
+      "result": {
+        "request_id": "6bdf42e03df0471c",
+        "agents": [
+          {
+            "agent_id": "personal-e2e-android-app-install-8a2a3be1-20261016-a4",
+            "agent_name": "personal-e2e-android-app-install-8a2a3be1-20261016-a4",
+            "host_os": "Darwin 24.6.0",
+            "ok": true,
+            "reason": "可用",
+            "warning": "",
+            "details": {
+              "host_os": "Darwin",
+              "host_machine": "arm64",
+              "host_abi": "arm64",
+              "requested_abi": "arm64",
+              "api_level": 33,
+              "system_type": "google_apis",
+              "system_image": "system-images;android-33;google_apis;arm64-v8a",
+              "current_instances": 0,
+              "max_instances": 1,
+              "tools": {
+                "adb": "/Users/dongxin/Library/Android/sdk/platform-tools/adb",
+                "emulator": "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+                "avdmanager": "/Users/dongxin/Library/Android/sdk/cmdline-tools/latest/bin/avdmanager",
+                "sdkmanager": "/Users/dongxin/Library/Android/sdk/cmdline-tools/latest/bin/sdkmanager",
+                "sdk_root": "/Users/dongxin/Library/Android/sdk"
+              },
+              "installed_system_images": [
+                "system-images;android-33;google_apis;arm64-v8a",
+                "system-images;android-34;google_apis;arm64-v8a"
+              ],
+              "available_memory_mb": 5346,
+              "warning": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "stage": "agent-command",
+      "at": "2026-10-15T20:49:38.222606+00:00",
+      "monotonic_ns": 105690489808916,
+      "message_type": "vm_start",
+      "vm_id": "b834fac98cc2",
+      "request_id": "d3d0f0222dcb43fa"
+    },
+    {
+      "stage": "native-ready-first",
+      "at": "2026-10-15T20:50:03.304624+00:00",
+      "monotonic_ns": 105715571535791,
+      "status": "passed",
+      "vm_id": "b834fac98cc2",
+      "serial": "emulator-5666",
+      "screenshot": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/native-ready-first.png",
+      "sys_boot_completed": "1",
+      "package_service": "Service package: found",
+      "server_available_readback": true,
+      "native_popen_pid": 54738,
+      "native_popen_poll": null
+    },
+    {
+      "stage": "guest-network-diagnostic",
+      "at": "2026-10-15T20:50:05.934288+00:00",
+      "monotonic_ns": 105718201169333,
+      "status": "collected",
+      "vm_id": "b834fac98cc2",
+      "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/guest-network.json",
+      "gateway_result": {
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "nc: Timeout"
+      },
+      "external_network_validated": false
+    },
+    {
+      "stage": "bind-start",
+      "at": "2026-10-15T20:50:05.934869+00:00",
+      "monotonic_ns": 105718201745750,
+      "status": "passed",
+      "vm_id": "b834fac98cc2",
+      "assigned_agent_id": "personal-e2e-android-app-install-8a2a3be1-20261016-a4",
+      "adb_serial": "emulator-5666",
+      "native_ready_and_server_available_confirmed": true
+    },
+    {
+      "stage": "fixture-package-absent",
+      "at": "2026-10-15T20:50:06.033932+00:00",
+      "monotonic_ns": 105718300819833,
+      "status": "passed",
+      "serial": "emulator-5666",
+      "probe": {
+        "returncode": 0,
+        "package_lines": [],
+        "exact_package": "org.personal.aiphone.lifecycle",
+        "absent": true
+      }
+    },
+    {
+      "stage": "server-package-upload",
+      "at": "2026-10-15T20:50:06.082991+00:00",
+      "monotonic_ns": 105718349867666,
+      "status": "passed",
+      "package": {
+        "id": "0b317edb94d1",
+        "filename": "personal-lifecycle.apk",
+        "platform": "android",
+        "created_at": "2026-10-15T20:50:06.078144"
+      },
+      "server_file": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/storage/app-install/2026-10-15/987e74c7fa94a3cc-personal-lifecycle.apk",
+      "sha256": "0d92edbb4b41b13645f23fd52c4934ea467d02cc9820855084af6f301008c10b"
+    },
+    {
+      "stage": "server-install-task-created",
+      "at": "2026-10-15T20:50:06.128042+00:00",
+      "monotonic_ns": 105718394916958,
+      "task": {
+        "id": "b979fd3d49db",
+        "package_id": "0b317edb94d1",
+        "state": "running",
+        "created_at": "2026-10-15T20:50:06.117821+00:00",
+        "finished_at": null,
+        "package": {
+          "id": "0b317edb94d1",
+          "filename": "personal-lifecycle.apk",
+          "platform": "android",
+          "created_at": "2026-10-15T20:50:06.078144"
+        },
+        "items": [
+          {
+            "id": "c83438719208",
+            "task_id": "b979fd3d49db",
+            "serial": "emulator-5666",
+            "platform": "android",
+            "state": "running",
+            "reason": null,
+            "message": "",
+            "timeout_sec": 600,
+            "started_at": "2026-10-15T20:50:06.118981+00:00",
+            "finished_at": null
+          }
+        ],
+        "summary": {
+          "total": 1,
+          "pending": 0,
+          "running": 1,
+          "success": 0,
+          "failed": 0,
+          "timeout": 0,
+          "unknown": 0
+        }
+      }
+    },
+    {
+      "stage": "agent-app-install-handler",
+      "at": "2026-10-15T20:50:06.141925+00:00",
+      "monotonic_ns": 105718408800250,
+      "status": "entered",
+      "command": {
+        "type": "app_install_start",
+        "task_id": "b979fd3d49db",
+        "item_id": "c83438719208",
+        "serial": "emulator-5666",
+        "platform": "android",
+        "package_url": "/api/app-install/packages/0b317edb94d1/download",
+        "filename": "personal-lifecycle.apk",
+        "timeout_sec": 600
+      }
+    },
+    {
+      "stage": "server-app-install-terminal",
+      "at": "2026-10-15T20:50:07.754712+00:00",
+      "monotonic_ns": 105720021580500,
+      "status": "passed",
+      "task": {
+        "id": "b979fd3d49db",
+        "package_id": "0b317edb94d1",
+        "state": "done",
+        "created_at": "2026-10-15T20:50:06.117821",
+        "finished_at": "2026-10-15T20:50:07.229290",
+        "package": {
+          "id": "0b317edb94d1",
+          "filename": "personal-lifecycle.apk",
+          "platform": "android",
+          "created_at": "2026-10-15T20:50:06.078144"
+        },
+        "items": [
+          {
+            "id": "c83438719208",
+            "task_id": "b979fd3d49db",
+            "serial": "emulator-5666",
+            "platform": "android",
+            "state": "success",
+            "reason": null,
+            "message": "安装成功",
+            "timeout_sec": 600,
+            "started_at": "2026-10-15T20:50:06.118981",
+            "finished_at": "2026-10-15T20:50:07.227841"
+          }
+        ],
+        "summary": {
+          "total": 1,
+          "pending": 0,
+          "running": 0,
+          "success": 1,
+          "failed": 0,
+          "timeout": 0,
+          "unknown": 0
+        }
+      },
+      "package": "org.personal.aiphone.lifecycle",
+      "native_path": "package:/data/app/~~xUtBFb31aZEH0VnFUdxSKg==/org.personal.aiphone.lifecycle-c-IO7VXxz-zU3EU21ZIMBQ==/base.apk",
+      "activity_users_after": 0,
+      "guest_temp_before": [],
+      "guest_temp_after": [],
+      "direct_adb_install_used": false
+    },
+    {
+      "stage": "fixture-open",
+      "at": "2026-10-15T20:50:07.900016+00:00",
+      "monotonic_ns": 105720166871583,
+      "vm_id": "b834fac98cc2",
+      "url": "http://127.0.0.1:19080/fixture/?run=android-app-install-8a2a3be1-20261016-a4&platform=android",
+      "output": "Starting: Intent { cmp=org.personal.aiphone.lifecycle/.MainActivity (has extras) }",
+      "witness_mode": "first-write",
+      "transport": "exact-serial private adb reverse",
+      "reverse_mapping": "host-54 tcp:19080 tcp:62769"
+    },
+    {
+      "stage": "fixture-input-locator",
+      "at": "2026-10-15T20:50:12.000800+00:00",
+      "monotonic_ns": 105724267615083,
+      "method": "fixed fixture screenshot pixels",
+      "bounds": [
+        30,
+        295,
+        510,
+        382
+      ],
+      "center": [
+        270,
+        338
+      ],
+      "pixel_count": 3246,
+      "rgb": [
+        82,
+        101,
+        122
+      ]
+    },
+    {
+      "stage": "fixture-button-locator",
+      "at": "2026-10-15T20:50:15.882972+00:00",
+      "monotonic_ns": 105728149739500,
+      "method": "native accessibility",
+      "center": [
+        270,
+        455
+      ]
+    },
+    {
+      "stage": "fixture-confirmed",
+      "at": "2026-10-15T20:50:18.494412+00:00",
+      "monotonic_ns": 105730761146875,
+      "status": "native-control-and-receipt-passed",
+      "vm_id": "b834fac98cc2",
+      "token": "personal34791164d5d2",
+      "count": 1,
+      "screenshot": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/fixture-confirmed.png",
+      "native_accessibility_exposes_token": true,
+      "visual_review_required": true
+    },
+    {
+      "stage": "native-ready-reconnected",
+      "at": "2026-10-15T20:50:20.227755+00:00",
+      "monotonic_ns": 105732494464666,
+      "status": "passed",
+      "vm_id": "b834fac98cc2",
+      "serial": "emulator-5666",
+      "screenshot": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/native-ready-reconnected.png",
+      "sys_boot_completed": "1",
+      "package_service": "Service package: found",
+      "server_available_readback": true,
+      "native_popen_pid": 54738,
+      "native_popen_poll": null
+    },
+    {
+      "stage": "websocket-reconnect",
+      "at": "2026-10-15T20:50:20.228684+00:00",
+      "monotonic_ns": 105732495391000,
+      "status": "passed",
+      "vm_id": "b834fac98cc2",
+      "unchanged_emulator_pid": 54738,
+      "scope": "connection reconnect with bounded real manager reclaim; not Agent process crash"
+    },
+    {
+      "stage": "native-ready-reconstructed",
+      "at": "2026-10-15T20:50:20.900458+00:00",
+      "monotonic_ns": 105733167161625,
+      "status": "passed",
+      "vm_id": "b834fac98cc2",
+      "serial": "emulator-5666",
+      "screenshot": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/native-ready-reconstructed.png",
+      "sys_boot_completed": "1",
+      "package_service": "Service package: found",
+      "server_available_readback": true,
+      "native_popen_pid": null,
+      "native_popen_poll": null
+    },
+    {
+      "stage": "agent-manager-reconstruction",
+      "at": "2026-10-15T20:50:20.901733+00:00",
+      "monotonic_ns": 105733168434291,
+      "status": "passed",
+      "vm_id": "b834fac98cc2",
+      "previous_agent_id": "personal-e2e-android-app-install-8a2a3be1-20261016-a4",
+      "new_agent_id": "personal-e2e-restart-android-app-install-8a2a3be1-20261016-a4",
+      "persisted_host_id": "88aa9d9e3a6846f3abff69a9968d7e78",
+      "unchanged_emulator_pid": 54738,
+      "os_process_restart_tested": false
+    },
+    {
+      "stage": "agent-command",
+      "at": "2026-10-15T20:50:20.905808+00:00",
+      "monotonic_ns": 105733172506500,
+      "message_type": "vm_stop",
+      "vm_id": "b834fac98cc2",
+      "request_id": "af65a2bfabbc4fa1"
+    },
+    {
+      "stage": "stop",
+      "at": "2026-10-15T20:50:22.734543+00:00",
+      "monotonic_ns": 105735001221000,
+      "status": "passed",
+      "avd_preserved": true,
+      "binding_preserved": true,
+      "ports_released": true
+    },
+    {
+      "stage": "agent-command",
+      "at": "2026-10-15T20:50:22.739263+00:00",
+      "monotonic_ns": 105735005939791,
+      "message_type": "vm_start",
+      "vm_id": "b834fac98cc2",
+      "request_id": "788a3872fdc0487c"
+    },
+    {
+      "stage": "native-ready-restarted",
+      "at": "2026-10-15T20:50:39.615942+00:00",
+      "monotonic_ns": 105751882422833,
+      "status": "passed",
+      "vm_id": "b834fac98cc2",
+      "serial": "emulator-5666",
+      "screenshot": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/native-ready-restarted.png",
+      "sys_boot_completed": "1",
+      "package_service": "Service package: found",
+      "server_available_readback": true,
+      "native_popen_pid": 55015,
+      "native_popen_poll": null
+    },
+    {
+      "stage": "fixture-open",
+      "at": "2026-10-15T20:50:39.838653+00:00",
+      "monotonic_ns": 105752105131458,
+      "vm_id": "b834fac98cc2",
+      "url": "http://127.0.0.1:19080/fixture/?run=android-app-install-8a2a3be1-20261016-a4&platform=android",
+      "output": "Starting: Intent { cmp=org.personal.aiphone.lifecycle/.MainActivity (has extras) }",
+      "witness_mode": "restart-read",
+      "transport": "exact-serial private adb reverse",
+      "reverse_mapping": "host-12 tcp:19080 tcp:62769"
+    },
+    {
+      "stage": "failure",
+      "at": "2026-10-15T20:51:15.057177+00:00",
+      "monotonic_ns": 105787323267666,
+      "status": "failed",
+      "error": "TimeoutError: Condition timed out after 35s; last=[{'run': 'android-app-install-8a2a3be1-20261016-a4', 'platform': 'android', 'event': 'load', 'token': '', 'count': 0}]"
+    },
+    {
+      "stage": "failure-screen",
+      "at": "2026-10-15T20:51:15.268019+00:00",
+      "monotonic_ns": 105787534082208,
+      "vm_id": "b834fac98cc2",
+      "screenshot": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/failure-b834fac98cc2.png"
+    },
+    {
+      "stage": "existing-instance-failure-preservation",
+      "at": "2026-10-15T20:51:16.868173+00:00",
+      "monotonic_ns": 105789134211708,
+      "vm_id": "b834fac98cc2",
+      "avd_preserved": true,
+      "stopped": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5666",
+        "details": {
+          "avd_name": "aiphone_vm_b834fac98cc2",
+          "port": 5666,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": 0,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "cleanup_delete_skipped": true,
+      "reason": "Preserve original data evidence after failed stop/restart; no recreate or retry."
+    }
+  ],
+  "owned_vm_ids": [
+    "b834fac98cc2"
+  ],
+  "receipts": [
+    {
+      "run": "android-app-install-8a2a3be1-20261016-a4",
+      "platform": "android",
+      "event": "load",
+      "token": "",
+      "count": 0
+    },
+    {
+      "run": "android-app-install-8a2a3be1-20261016-a4",
+      "platform": "android",
+      "event": "confirm",
+      "token": "personal34791164d5d2",
+      "count": 1
+    },
+    {
+      "run": "android-app-install-8a2a3be1-20261016-a4",
+      "platform": "android",
+      "event": "load",
+      "token": "",
+      "count": 0
+    }
+  ],
+  "a4_adb_read_path": {
+    "version": "2.12.0",
+    "files": {
+      "screenshot.py": {
+        "path": "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/adbutils/screenshot.py",
+        "sha256": "d529adfa7bf979528842704bd94ebd23a4efca75313656307a5ee73195d10d6f"
+      },
+      "_device_base.py": {
+        "path": "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/adbutils/_device_base.py",
+        "sha256": "69fba33b2f3c3766df857650a2f179e0b14fea352903f9bd438eb64a9630018a"
+      },
+      "_adb.py": {
+        "path": "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/adbutils/_adb.py",
+        "sha256": "10aff30a6779ee4b172378dbb63777960b9af477c345e1296e1b1d28ee4e6466"
+      }
+    },
+    "actual_screenshot": "screencap -p via shell; invalid image can return black after window_size; no helper installation/start in this installed screenshot code",
+    "sample_factory": "does not use _safe_connect automatic adb start-server fallback; private TCP only",
+    "source_mismatches_at_finish": []
+  },
+  "paths": {
+    "root": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4",
+    "db": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/server.sqlite3",
+    "storage": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/storage",
+    "avd_home": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd",
+    "android_user_home": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/user",
+    "android_runtime": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/runtime",
+    "private_adb_port": 15037,
+    "allowed_emulator_ports": [
+      5666
+    ],
+    "fixture_apk": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/fixture/personal-lifecycle.apk",
+    "fixture_html": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/execution/personal-fixture.html",
+    "diagnostic_java_template": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a3_MainActivity.java",
+    "diagnostic_readonly_js": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a3_storage_diagnostic.js",
+    "agent_download_tmp": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/tmp",
+    "server_upload_storage": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/storage/app-install",
+    "ios_device_set_plan": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/ios/devices",
+    "harmony_instance_path_plan": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/harmony/runtime/instances"
+  },
+  "protected_before": {
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_harmony_8ef590502d89/config.ini": "d9e02a36096d3684498346cf70e5bf053a6bbf9817ce34a6f8eb1007a1b00641",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_harmony_8ef590502d89.ini": "8d04b5680ba467e1c059dbb7d0463b6a3edbc72698e879eae6161b83f7530ce2",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_hdc_test/config.ini": "2d8e0eddf338e0a8ff9b571985221ade1efaac556930aaa869a9cfa3ced45d18",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_hdc_test.ini": "c614dfdb3328e5c48612050084f08b9ea8f5453757333262a3a0406a82ca6933",
+    "/Users/dongxin/.Huawei/Emulator/deployed/lists.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "/Users/dongxin/.android/avd/aiphone_vm_d553e2ea1fde.avd/config.ini": "e6595b4119a9cf5c47bbc679ae9f25f38a319a44d1ca2461ff6c3165ea794fbd",
+    "/Users/dongxin/.android/avd/aiphone_vm_d553e2ea1fde.ini": "93c1f2299159212b765c362642324c762cc050b49964e2a729b11a52f70950ad",
+    "/Users/dongxin/.android/avd/aiphone_vm_d948f0dc999a.avd/config.ini": "0c9da58b8fb261f800e42e0291687707917be931345f2abccb8aa98c6f6c7b61",
+    "/Users/dongxin/.android/avd/aiphone_vm_d948f0dc999a.ini": "33b2da0b472680b7c623c170d3fba138269ead145a2d162b1d0e93b8e69198be",
+    "/Users/dongxin/.android/avd/aiphone_vm_test.avd/config.ini": "b3e9998e584cc43be815ab13c4b744d7848eeb0eb37258cc4847db6b8854c02a",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/1CF23D80-F81F-4342-8B9B-CE0F19B0E6A9/device.plist": "8a4f5122dec24c29506fe812d49a6eb46ad53f103c14b76910c8b78686142aaa",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/33D6A401-5F36-4F06-9306-A6CE108897DF/device.plist": "4a6bb0be4a60b30503171afc3ce05bc70a377fb6fbb1b04bfb381ec03634f739",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/3CEA6065-BACE-4303-9206-F4494D2A250F/device.plist": "99d5bf0c8903312ff97c45d4a04503417c7364eb6639a23a449bd76577181134",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/4FE2080C-9969-4322-895C-BD533F1AAEF1/device.plist": "924c29fda4385ef935f17a78fd6a44e0db4e443b474c4c543b417e7715afb43d",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/583611BB-5D51-4366-BAE1-E01396F8E6A9/device.plist": "830a244bec1c3e880a12758fcc3fe8aaa0525d31cbd6531ee28aed88e631a406",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/61859972-B787-415F-979B-93FEF439D231/device.plist": "0f283b2d7fec63b24657ca2ddd7e81e2b6fb880ac216f855a174ee5b7149d255",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/65147217-9B6E-4FAA-8B3D-A5FB7C82346E/device.plist": "8bdf06e233c125104c13f594476e41f085f263361d638b02ffb3d3d952a383c4",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/74340A76-2933-4F43-A931-83B56604EB64/device.plist": "879ddd7b2dda101a845fb0c57bb4620f97288db6543260dfa38847da34e51816",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/AA23F9B5-52E7-4577-9481-B0B8CEDD081D/device.plist": "38dfc87cdaecffb99928295b4db860b5bbdaef323755ee952ea67a48221a99a4",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/B8358AD3-D445-426D-9F51-2F8D7D627FD6/device.plist": "15572dc944d2d23b759213eb0efb28e840fa547952551d86aff227519bfe56b6",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/C028A098-1CB0-4797-BC34-B999FE0B9E56/device.plist": "08912f85db5df2495e8ce92049d732c46a5d89d44f473c993e9e520a906894b1",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/C1C16134-3F25-4E80-88CD-FC65DC0DF8C1/device.plist": "ac434b38f456562c0f8cb5d8c6eed7ad985433c354f6dc25888a2145ff11df02",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/D50173E3-9F20-4DEB-B117-608349BB613F/device.plist": "ee4ff3dc9c13cfbfecfd2bd0fee5d4d9aedafac8c416b6c145af548856135b85",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/F27146F2-A4B0-4F9A-B731-7C1759B25941/device.plist": "72e342a566a56e207c37d024c82aa1449cd822a0570522029ec88c77d625fa01",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/FA446F28-83BD-4DE3-B65B-A4392B13BEC4/device.plist": "12d40c8e4a9478e042ad4f9ab1299542fa876b6f30b2306f15a413fa77b5c9ba"
+  },
+  "frozen_products_at_start": {
+    "manifest": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/frozen-products.json",
+    "manifest_sha256": "043825f66893cc210329a77ffe9e9a2ba4e25c51b26644492d654d000868574a",
+    "count": 33,
+    "source_sha256": {
+      "backend/ai_phone/agent/android_vm/capability.py": "ed8630cb9f20d1791eea36d142bce755e73147b50a6e1621b2f6b4192d210b31",
+      "backend/ai_phone/agent/android_vm/manager.py": "13bf99f44a4fa566bbfab44258cd4ab8a0eac2d000613fe149ed9fef33b26bd3",
+      "backend/ai_phone/agent/app_install/handler.py": "31abda8902919971a2879a3b6e262ddb16509213b7a1a249392a560ba7a81d22",
+      "backend/ai_phone/agent/app_uninstall/handler.py": "b373f34caf73043d54bc297cacd929c18783342486b8330acbb97c0c44b7714d",
+      "backend/ai_phone/agent/device_activity.py": "cc2e96d66080f7aa60fa8d0b9956e433e186fd892dfc26c00a8c904060395e31",
+      "backend/ai_phone/agent/drivers/__init__.py": "67dd1c2ac123154794e17d584ec5fb5335baec68293f16acea0fd1f14de506c8",
+      "backend/ai_phone/agent/drivers/android.py": "af3b1fe42b0ce93e2ad1717143e8959bc2a438e2a73955a2a7ca0c6224136d9a",
+      "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+      "backend/ai_phone/agent/harmony_vm/capability.py": "6716584a4ee555fd49b2297db5136e004679806d2af0b12a2c4edb3eac5003fa",
+      "backend/ai_phone/agent/harmony_vm/manager.py": "efac19845e45b5c0a7aa2faefc95f8c6dc9cecd6842442fee303765dc9a3999e",
+      "backend/ai_phone/agent/health/probe.py": "a4ec72f21e4dc6b1bf4b0c3bcfcdde37b74b57305cc57b9d2ce738fc91139c33",
+      "backend/ai_phone/agent/health/supervisor.py": "8393340453f02129d1c342e1815806cfe4f039ff00d7f117fbab94c462678858",
+      "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+      "backend/ai_phone/agent/ios_sim/manager.py": "6401fce688f697450099204f8c96c8995ffb2f2dcc65912b265e7ff1362bda60",
+      "backend/ai_phone/agent/main.py": "33941428605993c5c6b4ec709e2bb4f42d014ea57634a5133d5e3bd2d8e33d99",
+      "backend/ai_phone/agent/native_operation.py": "1fbc78e1560cf21ba3dc6e68d50adfc9a025831fba3d3848c407e291ff901255",
+      "backend/ai_phone/agent/vm_ports.py": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+      "backend/ai_phone/agent/ws_client.py": "aadad560bfa0788b0b6eefe6636be7b7f2e95cae96b31d423f2dcaa34252592e",
+      "backend/ai_phone/server/android_vm/api.py": "3bdcfa84b46262ca974be0e29ba9352986d6e0a350df109c8d09aa2d69116d3d",
+      "backend/ai_phone/server/android_vm/service.py": "b7f9aa7149dbf196b71e63076cf3469b80d6f35845f5caf25143f3ff0a318621",
+      "backend/ai_phone/server/api/_deps.py": "83e8ecdb97ae92480c6034200039d080ad0e024bcd26f6cf361e68c3b9ea6bd7",
+      "backend/ai_phone/server/app.py": "2db57a8e7f596d36cbc4772808ad840d59ec134767d7e8ce8837bf5100435f73",
+      "backend/ai_phone/server/harmony_vm/api.py": "00b4665fda0e96e110b2fcb6ef236edc0af62a4a956abd76ca156c94e96793a6",
+      "backend/ai_phone/server/harmony_vm/service.py": "cef15701e1c3d6260a2e681911fa200dda10f27114225ab85994417e67008460",
+      "backend/ai_phone/server/hub.py": "7252018d5468f7e0ccc3f7b28e3fa238053751e61925cef1b3538050c6ee4b33",
+      "backend/ai_phone/server/ios_sim/api.py": "5df873d042daadb1a7b7f71a9ab642acdb276dd93835219548cd329736f0d1df",
+      "backend/ai_phone/server/ios_sim/service.py": "687dcf0c157300f37c1d825d4d55ca83ecbfa07cba3efa3190467dd2a4164647",
+      "backend/ai_phone/server/vm_lifecycle.py": "232cf364266b1e344a7d29e87ebce39709994a1b0aa790db582ef33602af56aa",
+      "backend/ai_phone/server/ws/_deps.py": "a35024e4a79af02d098e71ab3f5a6f1ae5bad0130d35097a6a97ead977bacfcf",
+      "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+      "web/src/pages/HarmonyVirtualMachines.vue": "d702050463af50e3ecd2aa6a7866fd7ba6855d197527e303271650aa69f11d35",
+      "web/src/pages/IosSimVirtualMachines.vue": "4b99e783884daf6ff8a9eaa918f568a0e3976a31ef38545e43d9400e1e1f6c29",
+      "web/src/pages/VirtualMachines.vue": "2a78c051715bf1ecc9e8dcb29e60f098e714e89cfd77d8320659ae47daac4abf"
+    },
+    "mismatches": []
+  },
+  "source_hashes_at_start": {
+    "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_visual_a4.py": "a958493a2f746d209eba4b7dbd7a0982de35da157120a9f599532872d6016f9a",
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/personal-fixture.html": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+    "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a3_MainActivity.java": "9219cf05d043b476d802cc0b5e5b02b2827d013d13f73d5fab6a39ac03ba906d",
+    "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a3_storage_diagnostic.js": "7a2bd86efcb92da3a63956b34e24948e1399bc48cc4e42cb2d284981d2db80cf",
+    "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a4-prepare/adbutils-read-path.json": "9e42a6da93de8db8ced3077d08abf0e1c517831f9c33ca604e174a26dfff621e",
+    "backend/ai_phone/agent/android_vm/manager.py": "13bf99f44a4fa566bbfab44258cd4ab8a0eac2d000613fe149ed9fef33b26bd3",
+    "backend/ai_phone/agent/ws_client.py": "aadad560bfa0788b0b6eefe6636be7b7f2e95cae96b31d423f2dcaa34252592e",
+    "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+    "backend/ai_phone/agent/drivers/android.py": "af3b1fe42b0ce93e2ad1717143e8959bc2a438e2a73955a2a7ca0c6224136d9a",
+    "backend/ai_phone/server/android_vm/api.py": "3bdcfa84b46262ca974be0e29ba9352986d6e0a350df109c8d09aa2d69116d3d",
+    "backend/ai_phone/server/android_vm/service.py": "b7f9aa7149dbf196b71e63076cf3469b80d6f35845f5caf25143f3ff0a318621",
+    "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+    "backend/ai_phone/server/vm_lifecycle.py": "232cf364266b1e344a7d29e87ebce39709994a1b0aa790db582ef33602af56aa",
+    "backend/ai_phone/agent/android_vm/capability.py": "ed8630cb9f20d1791eea36d142bce755e73147b50a6e1621b2f6b4192d210b31",
+    "backend/ai_phone/agent/app_install/handler.py": "31abda8902919971a2879a3b6e262ddb16509213b7a1a249392a560ba7a81d22",
+    "backend/ai_phone/agent/app_uninstall/handler.py": "b373f34caf73043d54bc297cacd929c18783342486b8330acbb97c0c44b7714d",
+    "backend/ai_phone/agent/device_activity.py": "cc2e96d66080f7aa60fa8d0b9956e433e186fd892dfc26c00a8c904060395e31",
+    "backend/ai_phone/agent/drivers/__init__.py": "67dd1c2ac123154794e17d584ec5fb5335baec68293f16acea0fd1f14de506c8",
+    "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+    "backend/ai_phone/agent/harmony_vm/capability.py": "6716584a4ee555fd49b2297db5136e004679806d2af0b12a2c4edb3eac5003fa",
+    "backend/ai_phone/agent/harmony_vm/manager.py": "efac19845e45b5c0a7aa2faefc95f8c6dc9cecd6842442fee303765dc9a3999e",
+    "backend/ai_phone/agent/health/probe.py": "a4ec72f21e4dc6b1bf4b0c3bcfcdde37b74b57305cc57b9d2ce738fc91139c33",
+    "backend/ai_phone/agent/health/supervisor.py": "8393340453f02129d1c342e1815806cfe4f039ff00d7f117fbab94c462678858",
+    "backend/ai_phone/agent/ios_sim/manager.py": "6401fce688f697450099204f8c96c8995ffb2f2dcc65912b265e7ff1362bda60",
+    "backend/ai_phone/agent/main.py": "33941428605993c5c6b4ec709e2bb4f42d014ea57634a5133d5e3bd2d8e33d99",
+    "backend/ai_phone/agent/native_operation.py": "1fbc78e1560cf21ba3dc6e68d50adfc9a025831fba3d3848c407e291ff901255",
+    "backend/ai_phone/agent/vm_ports.py": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+    "backend/ai_phone/server/api/_deps.py": "83e8ecdb97ae92480c6034200039d080ad0e024bcd26f6cf361e68c3b9ea6bd7",
+    "backend/ai_phone/server/app.py": "2db57a8e7f596d36cbc4772808ad840d59ec134767d7e8ce8837bf5100435f73",
+    "backend/ai_phone/server/harmony_vm/api.py": "00b4665fda0e96e110b2fcb6ef236edc0af62a4a956abd76ca156c94e96793a6",
+    "backend/ai_phone/server/harmony_vm/service.py": "cef15701e1c3d6260a2e681911fa200dda10f27114225ab85994417e67008460",
+    "backend/ai_phone/server/hub.py": "7252018d5468f7e0ccc3f7b28e3fa238053751e61925cef1b3538050c6ee4b33",
+    "backend/ai_phone/server/ios_sim/api.py": "5df873d042daadb1a7b7f71a9ab642acdb276dd93835219548cd329736f0d1df",
+    "backend/ai_phone/server/ios_sim/service.py": "687dcf0c157300f37c1d825d4d55ca83ecbfa07cba3efa3190467dd2a4164647",
+    "backend/ai_phone/server/ws/_deps.py": "a35024e4a79af02d098e71ab3f5a6f1ae5bad0130d35097a6a97ead977bacfcf",
+    "web/src/pages/HarmonyVirtualMachines.vue": "d702050463af50e3ecd2aa6a7866fd7ba6855d197527e303271650aa69f11d35",
+    "web/src/pages/IosSimVirtualMachines.vue": "4b99e783884daf6ff8a9eaa918f568a0e3976a31ef38545e43d9400e1e1f6c29",
+    "web/src/pages/VirtualMachines.vue": "2a78c051715bf1ecc9e8dcb29e60f098e714e89cfd77d8320659ae47daac4abf",
+    "backend/ai_phone/server/app_install/service.py": "6a45cfa0dccab2f498d7b68bb93b50bb9a8f6e758b4c2a1fcb9f3e311dc63ea5",
+    "backend/ai_phone/server/app_install/__init__.py": "49822006c1bb8bf1c67876ed8118fa0f7a91f836f79be623c0e151dcfc0c7a2a",
+    "backend/ai_phone/server/app_install/api.py": "5379cfa11f852d9e184f4c97ca6ecd8da3940505c45bf7ec1fc136aa5baad4ee",
+    "backend/ai_phone/server/app_install/schemas.py": "e58afb853d3d79f7bd6187368590e0585657e90aa010093c74f43a8f30a406bd",
+    "backend/ai_phone/server/app_install/storage.py": "30c993c2fdbd8d47e2ba73cd073142d6b4a0296f31ff033b2dafbc3a2bac18bd",
+    "backend/ai_phone/server/app_install/timeout_scanner.py": "2fd16d6ac4b462a3f8324106fd63b994b8c201618205cfec19e8432e36bf4de8",
+    "backend/ai_phone/agent/app_install/ios_sim.py": "ff3de08bed578d426e4b87a0585b70ee4dfb53c1dfb3e1927ec5191346e75fc6",
+    "backend/ai_phone/agent/app_install/ios.py": "42af7874f2eec4984a31228b16e86cb2c5fb1a1869321af1ab744a0a83ac7eda",
+    "backend/ai_phone/agent/app_install/__init__.py": "4acbba852d881bd17ebe402ce8dc645a554b45c051f784b09e172a723d07b942",
+    "backend/ai_phone/agent/app_install/harmony.py": "ed62fccba993866f2f7c50ad9bf93af567c762c94eed2170d39c94f9efdb2ebf",
+    "backend/ai_phone/agent/app_install/android.py": "52aa206c26fe1961a279add9eacd8e707d247d357245e8b799f8704a1ae690fa"
+  },
+  "a3_diagnostic": {
+    "records": [
+      {
+        "protocol": "personal-vm-a3",
+        "run": "android-app-install-8a2a3be1-20261016-a4",
+        "platform": "android",
+        "phase": "first-write",
+        "kind": "witness",
+        "sequence": 1,
+        "emittedWallMs": 1792097407775,
+        "emittedElapsedNs": 25330362095,
+        "data": {
+          "startedWallMs": 1792097407773,
+          "startedElapsedNs": 25327807887,
+          "mode": "first-write",
+          "openedForWrite": true,
+          "created": true,
+          "fileFsync": true,
+          "parentFsync": true,
+          "path": "/data/user/0/org.personal.aiphone.lifecycle/personal-witness-android-app-install-8a2a3be1-20261016-a4.txt",
+          "parent": "/data/user/0/org.personal.aiphone.lifecycle",
+          "existedBefore": false,
+          "sha256": "0aa5107c10b24342182f02663381cab3ae1f3ebe88cb5474d4833d12ff610089",
+          "bytes": 93,
+          "inode": 132233,
+          "mtimeMs": 1792097407000,
+          "ok": true,
+          "finishedWallMs": 1792097407775,
+          "finishedElapsedNs": 25330352553
+        },
+        "host_received_at": "2026-10-15T20:50:08.111814+00:00",
+        "host_received_monotonic_ns": 105720378667750
+      },
+      {
+        "protocol": "personal-vm-a3",
+        "run": "android-app-install-8a2a3be1-20261016-a4",
+        "platform": "android",
+        "phase": "first-write",
+        "kind": "webview-provider",
+        "sequence": 2,
+        "emittedWallMs": 1792097408130,
+        "emittedElapsedNs": 25684975345,
+        "data": {
+          "packageName": "com.google.android.webview",
+          "versionName": "109.0.5414.123",
+          "longVersionCode": 541412334,
+          "ok": true
+        },
+        "host_received_at": "2026-10-15T20:50:08.466682+00:00",
+        "host_received_monotonic_ns": 105720733532875
+      },
+      {
+        "protocol": "personal-vm-a3",
+        "run": "android-app-install-8a2a3be1-20261016-a4",
+        "platform": "android",
+        "phase": "first-write",
+        "kind": "storage",
+        "sequence": 3,
+        "emittedWallMs": 1792097408773,
+        "emittedElapsedNs": 26328263929,
+        "data": {
+          "href": "http://127.0.0.1:19080/fixture/?run=android-app-install-8a2a3be1-20261016-a4&platform=android",
+          "origin": "http://127.0.0.1:19080",
+          "storageKey": "personal-vm-e2e:android-app-install-8a2a3be1-20261016-a4",
+          "runFromLocation": "android-app-install-8a2a3be1-20261016-a4",
+          "platformFromLocation": "android",
+          "userAgent": "Mozilla/5.0 (Linux; Android 13; sdk_gphone64_arm64 Build/TE1A.240213.009; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/109.0.5414.123 Mobile Safari/537.36",
+          "documentReadyState": "complete",
+          "capturedDateMs": 1792097408773,
+          "capturedPerformanceMs": 641.9000000000015,
+          "rawValue": null,
+          "missing": true,
+          "readError": null,
+          "parseError": null,
+          "parsedValue": null,
+          "probeOk": true,
+          "trigger": "receipt-request",
+          "triggerWallMs": 1792097408712,
+          "triggerElapsedNs": 26267084595,
+          "evaluationRequestedWallMs": 1792097408717,
+          "evaluationRequestedElapsedNs": 26271440054,
+          "evaluationFinishedWallMs": 1792097408773,
+          "evaluationFinishedElapsedNs": 26328261345
+        },
+        "host_received_at": "2026-10-15T20:50:09.113192+00:00",
+        "host_received_monotonic_ns": 105721380034708
+      },
+      {
+        "protocol": "personal-vm-a3",
+        "run": "android-app-install-8a2a3be1-20261016-a4",
+        "platform": "android",
+        "phase": "first-write",
+        "kind": "storage",
+        "sequence": 4,
+        "emittedWallMs": 1792097408807,
+        "emittedElapsedNs": 26362344720,
+        "data": {
+          "href": "http://127.0.0.1:19080/fixture/?run=android-app-install-8a2a3be1-20261016-a4&platform=android",
+          "origin": "http://127.0.0.1:19080",
+          "storageKey": "personal-vm-e2e:android-app-install-8a2a3be1-20261016-a4",
+          "runFromLocation": "android-app-install-8a2a3be1-20261016-a4",
+          "platformFromLocation": "android",
+          "userAgent": "Mozilla/5.0 (Linux; Android 13; sdk_gphone64_arm64 Build/TE1A.240213.009; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/109.0.5414.123 Mobile Safari/537.36",
+          "documentReadyState": "complete",
+          "capturedDateMs": 1792097408807,
+          "capturedPerformanceMs": 676.4000000000015,
+          "rawValue": null,
+          "missing": true,
+          "readError": null,
+          "parseError": null,
+          "parsedValue": null,
+          "probeOk": true,
+          "trigger": "page-finished",
+          "triggerWallMs": 1792097408771,
+          "triggerElapsedNs": 26326165804,
+          "evaluationRequestedWallMs": 1792097408771,
+          "evaluationRequestedElapsedNs": 26326167762,
+          "evaluationFinishedWallMs": 1792097408807,
+          "evaluationFinishedElapsedNs": 26362341429
+        },
+        "host_received_at": "2026-10-15T20:50:09.141971+00:00",
+        "host_received_monotonic_ns": 105721408813083
+      },
+      {
+        "protocol": "personal-vm-a3",
+        "run": "android-app-install-8a2a3be1-20261016-a4",
+        "platform": "android",
+        "phase": "first-write",
+        "kind": "storage",
+        "sequence": 5,
+        "emittedWallMs": 1792097415684,
+        "emittedElapsedNs": 33239100890,
+        "data": {
+          "href": "http://127.0.0.1:19080/fixture/?run=android-app-install-8a2a3be1-20261016-a4&platform=android",
+          "origin": "http://127.0.0.1:19080",
+          "storageKey": "personal-vm-e2e:android-app-install-8a2a3be1-20261016-a4",
+          "runFromLocation": "android-app-install-8a2a3be1-20261016-a4",
+          "platformFromLocation": "android",
+          "userAgent": "Mozilla/5.0 (Linux; Android 13; sdk_gphone64_arm64 Build/TE1A.240213.009; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/109.0.5414.123 Mobile Safari/537.36",
+          "documentReadyState": "complete",
+          "capturedDateMs": 1792097415684,
+          "capturedPerformanceMs": 7552.899999999998,
+          "rawValue": "{\"token\":\"personal34791164d5d2\",\"count\":1}",
+          "missing": false,
+          "readError": null,
+          "parseError": null,
+          "parsedValue": {
+            "token": "personal34791164d5d2",
+            "count": 1
+          },
+          "probeOk": true,
+          "trigger": "receipt-request",
+          "triggerWallMs": 1792097415663,
+          "triggerElapsedNs": 33218401140,
+          "evaluationRequestedWallMs": 1792097415664,
+          "evaluationRequestedElapsedNs": 33218444057,
+          "evaluationFinishedWallMs": 1792097415684,
+          "evaluationFinishedElapsedNs": 33239090224
+        },
+        "host_received_at": "2026-10-15T20:50:16.023445+00:00",
+        "host_received_monotonic_ns": 105728290205041
+      },
+      {
+        "protocol": "personal-vm-a3",
+        "run": "android-app-install-8a2a3be1-20261016-a4",
+        "platform": "android",
+        "phase": "restart-read",
+        "kind": "witness",
+        "sequence": 1,
+        "emittedWallMs": 1792097440520,
+        "emittedElapsedNs": 13083222297,
+        "data": {
+          "startedWallMs": 1792097440518,
+          "startedElapsedNs": 13081103214,
+          "mode": "restart-read",
+          "openedForWrite": false,
+          "created": false,
+          "fileFsync": false,
+          "parentFsync": false,
+          "path": "/data/user/0/org.personal.aiphone.lifecycle/personal-witness-android-app-install-8a2a3be1-20261016-a4.txt",
+          "parent": "/data/user/0/org.personal.aiphone.lifecycle",
+          "existedBefore": true,
+          "sha256": "0aa5107c10b24342182f02663381cab3ae1f3ebe88cb5474d4833d12ff610089",
+          "bytes": 93,
+          "inode": 132233,
+          "mtimeMs": 1792097407000,
+          "ok": true,
+          "finishedWallMs": 1792097440520,
+          "finishedElapsedNs": 13083213089
+        },
+        "host_received_at": "2026-10-15T20:50:40.031187+00:00",
+        "host_received_monotonic_ns": 105752297665500
+      },
+      {
+        "protocol": "personal-vm-a3",
+        "run": "android-app-install-8a2a3be1-20261016-a4",
+        "platform": "android",
+        "phase": "restart-read",
+        "kind": "webview-provider",
+        "sequence": 2,
+        "emittedWallMs": 1792097441299,
+        "emittedElapsedNs": 13861826172,
+        "data": {
+          "packageName": "com.google.android.webview",
+          "versionName": "109.0.5414.123",
+          "longVersionCode": 541412334,
+          "ok": true
+        },
+        "host_received_at": "2026-10-15T20:50:40.808133+00:00",
+        "host_received_monotonic_ns": 105753074604041
+      },
+      {
+        "protocol": "personal-vm-a3",
+        "run": "android-app-install-8a2a3be1-20261016-a4",
+        "platform": "android",
+        "phase": "restart-read",
+        "kind": "storage",
+        "sequence": 3,
+        "emittedWallMs": 1792097441828,
+        "emittedElapsedNs": 14391404173,
+        "data": {
+          "href": "http://127.0.0.1:19080/fixture/?run=android-app-install-8a2a3be1-20261016-a4&platform=android",
+          "origin": "http://127.0.0.1:19080",
+          "storageKey": "personal-vm-e2e:android-app-install-8a2a3be1-20261016-a4",
+          "runFromLocation": "android-app-install-8a2a3be1-20261016-a4",
+          "platformFromLocation": "android",
+          "userAgent": "Mozilla/5.0 (Linux; Android 13; sdk_gphone64_arm64 Build/TE1A.240213.009; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/109.0.5414.123 Mobile Safari/537.36",
+          "documentReadyState": "complete",
+          "capturedDateMs": 1792097441828,
+          "capturedPerformanceMs": 528.6000000000004,
+          "rawValue": null,
+          "missing": true,
+          "readError": null,
+          "parseError": null,
+          "parsedValue": null,
+          "probeOk": true,
+          "trigger": "receipt-request",
+          "triggerWallMs": 1792097441665,
+          "triggerElapsedNs": 14228422256,
+          "evaluationRequestedWallMs": 1792097441703,
+          "evaluationRequestedElapsedNs": 14266437631,
+          "evaluationFinishedWallMs": 1792097441828,
+          "evaluationFinishedElapsedNs": 14391401423
+        },
+        "host_received_at": "2026-10-15T20:50:41.344595+00:00",
+        "host_received_monotonic_ns": 105753611056625
+      },
+      {
+        "protocol": "personal-vm-a3",
+        "run": "android-app-install-8a2a3be1-20261016-a4",
+        "platform": "android",
+        "phase": "restart-read",
+        "kind": "storage",
+        "sequence": 4,
+        "emittedWallMs": 1792097441861,
+        "emittedElapsedNs": 14424630881,
+        "data": {
+          "href": "http://127.0.0.1:19080/fixture/?run=android-app-install-8a2a3be1-20261016-a4&platform=android",
+          "origin": "http://127.0.0.1:19080",
+          "storageKey": "personal-vm-e2e:android-app-install-8a2a3be1-20261016-a4",
+          "runFromLocation": "android-app-install-8a2a3be1-20261016-a4",
+          "platformFromLocation": "android",
+          "userAgent": "Mozilla/5.0 (Linux; Android 13; sdk_gphone64_arm64 Build/TE1A.240213.009; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/109.0.5414.123 Mobile Safari/537.36",
+          "documentReadyState": "complete",
+          "capturedDateMs": 1792097441842,
+          "capturedPerformanceMs": 542.7000000000007,
+          "rawValue": null,
+          "missing": true,
+          "readError": null,
+          "parseError": null,
+          "parsedValue": null,
+          "probeOk": true,
+          "trigger": "page-finished",
+          "triggerWallMs": 1792097441822,
+          "triggerElapsedNs": 14384878256,
+          "evaluationRequestedWallMs": 1792097441822,
+          "evaluationRequestedElapsedNs": 14384879964,
+          "evaluationFinishedWallMs": 1792097441861,
+          "evaluationFinishedElapsedNs": 14424628756
+        },
+        "host_received_at": "2026-10-15T20:50:41.383215+00:00",
+        "host_received_monotonic_ns": 105753649676500
+      }
+    ],
+    "first_write_error": null,
+    "host_timing": [
+      {
+        "label": "activity-launch-requested",
+        "at": "2026-10-15T20:50:07.800863+00:00",
+        "monotonic_ns": 105720067727583,
+        "phase": "first-write"
+      },
+      {
+        "label": "activity-launch-returned",
+        "at": "2026-10-15T20:50:07.899983+00:00",
+        "monotonic_ns": 105720166850083,
+        "phase": "first-write"
+      },
+      {
+        "label": "confirm-click-requested",
+        "at": "2026-10-15T20:50:15.883844+00:00",
+        "monotonic_ns": 105728150602416
+      },
+      {
+        "label": "confirm-click-returned",
+        "at": "2026-10-15T20:50:15.942905+00:00",
+        "monotonic_ns": 105728209670125
+      },
+      {
+        "label": "server-stop-requested",
+        "at": "2026-10-15T20:50:20.902693+00:00",
+        "monotonic_ns": 105733169392250,
+        "path": "/api/internal/vm/instances/b834fac98cc2/stop"
+      },
+      {
+        "label": "server-stop-returned",
+        "at": "2026-10-15T20:50:20.926449+00:00",
+        "monotonic_ns": 105733193148625,
+        "status_code": 200
+      },
+      {
+        "label": "activity-launch-requested",
+        "at": "2026-10-15T20:50:39.650624+00:00",
+        "monotonic_ns": 105751917114666,
+        "phase": "restart-read"
+      },
+      {
+        "label": "activity-launch-returned",
+        "at": "2026-10-15T20:50:39.838591+00:00",
+        "monotonic_ns": 105752105099583,
+        "phase": "restart-read"
+      }
+    ],
+    "receipt_timing": [
+      {
+        "at": "2026-10-15T20:50:09.051626+00:00",
+        "monotonic_ns": 105721318469750,
+        "run": "android-app-install-8a2a3be1-20261016-a4",
+        "platform": "android",
+        "event": "load",
+        "token": "",
+        "count": 0
+      },
+      {
+        "at": "2026-10-15T20:50:16.005491+00:00",
+        "monotonic_ns": 105728272252041,
+        "run": "android-app-install-8a2a3be1-20261016-a4",
+        "platform": "android",
+        "event": "confirm",
+        "token": "personal34791164d5d2",
+        "count": 1
+      },
+      {
+        "at": "2026-10-15T20:50:41.170796+00:00",
+        "monotonic_ns": 105753437260625,
+        "run": "android-app-install-8a2a3be1-20261016-a4",
+        "platform": "android",
+        "event": "load",
+        "token": "",
+        "count": 0
+      }
+    ],
+    "native_calls": [
+      {
+        "kind": "native-command",
+        "argv": [
+          "/Users/dongxin/Library/Android/sdk/cmdline-tools/latest/bin/avdmanager",
+          "create",
+          "avd",
+          "-n",
+          "aiphone_vm_b834fac98cc2",
+          "-k",
+          "system-images;android-33;google_apis;arm64-v8a"
+        ],
+        "at": "2026-10-15T20:49:38.369212+00:00",
+        "monotonic_ns": 105690636422500,
+        "returncode": 0,
+        "returned_at": "2026-10-15T20:49:38.717956+00:00",
+        "returned_monotonic_ns": 105690985158458,
+        "stdout": "Auto-selecting single ABI arm64-v8a\nDo you wish to create a custom hardware profile? [no] ",
+        "stderr": "Warning: This version only understands SDK XML versions up to 3 but an SDK XML file of version 4 was encountered. This can happen if you use versions of Android Studio and the command-line tools that were released at different times.\n"
+      },
+      {
+        "kind": "native-launch",
+        "argv": [
+          "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+          "-avd",
+          "aiphone_vm_b834fac98cc2",
+          "-port",
+          "5666",
+          "-skin",
+          "540x960",
+          "-prop",
+          "qemu.sf.lcd_density=240",
+          "-prop",
+          "debug.aiphone.vmid=b834fac98cc2",
+          "-prop",
+          "debug.aiphone.alias=personal-e2e-android-app-install-8a2a3be1-20261016-a4",
+          "-prop",
+          "persist.sys.timezone=Asia/Shanghai",
+          "-no-audio",
+          "-no-boot-anim",
+          "-no-snapshot",
+          "-no-window",
+          "-memory",
+          "2048",
+          "-cores",
+          "2",
+          "-gpu",
+          "host",
+          "-camera-back",
+          "emulated",
+          "-camera-front",
+          "none"
+        ],
+        "at": "2026-10-15T20:49:38.718333+00:00",
+        "monotonic_ns": 105690985530708,
+        "pid": 54738,
+        "returned_at": "2026-10-15T20:49:38.720286+00:00",
+        "returned_monotonic_ns": 105690987490833
+      },
+      {
+        "kind": "native-command",
+        "argv": [
+          "/Users/dongxin/Library/Android/sdk/platform-tools/adb",
+          "-s",
+          "emulator-5666",
+          "emu",
+          "kill"
+        ],
+        "at": "2026-10-15T20:50:20.932576+00:00",
+        "monotonic_ns": 105733199276708,
+        "returncode": 0,
+        "returned_at": "2026-10-15T20:50:20.942722+00:00",
+        "returned_monotonic_ns": 105733209430000,
+        "stdout": "OK: killing emulator, bye bye\r\nOK\r\n",
+        "stderr": ""
+      },
+      {
+        "kind": "owned-process-stop",
+        "pid": 54738,
+        "emu_kill_succeeded": true,
+        "at": "2026-10-15T20:50:20.942913+00:00",
+        "monotonic_ns": 105733209614250,
+        "calls": [
+          {
+            "method": "wait",
+            "at": "2026-10-15T20:50:20.942956+00:00",
+            "monotonic_ns": 105733209654291,
+            "kwargs": {
+              "timeout": 19.999806792009622
+            },
+            "result": 0,
+            "returned_monotonic_ns": 105734927768041
+          }
+        ],
+        "forwarded_kwargs": {
+          "deadline": 105853.173307374,
+          "grace_deadline": 105753.209451
+        },
+        "returned_at": "2026-10-15T20:50:22.661126+00:00",
+        "returned_monotonic_ns": 105734927822041,
+        "fallback_signals": []
+      },
+      {
+        "kind": "native-launch",
+        "argv": [
+          "/Users/dongxin/Library/Android/sdk/emulator/emulator",
+          "-avd",
+          "aiphone_vm_b834fac98cc2",
+          "-port",
+          "5666",
+          "-skin",
+          "540x960",
+          "-prop",
+          "qemu.sf.lcd_density=240",
+          "-prop",
+          "debug.aiphone.vmid=b834fac98cc2",
+          "-prop",
+          "debug.aiphone.alias=personal-e2e-android-app-install-8a2a3be1-20261016-a4",
+          "-prop",
+          "persist.sys.timezone=Asia/Shanghai",
+          "-no-audio",
+          "-no-boot-anim",
+          "-no-snapshot",
+          "-no-window",
+          "-memory",
+          "2048",
+          "-cores",
+          "2",
+          "-gpu",
+          "host",
+          "-camera-back",
+          "emulated",
+          "-camera-front",
+          "none"
+        ],
+        "at": "2026-10-15T20:50:23.154678+00:00",
+        "monotonic_ns": 105735421355791,
+        "pid": 55015,
+        "returned_at": "2026-10-15T20:50:23.156631+00:00",
+        "returned_monotonic_ns": 105735423313541
+      },
+      {
+        "kind": "native-command",
+        "argv": [
+          "/Users/dongxin/Library/Android/sdk/platform-tools/adb",
+          "-s",
+          "emulator-5666",
+          "emu",
+          "kill"
+        ],
+        "at": "2026-10-15T20:51:15.291571+00:00",
+        "monotonic_ns": 105787557637875,
+        "returncode": 0,
+        "returned_at": "2026-10-15T20:51:15.299994+00:00",
+        "returned_monotonic_ns": 105787566063333,
+        "stdout": "OK: killing emulator, bye bye\r\nOK\r\n",
+        "stderr": ""
+      },
+      {
+        "kind": "owned-process-stop",
+        "pid": 55015,
+        "emu_kill_succeeded": true,
+        "at": "2026-10-15T20:51:15.300136+00:00",
+        "monotonic_ns": 105787566194875,
+        "calls": [
+          {
+            "method": "wait",
+            "at": "2026-10-15T20:51:15.300174+00:00",
+            "monotonic_ns": 105787566231375,
+            "kwargs": {
+              "timeout": 19.999852833003388
+            },
+            "result": 0,
+            "returned_monotonic_ns": 105789110467666
+          }
+        ],
+        "forwarded_kwargs": {
+          "deadline": 105907.535616333,
+          "grace_deadline": 105807.566074666
+        },
+        "returned_at": "2026-10-15T20:51:16.844477+00:00",
+        "returned_monotonic_ns": 105789110534750,
+        "fallback_signals": []
+      }
+    ],
+    "avd_snapshots": [
+      {
+        "phase": "native-ready-first",
+        "at": "2026-10-15T20:50:03.305284+00:00",
+        "monotonic_ns": 105715572191375,
+        "vm_id": "b834fac98cc2",
+        "avd_name": "aiphone_vm_b834fac98cc2",
+        "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd",
+        "files": [
+          {
+            "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/config.ini",
+            "exists": true,
+            "inode": 84390741,
+            "size": 3747,
+            "mtime_ns": 1792097379069381988,
+            "birth_time": 1792097379.0693336,
+            "sha256": "c680eb0752ab0f64c41bca3b244f1b17b01a996160b9c70ccaf87ae7dffa2185",
+            "text": "PlayStore.enabled = no\nabi.type = arm64-v8a\navd.id = <build>\navd.ini.encoding = UTF-8\navd.name = <build>\ndisk.cachePartition = yes\ndisk.cachePartition.size = 66MB\ndisk.dataPartition.path = <temp>\ndisk.dataPartition.size = 6442450944\ndisk.systemPartition.size = 0\ndisk.vendorPartition.size = 0\nenvironment.height = 0\nenvironment.width = 0\nfastboot.forceChosenSnapshotBoot = no\nfastboot.forceColdBoot = no\nfastboot.forceFastBoot = yes\nfirstboot.bootFromDownloadableSnapshot = yes\nfirstboot.bootFromLocalSnapshot = yes\nfirstboot.saveToLocalSnapshot = yes\nhw.accelerometer = yes\nhw.accelerometer_uncalibrated = yes\nhw.arc = false\nhw.audioInput = yes\nhw.audioOutput = yes\nhw.battery = yes\nhw.camera.back = emulated\nhw.camera.back.orientation = 90\nhw.camera.front = none\nhw.camera.front.orientation = 90\nhw.cpu.arch = arm64\nhw.cpu.ncore = 4\nhw.dPad = no\nhw.display1.density = 0\nhw.display1.flag = 0\nhw.display1.height = 0\nhw.display1.width = 0\nhw.display1.xOffset = -1\nhw.display1.yOffset = -1\nhw.display2.density = 0\nhw.display2.flag = 0\nhw.display2.height = 0\nhw.display2.width = 0\nhw.display2.xOffset = -1\nhw.display2.yOffset = -1\nhw.display3.density = 0\nhw.display3.flag = 0\nhw.display3.height = 0\nhw.display3.width = 0\nhw.display3.xOffset = -1\nhw.display3.yOffset = -1\nhw.displayRegion.0.1.height = 0\nhw.displayRegion.0.1.width = 0\nhw.displayRegion.0.1.xOffset = -1\nhw.displayRegion.0.1.yOffset = -1\nhw.displayRegion.0.2.height = 0\nhw.displayRegion.0.2.width = 0\nhw.displayRegion.0.2.xOffset = -1\nhw.displayRegion.0.2.yOffset = -1\nhw.displayRegion.0.3.height = 0\nhw.displayRegion.0.3.width = 0\nhw.displayRegion.0.3.xOffset = -1\nhw.displayRegion.0.3.yOffset = -1\nhw.gltransport = pipe\nhw.gltransport.asg.dataRingSize = 32768\nhw.gltransport.asg.writeBufferSize = 1048576\nhw.gltransport.asg.writeStepSize = 4096\nhw.gltransport.drawFlushInterval = 800\nhw.gps = yes\nhw.gpu.enabled = no\nhw.gpu.mode = auto\nhw.gsmModem = yes\nhw.gyroscope = yes\nhw.hotplug_multi_display = no\nhw.initialOrientation = portrait\nhw.keyboard = no\nhw.keyboard.charmap = qwerty2\nhw.keyboard.lid = yes\nhw.lcd.backlight = yes\nhw.lcd.circular = false\nhw.lcd.density = 240\nhw.lcd.depth = 32\nhw.lcd.height = 960\nhw.lcd.transparent = false\nhw.lcd.vsync = 60\nhw.lcd.width = 540\nhw.mainKeys = yes\nhw.multi_display_window = no\nhw.ramSize = 2048\nhw.rotaryInput = no\nhw.screen = multi-touch\nhw.sdCard = yes\nhw.sensor.hinge = no\nhw.sensor.hinge.count = 0\nhw.sensor.hinge.fold_to_displayRegion.0.1_at_posture = 1\nhw.sensor.hinge.resizable.config = 1\nhw.sensor.hinge.sub_type = 0\nhw.sensor.hinge.type = 0\nhw.sensor.roll = no\nhw.sensor.roll.count = 0\nhw.sensor.roll.resize_to_displayRegion.0.1_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.2_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.3_at_posture = 6\nhw.sensors.gyroscope_uncalibrated = yes\nhw.sensors.heading = no\nhw.sensors.heart_rate = no\nhw.sensors.humidity = yes\nhw.sensors.light = yes\nhw.sensors.magnetic_field = yes\nhw.sensors.magnetic_field_uncalibrated = yes\nhw.sensors.orientation = yes\nhw.sensors.pressure = yes\nhw.sensors.proximity = no\nhw.sensors.rgbclight = no\nhw.sensors.temperature = yes\nhw.sensors.wrist_tilt = no\nhw.touchpad0 = no\nhw.touchpad0.height = 400\nhw.touchpad0.width = 600\nhw.trackBall = yes\nhw.useext4 = yes\nimage.sysdir.1 = system-images/android-33/google_apis/arm64-v8a/\nkernel.newDeviceNaming = autodetect\nkernel.supportsYaffs2 = autodetect\nruntime.network.latency = none\nruntime.network.speed = full\nsdcard.size = 512 MB\nshowDeviceFrame = yes\ntag.display = Google APIs\ntag.displaynames = Google APIs\ntag.id = google_apis\ntag.ids = google_apis\ntarget = android-33\ntest.delayAdbTillBootComplete = 0\ntest.monitorAdb = 0\ntest.quitAfterBootTimeOut = -1\nuserdata.useQcow2 = no\nvm.heapSize = 384\n"
+          },
+          {
+            "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/hardware-qemu.ini",
+            "exists": true,
+            "inode": 84390785,
+            "size": 4708,
+            "mtime_ns": 1792097379572698198,
+            "birth_time": 1792097379.5726202,
+            "sha256": "251690ada8b0f672e204d85fbcbdfad47407ac4590c7284912300752f80bd1f9",
+            "text": "hw.cpu.arch = arm64\nhw.cpu.ncore = 2\nhw.ramSize = 2048\nhw.screen = multi-touch\nhw.mainKeys = true\nhw.touchpad0 = false\nhw.touchpad0.width = 600\nhw.touchpad0.height = 400\nhw.trackBall = true\nhw.keyboard = false\nhw.keyboard.lid = true\nhw.keyboard.charmap = qwerty2\nhw.dPad = false\nhw.rotaryInput = false\nhw.gsmModem = true\nhw.gps = true\nhw.battery = true\nhw.accelerometer = true\nhw.accelerometer_uncalibrated = true\nhw.gyroscope = true\nhw.audioInput = true\nhw.audioOutput = true\nhw.sdCard = true\ndisk.cachePartition = true\ndisk.cachePartition.path = /Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/cache.img\ndisk.cachePartition.size = 66m\ntest.quitAfterBootTimeOut = -1\ntest.delayAdbTillBootComplete = 0\ntest.monitorAdb = 0\nhw.lcd.width = 540\nhw.lcd.height = 960\nhw.lcd.depth = 32\nhw.lcd.circular = false\nhw.lcd.density = 240\nhw.lcd.transparent = false\nhw.lcd.backlight = true\nhw.lcd.vsync = 60\nhw.gltransport = pipe\nhw.gltransport.asg.writeBufferSize = 1048576\nhw.gltransport.asg.writeStepSize = 4096\nhw.gltransport.asg.dataRingSize = 32768\nhw.gltransport.drawFlushInterval = 800\nhw.displayRegion.0.1.xOffset = -1\nhw.displayRegion.0.1.yOffset = -1\nhw.displayRegion.0.1.width = 0\nhw.displayRegion.0.1.height = 0\nhw.displayRegion.0.2.xOffset = -1\nhw.displayRegion.0.2.yOffset = -1\nhw.displayRegion.0.2.width = 0\nhw.displayRegion.0.2.height = 0\nhw.displayRegion.0.3.xOffset = -1\nhw.displayRegion.0.3.yOffset = -1\nhw.displayRegion.0.3.width = 0\nhw.displayRegion.0.3.height = 0\nhw.display1.width = 0\nhw.display1.height = 0\nhw.display1.density = 0\nhw.display1.xOffset = -1\nhw.display1.yOffset = -1\nhw.display1.flag = 0\nhw.display2.width = 0\nhw.display2.height = 0\nhw.display2.density = 0\nhw.display2.xOffset = -1\nhw.display2.yOffset = -1\nhw.display2.flag = 0\nhw.display3.width = 0\nhw.display3.height = 0\nhw.display3.density = 0\nhw.display3.xOffset = -1\nhw.display3.yOffset = -1\nhw.display3.flag = 0\nhw.multi_display_window = false\nhw.hotplug_multi_display = false\nhw.gpu.enabled = true\nhw.gpu.mode = host\nhw.initialOrientation = portrait\nhw.camera.back = emulated\nhw.camera.back.orientation = 90\nhw.camera.front = none\nhw.camera.front.orientation = 90\nvm.heapSize = 512\nhw.sensors.light = true\nhw.sensors.pressure = true\nhw.sensors.humidity = true\nhw.sensors.proximity = false\nhw.sensors.magnetic_field = true\nhw.sensors.magnetic_field_uncalibrated = true\nhw.sensors.gyroscope_uncalibrated = true\nhw.sensors.orientation = true\nhw.sensors.temperature = true\nhw.sensors.rgbclight = false\nhw.sensor.hinge = false\nhw.sensor.hinge.count = 0\nhw.sensor.hinge.type = 0\nhw.sensor.hinge.sub_type = 0\nhw.sensor.hinge.resizable.config = 1\nhw.sensor.hinge.fold_to_displayRegion.0.1_at_posture = 1\nhw.sensor.roll = false\nhw.sensor.roll.count = 0\nhw.sensor.roll.resize_to_displayRegion.0.1_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.2_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.3_at_posture = 6\nhw.sensors.heart_rate = false\nhw.sensors.wrist_tilt = false\nhw.sensors.heading = false\nhw.useext4 = true\nkernel.path = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//kernel-ranchu\nkernel.newDeviceNaming = yes\nkernel.supportsYaffs2 = no\ndisk.ramdisk.path = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//ramdisk.img\ndisk.systemPartition.initPath = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//system.img\ndisk.systemPartition.size = 8203m\ndisk.vendorPartition.initPath = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//vendor.img\ndisk.vendorPartition.size = 800m\ndisk.dataPartition.path = /Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/userdata-qemu.img\ndisk.dataPartition.initPath = /Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/userdata.img\ndisk.dataPartition.size = 6g\ndisk.encryptionKeyPartition.path = /Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/encryptionkey.img\nPlayStore.enabled = false\navd.name = aiphone_vm_b834fac98cc2\navd.id = aiphone_vm_b834fac98cc2\nfastboot.forceColdBoot = false\nuserdata.useQcow2 = true\nfirstboot.bootFromDownloadableSnapshot = true\nfirstboot.bootFromLocalSnapshot = true\nfirstboot.saveToLocalSnapshot = true\nandroid.sdk.root = /Users/dongxin/Library/Android/sdk\nandroid.avd.home = /Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd\nenvironment.width = 0\nenvironment.height = 0\n"
+          },
+          {
+            "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/emu-launch-params.txt",
+            "exists": true,
+            "inode": 84390725,
+            "size": 557,
+            "mtime_ns": 1792097378747093059,
+            "birth_time": 1792097378.7469962,
+            "sha256": "8b4162ce2b0644a507f2768fda170f0d7c9b9cb836152df67a78d8f5960f3198",
+            "text": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4\n/Users/dongxin/Library/Android/sdk/emulator/emulator\n29\n/Users/dongxin/Library/Android/sdk/emulator/emulator\n-avd\naiphone_vm_b834fac98cc2\n-port\n5666\n-skin\n540x960\n-prop\nqemu.sf.lcd_density=240\n-prop\ndebug.aiphone.vmid=b834fac98cc2\n-prop\ndebug.aiphone.alias=personal-e2e-android-app-install-8a2a3be1-20261016-a4\n-prop\npersist.sys.timezone=Asia/Shanghai\n-no-audio\n-no-boot-anim\n-no-snapshot\n-no-window\n-memory\n2048\n-cores\n2\n-gpu\nhost\n-camera-back\nemulated\n-camera-front\nnone\n"
+          },
+          {
+            "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/emulator-user.ini",
+            "exists": false
+          },
+          {
+            "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/userdata-qemu.img",
+            "exists": true,
+            "inode": 84390767,
+            "size": 6422528,
+            "mtime_ns": 1792097379164192451,
+            "birth_time": 1792097379.1613598
+          },
+          {
+            "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/userdata-qemu.img.qcow2",
+            "exists": true,
+            "inode": 84390787,
+            "size": 727121920,
+            "mtime_ns": 1792097403303208064,
+            "birth_time": 1792097379.5861254
+          }
+        ]
+      },
+      {
+        "phase": "native-ready-restarted",
+        "at": "2026-10-15T20:50:39.617045+00:00",
+        "monotonic_ns": 105751883524500,
+        "vm_id": "b834fac98cc2",
+        "avd_name": "aiphone_vm_b834fac98cc2",
+        "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd",
+        "files": [
+          {
+            "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/config.ini",
+            "exists": true,
+            "inode": 84390741,
+            "size": 3468,
+            "mtime_ns": 1792097423154558386,
+            "birth_time": 1792097379.0693336,
+            "sha256": "60877e8b38278859ca87ea92e5039a2be5bd5c66f1a39d67364d54e0e4b97dc6",
+            "text": "PlayStore.enabled=no\nabi.type=arm64-v8a\navd.id=<build>\navd.ini.encoding=UTF-8\navd.name=<build>\ndisk.cachePartition=yes\ndisk.cachePartition.size=66MB\ndisk.dataPartition.path=<temp>\ndisk.dataPartition.size=4096M\ndisk.systemPartition.size=0\ndisk.vendorPartition.size=0\nenvironment.height=0\nenvironment.width=0\nfastboot.forceChosenSnapshotBoot=no\nfastboot.forceColdBoot=no\nfastboot.forceFastBoot=yes\nfirstboot.bootFromDownloadableSnapshot=yes\nfirstboot.bootFromLocalSnapshot=yes\nfirstboot.saveToLocalSnapshot=yes\nhw.accelerometer=yes\nhw.accelerometer_uncalibrated=yes\nhw.arc=false\nhw.audioInput=yes\nhw.audioOutput=yes\nhw.battery=yes\nhw.camera.back=emulated\nhw.camera.back.orientation=90\nhw.camera.front=none\nhw.camera.front.orientation=90\nhw.cpu.arch=arm64\nhw.cpu.ncore=4\nhw.dPad=no\nhw.display1.density=0\nhw.display1.flag=0\nhw.display1.height=0\nhw.display1.width=0\nhw.display1.xOffset=-1\nhw.display1.yOffset=-1\nhw.display2.density=0\nhw.display2.flag=0\nhw.display2.height=0\nhw.display2.width=0\nhw.display2.xOffset=-1\nhw.display2.yOffset=-1\nhw.display3.density=0\nhw.display3.flag=0\nhw.display3.height=0\nhw.display3.width=0\nhw.display3.xOffset=-1\nhw.display3.yOffset=-1\nhw.displayRegion.0.1.height=0\nhw.displayRegion.0.1.width=0\nhw.displayRegion.0.1.xOffset=-1\nhw.displayRegion.0.1.yOffset=-1\nhw.displayRegion.0.2.height=0\nhw.displayRegion.0.2.width=0\nhw.displayRegion.0.2.xOffset=-1\nhw.displayRegion.0.2.yOffset=-1\nhw.displayRegion.0.3.height=0\nhw.displayRegion.0.3.width=0\nhw.displayRegion.0.3.xOffset=-1\nhw.displayRegion.0.3.yOffset=-1\nhw.gltransport=pipe\nhw.gltransport.asg.dataRingSize=32768\nhw.gltransport.asg.writeBufferSize=1048576\nhw.gltransport.asg.writeStepSize=4096\nhw.gltransport.drawFlushInterval=800\nhw.gps=yes\nhw.gpu.enabled=no\nhw.gpu.mode=auto\nhw.gsmModem=yes\nhw.gyroscope=yes\nhw.hotplug_multi_display=no\nhw.initialOrientation=portrait\nhw.keyboard=no\nhw.keyboard.charmap=qwerty2\nhw.keyboard.lid=yes\nhw.lcd.backlight=yes\nhw.lcd.circular=false\nhw.lcd.density=240\nhw.lcd.depth=32\nhw.lcd.height=960\nhw.lcd.transparent=false\nhw.lcd.vsync=60\nhw.lcd.width=540\nhw.mainKeys=yes\nhw.multi_display_window=no\nhw.ramSize=2048\nhw.rotaryInput=no\nhw.screen=multi-touch\nhw.sdCard=yes\nhw.sensor.hinge=no\nhw.sensor.hinge.count=0\nhw.sensor.hinge.fold_to_displayRegion.0.1_at_posture=1\nhw.sensor.hinge.resizable.config=1\nhw.sensor.hinge.sub_type=0\nhw.sensor.hinge.type=0\nhw.sensor.roll=no\nhw.sensor.roll.count=0\nhw.sensor.roll.resize_to_displayRegion.0.1_at_posture=6\nhw.sensor.roll.resize_to_displayRegion.0.2_at_posture=6\nhw.sensor.roll.resize_to_displayRegion.0.3_at_posture=6\nhw.sensors.gyroscope_uncalibrated=yes\nhw.sensors.heading=no\nhw.sensors.heart_rate=no\nhw.sensors.humidity=yes\nhw.sensors.light=yes\nhw.sensors.magnetic_field=yes\nhw.sensors.magnetic_field_uncalibrated=yes\nhw.sensors.orientation=yes\nhw.sensors.pressure=yes\nhw.sensors.proximity=no\nhw.sensors.rgbclight=no\nhw.sensors.temperature=yes\nhw.sensors.wrist_tilt=no\nhw.touchpad0=no\nhw.touchpad0.height=400\nhw.touchpad0.width=600\nhw.trackBall=yes\nhw.useext4=yes\nimage.sysdir.1=system-images/android-33/google_apis/arm64-v8a/\nkernel.newDeviceNaming=autodetect\nkernel.supportsYaffs2=autodetect\nruntime.network.latency=none\nruntime.network.speed=full\nsdcard.size=512 MB\nshowDeviceFrame=yes\ntag.display=Google APIs\ntag.displaynames=Google APIs\ntag.id=google_apis\ntag.ids=google_apis\ntarget=android-33\ntest.delayAdbTillBootComplete=0\ntest.monitorAdb=0\ntest.quitAfterBootTimeOut=-1\nuserdata.useQcow2=no\nvm.heapSize=384\n"
+          },
+          {
+            "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/hardware-qemu.ini",
+            "exists": true,
+            "inode": 84390957,
+            "size": 4541,
+            "mtime_ns": 1792097423739956291,
+            "birth_time": 1792097423.739885,
+            "sha256": "3b02e2f06973990e2364dbf21de8f67492500d3397c15e30965de2722da98e6a",
+            "text": "hw.cpu.arch = arm64\nhw.cpu.ncore = 2\nhw.ramSize = 2048\nhw.screen = multi-touch\nhw.mainKeys = true\nhw.touchpad0 = false\nhw.touchpad0.width = 600\nhw.touchpad0.height = 400\nhw.trackBall = true\nhw.keyboard = false\nhw.keyboard.lid = true\nhw.keyboard.charmap = qwerty2\nhw.dPad = false\nhw.rotaryInput = false\nhw.gsmModem = true\nhw.gps = true\nhw.battery = true\nhw.accelerometer = true\nhw.accelerometer_uncalibrated = true\nhw.gyroscope = true\nhw.audioInput = true\nhw.audioOutput = true\nhw.sdCard = true\ndisk.cachePartition = true\ndisk.cachePartition.path = /Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/cache.img\ndisk.cachePartition.size = 66m\ntest.quitAfterBootTimeOut = -1\ntest.delayAdbTillBootComplete = 0\ntest.monitorAdb = 0\nhw.lcd.width = 540\nhw.lcd.height = 960\nhw.lcd.depth = 32\nhw.lcd.circular = false\nhw.lcd.density = 240\nhw.lcd.transparent = false\nhw.lcd.backlight = true\nhw.lcd.vsync = 60\nhw.gltransport = pipe\nhw.gltransport.asg.writeBufferSize = 1048576\nhw.gltransport.asg.writeStepSize = 4096\nhw.gltransport.asg.dataRingSize = 32768\nhw.gltransport.drawFlushInterval = 800\nhw.displayRegion.0.1.xOffset = -1\nhw.displayRegion.0.1.yOffset = -1\nhw.displayRegion.0.1.width = 0\nhw.displayRegion.0.1.height = 0\nhw.displayRegion.0.2.xOffset = -1\nhw.displayRegion.0.2.yOffset = -1\nhw.displayRegion.0.2.width = 0\nhw.displayRegion.0.2.height = 0\nhw.displayRegion.0.3.xOffset = -1\nhw.displayRegion.0.3.yOffset = -1\nhw.displayRegion.0.3.width = 0\nhw.displayRegion.0.3.height = 0\nhw.display1.width = 0\nhw.display1.height = 0\nhw.display1.density = 0\nhw.display1.xOffset = -1\nhw.display1.yOffset = -1\nhw.display1.flag = 0\nhw.display2.width = 0\nhw.display2.height = 0\nhw.display2.density = 0\nhw.display2.xOffset = -1\nhw.display2.yOffset = -1\nhw.display2.flag = 0\nhw.display3.width = 0\nhw.display3.height = 0\nhw.display3.density = 0\nhw.display3.xOffset = -1\nhw.display3.yOffset = -1\nhw.display3.flag = 0\nhw.multi_display_window = false\nhw.hotplug_multi_display = false\nhw.gpu.enabled = true\nhw.gpu.mode = host\nhw.initialOrientation = portrait\nhw.camera.back = emulated\nhw.camera.back.orientation = 90\nhw.camera.front = none\nhw.camera.front.orientation = 90\nvm.heapSize = 512\nhw.sensors.light = true\nhw.sensors.pressure = true\nhw.sensors.humidity = true\nhw.sensors.proximity = false\nhw.sensors.magnetic_field = true\nhw.sensors.magnetic_field_uncalibrated = true\nhw.sensors.gyroscope_uncalibrated = true\nhw.sensors.orientation = true\nhw.sensors.temperature = true\nhw.sensors.rgbclight = false\nhw.sensor.hinge = false\nhw.sensor.hinge.count = 0\nhw.sensor.hinge.type = 0\nhw.sensor.hinge.sub_type = 0\nhw.sensor.hinge.resizable.config = 1\nhw.sensor.hinge.fold_to_displayRegion.0.1_at_posture = 1\nhw.sensor.roll = false\nhw.sensor.roll.count = 0\nhw.sensor.roll.resize_to_displayRegion.0.1_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.2_at_posture = 6\nhw.sensor.roll.resize_to_displayRegion.0.3_at_posture = 6\nhw.sensors.heart_rate = false\nhw.sensors.wrist_tilt = false\nhw.sensors.heading = false\nhw.useext4 = true\nkernel.path = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//kernel-ranchu\nkernel.newDeviceNaming = yes\nkernel.supportsYaffs2 = no\ndisk.ramdisk.path = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//ramdisk.img\ndisk.systemPartition.initPath = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//system.img\ndisk.systemPartition.size = 8203m\ndisk.vendorPartition.initPath = /Users/dongxin/Library/Android/sdk/system-images/android-33/google_apis/arm64-v8a//vendor.img\ndisk.vendorPartition.size = 800m\ndisk.dataPartition.path = /Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/userdata-qemu.img\ndisk.dataPartition.size = 4g\ndisk.encryptionKeyPartition.path = /Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/encryptionkey.img\nPlayStore.enabled = false\navd.name = aiphone_vm_b834fac98cc2\navd.id = aiphone_vm_b834fac98cc2\nfastboot.forceColdBoot = false\nuserdata.useQcow2 = true\nfirstboot.bootFromDownloadableSnapshot = true\nfirstboot.bootFromLocalSnapshot = true\nfirstboot.saveToLocalSnapshot = true\nandroid.sdk.root = /Users/dongxin/Library/Android/sdk\nandroid.avd.home = /Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd\nenvironment.width = 0\nenvironment.height = 0\n"
+          },
+          {
+            "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/emu-launch-params.txt",
+            "exists": true,
+            "inode": 84390725,
+            "size": 557,
+            "mtime_ns": 1792097423169728606,
+            "birth_time": 1792097378.7469962,
+            "sha256": "8b4162ce2b0644a507f2768fda170f0d7c9b9cb836152df67a78d8f5960f3198",
+            "text": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4\n/Users/dongxin/Library/Android/sdk/emulator/emulator\n29\n/Users/dongxin/Library/Android/sdk/emulator/emulator\n-avd\naiphone_vm_b834fac98cc2\n-port\n5666\n-skin\n540x960\n-prop\nqemu.sf.lcd_density=240\n-prop\ndebug.aiphone.vmid=b834fac98cc2\n-prop\ndebug.aiphone.alias=personal-e2e-android-app-install-8a2a3be1-20261016-a4\n-prop\npersist.sys.timezone=Asia/Shanghai\n-no-audio\n-no-boot-anim\n-no-snapshot\n-no-window\n-memory\n2048\n-cores\n2\n-gpu\nhost\n-camera-back\nemulated\n-camera-front\nnone\n"
+          },
+          {
+            "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/emulator-user.ini",
+            "exists": true,
+            "inode": 84390925,
+            "size": 113,
+            "mtime_ns": 1792097421938215080,
+            "birth_time": 1792097421.9381301,
+            "sha256": "ee358e82f5e0838ec174c9c665b9dde1c0962e400bc4cfd8330c38662bdbf89d",
+            "text": "window.x = 100\nwindow.y = 100\nwindow.scale = -1.000000\nresizable.config.id = -1\nposture = 0\nuuid = 1792097379193\n"
+          },
+          {
+            "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/userdata-qemu.img",
+            "exists": true,
+            "inode": 84390767,
+            "size": 6422528,
+            "mtime_ns": 1792097379164192451,
+            "birth_time": 1792097379.1613598
+          },
+          {
+            "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd/userdata-qemu.img.qcow2",
+            "exists": true,
+            "inode": 84390787,
+            "size": 807010304,
+            "mtime_ns": 1792097439593640699,
+            "birth_time": 1792097379.5861254
+          }
+        ]
+      }
+    ],
+    "witness_name": "personal-witness-android-app-install-8a2a3be1-20261016-a4.txt",
+    "expected_witness_sha256": "0aa5107c10b24342182f02663381cab3ae1f3ebe88cb5474d4833d12ff610089",
+    "expected_witness_bytes": 93,
+    "fixture_url": "http://127.0.0.1:19080/fixture/?run=android-app-install-8a2a3be1-20261016-a4&platform=android",
+    "storage_key": "personal-vm-e2e:android-app-install-8a2a3be1-20261016-a4",
+    "source_snapshot": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/diagnostic-sources",
+    "original_html_sha256": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+    "summary": {
+      "phases": {
+        "first-write": {
+          "witness_ok": true,
+          "witness_errors": [],
+          "witness": {
+            "startedWallMs": 1792097407773,
+            "startedElapsedNs": 25327807887,
+            "mode": "first-write",
+            "openedForWrite": true,
+            "created": true,
+            "fileFsync": true,
+            "parentFsync": true,
+            "path": "/data/user/0/org.personal.aiphone.lifecycle/personal-witness-android-app-install-8a2a3be1-20261016-a4.txt",
+            "parent": "/data/user/0/org.personal.aiphone.lifecycle",
+            "existedBefore": false,
+            "sha256": "0aa5107c10b24342182f02663381cab3ae1f3ebe88cb5474d4833d12ff610089",
+            "bytes": 93,
+            "inode": 132233,
+            "mtimeMs": 1792097407000,
+            "ok": true,
+            "finishedWallMs": 1792097407775,
+            "finishedElapsedNs": 25330352553
+          },
+          "providers": [
+            {
+              "packageName": "com.google.android.webview",
+              "versionName": "109.0.5414.123",
+              "longVersionCode": 541412334,
+              "ok": true
+            }
+          ],
+          "storage_observations": [
+            {
+              "identity_ok": true,
+              "confirmed_value": false,
+              "probe_ok": true,
+              "missing": true,
+              "read_error": null,
+              "parse_error": null,
+              "raw_value": null,
+              "parsed_value": null,
+              "trigger": "receipt-request",
+              "evaluation_finished_ns": 26328261345
+            },
+            {
+              "identity_ok": true,
+              "confirmed_value": false,
+              "probe_ok": true,
+              "missing": true,
+              "read_error": null,
+              "parse_error": null,
+              "raw_value": null,
+              "parsed_value": null,
+              "trigger": "page-finished",
+              "evaluation_finished_ns": 26362341429
+            },
+            {
+              "identity_ok": true,
+              "confirmed_value": true,
+              "probe_ok": true,
+              "missing": false,
+              "read_error": null,
+              "parse_error": null,
+              "raw_value": "{\"token\":\"personal34791164d5d2\",\"count\":1}",
+              "parsed_value": {
+                "token": "personal34791164d5d2",
+                "count": 1
+              },
+              "trigger": "receipt-request",
+              "evaluation_finished_ns": 33239090224
+            }
+          ],
+          "witness_observation_count": 1,
+          "confirmed_storage_observed": true
+        },
+        "restart-read": {
+          "witness_ok": true,
+          "witness_errors": [],
+          "witness": {
+            "startedWallMs": 1792097440518,
+            "startedElapsedNs": 13081103214,
+            "mode": "restart-read",
+            "openedForWrite": false,
+            "created": false,
+            "fileFsync": false,
+            "parentFsync": false,
+            "path": "/data/user/0/org.personal.aiphone.lifecycle/personal-witness-android-app-install-8a2a3be1-20261016-a4.txt",
+            "parent": "/data/user/0/org.personal.aiphone.lifecycle",
+            "existedBefore": true,
+            "sha256": "0aa5107c10b24342182f02663381cab3ae1f3ebe88cb5474d4833d12ff610089",
+            "bytes": 93,
+            "inode": 132233,
+            "mtimeMs": 1792097407000,
+            "ok": true,
+            "finishedWallMs": 1792097440520,
+            "finishedElapsedNs": 13083213089
+          },
+          "providers": [
+            {
+              "packageName": "com.google.android.webview",
+              "versionName": "109.0.5414.123",
+              "longVersionCode": 541412334,
+              "ok": true
+            }
+          ],
+          "storage_observations": [
+            {
+              "identity_ok": true,
+              "confirmed_value": false,
+              "probe_ok": true,
+              "missing": true,
+              "read_error": null,
+              "parse_error": null,
+              "raw_value": null,
+              "parsed_value": null,
+              "trigger": "receipt-request",
+              "evaluation_finished_ns": 14391401423
+            },
+            {
+              "identity_ok": true,
+              "confirmed_value": false,
+              "probe_ok": true,
+              "missing": true,
+              "read_error": null,
+              "parse_error": null,
+              "raw_value": null,
+              "parsed_value": null,
+              "trigger": "page-finished",
+              "evaluation_finished_ns": 14424628756
+            }
+          ],
+          "witness_observation_count": 1,
+          "confirmed_storage_observed": false
+        }
+      },
+      "evidence_complete": true,
+      "missing_evidence_means": "diagnostic evidence incomplete; never inferred as missing file/storage",
+      "raw_storage_false_means": "not proven preserved; inspect missing/read_error/parse_error/identity before assigning cause",
+      "webview_provider_identities": {
+        "first-write": [
+          [
+            "com.google.android.webview",
+            "109.0.5414.123",
+            "541412334"
+          ]
+        ],
+        "restart-read": [
+          [
+            "com.google.android.webview",
+            "109.0.5414.123",
+            "541412334"
+          ]
+        ]
+      },
+      "webview_provider_same": true,
+      "durable_witness_preserved": true,
+      "raw_storage_preserved": false,
+      "actual_webview_versions_observed": true
+    },
+    "source_mismatches": []
+  },
+  "native_exit_samples": [
+    {
+      "at": "2026-10-15T20:50:22.681471+00:00",
+      "vm_id": "b834fac98cc2",
+      "confirmed": true,
+      "popen_pid": null,
+      "popen_poll": null,
+      "matching_pids": [],
+      "process_inventory_complete": true,
+      "bind_errno": {
+        "5666": {
+          "plain": 48,
+          "reuse": 0
+        },
+        "5667": {
+          "plain": 48,
+          "reuse": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-15T20:51:16.867928+00:00",
+      "vm_id": "b834fac98cc2",
+      "confirmed": true,
+      "popen_pid": 55015,
+      "popen_poll": 0,
+      "matching_pids": [],
+      "process_inventory_complete": true,
+      "bind_errno": {
+        "5666": {
+          "plain": 48,
+          "reuse": 0
+        },
+        "5667": {
+          "plain": 48,
+          "reuse": 0
+        }
+      }
+    }
+  ],
+  "server_app_install": {
+    "package_id": "0b317edb94d1",
+    "task_id": "b979fd3d49db",
+    "item_id": "c83438719208",
+    "serial": "emulator-5666",
+    "filename": "personal-lifecycle.apk",
+    "fixture_sha256": "0d92edbb4b41b13645f23fd52c4934ea467d02cc9820855084af6f301008c10b",
+    "vm_id": "b834fac98cc2",
+    "armed": false,
+    "handler_calls": 1,
+    "native_calls": 1,
+    "native_finished": true,
+    "temporary_paths": [
+      "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/tmp/ai-phone-app-install-dsfe72fb/personal-lifecycle.apk"
+    ],
+    "trace": [
+      {
+        "event": "native-install-enter",
+        "at": "2026-10-15T20:50:06.161599+00:00",
+        "serial": "emulator-5666",
+        "local_path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/tmp/ai-phone-app-install-dsfe72fb/personal-lifecycle.apk",
+        "sha256": "0d92edbb4b41b13645f23fd52c4934ea467d02cc9820855084af6f301008c10b",
+        "real_native_operation_in_stack": true,
+        "activity_users": 2
+      },
+      {
+        "event": "native-install-return",
+        "at": "2026-10-15T20:50:07.225068+00:00",
+        "success": true,
+        "reason": "",
+        "temporary_file_present_until_native_return": true
+      }
+    ],
+    "result_messages": [
+      {
+        "type": "app_install_result",
+        "task_id": "b979fd3d49db",
+        "item_id": "c83438719208",
+        "serial": "emulator-5666",
+        "success": true,
+        "reason": "",
+        "message": "安装成功",
+        "observed_at": "2026-10-15T20:50:07.225496+00:00",
+        "native_finished": true,
+        "temporary_files_removed": true
+      }
+    ],
+    "http_events": [
+      {
+        "at": "2026-10-15T20:50:06.081178+00:00",
+        "method": "POST",
+        "path": "/api/app-install/packages",
+        "status_code": 201
+      },
+      {
+        "at": "2026-10-15T20:50:06.114906+00:00",
+        "method": "GET",
+        "path": "/api/app-install/packages/0b317edb94d1/eligible-devices",
+        "status_code": 200
+      },
+      {
+        "at": "2026-10-15T20:50:06.126895+00:00",
+        "method": "POST",
+        "path": "/api/app-install/tasks",
+        "status_code": 201
+      },
+      {
+        "at": "2026-10-15T20:50:06.131866+00:00",
+        "method": "GET",
+        "path": "/api/app-install/tasks/b979fd3d49db",
+        "status_code": 200
+      },
+      {
+        "at": "2026-10-15T20:50:06.141431+00:00",
+        "method": "GET",
+        "path": "/api/app-install/tasks/b979fd3d49db",
+        "status_code": 200
+      },
+      {
+        "at": "2026-10-15T20:50:06.149151+00:00",
+        "method": "GET",
+        "path": "/api/app-install/packages/0b317edb94d1/download",
+        "status_code": 200
+      },
+      {
+        "at": "2026-10-15T20:50:06.638319+00:00",
+        "method": "GET",
+        "path": "/api/app-install/tasks/b979fd3d49db",
+        "status_code": 200
+      },
+      {
+        "at": "2026-10-15T20:50:07.143348+00:00",
+        "method": "GET",
+        "path": "/api/app-install/tasks/b979fd3d49db",
+        "status_code": 200
+      },
+      {
+        "at": "2026-10-15T20:50:07.649571+00:00",
+        "method": "GET",
+        "path": "/api/app-install/tasks/b979fd3d49db",
+        "status_code": 200
+      }
+    ],
+    "guard_error": null,
+    "server_file": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/storage/app-install/2026-10-15/987e74c7fa94a3cc-personal-lifecycle.apk"
+  },
+  "visual_review_required": true,
+  "native_install_active_at_cleanup": false,
+  "protected_after": {
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_harmony_8ef590502d89/config.ini": "d9e02a36096d3684498346cf70e5bf053a6bbf9817ce34a6f8eb1007a1b00641",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_harmony_8ef590502d89.ini": "8d04b5680ba467e1c059dbb7d0463b6a3edbc72698e879eae6161b83f7530ce2",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_hdc_test/config.ini": "2d8e0eddf338e0a8ff9b571985221ade1efaac556930aaa869a9cfa3ced45d18",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_hdc_test.ini": "c614dfdb3328e5c48612050084f08b9ea8f5453757333262a3a0406a82ca6933",
+    "/Users/dongxin/.Huawei/Emulator/deployed/lists.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "/Users/dongxin/.android/avd/aiphone_vm_d553e2ea1fde.avd/config.ini": "e6595b4119a9cf5c47bbc679ae9f25f38a319a44d1ca2461ff6c3165ea794fbd",
+    "/Users/dongxin/.android/avd/aiphone_vm_d553e2ea1fde.ini": "93c1f2299159212b765c362642324c762cc050b49964e2a729b11a52f70950ad",
+    "/Users/dongxin/.android/avd/aiphone_vm_d948f0dc999a.avd/config.ini": "0c9da58b8fb261f800e42e0291687707917be931345f2abccb8aa98c6f6c7b61",
+    "/Users/dongxin/.android/avd/aiphone_vm_d948f0dc999a.ini": "33b2da0b472680b7c623c170d3fba138269ead145a2d162b1d0e93b8e69198be",
+    "/Users/dongxin/.android/avd/aiphone_vm_test.avd/config.ini": "b3e9998e584cc43be815ab13c4b744d7848eeb0eb37258cc4847db6b8854c02a",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/1CF23D80-F81F-4342-8B9B-CE0F19B0E6A9/device.plist": "8a4f5122dec24c29506fe812d49a6eb46ad53f103c14b76910c8b78686142aaa",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/33D6A401-5F36-4F06-9306-A6CE108897DF/device.plist": "4a6bb0be4a60b30503171afc3ce05bc70a377fb6fbb1b04bfb381ec03634f739",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/3CEA6065-BACE-4303-9206-F4494D2A250F/device.plist": "99d5bf0c8903312ff97c45d4a04503417c7364eb6639a23a449bd76577181134",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/4FE2080C-9969-4322-895C-BD533F1AAEF1/device.plist": "924c29fda4385ef935f17a78fd6a44e0db4e443b474c4c543b417e7715afb43d",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/583611BB-5D51-4366-BAE1-E01396F8E6A9/device.plist": "830a244bec1c3e880a12758fcc3fe8aaa0525d31cbd6531ee28aed88e631a406",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/61859972-B787-415F-979B-93FEF439D231/device.plist": "0f283b2d7fec63b24657ca2ddd7e81e2b6fb880ac216f855a174ee5b7149d255",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/65147217-9B6E-4FAA-8B3D-A5FB7C82346E/device.plist": "8bdf06e233c125104c13f594476e41f085f263361d638b02ffb3d3d952a383c4",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/74340A76-2933-4F43-A931-83B56604EB64/device.plist": "879ddd7b2dda101a845fb0c57bb4620f97288db6543260dfa38847da34e51816",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/AA23F9B5-52E7-4577-9481-B0B8CEDD081D/device.plist": "38dfc87cdaecffb99928295b4db860b5bbdaef323755ee952ea67a48221a99a4",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/B8358AD3-D445-426D-9F51-2F8D7D627FD6/device.plist": "15572dc944d2d23b759213eb0efb28e840fa547952551d86aff227519bfe56b6",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/C028A098-1CB0-4797-BC34-B999FE0B9E56/device.plist": "08912f85db5df2495e8ce92049d732c46a5d89d44f473c993e9e520a906894b1",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/C1C16134-3F25-4E80-88CD-FC65DC0DF8C1/device.plist": "ac434b38f456562c0f8cb5d8c6eed7ad985433c354f6dc25888a2145ff11df02",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/D50173E3-9F20-4DEB-B117-608349BB613F/device.plist": "ee4ff3dc9c13cfbfecfd2bd0fee5d4d9aedafac8c416b6c145af548856135b85",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/F27146F2-A4B0-4F9A-B731-7C1759B25941/device.plist": "72e342a566a56e207c37d024c82aa1449cd822a0570522029ec88c77d625fa01",
+    "/Users/dongxin/Library/Developer/CoreSimulator/Devices/FA446F28-83BD-4DE3-B65B-A4392B13BEC4/device.plist": "12d40c8e4a9478e042ad4f9ab1299542fa876b6f30b2306f15a413fa77b5c9ba"
+  },
+  "protected_metadata_changed": [],
+  "remaining_owned_runtimes": [],
+  "remaining_private_avds": [
+    "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.avd",
+    "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/avd/aiphone_vm_b834fac98cc2.ini"
+  ],
+  "preserved_after_existing_instance_failure": true,
+  "private_adb_stopped": true,
+  "finished_at": "2026-10-15T20:51:17.052315+00:00",
+  "source_hashes_at_finish": {
+    "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_app_install_visual_a4.py": "a958493a2f746d209eba4b7dbd7a0982de35da157120a9f599532872d6016f9a",
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/personal-fixture.html": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+    "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a3_MainActivity.java": "9219cf05d043b476d802cc0b5e5b02b2827d013d13f73d5fab6a39ac03ba906d",
+    "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a3_storage_diagnostic.js": "7a2bd86efcb92da3a63956b34e24948e1399bc48cc4e42cb2d284981d2db80cf",
+    "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/a4-prepare/adbutils-read-path.json": "9e42a6da93de8db8ced3077d08abf0e1c517831f9c33ca604e174a26dfff621e",
+    "backend/ai_phone/agent/android_vm/manager.py": "13bf99f44a4fa566bbfab44258cd4ab8a0eac2d000613fe149ed9fef33b26bd3",
+    "backend/ai_phone/agent/ws_client.py": "aadad560bfa0788b0b6eefe6636be7b7f2e95cae96b31d423f2dcaa34252592e",
+    "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+    "backend/ai_phone/agent/drivers/android.py": "af3b1fe42b0ce93e2ad1717143e8959bc2a438e2a73955a2a7ca0c6224136d9a",
+    "backend/ai_phone/server/android_vm/api.py": "3bdcfa84b46262ca974be0e29ba9352986d6e0a350df109c8d09aa2d69116d3d",
+    "backend/ai_phone/server/android_vm/service.py": "b7f9aa7149dbf196b71e63076cf3469b80d6f35845f5caf25143f3ff0a318621",
+    "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+    "backend/ai_phone/server/vm_lifecycle.py": "232cf364266b1e344a7d29e87ebce39709994a1b0aa790db582ef33602af56aa",
+    "backend/ai_phone/agent/android_vm/capability.py": "ed8630cb9f20d1791eea36d142bce755e73147b50a6e1621b2f6b4192d210b31",
+    "backend/ai_phone/agent/app_install/handler.py": "31abda8902919971a2879a3b6e262ddb16509213b7a1a249392a560ba7a81d22",
+    "backend/ai_phone/agent/app_uninstall/handler.py": "b373f34caf73043d54bc297cacd929c18783342486b8330acbb97c0c44b7714d",
+    "backend/ai_phone/agent/device_activity.py": "cc2e96d66080f7aa60fa8d0b9956e433e186fd892dfc26c00a8c904060395e31",
+    "backend/ai_phone/agent/drivers/__init__.py": "67dd1c2ac123154794e17d584ec5fb5335baec68293f16acea0fd1f14de506c8",
+    "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+    "backend/ai_phone/agent/harmony_vm/capability.py": "6716584a4ee555fd49b2297db5136e004679806d2af0b12a2c4edb3eac5003fa",
+    "backend/ai_phone/agent/harmony_vm/manager.py": "efac19845e45b5c0a7aa2faefc95f8c6dc9cecd6842442fee303765dc9a3999e",
+    "backend/ai_phone/agent/health/probe.py": "a4ec72f21e4dc6b1bf4b0c3bcfcdde37b74b57305cc57b9d2ce738fc91139c33",
+    "backend/ai_phone/agent/health/supervisor.py": "8393340453f02129d1c342e1815806cfe4f039ff00d7f117fbab94c462678858",
+    "backend/ai_phone/agent/ios_sim/manager.py": "6401fce688f697450099204f8c96c8995ffb2f2dcc65912b265e7ff1362bda60",
+    "backend/ai_phone/agent/main.py": "33941428605993c5c6b4ec709e2bb4f42d014ea57634a5133d5e3bd2d8e33d99",
+    "backend/ai_phone/agent/native_operation.py": "1fbc78e1560cf21ba3dc6e68d50adfc9a025831fba3d3848c407e291ff901255",
+    "backend/ai_phone/agent/vm_ports.py": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+    "backend/ai_phone/server/api/_deps.py": "83e8ecdb97ae92480c6034200039d080ad0e024bcd26f6cf361e68c3b9ea6bd7",
+    "backend/ai_phone/server/app.py": "2db57a8e7f596d36cbc4772808ad840d59ec134767d7e8ce8837bf5100435f73",
+    "backend/ai_phone/server/harmony_vm/api.py": "00b4665fda0e96e110b2fcb6ef236edc0af62a4a956abd76ca156c94e96793a6",
+    "backend/ai_phone/server/harmony_vm/service.py": "cef15701e1c3d6260a2e681911fa200dda10f27114225ab85994417e67008460",
+    "backend/ai_phone/server/hub.py": "7252018d5468f7e0ccc3f7b28e3fa238053751e61925cef1b3538050c6ee4b33",
+    "backend/ai_phone/server/ios_sim/api.py": "5df873d042daadb1a7b7f71a9ab642acdb276dd93835219548cd329736f0d1df",
+    "backend/ai_phone/server/ios_sim/service.py": "687dcf0c157300f37c1d825d4d55ca83ecbfa07cba3efa3190467dd2a4164647",
+    "backend/ai_phone/server/ws/_deps.py": "a35024e4a79af02d098e71ab3f5a6f1ae5bad0130d35097a6a97ead977bacfcf",
+    "web/src/pages/HarmonyVirtualMachines.vue": "d702050463af50e3ecd2aa6a7866fd7ba6855d197527e303271650aa69f11d35",
+    "web/src/pages/IosSimVirtualMachines.vue": "4b99e783884daf6ff8a9eaa918f568a0e3976a31ef38545e43d9400e1e1f6c29",
+    "web/src/pages/VirtualMachines.vue": "2a78c051715bf1ecc9e8dcb29e60f098e714e89cfd77d8320659ae47daac4abf",
+    "backend/ai_phone/server/app_install/service.py": "6a45cfa0dccab2f498d7b68bb93b50bb9a8f6e758b4c2a1fcb9f3e311dc63ea5",
+    "backend/ai_phone/server/app_install/__init__.py": "49822006c1bb8bf1c67876ed8118fa0f7a91f836f79be623c0e151dcfc0c7a2a",
+    "backend/ai_phone/server/app_install/api.py": "5379cfa11f852d9e184f4c97ca6ecd8da3940505c45bf7ec1fc136aa5baad4ee",
+    "backend/ai_phone/server/app_install/schemas.py": "e58afb853d3d79f7bd6187368590e0585657e90aa010093c74f43a8f30a406bd",
+    "backend/ai_phone/server/app_install/storage.py": "30c993c2fdbd8d47e2ba73cd073142d6b4a0296f31ff033b2dafbc3a2bac18bd",
+    "backend/ai_phone/server/app_install/timeout_scanner.py": "2fd16d6ac4b462a3f8324106fd63b994b8c201618205cfec19e8432e36bf4de8",
+    "backend/ai_phone/agent/app_install/ios_sim.py": "ff3de08bed578d426e4b87a0585b70ee4dfb53c1dfb3e1927ec5191346e75fc6",
+    "backend/ai_phone/agent/app_install/ios.py": "42af7874f2eec4984a31228b16e86cb2c5fb1a1869321af1ab744a0a83ac7eda",
+    "backend/ai_phone/agent/app_install/__init__.py": "4acbba852d881bd17ebe402ce8dc645a554b45c051f784b09e172a723d07b942",
+    "backend/ai_phone/agent/app_install/harmony.py": "ed62fccba993866f2f7c50ad9bf93af567c762c94eed2170d39c94f9efdb2ebf",
+    "backend/ai_phone/agent/app_install/android.py": "52aa206c26fe1961a279add9eacd8e707d247d357245e8b799f8704a1ae690fa"
+  },
+  "frozen_products_at_finish": {
+    "manifest": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/frozen-products.json",
+    "manifest_sha256": "043825f66893cc210329a77ffe9e9a2ba4e25c51b26644492d654d000868574a",
+    "count": 33,
+    "source_sha256": {
+      "backend/ai_phone/agent/android_vm/capability.py": "ed8630cb9f20d1791eea36d142bce755e73147b50a6e1621b2f6b4192d210b31",
+      "backend/ai_phone/agent/android_vm/manager.py": "13bf99f44a4fa566bbfab44258cd4ab8a0eac2d000613fe149ed9fef33b26bd3",
+      "backend/ai_phone/agent/app_install/handler.py": "31abda8902919971a2879a3b6e262ddb16509213b7a1a249392a560ba7a81d22",
+      "backend/ai_phone/agent/app_uninstall/handler.py": "b373f34caf73043d54bc297cacd929c18783342486b8330acbb97c0c44b7714d",
+      "backend/ai_phone/agent/device_activity.py": "cc2e96d66080f7aa60fa8d0b9956e433e186fd892dfc26c00a8c904060395e31",
+      "backend/ai_phone/agent/drivers/__init__.py": "67dd1c2ac123154794e17d584ec5fb5335baec68293f16acea0fd1f14de506c8",
+      "backend/ai_phone/agent/drivers/android.py": "af3b1fe42b0ce93e2ad1717143e8959bc2a438e2a73955a2a7ca0c6224136d9a",
+      "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+      "backend/ai_phone/agent/harmony_vm/capability.py": "6716584a4ee555fd49b2297db5136e004679806d2af0b12a2c4edb3eac5003fa",
+      "backend/ai_phone/agent/harmony_vm/manager.py": "efac19845e45b5c0a7aa2faefc95f8c6dc9cecd6842442fee303765dc9a3999e",
+      "backend/ai_phone/agent/health/probe.py": "a4ec72f21e4dc6b1bf4b0c3bcfcdde37b74b57305cc57b9d2ce738fc91139c33",
+      "backend/ai_phone/agent/health/supervisor.py": "8393340453f02129d1c342e1815806cfe4f039ff00d7f117fbab94c462678858",
+      "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+      "backend/ai_phone/agent/ios_sim/manager.py": "6401fce688f697450099204f8c96c8995ffb2f2dcc65912b265e7ff1362bda60",
+      "backend/ai_phone/agent/main.py": "33941428605993c5c6b4ec709e2bb4f42d014ea57634a5133d5e3bd2d8e33d99",
+      "backend/ai_phone/agent/native_operation.py": "1fbc78e1560cf21ba3dc6e68d50adfc9a025831fba3d3848c407e291ff901255",
+      "backend/ai_phone/agent/vm_ports.py": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+      "backend/ai_phone/agent/ws_client.py": "aadad560bfa0788b0b6eefe6636be7b7f2e95cae96b31d423f2dcaa34252592e",
+      "backend/ai_phone/server/android_vm/api.py": "3bdcfa84b46262ca974be0e29ba9352986d6e0a350df109c8d09aa2d69116d3d",
+      "backend/ai_phone/server/android_vm/service.py": "b7f9aa7149dbf196b71e63076cf3469b80d6f35845f5caf25143f3ff0a318621",
+      "backend/ai_phone/server/api/_deps.py": "83e8ecdb97ae92480c6034200039d080ad0e024bcd26f6cf361e68c3b9ea6bd7",
+      "backend/ai_phone/server/app.py": "2db57a8e7f596d36cbc4772808ad840d59ec134767d7e8ce8837bf5100435f73",
+      "backend/ai_phone/server/harmony_vm/api.py": "00b4665fda0e96e110b2fcb6ef236edc0af62a4a956abd76ca156c94e96793a6",
+      "backend/ai_phone/server/harmony_vm/service.py": "cef15701e1c3d6260a2e681911fa200dda10f27114225ab85994417e67008460",
+      "backend/ai_phone/server/hub.py": "7252018d5468f7e0ccc3f7b28e3fa238053751e61925cef1b3538050c6ee4b33",
+      "backend/ai_phone/server/ios_sim/api.py": "5df873d042daadb1a7b7f71a9ab642acdb276dd93835219548cd329736f0d1df",
+      "backend/ai_phone/server/ios_sim/service.py": "687dcf0c157300f37c1d825d4d55ca83ecbfa07cba3efa3190467dd2a4164647",
+      "backend/ai_phone/server/vm_lifecycle.py": "232cf364266b1e344a7d29e87ebce39709994a1b0aa790db582ef33602af56aa",
+      "backend/ai_phone/server/ws/_deps.py": "a35024e4a79af02d098e71ab3f5a6f1ae5bad0130d35097a6a97ead977bacfcf",
+      "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+      "web/src/pages/HarmonyVirtualMachines.vue": "d702050463af50e3ecd2aa6a7866fd7ba6855d197527e303271650aa69f11d35",
+      "web/src/pages/IosSimVirtualMachines.vue": "4b99e783884daf6ff8a9eaa918f568a0e3976a31ef38545e43d9400e1e1f6c29",
+      "web/src/pages/VirtualMachines.vue": "2a78c051715bf1ecc9e8dcb29e60f098e714e89cfd77d8320659ae47daac4abf"
+    },
+    "mismatches": []
+  }
+}

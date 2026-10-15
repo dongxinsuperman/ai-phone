@@ -1,0 +1,23 @@
+{
+  "recorded_at": "2026-10-16T02:35:20.594187+08:00",
+  "initial_review_commit": "74f209dc6556d4678291b0dce63a9817741b6bea",
+  "head_at_followup": "74f209dc6556d4678291b0dce63a9817741b6bea",
+  "scope": "listed files including uncommitted Server upgrade safety follow-up; not a native acceptance manifest",
+  "sha256": {
+    "backend/ai_phone/server/vm_lifecycle.py": "232cf364266b1e344a7d29e87ebce39709994a1b0aa790db582ef33602af56aa",
+    "backend/ai_phone/server/android_vm/api.py": "f74c4486b206921206be86128468c999ea280ed820f25568e5394540ac42fad6",
+    "backend/ai_phone/server/android_vm/service.py": "b7f9aa7149dbf196b71e63076cf3469b80d6f35845f5caf25143f3ff0a318621",
+    "backend/ai_phone/server/ios_sim/api.py": "5df873d042daadb1a7b7f71a9ab642acdb276dd93835219548cd329736f0d1df",
+    "backend/ai_phone/server/ios_sim/service.py": "687dcf0c157300f37c1d825d4d55ca83ecbfa07cba3efa3190467dd2a4164647",
+    "backend/ai_phone/server/harmony_vm/api.py": "00b4665fda0e96e110b2fcb6ef236edc0af62a4a956abd76ca156c94e96793a6",
+    "backend/ai_phone/server/harmony_vm/service.py": "b99a3728b548e1e73ccbec6fc435887b84a8ed7c0548adc9e60bab3a8a57f47f",
+    "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+    "backend/ai_phone/server/app.py": "2db57a8e7f596d36cbc4772808ad840d59ec134767d7e8ce8837bf5100435f73",
+    "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+    "backend/ai_phone/agent/ws_client.py": "c9d6b39b48952b4c10adf8d124a210adc014f89525af9008586d2a7bdffcc04d",
+    "backend/ai_phone/agent/main.py": "9808bfb8ffaab1a2d647c311019709fbe2b0987685b83a96937dc9098ffd5a0f",
+    "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+    "backend/tests/test_vm_upgrade_independent_review.py": "007c921aeb50860ea240fc3674e184f21c4451fd238a03b027344b79528c121b",
+    "backend/tests/test_vm_upgrade_compat_audit.py": "8c86adc1d8d1a49bf575d882f1a3fa40425674307302a0cd7899969504130db3"
+  }
+}

@@ -1,0 +1,3 @@
+2026-10-16 03:41:00.181 Emulator[37601:6207442] WARNING: AVCaptureDeviceTypeExternal is deprecated for Continuity Cameras. Please use AVCaptureDeviceTypeContinuityCamera and add NSCameraUseContinuityCameraDeviceType to your Info.plist.
+Emulator: terminating on signal 15 from pid 37545 (<unknown process>)
+2026-10-16 03:42:21.676 Emulator[38391:6210620] WARNING: AVCaptureDeviceTypeExternal is deprecated for Continuity Cameras. Please use AVCaptureDeviceTypeContinuityCamera and add NSCameraUseContinuityCameraDeviceType to your Info.plist.

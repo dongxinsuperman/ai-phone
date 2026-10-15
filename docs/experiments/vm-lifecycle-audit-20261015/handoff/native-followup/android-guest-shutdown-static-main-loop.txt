@@ -1,0 +1,268 @@
+
+/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+00000001001ccdfc <_main_loop>:
+1001ccdfc: d10203ff    	sub	sp, sp, #0x80
+1001cce00: a9026ffc    	stp	x28, x27, [sp, #0x20]
+1001cce04: a90367fa    	stp	x26, x25, [sp, #0x30]
+1001cce08: a9045ff8    	stp	x24, x23, [sp, #0x40]
+1001cce0c: a90557f6    	stp	x22, x21, [sp, #0x50]
+1001cce10: a9064ff4    	stp	x20, x19, [sp, #0x60]
+1001cce14: a9077bfd    	stp	x29, x30, [sp, #0x70]
+1001cce18: 9101c3fd    	add	x29, sp, #0x70
+1001cce1c: 9000d3ba    	adrp	x26, 0x101c40000 <__MergedGlobals+0x60>
+1001cce20: d000d2f3    	adrp	x19, 0x101c2a000 <_prom_envs+0x2f8>
+1001cce24: 9123e273    	add	x19, x19, #0x8f8
+1001cce28: 9000d3b4    	adrp	x20, 0x101c40000 <__MergedGlobals+0x60>
+1001cce2c: 9123e294    	add	x20, x20, #0x8f8
+1001cce30: 9000d3bb    	adrp	x27, 0x101c40000 <__MergedGlobals+0x60>
+1001cce34: 9000d3b5    	adrp	x21, 0x101c40000 <__MergedGlobals+0x60>
+1001cce38: 912702b5    	add	x21, x21, #0x9c0
+1001cce3c: b0009d56    	adrp	x22, 0x101575000 <_hex+0x11557>
+1001cce40: 912eded6    	add	x22, x22, #0xbb7
+1001cce44: d000c898    	adrp	x24, 0x101ade000 <_.compoundliteral.29+0x4c0>
+1001cce48: 9000d3b7    	adrp	x23, 0x101c40000 <__MergedGlobals+0x60>
+1001cce4c: 912402f7    	add	x23, x23, #0x900
+1001cce50: 52800000    	mov	w0, #0x0                ; =0
+1001cce54: 940a3074    	bl	0x100459024 <_main_loop_wait>
+1001cce58: 39631348    	ldrb	w8, [x26, #0x8c4]
+1001cce5c: 3923135f    	strb	wzr, [x26, #0x8c4]
+1001cce60: 7100051f    	cmp	w8, #0x1
+1001cce64: 54000061    	b.ne	0x1001cce70 <_main_loop+0x74>
+1001cce68: 52800000    	mov	w0, #0x0                ; =0
+1001cce6c: 97f94ecd    	bl	0x1000209a0 <_vm_stop>
+1001cce70: 9000d3a8    	adrp	x8, 0x101c40000 <__MergedGlobals+0x60>
+1001cce74: 3962f108    	ldrb	w8, [x8, #0x8bc]
+1001cce78: 7100051f    	cmp	w8, #0x1
+1001cce7c: 54000321    	b.ne	0x1001ccee0 <_main_loop+0xe4>
+1001cce80: 52800060    	mov	w0, #0x3                ; =3
+1001cce84: 940837ca    	bl	0x1003dadac <_replay_checkpoint>
+1001cce88: 340002c0    	cbz	w0, 0x1001ccee0 <_main_loop+0xe4>
+1001cce8c: 9000d3bc    	adrp	x28, 0x101c40000 <__MergedGlobals+0x60>
+1001cce90: 9122f39c    	add	x28, x28, #0x8bc
+1001cce94: 3806479f    	strb	wzr, [x28], #0x64
+1001cce98: 97f94cfc    	bl	0x100020288 <_pause_all_vcpus>
+1001cce9c: aa1c03e0    	mov	x0, x28
+1001ccea0: d2800001    	mov	x1, #0x0                ; =0
+1001ccea4: 940a31ac    	bl	0x100459554 <_notifier_list_notify>
+1001ccea8: d000c888    	adrp	x8, 0x101ade000 <_.compoundliteral.29+0x4c0>
+1001cceac: b945b101    	ldr	w1, [x8, #0x5b0]
+1001cceb0: 7100303f    	cmp	w1, #0xc
+1001cceb4: 54000120    	b.eq	0x1001cced8 <_main_loop+0xdc>
+1001cceb8: 9000d3a8    	adrp	x8, 0x101c40000 <__MergedGlobals+0x60>
+1001ccebc: 9122c108    	add	x8, x8, #0x8b0
+1001ccec0: 8b011108    	add	x8, x8, x1, lsl #4
+1001ccec4: 39499108    	ldrb	w8, [x8, #0x264]
+1001ccec8: 36001728    	tbz	w8, #0x0, 0x1001cd1ac <_main_loop+0x3b0>
+1001ccecc: d000c888    	adrp	x8, 0x101ade000 <_.compoundliteral.29+0x4c0>
+1001cced0: 52800189    	mov	w9, #0xc                ; =12
+1001cced4: b905b109    	str	w9, [x8, #0x5b0]
+1001cced8: aa1303e0    	mov	x0, x19
+1001ccedc: 940a3c1e    	bl	0x10045bf54 <_qapi_event_send_suspend>
+1001ccee0: 9000d3a8    	adrp	x8, 0x101c40000 <__MergedGlobals+0x60>
+1001ccee4: f944a508    	ldr	x8, [x8, #0x948]
+1001ccee8: b40001a8    	cbz	x8, 0x1001ccf1c <_main_loop+0x120>
+1001cceec: d2800000    	mov	x0, #0x0                ; =0
+1001ccef0: 944dc945    	bl	0x10153f404 <dyld_stub_binder+0x10153f404>
+1001ccef4: 9000d3a8    	adrp	x8, 0x101c40000 <__MergedGlobals+0x60>
+1001ccef8: f944a508    	ldr	x8, [x8, #0x948]
+1001ccefc: 9100f108    	add	x8, x8, #0x3c
+1001ccf00: eb08001f    	cmp	x0, x8
+1001ccf04: 540000cd    	b.le	0x1001ccf1c <_main_loop+0x120>
+1001ccf08: 944dc9f6    	bl	0x10153f6e0 <dyld_stub_binder+0x10153f6e0>
+1001ccf0c: f9403c08    	ldr	x8, [x0, #0x78]
+1001ccf10: f9400908    	ldr	x8, [x8, #0x10]
+1001ccf14: d63f0100    	blr	x8
+1001ccf18: 941c0e55    	bl	0x1008d086c <_amodem_update_time>
+1001ccf1c: d2800000    	mov	x0, #0x0                ; =0
+1001ccf20: 944dc939    	bl	0x10153f404 <dyld_stub_binder+0x10153f404>
+1001ccf24: f9002a80    	str	x0, [x20, #0x50]
+1001ccf28: b8ff8299    	swpal	wzr, w25, [x20]
+1001ccf2c: 340007b9    	cbz	w25, 0x1001cd020 <_main_loop+0x224>
+1001ccf30: 944dc9ec    	bl	0x10153f6e0 <dyld_stub_binder+0x10153f6e0>
+1001ccf34: f9405808    	ldr	x8, [x0, #0xb0]
+1001ccf38: f9401d08    	ldr	x8, [x8, #0x38]
+1001ccf3c: d63f0100    	blr	x8
+1001ccf40: 340000c0    	cbz	w0, 0x1001ccf58 <_main_loop+0x15c>
+1001ccf44: b000d2e8    	adrp	x8, 0x101c29000 <_mac_slots+0x4710>
+1001ccf48: b9499108    	ldr	w8, [x8, #0x990]
+1001ccf4c: 34000388    	cbz	w8, 0x1001ccfbc <_main_loop+0x1c0>
+1001ccf50: d2800000    	mov	x0, #0x0                ; =0
+1001ccf54: 940c64c7    	bl	0x1004e6270 <_androidSnapshot_quickbootInvalidate>
+1001ccf58: 97fd0938    	bl	0x10010f438 <_qtest_driver>
+1001ccf5c: 37000500    	tbnz	w0, #0x0, 0x1001ccffc <_main_loop+0x200>
+1001ccf60: 9000d3a8    	adrp	x8, 0x101c40000 <__MergedGlobals+0x60>
+1001ccf64: b9490508    	ldr	w8, [x8, #0x904]
+1001ccf68: 340004a8    	cbz	w8, 0x1001ccffc <_main_loop+0x200>
+1001ccf6c: 9000d3a9    	adrp	x9, 0x101c40000 <__MergedGlobals+0x60>
+1001ccf70: b9490920    	ldr	w0, [x9, #0x908]
+1001ccf74: 34000380    	cbz	w0, 0x1001ccfe4 <_main_loop+0x1e8>
+1001ccf78: 940a1f75    	bl	0x100454d4c <_qemu_get_pid_name>
+1001ccf7c: aa0003fc    	mov	x28, x0
+1001ccf80: f100001f    	cmp	x0, #0x0
+1001ccf84: d0009d88    	adrp	x8, 0x10157e000 <_hex+0x1a557>
+1001ccf88: 9120a108    	add	x8, x8, #0x828
+1001ccf8c: 9a800108    	csel	x8, x8, x0, eq
+1001ccf90: 9000d3aa    	adrp	x10, 0x101c40000 <__MergedGlobals+0x60>
+1001ccf94: 9124114a    	add	x10, x10, #0x904
+1001ccf98: 29402949    	ldp	w9, w10, [x10]
+1001ccf9c: a900a3ea    	stp	x10, x8, [sp, #0x8]
+1001ccfa0: f90003e9    	str	x9, [sp]
+1001ccfa4: d0009d80    	adrp	x0, 0x10157e000 <_hex+0x1a557>
+1001ccfa8: 911ff800    	add	x0, x0, #0x7fe
+1001ccfac: 9409f957    	bl	0x10044b508 <_error_report>
+1001ccfb0: aa1c03e0    	mov	x0, x28
+1001ccfb4: 944dc76d    	bl	0x10153ed68 <dyld_stub_binder+0x10153ed68>
+1001ccfb8: 1400000f    	b	0x1001ccff4 <_main_loop+0x1f8>
+1001ccfbc: d2800000    	mov	x0, #0x0                ; =0
+1001ccfc0: 940c63f2    	bl	0x1004e5f88 <_androidSnapshot_quickbootSave>
+1001ccfc4: 944dc9c7    	bl	0x10153f6e0 <dyld_stub_binder+0x10153f6e0>
+1001ccfc8: f9405808    	ldr	x8, [x0, #0xb0]
+1001ccfcc: f9406908    	ldr	x8, [x8, #0xd0]
+1001ccfd0: 52800020    	mov	w0, #0x1                ; =1
+1001ccfd4: d63f0100    	blr	x8
+1001ccfd8: 97fd0918    	bl	0x10010f438 <_qtest_driver>
+1001ccfdc: 3607fc20    	tbz	w0, #0x0, 0x1001ccf60 <_main_loop+0x164>
+1001ccfe0: 14000007    	b	0x1001ccffc <_main_loop+0x200>
+1001ccfe4: f90003e8    	str	x8, [sp]
+1001ccfe8: d0009d80    	adrp	x0, 0x10157e000 <_hex+0x1a557>
+1001ccfec: 911f9400    	add	x0, x0, #0x7e5
+1001ccff0: 9409f946    	bl	0x10044b508 <_error_report>
+1001ccff4: 9000d3a8    	adrp	x8, 0x101c40000 <__MergedGlobals+0x60>
+1001ccff8: b909051f    	str	wzr, [x8, #0x904]
+1001ccffc: 7100133f    	cmp	w25, #0x4
+1001cd000: 1a9f97e0    	cset	w0, hi
+1001cd004: aa1303e1    	mov	x1, x19
+1001cd008: 940a3aaf    	bl	0x10045bac4 <_qapi_event_send_shutdown>
+1001cd00c: 9000d2e8    	adrp	x8, 0x101c29000 <_mac_slots+0x4710>
+1001cd010: b9498d08    	ldr	w8, [x8, #0x98c]
+1001cd014: 34000bc8    	cbz	w8, 0x1001cd18c <_main_loop+0x390>
+1001cd018: 52800160    	mov	w0, #0xb                ; =11
+1001cd01c: 97f94e61    	bl	0x1000209a0 <_vm_stop>
+1001cd020: f000d388    	adrp	x8, 0x101c40000 <__MergedGlobals+0x60>
+1001cd024: b948fd1c    	ldr	w28, [x8, #0x8fc]
+1001cd028: 3400027c    	cbz	w28, 0x1001cd074 <_main_loop+0x278>
+1001cd02c: 52800040    	mov	w0, #0x2                ; =2
+1001cd030: 9408375f    	bl	0x1003dadac <_replay_checkpoint>
+1001cd034: 34000200    	cbz	w0, 0x1001cd074 <_main_loop+0x278>
+1001cd038: f000d388    	adrp	x8, 0x101c40000 <__MergedGlobals+0x60>
+1001cd03c: b908fd1f    	str	wzr, [x8, #0x8fc]
+1001cd040: 97f94c92    	bl	0x100020288 <_pause_all_vcpus>
+1001cd044: aa1c03e0    	mov	x0, x28
+1001cd048: 97ffe023    	bl	0x1001c50d4 <_qemu_system_reset>
+1001cd04c: 97f94d38    	bl	0x10002052c <_resume_all_vcpus>
+1001cd050: b000c888    	adrp	x8, 0x101ade000 <_.compoundliteral.29+0x4c0>
+1001cd054: b945b101    	ldr	w1, [x8, #0x5b0]
+1001cd058: 7100243f    	cmp	w1, #0x9
+1001cd05c: 54000808    	b.hi	0x1001cd15c <_main_loop+0x360>
+1001cd060: 52800028    	mov	w8, #0x1                ; =1
+1001cd064: 1ac12108    	lsl	w8, w8, w1
+1001cd068: 52804849    	mov	w9, #0x242              ; =578
+1001cd06c: 6a09011f    	tst	w8, w9
+1001cd070: 54000760    	b.eq	0x1001cd15c <_main_loop+0x360>
+1001cd074: f000d388    	adrp	x8, 0x101c40000 <__MergedGlobals+0x60>
+1001cd078: b9490108    	ldr	w8, [x8, #0x900]
+1001cd07c: 340003c8    	cbz	w8, 0x1001cd0f4 <_main_loop+0x2f8>
+1001cd080: 97f94c82    	bl	0x100020288 <_pause_all_vcpus>
+1001cd084: 9000d2e8    	adrp	x8, 0x101c29000 <_mac_slots+0x4710>
+1001cd088: f944dd00    	ldr	x0, [x8, #0x9b8]
+1001cd08c: b4000200    	cbz	x0, 0x1001cd0cc <_main_loop+0x2d0>
+1001cd090: 940819ec    	bl	0x1003d3840 <_object_get_class>
+1001cd094: 90009be1    	adrp	x1, 0x101549000 <dyld_stub_binder+0x101549000>
+1001cd098: 912f1c21    	add	x1, x1, #0xbc7
+1001cd09c: aa1603e2    	mov	x2, x22
+1001cd0a0: 5280f263    	mov	w3, #0x793              ; =1939
+1001cd0a4: 90009d44    	adrp	x4, 0x101575000 <_hex+0x11557>
+1001cd0a8: 91303084    	add	x4, x4, #0xc0c
+1001cd0ac: 94081a1f    	bl	0x1003d3928 <_object_class_dynamic_cast_assert>
+1001cd0b0: aa0003fc    	mov	x28, x0
+1001cd0b4: 97f94bb1    	bl	0x10001ff78 <_cpu_synchronize_all_states>
+1001cd0b8: b40000dc    	cbz	x28, 0x1001cd0d0 <_main_loop+0x2d4>
+1001cd0bc: f9404788    	ldr	x8, [x28, #0x88]
+1001cd0c0: b4000088    	cbz	x8, 0x1001cd0d0 <_main_loop+0x2d4>
+1001cd0c4: d63f0100    	blr	x8
+1001cd0c8: 14000003    	b	0x1001cd0d4 <_main_loop+0x2d8>
+1001cd0cc: 97f94bab    	bl	0x10001ff78 <_cpu_synchronize_all_states>
+1001cd0d0: 9403bd46    	bl	0x1002bc5e8 <_qemu_devices_reset>
+1001cd0d4: 97f94bbc    	bl	0x10001ffc4 <_cpu_synchronize_all_post_reset>
+1001cd0d8: 9100a2e0    	add	x0, x23, #0x28
+1001cd0dc: aa1703e1    	mov	x1, x23
+1001cd0e0: 940a311d    	bl	0x100459554 <_notifier_list_notify>
+1001cd0e4: b90002ff    	str	wzr, [x23]
+1001cd0e8: 97f94d11    	bl	0x10002052c <_resume_all_vcpus>
+1001cd0ec: aa1303e0    	mov	x0, x19
+1001cd0f0: 940a3be5    	bl	0x10045c084 <_qapi_event_send_wakeup>
+1001cd0f4: 39630368    	ldrb	w8, [x27, #0x8c0]
+1001cd0f8: 3923037f    	strb	wzr, [x27, #0x8c0]
+1001cd0fc: 7100051f    	cmp	w8, #0x1
+1001cd100: 540000e1    	b.ne	0x1001cd11c <_main_loop+0x320>
+1001cd104: aa1303e0    	mov	x0, x19
+1001cd108: 940a3ac8    	bl	0x10045bc28 <_qapi_event_send_powerdown>
+1001cd10c: f000d380    	adrp	x0, 0x101c40000 <__MergedGlobals+0x60>
+1001cd110: 9124c000    	add	x0, x0, #0x930
+1001cd114: d2800001    	mov	x1, #0x0                ; =0
+1001cd118: 940a310f    	bl	0x100459554 <_notifier_list_notify>
+1001cd11c: aa1503e0    	mov	x0, x21
+1001cd120: aa1603e1    	mov	x1, x22
+1001cd124: 52807722    	mov	w2, #0x3b9              ; =953
+1001cd128: 940a5927    	bl	0x1004635c4 <_qemu_mutex_lock_impl>
+1001cd12c: b945b71c    	ldr	w28, [x24, #0x5b4]
+1001cd130: 52800208    	mov	w8, #0x10               ; =16
+1001cd134: b905b708    	str	w8, [x24, #0x5b4]
+1001cd138: aa1503e0    	mov	x0, x21
+1001cd13c: aa1603e1    	mov	x1, x22
+1001cd140: 52807782    	mov	w2, #0x3bc              ; =956
+1001cd144: 940a5944    	bl	0x100463654 <_qemu_mutex_unlock_impl>
+1001cd148: 71003f9f    	cmp	w28, #0xf
+1001cd14c: 54ffe828    	b.hi	0x1001cce50 <_main_loop+0x54>
+1001cd150: aa1c03e0    	mov	x0, x28
+1001cd154: 97f94e13    	bl	0x1000209a0 <_vm_stop>
+1001cd158: 17ffff3e    	b	0x1001cce50 <_main_loop+0x54>
+1001cd15c: f000d388    	adrp	x8, 0x101c40000 <__MergedGlobals+0x60>
+1001cd160: 9122c108    	add	x8, x8, #0x8b0
+1001cd164: 8b011108    	add	x8, x8, x1, lsl #4
+1001cd168: 39497908    	ldrb	w8, [x8, #0x25e]
+1001cd16c: 360003a8    	tbz	w8, #0x0, 0x1001cd1e0 <_main_loop+0x3e4>
+1001cd170: b000c888    	adrp	x8, 0x101ade000 <_.compoundliteral.29+0x4c0>
+1001cd174: 528000c9    	mov	w9, #0x6                ; =6
+1001cd178: b905b109    	str	w9, [x8, #0x5b0]
+1001cd17c: f000d388    	adrp	x8, 0x101c40000 <__MergedGlobals+0x60>
+1001cd180: b9490108    	ldr	w8, [x8, #0x900]
+1001cd184: 35fff7e8    	cbnz	w8, 0x1001cd080 <_main_loop+0x284>
+1001cd188: 17ffffdb    	b	0x1001cd0f4 <_main_loop+0x2f8>
+1001cd18c: a9477bfd    	ldp	x29, x30, [sp, #0x70]
+1001cd190: a9464ff4    	ldp	x20, x19, [sp, #0x60]
+1001cd194: a94557f6    	ldp	x22, x21, [sp, #0x50]
+1001cd198: a9445ff8    	ldp	x24, x23, [sp, #0x40]
+1001cd19c: a94367fa    	ldp	x26, x25, [sp, #0x30]
+1001cd1a0: a9426ffc    	ldp	x28, x27, [sp, #0x20]
+1001cd1a4: 910203ff    	add	sp, sp, #0x80
+1001cd1a8: d65f03c0    	ret
+1001cd1ac: 9000c0d3    	adrp	x19, 0x1019e5000 <_.compoundliteral+0x8>
+1001cd1b0: 913ec273    	add	x19, x19, #0xfb0
+1001cd1b4: aa1303e0    	mov	x0, x19
+1001cd1b8: 940a35bd    	bl	0x10045a8ac <_qapi_enum_lookup>
+1001cd1bc: aa0003f4    	mov	x20, x0
+1001cd1c0: aa1303e0    	mov	x0, x19
+1001cd1c4: 52800181    	mov	w1, #0xc                ; =12
+1001cd1c8: 940a35b9    	bl	0x10045a8ac <_qapi_enum_lookup>
+1001cd1cc: a90003f4    	stp	x20, x0, [sp]
+1001cd1d0: 90009d40    	adrp	x0, 0x101575000 <_hex+0x11557>
+1001cd1d4: 912e3400    	add	x0, x0, #0xb8d
+1001cd1d8: 9409f8cc    	bl	0x10044b508 <_error_report>
+1001cd1dc: 944dc6e9    	bl	0x10153ed80 <dyld_stub_binder+0x10153ed80>
+1001cd1e0: 9000c0d3    	adrp	x19, 0x1019e5000 <_.compoundliteral+0x8>
+1001cd1e4: 913ec273    	add	x19, x19, #0xfb0
+1001cd1e8: aa1303e0    	mov	x0, x19
+1001cd1ec: 940a35b0    	bl	0x10045a8ac <_qapi_enum_lookup>
+1001cd1f0: aa0003f4    	mov	x20, x0
+1001cd1f4: aa1303e0    	mov	x0, x19
+1001cd1f8: 528000c1    	mov	w1, #0x6                ; =6
+1001cd1fc: 940a35ac    	bl	0x10045a8ac <_qapi_enum_lookup>
+1001cd200: a90003f4    	stp	x20, x0, [sp]
+1001cd204: 90009d40    	adrp	x0, 0x101575000 <_hex+0x11557>
+1001cd208: 912e3400    	add	x0, x0, #0xb8d
+1001cd20c: 9409f8bf    	bl	0x10044b508 <_error_report>
+1001cd210: 944dc6dc    	bl	0x10153ed80 <dyld_stub_binder+0x10153ed80>

@@ -1,0 +1,21 @@
+{
+  "scope": "readonly evidence plus actual writer AST on a separate temporary file; no native or sealed disk writes",
+  "source_sha256": "a9fc524cf2206baa1295557e936a05781d4d584e96e334e685f3e01c84e1a5db",
+  "evidence_sha256": "4988413deb824bc371710f75cb108c72e0d8677162b1d86f33ae2c3e857011c5",
+  "sealed_evidence_unchanged": true,
+  "native_argv_identical": true,
+  "recorded_normalized_difference": {
+    "disk.dataPartition.size": {
+      "first": "6442450944",
+      "second": "4096M"
+    }
+  },
+  "actual_writer_temporary_replay_difference": {
+    "disk.dataPartition.size": {
+      "first": "6442450944",
+      "second": "4096M"
+    }
+  },
+  "first_stop_exit_code": -6,
+  "stop_exit_can_confirm_resources_but_not_snapshot_restoration": true
+}

@@ -1,0 +1,567 @@
+{
+  "source_sha256": "c609f1b69eb7af48fa34ecaf757d1617d46e4afc3356e30344322d1fb521a0d0",
+  "cases": [
+    {
+      "case": "complete-marker",
+      "result": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5554",
+        "details": {
+          "avd_name": "aiphone_vm_a",
+          "port": 5554,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "sync_completed": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": 0,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "calls": [
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a"
+        },
+        {
+          "kind": "sync",
+          "command": "/system/bin/sync && printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"
+        },
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a"
+        },
+        {
+          "kind": "emu-kill",
+          "serial": "emulator-5554"
+        }
+      ],
+      "clock_after": 100.0
+    },
+    {
+      "case": "rc0-without-marker",
+      "result": {
+        "ok": false,
+        "reason": "stop_unconfirmed",
+        "error": "未确认本次系统数据同步完成，未执行停止",
+        "adb_serial": "emulator-5554",
+        "avd_name": "aiphone_vm_a",
+        "details": {
+          "avd_name": "aiphone_vm_a",
+          "port": 5554,
+          "cleanup_pending": true,
+          "cleanup_confirmed": false,
+          "instance_created": true,
+          "exit_evidence": {
+            "confirmed": false,
+            "owned_process_exit_code": null,
+            "reason": "owned_process_running"
+          },
+          "sync_completed": false
+        }
+      },
+      "calls": [
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a"
+        },
+        {
+          "kind": "sync",
+          "command": "/system/bin/sync && printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"
+        }
+      ],
+      "clock_after": 100.0
+    },
+    {
+      "case": "stale-marker",
+      "result": {
+        "ok": false,
+        "reason": "stop_unconfirmed",
+        "error": "未确认本次系统数据同步完成，未执行停止",
+        "adb_serial": "emulator-5554",
+        "avd_name": "aiphone_vm_a",
+        "details": {
+          "avd_name": "aiphone_vm_a",
+          "port": 5554,
+          "cleanup_pending": true,
+          "cleanup_confirmed": false,
+          "instance_created": true,
+          "exit_evidence": {
+            "confirmed": false,
+            "owned_process_exit_code": null,
+            "reason": "owned_process_running"
+          },
+          "sync_completed": false
+        }
+      },
+      "calls": [
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a"
+        },
+        {
+          "kind": "sync",
+          "command": "/system/bin/sync && printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"
+        }
+      ],
+      "clock_after": 100.0
+    },
+    {
+      "case": "nonzero-with-marker",
+      "result": {
+        "ok": false,
+        "reason": "stop_unconfirmed",
+        "error": "未确认本次系统数据同步完成，未执行停止",
+        "adb_serial": "emulator-5554",
+        "avd_name": "aiphone_vm_a",
+        "details": {
+          "avd_name": "aiphone_vm_a",
+          "port": 5554,
+          "cleanup_pending": true,
+          "cleanup_confirmed": false,
+          "instance_created": true,
+          "exit_evidence": {
+            "confirmed": false,
+            "owned_process_exit_code": null,
+            "reason": "owned_process_running"
+          },
+          "sync_completed": false
+        }
+      },
+      "calls": [
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a"
+        },
+        {
+          "kind": "sync",
+          "command": "/system/bin/sync && printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"
+        }
+      ],
+      "clock_after": 100.0
+    },
+    {
+      "case": "extra-stdout",
+      "result": {
+        "ok": false,
+        "reason": "stop_unconfirmed",
+        "error": "未确认本次系统数据同步完成，未执行停止",
+        "adb_serial": "emulator-5554",
+        "avd_name": "aiphone_vm_a",
+        "details": {
+          "avd_name": "aiphone_vm_a",
+          "port": 5554,
+          "cleanup_pending": true,
+          "cleanup_confirmed": false,
+          "instance_created": true,
+          "exit_evidence": {
+            "confirmed": false,
+            "owned_process_exit_code": null,
+            "reason": "owned_process_running"
+          },
+          "sync_completed": false
+        }
+      },
+      "calls": [
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a"
+        },
+        {
+          "kind": "sync",
+          "command": "/system/bin/sync && printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"
+        }
+      ],
+      "clock_after": 100.0
+    },
+    {
+      "case": "sync-timeout",
+      "result": {
+        "ok": false,
+        "reason": "stop_unconfirmed",
+        "error": "未确认本次系统数据同步完成，未执行停止",
+        "adb_serial": "emulator-5554",
+        "avd_name": "aiphone_vm_a",
+        "details": {
+          "avd_name": "aiphone_vm_a",
+          "port": 5554,
+          "cleanup_pending": true,
+          "cleanup_confirmed": false,
+          "instance_created": true,
+          "exit_evidence": {
+            "confirmed": false,
+            "owned_process_exit_code": null,
+            "reason": "owned_process_running"
+          },
+          "sync_completed": false
+        }
+      },
+      "calls": [
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a"
+        },
+        {
+          "kind": "sync",
+          "command": "/system/bin/sync && printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"
+        },
+        {
+          "kind": "diagnostic-error",
+          "message": "('Android VM guest sync 未确认 serial={}: {}', 'emulator-5554', TimeoutExpired('fake-adb', 20.0))"
+        }
+      ],
+      "clock_after": 100.0
+    },
+    {
+      "case": "late-marker",
+      "result": {
+        "ok": false,
+        "reason": "operation_timeout",
+        "error": "本次停止/清理操作超时，尚未确认资源释放",
+        "adb_serial": "emulator-5554",
+        "avd_name": "aiphone_vm_a",
+        "details": {
+          "avd_name": "aiphone_vm_a",
+          "port": 5554,
+          "cleanup_pending": true,
+          "cleanup_confirmed": false,
+          "instance_created": true,
+          "exit_evidence": {
+            "confirmed": false,
+            "owned_process_exit_code": null,
+            "reason": "owned_process_running"
+          }
+        }
+      },
+      "calls": [
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a"
+        },
+        {
+          "kind": "sync",
+          "command": "/system/bin/sync && printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"
+        },
+        {
+          "kind": "diagnostic-error",
+          "message": "('Android VM guest sync 未确认 serial={}: {}', 'emulator-5554', TimeoutError('Android VM startup deadline exceeded'))"
+        }
+      ],
+      "clock_after": 121.0
+    },
+    {
+      "case": "wrong-identity",
+      "result": {
+        "ok": false,
+        "reason": "stop_unconfirmed",
+        "error": "无法唯一确认受管 AVD 的同步通道，未执行停止",
+        "adb_serial": "emulator-5554",
+        "avd_name": "aiphone_vm_a",
+        "details": {
+          "avd_name": "aiphone_vm_a",
+          "port": 5554,
+          "cleanup_pending": true,
+          "cleanup_confirmed": false,
+          "instance_created": true,
+          "exit_evidence": {
+            "confirmed": false,
+            "owned_process_exit_code": null,
+            "reason": "owned_process_running"
+          }
+        }
+      },
+      "calls": [
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_other"
+        }
+      ],
+      "clock_after": 100.0
+    },
+    {
+      "case": "identity-changed-after-sync",
+      "result": {
+        "ok": false,
+        "reason": "stop_unconfirmed",
+        "error": "未确认原生退出请求，保留实例等待核实",
+        "adb_serial": "emulator-5554",
+        "avd_name": "aiphone_vm_a",
+        "details": {
+          "avd_name": "aiphone_vm_a",
+          "port": 5554,
+          "cleanup_pending": true,
+          "cleanup_confirmed": false,
+          "instance_created": true,
+          "exit_evidence": {
+            "confirmed": false,
+            "owned_process_exit_code": null,
+            "reason": "owned_process_running"
+          },
+          "sync_completed": true
+        }
+      },
+      "calls": [
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a"
+        },
+        {
+          "kind": "sync",
+          "command": "/system/bin/sync && printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"
+        },
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_other"
+        }
+      ],
+      "clock_after": 100.0
+    },
+    {
+      "case": "native-request-failed",
+      "result": {
+        "ok": false,
+        "reason": "stop_unconfirmed",
+        "error": "未确认原生退出请求，保留实例等待核实",
+        "adb_serial": "emulator-5554",
+        "avd_name": "aiphone_vm_a",
+        "details": {
+          "avd_name": "aiphone_vm_a",
+          "port": 5554,
+          "cleanup_pending": true,
+          "cleanup_confirmed": false,
+          "instance_created": true,
+          "exit_evidence": {
+            "confirmed": false,
+            "owned_process_exit_code": null,
+            "reason": "owned_process_running"
+          },
+          "sync_completed": true
+        }
+      },
+      "calls": [
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a"
+        },
+        {
+          "kind": "sync",
+          "command": "/system/bin/sync && printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"
+        },
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a"
+        },
+        {
+          "kind": "emu-kill",
+          "serial": "emulator-5554"
+        }
+      ],
+      "clock_after": 100.0
+    },
+    {
+      "case": "ambiguous-second-serial",
+      "result": {
+        "ok": false,
+        "reason": "stop_unconfirmed",
+        "error": "受管 AVD 存在未消除的地址歧义，未执行同步或停止",
+        "adb_serial": "emulator-5554",
+        "avd_name": "aiphone_vm_a",
+        "details": {
+          "avd_name": "aiphone_vm_a",
+          "port": 5554,
+          "cleanup_pending": true,
+          "cleanup_confirmed": false,
+          "instance_created": true,
+          "exit_evidence": {
+            "confirmed": false,
+            "owned_process_exit_code": null,
+            "reason": "owned_process_running"
+          }
+        }
+      },
+      "calls": [],
+      "clock_after": 100.0
+    },
+    {
+      "case": "unknown-second-process-port",
+      "result": {
+        "ok": false,
+        "reason": "stop_unconfirmed",
+        "error": "受管 AVD 存在未消除的地址歧义，未执行同步或停止",
+        "adb_serial": "emulator-5554",
+        "avd_name": "aiphone_vm_a",
+        "details": {
+          "avd_name": "aiphone_vm_a",
+          "port": 5554,
+          "cleanup_pending": true,
+          "cleanup_confirmed": false,
+          "instance_created": true,
+          "exit_evidence": {
+            "confirmed": false,
+            "owned_process_exit_code": null,
+            "reason": "owned_process_running"
+          }
+        }
+      },
+      "calls": [],
+      "clock_after": 100.0
+    },
+    {
+      "case": "already-exited",
+      "result": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5554",
+        "details": {
+          "avd_name": "aiphone_vm_a",
+          "port": 5554,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": 0,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "calls": [],
+      "clock_after": 100.0
+    },
+    {
+      "case": "reclaimed-process",
+      "result": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5554",
+        "details": {
+          "avd_name": "aiphone_vm_a",
+          "port": 5554,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "sync_completed": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": null,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "calls": [
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a"
+        },
+        {
+          "kind": "sync",
+          "command": "/system/bin/sync && printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"
+        },
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a"
+        },
+        {
+          "kind": "emu-kill",
+          "serial": "emulator-5554"
+        }
+      ],
+      "clock_after": 100.0
+    },
+    {
+      "case": "explicit-delete-skips-sync",
+      "result": {
+        "ok": true,
+        "reason": "deleted",
+        "error": "",
+        "avd_name": "aiphone_vm_a",
+        "details": {
+          "cleanup_confirmed": true,
+          "instance_created": false
+        }
+      },
+      "calls": [
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a"
+        },
+        {
+          "kind": "emu-kill",
+          "serial": "emulator-5554"
+        },
+        {
+          "kind": "delete-avd"
+        }
+      ],
+      "clock_after": 100.0
+    },
+    {
+      "case": "stop-all-preserves-on-sync-failure",
+      "result": 0,
+      "calls": [
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a"
+        },
+        {
+          "kind": "sync",
+          "command": "/system/bin/sync && printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"
+        }
+      ],
+      "clock_after": 100.0
+    },
+    {
+      "case": "no-untrusted-text-in-shell",
+      "result": {
+        "ok": true,
+        "reason": "stopped",
+        "adb_serial": "emulator-5554",
+        "details": {
+          "avd_name": "aiphone_vm_a_echo_injected_",
+          "port": 5554,
+          "cleanup_confirmed": true,
+          "instance_created": true,
+          "sync_completed": true,
+          "exit_evidence": {
+            "confirmed": true,
+            "owned_process_exit_code": 0,
+            "process_inventory_complete": true,
+            "matching_process_ids": [],
+            "blocked_ports": [],
+            "reason": "exit_confirmed"
+          }
+        }
+      },
+      "calls": [
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a_echo_injected_"
+        },
+        {
+          "kind": "sync",
+          "command": "/system/bin/sync && printf '%s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"
+        },
+        {
+          "kind": "identity",
+          "value": "aiphone_vm_a_echo_injected_"
+        },
+        {
+          "kind": "emu-kill",
+          "serial": "emulator-5554"
+        }
+      ],
+      "clock_after": 100.0
+    }
+  ],
+  "passed": 17,
+  "scope": "Unchanged production manager methods/helper AST; fake time/process/ADB only; no native commands, network or product modification"
+}

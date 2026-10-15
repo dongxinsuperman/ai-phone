@@ -1,0 +1,45 @@
+{
+  "harness_sha256": "9c5cea9afd5983d88de46c63ec7005a04fb68316f364bbc3c5d94eb0cdfdcd22",
+  "server_value": {
+    "id": "vm",
+    "state": "stopped",
+    "runtime": {
+      "operation": {
+        "action": "stop",
+        "request_id": "r1",
+        "pending": false,
+        "outcome": "failed",
+        "failure_reason": "operation_timeout"
+      }
+    }
+  },
+  "wait_returned": {
+    "id": "vm",
+    "state": "stopped",
+    "runtime": {
+      "operation": {
+        "action": "stop",
+        "request_id": "r1",
+        "pending": false,
+        "outcome": "failed",
+        "failure_reason": "operation_timeout"
+      }
+    }
+  },
+  "attempt_records_after": [
+    {
+      "vm_id": "vm",
+      "generation_id": "pid:launch",
+      "outcome": "succeeded",
+      "server_stopped_observed": true
+    }
+  ],
+  "cleanup_decision": {
+    "allowed": true,
+    "generation_id": "pid:launch",
+    "reason": "no unsuccessful stop for this native generation; one protective cleanup is allowed",
+    "prior_attempt_count": 1,
+    "unresolved_attempt_count": 0
+  },
+  "scope": "unchanged actual function AST; fake HTTP/poll; no native/network/product edits"
+}

@@ -1,0 +1,243 @@
+{
+  "recorded_at": "2026-10-15T20:56:51.531035+00:00",
+  "scope": "read-only product/SDK/retained native data; no VM, ADB, emulator or guest execution; static nm/llvm-objdump plus primary-source HTTP reads only",
+  "git_head": "8a2a3be1bb60f719282349e6135be3c226c3a7fe",
+  "files": [
+    {
+      "path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/android_vm/manager.py",
+      "sha256": "13bf99f44a4fa566bbfab44258cd4ab8a0eac2d000613fe149ed9fef33b26bd3",
+      "bytes": 77496
+    },
+    {
+      "path": "/Users/dongxin/Library/Android/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64-headless",
+      "sha256": "4324b12002d535af88f0f4a3e8267730dd495ddfa704c0f5cb141abf679c9b08",
+      "bytes": 45400000
+    },
+    {
+      "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/evidence.json",
+      "sha256": "a16dbac07dedb8c6850cc248365bab69bdbb4abf5667bc5e15ac02ed662e9396",
+      "bytes": 105000
+    },
+    {
+      "path": "/Users/dongxin/.codex/personal-vm-followup/android-app-install-8a2a3be1-20261016-a4/android/runtime/b834fac98cc2/emulator.log",
+      "sha256": "215958af4c0c7c307bb52350302f48ef7ea8d6d71eec95f26fbe184ae46ee440",
+      "bytes": 18692
+    },
+    {
+      "path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-app-install-a4-results.json",
+      "sha256": "585e6ac8b2ca21b73bb78f4868e42ec9374c22b38da185a093ab879d5c959cee",
+      "bytes": 22594
+    },
+    {
+      "path": "/Users/dongxin/Library/Android/sdk/platform-tools/adb",
+      "sha256": "5759ea07285e5a5b66d84f489c118a3fa3998e69cd37725e5a3dc7cbe0597278",
+      "bytes": 19993936
+    }
+  ],
+  "source_index": [
+    {
+      "file": "android13-reboot-command.txt",
+      "url": "https://android.googlesource.com/platform/system/core/+/refs/tags/android-13.0.0_r1/reboot/reboot.cpp?format=TEXT",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "file": "android13-activity-manager.txt",
+      "url": "https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-13.0.0_r1/services/core/java/com/android/server/am/ActivityManagerService.java?format=TEXT",
+      "bytes": 825353,
+      "sha256": "054108d24ce9dd1c0aa11534d849cb825c1d1309da3ddb727f0aace1f4c156b5"
+    },
+    {
+      "file": "android13-task-manager.txt",
+      "url": "https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-13.0.0_r1/services/core/java/com/android/server/wm/ActivityTaskManagerService.java?format=TEXT",
+      "bytes": 288333,
+      "sha256": "a8ff32c32af92b97d6d054b2ac16fb610101c857f0f0f50694d42b8fa6c8d93e"
+    },
+    {
+      "file": "android13-activity-supervisor.txt",
+      "url": "https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-13.0.0_r1/services/core/java/com/android/server/wm/ActivityTaskSupervisor.java?format=TEXT",
+      "bytes": 121235,
+      "sha256": "633059d827e01aac813caf78d5af4bbf419e0e663f6ef76dd49295d07aeeea50"
+    },
+    {
+      "file": "android13-init-permissions.txt",
+      "url": "https://android.googlesource.com/platform/system/sepolicy/+/refs/tags/android-13.0.0_r1/private/property_contexts?format=TEXT",
+      "bytes": 85292,
+      "sha256": "e78520fc1545b6b958067f06d9c3d0ad9613aadffaee206fd54fea43b36bf585"
+    },
+    {
+      "file": "android13-toolbox-reboot.txt",
+      "url": "https://android.googlesource.com/platform/system/core/+/refs/tags/android-13.0.0_r1/toolbox/reboot.cpp?format=TEXT",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "file": "android13-toybox-reboot.txt",
+      "url": "https://android.googlesource.com/platform/external/toybox/+/refs/tags/android-13.0.0_r1/toys/android/reboot.c?format=TEXT",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "file": "android13-psci.txt",
+      "url": "https://android.googlesource.com/kernel/common/+/refs/heads/android13-5.15/drivers/firmware/psci/psci.c?format=TEXT",
+      "bytes": 15213,
+      "sha256": "40c5f3a2f2b63728f90965e4457b44305eaee4ee0fc42661ac336cf38727c9fc"
+    },
+    {
+      "file": "qemu-psci-source.txt",
+      "url": "https://android.googlesource.com/platform/external/qemu/+/refs/heads/emu-master-dev/target/arm/psci.c?format=TEXT",
+      "bytes": 7222,
+      "sha256": "2a31ff5a0b586188026da9aac70849b6d5541d668c174ed8ba6e8a6fbf68d91f"
+    },
+    {
+      "file": "qemu-runstate-source.txt",
+      "url": "https://android.googlesource.com/platform/external/qemu/+/refs/heads/emu-master-dev/vl.c?format=TEXT",
+      "bytes": 179261,
+      "sha256": "d3afd09e1864abb80ba3ac103d99ffb7a272cb21778c941f3865adab55f83c53"
+    },
+    {
+      "file": "android13-reboot-command.txt",
+      "url": "https://android.googlesource.com/platform/system/core/+/refs/tags/android-13.0.0_r1/reboot/reboot.c?format=TEXT",
+      "bytes": 2226,
+      "sha256": "430a3fc60880d3bedc8d50fedfb1695ffc831316c9af4b58d7acb5dfa0a49e1e"
+    },
+    {
+      "file": "android13-toybox-reboot.txt",
+      "url": "https://android.googlesource.com/platform/external/toybox/+/refs/tags/android-13.0.0_r1/toys/other/reboot.c?format=TEXT",
+      "bytes": 1126,
+      "sha256": "0bf4396e12f419a0e10d3e9f32e3c18b22d9ccafb2715dbc6a7b17e75508f479"
+    },
+    {
+      "file": "android13-init-reboot-utils.txt",
+      "url": "https://android.googlesource.com/platform/system/core/+/refs/tags/android-13.0.0_r1/init/reboot_utils.cpp?format=TEXT",
+      "bytes": 8063,
+      "sha256": "70858014921306ca5b42ac86912b9131a39825d2ac4c3b3d50dacc88d7618bf7"
+    },
+    {
+      "file": "qemu-hvf-source.txt",
+      "url": "https://android.googlesource.com/platform/external/qemu/+/refs/heads/emu-master-dev/target/arm/hvf/hvf.c?format=TEXT",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "file": "qemu-shutdown-cause.txt",
+      "url": "https://android.googlesource.com/platform/external/qemu/+/refs/heads/emu-master-dev/include/sysemu/sysemu.h?format=TEXT",
+      "bytes": 11552,
+      "sha256": "fddf49c5dc2d9344e04f92ab7e074a90b501dca82954cb9cb80e164691a2b0ec"
+    },
+    {
+      "file": "qemu-quickboot-source.txt",
+      "url": "https://android.googlesource.com/platform/external/qemu/+/refs/heads/emu-master-dev/android/android-emu/android/snapshot/Quickboot.cpp?format=TEXT",
+      "bytes": 34908,
+      "sha256": "fc107b8329e04d8700913fe924dd0fd161093b5e8e0a538a3bd42eb51c97b2df"
+    },
+    {
+      "file": "qemu-snapshotter-source.txt",
+      "url": "https://android.googlesource.com/platform/external/qemu/+/refs/heads/emu-master-dev/android/android-emu/android/snapshot/Snapshotter.cpp?format=TEXT",
+      "bytes": 41172,
+      "sha256": "a4cea174e2fa8f9fc2f2f17abe88b0db2ee9c8d69794c7aa11ac333418de5fc2"
+    },
+    {
+      "file": "android13-sync-command.txt",
+      "url": "https://android.googlesource.com/platform/external/toybox/+/refs/tags/android-13.0.0_r1/toys/other/sync.c?format=TEXT",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "file": "android13-posix-sync-command.txt",
+      "url": "https://android.googlesource.com/platform/external/toybox/+/refs/tags/android-13.0.0_r1/toys/posix/sync.c?format=TEXT",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "file": "android13-kernel-sync.txt",
+      "url": "https://android.googlesource.com/kernel/common/+/refs/heads/android13-5.15/fs/sync.c?format=TEXT",
+      "bytes": 10367,
+      "sha256": "984f4842c737eb0895895d21e8a73b2a83c665a5bb0081283707b65b2427677d"
+    },
+    {
+      "file": "android13-lsb-sync-command.txt",
+      "url": "https://android.googlesource.com/platform/external/toybox/+/refs/tags/android-13.0.0_r1/toys/lsb/sync.c?format=TEXT",
+      "bytes": 429,
+      "sha256": "8b5d817b931456b387f12671bf443c3a26a41399643840671653e84c51bb28da"
+    },
+    {
+      "file": "android13-toybox-build.txt",
+      "url": "https://android.googlesource.com/platform/external/toybox/+/refs/tags/android-13.0.0_r1/Android.bp?format=TEXT",
+      "bytes": 12098,
+      "sha256": "4da8240577f8967f0daa3753f671d5c877c72aece30fdf9ae026e546e3151cca"
+    },
+    {
+      "file": "android13-adb-commandline.txt",
+      "url": "https://android.googlesource.com/platform/packages/modules/adb/+/refs/tags/android-13.0.0_r1/client/commandline.cpp?format=TEXT",
+      "bytes": 82427,
+      "sha256": "914dcde0d08de3ad8c61d1f35cbb091fef280d7ae672b186a1f97628b338fb51"
+    },
+    {
+      "file": "android13-adb-shell-service.txt",
+      "url": "https://android.googlesource.com/platform/packages/modules/adb/+/refs/tags/android-13.0.0_r1/daemon/shell_service.cpp?format=TEXT",
+      "bytes": 34894,
+      "sha256": "a542db283ec55fe4dd1b6a5c9633ed1eb44d226c5faf1b689bc638e671aee2e7"
+    },
+    {
+      "file": "android13-adb-shell-protocol.txt",
+      "url": "https://android.googlesource.com/platform/packages/modules/adb/+/refs/tags/android-13.0.0_r1/shell_protocol.h?format=TEXT",
+      "bytes": 3922,
+      "sha256": "31152fc050e8eed83fe90b1ad99ec13bc36e2d5ae049a273fa8a860b30434943"
+    }
+  ],
+  "static_disassembly": [
+    {
+      "path": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-guest-shutdown-static-adb-exit-receipt.txt",
+      "sha256": "fcc286e214e3fa733aaa987f0c2c38457d0a93e8fc5277a44543345bf0dfef5f",
+      "bytes": 3610
+    },
+    {
+      "path": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-guest-shutdown-static-arm-psci.txt",
+      "sha256": "36225f20b071436a99d258335492067f2d3fb74ab206e325cd70d1c211fca1bd",
+      "bytes": 11424
+    },
+    {
+      "path": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-guest-shutdown-static-call-index.json",
+      "sha256": "50a06d648a2acd9debce26bf797009290a22eba1208cdf856423cd995f0f858e",
+      "bytes": 3295
+    },
+    {
+      "path": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-guest-shutdown-static-hvf-exception.txt",
+      "sha256": "d3e75401c6137b82ad58611cdf8c383050762aba2282160b9d67a826e50573a9",
+      "bytes": 10114
+    },
+    {
+      "path": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-guest-shutdown-static-hvf-smp-cpu-exec.txt",
+      "sha256": "e9e92ecf4405ff7e1d94f574cf126aca041dbb6ffb03e33f287c26b7d0dc8ac2",
+      "bytes": 1104
+    },
+    {
+      "path": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-guest-shutdown-static-hvf-vcpu-exec.txt",
+      "sha256": "f91793a7e2f4f011d17274aee5104f6478ee72f1d3278c80c8ea0cf1a15a4f63",
+      "bytes": 4980
+    },
+    {
+      "path": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-guest-shutdown-static-invalidate-exit.txt",
+      "sha256": "effc7b2f90148e41d13446434dadd24e4ce673f4922cffe04361b81844e7304d",
+      "bytes": 413
+    },
+    {
+      "path": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-guest-shutdown-static-main-loop.txt",
+      "sha256": "facac2faba64851e5aac56db150cfd4c5134542edeb95d6ab1801d0d466bf653",
+      "bytes": 14194
+    },
+    {
+      "path": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-guest-shutdown-static-quickboot-save.txt",
+      "sha256": "4427e973371681f43fc9a2bd60e08865b7b656cf2013ed0d1d2763264de66595",
+      "bytes": 26098
+    },
+    {
+      "path": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-guest-shutdown-static-quickboot-wrapper.txt",
+      "sha256": "5c8a294f823423e1a247adcb399d815dbbc0ddda46ed8b8d08f96693e7849824",
+      "bytes": 10512
+    },
+    {
+      "path": "docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android-guest-shutdown-static-shutdown-request.txt",
+      "sha256": "1748bdf960c6e94baeb361c543f36f7000f3252b3d20f4da3bf6f90e1997bf6a",
+      "bytes": 730
+    }
+  ],
+  "product_hash_at_finish": "13bf99f44a4fa566bbfab44258cd4ab8a0eac2d000613fe149ed9fef33b26bd3",
+  "product_hash_unchanged_during_review": true,
+  "completed_at": "2026-10-15T21:06:18.406075+00:00"
+}

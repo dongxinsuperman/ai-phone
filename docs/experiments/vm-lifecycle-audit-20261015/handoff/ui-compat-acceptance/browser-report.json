@@ -1,0 +1,236 @@
+{
+  "base": "http://127.0.0.1:49170",
+  "checks": [
+    {
+      "passed": true,
+      "label": "android: failed replacement uses non-2xx",
+      "detail": {
+        "status": 409
+      }
+    },
+    {
+      "passed": true,
+      "label": "android: error response applies new ID before delayed GET completes"
+    },
+    {
+      "passed": true,
+      "label": "android: retired old ID is removed immediately"
+    },
+    {
+      "passed": true,
+      "label": "android: new instance error is visible"
+    },
+    {
+      "passed": true,
+      "label": "android: quiet GET preserves operation error"
+    },
+    {
+      "passed": true,
+      "label": "android: ordinary send failure preserves platform HTTP status",
+      "detail": {
+        "status": 409
+      }
+    },
+    {
+      "passed": true,
+      "label": "android: failed first bind remains unbound"
+    },
+    {
+      "passed": true,
+      "label": "android: first-bind HTTP error survives quiet GET"
+    },
+    {
+      "passed": true,
+      "label": "android: plain conflict remains non-2xx"
+    },
+    {
+      "passed": true,
+      "label": "android: conflict without instance does not retire the old card"
+    },
+    {
+      "passed": true,
+      "label": "android: ordinary conflict message stays visible"
+    },
+    {
+      "passed": true,
+      "label": "harmony: failed replacement uses non-2xx",
+      "detail": {
+        "status": 409
+      }
+    },
+    {
+      "passed": true,
+      "label": "harmony: error response applies new ID before delayed GET completes"
+    },
+    {
+      "passed": true,
+      "label": "harmony: retired old ID is removed immediately"
+    },
+    {
+      "passed": true,
+      "label": "harmony: new instance error is visible"
+    },
+    {
+      "passed": true,
+      "label": "harmony: quiet GET preserves operation error"
+    },
+    {
+      "passed": true,
+      "label": "harmony: ordinary send failure preserves platform HTTP status",
+      "detail": {
+        "status": 409
+      }
+    },
+    {
+      "passed": true,
+      "label": "harmony: failed first bind remains unbound"
+    },
+    {
+      "passed": true,
+      "label": "harmony: first-bind HTTP error survives quiet GET"
+    },
+    {
+      "passed": true,
+      "label": "harmony: plain conflict remains non-2xx"
+    },
+    {
+      "passed": true,
+      "label": "harmony: conflict without instance does not retire the old card"
+    },
+    {
+      "passed": true,
+      "label": "harmony: ordinary conflict message stays visible"
+    },
+    {
+      "passed": true,
+      "label": "ios: failed replacement uses non-2xx",
+      "detail": {
+        "status": 409
+      }
+    },
+    {
+      "passed": true,
+      "label": "ios: error response applies new ID before delayed GET completes"
+    },
+    {
+      "passed": true,
+      "label": "ios: retired old ID is removed immediately"
+    },
+    {
+      "passed": true,
+      "label": "ios: new instance error is visible"
+    },
+    {
+      "passed": true,
+      "label": "ios: quiet GET preserves operation error"
+    },
+    {
+      "passed": true,
+      "label": "ios: ordinary send failure preserves platform HTTP status",
+      "detail": {
+        "status": 502
+      }
+    },
+    {
+      "passed": true,
+      "label": "ios: failed first bind remains unbound"
+    },
+    {
+      "passed": true,
+      "label": "ios: first-bind HTTP error survives quiet GET"
+    },
+    {
+      "passed": true,
+      "label": "ios: plain conflict remains non-2xx"
+    },
+    {
+      "passed": true,
+      "label": "ios: conflict without instance does not retire the old card"
+    },
+    {
+      "passed": true,
+      "label": "ios: ordinary conflict message stays visible"
+    },
+    {
+      "passed": true,
+      "label": "android: no replacement dispatch retry"
+    },
+    {
+      "passed": true,
+      "label": "android: no failed first-bind retry"
+    },
+    {
+      "passed": true,
+      "label": "android: no plain-conflict retry"
+    },
+    {
+      "passed": true,
+      "label": "harmony: no replacement dispatch retry"
+    },
+    {
+      "passed": true,
+      "label": "harmony: no failed first-bind retry"
+    },
+    {
+      "passed": true,
+      "label": "harmony: no plain-conflict retry"
+    },
+    {
+      "passed": true,
+      "label": "ios: no replacement dispatch retry"
+    },
+    {
+      "passed": true,
+      "label": "ios: no failed first-bind retry"
+    },
+    {
+      "passed": true,
+      "label": "ios: no plain-conflict retry"
+    },
+    {
+      "passed": true,
+      "label": "no browser runtime exception",
+      "detail": []
+    },
+    {
+      "passed": true,
+      "label": "no non-local HTTP request attempted",
+      "detail": []
+    }
+  ],
+  "screenshots": [
+    "android-switch-error-new-id.png",
+    "android-first-bind-send-error.png",
+    "harmony-switch-error-new-id.png",
+    "harmony-first-bind-send-error.png",
+    "ios-switch-error-new-id.png",
+    "ios-first-bind-send-error.png"
+  ],
+  "runtimeErrors": [],
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "Failed to load resource: the server responded with a status of 409 (Conflict)"
+  ],
+  "blockedUrls": [],
+  "summary": {
+    "passed": 44,
+    "failed": 0,
+    "screenshots": 6
+  },
+  "finishedAt": "2026-10-15T18:43:27.128Z",
+  "note": "Incremental dispatch error-catch acceptance only; baseline 102 checks and old build hashes are unchanged.",
+  "acceptance_status": "PASS_INCREMENTAL_HTTP_ERROR_CATCH",
+  "baseline_revision": "74f209d",
+  "baseline_browser_checks": 102,
+  "baseline_evidence_unchanged": true,
+  "fixture_server_stopped": true,
+  "test_page_closed": true,
+  "native_vm_validation": false
+}

@@ -1,0 +1,66 @@
+{
+  "audited_at_utc": "2026-10-15T18:23:29.241148+00:00",
+  "personal_cli": {
+    "path": "/Users/dongxin/aiphonecli开源",
+    "origin": "https://github.com/dongxinsuperman/aiphone-cli.git",
+    "commit": "dba438b2ede72b1c43b545fbb7a55bb0a2b5b07d",
+    "package": "aiphone-cli",
+    "version": "0.3.0",
+    "private": true,
+    "working_tree_status": "",
+    "source_sha256": {
+      "lib/vm-client.js": "09f17669e78d84f40e188f69099140d09aeecf4de4d7040ce037c8c4090701e5",
+      "lib/vm-service.js": "72c329b26acc531f8b7a6d43da264998e191f932a8f475719fe258803ada03a9",
+      "lib/vm-commands.js": "f86abe5e927d0d41d14a0df83c99ad37fc35cc2b274fb2c5acc58f59dbbed993",
+      "lib/config.js": "e8c9f8479c6d69d8d2f50bd7b758efd943773a8e05c739f6dada6158bf3a8ac9",
+      "package.json": "da96f0190760edb913bd1e248ea3239566ddc1d51c075e17acf1572b4a633947"
+    }
+  },
+  "backend": {
+    "path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone",
+    "from": "452e7d77326f9fc0e5b003ecbf6cec5fc499e4bf",
+    "to": "74f209dc6556d4678291b0dce63a9817741b6bea",
+    "tracked_cli_files": [],
+    "product_diff": [
+      "backend/ai_phone/server/android_vm/api.py",
+      "backend/ai_phone/server/android_vm/service.py",
+      "backend/ai_phone/server/harmony_vm/api.py",
+      "backend/ai_phone/server/harmony_vm/service.py",
+      "backend/ai_phone/server/ios_sim/api.py",
+      "backend/ai_phone/server/ios_sim/service.py",
+      "backend/ai_phone/server/vm_lifecycle.py"
+    ],
+    "working_tree_dirty_during_audit": true,
+    "product_source_modified_by_this_audit": false,
+    "comparison_uses_git_show_commits_only": true
+  },
+  "cri_scan": {
+    "personal_cli": {
+      "query": "\\bcri\\b|container.?runtime.?interface|runtime\\.v1|RuntimeService|ImageService",
+      "matches": [],
+      "exit_code": 1
+    },
+    "personal_server": {
+      "query": "\\bcri\\b|container.?runtime.?interface|runtime\\.v1|RuntimeService|ImageService",
+      "matches": [],
+      "exit_code": 1
+    }
+  },
+  "validation": {
+    "existing_personal_vm_test_suite": {
+      "command": "AIPHONE_BASE_URL=http://127.0.0.1:9 node --test test/vm.test.js",
+      "passed": 15,
+      "failed": 0,
+      "duration_ms": 6313.104625,
+      "note": "All child CLI invocations in this audited test file override baseURL to their own127.0.0.1 mock."
+    },
+    "new_contract_replays": 12,
+    "profile_read_attempts": 0,
+    "network": "strict loopback mock guard",
+    "backend_helpers": "Pinned74f209d snapshot: late physical stop accepted while failed operation remains failed",
+    "native_devices_used": false,
+    "company_resources_used": false,
+    "published_or_pushed": false,
+    "cli_source_modified": false
+  }
+}

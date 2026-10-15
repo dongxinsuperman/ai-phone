@@ -1,0 +1,50 @@
+2026-10-16 06:01:49.699 | DEBUG    | ai_phone.agent.drivers.harmony:_neutralize_hmdriver_del_once:114 - hmdriver2.Driver.__del__ 已阉割（去除 _instance.clear + fport 副作用）
+2026-10-16 06:01:52.925 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:////Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/server.sqlite3
+2026-10-16 06:01:53.279 | INFO     | ai_phone.agent.ws_client:run_forever:221 - 连接 Server WS ws://127.0.0.1:56283/ws/agent?token=***
+2026-10-16 06:01:53.314 | INFO     | ai_phone.agent.ws_client:_on_connected:275 - hello sent | devices=[]
+2026-10-16 06:01:53.314 | INFO     | ai_phone.agent.ws_client:_rescan_loop:511 - rescan_loop 启动，间隔 5.0s
+2026-10-16 06:01:53.315 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2 name=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2 host_os=Darwin 24.6.0
+2026-10-16 06:01:53.334 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:222 - Agent hello | id=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2 devices=[]
+2026-10-16 06:01:53.334 | WARNING  | ai_phone.server.ws.agent_ws:agent_ws:236 - 向 Agent personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2 下发配置失败（VLM Run 未应用配置会拒绝执行，等待后续补发）：新版 PHONE_VLM 配置缺失，无法派生模型执行链路：AI_PHONE_PHONE_VLM_PROVIDER, AI_PHONE_PHONE_VLM_BASE_URL, AI_PHONE_PHONE_VLM_API_KEY, AI_PHONE_PHONE_VLM_MODEL。请配置 AI_PHONE_PHONE_VLM_*；不再回退旧式 AI_PHONE_VLM_*。
+2026-10-16 06:02:16.575 | INFO     | ai_phone.agent.android_vm.manager:_provision_device:1356 - VM emulator-5666 开机预置完成 locale=- tz=Asia/Shanghai optimize=True
+2026-10-16 06:02:16.598 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['emulator-5666']
+2026-10-16 06:02:16.602 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2 devices=['emulator-5666']
+2026-10-16 06:02:20.505 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['emulator-5666'] → []
+2026-10-16 06:02:20.507 | INFO     | ai_phone.server.ws.agent_ws:op:763 - Agent personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2 移除已拔出设备 ['emulator-5666']
+2026-10-16 06:02:20.508 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2 devices=[]
+2026-10-16 06:02:23.355 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2 devices=[]
+2026-10-16 06:02:36.407 | INFO     | ai_phone.agent.android_vm.manager:_provision_device:1356 - VM emulator-5666 开机预置完成 locale=- tz=Asia/Shanghai optimize=True
+2026-10-16 06:02:36.429 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['emulator-5666']
+2026-10-16 06:02:36.432 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2 devices=['emulator-5666']
+2026-10-16 06:02:39.089 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:273 - Agent 断开 | id=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2
+2026-10-16 06:02:39.089 | INFO     | ai_phone.server.hub:unregister_agent:201 - Agent 下线 | id=personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2 serials=['emulator-5666']
+2026-10-16 06:02:39.091 | INFO     | ai_phone.server.ws.agent_ws:op:808 - Agent personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2 断开，删除其名下设备 1 条
+2026-10-16 06:02:39.096 | INFO     | ai_phone.server.ws.agent_ws:_on_disconnect:1088 - Agent personal-snapshot-android-snapshot-a6-f263af3a-20261016-a2 断开，已标记 VM unavailable 1 台
+2026-10-16 06:02:39.194 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+{"status": "failed", "evidence": "/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/evidence.json", "live_native_pids": [], "preserved_avds": ["/Users/dongxin/.codex/personal-vm-followup/android-snapshot-a6-f263af3a-20261016-a2/android/avd/aiphone_vm_779481a8a016.avd"]}
+Traceback (most recent call last):
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_snapshot_a6.py", line 670, in execute
+    check_ram(boot, initial_boot, observed, markers)
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_snapshot_a6.py", line 168, in check_ram
+    raise RuntimeError("QuickBoot did not restore the exact original kernel and RAM marker A")
+RuntimeError: QuickBoot did not restore the exact original kernel and RAM marker A
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_snapshot_a6.py", line 870, in <module>
+    main()
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_snapshot_a6.py", line 864, in main
+    asyncio.run(execute(args.run_id))
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/native-followup/android_snapshot_a6.py", line 851, in execute
+    raise RuntimeError("a6 failed once; inspect the preserved evidence; no automatic rerun") from failure
+RuntimeError: a6 failed once; inspect the preserved evidence; no automatic rerun

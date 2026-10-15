@@ -1,0 +1,239 @@
+{
+  "at": "2026-10-15T21:28:59.656512+00:00",
+  "scope": "Same AST-extracted HTTP/wait methods with current-contract fake payloads; no native/backend/network execution",
+  "status": "old counterexamples reproduced and new candidates blocked",
+  "old_sha256": "9c5cea9afd5983d88de46c63ec7005a04fb68316f364bbc3c5d94eb0cdfdcd22",
+  "new_sha256": "43356f481dea68c8adcd7b5fb7344b08912f2b2e4f678075533f2a15856eaf51",
+  "cases": [
+    {
+      "endpoint": "stop",
+      "reported_state": "stopped",
+      "operation_outcome": "failed",
+      "old": {
+        "advanced": [
+          "start"
+        ],
+        "error": null,
+        "api_stop_records": [
+          {
+            "vm_id": "vm",
+            "generation_id": "g1",
+            "kind": "http-stop",
+            "outcome": "succeeded",
+            "at": "fake-clock",
+            "monotonic_ns": 108051920667375,
+            "finished_at": "fake-clock",
+            "finished_monotonic_ns": 108051920674958,
+            "server_stopped_observed": true
+          }
+        ],
+        "api_lifecycle_records": [],
+        "same_generation_cleanup_allowed": true
+      },
+      "new": {
+        "advanced": [],
+        "error": "RuntimeError: This stop operation current-request ended as failed; physical stopped is not success",
+        "api_stop_records": [
+          {
+            "vm_id": "vm",
+            "generation_id": "g1",
+            "kind": "http-stop",
+            "action": "stop",
+            "endpoint": "stop",
+            "outcome": "failed",
+            "at": "fake-clock",
+            "monotonic_ns": 108051938665791,
+            "request_id": "current-request",
+            "response_operation": {
+              "action": "stop",
+              "request_id": "current-request",
+              "pending": true,
+              "outcome": "pending"
+            },
+            "finished_at": "fake-clock",
+            "finished_monotonic_ns": 108051938679958,
+            "error": "RuntimeError: This stop operation current-request ended as failed; physical stopped is not success"
+          }
+        ],
+        "api_lifecycle_records": [
+          {
+            "vm_id": "vm",
+            "generation_id": "g1",
+            "kind": "http-stop",
+            "action": "stop",
+            "endpoint": "stop",
+            "outcome": "failed",
+            "at": "fake-clock",
+            "monotonic_ns": 108051938665791,
+            "request_id": "current-request",
+            "response_operation": {
+              "action": "stop",
+              "request_id": "current-request",
+              "pending": true,
+              "outcome": "pending"
+            },
+            "finished_at": "fake-clock",
+            "finished_monotonic_ns": 108051938679958,
+            "error": "RuntimeError: This stop operation current-request ended as failed; physical stopped is not success"
+          }
+        ],
+        "same_generation_cleanup_allowed": false
+      }
+    },
+    {
+      "endpoint": "stop",
+      "reported_state": "stopped",
+      "operation_outcome": "timeout",
+      "old": {
+        "advanced": [
+          "start"
+        ],
+        "error": null,
+        "api_stop_records": [
+          {
+            "vm_id": "vm",
+            "generation_id": "g1",
+            "kind": "http-stop",
+            "outcome": "succeeded",
+            "at": "fake-clock",
+            "monotonic_ns": 108051952107666,
+            "finished_at": "fake-clock",
+            "finished_monotonic_ns": 108051952114083,
+            "server_stopped_observed": true
+          }
+        ],
+        "api_lifecycle_records": [],
+        "same_generation_cleanup_allowed": true
+      },
+      "new": {
+        "advanced": [],
+        "error": "RuntimeError: This stop operation current-request ended as timeout; physical stopped is not success",
+        "api_stop_records": [
+          {
+            "vm_id": "vm",
+            "generation_id": "g1",
+            "kind": "http-stop",
+            "action": "stop",
+            "endpoint": "stop",
+            "outcome": "failed",
+            "at": "fake-clock",
+            "monotonic_ns": 108051966714875,
+            "request_id": "current-request",
+            "response_operation": {
+              "action": "stop",
+              "request_id": "current-request",
+              "pending": true,
+              "outcome": "pending"
+            },
+            "finished_at": "fake-clock",
+            "finished_monotonic_ns": 108051966728125,
+            "error": "RuntimeError: This stop operation current-request ended as timeout; physical stopped is not success"
+          }
+        ],
+        "api_lifecycle_records": [
+          {
+            "vm_id": "vm",
+            "generation_id": "g1",
+            "kind": "http-stop",
+            "action": "stop",
+            "endpoint": "stop",
+            "outcome": "failed",
+            "at": "fake-clock",
+            "monotonic_ns": 108051966714875,
+            "request_id": "current-request",
+            "response_operation": {
+              "action": "stop",
+              "request_id": "current-request",
+              "pending": true,
+              "outcome": "pending"
+            },
+            "finished_at": "fake-clock",
+            "finished_monotonic_ns": 108051966728125,
+            "error": "RuntimeError: This stop operation current-request ended as timeout; physical stopped is not success"
+          }
+        ],
+        "same_generation_cleanup_allowed": false
+      }
+    },
+    {
+      "endpoint": "start",
+      "reported_state": "running",
+      "operation_outcome": "failed",
+      "old": {
+        "advanced": [
+          "business-case"
+        ],
+        "error": null,
+        "api_stop_records": [],
+        "api_lifecycle_records": []
+      },
+      "new": {
+        "advanced": [],
+        "error": "RuntimeError: This start operation current-request ended as failed; physical running is not success",
+        "api_stop_records": [],
+        "api_lifecycle_records": [
+          {
+            "vm_id": "vm",
+            "generation_id": "g1",
+            "kind": "http-start",
+            "action": "start",
+            "endpoint": "start",
+            "outcome": "failed",
+            "at": "fake-clock",
+            "monotonic_ns": 108051996787666,
+            "request_id": "current-request",
+            "response_operation": {
+              "action": "start",
+              "request_id": "current-request",
+              "pending": true,
+              "outcome": "pending"
+            },
+            "finished_at": "fake-clock",
+            "finished_monotonic_ns": 108051996800750,
+            "error": "RuntimeError: This start operation current-request ended as failed; physical running is not success"
+          }
+        ]
+      }
+    },
+    {
+      "endpoint": "dispatch",
+      "reported_state": "running",
+      "operation_outcome": "failed",
+      "old": {
+        "advanced": [
+          "business-case"
+        ],
+        "error": null,
+        "api_stop_records": [],
+        "api_lifecycle_records": []
+      },
+      "new": {
+        "advanced": [],
+        "error": "RuntimeError: This start operation current-request ended as failed; physical running is not success",
+        "api_stop_records": [],
+        "api_lifecycle_records": [
+          {
+            "vm_id": "vm",
+            "generation_id": "g1",
+            "kind": "http-start",
+            "action": "start",
+            "endpoint": "dispatch",
+            "outcome": "failed",
+            "at": "fake-clock",
+            "monotonic_ns": 108052025270708,
+            "request_id": "current-request",
+            "response_operation": {
+              "action": "start",
+              "request_id": "current-request",
+              "pending": true,
+              "outcome": "pending"
+            },
+            "finished_at": "fake-clock",
+            "finished_monotonic_ns": 108052025284083,
+            "error": "RuntimeError: This start operation current-request ended as failed; physical running is not success"
+          }
+        ]
+      }
+    }
+  ]
+}

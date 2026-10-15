@@ -1,0 +1,56 @@
+{
+  "updated_at_utc": "2026-10-15T18:41:52.125022+00:00",
+  "repository": "https://github.com/dongxinsuperman/aiphone-cli.git",
+  "worktree": "/Users/dongxin/.codex/worktrees/cli-vm-lifecycle-compat/aiphone-cli",
+  "branch": "codex/vm-lifecycle-compat",
+  "commit": "e65dad549d2d667972c44718962d6c6f87bf8eb9",
+  "main_commit": "dba438b2ede72b1c43b545fbb7a55bb0a2b5b07d",
+  "main_clean": true,
+  "worktree_clean": true,
+  "changed_files": [
+    "lib/vm-commands.js",
+    "lib/vm-service.js",
+    "test/helpers/vm-network-guard.cjs",
+    "test/vm-lifecycle-compat.test.js"
+  ],
+  "source_sha256": {
+    "lib/vm-commands.js": "62de912f887052de591eba9b70d938a640d6583d02c79ba37a0e11565c474e76",
+    "lib/vm-service.js": "4063789f98fd145a01b751f52db6daeeeec77597f398b32c7cfaf6bfd9bc15a9",
+    "test/helpers/vm-network-guard.cjs": "e9d8ea07e7831b774c2f877d890361594d0f7adc0e7f2a23128c4a7381088bc5",
+    "test/vm-lifecycle-compat.test.js": "c0c63bfe3d18f495ff4f3c7fb780b95fbbf0a8d8ff82cc5885693bf847779bcd"
+  },
+  "tests": {
+    "command": "NODE_PATH=/Users/dongxin/aiphonecli开源/node_modules AIPHONE_BASE_URL=http://127.0.0.1:9 AIPHONE_INTERNAL_TOKEN=personal-compat-only node --test test/vm.test.js test/vm-lifecycle-compat.test.js",
+    "passed": 58,
+    "failed": 0,
+    "legacy_cases": 15,
+    "new_compat_cases": 43,
+    "duration_ms": 6919.842709,
+    "new_test_profile_reads": 0,
+    "new_test_network": "localhost mock enforced by preload guard",
+    "native_devices_used": false,
+    "diff_check": "passed",
+    "node_check": "passed"
+  },
+  "new_server_errors_supported": {
+    "start_stop": {
+      "android": 409,
+      "ios": 502,
+      "harmony": 409
+    },
+    "switch": {
+      "android": 409,
+      "ios": 409,
+      "harmony": 409
+    },
+    "legacy_explicit_sent_false": "non-wait fails; explicit wait may confirm legacy stopped no-op only",
+    "delete_cleanup_sent_false": "ledger deletion remains success"
+  },
+  "non_vm_submission_code_changed": false,
+  "merged_to_main": false,
+  "pushed": false,
+  "npm_published": false,
+  "package_version_changed": false,
+  "package_version": "0.3.0",
+  "awaiting_root_review": true
+}
