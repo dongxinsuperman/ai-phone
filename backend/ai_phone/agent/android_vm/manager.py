@@ -10,9 +10,10 @@ import subprocess
 import threading
 import time
 import uuid
+import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from typing import Any, Dict, List, Optional
 
 import psutil
@@ -62,6 +63,12 @@ class VmStartFailure(RuntimeError):
         self.cleanup_error = str(getattr(cause, "cleanup_error", ""))
         self.created_in_attempt = getattr(cause, "created_in_attempt", None)
         self.instance_preexisting = bool(getattr(cause, "instance_preexisting", False))
+
+
+class _ExistingAvdImageError(RuntimeError):
+    """已有磁盘的只读检查失败，不能进入启动失败的实例清理。"""
+
+    created_in_attempt = False
 
 
 class AndroidVmManager:
@@ -298,6 +305,11 @@ class AndroidVmManager:
         rollback_new = _msg_bool(msg, "rollback_new_instance", False) and not _msg_bool(
             msg, "require_existing_instance", False
         )
+        abi = normalize_abi(str(msg.get("abi") or "auto"))
+        system_type = str(msg.get("system_type") or "google_apis").strip() or "google_apis"
+        system_image = str(msg.get("system_image") or "").strip() or default_system_image(
+            int(msg.get("api_level") or 35), abi, system_type,
+        )
         existing = self._runtimes.get(vm_id)
         if existing is not None:
             if rollback_new:
@@ -312,6 +324,10 @@ class AndroidVmManager:
                 existing.avd_name or _safe_avd_name(vm_id)
             ):
                 raise RuntimeError("无法确认已有实例身份，请先停止或恢复通道")
+            # 重认领的活实例也不能跳过镜像核验；此处只读索引，不改盘、不停止实例。
+            _verify_existing_avd_image(
+                tools, existing.avd_name or _safe_avd_name(vm_id), system_image,
+            )
             existing.operation_deadline = operation_deadline
             self._wait_boot_completed(tools, existing.adb_serial)
             existing.observed_request_id = str(msg.get("request_id") or "")
@@ -329,7 +345,6 @@ class AndroidVmManager:
             raise RuntimeError(f"missing android tools: {', '.join(missing)}")
 
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
-        abi = normalize_abi(str(msg.get("abi") or "auto"))
         width = _msg_int(msg, "screen_width", 1080)
         height = _msg_int(msg, "screen_height", 2400)
         density = _density_int(msg, "density", self.density)
@@ -343,12 +358,6 @@ class AndroidVmManager:
         network_speed = _choice(str(msg.get("network_speed") or "full"), {"full", "gsm", "hscsd", "gprs", "edge", "umts", "hsdpa", "lte", "evdo"}, "full")
         network_delay = _choice(str(msg.get("network_delay") or "none"), {"none", "gsm", "hscsd", "gprs", "edge", "umts", "lte", "evdo"}, "none")
         snapshot_policy = _choice(str(msg.get("snapshot_policy") or "discard_changes"), {"save", "discard_changes", "cold_boot", "no_snapshot"}, "discard_changes")
-        system_type = str(msg.get("system_type") or "google_apis").strip() or "google_apis"
-        system_image = str(msg.get("system_image") or "").strip() or default_system_image(
-            int(msg.get("api_level") or 35),
-            abi,
-            system_type,
-        )
         avd_name = _safe_avd_name(vm_id)
         # Server 全局分配的端口 + 全局已占端口（兜底避让），保证跨机器 serial 不撞。
         assigned_port = _opt_port(msg.get("assigned_port"))
@@ -491,6 +500,11 @@ class AndroidVmManager:
                 },
             }
         except Exception as exc:
+            if isinstance(exc, _ExistingAvdImageError) and runtime.process is None:
+                # 本次尚未启动：仅撤占位，旧盘和可能仍活着的旧进程都不能被收尾逻辑修改。
+                exc.cleanup_confirmed = self._runtime_exit_confirmed(runtime)
+                self._forget_runtime(runtime)
+                raise
             # 首次绑定失败回收本次实例；已有绑定的重启失败只能停机，不能删除用户数据。
             created_here = bool(created_here or getattr(exc, "created_here", False))
             if rollback_new and created_here:
@@ -1083,6 +1097,7 @@ class AndroidVmManager:
                 error.created_in_attempt = False
                 error.instance_preexisting = True
                 raise error
+            _verify_existing_avd_image(tools, avd_name, system_image, avd_list=proc.stdout or "")
             self._write_avd_screen_config(
                 tools,
                 avd_name=avd_name,
@@ -1505,6 +1520,81 @@ def _avd_names(output: str) -> set[str]:
         line.strip().split(":", 1)[1].strip()
         for line in output.splitlines() if line.strip().startswith("Name:")
     }
+
+
+def _sdk_image_path(value: str, sdk_root: str = "") -> PurePath:
+    """按 SDK 规则解析路径，不把 Windows 驱动器相对路径当成本机相对路径。"""
+    windows = PureWindowsPath(value)
+    if windows.drive or value.startswith("\\"):
+        if not windows.is_absolute():
+            raise ValueError("镜像路径不是完整的 Windows 绝对路径")
+        return windows
+    relative = PurePosixPath(value.replace("\\", "/"))
+    if relative.is_absolute():
+        return relative
+    if not value or not sdk_root:
+        raise ValueError("相对镜像路径缺少明确的 SDK 根目录")
+    root = _sdk_image_path(sdk_root)
+    return root.joinpath(*relative.parts)
+
+
+def _native_sdk_path(value: str, sdk_root: str = "") -> Path:
+    path = _sdk_image_path(value, sdk_root)
+    if isinstance(path, PureWindowsPath) != (os.name == "nt"):
+        raise ValueError("镜像路径格式与当前宿主系统不符")
+    return Path(path).resolve(strict=True)
+
+
+def _verify_existing_avd_image(
+    tools: AndroidVmTools, avd_name: str, system_image: str, *, avd_list: Optional[str] = None,
+) -> None:
+    """只核对 SDK 包身份；不承诺同包 ID 的镜像二进制或 revision 完全一致。"""
+    try:
+        config = _avd_config_path(tools, avd_name)
+        if config is None:
+            raise ValueError("未找到受管 AVD 配置路径")
+        if avd_list is None:
+            # 已认领运行实例没有本次 list 输出：只读原生 AVD 索引，不能猜同名目录。
+            index = config.parent.parent / f"{avd_name}.ini"
+            paths = [value.strip() for line in index.read_text(encoding="utf-8-sig").splitlines()
+                     for key, sep, value in [line.partition("=")] if sep and key.strip() == "path"]
+        else:
+            name, occurrences, paths = "", 0, []
+            for line in avd_list.splitlines():
+                key, sep, value = line.strip().partition(":")
+                if not sep:
+                    continue
+                if key == "Name":
+                    name = value.strip()
+                    occurrences += name == avd_name
+                elif key == "Path" and name == avd_name:
+                    paths.append(value.strip())
+            if occurrences != 1:
+                raise ValueError("AVD 清单中没有唯一的实例条目")
+        if len(paths) != 1 or not paths[0]:
+            raise ValueError("AVD 没有唯一的原生配置目录")
+        actual_config = _native_sdk_path(paths[0]) / "config.ini"
+        if actual_config.resolve(strict=True) != config.resolve(strict=True):
+            raise ValueError("AVD 原生目录与受管配置目录不一致")
+        sysdirs = [(key.strip(), value.strip())
+                   for line in actual_config.read_text(encoding="utf-8-sig").splitlines()
+                   for key, sep, value in [line.partition("=")]
+                   if sep and key.strip().startswith("image.sysdir.")]
+        if len(sysdirs) != 1 or sysdirs[0][0] != "image.sysdir.1" or not sysdirs[0][1]:
+            raise ValueError("AVD 没有唯一的 image.sysdir.1")
+        image_dir = _native_sdk_path(sysdirs[0][1], tools.sdk_root)
+        root = ET.parse(image_dir / "package.xml").getroot()
+        packages = [element.get("path", "") for element in root.iter()
+                    if element.tag.rsplit("}", 1)[-1] == "localPackage"]
+        if len(packages) != 1 or not re.fullmatch(
+            r"system-images;[A-Za-z0-9_-][A-Za-z0-9_.-]*;[A-Za-z0-9_-][A-Za-z0-9_.-]*;[A-Za-z0-9_-][A-Za-z0-9_.-]*",
+            packages[0],
+        ):
+            raise ValueError("镜像缺少唯一有效的 SDK 包标识")
+        if packages[0] != system_image:
+            raise ValueError(f"实际镜像 {packages[0]} 与请求 {system_image} 不一致")
+    except (OSError, ValueError, RuntimeError, ET.ParseError) as exc:
+        raise _ExistingAvdImageError(f"无法核实已有虚拟机的镜像，未修改或启动：{exc}") from exc
 
 
 def _find_avd_processes(avd_name: str) -> tuple[list[tuple[Any, int]], bool]:
