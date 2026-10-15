@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -533,7 +534,9 @@ class AndroidVmManager:
     def _cleanup_failure(self, vm_id: str, serial: str, exc: Exception) -> Dict[str, Any]:
         runtime = self._runtimes.get(vm_id)
         return {
-            "ok": False, "reason": "operation_timeout" if isinstance(exc, TimeoutError) else "bad_request",
+            "ok": False, "reason": "operation_timeout" if isinstance(exc, TimeoutError) else (
+                "bad_request" if isinstance(exc, ValueError) else "stop_unconfirmed"
+            ),
             "error": "本次停止/清理操作超时，尚未确认资源释放" if isinstance(exc, TimeoutError) else str(exc),
             "adb_serial": runtime.adb_serial if runtime else serial,
             "avd_name": _safe_avd_name(vm_id),
@@ -544,7 +547,7 @@ class AndroidVmManager:
         }
 
     def _stop_sync_locked(
-        self, vm_id: str, adb_serial: str, request_id: str, deadline: float,
+        self, vm_id: str, adb_serial: str, request_id: str, deadline: float, *, destroy: bool = False,
     ) -> Dict[str, Any]:
         _startup_timeout(deadline, 1)
         runtime = self._runtimes.get(vm_id)
@@ -565,6 +568,33 @@ class AndroidVmManager:
         runtime.transport_unavailable = True
         serials = {runtime.adb_serial} | {f"emulator-{port}" for _proc, port in matches if port}
         tools, _missing = find_android_tools()
+        sync_completed = None
+        if not destroy:
+            # 已退出仍然幂等；活实例普通停止先同步，不能因 ADB 不可用而转强制销毁。
+            exited = self._runtime_exit_confirmed(runtime)
+            _startup_timeout(deadline, 1)
+            if exited:
+                serials = set()
+            else:
+                candidates = {serial for serial in serials if _emulator_port(serial)}
+                if len(candidates) != 1 or any(not port for _proc, port in matches):
+                    return self._cleanup_failure(vm_id, adb_serial, RuntimeError("受管 AVD 存在未消除的地址歧义，未执行同步或停止"))
+                verified = []
+                if tools is not None:
+                    for serial in sorted(serials):
+                        _startup_timeout(deadline, 1)
+                        if _emulator_port(serial) and self._emulator_avd_name(tools, serial, deadline) == avd_name:
+                            verified.append(serial)
+                _startup_timeout(deadline, 1)
+                if len(verified) != 1:
+                    return self._cleanup_failure(vm_id, adb_serial, RuntimeError("无法唯一确认受管 AVD 的同步通道，未执行停止"))
+                serials = {verified[0]}
+                sync_completed = self._sync_guest(tools, verified[0], deadline)
+                _startup_timeout(deadline, 1)
+                if not sync_completed:
+                    result = self._cleanup_failure(vm_id, adb_serial, RuntimeError("未确认本次系统数据同步完成，未执行停止"))
+                    result["details"]["sync_completed"] = False
+                    return result
         graceful = False
         grace_seconds = None
         grace_deadline = None
@@ -586,6 +616,14 @@ class AndroidVmManager:
                             deadline, max(grace_deadline or 0, accepted_at + grace_seconds),
                         )
                     graceful = accepted or graceful
+        if not destroy and serials and not graceful:
+            # 同步期间 serial 可能变更或通道消失；再次校验失败不能强杀仍在运行的实例。
+            exited = self._runtime_exit_confirmed(runtime)
+            _startup_timeout(deadline, 1)
+            if not exited:
+                result = self._cleanup_failure(vm_id, adb_serial, RuntimeError("未确认原生退出请求，保留实例等待核实"))
+                result["details"]["sync_completed"] = sync_completed
+                return result
         owned_processes = ([runtime.process] if runtime.process is not None else [])
         owned_processes.extend(proc for proc, _port in matches)
         stopped_pids: set[int] = set()
@@ -614,6 +652,7 @@ class AndroidVmManager:
                     "details": {"avd_name": avd_name, "port": runtime.port,
                                 "cleanup_pending": True, "cleanup_confirmed": False,
                                 "instance_created": vm_id in self._created_vm_ids,
+                                **({"sync_completed": sync_completed} if sync_completed is not None else {}),
                                 "exit_evidence": runtime.exit_evidence or {}},
                 }
             time.sleep(min(0.1, _startup_timeout(deadline, 0.1)))
@@ -623,6 +662,7 @@ class AndroidVmManager:
             "adb_serial": runtime.adb_serial,
             "details": {"avd_name": avd_name, "port": runtime.port, "cleanup_confirmed": True,
                         "instance_created": vm_id in self._created_vm_ids,
+                        **({"sync_completed": sync_completed} if sync_completed is not None else {}),
                         "exit_evidence": runtime.exit_evidence or {}},
         }
 
@@ -687,7 +727,8 @@ class AndroidVmManager:
     def _delete_sync_locked(self, vm_id: str, adb_serial: str, deadline: float) -> Dict[str, Any]:
         avd_name = _safe_avd_name(vm_id)
         # 1) 必须确认停妥；旧 serial 即使被别人复用也不能关闭另一台实例。
-        stopped = self.stop_sync(vm_id, adb_serial, deadline=deadline)
+        # 销毁意图仅从内部删除路径进入；普通 stop 消息不能开启此模式。
+        stopped = self._stop_sync_locked(vm_id, adb_serial, "", deadline, destroy=True)
         if not stopped.get("ok"):
             return {**stopped, "avd_name": avd_name}
         tools, _missing = find_android_tools()
@@ -1170,6 +1211,22 @@ class AndroidVmManager:
         except Exception:
             return ""
         return (proc.stdout or "").strip() if proc.returncode == 0 else ""
+
+    def _sync_guest(self, tools: AndroidVmTools, serial: str, deadline: float) -> bool:
+        # 只确认本次内核同步命令完成，不承诺应用用户态提交或底层所有 I/O 成功。
+        marker = uuid.uuid4().hex
+        command = f"/system/bin/sync && printf '%s\\n' '{marker}'"
+        try:
+            proc = subprocess.run(
+                [tools.adb, "-s", serial, "shell", command],
+                check=False, capture_output=True, text=True,
+                timeout=_startup_timeout(deadline, _CLEANUP_TIMEOUT_SEC),
+            )
+            _startup_timeout(deadline, 1)
+            return proc.returncode == 0 and proc.stdout == marker + "\n"
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Android VM guest sync 未确认 serial={}: {}", serial, exc)
+            return False
 
     def _kill_emulator(self, tools: AndroidVmTools, serial: str, deadline: Optional[float] = None) -> bool:
         try:

@@ -1035,8 +1035,8 @@ def test_vm_lock_is_per_vm_id(tmp_path):
     assert manager._vm_lock("vm-a") is not manager._vm_lock("vm-b")
 
 
-def test_delete_sync_reentrant_stop_no_deadlock(tmp_path, monkeypatch):
-    # delete_sync 持 per-vm 锁时内部会调 stop_sync（同一把 RLock 重入），不应死锁；且能清掉 runtime
+def test_delete_sync_cleans_runtime_under_one_lifecycle_lock(tmp_path, monkeypatch):
+    # delete_sync 持 per-vm 锁直接执行内部销毁停止，停止与删除共用同一预算和锁。
     from ai_phone.agent.android_vm import manager as mgr
 
     manager = AndroidVmManager(runtime_dir=tmp_path)
@@ -1063,9 +1063,9 @@ def test_delete_sync_reentrant_stop_no_deadlock(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mgr.subprocess, "run", _fake_run)
 
-    res = manager.delete_sync("v1", "emulator-5554")  # 不死锁即通过
+    res = manager.delete_sync("v1", "emulator-5554")
     assert res["ok"] is True
-    assert "v1" not in manager._runtimes  # 内部 stop_sync 重入成功，已 pop
+    assert "v1" not in manager._runtimes
 
 
 def test_choose_port_skips_registered_runtimes(tmp_path, monkeypatch):

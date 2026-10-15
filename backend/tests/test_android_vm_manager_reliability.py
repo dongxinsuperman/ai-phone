@@ -142,15 +142,15 @@ async def test_sweep_does_not_race_locked_lifecycle_operation(tmp_path):
     assert client.sent == []
 
 
-def test_stop_uses_owned_process_when_adb_is_unavailable(tmp_path):
+def test_stop_retains_owned_process_when_sync_channel_is_unavailable(tmp_path):
     manager = mod.AndroidVmManager(runtime_dir=tmp_path)
     proc = OwnedProcess()
     manager._runtimes["a"] = runtime(process=proc)
     result = manager.stop_sync("a")
-    assert result["ok"] is True
-    assert result["details"]["cleanup_confirmed"] is True
-    assert proc.terminated == 1
-    assert manager._runtimes == {}
+    assert result["ok"] is False
+    assert result["details"]["cleanup_confirmed"] is False
+    assert proc.terminated == 0
+    assert manager._runtimes["a"].process is proc
 
 
 def test_sweep_captures_operation_id_before_later_stop(tmp_path):
@@ -199,17 +199,17 @@ def test_delete_stale_serial_never_kills_other_vm(tmp_path, monkeypatch):
     delete.assert_not_called()
 
 
-def test_stop_recovers_exact_adopted_process_without_runtime(tmp_path, monkeypatch):
+def test_stop_tracks_adopted_process_but_cannot_destroy_without_sync(tmp_path, monkeypatch):
     manager = mod.AndroidVmManager(runtime_dir=tmp_path)
     proc = OwnedProcess()
     monkeypatch.setattr(mod, "_find_avd_processes", lambda name: (
         [(proc, 5556)] if name == "aiphone_vm_a" and proc.alive else [], True
     ))
     result = manager.stop_sync("a")
-    assert result["ok"] is True
+    assert result["ok"] is False
     assert result["adb_serial"] == "emulator-5556"
-    assert proc.terminated == 1
-    assert manager._runtimes == {}
+    assert proc.terminated == 0
+    assert "a" in manager._runtimes
 
 
 def test_stop_all_counts_only_confirmed_cleanup(tmp_path):
@@ -232,7 +232,7 @@ def test_stop_graceful_command_is_not_itself_exit_proof(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("kill_exits", [True, False])
-def test_forced_stop_waits_for_exit_before_releasing_runtime(tmp_path, kill_exits):
+def test_destroy_waits_for_exit_before_releasing_runtime(tmp_path, monkeypatch, kill_exits):
     class StubbornProcess(OwnedProcess):
         def terminate(self):
             self.terminated += 1
@@ -244,7 +244,10 @@ def test_forced_stop_waits_for_exit_before_releasing_runtime(tmp_path, kill_exit
     manager = mod.AndroidVmManager(runtime_dir=tmp_path)
     proc = StubbornProcess()
     manager._runtimes["a"] = runtime(process=proc)
-    assert manager.stop_sync("a")["ok"] is kill_exits
+    fake_tools(monkeypatch)
+    monkeypatch.setattr(manager, "_emulator_avd_name", lambda *_: "")
+    monkeypatch.setattr(manager, "_delete_avd", lambda *_: True)
+    assert manager.delete_sync("a")["ok"] is kill_exits
     assert proc.terminated == proc.killed == 1
     assert ("a" in manager._runtimes) is not kill_exits
 
@@ -257,7 +260,7 @@ def test_assigned_port_is_not_silently_replaced(tmp_path, monkeypatch):
     assert manager._choose_port() == 5556
 
 
-async def test_start_identity_mismatch_is_cleaned_without_provisioning_other_vm(tmp_path, monkeypatch):
+async def test_start_identity_mismatch_is_retained_without_provisioning_other_vm(tmp_path, monkeypatch):
     manager = mod.AndroidVmManager(runtime_dir=tmp_path)
     fake_tools(monkeypatch)
     proc = OwnedProcess()
@@ -273,10 +276,10 @@ async def test_start_identity_mismatch_is_cleaned_without_provisioning_other_vm(
     client = Client()
     await manager._start_and_report(client, {"vm_id": "a", "request_id": "start-1", "assigned_port": 5554})
     assert client.sent[-1]["state"] == "error"
-    assert client.sent[-1]["details"]["cleanup_confirmed"] is True
+    assert client.sent[-1]["details"]["cleanup_confirmed"] is False
     assert client.sent[-1]["details"]["instance_created"] is True
-    assert proc.terminated == 1
-    assert manager._runtimes == {}
+    assert proc.terminated == 0
+    assert manager._runtimes["a"].process is proc
     provision.assert_not_called()
     kill.assert_not_called()
 
@@ -381,10 +384,30 @@ async def test_restart_failure_never_deletes_saved_avd(tmp_path, monkeypatch, ro
         "vm_id": "a", "request_id": "restart", "rollback_new_instance": rollback,
         "require_existing_instance": require_existing,
     })
-    assert client.sent[-1]["details"] == {"cleanup_confirmed": True, "instance_created": True}
+    assert client.sent[-1]["details"] == {"cleanup_confirmed": False, "instance_created": True}
     assert (owned_avd / "userdata.img").read_text() == "owned instance data"
     assert (other_avd / "userdata.img").read_text() == "other instance data"
-    assert proc.terminated == 1
+    assert proc.terminated == 0
+    assert "a" in manager._runtimes
+    run.assert_not_called()
+
+
+async def test_existing_instance_start_failure_cannot_skip_failed_sync(tmp_path, monkeypatch):
+    manager, owned_avd, _other_avd, proc, run = failing_boot_setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(manager, "_emulator_avd_name", lambda *_: "aiphone_vm_a")
+    sync = Mock(return_value=False)
+    kill = Mock(side_effect=AssertionError("existing data must not be destroyed on failed sync"))
+    monkeypatch.setattr(manager, "_sync_guest", sync)
+    monkeypatch.setattr(manager, "_kill_emulator", kill)
+    client = Client()
+    await manager._start_and_report(client, {"vm_id": "a", "require_existing_instance": True})
+    assert client.sent[-1]["reason"] == "start_failed"
+    assert client.sent[-1]["details"]["cleanup_confirmed"] is False
+    assert (owned_avd / "userdata.img").read_text() == "owned instance data"
+    assert manager._runtimes["a"].process is proc
+    assert proc.terminated == proc.killed == 0
+    sync.assert_called_once()
+    kill.assert_not_called()
     run.assert_not_called()
 
 

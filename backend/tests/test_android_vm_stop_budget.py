@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -112,6 +113,7 @@ def managed(monkeypatch, tmp_path, clock, processes, *, commands=True):
     ))
     if commands:
         monkeypatch.setattr(manager, "_emulator_avd_name", lambda *_: "aiphone_vm_a")
+        monkeypatch.setattr(manager, "_sync_guest", lambda *_: True)
         monkeypatch.setattr(manager, "_kill_emulator", lambda *_: True)
     return manager, rt
 
@@ -196,7 +198,8 @@ def test_last_accepted_serial_gets_native_window_without_per_pid_reset(isolated,
         return True
 
     monkeypatch.setattr(manager, "_kill_emulator", kill)
-    assert manager.stop_sync("a")["ok"] is True
+    monkeypatch.setattr(manager, "_delete_avd", lambda *_: True)
+    assert manager.delete_sync("a")["ok"] is True
     assert accepted == [103, 106]
     assert first.signals == second.signals == [("terminate", 126.0)]
 
@@ -211,12 +214,13 @@ def test_fast_exit_does_not_wait_out_native_window(isolated, monkeypatch, tmp_pa
     assert not proc.signals
 
 
-def test_rejected_native_command_keeps_existing_owned_force_path(isolated, monkeypatch, tmp_path):
+def test_destroy_rejected_native_command_keeps_existing_owned_force_path(isolated, monkeypatch, tmp_path):
     clock, _ = isolated
     proc = Process(clock)
     manager, _ = managed(monkeypatch, tmp_path, clock, [proc])
     monkeypatch.setattr(manager, "_kill_emulator", lambda *_: False)
-    assert manager.stop_sync("a")["ok"] is True
+    monkeypatch.setattr(manager, "_delete_avd", lambda *_: True)
+    assert manager.delete_sync("a")["ok"] is True
     assert proc.signals == [("terminate", 100.0)]
     assert proc.env_keys == []
 
@@ -388,8 +392,8 @@ async def test_failed_start_has_one_bounded_cleanup_but_preserves_existing_avd(i
         "require_existing_instance": not first_bind, "operation_timeout_sec": 1,
     })
     assert client.sent[-1]["reason"] == "start_failed"
-    assert client.sent[-1]["details"]["cleanup_confirmed"] is True
-    assert proc.signals == [("terminate", 102.0)]
+    assert client.sent[-1]["details"]["cleanup_confirmed"] is first_bind
+    assert proc.signals == ([("terminate", 102.0)] if first_bind else [])
     assert command.call_count == int(first_bind)
     assert avd.exists() is not first_bind
     if not first_bind:
@@ -468,3 +472,205 @@ async def test_server_stop_forwards_the_existing_120_second_operation(session, m
     payload = send.call_args.args[1]
     assert payload["type"] == P.MSG_VM_STOP
     assert payload["operation_timeout_sec"] == runtime(vm)["operation"]["timeout_sec"] == 120
+
+
+def sync_marker(args):
+    assert args[:4] == ["/isolated/adb", "-s", "emulator-5554", "shell"]
+    match = re.fullmatch(r"/system/bin/sync && printf '%s\\n' '([0-9a-f]{32})'", args[4])
+    assert match, args
+    return match.group(1)
+
+
+def test_normal_stop_sync_marker_precedes_original_exit_and_rechecks_identity(isolated, monkeypatch, tmp_path):
+    clock, _ = isolated
+    proc = Process(clock)
+    manager, _ = managed(monkeypatch, tmp_path, clock, [proc], commands=False)
+    calls = []
+
+    def run(args, **kwargs):
+        if args[-3:] == ["emu", "avd", "name"]:
+            calls.append("identity")
+            return SimpleNamespace(returncode=0, stdout="aiphone_vm_a\nOK\n", stderr="")
+        if args[3] == "shell":
+            calls.append("sync")
+            assert kwargs["timeout"] == 120
+            clock.advance(2)
+            return SimpleNamespace(returncode=0, stdout=sync_marker(args) + "\n", stderr="")
+        assert args[-2:] == ["emu", "kill"]
+        calls.append("kill")
+        proc.exit_at = clock.now + 1
+        return SimpleNamespace(returncode=0, stdout=b"OK", stderr=b"")
+
+    monkeypatch.setattr(mod.subprocess, "run", run)
+    result = manager.stop_sync("a")
+    assert calls == ["identity", "sync", "identity", "kill"]
+    assert result["ok"] is True
+    assert result["details"]["sync_completed"] is True
+    assert proc.signals == []
+    assert clock.now == 103
+
+
+@pytest.mark.parametrize("reply", ["empty", "wrong", "extra", "nonzero", "timeout", "late"])
+def test_unconfirmed_sync_never_closes_or_forces_instance(isolated, monkeypatch, tmp_path, reply):
+    clock, _ = isolated
+    proc = Process(clock)
+    manager, rt = managed(monkeypatch, tmp_path, clock, [proc], commands=False)
+    monkeypatch.setattr(manager, "_emulator_avd_name", lambda *_: "aiphone_vm_a")
+    kill = Mock(side_effect=AssertionError("no emulator close after unconfirmed sync"))
+    monkeypatch.setattr(manager, "_kill_emulator", kill)
+
+    def run(args, **kwargs):
+        marker = sync_marker(args)
+        if reply == "timeout":
+            clock.advance(kwargs["timeout"])
+            raise mod.subprocess.TimeoutExpired(args, kwargs["timeout"])
+        if reply == "late":
+            clock.advance(kwargs["timeout"] + 1)
+        out = {"empty": "", "wrong": "previous-marker\n", "extra": marker + "\nextra\n"}.get(reply, marker + "\n")
+        return SimpleNamespace(returncode=1 if reply == "nonzero" else 0, stdout=out, stderr="")
+
+    command = Mock(side_effect=run)
+    monkeypatch.setattr(mod.subprocess, "run", command)
+    result = manager.stop_sync("a", deadline=130)
+    assert result["ok"] is False
+    assert result["reason"] == ("operation_timeout" if reply in {"timeout", "late"} else "stop_unconfirmed")
+    assert result["details"]["cleanup_confirmed"] is False
+    if reply not in {"timeout", "late"}:
+        assert result["details"]["sync_completed"] is False
+        assert result["error"] == "未确认本次系统数据同步完成，未执行停止"
+    assert command.call_count == 1
+    kill.assert_not_called()
+    assert not proc.signals and not proc.waits
+    assert manager._runtimes["a"] is rt
+
+
+def test_previous_success_marker_cannot_ack_a_new_sync_attempt(isolated, monkeypatch, tmp_path):
+    clock, tools = isolated
+    manager = mod.AndroidVmManager(runtime_dir=tmp_path)
+    markers = []
+
+    def run(args, **_kwargs):
+        markers.append(sync_marker(args))
+        return SimpleNamespace(returncode=0, stdout=markers[0] + "\n", stderr="")
+
+    monkeypatch.setattr(mod.subprocess, "run", run)
+    assert manager._sync_guest(tools, "emulator-5554", clock.now + 30) is True
+    assert manager._sync_guest(tools, "emulator-5554", clock.now + 30) is False
+    assert markers[0] != markers[1]
+
+
+def test_identity_changed_after_sync_never_receives_kill_or_force(isolated, monkeypatch, tmp_path):
+    clock, _ = isolated
+    proc = Process(clock)
+    manager, rt = managed(monkeypatch, tmp_path, clock, [proc], commands=False)
+    identity = Mock(side_effect=["aiphone_vm_a", "aiphone_vm_other"])
+    monkeypatch.setattr(manager, "_emulator_avd_name", identity)
+    monkeypatch.setattr(mod.subprocess, "run", lambda args, **_kw: SimpleNamespace(returncode=0, stdout=sync_marker(args) + "\n", stderr=""))
+    kill = Mock(side_effect=AssertionError("replacement serial must not be killed"))
+    monkeypatch.setattr(manager, "_kill_emulator", kill)
+    result = manager.stop_sync("a")
+    assert result["ok"] is False
+    assert result["details"]["sync_completed"] is True
+    assert identity.call_count == 2
+    assert not proc.signals and not proc.waits
+    assert manager._runtimes["a"] is rt
+    kill.assert_not_called()
+
+
+@pytest.mark.parametrize("unresolved_port", [5556, 0])
+def test_unresolved_second_process_is_not_discarded_to_fake_unique_sync_target(isolated, monkeypatch, tmp_path, unresolved_port):
+    clock, _ = isolated
+    first, second = Process(clock), Process(clock, pid=72, port=unresolved_port)
+    manager, rt = managed(monkeypatch, tmp_path, clock, [first, second], commands=False)
+    monkeypatch.setattr(manager, "_emulator_avd_name", lambda _tools, serial, *_: "aiphone_vm_a" if serial == "emulator-5554" else "")
+    sync = Mock(side_effect=AssertionError("ambiguous process list must not sync"))
+    kill = Mock(side_effect=AssertionError("ambiguous process list must not close"))
+    monkeypatch.setattr(manager, "_sync_guest", sync)
+    monkeypatch.setattr(manager, "_kill_emulator", kill)
+    result = manager.stop_sync("a")
+    assert result["reason"] == "stop_unconfirmed"
+    assert manager._runtimes["a"] is rt
+    assert first.signals == second.signals == []
+    sync.assert_not_called()
+    kill.assert_not_called()
+
+
+@pytest.mark.parametrize("serial", ["USB-physical", "192.0.2.10:5555"])
+def test_physical_serial_cannot_enter_guest_sync_path(isolated, monkeypatch, tmp_path, serial):
+    clock, _ = isolated
+    proc = Process(clock)
+    manager, rt = managed(monkeypatch, tmp_path, clock, [], commands=False)
+    rt.process, rt.adb_serial, rt.port = proc, serial, 0
+    sync = Mock(side_effect=AssertionError("physical device must not be synchronized"))
+    monkeypatch.setattr(manager, "_sync_guest", sync)
+    assert manager.stop_sync("a")["ok"] is False
+    sync.assert_not_called()
+    assert not proc.signals
+
+
+def test_stop_all_requires_normal_sync_and_does_not_destroy_on_failure(isolated, monkeypatch, tmp_path):
+    clock, _ = isolated
+    proc = Process(clock)
+    manager, rt = managed(monkeypatch, tmp_path, clock, [proc])
+    sync = Mock(return_value=False)
+    kill = Mock(side_effect=AssertionError("stop_all cannot skip sync"))
+    monkeypatch.setattr(manager, "_sync_guest", sync)
+    monkeypatch.setattr(manager, "_kill_emulator", kill)
+    assert manager.stop_all() == 0
+    assert manager._runtimes["a"] is rt
+    assert not proc.signals
+    sync.assert_called_once()
+    kill.assert_not_called()
+
+
+def test_already_stopped_is_idempotent_without_adb_or_sync(isolated, monkeypatch, tmp_path):
+    clock, _ = isolated
+    manager, _ = managed(monkeypatch, tmp_path, clock, [], commands=False)
+    monkeypatch.setattr(mod, "find_android_tools", lambda: (None, ["offline"]))
+    sync = Mock(side_effect=AssertionError("already stopped requires no guest command"))
+    monkeypatch.setattr(manager, "_sync_guest", sync)
+    result = manager.stop_sync("a")
+    assert result["ok"] is True
+    assert result["details"]["cleanup_confirmed"] is True
+    assert "sync_completed" not in result["details"]
+    assert manager._runtimes == {}
+    sync.assert_not_called()
+
+
+def test_explicit_delete_skips_guest_sync_but_still_confirms_owned_exit(isolated, monkeypatch, tmp_path):
+    clock, _ = isolated
+    proc = Process(clock)
+    manager, _ = managed(monkeypatch, tmp_path, clock, [proc])
+    sync = Mock(side_effect=AssertionError("destroy does not require a functioning guest"))
+    monkeypatch.setattr(manager, "_sync_guest", sync)
+    monkeypatch.setattr(manager, "_emulator_avd_name", lambda *_: "")
+    deletion = Mock(return_value=True)
+    monkeypatch.setattr(manager, "_delete_avd", deletion)
+    assert manager.delete_sync("a")["ok"] is True
+    assert proc.signals == [("terminate", 100.0)]
+    sync.assert_not_called()
+    deletion.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_stop_message_cannot_opt_into_destroy_or_supply_completion_marker(isolated, monkeypatch, tmp_path):
+    clock, _ = isolated
+    proc = Process(clock)
+    manager, rt = managed(monkeypatch, tmp_path, clock, [proc], commands=False)
+    monkeypatch.setattr(manager, "_emulator_avd_name", lambda *_: "aiphone_vm_a")
+    commands = []
+
+    def run(args, **_kwargs):
+        sync_marker(args)
+        commands.append(args)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(mod.subprocess, "run", run)
+    client = Client()
+    await manager.handle_stop(client, {"vm_id": "a", "request_id": "untrusted-$(touch never)",
+                                      "destroy": True, "force": True, "sync_marker": "fake"})
+    assert client.sent[-1]["reason"] == "stop_unconfirmed"
+    assert len(commands) == 1
+    assert "untrusted" not in commands[0][-1] and "fake" not in commands[0][-1]
+    assert manager._runtimes["a"] is rt
+    assert not proc.signals
