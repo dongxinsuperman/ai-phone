@@ -66,7 +66,11 @@ class VisualEnhancer:
             tree = provider.source()
             raw = provider._visual_raw
             provider.driver = self.host.driver._raw
-            self.observation = Observation(tree, image, size, {"_native_capture": provider._native_capture})
+            # Same handoff as SDK HarmonyAdapter.observe: enhancement consumes
+            # the original tree from metadata, not the converted XML alone.
+            metadata = {"_visual_raw": raw, "_native_capture": provider._native_capture}
+            provider._visual_raw = None
+            self.observation = Observation(tree, image, size, metadata)
             return self.host.convert(raw)
         return self.host.tree(size)
 

@@ -192,3 +192,62 @@ def test_provider_initialization_never_resets_internal_master_switch(monkeypatch
     settings.configure(visual_enhancement=True)
     assert visual._provider() is provider
     assert provider.device is device
+
+
+def test_harmony_bridge_hands_original_tree_to_sdk_enhancement(monkeypatch):
+    from ai_phone.agent.trajectory_cache.jev_click.adapters.harmony import HarmonyAdapter
+    from ai_phone.agent.trajectory_cache.jev_click.visual_vendor.adapters.harmony import HarmonyAdapter as SDKHarmony
+    from ai_phone.agent.trajectory_cache.jev_click.visual_vendor import visual_channels, settings
+    monkeypatch.setattr(settings, 'VISUAL_ENHANCEMENT_ENABLED', True)
+    raw = {'attributes': {'type': 'Button', 'clickable': 'true', 'enabled': 'true',
+                         'visible': 'true', 'bounds': '[0,0][200,100]', 'text': 'button'}}
+    host = HarmonyAdapter(SimpleNamespace(platform='harmony', _raw=object()))
+    provider = SDKHarmony('unit', driver=object())
+    def source():
+        provider._visual_raw = raw
+        provider._native_capture = {'status': 'available'}
+        return SDKHarmony.convert(raw)
+    provider.source = source
+    visual = VisualEnhancer(host)
+    visual.provider = provider
+    tree = visual.capture_tree(image(), (200,100))
+    frame = Frame(image(), (200,100), tree_data(tree, (200,100))[0])
+    before = deepcopy(frame.candidates)
+    def enhance(adapter, obs, nodes, received):
+        assert received is raw
+        assert nodes == before
+        return {'N1': {'bounds': [10,10,190,90], 'radius': 10}}, {
+            'native': {'status': 'matched', 'count': 1}, 'dom': {'status': 'not_applicable'}}
+    collect = Mock(side_effect=enhance)
+    monkeypatch.setattr(visual_channels, 'enhance_harmony', collect)
+    regions, status = visual.enhance(frame)
+    collect.assert_called_once()
+    assert regions['N1']['bounds'] == [10,10,190,90]
+    assert status['native']['count'] == 1
+    assert provider._visual_raw is None
+    assert '_visual_raw' not in visual.observation.metadata
+    assert frame.candidates == before
+
+
+def test_harmony_bridge_preserves_sdk_observation_handoff(monkeypatch):
+    from ai_phone.agent.trajectory_cache.jev_click.adapters.harmony import HarmonyAdapter as Host
+    from ai_phone.agent.trajectory_cache.jev_click.visual_vendor.adapters.harmony import HarmonyAdapter as SDK
+    from ai_phone.agent.trajectory_cache.jev_click.visual_vendor import settings
+    monkeypatch.setattr(settings, 'VISUAL_ENHANCEMENT_ENABLED', True)
+    raw = {'attributes': {'type':'Button','clickable':'true','enabled':'true',
+                         'visible':'true','bounds':'[0,0][200,100]'}}
+    provider = SDK('unit', driver=object())
+    provider.viewport = lambda:(200,100)
+    def source():
+        provider._visual_raw = raw
+        provider._native_capture = {'status':'available','capture_ms':12}
+        return SDK.convert(raw)
+    provider.source = source
+    sdk_observation = provider.observe(lambda name, fn:fn(), frame=image())
+    host = Host(SimpleNamespace(platform='harmony', _raw=object()))
+    bridge = VisualEnhancer(host)
+    bridge.provider = provider
+    bridge.capture_tree(image(), (200,100))
+    assert bridge.observation.metadata == sdk_observation.metadata
+    assert bridge.observation.tree == sdk_observation.tree
+    assert provider._visual_raw is None
