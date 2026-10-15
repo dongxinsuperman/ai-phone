@@ -29,6 +29,7 @@ async def create_locator(*, settings, driver, main_vlm_backend, emit, run_id):
         emit=emit,
         run_id=run_id,
     )
+    locator.adapter.visual_enabled = True
     try:
         await locator.initialize()
         return locator

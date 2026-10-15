@@ -14,6 +14,11 @@ class HarmonyAdapter(TreeAdapter):
                self.driver._call_with_reconnect(lambda: self.driver._raw.dump_hierarchy()))
         return self.convert(raw)
 
+    def read_raw_tree(self):
+        fast_tree = getattr(self, "fast_tree", None)
+        return (fast_tree() if fast_tree is not None else
+                self.driver._call_with_reconnect(lambda: self.driver._raw.dump_hierarchy()))
+
     @staticmethod
     def convert(raw):
         def visit(item, ancestor_clickable=False, parent_bounds=None):

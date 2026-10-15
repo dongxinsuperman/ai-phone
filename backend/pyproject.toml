@@ -45,6 +45,7 @@ dependencies = [
 jev = [
     # Optional Android tree reader; no imports or service start while Jev is off.
     "uiautomator2==3.7.0",
+    "websocket-client>=1.8",
 ]
 dev = [
     "pytest>=8",
@@ -81,6 +82,7 @@ where = ["."]
 include = ["ai_phone*"]
 
 [tool.setuptools.package-data]
+"ai_phone.agent.trajectory_cache.jev_click.visual_vendor" = ["LICENSE", "NOTICE.md", "wda/*.patch", "wda/NOTICE"]
 "ai_phone.server.harmony_vm" = ["official_catalog.json", "create_compat.json"]
 
 [tool.ruff]

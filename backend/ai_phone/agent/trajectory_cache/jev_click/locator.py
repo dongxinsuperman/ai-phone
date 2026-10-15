@@ -81,8 +81,14 @@ class JevClickLocator:
             if not frame.candidates:
                 raise JevError("NOT_FOUND: no visible candidates")
             t = time.monotonic()
+            enhance = getattr(self.adapter, "enhance_frame", None)
+            if enhance is not None:
+                await run_blocking(enhance, frame)
+            evidence["timings_ms"]["visual_enhancement"] = round((time.monotonic() - t) * 1000)
+            t = time.monotonic()
             model_image, overlay_mode = await run_blocking(annotate_with_mode, frame)
             evidence["overlay_mode"] = overlay_mode
+            evidence["visual_enhancement"] = redact(frame.visual_metadata)
             evidence["timings_ms"]["annotate"] = round((time.monotonic() - t) * 1000)
             images["model_input"] = model_image  # Exact bytes sent; also the red-box preview.
             nodes = redact(frame.candidates)
@@ -194,4 +200,9 @@ class JevClickLocator:
                 if self.original:
                     await self.original.aclose()
             finally:
-                await run_blocking(self.adapter.close)
+                try:
+                    close_visual = getattr(self.adapter, "close_visual", None)
+                    if close_visual is not None:
+                        await run_blocking(close_visual)
+                finally:
+                    await run_blocking(self.adapter.close)

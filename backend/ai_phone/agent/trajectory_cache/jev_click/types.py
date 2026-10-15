@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 from xml.etree import ElementTree as ET
@@ -42,6 +42,8 @@ class Frame:
     image: bytes
     size: tuple[int, int]
     candidates: list[dict]
+    visual_regions: dict = field(default_factory=dict)
+    visual_metadata: dict = field(default_factory=dict)
 
 
 def tree_data(xml: str, size: tuple[int, int]) -> tuple[list[dict], list[str]]:
@@ -124,6 +126,13 @@ def annotate_with_mode(frame: Frame) -> tuple[bytes, str]:
     from .point_overlay import annotate_points
     from loguru import logger
 
+    if frame.visual_regions:
+        try:
+            from .visual_vendor.core import annotate as enhanced_annotate
+            return enhanced_annotate(frame.image, frame.candidates, frame.visual_regions), "point_overlay"
+        except Exception as exc:
+            frame.visual_metadata["render_fallback"] = True
+            logger.warning("Jev enhanced drawing failed; using original renderer: {}", type(exc).__name__)
     try:
         return annotate_points(frame), "point_overlay"
     except Exception as exc:

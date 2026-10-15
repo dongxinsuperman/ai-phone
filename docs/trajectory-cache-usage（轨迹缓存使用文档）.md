@@ -71,6 +71,23 @@ Android Agent需安装可选依赖：在backend目录运行`pip install -e '.[je
 
 日志中的“Jev定位证据”包含实际模型输入红框图、所选编号和分段耗时。JEV分支仅展示画框后的模型输入图，画框前原图仍在内部复用，不重复上传；其他分支保留原截图展示。为降低回放耗时，V3不再逐步拍after留证图，任务结束仍单独截图供最终验收。Jev仅识别当前摘要目标，不传执行历史、不额外采集点击后文字；V3动作后观察等待为200ms。定位复用V3已有截图，只取一次UI树，模型返回后不反向读取设备验证。已有截图尺寸不一致、定位超时、API或采集失败、目标不确定进入原救援，不尝试切换另一渠道或旧定位器。
 
+### 三端绘图增强
+
+JEV开启时自动使用从Jev Phone 0.2.0移植的绘图增强，无新增ENV。Android读取H5 DOM和原生View几何；iOS读取WebKit及可选WDA原生可见区域；HarmonyOS读取ArkWeb及原生背景、圆角。增强只改变展示框，候选编号、原始点击区域与坐标保持当前AI Phone实现。没有可靠信息或绘图失败时沿用原画法。
+
+增强复用V3当前截图，不执行SDK的click/run，不修改V3稳定等待、WAIT预算、救援与断言。iOS或鸿蒙的原生几何快照替代当次普通取树；失败才回退原取树。日志`timings_ms.visual_enhancement`和`visual_enhancement`记录增量耗时与各通道状态，不能把匹配数量当作点击成功率。
+
+Android/HarmonyOS的Web通道需要`websocket-client`，安装`.[jev]`包含此依赖。iOS H5检查使用SDK已验证的`pymobiledevice3==11.29.0`接口；本次不自动升级AI Phone现有iOS依赖，不兼容时保留原框，并在证据中标为unavailable。原生增强与H5独立回退。
+
+iOS原生几何需要可选WDA只读扩展，标准WDA缺少端点时只探测一次，之后使用普通取树。补丁随包提供，不会自动修改、签名或安装WDA；在兼容的WDA源码上检查后，按原部署流程构建：
+
+```bash
+python -m ai_phone.agent.trajectory_cache.jev_click.visual_vendor.wda_patch /path/to/WebDriverAgent --check
+python -m ai_phone.agent.trajectory_cache.jev_click.visual_vendor.wda_patch /path/to/WebDriverAgent
+```
+
+来源版本及MIT授权见`backend/ai_phone/agent/trajectory_cache/jev_click/visual_vendor/NOTICE.md`。
+
 ## 3. 投递方式
 
 `POST /api/submissions` 支持批次级默认 `cacheMode`，也支持 item 覆盖。

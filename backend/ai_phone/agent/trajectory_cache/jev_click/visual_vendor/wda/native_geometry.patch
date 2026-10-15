@@ -1,0 +1,76 @@
+--- a/WebDriverAgentLib/Commands/FBDebugCommands.m
++++ b/WebDriverAgentLib/Commands/FBDebugCommands.m
+@@ -15,6 +15,36 @@
+ #import "XCUIElement+FBUtilities.h"
+ #import "FBXPath.h"
+ 
++#import "FBXCElementSnapshotWrapper+Helpers.h"
++#import "XCUIElement+FBVisibleFrame.h"
++#import "XCTestPrivateSymbols.h"
++#import "FBXCAXClientProxy.h"
++#import "XCUIElement+FBUID.h"
++#import "XCUIElement+FBWebDriverAttributes.h"
++
++
++static NSDictionary *JEVSnapshotTree(id<FBXCElementSnapshot> node, BOOL webParent, NSUInteger depth)
++{
++  FBXCElementSnapshotWrapper *w = [FBXCElementSnapshotWrapper ensureWrapped:node];
++  BOOL web = webParent || node.elementType == XCUIElementTypeWebView;
++  NSMutableDictionary *d = [NSMutableDictionary dictionary];
++  d[@"type"] = w.wdType ?: @"";
++  d[@"uid"] = w.fb_uid ?: @"";
++  d[@"label"] = node.label ?: @"";
++  d[@"name"] = w.wdName ?: @"";
++  d[@"value"] = node.value == nil ? @"" : [node.value description];
++  d[@"frame"] = NSStringFromCGRect(node.frame);
++  d[@"enabled"] = @(node.enabled);
++  d[@"visible"] = @([w isWDVisible]);
++  d[@"web"] = @(web);
++  if (!web) { @try { d[@"visibleFrame"] = NSStringFromCGRect(node.visibleFrame); } @catch (NSException *e) { d[@"visibleFrameError"] = e.name; } }
++  NSMutableArray *children = [NSMutableArray array];
++  if (depth >= 100 && node.children.count > 0) { d[@"truncated"] = @YES; }
++  if (depth < 100) { for (id<FBXCElementSnapshot> child in node.children) { [children addObject:JEVSnapshotTree(child, web, depth + 1)]; } }
++  d[@"children"] = children;
++  return d;
++}
++
+ @implementation FBDebugCommands
+ 
+ #pragma mark - <FBCommandHandler>
+@@ -24,6 +54,7 @@
+   return
+   @[
+     [[FBRoute GET:@"/source"] respondWithTarget:self action:@selector(handleGetSourceCommand:)],
++    [[FBRoute GET:@"/wda/nativeGeometryProbe"] respondWithTarget:self action:@selector(handleNativeGeometryProbe:)],
+     [[FBRoute GET:@"/source"].withoutSession respondWithTarget:self action:@selector(handleGetSourceCommand:)],
+     [[FBRoute GET:@"/wda/accessibleSource"] respondWithTarget:self action:@selector(handleGetAccessibleSourceCommand:)],
+     [[FBRoute GET:@"/wda/accessibleSource"].withoutSession respondWithTarget:self action:@selector(handleGetAccessibleSourceCommand:)],
+@@ -78,4 +109,28 @@
+   return FBResponseWithObject(application.fb_accessibilityTree ?: @{});
+ }
+ 
+++ (id<FBResponsePayload>)handleNativeGeometryProbe:(FBRouteRequest *)request
++{
++  XCUIApplication *app = request.session.activeApplication ?: XCUIApplication.fb_activeApplication;
++  NSDate *begin = [NSDate date];
++  static id<FBXCAccessibilityElement> cachedRoot = nil;
++  static NSString *cachedApp = nil;
++  NSString *appKey = [[app valueForKey:@"processID"] description];
++  if (cachedRoot == nil || ![cachedApp isEqualToString:appKey]) {
++    cachedRoot = [app fb_standardSnapshot].accessibilityElement;
++    cachedApp = appKey;
++  }
++  NSMutableArray *snapshotAttrs = [NSMutableArray arrayWithArray:FBStandardAttributeNames()];
++  [snapshotAttrs addObjectsFromArray:FBCustomAttributeNames()];
++  [snapshotAttrs addObject:FB_XCAXAVisibleFrameAttributeName];
++  NSError *snapshotError = nil;
++  id<FBXCElementSnapshot> root = [FBXCAXClientProxy.sharedClient snapshotForElement:cachedRoot attributes:snapshotAttrs inDepth:YES error:&snapshotError];
++  if (root == nil) { cachedRoot = nil; return FBResponseWithUnknownErrorFormat(@"Native snapshot failed: %@", snapshotError.localizedDescription); }
++
++  NSTimeInterval snapshotMs = -[begin timeIntervalSinceNow] * 1000;
++  NSDictionary *tree = JEVSnapshotTree(root, NO, 0);
++  return FBResponseWithObject(@{ @"version": @1, @"tree": tree,
++    @"timingsMs": @{ @"snapshot": @(snapshotMs) } });
++}
++
+ @end
