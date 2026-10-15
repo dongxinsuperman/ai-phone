@@ -33,6 +33,7 @@ from .simctl import (
     device_type_names,
     device_type_screens,
     list_simulators,
+    simulator_screen,
 )
 
 
@@ -95,19 +96,21 @@ def reset_managed_for_tests() -> None:
 def _to_device_info(sim: SimulatorDevice) -> DeviceInfo:
     """``SimulatorDevice`` → ``DeviceInfo``。
 
-    ``screen_width`` / ``screen_height`` 报**竖屏物理像素**，取自机型自带的
-    ``profile.plist``（见 :func:`~.simctl.device_type_screens`）。
-
-    这一项**必须在发现阶段就报出来**，不能等驱动打开：前端手动点击是按
-    「设备像素」换算坐标的，拿不到就退化成用镜像画面尺寸当基准，而镜像是缩放过的
-    （长边 1280），于是点击整体偏向左上、点不准。VLM 那条路不受影响——它用的是
-    未缩放的截图，坐标空间自始至终一致。两条路都要准，所以这里必须有值。
+    运行实例通过 simctl 查询真实 LCD 规格，不依赖机型文件的位置或格式。
+    在线设备拿不到有效尺寸时不进入可操作设备池，下一轮扫描重试，避免把缩小
+    镜像的尺寸误当作设备像素。离线模板的规格仅用于展示。
 
     与真机同性质：真机报的是 lockdown 的 ``ScreenWidth/Height``，也是固定竖屏值。
     **不报「当前方向」的尺寸**——那个会随业务转屏变化，存进设备记录就成了错的。
     业务自己转横屏时，由前端按镜像画面方向自动对调宽高（真机已跑通的那条路）。
     """
-    screen = device_type_screens().get(sim.device_type_id)
+    screen = (
+        simulator_screen(sim.udid)
+        if sim.is_booted
+        else device_type_screens().get(sim.device_type_id)
+    )
+    if sim.is_booted and screen is None:
+        raise ValueError("运行实例尚未返回有效 LCD 尺寸，等待下轮扫描重试")
     # model 必须是**真实机型**（iPhone 16e），不能用 sim.name——那是实例名，
     # 受管实例形如 aiphone_sim_<vmid>，直接上报会让设备卡片显示一串内部标识。
     # 机型名从 devicetypes 映射查（带缓存）；查不到才退回实例名。

@@ -54,6 +54,11 @@ def _sim(udid="UDID-1", name="iPhone 17 Pro", state="Booted", available=True,
 
 def _patch(monkeypatch, sims):
     monkeypatch.setattr(sim_mod, "list_simulators", lambda *a, **k: sims)
+    from ai_phone.agent.drivers.simctl import DeviceTypeScreen
+
+    screens = {s.udid: (DeviceTypeScreen(1668, 2420, 2) if s.device_type_id == _DT_IPAD
+                       else DeviceTypeScreen(1206, 2622, 3)) for s in sims}
+    monkeypatch.setattr(sim_mod, "simulator_screen", screens.get)
 
 
 # --------------------------------------------------------------------------
@@ -132,11 +137,25 @@ def test_screen_size_is_portrait_fixed_not_current_orientation(monkeypatch):
     assert info.screen_width < info.screen_height, "必须是竖屏方向（短边为宽）"
 
 
-def test_unknown_device_type_falls_back_to_zero(monkeypatch):
-    """查不到规格就报 0——与真机 lockdown 读不到时一致，不猜一个假尺寸。"""
+def test_unknown_device_type_uses_running_display(monkeypatch):
+    """未知机型也直接问运行实例，不依赖本机文件目录。"""
     _patch(monkeypatch, [_sim(device_type_id="com.apple.CoreSimulator.SimDeviceType.Unknown")])
     (info,) = sim_mod.list_ios_simulators(managed_only=False)
-    assert info.screen_width == 0 and info.screen_height == 0
+    assert (info.screen_width, info.screen_height) == (1206, 2622)
+
+
+def test_running_screen_does_not_read_profile(monkeypatch):
+    _patch(monkeypatch, [_sim()])
+    def forbidden(*a, **k):
+        raise AssertionError("在线模拟器不应读取机型文件")
+    monkeypatch.setattr(sim_mod, "device_type_screens", forbidden)
+    assert sim_mod.list_ios_simulators(managed_only=False)[0].screen_width == 1206
+
+
+def test_running_screen_failure_is_not_an_operable_zero_size_device(monkeypatch):
+    _patch(monkeypatch, [_sim()])
+    monkeypatch.setattr(sim_mod, "simulator_screen", lambda _: None)
+    assert sim_mod.list_ios_simulators(managed_only=False) == []
 
 
 # --------------------------------------------------------------------------

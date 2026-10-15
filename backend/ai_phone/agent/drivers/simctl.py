@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import platform as _platform
 import plistlib
+import re
 import shutil
 import subprocess
 import threading
@@ -187,6 +188,8 @@ def reset_probe_cache_for_tests() -> None:
     with _screen_cache_lock:
         _screen_cache = None
         _screen_cache_ts = 0.0
+    with _live_screen_lock:
+        _live_screen_cache.clear()
 
 
 def simctl_run(
@@ -328,16 +331,58 @@ class DeviceTypeScreen:
     scale: int
 
 
+_live_screen_cache: Dict[str, tuple[float, DeviceTypeScreen]] = {}
+_live_screen_lock = threading.Lock()
+
+
+def simulator_screen(udid: str) -> Optional[DeviceTypeScreen]:
+    """查询运行实例的 LCD 规格；只缓存成功值，始终返回竖屏物理像素。
+
+    不依赖 Xcode 机型文件格式，也不创建 WDA session。LCD 与 TVOut/CarPlay
+    必须区分；方向由镜像帧处理，不能把横屏宽高写进设备固定规格。
+    """
+    now = time.monotonic()
+    with _live_screen_lock:
+        for key, (ts, _) in list(_live_screen_cache.items()):
+            if now - ts >= _RUNTIME_CACHE_TTL:
+                del _live_screen_cache[key]
+        cached = _live_screen_cache.get(udid)
+        if cached is not None:
+            return cached[1]
+    try:
+        raw = simctl_run("io", udid, "enumerate", timeout=2.0)
+        screen = _parse_lcd_screen(raw)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("读取模拟器 LCD 规格失败 udid={}：{}", udid, exc)
+        return None
+    if screen is not None:
+        with _live_screen_lock:
+            _live_screen_cache[udid] = (now, screen)
+    return screen
+
+
+def _parse_lcd_screen(raw: str) -> Optional[DeviceTypeScreen]:
+    for block in re.split(r"(?m)^[ \t]*\(\d+\)[ \t]+", raw)[1:]:
+        if not block.startswith("LCD:"):
+            continue
+        block = block.split("\nPort:", 1)[0]
+        size = re.search(r"Pixel Size:\s*\{\s*(\d+)\s*,\s*(\d+)\s*\}", block)
+        scale = re.search(r"Preferred UI Scale:\s*(\d+(?:\.\d+)?)", block)
+        if not size or not scale:
+            continue
+        width, height = map(int, size.groups())
+        factor = float(scale.group(1))
+        if width <= 0 or height <= 0 or factor <= 0 or not factor.is_integer():
+            continue
+        return DeviceTypeScreen(min(width, height), max(width, height), int(factor))
+    return None
+
+
 def device_type_screens(force_refresh: bool = False) -> Dict[str, DeviceTypeScreen]:
     """``{deviceTypeIdentifier: 屏幕规格}``，带 TTL 缓存。
 
-    **为什么需要它**：设备发现阶段必须能报出屏幕尺寸，否则前端拿不到设备像素，
-    手动点击会退化成拿镜像画面尺寸当基准，坐标系整体偏移（方案 §1.11）。
-    而虚拟机不像真机能从 lockdown 直接读——只能靠 WDA，可发现阶段又不启动 WDA。
-
-    出路是机型自带的 ``profile.plist``：``simctl list devicetypes`` 的每条记录都带
-    ``bundlePath``，里面的 ``mainScreenWidth/Height/Scale`` 就是这台机型的固定规格。
-    纯本地文件、不需要设备开机、更不需要 WDA——与真机读 lockdown 处在同一层级。
+    仅供离线机型规格展示。运行实例必须使用 :func:`simulator_screen` 查询真实
+    LCD，不能把这些可能随工具链格式变化而缺失的静态字段用于手动点击。
 
     **报的是竖屏尺寸，不随旋转变**，与真机 lockdown 的 ScreenWidth/Height 同性质。
     旋转由前端按镜像画面方向自动换算宽高（真机已经跑通的那条路），设备记录里不该

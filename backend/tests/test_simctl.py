@@ -1,4 +1,5 @@
 import json
+import pytest
 
 from ai_phone.agent.drivers import simctl as simctl_mod
 
@@ -6,6 +7,73 @@ from ai_phone.agent.drivers import simctl as simctl_mod
 _IOS_RT = "com.apple.CoreSimulator.SimRuntime.iOS-26-0"
 _WATCH_RT = "com.apple.CoreSimulator.SimRuntime.watchOS-11-0"
 _TV_RT = "com.apple.CoreSimulator.SimRuntime.tvOS-18-0"
+
+
+def _display_output(width=1170, height=2532, scale=3):
+    return f"""Port:
+    Connected Screens:
+    (2) TVOut:
+        Pixel Size: {{720, 480}}
+        Preferred UI Scale: 1
+    (1) LCD:
+        Screen Type: Integrated
+        Pixel Size: {{{width}, {height}}}
+        Preferred UI Scale: {scale}
+Port:
+    Class: Audio
+"""
+
+
+@pytest.mark.parametrize("width,height", [(1170, 2532), (2532, 1170)])
+def test_runtime_lcd_ignores_external_display_and_normalizes_rotation(width, height):
+    assert simctl_mod._parse_lcd_screen(_display_output(width, height)) == (
+        simctl_mod.DeviceTypeScreen(1170, 2532, 3)
+    )
+
+
+@pytest.mark.parametrize("raw", ["", _display_output(0), _display_output(scale=0),
+                                 _display_output().replace("LCD:", "CarPlay:"),
+                                 _display_output().replace("Pixel Size: {1170, 2532}", ""),
+                                 _display_output().replace("Preferred UI Scale: 3", "")])
+def test_runtime_lcd_rejects_missing_or_invalid_screen(raw):
+    assert simctl_mod._parse_lcd_screen(raw) is None
+
+
+def test_runtime_screen_cache_is_per_udid_and_expired_values_are_not_reused(monkeypatch):
+    simctl_mod.reset_probe_cache_for_tests()
+    calls = []
+    now = [100.0]
+    def run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return _display_output() if now[0] == 100 else ""
+    monkeypatch.setattr(simctl_mod, "simctl_run", run)
+    monkeypatch.setattr(simctl_mod.time, "monotonic", lambda: now[0])
+    try:
+        assert simctl_mod.simulator_screen("A").width == 1170
+        assert simctl_mod.simulator_screen("A").width == 1170
+        assert len(calls) == 1
+        assert simctl_mod.simulator_screen("B").width == 1170
+        assert calls[0] == (("io", "A", "enumerate"), {"timeout": 2.0})
+        now[0] += 61
+        assert simctl_mod.simulator_screen("A") is None
+    finally:
+        simctl_mod.reset_probe_cache_for_tests()
+
+
+def test_runtime_screen_failure_retries_instead_of_caching_zero(monkeypatch):
+    simctl_mod.reset_probe_cache_for_tests()
+    calls = []
+    def run(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 1:
+            raise TimeoutError("display not ready")
+        return _display_output()
+    monkeypatch.setattr(simctl_mod, "simctl_run", run)
+    try:
+        assert simctl_mod.simulator_screen("A") is None
+        assert simctl_mod.simulator_screen("A").width == 1170
+    finally:
+        simctl_mod.reset_probe_cache_for_tests()
 
 
 def _device(udid: str, name: str = "iPhone 17 Pro", state: str = "Shutdown", **kw):

@@ -10,6 +10,12 @@ from ai_phone.agent.drivers import ios_simulator as sim_mod
 from ai_phone.agent.drivers.base import DeviceInfo
 
 
+@pytest.fixture(autouse=True)
+def stub_simulator_screen(monkeypatch):
+    from ai_phone.agent.drivers.simctl import DeviceTypeScreen
+    monkeypatch.setattr(sim_mod, "simulator_screen", lambda _: DeviceTypeScreen(1206, 2622, 3))
+
+
 def _sim_info(serial="SIM-1"):
     return DeviceInfo(
         serial=serial,
