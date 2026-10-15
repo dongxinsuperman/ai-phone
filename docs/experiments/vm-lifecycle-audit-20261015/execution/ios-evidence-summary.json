@@ -1,0 +1,61 @@
+{
+  "status": "passed_functional_and_visual_on_frozen_source",
+  "run_directory": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/execution/personal-runtime/ios-20261016-012711-37f48c",
+  "duration_seconds": 157.519,
+  "vm_id": "bc1095238b06",
+  "udid": "57122E96-DA8A-488C-90B5-AA09CE780B22",
+  "run_id": "ff37e9a47324",
+  "token": "personal-88862240df2c",
+  "count": 1,
+  "passed": [
+    "unbound_config",
+    "real_capability_probe",
+    "bind_and_start",
+    "delete_during_start_409",
+    "real_native_input_and_confirm_screenshot",
+    "localhost_confirm_receipt",
+    "native_shutdown",
+    "same_udid_and_ports_restart",
+    "persisted_token_count_load_receipt",
+    "native_visible_saved_token_count_after_restart",
+    "restart_rendered_screenshot",
+    "offline_delete_immediate_server_404",
+    "fresh_agent_same_host_orphan_cleanup",
+    "native_directory_and_port_release",
+    "16_source_hashes_stable"
+  ],
+  "visual_review": {
+    "worker": "confirmed.png and after-restart.png both visibly show saved token and count1; after restart input is empty while saved token persists",
+    "root_independent_review": true,
+    "root_review_evidence": "Root independently inspected both images and confirmed saved personal-88862240df2c/count1/local receipt"
+  },
+  "not_proven": [
+    "iPad",
+    "production_VLM_Runner",
+    "full_live_mirror",
+    "company_business_app",
+    "real_phone"
+  ],
+  "cleanup": {
+    "device_set": "/private/tmp/aiphone-personal-ios-20261016-012711-37f48c",
+    "device_set_empty": true,
+    "owned_data_absent": true,
+    "ports": {
+      "18309": "free",
+      "19309": "free",
+      "55536": "free (personal HTTP server)"
+    },
+    "guard_command_count": 58,
+    "all_logged_commands_custom_set": true,
+    "no_default_set_lifecycle_call": true,
+    "source_hash_count": 16,
+    "source_hash_mismatches": []
+  },
+  "private_build_cleanup_record": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/execution/ios-owned-build-cleanup.json",
+  "earlier_failures_retained": [
+    "initial Safari focus/keyboard not settled in harness",
+    "long custom device-set restart timed out; short-set native baseline and full lifecycle passed; sole cause not proven",
+    "previous after-restart screenshot taken before render; final native-visible wait and screenshot passed"
+  ],
+  "current_native_resources": "no own instances remain; no further native lifecycle operation performed"
+}

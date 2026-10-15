@@ -1,0 +1,34 @@
+{
+  "platform": "android",
+  "scope": "personal isolated synthetic native chain; not production VLM or physical phone acceptance",
+  "raw_result": "/Users/dongxin/.codex/personal-vm-e2e/android-frozen-20261016-4cdbe5/evidence.json",
+  "raw_status": "passed",
+  "screenshots": [
+    {
+      "file": "fixture-before.png",
+      "sha256": "86f57992f0611f9e4ab82d7f999af16255cf3cb009fd7e2781aafd46c3b79af7"
+    },
+    {
+      "file": "fixture-confirmed.png",
+      "sha256": "2684a4c0509a2052865716a40024f5470c81e17862e5dac53baa2b52b5bab977"
+    },
+    {
+      "file": "fixture-persisted.png",
+      "sha256": "08ae1b90083df5dac33b923bfb943d6e00fe2d0646ef2456cfd7477c02157e73"
+    }
+  ],
+  "root_independent_visual_review": true,
+  "source_hashes_at_start": {
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/personal_e2e.py": "5825e4bd22a08f2b3a02e6182f23b5666d772f129ea23006d21e02a7c091ed75",
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/personal-fixture.html": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+    "backend/ai_phone/agent/android_vm/manager.py": "74121870ea9ca663e9e171d8ed146ef86f30c1e9bd0abd65f2d38ddf8318221c",
+    "backend/ai_phone/agent/ws_client.py": "c9d6b39b48952b4c10adf8d124a210adc014f89525af9008586d2a7bdffcc04d",
+    "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+    "backend/ai_phone/agent/drivers/android.py": "ca246ba5b3cd1d23e7f136505d9abe4e634e544cfa13c1520db0f309cc34eee2",
+    "backend/ai_phone/server/android_vm/api.py": "86405049beae3d4668b235f48ce32e1ba51b52a597ba3fcd18c5763233c97c38",
+    "backend/ai_phone/server/android_vm/service.py": "7a5799c4d386895ab9d4440708a4e7d1673ab8535f5154b2abac99c0dbd7edcd",
+    "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+    "backend/ai_phone/server/vm_lifecycle.py": "573d1a9005265736d08caf2891a81958004052a5bd27a8e53fed37bed497181b"
+  },
+  "source_hashes_match_final_files": true
+}

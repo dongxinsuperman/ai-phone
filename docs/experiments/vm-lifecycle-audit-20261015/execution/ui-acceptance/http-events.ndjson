@@ -1,0 +1,483 @@
+{"event": "request", "seconds": 10.2749, "method": "GET", "path": "/virtual-machines"}
+{"event": "response", "seconds": 10.2773, "method": "GET", "path": "/virtual-machines", "status": 200}
+{"event": "request", "seconds": 10.2866, "method": "GET", "path": "/assets/index-ByQQso9D.js"}
+{"event": "response", "seconds": 10.2885, "method": "GET", "path": "/assets/index-ByQQso9D.js", "status": 200}
+{"event": "request", "seconds": 10.2893, "method": "GET", "path": "/assets/index-BewHGb4-.css"}
+{"event": "response", "seconds": 10.2904, "method": "GET", "path": "/assets/index-BewHGb4-.css", "status": 200}
+{"event": "request", "seconds": 10.3351, "method": "GET", "path": "/api/healthz"}
+{"event": "response", "seconds": 10.3358, "method": "GET", "path": "/api/healthz", "status": 200}
+{"event": "request", "seconds": 10.3381, "method": "GET", "path": "/api/internal/vm/device-profiles"}
+{"event": "request", "seconds": 10.3388, "method": "GET", "path": "/api/internal/vm/device-facets"}
+{"event": "request", "seconds": 10.3391, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "response", "seconds": 10.3392, "method": "GET", "path": "/api/internal/vm/device-profiles", "status": 200}
+{"event": "list_snapshot", "seconds": 10.3404, "platform": "android", "delay": 0, "states": {"android-running": "running", "android-starting": "starting", "android-error": "error", "android-stopping": "stopping", "android-bind-failed": "error", "android-offline": "agent_offline", "android-switch-source": "agent_offline", "android-stopped": "stopped", "android-probe-a": "draft", "android-probe-b": "draft"}}
+{"event": "response", "seconds": 10.341, "method": "GET", "path": "/api/internal/vm/device-facets", "status": 200}
+{"event": "response", "seconds": 10.3415, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "request", "seconds": 10.3421, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "list_snapshot", "seconds": 10.3434, "platform": "harmony", "delay": 0, "states": {"harmony-running": "running", "harmony-starting": "starting", "harmony-error": "error", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-offline": "agent_offline", "harmony-switch-source": "agent_offline", "harmony-stopped": "stopped", "harmony-probe-a": "draft", "harmony-probe-b": "draft"}}
+{"event": "request", "seconds": 10.3437, "method": "GET", "path": "/api/internal/ios-sim/catalog"}
+{"event": "request", "seconds": 10.3438, "method": "GET", "path": "/api/internal/harmony-vm/catalog"}
+{"event": "request", "seconds": 10.3442, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "response", "seconds": 10.3443, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "list_snapshot", "seconds": 10.3445, "platform": "ios", "delay": 0, "states": {"ios-running": "running", "ios-starting": "starting", "ios-error": "error", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-offline": "agent_offline", "ios-switch-source": "agent_offline", "ios-stopped": "stopped", "ios-probe-a": "draft", "ios-probe-b": "draft"}}
+{"event": "response", "seconds": 10.3446, "method": "GET", "path": "/api/internal/ios-sim/catalog", "status": 200}
+{"event": "response", "seconds": 10.3447, "method": "GET", "path": "/api/internal/harmony-vm/catalog", "status": 200}
+{"event": "response", "seconds": 10.3449, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 10.4112, "method": "GET", "path": "/favicon.svg"}
+{"event": "response", "seconds": 10.4117, "method": "GET", "path": "/favicon.svg", "status": 200}
+{"event": "request", "seconds": 13.3338, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 13.3341, "platform": "android", "delay": 0, "states": {"android-running": "running", "android-starting": "starting", "android-error": "error", "android-stopping": "stopping", "android-bind-failed": "error", "android-offline": "agent_offline", "android-switch-source": "agent_offline", "android-stopped": "stopped", "android-probe-a": "draft", "android-probe-b": "draft"}}
+{"event": "request", "seconds": 13.3346, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "list_snapshot", "seconds": 13.3348, "platform": "harmony", "delay": 0, "states": {"harmony-running": "running", "harmony-starting": "starting", "harmony-error": "error", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-offline": "agent_offline", "harmony-switch-source": "agent_offline", "harmony-stopped": "stopped", "harmony-probe-a": "draft", "harmony-probe-b": "draft"}}
+{"event": "request", "seconds": 13.3349, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "response", "seconds": 13.335, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "list_snapshot", "seconds": 13.3351, "platform": "ios", "delay": 0, "states": {"ios-running": "running", "ios-starting": "starting", "ios-error": "error", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-offline": "agent_offline", "ios-switch-source": "agent_offline", "ios-stopped": "stopped", "ios-probe-a": "draft", "ios-probe-b": "draft"}}
+{"event": "response", "seconds": 13.3352, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 13.3355, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 15.3156, "method": "GET", "path": "/api/healthz"}
+{"event": "response", "seconds": 15.3166, "method": "GET", "path": "/api/healthz", "status": 200}
+{"event": "request", "seconds": 16.3358, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 16.3364, "platform": "android", "delay": 0, "states": {"android-running": "running", "android-starting": "starting", "android-error": "error", "android-stopping": "stopping", "android-bind-failed": "error", "android-offline": "agent_offline", "android-switch-source": "agent_offline", "android-stopped": "stopped", "android-probe-a": "draft", "android-probe-b": "draft"}}
+{"event": "request", "seconds": 16.3368, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 16.337, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 16.3372, "platform": "harmony", "delay": 0, "states": {"harmony-running": "running", "harmony-starting": "starting", "harmony-error": "error", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-offline": "agent_offline", "harmony-switch-source": "agent_offline", "harmony-stopped": "stopped", "harmony-probe-a": "draft", "harmony-probe-b": "draft"}}
+{"event": "list_snapshot", "seconds": 16.3374, "platform": "ios", "delay": 0, "states": {"ios-running": "running", "ios-starting": "starting", "ios-error": "error", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-offline": "agent_offline", "ios-switch-source": "agent_offline", "ios-stopped": "stopped", "ios-probe-a": "draft", "ios-probe-b": "draft"}}
+{"event": "response", "seconds": 16.3376, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "response", "seconds": 16.3377, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 16.3378, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 16.7733, "method": "DELETE", "path": "/api/internal/vm/instances/android-offline"}
+{"event": "delete_ledger", "seconds": 16.7739, "platform": "android", "vm_id": "android-offline", "previous_state": "agent_offline"}
+{"event": "response", "seconds": 16.7741, "method": "DELETE", "path": "/api/internal/vm/instances/android-offline", "status": 200}
+{"event": "request", "seconds": 16.777, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 16.7776, "platform": "android", "delay": 0, "states": {"android-running": "running", "android-starting": "starting", "android-error": "error", "android-stopping": "stopping", "android-bind-failed": "error", "android-switch-source": "agent_offline", "android-stopped": "stopped", "android-probe-a": "draft", "android-probe-b": "draft"}}
+{"event": "response", "seconds": 16.778, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "request", "seconds": 16.7953, "method": "POST", "path": "/api/internal/vm/instances/android-probe-a/dispatch-candidates"}
+{"event": "probe_begin", "seconds": 16.7956, "vm_id": "android-probe-a", "marker": "A", "delay": 0.6}
+{"event": "request", "seconds": 16.8112, "method": "POST", "path": "/api/internal/vm/instances/android-probe-b/dispatch-candidates"}
+{"event": "probe_begin", "seconds": 16.8115, "vm_id": "android-probe-b", "marker": "B", "delay": 1.4}
+{"event": "probe_end", "seconds": 17.3968, "vm_id": "android-probe-a", "marker": "A"}
+{"event": "response", "seconds": 17.3972, "method": "POST", "path": "/api/internal/vm/instances/android-probe-a/dispatch-candidates", "status": 200}
+{"event": "probe_end", "seconds": 18.2113, "vm_id": "android-probe-b", "marker": "B"}
+{"event": "response", "seconds": 18.2124, "method": "POST", "path": "/api/internal/vm/instances/android-probe-b/dispatch-candidates", "status": 200}
+{"event": "request", "seconds": 18.3037, "method": "POST", "path": "/api/internal/vm/instances/android-probe-b/dispatch"}
+{"event": "vm_action", "seconds": 18.3043, "platform": "android", "vm_id": "android-probe-b", "old_vm_id": "android-probe-b", "action": "dispatch", "switched": false, "state": "starting", "target": "personal-candidate-B"}
+{"event": "response", "seconds": 18.3045, "method": "POST", "path": "/api/internal/vm/instances/android-probe-b/dispatch", "status": 200}
+{"event": "request", "seconds": 18.3109, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 18.3113, "platform": "android", "delay": 0, "states": {"android-running": "running", "android-starting": "starting", "android-error": "error", "android-stopping": "stopping", "android-bind-failed": "error", "android-switch-source": "agent_offline", "android-stopped": "stopped", "android-probe-a": "draft", "android-probe-b": "starting"}}
+{"event": "response", "seconds": 18.3115, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "request", "seconds": 18.374, "method": "POST", "path": "/fixture/complete-bind"}
+{"event": "bind_ack", "seconds": 18.3747, "platform": "android", "vm_id": "android-probe-b", "state": "error", "assigned_agent_id": ""}
+{"event": "response", "seconds": 18.3749, "method": "POST", "path": "/fixture/complete-bind", "status": 200}
+{"event": "request", "seconds": 18.396, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 18.3966, "platform": "android", "delay": 0, "states": {"android-running": "running", "android-starting": "starting", "android-error": "error", "android-stopping": "stopping", "android-bind-failed": "error", "android-switch-source": "agent_offline", "android-stopped": "stopped", "android-probe-a": "draft", "android-probe-b": "error"}}
+{"event": "response", "seconds": 18.3968, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "request", "seconds": 18.4863, "method": "POST", "path": "/api/internal/vm/instances/android-switch-source/dispatch-candidates"}
+{"event": "probe_begin", "seconds": 18.4867, "vm_id": "android-switch-source", "marker": "目标", "delay": 0}
+{"event": "probe_end", "seconds": 18.4868, "vm_id": "android-switch-source", "marker": "目标"}
+{"event": "response", "seconds": 18.4869, "method": "POST", "path": "/api/internal/vm/instances/android-switch-source/dispatch-candidates", "status": 200}
+{"event": "request", "seconds": 18.5435, "method": "POST", "path": "/api/internal/vm/instances/android-switch-source/dispatch"}
+{"event": "vm_action", "seconds": 18.544, "platform": "android", "vm_id": "android-switched-1", "old_vm_id": "android-switch-source", "action": "dispatch", "switched": true, "state": "starting", "target": "personal-candidate-目标"}
+{"event": "response", "seconds": 18.5443, "method": "POST", "path": "/api/internal/vm/instances/android-switch-source/dispatch", "status": 200}
+{"event": "request", "seconds": 18.5469, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 18.5472, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "error", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "draft", "android-probe-b": "error"}}
+{"event": "response", "seconds": 18.5473, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "request", "seconds": 18.6283, "method": "POST", "path": "/api/internal/vm/instances/android-probe-a/dispatch-candidates"}
+{"event": "probe_begin", "seconds": 18.6287, "vm_id": "android-probe-a", "marker": "A", "delay": 0.6}
+{"event": "probe_end", "seconds": 19.2307, "vm_id": "android-probe-a", "marker": "A"}
+{"event": "response", "seconds": 19.2311, "method": "POST", "path": "/api/internal/vm/instances/android-probe-a/dispatch-candidates", "status": 200}
+{"event": "request", "seconds": 19.3326, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "request", "seconds": 19.3328, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "list_snapshot", "seconds": 19.3331, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "error", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "draft", "android-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 19.3334, "platform": "harmony", "delay": 0, "states": {"harmony-running": "running", "harmony-starting": "starting", "harmony-error": "error", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-offline": "agent_offline", "harmony-switch-source": "agent_offline", "harmony-stopped": "stopped", "harmony-probe-a": "draft", "harmony-probe-b": "draft"}}
+{"event": "request", "seconds": 19.3335, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 19.3337, "platform": "ios", "delay": 0, "states": {"ios-running": "running", "ios-starting": "starting", "ios-error": "error", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-offline": "agent_offline", "ios-switch-source": "agent_offline", "ios-stopped": "stopped", "ios-probe-a": "draft", "ios-probe-b": "draft"}}
+{"event": "response", "seconds": 19.3338, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "response", "seconds": 19.334, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 19.3342, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 19.4198, "method": "POST", "path": "/api/internal/vm/instances/android-probe-a/dispatch"}
+{"event": "vm_action", "seconds": 19.4204, "platform": "android", "vm_id": "android-probe-a", "old_vm_id": "android-probe-a", "action": "dispatch", "switched": false, "state": "starting", "target": "personal-candidate-A"}
+{"event": "response", "seconds": 19.4206, "method": "POST", "path": "/api/internal/vm/instances/android-probe-a/dispatch", "status": 200}
+{"event": "request", "seconds": 19.4271, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 19.4275, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "error", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "starting", "android-probe-b": "error"}}
+{"event": "response", "seconds": 19.4276, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "request", "seconds": 19.446, "method": "POST", "path": "/fixture/complete-bind"}
+{"event": "bind_ack", "seconds": 19.4464, "platform": "android", "vm_id": "android-probe-a", "state": "running", "assigned_agent_id": "personal-candidate-A"}
+{"event": "response", "seconds": 19.4466, "method": "POST", "path": "/fixture/complete-bind", "status": 200}
+{"event": "request", "seconds": 19.4615, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 19.462, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "error", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "response", "seconds": 19.4622, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "request", "seconds": 19.544, "method": "POST", "path": "/api/internal/vm/instances/android-error/stop"}
+{"event": "vm_action", "seconds": 19.5444, "platform": "android", "vm_id": "android-error", "action": "stop", "state": "stopped"}
+{"event": "response", "seconds": 19.5446, "method": "POST", "path": "/api/internal/vm/instances/android-error/stop", "status": 200}
+{"event": "request", "seconds": 19.5519, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 19.5522, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "stopped", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "response", "seconds": 19.5523, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "request", "seconds": 19.5695, "method": "POST", "path": "/fixture/arm-list-delay"}
+{"event": "arm_list_delay", "seconds": 2.5, "platform": "android"}
+{"event": "response", "seconds": 19.5699, "method": "POST", "path": "/fixture/arm-list-delay", "status": 200}
+{"event": "request", "seconds": 19.5858, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 19.5863, "platform": "android", "delay": 2.5, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "stopped", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 19.6027, "method": "POST", "path": "/api/internal/vm/instances/android-error/start"}
+{"event": "vm_action", "seconds": 19.6029, "platform": "android", "vm_id": "android-error", "action": "start", "state": "starting"}
+{"event": "response", "seconds": 19.6031, "method": "POST", "path": "/api/internal/vm/instances/android-error/start", "status": 200}
+{"event": "request", "seconds": 19.6098, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 19.6101, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "response", "seconds": 19.6104, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "request", "seconds": 20.3141, "method": "GET", "path": "/api/healthz"}
+{"event": "response", "seconds": 20.3146, "method": "GET", "path": "/api/healthz", "status": 200}
+{"event": "response", "seconds": 22.0876, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "request", "seconds": 22.3605, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 22.3608, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 22.361, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 22.3611, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 22.3612, "platform": "harmony", "delay": 0, "states": {"harmony-running": "running", "harmony-starting": "starting", "harmony-error": "error", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-offline": "agent_offline", "harmony-switch-source": "agent_offline", "harmony-stopped": "stopped", "harmony-probe-a": "draft", "harmony-probe-b": "draft"}}
+{"event": "list_snapshot", "seconds": 22.3614, "platform": "ios", "delay": 0, "states": {"ios-running": "running", "ios-starting": "starting", "ios-error": "error", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-offline": "agent_offline", "ios-switch-source": "agent_offline", "ios-stopped": "stopped", "ios-probe-a": "draft", "ios-probe-b": "draft"}}
+{"event": "response", "seconds": 22.3615, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "response", "seconds": 22.3616, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 22.3617, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 22.3877, "method": "DELETE", "path": "/api/internal/harmony-vm/instances/harmony-offline"}
+{"event": "delete_ledger", "seconds": 22.3881, "platform": "harmony", "vm_id": "harmony-offline", "previous_state": "agent_offline"}
+{"event": "response", "seconds": 22.3884, "method": "DELETE", "path": "/api/internal/harmony-vm/instances/harmony-offline", "status": 200}
+{"event": "request", "seconds": 22.3912, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "list_snapshot", "seconds": 22.3916, "platform": "harmony", "delay": 0, "states": {"harmony-running": "running", "harmony-starting": "starting", "harmony-error": "error", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-switch-source": "agent_offline", "harmony-stopped": "stopped", "harmony-probe-a": "draft", "harmony-probe-b": "draft"}}
+{"event": "response", "seconds": 22.3919, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "request", "seconds": 22.42, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-probe-a/dispatch-candidates"}
+{"event": "probe_begin", "seconds": 22.4202, "vm_id": "harmony-probe-a", "marker": "A", "delay": 0.6}
+{"event": "request", "seconds": 22.7135, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-probe-b/dispatch-candidates"}
+{"event": "probe_begin", "seconds": 22.7139, "vm_id": "harmony-probe-b", "marker": "B", "delay": 1.4}
+{"event": "probe_end", "seconds": 23.0213, "vm_id": "harmony-probe-a", "marker": "A"}
+{"event": "response", "seconds": 23.0218, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-probe-a/dispatch-candidates", "status": 200}
+{"event": "probe_end", "seconds": 24.115, "vm_id": "harmony-probe-b", "marker": "B"}
+{"event": "response", "seconds": 24.1157, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-probe-b/dispatch-candidates", "status": 200}
+{"event": "request", "seconds": 24.1896, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-probe-b/dispatch"}
+{"event": "vm_action", "seconds": 24.1905, "platform": "harmony", "vm_id": "harmony-probe-b", "old_vm_id": "harmony-probe-b", "action": "dispatch", "switched": false, "state": "starting", "target": "personal-candidate-B"}
+{"event": "response", "seconds": 24.1912, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-probe-b/dispatch", "status": 200}
+{"event": "request", "seconds": 24.1973, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "list_snapshot", "seconds": 24.1977, "platform": "harmony", "delay": 0, "states": {"harmony-running": "running", "harmony-starting": "starting", "harmony-error": "error", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-switch-source": "agent_offline", "harmony-stopped": "stopped", "harmony-probe-a": "draft", "harmony-probe-b": "starting"}}
+{"event": "response", "seconds": 24.198, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "request", "seconds": 24.2567, "method": "POST", "path": "/fixture/complete-bind"}
+{"event": "bind_ack", "seconds": 24.2571, "platform": "harmony", "vm_id": "harmony-probe-b", "state": "error", "assigned_agent_id": ""}
+{"event": "response", "seconds": 24.2572, "method": "POST", "path": "/fixture/complete-bind", "status": 200}
+{"event": "request", "seconds": 24.2782, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "list_snapshot", "seconds": 24.2786, "platform": "harmony", "delay": 0, "states": {"harmony-running": "running", "harmony-starting": "starting", "harmony-error": "error", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-switch-source": "agent_offline", "harmony-stopped": "stopped", "harmony-probe-a": "draft", "harmony-probe-b": "error"}}
+{"event": "request", "seconds": 24.2788, "method": "GET", "path": "/api/internal/harmony-vm/catalog"}
+{"event": "response", "seconds": 24.2789, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 24.279, "method": "GET", "path": "/api/internal/harmony-vm/catalog", "status": 200}
+{"event": "request", "seconds": 24.361, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-switch-source/dispatch-candidates"}
+{"event": "probe_begin", "seconds": 24.3613, "vm_id": "harmony-switch-source", "marker": "目标", "delay": 0}
+{"event": "probe_end", "seconds": 24.3614, "vm_id": "harmony-switch-source", "marker": "目标"}
+{"event": "response", "seconds": 24.3615, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-switch-source/dispatch-candidates", "status": 200}
+{"event": "request", "seconds": 24.4193, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-switch-source/dispatch"}
+{"event": "vm_action", "seconds": 24.4201, "platform": "harmony", "vm_id": "harmony-switched-1", "old_vm_id": "harmony-switch-source", "action": "dispatch", "switched": true, "state": "starting", "target": "personal-candidate-目标"}
+{"event": "response", "seconds": 24.4203, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-switch-source/dispatch", "status": 200}
+{"event": "request", "seconds": 24.4304, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "list_snapshot", "seconds": 24.4307, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "error", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "draft", "harmony-probe-b": "error"}}
+{"event": "response", "seconds": 24.4308, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "request", "seconds": 24.5201, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-probe-a/dispatch-candidates"}
+{"event": "probe_begin", "seconds": 24.5205, "vm_id": "harmony-probe-a", "marker": "A", "delay": 0.6}
+{"event": "probe_end", "seconds": 25.1215, "vm_id": "harmony-probe-a", "marker": "A"}
+{"event": "response", "seconds": 25.1224, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-probe-a/dispatch-candidates", "status": 200}
+{"event": "request", "seconds": 25.312, "method": "GET", "path": "/api/healthz"}
+{"event": "response", "seconds": 25.3123, "method": "GET", "path": "/api/healthz", "status": 200}
+{"event": "request", "seconds": 25.329, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-probe-a/dispatch"}
+{"event": "vm_action", "seconds": 25.3298, "platform": "harmony", "vm_id": "harmony-probe-a", "old_vm_id": "harmony-probe-a", "action": "dispatch", "switched": false, "state": "starting", "target": "personal-candidate-A"}
+{"event": "response", "seconds": 25.3301, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-probe-a/dispatch", "status": 200}
+{"event": "request", "seconds": 25.3376, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 25.3382, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 25.3385, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 25.3386, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "list_snapshot", "seconds": 25.3388, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "error", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "starting", "harmony-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 25.3389, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "error", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "starting", "harmony-probe-b": "error"}}
+{"event": "request", "seconds": 25.339, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "response", "seconds": 25.3391, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "list_snapshot", "seconds": 25.3394, "platform": "ios", "delay": 0, "states": {"ios-running": "running", "ios-starting": "starting", "ios-error": "error", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-offline": "agent_offline", "ios-switch-source": "agent_offline", "ios-stopped": "stopped", "ios-probe-a": "draft", "ios-probe-b": "draft"}}
+{"event": "response", "seconds": 25.3395, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 25.3396, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 25.3401, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 25.3529, "method": "POST", "path": "/fixture/complete-bind"}
+{"event": "bind_ack", "seconds": 25.3533, "platform": "harmony", "vm_id": "harmony-probe-a", "state": "running", "assigned_agent_id": "personal-candidate-A"}
+{"event": "response", "seconds": 25.3534, "method": "POST", "path": "/fixture/complete-bind", "status": 200}
+{"event": "request", "seconds": 25.3703, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "list_snapshot", "seconds": 25.3706, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "error", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "request", "seconds": 25.3708, "method": "GET", "path": "/api/internal/harmony-vm/catalog"}
+{"event": "response", "seconds": 25.371, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 25.3711, "method": "GET", "path": "/api/internal/harmony-vm/catalog", "status": 200}
+{"event": "request", "seconds": 25.4616, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-error/stop"}
+{"event": "vm_action", "seconds": 25.4621, "platform": "harmony", "vm_id": "harmony-error", "action": "stop", "state": "stopped"}
+{"event": "response", "seconds": 25.4627, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-error/stop", "status": 200}
+{"event": "request", "seconds": 25.4687, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "list_snapshot", "seconds": 25.469, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "stopped", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "response", "seconds": 25.4692, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "request", "seconds": 25.4873, "method": "POST", "path": "/fixture/arm-list-delay"}
+{"event": "arm_list_delay", "seconds": 2.5, "platform": "harmony"}
+{"event": "response", "seconds": 25.4877, "method": "POST", "path": "/fixture/arm-list-delay", "status": 200}
+{"event": "request", "seconds": 25.5029, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 25.5031, "method": "GET", "path": "/api/internal/harmony-vm/catalog"}
+{"event": "list_snapshot", "seconds": 25.5033, "platform": "harmony", "delay": 2.5, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "stopped", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "response", "seconds": 25.5035, "method": "GET", "path": "/api/internal/harmony-vm/catalog", "status": 200}
+{"event": "request", "seconds": 25.5195, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-error/start"}
+{"event": "vm_action", "seconds": 25.5198, "platform": "harmony", "vm_id": "harmony-error", "action": "start", "state": "starting"}
+{"event": "response", "seconds": 25.5199, "method": "POST", "path": "/api/internal/harmony-vm/instances/harmony-error/start", "status": 200}
+{"event": "request", "seconds": 25.5267, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "list_snapshot", "seconds": 25.5269, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "response", "seconds": 25.5271, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 28.0052, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "request", "seconds": 28.2904, "method": "DELETE", "path": "/api/internal/ios-sim/instances/ios-offline"}
+{"event": "delete_ledger", "seconds": 28.2912, "platform": "ios", "vm_id": "ios-offline", "previous_state": "agent_offline"}
+{"event": "response", "seconds": 28.292, "method": "DELETE", "path": "/api/internal/ios-sim/instances/ios-offline", "status": 200}
+{"event": "request", "seconds": 28.2965, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 28.2968, "platform": "ios", "delay": 0, "states": {"ios-running": "running", "ios-starting": "starting", "ios-error": "error", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-switch-source": "agent_offline", "ios-stopped": "stopped", "ios-probe-a": "draft", "ios-probe-b": "draft"}}
+{"event": "response", "seconds": 28.297, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 28.3323, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 28.3328, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 28.3332, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 28.3333, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 28.3335, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 28.3338, "platform": "ios", "delay": 0, "states": {"ios-running": "running", "ios-starting": "starting", "ios-error": "error", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-switch-source": "agent_offline", "ios-stopped": "stopped", "ios-probe-a": "draft", "ios-probe-b": "draft"}}
+{"event": "response", "seconds": 28.334, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "response", "seconds": 28.3341, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 28.3343, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 28.3363, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-probe-a/dispatch-candidates"}
+{"event": "probe_begin", "seconds": 28.3365, "vm_id": "ios-probe-a", "marker": "A", "delay": 0.6}
+{"event": "request", "seconds": 28.3528, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-probe-b/dispatch-candidates"}
+{"event": "probe_begin", "seconds": 28.3531, "vm_id": "ios-probe-b", "marker": "B", "delay": 1.4}
+{"event": "probe_end", "seconds": 28.937, "vm_id": "ios-probe-a", "marker": "A"}
+{"event": "response", "seconds": 28.9375, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-probe-a/dispatch-candidates", "status": 200}
+{"event": "probe_end", "seconds": 29.7541, "vm_id": "ios-probe-b", "marker": "B"}
+{"event": "response", "seconds": 29.7552, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-probe-b/dispatch-candidates", "status": 200}
+{"event": "request", "seconds": 29.8384, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-probe-b/dispatch"}
+{"event": "vm_action", "seconds": 29.839, "platform": "ios", "vm_id": "ios-probe-b", "old_vm_id": "ios-probe-b", "action": "dispatch", "switched": false, "state": "starting", "target": "personal-candidate-B"}
+{"event": "response", "seconds": 29.8394, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-probe-b/dispatch", "status": 200}
+{"event": "request", "seconds": 29.8442, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 29.8446, "platform": "ios", "delay": 0, "states": {"ios-running": "running", "ios-starting": "starting", "ios-error": "error", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-switch-source": "agent_offline", "ios-stopped": "stopped", "ios-probe-a": "draft", "ios-probe-b": "starting"}}
+{"event": "response", "seconds": 29.8449, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 29.9091, "method": "POST", "path": "/fixture/complete-bind"}
+{"event": "bind_ack", "seconds": 29.9097, "platform": "ios", "vm_id": "ios-probe-b", "state": "error", "assigned_agent_id": ""}
+{"event": "response", "seconds": 29.9099, "method": "POST", "path": "/fixture/complete-bind", "status": 200}
+{"event": "request", "seconds": 29.9295, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 29.9298, "platform": "ios", "delay": 0, "states": {"ios-running": "running", "ios-starting": "starting", "ios-error": "error", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-switch-source": "agent_offline", "ios-stopped": "stopped", "ios-probe-a": "draft", "ios-probe-b": "error"}}
+{"event": "request", "seconds": 29.93, "method": "GET", "path": "/api/internal/ios-sim/catalog"}
+{"event": "response", "seconds": 29.9306, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "response", "seconds": 29.931, "method": "GET", "path": "/api/internal/ios-sim/catalog", "status": 200}
+{"event": "request", "seconds": 30.0198, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-switch-source/dispatch-candidates"}
+{"event": "probe_begin", "seconds": 30.0201, "vm_id": "ios-switch-source", "marker": "目标", "delay": 0}
+{"event": "probe_end", "seconds": 30.0203, "vm_id": "ios-switch-source", "marker": "目标"}
+{"event": "response", "seconds": 30.0204, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-switch-source/dispatch-candidates", "status": 200}
+{"event": "request", "seconds": 30.0768, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-switch-source/dispatch"}
+{"event": "vm_action", "seconds": 30.0779, "platform": "ios", "vm_id": "ios-switched-1", "old_vm_id": "ios-switch-source", "action": "dispatch", "switched": true, "state": "starting", "target": "personal-candidate-目标"}
+{"event": "response", "seconds": 30.0782, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-switch-source/dispatch", "status": 200}
+{"event": "request", "seconds": 30.0861, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 30.0864, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "error", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "draft", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 30.0866, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 30.1612, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-probe-a/dispatch-candidates"}
+{"event": "probe_begin", "seconds": 30.1617, "vm_id": "ios-probe-a", "marker": "A", "delay": 0.6}
+{"event": "request", "seconds": 30.3125, "method": "GET", "path": "/api/healthz"}
+{"event": "response", "seconds": 30.3129, "method": "GET", "path": "/api/healthz", "status": 200}
+{"event": "probe_end", "seconds": 30.7628, "vm_id": "ios-probe-a", "marker": "A"}
+{"event": "response", "seconds": 30.7635, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-probe-a/dispatch-candidates", "status": 200}
+{"event": "request", "seconds": 30.9622, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-probe-a/dispatch"}
+{"event": "vm_action", "seconds": 30.9629, "platform": "ios", "vm_id": "ios-probe-a", "old_vm_id": "ios-probe-a", "action": "dispatch", "switched": false, "state": "starting", "target": "personal-candidate-A"}
+{"event": "response", "seconds": 30.9632, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-probe-a/dispatch", "status": 200}
+{"event": "request", "seconds": 30.9698, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 30.9702, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "error", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "starting", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 30.9705, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 30.9882, "method": "POST", "path": "/fixture/complete-bind"}
+{"event": "bind_ack", "seconds": 30.9888, "platform": "ios", "vm_id": "ios-probe-a", "state": "running", "assigned_agent_id": "personal-candidate-A"}
+{"event": "response", "seconds": 30.989, "method": "POST", "path": "/fixture/complete-bind", "status": 200}
+{"event": "request", "seconds": 31.0131, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 31.0135, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "error", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "request", "seconds": 31.0137, "method": "GET", "path": "/api/internal/ios-sim/catalog"}
+{"event": "response", "seconds": 31.014, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "response", "seconds": 31.0142, "method": "GET", "path": "/api/internal/ios-sim/catalog", "status": 200}
+{"event": "request", "seconds": 31.0941, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-error/stop"}
+{"event": "vm_action", "seconds": 31.0944, "platform": "ios", "vm_id": "ios-error", "action": "stop", "state": "stopped"}
+{"event": "response", "seconds": 31.0947, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-error/stop", "status": 200}
+{"event": "request", "seconds": 31.1025, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 31.1029, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "stopped", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 31.1031, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 31.1201, "method": "POST", "path": "/fixture/arm-list-delay"}
+{"event": "arm_list_delay", "seconds": 2.5, "platform": "ios"}
+{"event": "response", "seconds": 31.1207, "method": "POST", "path": "/fixture/arm-list-delay", "status": 200}
+{"event": "request", "seconds": 31.1399, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 31.1403, "platform": "ios", "delay": 2.5, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "stopped", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "request", "seconds": 31.1404, "method": "GET", "path": "/api/internal/ios-sim/catalog"}
+{"event": "response", "seconds": 31.1406, "method": "GET", "path": "/api/internal/ios-sim/catalog", "status": 200}
+{"event": "request", "seconds": 31.1615, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-error/start"}
+{"event": "vm_action", "seconds": 31.1619, "platform": "ios", "vm_id": "ios-error", "action": "start", "state": "starting"}
+{"event": "response", "seconds": 31.1624, "method": "POST", "path": "/api/internal/ios-sim/instances/ios-error/start", "status": 200}
+{"event": "request", "seconds": 31.1696, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 31.1699, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 31.1701, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 31.3319, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 31.3323, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 31.3327, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "list_snapshot", "seconds": 31.333, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "response", "seconds": 31.3332, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "response", "seconds": 31.3334, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 33.6415, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 33.787, "method": "GET", "path": "/fixture/events"}
+{"event": "response", "seconds": 33.7907, "method": "GET", "path": "/fixture/events", "status": 200}
+{"event": "request", "seconds": 34.333, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "request", "seconds": 34.3331, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 34.3332, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 34.3334, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 34.3336, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 34.3338, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 34.3339, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "response", "seconds": 34.334, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 34.334, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 35.317, "method": "GET", "path": "/api/healthz"}
+{"event": "response", "seconds": 35.318, "method": "GET", "path": "/api/healthz", "status": 200}
+{"event": "request", "seconds": 37.3326, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 37.3329, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 37.3331, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 37.3332, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 37.3334, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 37.3335, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 37.3336, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "response", "seconds": 37.3338, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 37.3339, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 40.3122, "method": "GET", "path": "/api/healthz"}
+{"event": "response", "seconds": 40.3127, "method": "GET", "path": "/api/healthz", "status": 200}
+{"event": "request", "seconds": 40.3353, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 40.3358, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 40.336, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 40.3363, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 40.3366, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 40.3373, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 40.3377, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "response", "seconds": 40.3383, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 40.3387, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 43.3349, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 43.3357, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 43.3361, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "list_snapshot", "seconds": 43.3365, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "request", "seconds": 43.3368, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "response", "seconds": 43.337, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "list_snapshot", "seconds": 43.3374, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 43.3376, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 43.3378, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 45.3158, "method": "GET", "path": "/api/healthz"}
+{"event": "response", "seconds": 45.317, "method": "GET", "path": "/api/healthz", "status": 200}
+{"event": "request", "seconds": 46.3351, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 46.3357, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 46.3361, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 46.3363, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 46.3367, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 46.3371, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 46.3372, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "response", "seconds": 46.3374, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 46.3375, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 49.3407, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 49.3453, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 49.3459, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 49.346, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "response", "seconds": 49.3461, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "list_snapshot", "seconds": 49.3463, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 49.347, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 49.3474, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 49.3478, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 50.3155, "method": "GET", "path": "/api/healthz"}
+{"event": "response", "seconds": 50.3162, "method": "GET", "path": "/api/healthz", "status": 200}
+{"event": "request", "seconds": 52.3397, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 52.3414, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 52.3417, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 52.3418, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 52.342, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 52.3422, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 52.3423, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "response", "seconds": 52.3424, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 52.3425, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 55.3145, "method": "GET", "path": "/api/healthz"}
+{"event": "response", "seconds": 55.3151, "method": "GET", "path": "/api/healthz", "status": 200}
+{"event": "request", "seconds": 55.334, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 55.3357, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 55.3364, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 55.3366, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "response", "seconds": 55.3367, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "list_snapshot", "seconds": 55.3372, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 55.3377, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 55.338, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 55.3383, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 58.3344, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 58.3351, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 58.3361, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 58.3363, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "response", "seconds": 58.3365, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "list_snapshot", "seconds": 58.3369, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 58.3375, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 58.3379, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 58.3381, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 60.3139, "method": "GET", "path": "/api/healthz"}
+{"event": "response", "seconds": 60.3146, "method": "GET", "path": "/api/healthz", "status": 200}
+{"event": "request", "seconds": 61.3335, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 61.3344, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "response", "seconds": 61.3349, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "request", "seconds": 61.336, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "list_snapshot", "seconds": 61.3366, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "request", "seconds": 61.3371, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 61.3376, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 61.3379, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 61.3381, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 64.334, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "request", "seconds": 64.3344, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 64.3345, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 64.3347, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 64.335, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 64.3352, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 64.3353, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "response", "seconds": 64.3354, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 64.3354, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 65.3166, "method": "GET", "path": "/api/healthz"}
+{"event": "response", "seconds": 65.3176, "method": "GET", "path": "/api/healthz", "status": 200}
+{"event": "request", "seconds": 67.3334, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 67.3338, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 67.3339, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 67.334, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 67.3342, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 67.3417, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 67.342, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "response", "seconds": 67.3421, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 67.3422, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 70.3174, "method": "GET", "path": "/api/healthz"}
+{"event": "response", "seconds": 70.3191, "method": "GET", "path": "/api/healthz", "status": 200}
+{"event": "request", "seconds": 70.3337, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "request", "seconds": 70.334, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 70.3343, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 70.3348, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 70.3351, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 70.3353, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 70.3354, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "response", "seconds": 70.3355, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 70.3355, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 73.3362, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 73.3371, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 73.3376, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "request", "seconds": 73.3378, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "list_snapshot", "seconds": 73.3381, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 73.3386, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "response", "seconds": 73.3389, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "response", "seconds": 73.3391, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "response", "seconds": 73.3393, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "request", "seconds": 75.3167, "method": "GET", "path": "/api/healthz"}
+{"event": "response", "seconds": 75.3174, "method": "GET", "path": "/api/healthz", "status": 200}
+{"event": "request", "seconds": 76.3344, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 76.3348, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 76.335, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "request", "seconds": 76.3351, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "list_snapshot", "seconds": 76.3353, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 76.3355, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "response", "seconds": 76.3356, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "response", "seconds": 76.3357, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "response", "seconds": 76.3359, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "request", "seconds": 79.3341, "method": "GET", "path": "/api/internal/vm/instances"}
+{"event": "list_snapshot", "seconds": 79.3356, "platform": "android", "delay": 0, "states": {"android-switched-1": "starting", "android-running": "running", "android-starting": "starting", "android-error": "starting", "android-stopping": "stopping", "android-bind-failed": "error", "android-stopped": "stopped", "android-probe-a": "running", "android-probe-b": "error"}}
+{"event": "request", "seconds": 79.3363, "method": "GET", "path": "/api/internal/ios-sim/instances"}
+{"event": "request", "seconds": 79.3365, "method": "GET", "path": "/api/internal/harmony-vm/instances"}
+{"event": "response", "seconds": 79.3368, "method": "GET", "path": "/api/internal/vm/instances", "status": 200}
+{"event": "list_snapshot", "seconds": 79.3372, "platform": "ios", "delay": 0, "states": {"ios-switched-1": "starting", "ios-running": "running", "ios-starting": "starting", "ios-error": "starting", "ios-stopping": "stopping", "ios-bind-failed": "error", "ios-stopped": "stopped", "ios-probe-a": "running", "ios-probe-b": "error"}}
+{"event": "list_snapshot", "seconds": 79.3377, "platform": "harmony", "delay": 0, "states": {"harmony-switched-1": "starting", "harmony-running": "running", "harmony-starting": "starting", "harmony-error": "starting", "harmony-stopping": "stopping", "harmony-bind-failed": "error", "harmony-stopped": "stopped", "harmony-probe-a": "running", "harmony-probe-b": "error"}}
+{"event": "response", "seconds": 79.3382, "method": "GET", "path": "/api/internal/ios-sim/instances", "status": 200}
+{"event": "response", "seconds": 79.3387, "method": "GET", "path": "/api/internal/harmony-vm/instances", "status": 200}
+{"event": "request", "seconds": 80.3146, "method": "GET", "path": "/api/healthz"}
+{"event": "response", "seconds": 80.3153, "method": "GET", "path": "/api/healthz", "status": 200}

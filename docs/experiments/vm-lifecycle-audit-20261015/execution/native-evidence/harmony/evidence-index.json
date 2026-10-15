@@ -1,0 +1,44 @@
+{
+  "platform": "harmony",
+  "scope": "personal isolated synthetic native chain; first-run input-method initialization completed before the formal case",
+  "raw_result": "/tmp/aiphone-personal-harmony-20261016a7/result.json",
+  "raw_status": "passed",
+  "root_independent_visual_review": true,
+  "expected_token": "HARMONY20261016A7",
+  "expected_count": 1,
+  "screenshots": [
+    {
+      "file": "04_confirmed.png",
+      "sha256": "bafe8d97b37c14d85a6e0c147010083faac38a53b2b9d8722ff10e126e1fdb73"
+    },
+    {
+      "file": "06_persisted.png",
+      "sha256": "e5d3601a4b442a5f5c8cda69cd634e60e09986d1763de1c426e49f66f7f61098"
+    }
+  ],
+  "source_hashes_at_start": {
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/harmony_personal_e2e.py": "d951bc304dff6a9c23694035abc2b481b167a5cdad344ac5698c62a4912d5e70",
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/personal-fixture.html": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+    "backend/ai_phone/agent/harmony_vm/manager.py": "66ae26ef9619ca721cff0b137e6d060d683b540590fdaee31f9faa6a5022bc14",
+    "backend/ai_phone/agent/harmony_vm/capability.py": "0b55a6dd74febed56efae177f82091c0d84607d090ba2122114bce1f1812035b",
+    "backend/ai_phone/agent/harmony_vm/registry.py": "bebe6a5f0db459782b74721a753b4a7faeb26943beb7e8c60194e4403f997d80",
+    "backend/ai_phone/agent/ws_client.py": "c9d6b39b48952b4c10adf8d124a210adc014f89525af9008586d2a7bdffcc04d",
+    "backend/ai_phone/agent/drivers/harmony.py": "3dbab0a5cc082928492c09d15711f1b73705399a72a7fe199dc5b7d7c21fbec4",
+    "backend/ai_phone/agent/drivers/hdc.py": "440df7e7dd2795b6b0bffd2942efb4a161550bfe8877085973006c88601a5e7c",
+    "backend/ai_phone/server/harmony_vm/api.py": "f7a970d83620f52b4d0d48db8d7765e4bf5100f414626636e30618028a8b8dbd",
+    "backend/ai_phone/server/harmony_vm/service.py": "68f363acf0f78843219d92beb29ee7ddad37ac98dec299af57feb9b8e04fc2be",
+    "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+    "backend/ai_phone/server/vm_lifecycle.py": "573d1a9005265736d08caf2891a81958004052a5bd27a8e53fed37bed497181b"
+  },
+  "source_hashes_match_final_files": true,
+  "protected_metadata_unchanged": true,
+  "cleanup": {
+    "server_404": true,
+    "delete_commands": 1,
+    "instance_directory_absent": true,
+    "registry_absent": true,
+    "runtime_absent": true,
+    "owned_processes": [],
+    "listening_native_ports": []
+  }
+}

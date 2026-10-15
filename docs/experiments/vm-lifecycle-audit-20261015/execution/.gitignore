@@ -1,0 +1,4 @@
+# Private local test runtime: databases, ephemeral credentials, build products.
+personal-runtime/
+__pycache__/
+*.pyc

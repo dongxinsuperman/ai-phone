@@ -1,0 +1,1149 @@
+{
+  "base": "http://127.0.0.1:60045",
+  "browser": "Playwright Chromium, one fresh localhost page, 1440x1150",
+  "contract": "immediate-ledger-delete-and-replacement; first binding confirmed only by running ACK",
+  "finishedAt": "2026-10-15T16:23:10.298Z",
+  "summary": {
+    "passed": 102,
+    "failed": 0,
+    "screenshots": 21
+  },
+  "checks": [
+    {
+      "label": "android: only selected platform visible",
+      "passed": true
+    },
+    {
+      "label": "android: no cleanup queue or manual force-release workflow",
+      "passed": true
+    },
+    {
+      "label": "android: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "label": "android: running actions unchanged",
+      "passed": true,
+      "detail": [
+        {
+          "text": "停止",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "android: starting blocks operations",
+      "passed": true,
+      "detail": [
+        {
+          "text": "复制配置",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "label": "android: stopping blocks operations",
+      "passed": true,
+      "detail": [
+        {
+          "text": "复制配置",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "label": "android: bound failure blocks restart but permits delete/switch exceptions",
+      "passed": true,
+      "detail": [
+        {
+          "text": "换 Agent（探查）",
+          "disabled": false
+        },
+        {
+          "text": "重试停止",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "android: failed first bind stays unbound and actionable",
+      "passed": true,
+      "detail": [
+        {
+          "text": "探查",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "android: offline row can be deleted or replaced",
+      "passed": true,
+      "detail": [
+        {
+          "text": "换 Agent（探查）",
+          "disabled": false
+        },
+        {
+          "text": "重试停止",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "android: stopped workflow unchanged",
+      "passed": true,
+      "detail": [
+        {
+          "text": "换 Agent（探查）",
+          "disabled": false
+        },
+        {
+          "text": "启动",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "android: first-bind failure is visible",
+      "passed": true
+    },
+    {
+      "label": "android: offline delete removes ledger row immediately",
+      "passed": true
+    },
+    {
+      "label": "android: earlier probe cannot clear newer row busy state",
+      "passed": true
+    },
+    {
+      "label": "android: stale probe not rendered in selected row",
+      "passed": true
+    },
+    {
+      "label": "android: candidates remain attached to correct VM",
+      "passed": true
+    },
+    {
+      "label": "android: sent start is displayed only as binding progress",
+      "passed": true
+    },
+    {
+      "label": "android: first bind in progress blocks conflicting actions",
+      "passed": true,
+      "detail": [
+        {
+          "text": "复制配置",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "label": "android: failed first bind clears displayed binding",
+      "passed": true
+    },
+    {
+      "label": "android: failed first bind can probe again or delete",
+      "passed": true,
+      "detail": [
+        {
+          "text": "探查",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "android: failed bind reason stays visible",
+      "passed": true
+    },
+    {
+      "label": "android: switch removes old ID even when old Agent offline",
+      "passed": true
+    },
+    {
+      "label": "android: switch creates a new ID with one new start in progress",
+      "passed": true
+    },
+    {
+      "label": "android: replacement progress is not reported as running success",
+      "passed": true,
+      "detail": [
+        {
+          "text": "复制配置",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "label": "android: only running ACK displays a confirmed binding",
+      "passed": true
+    },
+    {
+      "label": "android: successful first bind enters normal running actions",
+      "passed": true,
+      "detail": [
+        {
+          "text": "停止",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "android: confirmed stop permits restart",
+      "passed": true,
+      "detail": [
+        {
+          "text": "换 Agent（探查）",
+          "disabled": false
+        },
+        {
+          "text": "启动",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "android: old list cannot overwrite a newer start result",
+      "passed": true
+    },
+    {
+      "label": "android: late list cannot reopen conflicting actions",
+      "passed": true,
+      "detail": [
+        {
+          "text": "复制配置",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "label": "harmony: only selected platform visible",
+      "passed": true
+    },
+    {
+      "label": "harmony: no cleanup queue or manual force-release workflow",
+      "passed": true
+    },
+    {
+      "label": "harmony: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "label": "harmony: running actions unchanged",
+      "passed": true,
+      "detail": [
+        {
+          "text": "停止",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "harmony: starting blocks operations",
+      "passed": true,
+      "detail": [
+        {
+          "text": "复制配置",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "label": "harmony: stopping blocks operations",
+      "passed": true,
+      "detail": [
+        {
+          "text": "复制配置",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "label": "harmony: bound failure blocks restart but permits delete/switch exceptions",
+      "passed": true,
+      "detail": [
+        {
+          "text": "换 Agent（探查）",
+          "disabled": false
+        },
+        {
+          "text": "重试停止",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "harmony: failed first bind stays unbound and actionable",
+      "passed": true,
+      "detail": [
+        {
+          "text": "探查",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "harmony: offline row can be deleted or replaced",
+      "passed": true,
+      "detail": [
+        {
+          "text": "换 Agent（探查）",
+          "disabled": false
+        },
+        {
+          "text": "重试停止",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "harmony: stopped workflow unchanged",
+      "passed": true,
+      "detail": [
+        {
+          "text": "换 Agent（探查）",
+          "disabled": false
+        },
+        {
+          "text": "启动",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "harmony: first-bind failure is visible",
+      "passed": true
+    },
+    {
+      "label": "harmony: offline delete removes ledger row immediately",
+      "passed": true
+    },
+    {
+      "label": "harmony: earlier probe cannot clear newer row busy state",
+      "passed": true
+    },
+    {
+      "label": "harmony: stale probe not rendered in selected row",
+      "passed": true
+    },
+    {
+      "label": "harmony: candidates remain attached to correct VM",
+      "passed": true
+    },
+    {
+      "label": "harmony: sent start is displayed only as binding progress",
+      "passed": true
+    },
+    {
+      "label": "harmony: first bind in progress blocks conflicting actions",
+      "passed": true,
+      "detail": [
+        {
+          "text": "复制配置",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "label": "harmony: failed first bind clears displayed binding",
+      "passed": true
+    },
+    {
+      "label": "harmony: failed first bind can probe again or delete",
+      "passed": true,
+      "detail": [
+        {
+          "text": "探查",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "harmony: failed bind reason stays visible",
+      "passed": true
+    },
+    {
+      "label": "harmony: switch removes old ID even when old Agent offline",
+      "passed": true
+    },
+    {
+      "label": "harmony: switch creates a new ID with one new start in progress",
+      "passed": true
+    },
+    {
+      "label": "harmony: replacement progress is not reported as running success",
+      "passed": true,
+      "detail": [
+        {
+          "text": "复制配置",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "label": "harmony: only running ACK displays a confirmed binding",
+      "passed": true
+    },
+    {
+      "label": "harmony: successful first bind enters normal running actions",
+      "passed": true,
+      "detail": [
+        {
+          "text": "停止",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "harmony: confirmed stop permits restart",
+      "passed": true,
+      "detail": [
+        {
+          "text": "换 Agent（探查）",
+          "disabled": false
+        },
+        {
+          "text": "启动",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "harmony: old list cannot overwrite a newer start result",
+      "passed": true
+    },
+    {
+      "label": "harmony: late list cannot reopen conflicting actions",
+      "passed": true,
+      "detail": [
+        {
+          "text": "复制配置",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "label": "ios: only selected platform visible",
+      "passed": true
+    },
+    {
+      "label": "ios: no cleanup queue or manual force-release workflow",
+      "passed": true
+    },
+    {
+      "label": "ios: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "label": "ios: running actions unchanged",
+      "passed": true,
+      "detail": [
+        {
+          "text": "停止",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "ios: starting blocks operations",
+      "passed": true,
+      "detail": [
+        {
+          "text": "复制配置",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "label": "ios: stopping blocks operations",
+      "passed": true,
+      "detail": [
+        {
+          "text": "复制配置",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "label": "ios: bound failure blocks restart but permits delete/switch exceptions",
+      "passed": true,
+      "detail": [
+        {
+          "text": "换 Agent（探查）",
+          "disabled": false
+        },
+        {
+          "text": "重试停止",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "ios: failed first bind stays unbound and actionable",
+      "passed": true,
+      "detail": [
+        {
+          "text": "探查",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "ios: offline row can be deleted or replaced",
+      "passed": true,
+      "detail": [
+        {
+          "text": "换 Agent（探查）",
+          "disabled": false
+        },
+        {
+          "text": "重试停止",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "ios: stopped workflow unchanged",
+      "passed": true,
+      "detail": [
+        {
+          "text": "换 Agent（探查）",
+          "disabled": false
+        },
+        {
+          "text": "启动",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "ios: first-bind failure is visible",
+      "passed": true
+    },
+    {
+      "label": "ios: offline delete removes ledger row immediately",
+      "passed": true
+    },
+    {
+      "label": "ios: earlier probe cannot clear newer row busy state",
+      "passed": true
+    },
+    {
+      "label": "ios: stale probe not rendered in selected row",
+      "passed": true
+    },
+    {
+      "label": "ios: candidates remain attached to correct VM",
+      "passed": true
+    },
+    {
+      "label": "ios: sent start is displayed only as binding progress",
+      "passed": true
+    },
+    {
+      "label": "ios: first bind in progress blocks conflicting actions",
+      "passed": true,
+      "detail": [
+        {
+          "text": "复制配置",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "label": "ios: failed first bind clears displayed binding",
+      "passed": true
+    },
+    {
+      "label": "ios: failed first bind can probe again or delete",
+      "passed": true,
+      "detail": [
+        {
+          "text": "探查",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "ios: failed bind reason stays visible",
+      "passed": true
+    },
+    {
+      "label": "ios: switch removes old ID even when old Agent offline",
+      "passed": true
+    },
+    {
+      "label": "ios: switch creates a new ID with one new start in progress",
+      "passed": true
+    },
+    {
+      "label": "ios: replacement progress is not reported as running success",
+      "passed": true,
+      "detail": [
+        {
+          "text": "复制配置",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "label": "ios: only running ACK displays a confirmed binding",
+      "passed": true
+    },
+    {
+      "label": "ios: successful first bind enters normal running actions",
+      "passed": true,
+      "detail": [
+        {
+          "text": "停止",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "ios: confirmed stop permits restart",
+      "passed": true,
+      "detail": [
+        {
+          "text": "换 Agent（探查）",
+          "disabled": false
+        },
+        {
+          "text": "启动",
+          "disabled": false
+        },
+        {
+          "text": "复制配置",
+          "disabled": false
+        },
+        {
+          "text": "删除",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "label": "ios: old list cannot overwrite a newer start result",
+      "passed": true
+    },
+    {
+      "label": "ios: late list cannot reopen conflicting actions",
+      "passed": true,
+      "detail": [
+        {
+          "text": "复制配置",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "label": "android: HTTP evidence confirms overlapping probes",
+      "passed": true,
+      "detail": {
+        "aBegin": 16.7956,
+        "bBegin": 16.8115,
+        "aEnd": 17.3968,
+        "bEnd": 18.2113
+      }
+    },
+    {
+      "label": "android: offline deletion runs once without automatic retry",
+      "passed": true,
+      "detail": [
+        {
+          "event": "delete_ledger",
+          "seconds": 16.7739,
+          "platform": "android",
+          "vm_id": "android-offline",
+          "previous_state": "agent_offline"
+        }
+      ]
+    },
+    {
+      "label": "android: switch retires old ID and starts new ID once",
+      "passed": true,
+      "detail": [
+        {
+          "event": "vm_action",
+          "seconds": 18.544,
+          "platform": "android",
+          "vm_id": "android-switched-1",
+          "old_vm_id": "android-switch-source",
+          "action": "dispatch",
+          "switched": true,
+          "state": "starting",
+          "target": "personal-candidate-目标"
+        }
+      ]
+    },
+    {
+      "label": "android: failed first bind does not trigger another background start",
+      "passed": true,
+      "detail": [
+        {
+          "event": "vm_action",
+          "seconds": 18.3043,
+          "platform": "android",
+          "vm_id": "android-probe-b",
+          "old_vm_id": "android-probe-b",
+          "action": "dispatch",
+          "switched": false,
+          "state": "starting",
+          "target": "personal-candidate-B"
+        }
+      ]
+    },
+    {
+      "label": "android: delayed HTTP snapshot was genuinely stale",
+      "passed": true,
+      "detail": {
+        "event": "list_snapshot",
+        "seconds": 19.5863,
+        "platform": "android",
+        "delay": 2.5,
+        "states": {
+          "android-switched-1": "starting",
+          "android-running": "running",
+          "android-starting": "starting",
+          "android-error": "stopped",
+          "android-stopping": "stopping",
+          "android-bind-failed": "error",
+          "android-stopped": "stopped",
+          "android-probe-a": "running",
+          "android-probe-b": "error"
+        }
+      }
+    },
+    {
+      "label": "harmony: HTTP evidence confirms overlapping probes",
+      "passed": true,
+      "detail": {
+        "aBegin": 22.4202,
+        "bBegin": 22.7139,
+        "aEnd": 23.0213,
+        "bEnd": 24.115
+      }
+    },
+    {
+      "label": "harmony: offline deletion runs once without automatic retry",
+      "passed": true,
+      "detail": [
+        {
+          "event": "delete_ledger",
+          "seconds": 22.3881,
+          "platform": "harmony",
+          "vm_id": "harmony-offline",
+          "previous_state": "agent_offline"
+        }
+      ]
+    },
+    {
+      "label": "harmony: switch retires old ID and starts new ID once",
+      "passed": true,
+      "detail": [
+        {
+          "event": "vm_action",
+          "seconds": 24.4201,
+          "platform": "harmony",
+          "vm_id": "harmony-switched-1",
+          "old_vm_id": "harmony-switch-source",
+          "action": "dispatch",
+          "switched": true,
+          "state": "starting",
+          "target": "personal-candidate-目标"
+        }
+      ]
+    },
+    {
+      "label": "harmony: failed first bind does not trigger another background start",
+      "passed": true,
+      "detail": [
+        {
+          "event": "vm_action",
+          "seconds": 24.1905,
+          "platform": "harmony",
+          "vm_id": "harmony-probe-b",
+          "old_vm_id": "harmony-probe-b",
+          "action": "dispatch",
+          "switched": false,
+          "state": "starting",
+          "target": "personal-candidate-B"
+        }
+      ]
+    },
+    {
+      "label": "harmony: delayed HTTP snapshot was genuinely stale",
+      "passed": true,
+      "detail": {
+        "event": "list_snapshot",
+        "seconds": 25.5033,
+        "platform": "harmony",
+        "delay": 2.5,
+        "states": {
+          "harmony-switched-1": "starting",
+          "harmony-running": "running",
+          "harmony-starting": "starting",
+          "harmony-error": "stopped",
+          "harmony-stopping": "stopping",
+          "harmony-bind-failed": "error",
+          "harmony-stopped": "stopped",
+          "harmony-probe-a": "running",
+          "harmony-probe-b": "error"
+        }
+      }
+    },
+    {
+      "label": "ios: HTTP evidence confirms overlapping probes",
+      "passed": true,
+      "detail": {
+        "aBegin": 28.3365,
+        "bBegin": 28.3531,
+        "aEnd": 28.937,
+        "bEnd": 29.7541
+      }
+    },
+    {
+      "label": "ios: offline deletion runs once without automatic retry",
+      "passed": true,
+      "detail": [
+        {
+          "event": "delete_ledger",
+          "seconds": 28.2912,
+          "platform": "ios",
+          "vm_id": "ios-offline",
+          "previous_state": "agent_offline"
+        }
+      ]
+    },
+    {
+      "label": "ios: switch retires old ID and starts new ID once",
+      "passed": true,
+      "detail": [
+        {
+          "event": "vm_action",
+          "seconds": 30.0779,
+          "platform": "ios",
+          "vm_id": "ios-switched-1",
+          "old_vm_id": "ios-switch-source",
+          "action": "dispatch",
+          "switched": true,
+          "state": "starting",
+          "target": "personal-candidate-目标"
+        }
+      ]
+    },
+    {
+      "label": "ios: failed first bind does not trigger another background start",
+      "passed": true,
+      "detail": [
+        {
+          "event": "vm_action",
+          "seconds": 29.839,
+          "platform": "ios",
+          "vm_id": "ios-probe-b",
+          "old_vm_id": "ios-probe-b",
+          "action": "dispatch",
+          "switched": false,
+          "state": "starting",
+          "target": "personal-candidate-B"
+        }
+      ]
+    },
+    {
+      "label": "ios: delayed HTTP snapshot was genuinely stale",
+      "passed": true,
+      "detail": {
+        "event": "list_snapshot",
+        "seconds": 31.1403,
+        "platform": "ios",
+        "delay": 2.5,
+        "states": {
+          "ios-switched-1": "starting",
+          "ios-running": "running",
+          "ios-starting": "starting",
+          "ios-error": "stopped",
+          "ios-stopping": "stopping",
+          "ios-bind-failed": "error",
+          "ios-stopped": "stopped",
+          "ios-probe-a": "running",
+          "ios-probe-b": "error"
+        }
+      }
+    },
+    {
+      "label": "no browser console or runtime errors",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "label": "no non-local request attempted",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "label": "all page HTTP requests use dedicated localhost fixture",
+      "passed": true
+    }
+  ],
+  "screenshots": [
+    "android-overview.png",
+    "android-probe-current.png",
+    "android-first-bind-progress.png",
+    "android-first-bind-failed.png",
+    "android-switch-new-id.png",
+    "android-first-bind-confirmed.png",
+    "android-late-list-protected.png",
+    "harmony-overview.png",
+    "harmony-probe-current.png",
+    "harmony-first-bind-progress.png",
+    "harmony-first-bind-failed.png",
+    "harmony-switch-new-id.png",
+    "harmony-first-bind-confirmed.png",
+    "harmony-late-list-protected.png",
+    "ios-overview.png",
+    "ios-probe-current.png",
+    "ios-first-bind-progress.png",
+    "ios-first-bind-failed.png",
+    "ios-switch-new-id.png",
+    "ios-first-bind-confirmed.png",
+    "ios-late-list-protected.png"
+  ],
+  "dialogs": [
+    {
+      "platform": "android",
+      "type": "confirm",
+      "message": "确定删除虚拟机“ANDROID · 离线删除示例”？将删除后台配置，原宿主上的实例及数据也不再保留。"
+    },
+    {
+      "platform": "android",
+      "type": "confirm",
+      "message": "换 Agent 将删除原配置，并在目标 Agent 新建空白机器；原实例的数据不迁移。确定继续？"
+    },
+    {
+      "platform": "harmony",
+      "type": "confirm",
+      "message": "确定删除虚拟机“HARMONY · 离线删除示例”？将删除后台配置，原宿主上的实例及数据也不再保留。"
+    },
+    {
+      "platform": "harmony",
+      "type": "confirm",
+      "message": "换 Agent 将删除原配置，并在目标 Agent 新建空白机器；原实例的数据不迁移。确定继续？"
+    },
+    {
+      "platform": "ios",
+      "type": "confirm",
+      "message": "确定删除虚拟机“IOS · 离线删除示例”？将删除后台配置，原宿主上的实例及数据也不再保留。"
+    },
+    {
+      "platform": "ios",
+      "type": "confirm",
+      "message": "换 Agent 将删除原配置，并在目标 Agent 新建空白机器；原实例的数据不迁移。确定继续？"
+    }
+  ],
+  "consoleErrors": [],
+  "blockedUrls": [],
+  "requestCounts": {
+    "http://127.0.0.1:60045/virtual-machines": 1,
+    "http://127.0.0.1:60045/assets/index-ByQQso9D.js": 1,
+    "http://127.0.0.1:60045/assets/index-BewHGb4-.css": 1,
+    "http://127.0.0.1:60045/api/healthz": 15,
+    "http://127.0.0.1:60045/api/internal/vm/device-profiles?offset=0&limit=60": 1,
+    "http://127.0.0.1:60045/api/internal/vm/device-facets": 1,
+    "http://127.0.0.1:60045/api/internal/vm/instances": 33,
+    "http://127.0.0.1:60045/api/internal/harmony-vm/instances": 33,
+    "http://127.0.0.1:60045/api/internal/harmony-vm/catalog": 4,
+    "http://127.0.0.1:60045/api/internal/ios-sim/instances": 32,
+    "http://127.0.0.1:60045/api/internal/ios-sim/catalog": 4,
+    "http://127.0.0.1:60045/favicon.svg": 1,
+    "http://127.0.0.1:60045/api/internal/vm/instances/android-offline": 1,
+    "http://127.0.0.1:60045/api/internal/vm/instances/android-probe-a/dispatch-candidates": 2,
+    "http://127.0.0.1:60045/api/internal/vm/instances/android-probe-b/dispatch-candidates": 1,
+    "http://127.0.0.1:60045/api/internal/vm/instances/android-probe-b/dispatch": 1,
+    "http://127.0.0.1:60045/api/internal/vm/instances/android-switch-source/dispatch-candidates": 1,
+    "http://127.0.0.1:60045/api/internal/vm/instances/android-switch-source/dispatch": 1,
+    "http://127.0.0.1:60045/api/internal/vm/instances/android-probe-a/dispatch": 1,
+    "http://127.0.0.1:60045/api/internal/vm/instances/android-error/stop": 1,
+    "http://127.0.0.1:60045/api/internal/vm/instances/android-error/start": 1,
+    "http://127.0.0.1:60045/api/internal/harmony-vm/instances/harmony-offline": 1,
+    "http://127.0.0.1:60045/api/internal/harmony-vm/instances/harmony-probe-a/dispatch-candidates": 2,
+    "http://127.0.0.1:60045/api/internal/harmony-vm/instances/harmony-probe-b/dispatch-candidates": 1,
+    "http://127.0.0.1:60045/api/internal/harmony-vm/instances/harmony-probe-b/dispatch": 1,
+    "http://127.0.0.1:60045/api/internal/harmony-vm/instances/harmony-switch-source/dispatch-candidates": 1,
+    "http://127.0.0.1:60045/api/internal/harmony-vm/instances/harmony-switch-source/dispatch": 1,
+    "http://127.0.0.1:60045/api/internal/harmony-vm/instances/harmony-probe-a/dispatch": 1,
+    "http://127.0.0.1:60045/api/internal/harmony-vm/instances/harmony-error/stop": 1,
+    "http://127.0.0.1:60045/api/internal/harmony-vm/instances/harmony-error/start": 1,
+    "http://127.0.0.1:60045/api/internal/ios-sim/instances/ios-offline": 1,
+    "http://127.0.0.1:60045/api/internal/ios-sim/instances/ios-probe-a/dispatch-candidates": 2,
+    "http://127.0.0.1:60045/api/internal/ios-sim/instances/ios-probe-b/dispatch-candidates": 1,
+    "http://127.0.0.1:60045/api/internal/ios-sim/instances/ios-probe-b/dispatch": 1,
+    "http://127.0.0.1:60045/api/internal/ios-sim/instances/ios-switch-source/dispatch-candidates": 1,
+    "http://127.0.0.1:60045/api/internal/ios-sim/instances/ios-switch-source/dispatch": 1,
+    "http://127.0.0.1:60045/api/internal/ios-sim/instances/ios-probe-a/dispatch": 1,
+    "http://127.0.0.1:60045/api/internal/ios-sim/instances/ios-error/stop": 1,
+    "http://127.0.0.1:60045/api/internal/ios-sim/instances/ios-error/start": 1
+  },
+  "acceptance_status": "PASS_LOCAL_UI_CURRENT_CONTRACT",
+  "native_vm_validation": false,
+  "fixture_server_stopped": true,
+  "test_browser_page_closed": true
+}

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>个人虚拟机生命周期验收</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f4f7fb; color: #132236; font: 20px system-ui, sans-serif; }
+  main { max-width: 520px; padding: 24px 20px; margin: auto; }
+  h1 { font-size: 26px; margin: 0 0 12px; }
+  p { line-height: 1.5; }
+  label { display: block; margin: 24px 0 8px; }
+  input { display: block; width: 100%; height: 58px; padding: 10px; font: 20px system-ui; border: 2px solid #52657a; border-radius: 8px; }
+  button { display: block; width: 100%; height: 62px; margin: 18px 0 24px; border: 0; border-radius: 8px; color: white; background: #155ab6; font: 24px system-ui; }
+  .result { padding: 16px; border: 2px solid #0a795b; border-radius: 8px; background: white; overflow-wrap: anywhere; }
+  #receipt { font-size: 15px; }
+</style>
+<main>
+  <h1>个人虚拟机生命周期验收</h1>
+  <p>输入本轮标记，再点击确认。</p>
+  <label for="token">本轮标记</label>
+  <input id="token" aria-label="输入本轮标记" placeholder="输入本轮标记" autocomplete="off" autocorrect="off" spellcheck="false" autocapitalize="none">
+  <button id="confirm" type="button" aria-label="确认">确认</button>
+  <section class="result" aria-live="polite">
+    <div>已保存标记：<strong id="saved">尚未确认</strong></div>
+    <div>确认次数：<strong id="count">0</strong></div>
+  </section>
+  <p id="receipt">正在记录页面状态</p>
+</main>
+<script>
+  'use strict';
+  const query = new URLSearchParams(location.search);
+  const run = query.get('run') || 'missing-run';
+  const platform = query.get('platform') || 'unknown';
+  const storageKey = 'personal-vm-e2e:' + run;
+  let saved = { token: '', count: 0 };
+  try { saved = JSON.parse(localStorage.getItem(storageKey)) || saved; } catch (_) {}
+  const input = document.getElementById('token');
+  function render() {
+    document.getElementById('saved').textContent = saved.token || '尚未确认';
+    document.getElementById('count').textContent = String(saved.count);
+  }
+  async function report(event) {
+    const body = { run, platform, event, token: saved.token, count: saved.count };
+    try {
+      const response = await fetch('/fixture/receipt', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      if (!response.ok) throw new Error('receipt failed');
+      document.getElementById('receipt').textContent = '本地回执已记录';
+    } catch (_) { document.getElementById('receipt').textContent = '本地回执未送达'; }
+  }
+  document.getElementById('confirm').addEventListener('click', () => {
+    const token = input.value.trim();
+    if (!token) { input.focus(); return; }
+    saved = { token, count: Number(saved.count || 0) + 1 };
+    localStorage.setItem(storageKey, JSON.stringify(saved));
+    input.blur(); render(); report('confirm');
+  });
+  render(); report('load');
+</script>
+</html>

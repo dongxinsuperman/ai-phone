@@ -1,0 +1,36 @@
+{
+  "platform": "ios",
+  "scope": "personal isolated synthetic native chain; not production VLM or physical phone acceptance",
+  "raw_result": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/execution/personal-runtime/ios-20261016-012711-37f48c/result.json",
+  "raw_status": "passed",
+  "screenshots": [
+    {
+      "file": "confirmed.png",
+      "sha256": "a843c6a4f9df3a1f3b356ee3831770d4dde0553c21d3b155d330d8ff7bf57e2c"
+    },
+    {
+      "file": "after-restart.png",
+      "sha256": "fa15f9ce021ed58c927917af48a17590caa9a64afe21abcc7d6317278de801ab"
+    }
+  ],
+  "root_independent_visual_review": true,
+  "source_hashes_at_start": {
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/ios_personal_e2e.py": "38efbdd9c843c6c21dbf618b2dffc24de86aae05f631f727384902453f572753",
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/personal-fixture.html": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+    "backend/ai_phone/agent/ios_sim/manager.py": "6401fce688f697450099204f8c96c8995ffb2f2dcc65912b265e7ff1362bda60",
+    "backend/ai_phone/agent/ios_sim/capability.py": "299b9d97a595e0e5963f916ce5fa375beb322d8226fb67e1aa5547799f7fba67",
+    "backend/ai_phone/agent/drivers/ios_simulator.py": "6fa35133ff3e8aef472349442aedca3be42f5141ecd0ee31d9c3efc936a65790",
+    "backend/ai_phone/agent/drivers/ios_simulator_driver.py": "ddc173297404542b57c33a006c5997e2f7c14f24c921f5b3b6e112e2629e9c18",
+    "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+    "backend/ai_phone/agent/drivers/wda_client.py": "95a944344e5f6eef75531fb0c433306845dc5b4abc079cf40f530bf1bba55f6c",
+    "backend/ai_phone/agent/drivers/simctl.py": "844014abea1f4a9e9c3694615db2d0859c261dd9f4a7e603dbff7b806580a084",
+    "backend/ai_phone/agent/health/probe.py": "a4ec72f21e4dc6b1bf4b0c3bcfcdde37b74b57305cc57b9d2ce738fc91139c33",
+    "backend/ai_phone/agent/ws_client.py": "c9d6b39b48952b4c10adf8d124a210adc014f89525af9008586d2a7bdffcc04d",
+    "backend/ai_phone/server/ios_sim/api.py": "913f2411086fd9fb6a0d0b3bbbd443693f07c554056a73af294dcda14fcff343",
+    "backend/ai_phone/server/ios_sim/service.py": "0671048c1217994e6fdb53c846e96afd99123d27f92b1325dcb50874ddad1fef",
+    "backend/ai_phone/server/vm_lifecycle.py": "573d1a9005265736d08caf2891a81958004052a5bd27a8e53fed37bed497181b",
+    "backend/ai_phone/server/hub.py": "7252018d5468f7e0ccc3f7b28e3fa238053751e61925cef1b3538050c6ee4b33",
+    "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50"
+  },
+  "source_hashes_match_final_files": true
+}

@@ -1,0 +1,242 @@
+{
+  "status": "passed",
+  "platform": "harmony",
+  "scope": "Personal local macOS/ARM64 DevEco Phone; real lifecycle and synthetic native-driver browser Case, no VLM/Onion/company environment.",
+  "evidence_root": "/tmp/aiphone-personal-harmony-20261016a7",
+  "result": "/tmp/aiphone-personal-harmony-20261016a7/result.json",
+  "result_sha256": "b3170b628478c92729070b5480b6989badeb0225e6db51d5dbc6bdce2330d8f8",
+  "vm_id": "b554f5abd1d9",
+  "native_uuid": "ddf4b2d0-71d2-4daa-9a1c-2f71999d297e",
+  "native_chain": {
+    "real_http_ws_server_agent": true,
+    "draft_created_unbound": true,
+    "actual_capability_probe": true,
+    "bind_and_create_boot": true,
+    "real_hdc_and_hmdriver2": true,
+    "real_readiness": true,
+    "server_run_status": "success",
+    "run_id": "183754b5afdb",
+    "actual_driver_input_and_confirm": true,
+    "formal_case_assisted": false
+  },
+  "persistence": {
+    "vm_id_retained": true,
+    "native_uuid_retained": true,
+    "token": "HARMONY20261016A7",
+    "count_before_stop": 1,
+    "count_after_restart": 1,
+    "confirm_and_restart_receipts": [
+      {
+        "run": "20261016a7",
+        "platform": "harmony",
+        "event": "load",
+        "token": "",
+        "count": 0,
+        "received_at": "2026-10-15T18:03:26.019246+00:00",
+        "user_agent": "Mozilla/5.0 (Phone; OpenHarmony 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36  ArkWeb/6.1.0.115 Mobile HuaweiBrowser/5.1.9.315"
+      },
+      {
+        "run": "20261016a7",
+        "platform": "harmony",
+        "event": "confirm",
+        "token": "HARMONY20261016A7",
+        "count": 1,
+        "received_at": "2026-10-15T18:04:05.084721+00:00",
+        "user_agent": "Mozilla/5.0 (Phone; OpenHarmony 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36  ArkWeb/6.1.0.115 Mobile HuaweiBrowser/5.1.9.315"
+      },
+      {
+        "run": "20261016a7",
+        "platform": "harmony",
+        "event": "load",
+        "token": "HARMONY20261016A7",
+        "count": 1,
+        "received_at": "2026-10-15T18:05:47.481562+00:00",
+        "user_agent": "Mozilla/5.0 (Phone; OpenHarmony 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36  ArkWeb/6.1.0.115 Mobile HuaweiBrowser/5.1.9.315"
+      }
+    ]
+  },
+  "delete": {
+    "server_ledger_immediate_404": true,
+    "native_cleanup_checked_independently": true,
+    "server_404": true,
+    "delete_commands": 1,
+    "instance_directory_absent": true,
+    "registry_absent": true,
+    "runtime_absent": true,
+    "owned_processes": [],
+    "listening_native_ports": []
+  },
+  "final_native_state": {
+    "instance_directory_absent": true,
+    "registry_absent": true,
+    "runtime_absent": true,
+    "owned_processes": [],
+    "listening_native_ports": []
+  },
+  "protected_metadata_unchanged": true,
+  "protected_before": {
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_harmony_8ef590502d89/config.ini": "d9e02a36096d3684498346cf70e5bf053a6bbf9817ce34a6f8eb1007a1b00641",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_harmony_8ef590502d89.ini": "8d04b5680ba467e1c059dbb7d0463b6a3edbc72698e879eae6161b83f7530ce2",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_hdc_test/config.ini": "2d8e0eddf338e0a8ff9b571985221ade1efaac556930aaa869a9cfa3ced45d18",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_hdc_test.ini": "c614dfdb3328e5c48612050084f08b9ea8f5453757333262a3a0406a82ca6933",
+    "/Users/dongxin/.Huawei/Emulator/deployed/lists.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "/Users/dongxin/Library/Caches/Huawei/Emulator6.1/.emu_config": "7cebbf23abec7212f5908c2c2ed6085c6ecd30ba15808de3b754979b47a17e56"
+  },
+  "protected_after": {
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_harmony_8ef590502d89/config.ini": "d9e02a36096d3684498346cf70e5bf053a6bbf9817ce34a6f8eb1007a1b00641",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_harmony_8ef590502d89.ini": "8d04b5680ba467e1c059dbb7d0463b6a3edbc72698e879eae6161b83f7530ce2",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_hdc_test/config.ini": "2d8e0eddf338e0a8ff9b571985221ade1efaac556930aaa869a9cfa3ced45d18",
+    "/Users/dongxin/.Huawei/Emulator/deployed/aiphone_hdc_test.ini": "c614dfdb3328e5c48612050084f08b9ea8f5453757333262a3a0406a82ca6933",
+    "/Users/dongxin/.Huawei/Emulator/deployed/lists.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "/Users/dongxin/Library/Caches/Huawei/Emulator6.1/.emu_config": "7cebbf23abec7212f5908c2c2ed6085c6ecd30ba15808de3b754979b47a17e56"
+  },
+  "product_and_harness_sources_unchanged_during_run": true,
+  "source_hashes": {
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/harmony_personal_e2e.py": "d951bc304dff6a9c23694035abc2b481b167a5cdad344ac5698c62a4912d5e70",
+    "docs/experiments/vm-lifecycle-audit-20261015/execution/personal-fixture.html": "24e20a5cf5ecaf8c3490c0ec11a8065b9974a51328a400e6e36a18ba7162cf87",
+    "backend/ai_phone/agent/harmony_vm/manager.py": "66ae26ef9619ca721cff0b137e6d060d683b540590fdaee31f9faa6a5022bc14",
+    "backend/ai_phone/agent/harmony_vm/capability.py": "0b55a6dd74febed56efae177f82091c0d84607d090ba2122114bce1f1812035b",
+    "backend/ai_phone/agent/harmony_vm/registry.py": "bebe6a5f0db459782b74721a753b4a7faeb26943beb7e8c60194e4403f997d80",
+    "backend/ai_phone/agent/ws_client.py": "c9d6b39b48952b4c10adf8d124a210adc014f89525af9008586d2a7bdffcc04d",
+    "backend/ai_phone/agent/drivers/harmony.py": "3dbab0a5cc082928492c09d15711f1b73705399a72a7fe199dc5b7d7c21fbec4",
+    "backend/ai_phone/agent/drivers/hdc.py": "440df7e7dd2795b6b0bffd2942efb4a161550bfe8877085973006c88601a5e7c",
+    "backend/ai_phone/server/harmony_vm/api.py": "f7a970d83620f52b4d0d48db8d7765e4bf5100f414626636e30618028a8b8dbd",
+    "backend/ai_phone/server/harmony_vm/service.py": "68f363acf0f78843219d92beb29ee7ddad37ac98dec299af57feb9b8e04fc2be",
+    "backend/ai_phone/server/ws/agent_ws.py": "380f915a423efed6b4f1d2a0414dfd2ec566c3fb205e8b4fde70b6ea1e05fc50",
+    "backend/ai_phone/server/vm_lifecycle.py": "573d1a9005265736d08caf2891a81958004052a5bd27a8e53fed37bed497181b"
+  },
+  "visual_evidence": {
+    "machine_method": "native_tree; OCR not used for final pass",
+    "root_independent_visual_review": "Both original PNGs verified by root: identical saved token and count 1; post-restart input empty.",
+    "confirmed": {
+      "path": "/tmp/aiphone-personal-harmony-20261016a7/04_confirmed.png",
+      "sha256": "bafe8d97b37c14d85a6e0c147010083faac38a53b2b9d8722ff10e126e1fdb73"
+    },
+    "restarted": {
+      "path": "/tmp/aiphone-personal-harmony-20261016a7/06_persisted.png",
+      "sha256": "e5d3601a4b442a5f5c8cda69cd634e60e09986d1763de1c426e49f66f7f61098"
+    }
+  },
+  "test_preparation": {
+    "is_product_change": false,
+    "description": "Fresh disposable guest only: cancel initial IME full statement, select explicit basic typing mode, choose 26-key classic layout, finish ordinary onboarding; no account or additional permissions. Performed before the one formal Run.",
+    "proof": "/tmp/aiphone-personal-harmony-20261016a7/manual-preparation.json",
+    "native_actions": "/tmp/aiphone-personal-harmony-20261016a7/manual-native-events.jsonl"
+  },
+  "timings_seconds": {
+    "candidate_probe": 3.9509272499999497,
+    "first_dispatch_to_running": 56.173624,
+    "restart_to_running": 37.03376,
+    "stop_roundtrips": [
+      15.271012,
+      15.742876
+    ]
+  },
+  "prior_attempts_preserved": [
+    {
+      "attempt": "a1",
+      "status": "failed",
+      "reason": "Harness sent readiness before Server device registration; corrected ordering.",
+      "result": "/tmp/aiphone-personal-harmony-20261016a1/result.json",
+      "result_sha256": "09f7696a83624b330fe598847a5aefc18a21d2a88adc7d8c2ebf51d6b43ff2d2",
+      "failure_image": "/tmp/aiphone-personal-harmony-20261016a1/failure.png",
+      "protected_unchanged": true,
+      "initial_cleanup": {
+        "instance_directory_absent": true,
+        "registry_absent": true,
+        "runtime_absent": true,
+        "owned_processes": [],
+        "listening_native_ports": []
+      }
+    },
+    {
+      "attempt": "a2",
+      "status": "failed",
+      "reason": "aa -U launched browser but did not navigate; switched to native address input.",
+      "result": "/tmp/aiphone-personal-harmony-20261016a2/result.json",
+      "result_sha256": "846fb6052d174e4e2e5b7d266718a85da057237d155e1646fcf17ab9a54d2e19",
+      "failure_image": "/tmp/aiphone-personal-harmony-20261016a2/failure.png",
+      "protected_unchanged": true,
+      "initial_cleanup": {
+        "instance_directory_absent": true,
+        "registry_absent": true,
+        "runtime_absent": true,
+        "owned_processes": [],
+        "listening_native_ports": []
+      }
+    },
+    {
+      "attempt": "a3",
+      "status": "failed",
+      "reason": "Fresh IME initial statement blocked input; did not accept it. Initial cleanup remained unconfirmed and retained registry/directory; one later exact cleanup succeeded.",
+      "result": "/tmp/aiphone-personal-harmony-20261016a3/result.json",
+      "result_sha256": "007de4c2845b4311f4f32a65d0818721ea466c436fcac61f1175088da8797fcf",
+      "failure_image": "/tmp/aiphone-personal-harmony-20261016a3/failure.png",
+      "protected_unchanged": true,
+      "initial_cleanup": {
+        "instance_directory_absent": false,
+        "registry_absent": false,
+        "runtime_absent": true,
+        "owned_processes": [],
+        "listening_native_ports": []
+      },
+      "subsequent_exact_cleanup_receipt": "/tmp/aiphone-personal-harmony-20261016a3/cleanup-receipt.json",
+      "subsequent_cleanup_passed": true
+    },
+    {
+      "attempt": "a4",
+      "status": "failed",
+      "reason": "Cancelling initial IME statement exposed basic/full-mode selection; no mode accepted in that run.",
+      "result": "/tmp/aiphone-personal-harmony-20261016a4/result.json",
+      "result_sha256": "50db0ee2877fc697055d4b277ec4c2cf8512a7d745a4e6b76d917023b4f895c7",
+      "failure_image": "/tmp/aiphone-personal-harmony-20261016a4/failure.png",
+      "protected_unchanged": true,
+      "initial_cleanup": {
+        "instance_directory_absent": true,
+        "registry_absent": true,
+        "runtime_absent": true,
+        "owned_processes": [],
+        "listening_native_ports": []
+      }
+    },
+    {
+      "attempt": "a5",
+      "status": "failed",
+      "reason": "Explicit basic mode enabled, then ordinary keyboard layout initialization remained; moved setup before formal Run.",
+      "result": "/tmp/aiphone-personal-harmony-20261016a5/result.json",
+      "result_sha256": "5035d46c324d408f602f6e5b1690d98953a2ddacb7793f24f0967cb9497872ef",
+      "failure_image": "/tmp/aiphone-personal-harmony-20261016a5/failure.png",
+      "protected_unchanged": true,
+      "initial_cleanup": {
+        "instance_directory_absent": true,
+        "registry_absent": true,
+        "runtime_absent": true,
+        "owned_processes": [],
+        "listening_native_ports": []
+      }
+    },
+    {
+      "attempt": "a6",
+      "status": "failed",
+      "reason": "Page loaded with real receipt; exact-RGB fixture locator rejected JPEG color variance; corrected offline using tolerance and rectangle geometry.",
+      "result": "/tmp/aiphone-personal-harmony-20261016a6/result.json",
+      "result_sha256": "70b2843a9adfe8633165249c1364eab805d482d76b6ee8008adf9406cba626bd",
+      "failure_image": "/tmp/aiphone-personal-harmony-20261016a6/failure.png",
+      "protected_unchanged": true,
+      "initial_cleanup": {
+        "instance_directory_absent": true,
+        "registry_absent": true,
+        "runtime_absent": true,
+        "owned_processes": [],
+        "listening_native_ports": []
+      }
+    }
+  ],
+  "limits": [
+    "Single personal macOS Harmony Phone instance; Windows and other Harmony device profiles not live-tested here.",
+    "No company environment, company package, real physical phone or remote host used.",
+    "This verifies synthetic native execution; it does not claim VLM business/Onion acceptance or high-concurrency stress coverage.",
+    "Default orphan scans were disabled for isolation; this run does not claim real offline reconciliation fault coverage."
+  ],
+  "recorded_at_utc": "2026-10-15T18:08:42.702751+00:00"
+}

@@ -1,0 +1,138 @@
+{
+  "updated_at_utc": "2026-10-15T17:37:57.104030+00:00",
+  "scope": "personal only; synthetic native chain; no external model",
+  "attempts": [
+    {
+      "run_id": "android-final-20261016-0f29c8",
+      "status": "failed",
+      "evidence": "/Users/dongxin/.codex/personal-vm-e2e/android-final-20261016-0f29c8/evidence.json",
+      "passed_stages": [
+        "personal APK build",
+        "HTTP create",
+        "WS capability",
+        "bind/start",
+        "native boot/package/screenshot",
+        "Server available readback",
+        "personal APK install"
+      ],
+      "failure": "Fixture load receipt absent; unquoted remote shell URL dropped platform parameter in isolated shell reproduction. Native stop confirmation also returned stop_unconfirmed; original instant not captured.",
+      "cleanup_evidence": "/Users/dongxin/.codex/personal-vm-e2e/android-final-20261016-0f29c8/resolved-owned-cleanup.json",
+      "cleanup_verified": {
+        "AVD_absent": true,
+        "private_ADB_stopped": true,
+        "native_processes_absent": true,
+        "ports_15037_5666_5667_no_listener": true,
+        "default_instance_metadata_unchanged": true
+      }
+    },
+    {
+      "run_id": "android-final-20261016-b41f5d",
+      "status": "failed",
+      "evidence": "/Users/dongxin/.codex/personal-vm-e2e/android-final-20261016-b41f5d/evidence.json",
+      "failure": "Correct complete URL reached personal APK; WebView showed ERR_ADDRESS_UNREACHABLE for10.0.2.2 host gateway. Native fixture transport will use exact-serial adb reverse instead; external guest networking remains unverified.",
+      "failure_screenshot": "/Users/dongxin/.codex/personal-vm-e2e/android-final-20261016-b41f5d/fixture-observed.png",
+      "native_stop_proof": {
+        "Popen_exit_code": 0,
+        "matching_pids": [],
+        "inventory_complete": true,
+        "port5666_plain_bind_errno": 48,
+        "port5666_reuse_bind_errno": 0,
+        "port5667_plain_bind_errno": 48,
+        "port5667_reuse_bind_errno": 0,
+        "production_stop_confirmed": true
+      },
+      "cleanup_verified": {
+        "AVD_absent": true,
+        "private_ADB_stopped": true,
+        "native_processes_absent": true,
+        "default_instance_metadata_unchanged": true
+      }
+    },
+    {
+      "run_id": "android-final-20261016-05e891",
+      "status": "failed",
+      "evidence": "/Users/dongxin/.codex/personal-vm-e2e/android-final-20261016-05e891/evidence.json",
+      "passed_stages": [
+        "bind/start",
+        "native readiness",
+        "personal APK install",
+        "exact serial private adb reverse",
+        "shared HTML page load receipt and screenshot"
+      ],
+      "failure": "Fixture locator assumed WebView exposed a native EditText; actual UIAutomator tree contained only WebView. Real screenshot showed correct input/button. Offline screenshot geometry validated before any next run.",
+      "failure_screenshot": "/Users/dongxin/.codex/personal-vm-e2e/android-final-20261016-05e891/failure-4156a0b3d659.png",
+      "guest_network_evidence": "/Users/dongxin/.codex/personal-vm-e2e/android-final-20261016-05e891/guest-network.json",
+      "guest_network_facts": [
+        "wlan0 NO-CARRIER and eth0 DOWN",
+        "Active default network: none",
+        "only dummy0 and lo routes in all tables",
+        "proxy fields null",
+        "10.0.2.2 TCP probe Network is unreachable"
+      ],
+      "cleanup_verified": {
+        "AVD_absent": true,
+        "private_ADB_stopped": true,
+        "native_processes_absent": true,
+        "default_instance_metadata_unchanged": true
+      }
+    },
+    {
+      "run_id": "android-final-20261016-388512",
+      "status": "passed_synthetic_native_chain",
+      "duration_seconds": 72.269943,
+      "evidence": "/Users/dongxin/.codex/personal-vm-e2e/android-final-20261016-388512/evidence.json",
+      "visual_review": "/Users/dongxin/.codex/personal-vm-e2e/android-final-20261016-388512/visual-review.json",
+      "vm_id": "87c71f7c0df5",
+      "confirmed_screenshot": "/Users/dongxin/.codex/personal-vm-e2e/android-final-20261016-388512/fixture-confirmed.png",
+      "persisted_screenshot": "/Users/dongxin/.codex/personal-vm-e2e/android-final-20261016-388512/fixture-persisted.png",
+      "initial_state": "fresh XML plus load0 receipt; before PNG missing, explicitly disclosed",
+      "cleanup_verified": {
+        "AVD_absent": true,
+        "private_ADB_stopped": true,
+        "native_processes_absent": true,
+        "ports15037_5666_5667_no_listener": true,
+        "default_instance_metadata_unchanged": true
+      },
+      "root_independent_visual_review": true
+    },
+    {
+      "run_id": "android-frozen-20261016-4cdbe5",
+      "status": "passed",
+      "duration_seconds": 72.454439,
+      "evidence": "/Users/dongxin/.codex/personal-vm-e2e/android-frozen-20261016-4cdbe5/evidence.json",
+      "visual_review": "/Users/dongxin/.codex/personal-vm-e2e/android-frozen-20261016-4cdbe5/visual-review.json",
+      "source_verification": "/Users/dongxin/.codex/personal-vm-e2e/android-frozen-20261016-4cdbe5/source-verification.json",
+      "source_changes_since_start": [],
+      "vm_id": "24f99a116d25",
+      "screenshots": {
+        "initial": "/Users/dongxin/.codex/personal-vm-e2e/android-frozen-20261016-4cdbe5/fixture-before.png",
+        "confirmed": "/Users/dongxin/.codex/personal-vm-e2e/android-frozen-20261016-4cdbe5/fixture-confirmed.png",
+        "persisted": "/Users/dongxin/.codex/personal-vm-e2e/android-frozen-20261016-4cdbe5/fixture-persisted.png"
+      },
+      "cleanup_verified": {
+        "AVD_absent": true,
+        "private_ADB_stopped": true,
+        "native_processes_absent": true,
+        "ports15037_5666_5667_no_listener": true,
+        "default_instance_metadata_unchanged": true
+      },
+      "scope_excludes": [
+        "external guest network",
+        "VLM execution",
+        "business Case",
+        "physical device control",
+        "OS Agent process crash"
+      ],
+      "reviewer": "root",
+      "accepted_at_utc": "2026-10-15T17:37:57.104030+00:00",
+      "source_hashes_match_current": true,
+      "initial_screenshot_verified": true,
+      "confirmed_screenshot_verified": true,
+      "persisted_screenshot_verified": true
+    }
+  ],
+  "latest_frozen_run": "android-frozen-20261016-4cdbe5",
+  "final_status": "passed",
+  "accepted_frozen_run": "android-frozen-20261016-4cdbe5",
+  "final_scope": "Personal synthetic lifecycle/control only; excludesexternalguestnetwork,VLM,businessCase,physicaldevicecontrol,andOSAgentprocesscrash"
+}

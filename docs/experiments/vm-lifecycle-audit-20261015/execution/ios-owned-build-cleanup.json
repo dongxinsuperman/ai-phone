@@ -1,0 +1,41 @@
+{
+  "finished_at": "2026-10-15T17:32:05.840255+00:00",
+  "scope": "only five exact own test WDA DerivedData directories; retained SQLite/screenshots/logs/manifests",
+  "directories": [
+    {
+      "run": "ios-20261015-235440-e6d673",
+      "path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/execution/personal-runtime/ios-20261015-235440-e6d673/storage/ios_sim_wda_build",
+      "allocated_kib_before": 192880,
+      "action": "removed",
+      "absent_after": true
+    },
+    {
+      "run": "ios-20261015-235748-36ec28",
+      "path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/execution/personal-runtime/ios-20261015-235748-36ec28/storage/ios_sim_wda_build",
+      "allocated_kib_before": 193136,
+      "action": "removed",
+      "absent_after": true
+    },
+    {
+      "run": "ios-20261016-000628-3b49cc",
+      "path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/execution/personal-runtime/ios-20261016-000628-3b49cc/storage/ios_sim_wda_build",
+      "allocated_kib_before": 193016,
+      "action": "removed",
+      "absent_after": true
+    },
+    {
+      "run": "ios-20261016-003239-b7992f",
+      "path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/execution/personal-runtime/ios-20261016-003239-b7992f/storage/ios_sim_wda_build",
+      "allocated_kib_before": 192856,
+      "action": "removed",
+      "absent_after": true
+    },
+    {
+      "run": "ios-20261016-012711-37f48c",
+      "path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/execution/personal-runtime/ios-20261016-012711-37f48c/storage/ios_sim_wda_build",
+      "allocated_kib_before": 193800,
+      "action": "removed",
+      "absent_after": true
+    }
+  ]
+}
