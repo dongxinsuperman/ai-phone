@@ -1023,25 +1023,33 @@ def test_pending_registry_cleanup_reports_fresh_absence_evidence_without_repeati
     assert not config.parent.exists()
 
 
-def test_explicitly_confirmed_stopped_record_keeps_idempotent_fast_path(tmp_path, monkeypatch):
+def test_confirmed_stopped_record_rechecks_facts_without_repeating_native_stop(tmp_path, monkeypatch):
     manager = HarmonyVmManager(runtime_dir=tmp_path)
     runtime = _runtime(tmp_path)
     manager._known[runtime.vm_id] = {
         **runtime.persistent_dict(), "ready": False, "cleanup_pending": False, "cleanup_confirmed": True,
     }
-    monkeypatch.setattr(manager, "_active_instance_serial", lambda *_args: pytest.fail("confirmed stop does not need new native inspection"))
+    inspected = []
+    monkeypatch.setattr(manager, "_active_instance_serial", lambda *_args: inspected.append(True) or "")
+    monkeypatch.setattr(lifecycle, "managed_vm_owner", lambda _serial: None)
+    monkeypatch.setattr(lifecycle, "hdc_list_targets", lambda: [])
+    monkeypatch.setattr(manager, "_port_is_free", lambda _port: True)
     monkeypatch.setattr(manager, "_cleanup_crash_service", lambda *_args: (True, []))
     result = manager.stop_sync(runtime.vm_id, runtime.hdc_serial, runtime.lease_token)
     assert result["ok"] is True and result["reason"] == "not_running"
     assert result["details"]["cleanup_confirmed"] is True
+    assert inspected == [True]
+    assert result["details"]["exit_evidence"]["instance_process_status"] == "absent"
 
 
 @pytest.mark.parametrize("native_state", ["unknown", "port_busy"])
-def test_legacy_stopped_bit_does_not_override_unknown_or_busy_native_state(tmp_path, monkeypatch, native_state):
+@pytest.mark.parametrize("stored_confirmation", [False, True])
+def test_legacy_stopped_bit_does_not_override_unknown_or_busy_native_state(tmp_path, monkeypatch, native_state, stored_confirmation):
     manager = HarmonyVmManager(runtime_dir=tmp_path)
     runtime = _runtime(tmp_path)
     manager._known[runtime.vm_id] = {
         **runtime.persistent_dict(), "ready": False, "cleanup_pending": False,
+        "cleanup_confirmed": stored_confirmation,
     }
     checked = []
     monkeypatch.setattr(manager, "_active_instance_serial", lambda *_args: checked.append("process") or (None if native_state == "unknown" else ""))
@@ -1052,3 +1060,56 @@ def test_legacy_stopped_bit_does_not_override_unknown_or_busy_native_state(tmp_p
     assert checked == ["process"]
     assert result["ok"] is False and result["details"]["cleanup_confirmed"] is False
     assert result["reason"] == ("instance_owner_unverified" if native_state == "unknown" else "instance_absence_unconfirmed")
+
+
+@pytest.mark.parametrize("process_state", ["absent", "running", "unknown"])
+@pytest.mark.parametrize("action", ["stop", "delete"])
+def test_reclaimed_instance_requires_post_stop_process_evidence(
+    tmp_path, monkeypatch, process_state, action
+):
+    manager = HarmonyVmManager(runtime_dir=tmp_path)
+    runtime = _runtime(tmp_path)
+    runtime.process = None
+    manager._runtimes[runtime.vm_id] = runtime
+    manager._known[runtime.vm_id] = {**runtime.persistent_dict(), "created": True}
+    config = Path(runtime.instance_path) / runtime.instance_name / "config.ini"
+    config.parent.mkdir(parents=True)
+    config.write_text("private userdata must survive an unconfirmed stop")
+    commands, inspected = [], []
+
+    def native(args, **_kwargs):
+        assert args[0] == "/fake/Emulator" and args[2] == runtime.instance_name
+        commands.append(args[1])
+        if args[1] == "-delete":
+            shutil.rmtree(config.parent)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    def inspect(vm_id, known):
+        assert vm_id == runtime.vm_id and known["instance_path"] == runtime.instance_path
+        assert commands == ["-stop"], "process must be sampled after native stop"
+        inspected.append(True)
+        return {"absent": "", "running": runtime.hdc_serial, "unknown": None}[process_state]
+
+    monkeypatch.setattr(lifecycle, "find_harmony_tools", lambda: (cap.HarmonyVmTools("/fake/Emulator"), []))
+    monkeypatch.setattr(lifecycle.subprocess, "run", native)
+    monkeypatch.setattr(lifecycle, "hdc_run", lambda *_a, **_k: "[Fail]No target available")
+    monkeypatch.setattr(lifecycle, "hdc_list_targets", lambda: [])
+    monkeypatch.setattr(manager, "_port_is_free", lambda _port: True)
+    monkeypatch.setattr(manager, "_remove_fport", lambda _runtime: None)
+    monkeypatch.setattr(manager, "_cleanup_crash_service", lambda *_a: (True, []))
+    monkeypatch.setattr(manager, "_active_instance_serial", inspect)
+    operation = manager.stop_sync if action == "stop" else manager.delete_sync
+    result = operation(runtime.vm_id, runtime.hdc_serial, runtime.lease_token)
+    expected_ok = process_state == "absent"
+    assert inspected == [True]
+    assert result["ok"] is expected_ok
+    assert result["details"]["cleanup_confirmed"] is expected_ok
+    assert commands == (["-stop", "-delete"] if expected_ok and action == "delete" else ["-stop"])
+    evidence = result["details"]["exit_evidence"]
+    assert evidence["process_handle_present"] is False
+    assert evidence["instance_process_status"] == process_state
+    assert evidence["instance_process_sampled_unix"] > 0
+    if not expected_ok:
+        assert config.is_file()
+        assert manager._known[runtime.vm_id]["cleanup_pending"] is True
+        assert manager._known[runtime.vm_id]["cleanup_confirmed"] is False

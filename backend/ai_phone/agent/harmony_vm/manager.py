@@ -6,7 +6,6 @@ import json
 import math
 import os
 import re
-import socket
 import subprocess
 import tempfile
 import threading
@@ -23,6 +22,7 @@ from ai_phone.agent.drivers import open_harmony_driver
 from ai_phone.agent.drivers.base import BaseDriver, DeviceInfo
 from ai_phone.agent.drivers.hdc import hdc_list_targets, hdc_run
 from ai_phone.agent.ws_client import AgentWSClient
+from ai_phone.agent.vm_ports import loopback_port_available
 from ai_phone.agent.android_vm.capability import host_abi
 from ai_phone.config import get_settings
 from ai_phone.shared import protocol as P
@@ -1139,27 +1139,9 @@ class HarmonyVmManager:
                     return self._stop_rejected("lease_mismatch", known_serial)
                 if hdc_serial and known_serial and hdc_serial != known_serial:
                     return self._stop_rejected("hdc_mismatch", known_serial)
-                if (
-                    known.get("cleanup_confirmed") is True
-                    and not bool(known.get("ready"))
-                    and not bool(known.get("cleanup_pending"))
-                ):
-                    crash_clean, crash_errors = self._cleanup_crash_service(
-                        vm_id, known
-                    )
-                    if not crash_clean:
-                        logger.warning(
-                            "Harmony VM crash-service 清理未确认 vm_id={} errors={}",
-                            vm_id,
-                            crash_errors,
-                        )
-                    unregister_managed_vm(vm_id, known_token)
-                    return {
-                        "ok": True,
-                        "reason": "not_running",
-                        "hdc_serial": known_serial,
-                        "details": {"cleanup_confirmed": True},
-                    }
+                # A stored confirmation describes an earlier observation. An
+                # explicit stop must verify current identity/transport facts,
+                # including registries written by older Agent versions.
                 inspection_started = time.monotonic()
                 inspection_unix = time.time()
                 serial = self._active_instance_serial(vm_id, known)
@@ -1344,6 +1326,27 @@ class HarmonyVmManager:
             cleanup_confirmed = False
             cleanup_mode = "process_still_running"
             stop_errors.append("emulator process is still running")
+        elif runtime.process is None:
+            # A reconnected Agent has no Popen handle. Transport removal alone
+            # cannot prove that its exact native instance stopped successfully.
+            active_serial = self._active_instance_serial(
+                runtime.vm_id, runtime.persistent_dict()
+            )
+            exit_evidence["instance_process_status"] = (
+                "unknown" if active_serial is None
+                else "running" if active_serial else "absent"
+            )
+            exit_evidence["instance_process_sampled_unix"] = time.time()
+            if active_serial != "":
+                cleanup_confirmed = False
+                cleanup_mode = (
+                    "process_exit_unconfirmed" if active_serial is None
+                    else "process_still_running"
+                )
+                stop_errors.append(
+                    "exact emulator process exit could not be confirmed"
+                    if active_serial is None else "exact emulator process is still running"
+                )
         crash_clean, crash_errors = self._cleanup_crash_service(
             runtime.vm_id, runtime.persistent_dict()
         )
@@ -1373,7 +1376,7 @@ class HarmonyVmManager:
             }
             self._save_registry()
         # 清理后的事实是停止成功的判据。HDC 若保留已离线 TCP target，
-        # 仍会把残留 serial 明确上报给 Server 并从后续端口分配中排除。
+        # 残留 serial 只作为诊断上报；后续分配仍按租约和实时端口检查判断。
         # CLI 的“本来就没在跑”等输出仍原样放在 stop_errors 里供排障，但不把
         # 已经确认干净的实例误送入租约隔离区。
         ok = cleanup_confirmed
@@ -2136,9 +2139,9 @@ class HarmonyVmManager:
                     evidence["max_offline_free_samples"] = max(evidence["max_offline_free_samples"], offline_ticks)
                     # DevEco HDC 6.1 keeps dead TCP targets and rejects
                     # `tconn <serial> -remove` with "No target available".
-                    # Four stable observations plus a bindable port prove no
-                    # Emulator/listener remains. The stale target is surfaced
-                    # and its port remains excluded from future Server leases.
+                    # Four stable observations plus a reusable port confirm
+                    # transport removal. The caller verifies the process
+                    # separately; the stale target is diagnostic, not a lease.
                     if offline_ticks >= 4:
                         return finish(True, "offline_hdc_target")
                 else:
@@ -2183,14 +2186,10 @@ class HarmonyVmManager:
 
     @staticmethod
     def _port_is_free(port: int) -> bool:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            sock.bind(("127.0.0.1", int(port)))
-            return True
+            return loopback_port_available(port)
         except OSError:
             return False
-        finally:
-            sock.close()
 
     def _load_registry(self) -> Dict[str, Dict[str, Any]]:
         try:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import errno
+import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
@@ -881,20 +882,20 @@ def test_stop_evidence_identifies_blocked_ports(tmp_path, monkeypatch):
 @pytest.mark.skipif(mod.os.name == "nt", reason="POSIX socket reuse semantics")
 def test_port_probe_matches_emulator_reuse_after_closed_tcp_connection():
     # All sockets/ports belong to this test; no ADB or fixed emulator port is accessed.
-    with mod.socket.socket(mod.socket.AF_INET, mod.socket.SOCK_STREAM) as listener:
-        listener.setsockopt(mod.socket.SOL_SOCKET, mod.socket.SO_REUSEADDR, 1)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         listener.settimeout(2)
         listener.bind(("127.0.0.1", 0))
         listener.listen(1)
         address = listener.getsockname()
-        with mod.socket.socket(mod.socket.AF_INET, mod.socket.SOCK_STREAM) as client:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
             client.settimeout(2)
             client.connect(address)
             connection, _ = listener.accept()
-            connection.shutdown(mod.socket.SHUT_WR)
+            connection.shutdown(socket.SHUT_WR)
             connection.close()
             assert client.recv(1) == b""
-    with mod.socket.socket(mod.socket.AF_INET, mod.socket.SOCK_STREAM) as plain:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as plain:
         with pytest.raises(OSError) as failure:
             plain.bind(address)
         assert failure.value.errno == errno.EADDRINUSE
@@ -902,8 +903,8 @@ def test_port_probe_matches_emulator_reuse_after_closed_tcp_connection():
 
 
 def test_port_probe_does_not_share_active_listener():
-    with mod.socket.socket(mod.socket.AF_INET, mod.socket.SOCK_STREAM) as listener:
-        listener.setsockopt(mod.socket.SOL_SOCKET, mod.socket.SO_REUSEADDR, 1)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         listener.bind(("127.0.0.1", 0))
         listener.listen(1)
         assert _PORT_BIND_CHECK(listener.getsockname()[1]) is False
@@ -925,10 +926,10 @@ def test_windows_port_probe_selects_exclusive_address_option(monkeypatch):
         def bind(self, _address):
             return None
 
-    monkeypatch.setattr(mod.socket, "SO_EXCLUSIVEADDRUSE", 123456, raising=False)
-    monkeypatch.setattr(mod.socket, "socket", lambda *_: Socket())
+    monkeypatch.setattr(socket, "SO_EXCLUSIVEADDRUSE", 123456, raising=False)
+    monkeypatch.setattr(socket, "socket", lambda *_: Socket())
     assert _PORT_BIND_CHECK(5666) is True
-    assert calls == [(mod.socket.SOL_SOCKET, 123456, 1)]
+    assert calls == [(socket.SOL_SOCKET, 123456, 1)]
 
 
 def prepare_image_probe(monkeypatch):

@@ -2,12 +2,10 @@
 from __future__ import annotations
 
 import json
-import errno
 import os
 import platform
 import re
 import shutil
-import socket
 import subprocess
 import tempfile
 import threading
@@ -20,6 +18,7 @@ from typing import Any, Dict, Iterable, Iterator, Optional, Set, Tuple
 
 from ai_phone.agent.android_vm.capability import available_memory_mb, host_abi
 from ai_phone.agent.drivers.hdc import hdc_available, hdc_list_targets, hdc_run
+from ai_phone.agent.vm_ports import loopback_port_available
 from ai_phone.config import get_settings
 
 from .fport import (
@@ -829,21 +828,19 @@ def _listener_ports(*, deadline: Optional[float] = None) -> Set[int]:
                         result.add(port)
 
     for port in range(HDC_PORT_MIN, HDC_PORT_MAX + 1):
-        if (port - HDC_PORT_MIN) % 128 == 0:
-            startup_timeout(deadline, 1.0)
+        startup_timeout(deadline, 1.0)
         if port in result:
             continue
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            sock.bind(("127.0.0.1", port))
-        except OSError as exc:
+            available = loopback_port_available(port, deadline=deadline)
+        except TimeoutError:
+            raise
+        except OSError:
             # EPERM means this process is sandboxed and proves nothing about
-            # whether the port is occupied.  Only EADDRINUSE is positive
-            # conflict evidence.
-            if exc.errno == errno.EADDRINUSE:
-                result.add(port)
-        finally:
-            sock.close()
+            # occupancy. Only the helper's confirmed bind conflict is included.
+            continue
+        if not available:
+            result.add(port)
     return result
 
 

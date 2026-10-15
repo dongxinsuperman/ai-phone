@@ -6,7 +6,6 @@ import math
 import os
 import re
 import shutil
-import socket
 import subprocess
 import threading
 import time
@@ -20,6 +19,7 @@ from loguru import logger
 
 from ai_phone.agent.drivers.base import DeviceInfo
 from ai_phone.agent.ws_client import AgentWSClient
+from ai_phone.agent.vm_ports import loopback_port_available
 from ai_phone.config import get_settings
 from ai_phone.shared import protocol as P
 
@@ -1554,13 +1554,7 @@ def _managed_avd_files(tools: AndroidVmTools) -> set[str]:
 
 
 def _is_port_free(port: int) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        # 与 Emulator socketSetXReuseAddr 一致：POSIX 允许重用已关闭连接的 TIME_WAIT，
-        # Windows 使用独占地址而非 SO_REUSEADDR；两者都不共享活跃监听端口。
-        try:
-            option = getattr(socket, "SO_EXCLUSIVEADDRUSE", socket.SO_REUSEADDR)
-            sock.setsockopt(socket.SOL_SOCKET, option, 1)
-            sock.bind(("127.0.0.1", port))
-        except OSError:
-            return False
-        return True
+    try:
+        return loopback_port_available(port)
+    except OSError:
+        return False
