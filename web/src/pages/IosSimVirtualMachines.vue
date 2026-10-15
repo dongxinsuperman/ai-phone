@@ -258,6 +258,11 @@ async function dispatchTo(vm, agentId) {
     await loadInstances({ quiet: true })
   } catch (e) {
     err.value = prettyErr(e)
+    if (e?.detail?.instance?.id) {
+      applyOperationResult(vm, e.detail)
+      if (candidateVmId.value === vm.id) closeCandidates()
+    }
+    await loadInstances({ quiet: true })
   } finally {
     delete busyByVm[vm.id]
   }

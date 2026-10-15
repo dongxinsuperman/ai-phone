@@ -553,6 +553,7 @@ def test_delete_rechecks_crash_service_that_outlives_stop(monkeypatch, tmp_path)
         "instance_name": instance_name,
         "instance_path": str(instance_root),
         "ready": False,
+        "cleanup_confirmed": True,
     }
 
     result = manager.delete_sync(vm_id)

@@ -38,7 +38,7 @@ from ..vm_lifecycle import (
     record_creation_provenance, proves_live_managed_instance, send_operation_once,
     expire_operation_if_due,
     is_abandoned_cleanup_receipt, record_abandoned_cleanup_receipt,
-    accept_owner, accept_status, bind_owner, cleanup_foreign_copy, cleanup_abandoned_first_bind,
+    accept_owner, accept_status, bind_owner, report_owner_conflict, cleanup_abandoned_first_bind,
     finish_operation, maintenance, runtime as lifecycle_runtime,
     transaction_lock, update_runtime, host_id as agent_host_id, fail_attempt,
 )
@@ -273,7 +273,7 @@ async def handle_vm_status(agent_id: str, msg: Dict[str, Any], hub: Optional[Hub
         legacy = bool(reason in {"reclaimed", "wda_not_ready"} and udid and vm.udid == udid)
         if not accept_owner(vm, agent_id, hub, legacy_evidence=legacy):
             if reason in {"reclaimed", "wda_not_ready"}:
-                await cleanup_foreign_copy(hub, vm, agent_id, details, msg)
+                await report_owner_conflict(hub, vm, agent_id, details, msg)
             return
         record_creation_provenance(vm, msg)
         expired = expire_operation_if_due(vm, hub)
@@ -360,20 +360,20 @@ async def handle_vm_reconcile(agent_id: str, msg: Dict[str, Any], hub: Optional[
                           and (not vm.udid or vm.udid == proof.get("udid")))
             if not accept_owner(vm, agent_id, hub, legacy_evidence=legacy):
                 if msg.get("inventory_complete"):
-                    await cleanup_foreign_copy(hub, vm, agent_id, proof)
+                    await report_owner_conflict(hub, vm, agent_id, proof)
                 continue
             if legacy and not vm.udid:
                 vm.udid = proof["udid"]
             if vm.id in reported:
                 update_runtime(vm, instance_created=True)
-                if vm.id in stopped and vm.id not in unknown and vm.state not in {"starting", "stopping"} and not (vm.state == "running" and lifecycle_runtime(vm).get("operation")):
+                if msg.get("inventory_complete") is True and vm.id in stopped and vm.id not in unknown and vm.state not in {"starting", "stopping"} and not (vm.state == "running" and lifecycle_runtime(vm).get("operation")):
                     vm.state, vm.error_code, vm.error_message = "stopped", "", ""
                     vm.wda_port, vm.mjpeg_port = None, None
                     vm.stopped_at = vm.stopped_at or now_utc()
                     await _try_bind_alias(session, vm, placeholder_serial(vm.id))
                     finish_operation(vm, {"state": "stopped"})
                     maintenance(hub, vm, True)
-            elif msg.get("inventory_complete", True) and vm.id not in unknown and vm.state not in {"draft", "starting", "stopping"}:
+            elif msg.get("inventory_complete") is True and vm.id not in unknown and vm.state not in {"draft", "starting", "stopping"}:
                 vm.state, vm.error_code = "error", "instance_missing"
                 vm.error_message = "Agent 未发现原实例；未自动重建"
         await session.commit()

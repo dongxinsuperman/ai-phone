@@ -370,7 +370,7 @@ async def test_harmony_bound_hardware_patch_fails_before_saving(session):
 
 
 @pytest.mark.asyncio
-async def test_known_foreign_host_copy_is_cleaned_without_touching_owner(session, platform):
+async def test_host_identity_conflict_preserves_authoritative_and_native_instances(session, platform):
     vm = await make_vm(session, platform, state="stopped")
     hub = ContractHub()
     original_serial = getattr(vm, platform.serial)
@@ -406,20 +406,13 @@ async def test_known_foreign_host_copy_is_cleaned_without_touching_owner(session
     await session.refresh(vm)
     assert vm.assigned_agent_id == "old" and vm.state == "stopped"
     assert getattr(vm, platform.serial) == original_serial
-    target, command = hub.sent[-1]
-    assert target == "new" and command["type"] == platform.delete and command["vm_id"] == vm.id
-    if platform.name == "ios":
-        assert command["udid"] == "copy-udid" != vm.udid
-    elif platform.name == "harmony":
-        assert command["hdc_serial"] == "127.0.0.1:11011" and command["lease_token"] == "copy-token"
-    else:
-        assert command["adb_serial"] == ""  # never send owner's reserved transport to the copy
+    assert not hub.sent, "different identity files do not prove separate native data"
     # A successful reply to copy cleanup must not retire the authoritative row.
     await platform.svc.handle_vm_status(
         "new",
         {
             "vm_id": vm.id,
-            "request_id": command["request_id"],
+            "request_id": "unrequested-foreign-cleanup",
             "state": "stopped",
             "reason": "deleted",
             "ok": True,
@@ -433,7 +426,7 @@ async def test_known_foreign_host_copy_is_cleaned_without_touching_owner(session
 
 @pytest.mark.asyncio
 async def test_unknown_legacy_host_does_not_authorize_foreign_copy_deletion(session, platform):
-    from ai_phone.server.vm_lifecycle import cleanup_foreign_copy
+    from ai_phone.server.vm_lifecycle import report_owner_conflict
 
     vm = await make_vm(session, platform)
     setattr(vm, "runtime_state" if platform.name == "ios" else "runtime", {})
@@ -446,7 +439,7 @@ async def test_unknown_legacy_host_does_not_authorize_foreign_copy_deletion(sess
         "managed_instance_present": True,
     }
     hub = ContractHub()
-    assert not await cleanup_foreign_copy(hub, vm, "new", proof)
+    assert not await report_owner_conflict(hub, vm, "new", proof)
     assert not hub.sent and vm.assigned_agent_id == "old"
 
 

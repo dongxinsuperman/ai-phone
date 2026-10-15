@@ -169,6 +169,13 @@ def native_simulator(tmp_path, monkeypatch):
     monkeypatch.setattr(manager, "_wait_driver", lambda _runtime, **_kw: _FakeDriver())
     monkeypatch.setattr(manager, "_wait_removed", lambda _serial, _port: (True, "removed"))
     monkeypatch.setattr(manager_module, "hdc_run", lambda *_a, **_kw: "")
+    # hdc_list_targets closes over the driver's hdc_run, so patching only the
+    # manager alias above does not isolate its inventory query.
+    monkeypatch.setattr(manager_module, "hdc_list_targets", lambda: [
+        SimpleNamespace(serial=runtime.hdc_serial, status="Connected")
+        for runtime in manager._runtimes.values()
+        if runtime.process is not None and runtime.process.poll() is None
+    ])
 
     real_run = subprocess.run
 

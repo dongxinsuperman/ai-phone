@@ -106,6 +106,10 @@ def _scrcpy_mirror_params() -> Dict[str, int]:
 # 进程内驱动缓存：同一设备的 VLM Run 和手动 input 共享一个 driver 实例，
 # 避免反复构造连接，也让 ADBKeyBoard / WDA session 等缓存状态在 Run 内 / 间复用。
 _driver_cache: Dict[str, BaseDriver] = {}
+# 仅 Android 受管 VM 使用：缓存身份与当前快照分开保存，避免缺席扫描抹掉旧身份后漏判端口复用。
+_android_vm_cache_identities: Dict[str, Tuple[str, int, object]] = {}
+_android_vm_seen_identities: Dict[str, Tuple[str, int, object]] = {}
+_android_vm_cache_lock = threading.Lock()
 
 
 class _LatestMirrorPayloadSender:
@@ -224,6 +228,24 @@ _IOS_DOWNSAMPLED_PRODUCT_TYPES: Set[str] = {
 }
 
 
+def _remember_android_vm_identity(serial: str, vm_id: str) -> Tuple[str, int, object]:
+    """调用方持缓存锁；只更新内存，不在扫描路径关闭或安装任何设备资源。"""
+    previous = _android_vm_seen_identities.get(serial)
+    epoch = _serial_lifecycle_epochs.get(serial, 0)
+    if previous is None or previous[0] != vm_id or previous[1] != epoch:
+        from .drivers.android import _STAY_AWAKE_DONE
+
+        # 第一次取得受管身份时，先前无来源的 serial 缓存同样不能继承。
+        _STAY_AWAKE_DONE.discard(serial)
+        _driver_cache.pop(serial, None)
+        _android_vm_cache_identities.pop(serial, None)
+        _serial_screen_size.pop(serial, None)
+        _serial_product_type.pop(serial, None)
+        previous = (vm_id, epoch, object())
+        _android_vm_seen_identities[serial] = previous
+    return previous
+
+
 def _record_serial_platform(infos: List[Any]) -> None:
     """把 device_provider 拿到的设备列表里的 serial → platform 记进缓存，
     给后续 ``_get_or_open_driver`` / mirror 路由复用。
@@ -243,13 +265,16 @@ def _record_serial_platform(infos: List[Any]) -> None:
         if serial and platform:
             serial_s = str(serial)
             current_serials.add(serial_s)
-            _serial_platform[serial_s] = str(platform)
             extra = getattr(info, "extra", None) or (info.get("extra", {}) if isinstance(info, dict) else {})
             vm_id = str(extra.get("vm_instance_id") or "")
-            if vm_id:
-                _serial_vm_ids[serial_s] = vm_id
-            else:
-                _serial_vm_ids.pop(serial_s, None)
+            with _android_vm_cache_lock:
+                _serial_platform[serial_s] = str(platform)
+                if vm_id:
+                    _serial_vm_ids[serial_s] = vm_id
+                    if platform == "android":
+                        _remember_android_vm_identity(serial_s, vm_id)
+                else:
+                    _serial_vm_ids.pop(serial_s, None)
             try:
                 product_type = getattr(info, "model", None) or info["model"]
             except Exception:  # noqa: BLE001
@@ -265,10 +290,92 @@ def _record_serial_platform(infos: List[Any]) -> None:
                 _serial_screen_size[serial_s] = (width, height)
     stale_serials = set(_serial_platform) - current_serials
     for serial in stale_serials:
-        _serial_platform.pop(serial, None)
+        with _android_vm_cache_lock:
+            _serial_platform.pop(serial, None)
+            _serial_vm_ids.pop(serial, None)
         _serial_screen_size.pop(serial, None)
         _serial_product_type.pop(serial, None)
-        _serial_vm_ids.pop(serial, None)
+
+
+def _current_android_cache_identity(serial: str) -> Optional[Tuple[str, int, object]]:
+    """调用方持缓存锁；普通无 VM ID 的真机继续使用原 serial 缓存。"""
+    vm_id = _serial_vm_ids.get(serial, "") if _serial_platform.get(serial, "android") == "android" else ""
+    if vm_id:
+        return _remember_android_vm_identity(serial, vm_id)
+    if serial in _android_vm_seen_identities:
+        raise RuntimeError(f"managed_android_vm_identity_unavailable:{serial}")
+    return None
+
+
+def _check_android_cache_identity(serial: str, expected: Optional[Tuple[str, int, object]]) -> None:
+    """创建期间快照可能换代；旧构造结果不得返回给新 VM，也不能覆盖它的缓存。"""
+    try:
+        if _current_android_cache_identity(serial) == expected:
+            return
+    except RuntimeError:
+        pass
+    latest = _android_vm_seen_identities.get(serial)
+    if latest != expected and (
+        serial not in _driver_cache or _android_vm_cache_identities.get(serial) != latest
+    ):
+        # 旧构造可能在换代后的扫描之后才写回此幂等位；没有新缓存证明时撤掉它。
+        from .drivers.android import _STAY_AWAKE_DONE
+
+        _STAY_AWAKE_DONE.discard(serial)
+    raise RuntimeError(f"managed_android_vm_identity_changed:{serial}")
+
+
+def _get_or_open_android_driver(serial: str, on_status: Optional[Any]) -> BaseDriver:
+    with _android_vm_cache_lock:
+        identity = _current_android_cache_identity(serial)
+        cached = _driver_cache.get(serial)
+        if cached is not None and _android_vm_cache_identities.get(serial) != identity:
+            _driver_cache.pop(serial, None)
+            _android_vm_cache_identities.pop(serial, None)
+            cached = None
+    if cached is not None:
+        if callable(on_status):
+            try:
+                on_status("ready", "设备就绪", "设备已建立连接，可直接使用。", 0)
+            except Exception:  # noqa: BLE001
+                pass
+        with _android_vm_cache_lock:
+            _check_android_cache_identity(serial, identity)
+            return cached
+
+    # 原生构造/初始化不能持扫描锁；完成后在同一把短锁内核对身份并发布缓存。
+    try:
+        # 构造不读取/写回共享 serial 保活位；旧构造的晚标记不能替代本 VM 的初始化。
+        driver = _open_driver_by_platform(serial, "android", setup_power=False)
+        with _android_vm_cache_lock:
+            _check_android_cache_identity(serial, identity)
+            current = _driver_cache.get(serial)
+            if current is not None and _android_vm_cache_identities.get(serial) == identity:
+                return current
+        setup_power = bool(get_settings().android_setup_stay_awake)
+        if setup_power:
+            driver._setup_stay_awake()
+    except Exception:
+        with _android_vm_cache_lock:
+            _check_android_cache_identity(serial, identity)
+            if serial not in _driver_cache or _android_vm_cache_identities.get(serial) != identity:
+                from .drivers.android import _STAY_AWAKE_DONE
+
+                _STAY_AWAKE_DONE.discard(serial)
+        raise
+    with _android_vm_cache_lock:
+        _check_android_cache_identity(serial, identity)
+        if setup_power:
+            from .drivers.android import _STAY_AWAKE_DONE
+
+            _STAY_AWAKE_DONE.add(serial)
+        current = _driver_cache.get(serial)
+        if current is not None and _android_vm_cache_identities.get(serial) == identity:
+            return current
+        _driver_cache[serial] = driver
+        if identity is not None:
+            _android_vm_cache_identities[serial] = identity
+        return driver
 
 
 def _get_or_open_driver(
@@ -281,6 +388,14 @@ def _get_or_open_driver(
     （compiling / need_unlock / ready / error）主动推到 web 提示条。
     Android 会静默忽略。
     """
+    with _android_vm_cache_lock:
+        managed_android = (
+            not serial.startswith("harmony-vm:")
+            and _serial_platform.get(serial, "android") == "android"
+            and (bool(_serial_vm_ids.get(serial)) or serial in _android_vm_seen_identities)
+        )
+    if managed_android:
+        return _get_or_open_android_driver(serial, on_status)
     if serial.startswith("harmony-vm:"):
         from ai_phone.agent.harmony_vm.registry import resolve_harmony_serial
 
@@ -297,6 +412,9 @@ def _get_or_open_driver(
                 on_status("ready", "设备就绪", "设备已建立连接，可直接使用。", 0)
             except Exception:  # noqa: BLE001
                 pass
+        if not serial.startswith("harmony-vm:") and _serial_platform.get(serial, "android") == "android":
+            with _android_vm_cache_lock:
+                _check_android_cache_identity(serial, None)
         return cached
     platform = _serial_platform.get(serial, "android")
     kwargs: Dict[str, Any] = {}
@@ -304,8 +422,19 @@ def _get_or_open_driver(
     # 而这段等待正是用户盯着空白镜像的时间（虚拟机冷启动实测 8.8 秒）。
     if on_status is not None and platform in P.family_platforms("ios"):
         kwargs["on_status"] = on_status
-    drv = _open_driver_by_platform(serial, platform, **kwargs)
-    _driver_cache[serial] = drv
+    try:
+        drv = _open_driver_by_platform(serial, platform, **kwargs)
+    except Exception:
+        if platform == "android" and not serial.startswith("harmony-vm:"):
+            with _android_vm_cache_lock:
+                _check_android_cache_identity(serial, None)
+        raise
+    if platform == "android" and not serial.startswith("harmony-vm:"):
+        with _android_vm_cache_lock:
+            _check_android_cache_identity(serial, None)
+            _driver_cache[serial] = drv
+    else:
+        _driver_cache[serial] = drv
     return drv
 
 

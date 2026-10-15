@@ -1139,8 +1139,10 @@ class HarmonyVmManager:
                     return self._stop_rejected("lease_mismatch", known_serial)
                 if hdc_serial and known_serial and hdc_serial != known_serial:
                     return self._stop_rejected("hdc_mismatch", known_serial)
-                if not bool(known.get("ready")) and not bool(
-                    known.get("cleanup_pending")
+                if (
+                    known.get("cleanup_confirmed") is True
+                    and not bool(known.get("ready"))
+                    and not bool(known.get("cleanup_pending"))
                 ):
                     crash_clean, crash_errors = self._cleanup_crash_service(
                         vm_id, known

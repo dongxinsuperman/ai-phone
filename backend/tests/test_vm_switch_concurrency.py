@@ -76,7 +76,11 @@ async def test_original_switch_cannot_overwrite_or_restart_another_callers_machi
             await other.refresh(current)
         protected_operation = dict(runtime(current)["operation"])
     hub.release.set()
-    result = await asyncio.wait_for(switching, timeout=2)
+    with pytest.raises(HTTPException) as conflict:
+        await asyncio.wait_for(switching, timeout=2)
+    assert conflict.value.status_code == 409
+    result = conflict.value.detail
+    assert result["switched"] and result["vm_id"] == new_id
     assert result["instance"]["state"] == resulting_state
     assert result["instance"]["assigned_agent_id"] == "new"
     async with db.get_session_factory()() as check:

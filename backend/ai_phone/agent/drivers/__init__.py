@@ -167,9 +167,12 @@ def open_driver(serial: str, platform: str, **kwargs) -> BaseDriver:
     - iOS ``on_status``：WDA 启动进度回调
     - iOS 虚拟机 ``on_status``：同上（首次要编译 WDA，进度反馈尤其有用）
     - Harmony：预留（暂无特殊 kwarg）
-    Android driver 不接受额外参数，会静默忽略。
+    - Android ``setup_power``：受管 VM 可显式关闭构造时保活；未传时沿用原设置
+    Android 的其他额外参数仍静默忽略。
     """
     if platform == "android":
+        if "setup_power" in kwargs:
+            return open_android_driver(serial, setup_power=kwargs["setup_power"])
         return open_android_driver(serial)
     if platform == "ios":
         return open_ios_driver(serial, **kwargs)

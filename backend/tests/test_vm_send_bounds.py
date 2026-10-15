@@ -111,23 +111,24 @@ async def test_blocked_first_start_send_ends_once_without_binding_or_retry(
     """首次启动发送超时必须结束本次尝试，不能绑定或在后台重复下发。"""
     start_type = platform.delete.removesuffix("delete") + "start"
     hub = SlowHub(blocked_types={start_type})
-    try:
-        vm, result = await asyncio.wait_for(start_first(session, platform, hub, monkeypatch), timeout=1.0)
-    except HTTPException as exc:
-        # 鸿蒙原有接口通过 409 提示重新下发；仍需验证持久状态已结束。
-        assert platform.name == "harmony" and exc.status_code == 409
-        rows = (await session.execute(select(platform.model))).scalars().all()
-        assert len(rows) == 1
-        vm = rows[0]
-    else:
-        assert result["sent"] is False
+    with pytest.raises(HTTPException) as failure:
+        await asyncio.wait_for(start_first(session, platform, hub, monkeypatch), timeout=1.0)
+    assert failure.value.status_code == (502 if platform.name == "ios" else 409)
+    detail = failure.value.detail
+    assert detail["sent"] is False and detail["message"]
+    rows = (await session.execute(select(platform.model))).scalars().all()
+    assert len(rows) == 1
+    vm = rows[0]
     await session.refresh(vm)
+    assert detail["vm_id"] == vm.id and detail["instance"]["id"] == vm.id
     assert hub.waiting.is_set() and hub.cancelled.is_set()
     assert vm.state == "error" and vm.assigned_agent_id is None
     operation = runtime(vm)["operation"]
     assert operation["action"] == "start" and operation["first_bind"] is True
     assert operation["outcome"] == "failed" and operation["pending"] is False
     assert operation["failure_reason"] == "send_failed"
+    assert detail["request_id"] == operation["request_id"]
+    assert detail["instance"]["state"] == "error"
     await asyncio.sleep(0.05)
     assert len(_messages(hub, "start")) == 1
     assert len(hub.sent) == 1, "发送超时不得隐式重试、切换宿主或继续操作"
@@ -142,15 +143,21 @@ async def test_blocked_stop_send_fails_once_and_native_stop_can_be_retried(
     stop_type = platform.delete.removesuffix("delete") + "stop"
     hub = SlowHub(blocked_types={stop_type})
     stop = platform.api.stop if platform.name == "ios" else platform.api.stop_instance
-    result = await asyncio.wait_for(stop(vm_id=vm.id, session=session, hub=hub), timeout=1.0)
+    with pytest.raises(HTTPException) as failure:
+        await asyncio.wait_for(stop(vm_id=vm.id, session=session, hub=hub), timeout=1.0)
+    assert failure.value.status_code == (502 if platform.name == "ios" else 409)
+    detail = failure.value.detail
     await session.refresh(vm)
-    assert result["sent"] is False
+    assert detail["sent"] is False and detail["message"]
+    assert detail["vm_id"] == vm.id and detail["instance"]["id"] == vm.id
     assert hub.waiting.is_set() and hub.cancelled.is_set()
     assert vm.state == "error" and vm.assigned_agent_id == "old"
     operation = runtime(vm)["operation"]
     assert operation["action"] == "stop" and operation["outcome"] == "failed"
     assert operation["pending"] is False and operation["failure_reason"] == "send_failed"
     first_request = operation["request_id"]
+    assert detail["request_id"] == first_request
+    assert detail["instance"]["state"] == "error"
     await asyncio.sleep(0.05)
     assert len(_messages(hub, "stop")) == 1
 

@@ -22,7 +22,7 @@ from ..vm_lifecycle import (
     record_creation_provenance, proves_live_managed_instance, send_operation_once,
     expire_operation_if_due,
     is_abandoned_cleanup_receipt, record_abandoned_cleanup_receipt,
-    accept_owner, accept_status, bind_owner, cleanup_foreign_copy, cleanup_abandoned_first_bind,
+    accept_owner, accept_status, bind_owner, report_owner_conflict, cleanup_abandoned_first_bind,
     finish_operation, maintenance, runtime as lifecycle_runtime,
     transaction_lock, update_runtime, host_id as agent_host_id, fail_attempt,
 )
@@ -292,16 +292,16 @@ async def handle_vm_reconcile(
     vm_ids = _clean("vm_ids") or sorted(set(running_ids) | set(stopped_ids))
     # 注意：空清单也要处理——代表"该 Agent 本机一台受管 VM 都没有"，需对其名下 DB VM 做差集收敛。
     if session is not None:
-        await _handle_vm_reconcile(session, agent_id, vm_ids, running_ids, stopped_ids, hub, inventory_complete=msg.get("inventory_complete", True), unknown_ids=msg.get("unknown_vm_ids") or [], instance_proofs=msg.get("instance_proofs") or {})
+        await _handle_vm_reconcile(session, agent_id, vm_ids, running_ids, stopped_ids, hub, inventory_complete=msg.get("inventory_complete") is True, unknown_ids=msg.get("unknown_vm_ids") or [], instance_proofs=msg.get("instance_proofs") or {})
         return
     session_factory = get_session_factory()
     async with session_factory() as session:
-        await _handle_vm_reconcile(session, agent_id, vm_ids, running_ids, stopped_ids, hub, inventory_complete=msg.get("inventory_complete", True), unknown_ids=msg.get("unknown_vm_ids") or [], instance_proofs=msg.get("instance_proofs") or {})
+        await _handle_vm_reconcile(session, agent_id, vm_ids, running_ids, stopped_ids, hub, inventory_complete=msg.get("inventory_complete") is True, unknown_ids=msg.get("unknown_vm_ids") or [], instance_proofs=msg.get("instance_proofs") or {})
 
 
 async def _handle_vm_reconcile(
     session: AsyncSession, agent_id: str, vm_ids: list[str], running_ids: list[str],
-    stopped_ids: list[str], hub: Hub, *, inventory_complete: bool = True, unknown_ids: list[str] = (),
+    stopped_ids: list[str], hub: Hub, *, inventory_complete: bool = False, unknown_ids: list[str] = (),
     instance_proofs: Optional[dict] = None,
 ) -> None:
     reported, stopped, unknown = set(vm_ids), set(stopped_ids), set(unknown_ids)
@@ -325,11 +325,11 @@ async def _handle_vm_reconcile(
                       proof.get("avd_name") == f"aiphone_vm_{vm.id}")
         if not accept_owner(vm, agent_id, hub, legacy_evidence=legacy):
             if inventory_complete:
-                await cleanup_foreign_copy(hub, vm, agent_id, proof)
+                await report_owner_conflict(hub, vm, agent_id, proof)
             continue  # cleanup addresses the copy, never rewrites the ledger
         if vm.id in reported:
             update_runtime(vm, instance_created=True)
-            if vm.id in stopped and vm.id not in unknown and vm.state not in {"starting", "stopping"} and not (vm.state == "running" and lifecycle_runtime(vm).get("operation")):
+            if inventory_complete and vm.id in stopped and vm.id not in unknown and vm.state not in {"starting", "stopping"} and not (vm.state == "running" and lifecycle_runtime(vm).get("operation")):
                 vm.state = "stopped"
                 vm.error_message = ""
                 vm.stopped_at = vm.stopped_at or now_utc()
@@ -366,7 +366,7 @@ async def _handle_vm_status(
               and (not vm.adb_serial or vm.adb_serial == adb_serial))
     if not accept_owner(vm, agent_id, hub, legacy_evidence=legacy):
         if reason == "reclaimed":
-            await cleanup_foreign_copy(hub, vm, agent_id, details, msg)
+            await report_owner_conflict(hub, vm, agent_id, details, msg)
         return
     record_creation_provenance(vm, msg)
     expired = expire_operation_if_due(vm, hub)

@@ -811,9 +811,9 @@ def list_android_devices(include_offline: bool = False) -> List[DeviceInfo]:
     return infos
 
 
-def open_android_driver(serial: str) -> AndroidDriver:
-    """按 serial 打开一个 AndroidDriver；找不到或未授权会抛异常。"""
+def open_android_driver(serial: str, *, setup_power: Optional[bool] = None) -> AndroidDriver:
+    """按 serial 打开驱动；默认沿用设置，受管 VM 可把保活延后到身份核验之后。"""
     return AndroidDriver(
         adb.device(serial=serial),
-        setup_power=bool(get_settings().android_setup_stay_awake),
+        setup_power=bool(get_settings().android_setup_stay_awake) if setup_power is None else setup_power,
     )

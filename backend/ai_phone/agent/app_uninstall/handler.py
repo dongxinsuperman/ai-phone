@@ -8,6 +8,7 @@ from loguru import logger
 
 from ai_phone.agent.ws_client import AgentWSClient
 from ai_phone.agent.device_activity import device_activity
+from ai_phone.agent.native_operation import NativeOperation
 from ai_phone.shared import protocol as P
 
 from .platforms import UNINSTALL_FAILED, uninstall_by_platform
@@ -53,16 +54,16 @@ async def _run_app_uninstall(client: AgentWSClient, msg: Dict[str, Any]) -> None
             reason = "bad_request"
             message = "package_name 格式无效"
         else:
-            success, reason, message = await asyncio.wait_for(
-                asyncio.to_thread(
-                    uninstall_by_platform,
-                    platform,
-                    serial,
-                    package_name,
-                    timeout_sec,
-                ),
-                timeout=max(30, timeout_sec + 5),
+            operation = NativeOperation(
+                serial, device_activity,
+                lambda: uninstall_by_platform(platform, serial, package_name, timeout_sec),
             )
+            try:
+                success, reason, message = await asyncio.wait_for(
+                    operation.run(), timeout=max(30, timeout_sec + 5),
+                )
+            finally:
+                operation.abandon_if_pending()
     except asyncio.TimeoutError:
         success = False
         reason = "timeout"

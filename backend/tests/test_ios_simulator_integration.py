@@ -14,6 +14,14 @@ from ai_phone.agent.drivers.base import DeviceInfo
 def stub_simulator_screen(monkeypatch):
     from ai_phone.agent.drivers.simctl import DeviceTypeScreen
     monkeypatch.setattr(sim_mod, "simulator_screen", lambda _: DeviceTypeScreen(1206, 2622, 3))
+    # Discovery needs metadata as well as screen size; keep all simctl reads
+    # inside the fixture rather than querying the developer's default device set.
+    monkeypatch.setattr(sim_mod, "device_type_names", lambda: {
+        "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro": "iPhone 17 Pro",
+    })
+    monkeypatch.setattr(sim_mod, "device_type_screens", lambda: {
+        "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro": DeviceTypeScreen(1206, 2622, 3),
+    })
 
 
 def _sim_info(serial="SIM-1"):

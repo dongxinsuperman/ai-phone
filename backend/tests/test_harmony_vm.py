@@ -995,6 +995,7 @@ async def test_harmony_reconcile_restores_lease_free_stopped_vm_after_server_rel
     await handle_vm_reconcile(
         "agent-1",
         {
+            "inventory_complete": True,
             "instances": [
                 {
                     "vm_id": vm_id,
@@ -1057,6 +1058,7 @@ async def test_harmony_stopped_reconcile_preserves_server_owner_and_active_lease
     await handle_vm_reconcile(
         "agent-old",
         {
+            "inventory_complete": True,
             "instances": [
                 {
                     "vm_id": owned_id,
@@ -1069,6 +1071,7 @@ async def test_harmony_stopped_reconcile_preserves_server_owner_and_active_lease
     await handle_vm_reconcile(
         "agent-1",
         {
+            "inventory_complete": True,
             "instances": [
                 {
                     "vm_id": active_id,
@@ -1157,7 +1160,7 @@ async def test_harmony_old_stopped_reconcile_cannot_release_a_new_running_lease(
 
     await handle_vm_reconcile(
         "owner",
-        {"instances": [{
+        {"inventory_complete": True, "instances": [{
             "vm_id": vm_id,
             "state": "stopped",
             "lease_token": "previous-start-token",
@@ -1175,7 +1178,7 @@ async def test_harmony_old_stopped_reconcile_cannot_release_a_new_running_lease(
     # The current lease's confirmed stop still converges after a lost ACK.
     await handle_vm_reconcile(
         "owner",
-        {"instances": [{
+        {"inventory_complete": True, "instances": [{
             "vm_id": vm_id, "state": "stopped", "lease_token": token,
             "hdc_serial": f"127.0.0.1:{port}",
             "details": {"cleanup_confirmed": True, "orphan_reconcile": True},
@@ -1744,8 +1747,12 @@ async def test_harmony_orphan_reconcile_reports_only_existing_managed_instances(
     ] is True
 
 
-def test_harmony_vm_stop_not_running_is_idempotent(tmp_path):
+def test_harmony_vm_stop_not_running_is_idempotent(tmp_path, monkeypatch):
+    import ai_phone.agent.harmony_vm.manager as manager_module
+
     manager = HarmonyVmManager(runtime_dir=tmp_path)
+    monkeypatch.setattr(manager, "_active_instance_serial", lambda *_args: "")
+    monkeypatch.setattr(manager_module, "hdc_list_targets", lambda: [])
     result = manager.stop_sync("unknown")
     assert result["ok"] is True
     assert result["reason"] == "not_running"

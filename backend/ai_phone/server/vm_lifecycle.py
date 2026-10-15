@@ -294,41 +294,19 @@ def require_owner_host(vm, hub) -> None:
         raise HTTPException(409, "Agent 标识对应的宿主已变化，原实例归属尚未确认，禁止在其他宿主执行")
 
 
-async def cleanup_foreign_copy(hub, vm, reporter: str, proof: dict, report: dict | None = None) -> bool:
-    """Delete a proved platform copy on a different known host, never the owner.
+async def report_owner_conflict(hub, vm, reporter: str, proof: dict, report: dict | None = None) -> bool:
+    """Preserve both the authoritative ledger and a possibly unique native VM.
 
-    VM ID alone or legacy unknown host identity is not sufficient evidence.
-    Transport fields come only from the reporter, not the authoritative VM row.
+    Different host-id files do not prove different hardware or separate native
+    data. Only an explicitly retired ledger ID authorizes orphan deletion.
     """
-    from ai_phone.shared import protocol as P
-    import re
-
-    expected, actual = str(runtime(vm).get("owner_host_id") or ""), host_id(hub, reporter)
-    if not expected or not actual or expected == actual:
-        return False
-    report = report or {}
-    payload = {"request_id": uuid.uuid4().hex[:16], "vm_id": vm.id}
-    if hasattr(vm, "udid"):
-        udid = str(proof.get("udid") or report.get("udid") or "")
-        if (proof.get("name") or proof.get("sim_name")) != f"aiphone_sim_{vm.id}" or not udid:
-            return False
-        payload.update(type=P.MSG_IOS_SIM_VM_DELETE, udid=udid)
-    elif hasattr(vm, "hdc_serial"):
-        name = "aiphone_harmony_" + re.sub(r"[^A-Za-z0-9_]+", "_", vm.id)[:32]
-        if proof.get("instance_name") != name or not (
-            proof.get("managed_instance_present") or (report.get("lease_token") and report.get("hdc_serial"))
-        ):
-            return False
-        payload.update(
-            type=P.MSG_HARMONY_VM_DELETE,
-            hdc_serial=str(report.get("hdc_serial") or ""),
-            lease_token=str(report.get("lease_token") or ""),
-        )
-    else:
-        if proof.get("avd_name") != f"aiphone_vm_{vm.id}":
-            return False
-        payload.update(type=P.MSG_VM_DELETE, adb_serial=str(report.get("adb_serial") or ""))
-    return await send_operation_once(hub, reporter, payload, timeout_sec=CLEANUP_SEND_TIMEOUT_SEC)
+    from loguru import logger
+    logger.warning(
+        "VM ownership conflict; no adoption or cleanup | vm_id={} owner={} owner_host={} reporter={} reporter_host={}",
+        vm.id, vm.assigned_agent_id or "", runtime(vm).get("owner_host_id") or "",
+        reporter, host_id(hub, reporter),
+    )
+    return False
 
 
 async def record_send_failure(session, vm, request_id: str, message: str) -> None:
@@ -610,3 +588,11 @@ def proves_live_managed_instance(vm_id: str, msg: dict, platform: str) -> bool:
 
 def is_untouched_draft(vm) -> bool:
     return vm.state == "draft" and not vm.assigned_agent_id and not runtime(vm).get("operation")
+
+
+def operation_failure_detail(vm, message: str, *, request_id: str | None = None, **extra) -> dict:
+    """Keep actionable identity/evidence when an HTTP operation fails."""
+    op = runtime(vm).get("operation") or {}
+    return {"message": message, "sent": False, "vm_id": vm.id,
+            "request_id": str(op.get("request_id") or "") if request_id is None else request_id,
+            "instance": vm.to_dict(), **extra}

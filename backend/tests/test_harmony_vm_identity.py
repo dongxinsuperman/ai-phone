@@ -482,6 +482,7 @@ def test_delayed_old_vm_cleanup_cannot_touch_new_owner_of_reused_hdc(monkeypatch
         "hdc_serial": HDC_SERIAL,
         "lease_token": "old-lease",
         "ready": False,
+        "cleanup_confirmed": True,
     }
     current = HarmonyVmRuntime(
         vm_id="vm-b",

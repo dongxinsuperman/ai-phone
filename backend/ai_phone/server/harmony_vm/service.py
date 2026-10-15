@@ -21,7 +21,7 @@ from ..vm_lifecycle import (
     record_creation_provenance, proves_live_managed_instance, send_operation_once,
     expire_operation_if_due,
     is_abandoned_cleanup_receipt, record_abandoned_cleanup_receipt,
-    accept_owner, accept_status, bind_owner, cleanup_foreign_copy, cleanup_abandoned_first_bind,
+    accept_owner, accept_status, bind_owner, report_owner_conflict, cleanup_abandoned_first_bind,
     finish_operation, maintenance, runtime as lifecycle_runtime,
     transaction_lock, update_runtime, host_id as agent_host_id, fail_attempt,
 )
@@ -480,7 +480,7 @@ async def handle_vm_status(agent_id: str, msg: Dict[str, Any], hub: Optional[Hub
                       and serial and serial == vm.hdc_serial)
         if not accept_owner(vm, agent_id, hub, legacy_evidence=legacy):
             if reason == "reclaimed":
-                await cleanup_foreign_copy(hub, vm, agent_id, details, msg)
+                await report_owner_conflict(hub, vm, agent_id, details, msg)
             return
         record_creation_provenance(vm, msg)
         expired = expire_operation_if_due(vm, hub)
@@ -573,7 +573,7 @@ async def handle_vm_reconcile(agent_id: str, msg: Dict[str, Any], hub: Optional[
             continue
         reported.add(str(item.get("vm_id") or ""))
         if item.get("state") == "stopped":
-            await _handle_stopped_vm_reconcile(agent_id, item, hub)
+            await _handle_stopped_vm_reconcile(agent_id, item, hub, inventory_complete=msg.get("inventory_complete") is True)
         else:
             await handle_vm_status(agent_id, {"type": P.MSG_HARMONY_VM_STATUS,
                 "reason": "reclaimed", "ok": item.get("state") == "running", **item}, hub)
@@ -592,14 +592,14 @@ async def handle_vm_reconcile(agent_id: str, msg: Dict[str, Any], hub: Optional[
                 continue
             if not accept_owner(vm, agent_id, hub):
                 continue
-            if (msg.get("inventory_complete", False) and vm.id not in reported | unknown
+            if (msg.get("inventory_complete") is True and vm.id not in reported | unknown
                   and vm.state not in {"draft", "starting", "stopping"}):
                 vm.state, vm.error_code = "error", "instance_missing"
                 vm.error_message = "Agent 未发现原实例；未自动重建"
         await session.commit()
 
 
-async def _handle_stopped_vm_reconcile(agent_id: str, item: Dict[str, Any], hub: Optional[Hub]) -> None:
+async def _handle_stopped_vm_reconcile(agent_id: str, item: Dict[str, Any], hub: Optional[Hub], *, inventory_complete: bool = False) -> None:
     vm_id = str(item.get("vm_id") or "")
     if not vm_id:
         return
@@ -623,8 +623,10 @@ async def _handle_stopped_vm_reconcile(agent_id: str, item: Dict[str, Any], hub:
             return
         legacy = bool(details.get("managed_instance_present") and details.get("instance_name") == safe_name)
         if not accept_owner(vm, agent_id, hub, legacy_evidence=legacy):
-            await cleanup_foreign_copy(hub, vm, agent_id, details, item)
+            await report_owner_conflict(hub, vm, agent_id, details, item)
             return
+        if not inventory_complete:
+            return  # old/partial inventory cannot certify that a guest stopped
         if vm.state in {"starting", "stopping"} or (vm.state == "running" and lifecycle_runtime(vm).get("operation")):
             return
         details = item.get("details") if isinstance(item.get("details"), dict) else {}
@@ -634,6 +636,21 @@ async def _handle_stopped_vm_reconcile(agent_id: str, item: Dict[str, Any], hub:
             if (not details.get("cleanup_confirmed") or not reported_token
                     or reported_token != vm.lease_token
                     or (reported_serial and reported_serial != vm.hdc_serial)):
+                # Old registries may prove the exact instance/lease without
+                # proving it stopped. Preserve that uncertainty, but persist
+                # an evidenced session handoff so an explicit stop reaches
+                # this same installation instead of the offline old session.
+                if (details.get("managed_instance_present") is True
+                        and details.get("instance_name") == safe_name
+                        and str(details.get("instance_path") or "").strip()
+                        and reported_token and reported_token == vm.lease_token
+                        and reported_serial and reported_serial == vm.hdc_serial
+                        and vm.hdc_port is not None
+                        and reported_serial == serial_for_port(vm.hdc_port)):
+                    lease = await session.get(HarmonyVmPortLease, vm.hdc_port)
+                    if (lease is not None and lease.vm_id == vm.id
+                            and lease.lease_token == reported_token):
+                        await session.commit()
                 return
             await release_port_lease(session, vm, reason="reconcile_stopped")
         vm.state, vm.error_code, vm.error_message = "stopped", "", ""

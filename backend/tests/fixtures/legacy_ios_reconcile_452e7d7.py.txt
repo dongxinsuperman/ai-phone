@@ -1,0 +1,87 @@
+# Historical fixture only. Do not import into product code.
+# Exact function from 452e7d77326f9fc0e5b003ecbf6cec5fc499e4bf:backend/ai_phone/server/ios_sim/service.py
+# Function sha256: 66c9ce12c6a158c5077fd45135028255943b72323ef9639641cf00be5561cefc
+
+async def handle_vm_reconcile(
+    agent_id: str,
+    msg: Dict[str, Any],
+    hub: Optional[Hub] = None,
+) -> None:
+    """处理 Agent (重)连后的受管实例对账清单。
+
+    载荷结构与 **Android 一致**（``vm_ids`` / ``running_vm_ids`` / ``stopped_vm_ids``
+    三个 id 列表），不用鸿蒙那种带 lease_token 的完整对象数组——我们没有租约要核。
+
+    三件事：
+    1. Agent 报的在跑实例 → 由随后的 ``vm_status reason=reclaimed`` 置态
+    2. Agent 报的没跑实例 → 明确置 stopped
+    3. **库里归本 Agent、但 Agent 没报** → 置 agent_offline（差集收敛）
+    4. **Agent 有、库里没有** → 回发删除清理孤儿
+    """
+    reported = [str(x) for x in (msg.get("vm_ids") or []) if str(x)]
+    running = {str(x) for x in (msg.get("running_vm_ids") or []) if str(x)}
+    stopped = {str(x) for x in (msg.get("stopped_vm_ids") or []) if str(x)}
+
+    factory = get_session_factory()
+    async with factory() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(IosSimVmInstance).where(
+                        IosSimVmInstance.assigned_agent_id == agent_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        known_ids = {vm.id for vm in rows}
+
+        # 差集收敛：库里归我、但 Agent 说没有 → 实例已不在那台机器上
+        for vm in rows:
+            if vm.id in reported:
+                continue
+            if vm.state == "draft":
+                continue
+            vm.state = "agent_offline"
+            vm.error_code = "not_on_agent"
+            vm.error_message = f"agent {agent_id} 未报告该实例"
+            logger.info("iOS 虚拟机实例已不在 Agent 上，置 agent_offline vm_id={}", vm.id)
+
+        # Agent 说没跑的，明确置 stopped
+        for vm_id in sorted(stopped):
+            vm = await session.get(IosSimVmInstance, vm_id)
+            if vm is None:
+                continue
+            vm.assigned_agent_id = agent_id
+            vm.state = "stopped"
+            vm.error_code = ""
+            vm.error_message = ""
+            vm.wda_port = None
+            vm.mjpeg_port = None
+            vm.stopped_at = vm.stopped_at or now_utc()
+
+        await session.commit()
+
+    # 孤儿清理：Agent 有、库里没有 → 回发删除（复用删除链路，无需单独消息）
+    if hub is not None:
+        orphans = [vm_id for vm_id in reported if vm_id not in known_ids]
+        for vm_id in orphans:
+            await hub.send_to_agent(
+                agent_id,
+                {
+                    "type": P.MSG_IOS_SIM_VM_DELETE,
+                    "request_id": uuid.uuid4().hex[:16],
+                    "vm_id": vm_id,
+                    "udid": "",
+                },
+            )
+        if orphans:
+            logger.info(
+                "iOS 虚拟机孤儿实例已回发删除 agent={} 共 {} 台", agent_id, len(orphans)
+            )
+
+    logger.info(
+        "iOS 虚拟机对账完成 agent={} 上报 {} 台（在跑 {} / 没跑 {}）",
+        agent_id, len(reported), len(running), len(stopped),
+    )

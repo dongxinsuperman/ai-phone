@@ -4,7 +4,7 @@ import asyncio
 import re
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Set
+from typing import Any, Callable, Dict, Optional, Set
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -12,6 +12,7 @@ from loguru import logger
 
 from ai_phone.agent.ws_client import AgentWSClient
 from ai_phone.agent.device_activity import device_activity
+from ai_phone.agent.native_operation import NativeOperation
 from ai_phone.shared import protocol as P
 
 from .android import install_apk
@@ -57,20 +58,29 @@ async def _run_app_install(client: AgentWSClient, msg: Dict[str, Any]) -> None:
             reason = "bad_request"
             message = "安装任务参数缺失"
         else:
-            with tempfile.TemporaryDirectory(prefix="ai-phone-app-install-") as tmp:
-                local_path = Path(tmp) / filename
+            tmp = tempfile.TemporaryDirectory(prefix="ai-phone-app-install-")
+            native_owns_tmp = False
+            try:
+                local_path = Path(tmp.name) / filename
                 try:
                     await _download_package(client, str(msg.get("package_url") or ""), local_path)
                 except Exception as exc:  # noqa: BLE001
                     reason = "download_failed"
                     message = f"{type(exc).__name__}: {exc}"
                 else:
+                    # _install_by_platform owns cleanup from entry onwards,
+                    # including timeout/cancel before its worker can start.
+                    native_owns_tmp = True
                     success, reason, message = await _install_by_platform(
                         platform,
                         serial,
                         local_path,
                         timeout_sec,
+                        cleanup=tmp.cleanup,
                     )
+            finally:
+                if not native_owns_tmp:
+                    tmp.cleanup()
     except asyncio.TimeoutError:
         success = False
         reason = "timeout"
@@ -124,6 +134,7 @@ async def _install_by_platform(
     serial: str,
     local_path: Path,
     timeout_sec: int,
+    *, cleanup: Optional[Callable[[], None]] = None,
 ) -> tuple[bool, str, str]:
     # 按**内部通道**分发，不是对外平台：iOS 真机与虚拟机的安装方式毫无共同点
     # （USB lockdown vs 宿主 simctl，.ipa vs .app），正是要分开的地方。
@@ -134,12 +145,23 @@ async def _install_by_platform(
         "ios_sim": install_sim_app,
     }.get(platform)
     if installer is None:
+        if cleanup is not None:
+            cleanup()
         return False, "platform_unsupported", f"不支持的平台: {platform}"
 
-    return await asyncio.wait_for(
-        asyncio.to_thread(installer, serial, local_path, timeout_sec),
-        timeout=max(30, timeout_sec + 30),
-    )
+    try:
+        operation = NativeOperation(
+            serial, device_activity, lambda: installer(serial, local_path, timeout_sec),
+            cleanup=cleanup,
+        )
+    except BaseException:
+        if cleanup is not None:
+            cleanup()
+        raise
+    try:
+        return await asyncio.wait_for(operation.run(), timeout=max(30, timeout_sec + 30))
+    finally:
+        operation.abandon_if_pending()
 
 
 def _absolute_url(server_http_base: str, package_url: str) -> str:

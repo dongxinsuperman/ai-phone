@@ -145,6 +145,71 @@ for (const [platform, filename, namespace] of pages) {
     assert.equal(page.instances.value.some(vm => vm.id === 'old'), false)
   })
 
+  test(`${platform}: failed switch HTTP response replaces the retired ID before the quiet readback`, async () => {
+    let dispatches = 0, reads = 0
+    const readback = deferred(), readStarted = deferred()
+    const oldVm = { id: 'old', state: 'agent_offline', assigned_agent_id: 'old-host' }
+    const failedVm = { id: 'new', state: 'error', assigned_agent_id: '', error_message: '新配置启动下发失败' }
+    const detail = { message: '新配置启动下发失败', sent: false, vm_id: 'new', request_id: 'start-new', instance: failedVm, switched: true, old_vm_id: 'old', old_cleanup_sent: false }
+    const page = loadPage(filename, namespace, {
+      dispatch: async () => { dispatches += 1; throw { status: 409, detail } },
+      list: () => { reads += 1; readStarted.resolve(); return readback.promise },
+    })
+    page.instances.value = [oldVm]
+    page.candidateVmId.value = oldVm.id
+    page.candidates.value = [{ agent_id: 'target-host', ok: true }]
+    const dispatching = page.dispatchTo(oldVm, 'target-host')
+    await readStarted.promise
+    assert.equal(page.instances.value.length, 1)
+    assert.equal(page.instances.value[0].id, 'new')
+    assert.equal(page.instances.value[0].state, 'error')
+    assert.equal(page.instances.value[0].assigned_agent_id, '')
+    assert.equal(page.candidateVmId.value, '')
+    assert.equal(page.err.value, detail.message)
+    readback.resolve([failedVm])
+    await dispatching
+    assert.equal(page.err.value, detail.message)
+    assert.equal(dispatches, 1)
+    assert.equal(reads, 1)
+    assert.equal(page.isVmBusy(oldVm), false)
+  })
+
+  test(`${platform}: first-bind send error keeps its returned state when readback also fails`, async () => {
+    let dispatches = 0, reads = 0
+    const vm = { id: 'new', state: 'draft', assigned_agent_id: '' }
+    const failedVm = { ...vm, state: 'error', error_message: '启动下发失败，本次操作已结束' }
+    const detail = { message: failedVm.error_message, sent: false, vm_id: 'new', request_id: 'start-new', instance: failedVm }
+    const page = loadPage(filename, namespace, {
+      dispatch: async () => { dispatches += 1; throw { status: platform === 'ios' ? 502 : 409, detail } },
+      list: async () => { reads += 1; throw new Error('readback unavailable') },
+    })
+    page.instances.value = [vm]
+    await page.dispatchTo(vm, 'target-host')
+    assert.equal(page.instances.value[0].id, 'new')
+    assert.equal(page.instances.value[0].state, 'error')
+    assert.equal(page.err.value, detail.message)
+    assert.equal(page.canProbe(page.instances.value[0]), true)
+    assert.equal(dispatches, 1)
+    assert.equal(reads, 1)
+  })
+
+  test(`${platform}: plain conflict without an instance cannot retire the current card`, async () => {
+    let dispatches = 0, reads = 0
+    const oldVm = { id: 'old', state: 'stopped', assigned_agent_id: 'old-host' }
+    const page = loadPage(filename, namespace, {
+      dispatch: async () => { dispatches += 1; throw { status: 409, detail: '设备正在被使用' } },
+      list: async () => { reads += 1; return [oldVm] },
+    })
+    page.instances.value = [oldVm]
+    await page.dispatchTo(oldVm, 'target-host')
+    assert.equal(page.instances.value.length, 1)
+    assert.equal(page.instances.value[0].id, 'old')
+    assert.equal(page.instances.value[0].state, 'stopped')
+    assert.equal(page.err.value, '设备正在被使用')
+    assert.equal(dispatches, 1)
+    assert.equal(reads, 1)
+  })
+
   test(`${platform}: first-bind progress is not success and a failed bind remains unbound`, async () => {
     let dispatches = 0
     const listResult = deferred()

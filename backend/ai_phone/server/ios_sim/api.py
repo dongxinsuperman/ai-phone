@@ -32,6 +32,7 @@ from ..api._deps import DBSession, HubDep
 from ..api.submissions import RequireBearer
 from ..hub import Hub
 from ..vm_lifecycle import (
+    operation_failure_detail,
     is_untouched_draft,
     require_retirement_allowed, send_operation_once,
     begin_operation, maintenance, require_idle, require_startable,
@@ -368,7 +369,7 @@ async def dispatch(vm_id: str, body: IosSimVmDispatchReq,
     return await _send_start(vm_id, body.agent_id.strip(), session, hub, probe=True)
 
 
-async def _send_start(vm_id: str, agent_id: str, session: AsyncSession, hub: Hub, *, probe: bool = False, expected_draft: bool = False) -> Dict[str, Any]:
+async def _send_start(vm_id: str, agent_id: str, session: AsyncSession, hub: Hub, *, probe: bool = False, expected_draft: bool = False, allow_switch: bool = True) -> Dict[str, Any]:
     try:
         vm = await get_vm_or_404(session, vm_id)
         await session.refresh(vm)
@@ -379,6 +380,8 @@ async def _send_start(vm_id: str, agent_id: str, session: AsyncSession, hub: Hub
     require_idle(vm)
     old_agent = str(vm.assigned_agent_id or "")
     if old_agent and old_agent != agent_id:
+        if not allow_switch:
+            raise HTTPException(409, "实例所属 Agent 已变化，请刷新后重试启动；启动不会更换实例")
         return await _switch_agent(vm=vm, new_agent_id=agent_id, session=session, hub=hub)
     require_startable(vm)
     if not hub.has_agent(agent_id):
@@ -402,6 +405,8 @@ async def _send_start(vm_id: str, agent_id: str, session: AsyncSession, hub: Hub
         raise HTTPException(409, "探查期间配置已修改，请重新探查")
     old_agent = (vm.assigned_agent_id or "").strip()
     if old_agent and old_agent != agent_id:
+        if not allow_switch:
+            raise HTTPException(409, "实例所属 Agent 已变化，请刷新后重试启动；启动不会更换实例")
         return await _switch_agent(vm=vm, new_agent_id=agent_id, session=session, hub=hub)
     require_owner_host(vm, hub)
     require_device_idle(hub, vm)
@@ -420,6 +425,11 @@ async def _send_start(vm_id: str, agent_id: str, session: AsyncSession, hub: Hub
     sent = await send_operation_once(hub, agent_id, payload)
     if not sent:
         await record_send_failure(session, vm, request_id, "下发失败，保留原绑定等待对账")
+        current_operation = lifecycle_runtime(vm).get("operation") or {}
+        if current_operation.get("request_id") == request_id and current_operation.get("outcome") == "succeeded":
+            sent = True
+        else:
+            raise HTTPException(502, detail=operation_failure_detail(vm, "启动下发失败，本次操作已结束；请查询当前实例与操作结果", request_id=request_id))
     await session.refresh(vm)
     return {"sent": sent, "instance": vm.to_dict()}
 
@@ -453,7 +463,9 @@ async def _switch_agent(*, vm: IosSimVmInstance, new_agent_id: str, session: Asy
         current = await session.get(IosSimVmInstance, new_vm_id, populate_existing=True)
         if current is None:
             await session.commit()
-            raise HTTPException(409, "新配置已被其他操作删除") from exc
+            raise HTTPException(409, detail={"message": "新配置已被其他操作删除", "sent": False,
+                "switched": True, "old_vm_id": old_vm_id, "vm_id": new_vm_id,
+                "instance": None, "request_id": "", "old_cleanup_sent": cleanup_sent}) from exc
         # A different caller may have started/stopped/deleted the visible new
         # configuration while old-host cleanup was in flight. Never overwrite
         # its operation or result with this switch call's stale exception.
@@ -463,9 +475,15 @@ async def _switch_agent(*, vm: IosSimVmInstance, new_agent_id: str, session: Asy
             update_runtime(current, last_status={"state": "error", "ok": False,
                            "details": {"cleanup_confirmed": True, "instance_created": False}},
                            details={"cleanup_confirmed": True, "instance_created": False})
-        instance = current.to_dict()
+        raw_detail = exc.detail if isinstance(exc.detail, dict) else {}
+        message = str(raw_detail.get("message") or exc.detail)
+        detail = operation_failure_detail(current, message,
+            request_id=str(raw_detail.get("request_id") or ""), switched=True,
+            old_vm_id=old_vm_id, old_cleanup_sent=cleanup_sent)
         await session.commit()
-        sent = False
+        # All three legacy switch paths report a conflict when the target
+        # cannot be started. This is a partial-effect failure, never HTTP 200.
+        raise HTTPException(409, detail=detail) from exc
     return {"sent": sent, "switched": True, "old_vm_id": old_vm_id,
             "old_cleanup_sent": cleanup_sent, "instance": instance}
 
@@ -478,7 +496,7 @@ async def start(vm_id: str, session: AsyncSession = DBSession, hub: Hub = HubDep
     agent_id = str(vm.assigned_agent_id or "")
     if not agent_id:
         raise HTTPException(409, "实例尚未绑定 Agent，请先探查并下发")
-    return await _send_start(vm_id, agent_id, session, hub)
+    return await _send_start(vm_id, agent_id, session, hub, allow_switch=False)
 
 
 @router.post("/{vm_id}/stop")
@@ -504,5 +522,10 @@ async def stop(vm_id: str, session: AsyncSession = DBSession, hub: Hub = HubDep)
         "request_id": request_id, "vm_id": vm.id, "udid": vm.udid or ""})
     if not sent:
         await record_send_failure(session, vm, request_id, "所属 Agent 离线，尚未确认停止")
+        current_operation = lifecycle_runtime(vm).get("operation") or {}
+        if current_operation.get("request_id") == request_id and current_operation.get("outcome") == "succeeded":
+            sent = True
+        else:
+            raise HTTPException(502, detail=operation_failure_detail(vm, "停止下发失败，本次操作已结束；尚未确认实例停止", request_id=request_id))
     await session.refresh(vm)
     return {"sent": sent, "instance": vm.to_dict()}

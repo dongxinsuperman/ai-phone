@@ -724,12 +724,17 @@ async def test_switch_start_send_failure_keeps_only_new_unbound_error(client, hu
         response = await _dispatch(client, hub, vm["id"], "agent-2")
     finally:
         hub.send_to_agent = original
-    assert response.status_code == 200
-    body = response.json()
+    assert response.status_code == 409
+    body = response.json()["detail"]
     assert body["switched"] is True
     assert body["sent"] is False
+    assert body["old_vm_id"] == vm["id"]
+    assert body["old_cleanup_sent"] is True
+    assert body["message"]
     new_vm = body["instance"]
     assert new_vm["id"] != vm["id"]
+    assert body["vm_id"] == new_vm["id"]
+    assert body["request_id"] == new_vm["runtime_state"]["operation"]["request_id"]
     assert new_vm["state"] == "error"
     assert new_vm["assigned_agent_id"] is None
     assert new_vm["runtime_state"]["operation"]["pending"] is False
@@ -820,13 +825,17 @@ async def test_stop_offline_agent_fails_attempt_without_losing_owner(client, hub
     await session.commit()
 
     r = await client.post(f"{_BASE}/instances/{vm['id']}/stop", headers=AUTH)
-    assert r.status_code == 200
-    assert r.json()["sent"] is False
-    got = r.json()["instance"]
+    assert r.status_code == 502
+    detail = r.json()["detail"]
+    assert detail["sent"] is False
+    assert detail["vm_id"] == vm["id"]
+    assert detail["message"]
+    got = detail["instance"]
     assert got["state"] == "error"
     assert got["assigned_agent_id"] == "agent-gone"
     assert got["runtime_state"]["operation"]["pending"] is False
     assert got["runtime_state"]["operation"]["outcome"] == "failed"
+    assert detail["request_id"] == got["runtime_state"]["operation"]["request_id"]
 
 
 @pytest.mark.asyncio
@@ -1165,7 +1174,8 @@ async def test_reconcile_marks_stopped(client, hub, session):
 
     await handle_vm_reconcile(
         "agent-1",
-        {"vm_ids": [vm["id"]], "running_vm_ids": [], "stopped_vm_ids": [vm["id"]]},
+        {"vm_ids": [vm["id"]], "running_vm_ids": [], "stopped_vm_ids": [vm["id"]],
+         "inventory_complete": True},
         hub,
     )
     got = (await client.get(f"{_BASE}/instances/{vm['id']}", headers=AUTH)).json()

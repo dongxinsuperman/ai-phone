@@ -406,8 +406,10 @@ async def test_android_vm_start_send_failure_preserves_assignment(client, app, s
 
     resp = await client.post(f"/api/internal/vm/instances/{vm_id}/start", headers=AUTH)
 
-    assert resp.status_code == 200
-    assert resp.json()["sent"] is False
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["sent"] is False
+    assert resp.json()["detail"]["instance"]["id"] == vm_id
+    assert resp.json()["detail"]["request_id"]
     assert hub.sent[-1][0] == "agent-1"
     await session.refresh(vm)
     assert vm.assigned_agent_id == "agent-1"
@@ -459,8 +461,10 @@ async def test_android_vm_dispatch_send_failure_preserves_assignment(client, app
         json={"agent_id": "agent-1"},
     )
 
-    assert resp.status_code == 200
-    assert resp.json()["sent"] is False
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["sent"] is False
+    assert resp.json()["detail"]["instance"]["id"] == vm_id
+    assert resp.json()["detail"]["request_id"]
     assert hub.sent[-1][0] == "agent-1"
     vm = await session.get(AndroidVmInstance, vm_id)
     assert vm.assigned_agent_id is None
@@ -758,6 +762,7 @@ async def test_android_vm_reconcile_corrects_stale_running(session):
     await handle_vm_reconcile(
         "agent-1",
         {
+            "inventory_complete": True,
             "vm_ids": [stale.id, live.id],
             "running_vm_ids": [live.id],
             "stopped_vm_ids": [stale.id],
@@ -825,7 +830,7 @@ async def test_android_vm_reconcile_marks_missing_without_releasing_identity(ses
     # agent-1 上报空清单（本机已无受管 VM）
     await handle_vm_reconcile(
         "agent-1",
-        {"vm_ids": [], "running_vm_ids": [], "stopped_vm_ids": []},
+        {"vm_ids": [], "running_vm_ids": [], "stopped_vm_ids": [], "inventory_complete": True},
         hub,
         session=session,
     )
