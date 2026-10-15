@@ -73,7 +73,7 @@ Android Agent需安装可选依赖：在backend目录运行`pip install -e '.[je
 
 ### 三端绘图增强
 
-JEV开启时自动使用从Jev Phone 0.2.0移植的绘图增强，无新增ENV。Android读取H5 DOM和原生View几何；iOS读取WebKit及可选WDA原生可见区域；HarmonyOS读取ArkWeb及原生背景、圆角。增强只改变展示框，候选编号、原始点击区域与坐标保持当前AI Phone实现。没有可靠信息或绘图失败时沿用原画法。
+绘图增强从Jev Phone 0.2.0移植，无新增ENV。三端共用独立的程序内部开关：`jev_click/visual_vendor/settings.py` 中的 `VISUAL_ENHANCEMENT_ENABLED = True`。改为`False`只关闭增强采集与绘图，JEV定位、快速设备通道和V3流程继续运行；Provider初始化不会重置开关。JEV关闭时不会进入该分支。Android读取H5 DOM和原生View几何；iOS读取WebKit及可选WDA原生可见区域；HarmonyOS读取ArkWeb及原生背景、圆角。增强只改变展示框，候选编号、原始点击区域与坐标保持当前AI Phone实现。没有可靠信息或绘图失败时沿用原画法。
 
 增强复用V3当前截图，不执行SDK的click/run，不修改V3稳定等待、WAIT预算、救援与断言。iOS或鸿蒙的原生几何快照替代当次普通取树；失败才回退原取树。日志`timings_ms.visual_enhancement`和`visual_enhancement`记录增量耗时与各通道状态，不能把匹配数量当作点击成功率。
 

@@ -6,7 +6,7 @@ click or screenshot here. Candidate IDs and click geometry remain host-owned.
 from copy import deepcopy
 from xml.etree import ElementTree as ET
 
-from .visual_vendor.settings import configure
+from .visual_vendor.settings import visual_enhancement_enabled
 from .visual_vendor.adapters.base import Observation
 
 
@@ -17,9 +17,10 @@ class VisualEnhancer:
         self.observation = None
 
     def _provider(self):
+        if not visual_enhancement_enabled():
+            return None
         if self.provider is not None:
             return self.provider
-        configure(visual_enhancement=True)
         host = self.host
         platform = host.driver.platform
         if platform == "android":
@@ -39,6 +40,8 @@ class VisualEnhancer:
     def capture_tree(self, image, size):
         """Replace the one tree read where native geometry needs one snapshot."""
         self.observation = None
+        if not visual_enhancement_enabled():
+            return self.host.tree(size)
         provider = self._provider()
         platform = self.host.driver.platform
         if platform == "android":
@@ -68,6 +71,8 @@ class VisualEnhancer:
         return self.host.tree(size)
 
     def enhance(self, frame):
+        if not visual_enhancement_enabled():
+            return {}, {"status": "disabled"}
         if self.observation is None:
             return {}, {"status": "unavailable"}
         provider = self._provider()

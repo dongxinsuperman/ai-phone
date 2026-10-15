@@ -156,3 +156,39 @@ def test_harmony_uses_host_converter_and_one_raw_capture():
     visual.provider = provider
     assert visual.capture_tree(image(), (200, 100)) == host.convert(raw)
     host.read_raw_tree.assert_called_once()
+
+@pytest.mark.parametrize('platform', ['android', 'ios', 'harmony'])
+def test_internal_master_switch_skips_collection_on_all_platforms(monkeypatch, platform):
+    from ai_phone.agent.trajectory_cache.jev_click.visual_vendor import settings
+    monkeypatch.setattr(settings, 'VISUAL_ENHANCEMENT_ENABLED', False)
+    host = Host(SimpleNamespace(platform=platform))
+    host.visual_enabled = True
+    monkeypatch.setattr(VisualEnhancer, '_provider', Mock(side_effect=AssertionError('no provider')))
+    frame = host.capture(image(), (200, 100), (200, 100))
+    host.enhance_frame(frame)
+    assert frame.candidates == tree_data(TREE, (200, 100))[0]
+    assert not frame.visual_regions
+    assert not hasattr(host, '_visual')
+    assert settings.visual_enhancement_enabled() is False
+
+
+def test_provider_initialization_never_resets_internal_master_switch(monkeypatch):
+    from ai_phone.agent.trajectory_cache.jev_click.visual_vendor import settings
+    from ai_phone.agent.trajectory_cache.jev_click.visual_vendor.adapters.android import AndroidAdapter
+    monkeypatch.setattr(settings, 'VISUAL_ENHANCEMENT_ENABLED', True)
+    device = object()
+    host = Host(SimpleNamespace(platform='android', serial='unit'))
+    host.device = device
+    visual = VisualEnhancer(host)
+    provider = visual._provider()
+    assert isinstance(provider, AndroidAdapter)
+    settings.configure(visual_enhancement=False)
+    assert visual.capture_tree(image(), (200, 100)) == TREE
+    assert visual._provider() is None
+    assert visual.enhance(Frame(image(), (200, 100), [])) == ({}, {'status': 'disabled'})
+    assert not settings.visual_enhancement_enabled()
+    # An instance created later must also respect the same False value.
+    assert VisualEnhancer(host)._provider() is None
+    settings.configure(visual_enhancement=True)
+    assert visual._provider() is provider
+    assert provider.device is device

@@ -30,7 +30,8 @@ class TreeAdapter:
         if size != tuple(expected_image_size) or size != tuple(window_size) or min(size) <= 0:
             raise JevError("Viewport changed since V3 step capture")
         tree = None
-        if getattr(self, "visual_enabled", False):
+        from ..visual_vendor.settings import visual_enhancement_enabled
+        if getattr(self, "visual_enabled", False) and visual_enhancement_enabled():
             try:
                 from ..visual import VisualEnhancer
                 if not getattr(self, "_visual", None):
@@ -46,7 +47,8 @@ class TreeAdapter:
         return Frame(screenshot_bytes, size, nodes)
 
     def enhance_frame(self, frame):
-        if not getattr(self, "visual_enabled", False):
+        from ..visual_vendor.settings import visual_enhancement_enabled
+        if not getattr(self, "visual_enabled", False) or not visual_enhancement_enabled():
             return
         visual = getattr(self, "_visual", None)
         if visual is None:
