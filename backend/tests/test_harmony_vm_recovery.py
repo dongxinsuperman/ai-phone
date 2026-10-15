@@ -389,6 +389,20 @@ def test_agent_stop_retry_never_confirms_unverified_old_port_or_touches_new_vm(
 
     calls: list[tuple[str, tuple[Any, ...]]] = []
     confirmations = iter([(False, "unconfirmed"), (False, "unconfirmed"), (True, "removed")])
+    native = {"stops": 0, "running": True}
+
+    def stop_emulator(args, **_kwargs):
+        assert args[1:] == ["-stop", runtime.instance_name]
+        calls.append(("emulator", tuple(args)))
+        native["stops"] += 1
+        # The first two explicit attempts do not exit. Only the last native
+        # stop actually removes the instance, allowing a positive exit proof.
+        native["running"] = native["stops"] < 3
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    def active_instance(*_args):
+        return serial if native["running"] else ""
+
     monkeypatch.setattr(
         manager_module,
         "find_harmony_tools",
@@ -397,8 +411,7 @@ def test_agent_stop_retry_never_confirms_unverified_old_port_or_touches_new_vm(
     monkeypatch.setattr(
         manager_module.subprocess,
         "run",
-        lambda args, **_kwargs: calls.append(("emulator", tuple(args)))
-        or SimpleNamespace(returncode=0, stdout="", stderr=""),
+        stop_emulator,
     )
     monkeypatch.setattr(
         manager_module,
@@ -406,7 +419,8 @@ def test_agent_stop_retry_never_confirms_unverified_old_port_or_touches_new_vm(
         lambda *args, **_kwargs: calls.append(("hdc", args)) or "",
     )
     monkeypatch.setattr(manager, "_wait_removed", lambda *_args: next(confirmations))
-    monkeypatch.setattr(manager, "_active_instance_serial", lambda *_args: serial)
+    monkeypatch.setattr(manager, "_active_instance_serial", active_instance)
+    monkeypatch.setattr(manager, "_cleanup_crash_service", lambda *_args: (True, []))
 
     try:
         first = manager.stop_sync(vm_id, serial, old_token)
@@ -417,7 +431,8 @@ def test_agent_stop_retry_never_confirms_unverified_old_port_or_touches_new_vm(
         # A process restart must not turn ready=False into a false cleanup ack.
         manager = HarmonyVmManager(runtime_dir=tmp_path)
         monkeypatch.setattr(manager, "_wait_removed", lambda *_args: next(confirmations))
-        monkeypatch.setattr(manager, "_active_instance_serial", lambda *_args: serial)
+        monkeypatch.setattr(manager, "_active_instance_serial", active_instance)
+        monkeypatch.setattr(manager, "_cleanup_crash_service", lambda *_args: (True, []))
         assert manager._known[vm_id]["cleanup_pending"] is True  # noqa: SLF001
 
         second = manager.stop_sync(vm_id, serial, old_token)
@@ -437,6 +452,8 @@ def test_agent_stop_retry_never_confirms_unverified_old_port_or_touches_new_vm(
         confirmed = manager.stop_sync(vm_id, serial, old_token)
         assert confirmed["ok"] is True
         assert confirmed["details"]["cleanup_confirmed"] is True
+        assert confirmed["details"]["exit_evidence"]["instance_process_status"] == "absent"
+        assert native == {"stops": 3, "running": False}
         assert manager._known[vm_id]["cleanup_pending"] is False  # noqa: SLF001
     finally:
         unregister_managed_vm("new-vm", "new-lease")
@@ -535,8 +552,22 @@ def test_delete_rechecks_crash_service_that_outlives_stop(monkeypatch, tmp_path)
             "1",
         ],
     )
-    scans = iter([[], [orphan]])
-    monkeypatch.setattr(psutil, "process_iter", lambda _attrs: next(scans))
+    # Explicit stop first proves that the exact Emulator is absent; the two
+    # later scans belong to crash-helper cleanup before and after deletion.
+    scans = iter([[], [], [orphan]])
+    events = []
+
+    def process_scan(_attrs):
+        events.append("process_scan")
+        return next(scans)
+
+    def delete_emulator(args, **_kwargs):
+        assert args[1] == "-delete" and args[2] == instance_name
+        events.append("delete")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(psutil, "process_iter", process_scan)
+    monkeypatch.setattr(manager_module, "hdc_list_targets", lambda: events.append("hdc_query") or [])
     monkeypatch.setattr(
         manager_module,
         "find_harmony_tools",
@@ -545,7 +576,7 @@ def test_delete_rechecks_crash_service_that_outlives_stop(monkeypatch, tmp_path)
     monkeypatch.setattr(
         manager_module.subprocess,
         "run",
-        lambda _args, **_kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+        delete_emulator,
     )
     manager = HarmonyVmManager(runtime_dir=tmp_path)
     manager._known[vm_id] = {  # noqa: SLF001
@@ -561,6 +592,7 @@ def test_delete_rechecks_crash_service_that_outlives_stop(monkeypatch, tmp_path)
     assert result["ok"] is True
     assert result["details"]["crash_service_cleanup_confirmed"] is True
     assert orphan.terminated is True
+    assert events == ["process_scan", "hdc_query", "process_scan", "delete", "process_scan"]
 
 
 def test_crash_service_scan_failure_does_not_block_confirmed_hdc_stop(
@@ -594,6 +626,9 @@ def test_crash_service_scan_failure_does_not_block_confirmed_hdc_stop(
         hdc_port=10007,
         hdc_serial="127.0.0.1:10007",
         lease_token="lease-c",
+        # This case is about an optional crash-helper query failing after the
+        # VM itself has independently exited, not an unverified reclaimed VM.
+        process=SimpleNamespace(poll=lambda: 0),
     )
     manager._runtimes[runtime.vm_id] = runtime  # noqa: SLF001
     monkeypatch.setattr(manager, "_wait_removed", lambda *_args: (True, "removed"))
@@ -603,6 +638,7 @@ def test_crash_service_scan_failure_does_not_block_confirmed_hdc_stop(
     assert result["ok"] is True
     assert result["details"]["cleanup_confirmed"] is True
     assert result["details"]["crash_service_cleanup_confirmed"] is False
+    assert result["details"]["exit_evidence"]["process_return_code"] == 0
 
 
 async def test_stale_port_lease_row_cannot_be_reused_by_new_dispatch(session):

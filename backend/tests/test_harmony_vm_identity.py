@@ -469,6 +469,7 @@ def test_reconcile_does_not_adopt_stale_ready_a_from_bs_reused_port(monkeypatch,
 @pytest.mark.parametrize("operation", ["stop", "delete"])
 def test_delayed_old_vm_cleanup_cannot_touch_new_owner_of_reused_hdc(monkeypatch, tmp_path, operation):
     """A's late command may affect A's files, never B's current connection."""
+    import psutil
     import ai_phone.agent.harmony_vm.manager as manager_module
 
     manager = HarmonyVmManager(runtime_dir=tmp_path)
@@ -505,6 +506,16 @@ def test_delayed_old_vm_cleanup_cannot_touch_new_owner_of_reused_hdc(monkeypatch
         "lease_token": "new-lease",
         "ready": True,
     }
+    # Match a real bind/reclaim: B owns both the runtime and the managed route;
+    # the exact native inventory contains B, while A is actually absent.
+    native_b = SimpleNamespace(info={
+        "name": "Emulator",
+        "cmdline": [
+            "/fake/Emulator", "-start", current.instance_name,
+            "-instancePath", current.instance_path, "-hdcPort", "10007",
+        ],
+    })
+    monkeypatch.setattr(psutil, "process_iter", lambda _attrs: iter([native_b]))
 
     def forbidden_hdc(*_args, **_kwargs):
         pytest.fail("old VM cleanup touched B's HDC connection")
@@ -516,15 +527,22 @@ def test_delayed_old_vm_cleanup_cannot_touch_new_owner_of_reused_hdc(monkeypatch
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(manager_module, "hdc_run", forbidden_hdc)
+    monkeypatch.setattr(manager_module, "hdc_list_targets", forbidden_hdc)
+    monkeypatch.setattr(manager, "_port_is_free", forbidden_hdc)
     monkeypatch.setattr(
         manager_module, "find_harmony_tools", lambda: (SimpleNamespace(emulator="Emulator"), [])
     )
     monkeypatch.setattr(manager_module.subprocess, "run", fake_emulator)
-    if operation == "stop":
-        result = manager.stop_sync("vm-a", HDC_SERIAL, "old-lease")
-    else:
-        result = manager.delete_sync("vm-a", HDC_SERIAL, "old-lease")
-    assert result["ok"] is True
-    assert manager._runtimes["vm-b"] is current  # noqa: SLF001
-    assert current.ready is True
-    assert current.hdc_serial == HDC_SERIAL
+    register_managed_vm("vm-b", HDC_SERIAL, "new-lease")
+    try:
+        if operation == "stop":
+            result = manager.stop_sync("vm-a", HDC_SERIAL, "old-lease")
+        else:
+            result = manager.delete_sync("vm-a", HDC_SERIAL, "old-lease")
+        assert result["ok"] is True
+        assert manager._runtimes["vm-b"] is current  # noqa: SLF001
+        assert current.ready is True
+        assert current.hdc_serial == HDC_SERIAL
+        assert resolve_harmony_serial("harmony-vm:vm-b") == HDC_SERIAL
+    finally:
+        unregister_managed_vm("vm-b", "new-lease")
