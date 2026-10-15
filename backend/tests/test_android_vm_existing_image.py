@@ -28,7 +28,7 @@ def avd(tmp_path, monkeypatch):
     directory = avd_home / f"{AVD}.avd"
     directory.mkdir(parents=True)
     config = directory / "config.ini"
-    config.write_text("image.sysdir.1=system-images/android-33/google_apis/arm64-v8a/\nhw.lcd.width=100\n")
+    config.write_text("image.sysdir.1=system-images/android-33/google_apis/arm64-v8a/\nhw.lcd.width=100\ndisk.dataPartition.size=6442450944\n")
     (directory / "userdata-qemu.img").write_bytes(b"existing user data must survive")
     index = avd_home / f"{AVD}.ini"
     index.write_text(f"avd.ini.encoding=UTF-8\npath={directory}\npath.rel=avd/{AVD}.avd\n")
@@ -74,7 +74,7 @@ def test_existing_same_package_accepts_real_sdk_paths(avd, form):
         "dotdot": "system-images/android-33/google_apis/../google_apis/arm64-v8a",
         "absolute_without_sdk": str(avd.image_dir),
     }
-    avd.config.write_text(f"image.sysdir.1={paths[form]}\nhw.lcd.width=100\n")
+    avd.config.write_text(f"image.sysdir.1={paths[form]}\nhw.lcd.width=100\ndisk.dataPartition.size=6442450944\n")
     if form == "absolute_without_sdk":
         avd.tools.sdk_root = ""
     assert ensure(avd) is False

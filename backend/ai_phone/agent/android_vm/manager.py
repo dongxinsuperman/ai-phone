@@ -65,10 +65,14 @@ class VmStartFailure(RuntimeError):
         self.instance_preexisting = bool(getattr(cause, "instance_preexisting", False))
 
 
-class _ExistingAvdImageError(RuntimeError):
+class _ExistingAvdConfigError(RuntimeError):
     """已有磁盘的只读检查失败，不能进入启动失败的实例清理。"""
 
     created_in_attempt = False
+
+
+class _ExistingAvdImageError(_ExistingAvdConfigError):
+    """已有 AVD 的原生镜像身份无法确认。"""
 
 
 class AndroidVmManager:
@@ -500,7 +504,7 @@ class AndroidVmManager:
                 },
             }
         except Exception as exc:
-            if isinstance(exc, _ExistingAvdImageError) and runtime.process is None:
+            if isinstance(exc, _ExistingAvdConfigError) and runtime.process is None:
                 # 本次尚未启动：仅撤占位，旧盘和可能仍活着的旧进程都不能被收尾逻辑修改。
                 exc.cleanup_confirmed = self._runtime_exit_confirmed(runtime)
                 self._forget_runtime(runtime)
@@ -1110,6 +1114,7 @@ class AndroidVmManager:
                 internal_storage_mb=internal_storage_mb,
                 sdcard_mb=sdcard_mb,
                 hardware=hardware,
+                preserve_data_size=True,
             )
             return False
         if require_existing:
@@ -1158,9 +1163,12 @@ class AndroidVmManager:
         internal_storage_mb: int = 0,
         sdcard_mb: int = 0,
         hardware: Optional[Dict[str, Any]] = None,
+        preserve_data_size: bool = False,
     ) -> None:
         config_path = _avd_config_path(tools, avd_name)
         if config_path is None:
+            if preserve_data_size:
+                raise _ExistingAvdConfigError("无法读取已有虚拟机的数据容量，未修改或启动")
             logger.warning("未找到 AVD config，跳过屏幕尺寸写入 avd={}", avd_name)
             return
         updates = {
@@ -1180,12 +1188,38 @@ class AndroidVmManager:
         for key, value in (hardware or {}).items():
             updates[key] = value
         existing: Dict[str, str] = {}
-        if config_path.exists():
-            for line in config_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        sizes: list[str] = []
+        try:
+            text = ""
+            if config_path.exists():
+                text = config_path.read_text(
+                    encoding="utf-8-sig" if preserve_data_size else "utf-8",
+                    errors="strict" if preserve_data_size else "ignore",
+                )
+            for line in text.splitlines():
                 if "=" not in line:
                     continue
                 key, value = line.split("=", 1)
                 existing[key.strip()] = value.strip()
+                if key.strip() == "disk.dataPartition.size":
+                    sizes.append(value.strip())
+        except (OSError, UnicodeError) as exc:
+            if preserve_data_size:
+                raise _ExistingAvdConfigError("无法读取已有虚拟机的数据容量，未修改或启动") from exc
+            raise
+        if preserve_data_size:
+            current_size = _avd_disk_size_bytes(sizes[0]) if len(sizes) == 1 else None
+            if current_size is None:
+                raise _ExistingAvdConfigError("无法核实已有虚拟机的数据容量，未修改或启动")
+            if "disk.dataPartition.size" in updates:
+                requested_size = _avd_disk_size_bytes(updates["disk.dataPartition.size"])
+                if requested_size is None:
+                    raise _ExistingAvdConfigError("无法核实请求的数据容量，未修改或启动")
+                if requested_size <= current_size:
+                    # SDK 可能在首次启动时上调容量；保留原值和表示，不把旧请求写回更小的值。
+                    updates.pop("disk.dataPartition.size")
+        if all(existing.get(key) == value for key, value in updates.items()):
+            return
         existing.update(updates)
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(
@@ -1536,6 +1570,15 @@ def _sdk_image_path(value: str, sdk_root: str = "") -> PurePath:
         raise ValueError("相对镜像路径缺少明确的 SDK 根目录")
     root = _sdk_image_path(sdk_root)
     return root.joinpath(*relative.parts)
+
+
+def _avd_disk_size_bytes(value: str) -> Optional[int]:
+    """SDK diskSize 的字节整数或二进制 K/M/G 单位；未知形式不猜测容量。"""
+    match = re.fullmatch(r"([0-9]+)([kKmMgG]?)", str(value).strip())
+    if match is None or len(match[1]) > 19:
+        return None
+    size = int(match[1]) * (1024 ** {"": 0, "k": 1, "m": 2, "g": 3}[match[2].lower()])
+    return size if 0 < size <= (1 << 63) - 1 else None
 
 
 def _native_sdk_path(value: str, sdk_root: str = "") -> Path:
