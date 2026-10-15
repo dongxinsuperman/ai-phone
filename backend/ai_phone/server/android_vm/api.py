@@ -748,6 +748,7 @@ async def stop_instance(
     sent = await send_operation_once(hub, vm.assigned_agent_id, {
         "type": P.MSG_VM_STOP, "request_id": request_id,
         "vm_id": vm.id, "adb_serial": vm.adb_serial or "",
+        "operation_timeout_sec": lifecycle_runtime(vm)["operation"]["timeout_sec"],
     })
     if not sent:
         await record_send_failure(session, vm, request_id, "所属 Agent 离线，尚未确认停止")

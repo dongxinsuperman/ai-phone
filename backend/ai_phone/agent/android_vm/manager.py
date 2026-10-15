@@ -158,11 +158,19 @@ class AndroidVmManager:
         await self._start_and_report(client, msg)
 
     async def handle_stop(self, client: AgentWSClient, msg: Dict[str, Any]) -> None:
-        await client.send(self._status_payload(msg, state="stopping", ok=True, reason="stopping"))
-        result = await asyncio.to_thread(
-            self.stop_sync, str(msg.get("vm_id") or ""), str(msg.get("adb_serial") or ""),
-            str(msg.get("request_id") or ""),
-        )
+        vm_id, serial = str(msg.get("vm_id") or ""), str(msg.get("adb_serial") or "")
+        try:
+            # WS 已扣除队列等待；发进度、线程池和 VM 锁不能重开一次预算。
+            deadline = _cleanup_deadline(msg)
+            await asyncio.wait_for(
+                client.send(self._status_payload(msg, state="stopping", ok=True, reason="stopping")),
+                timeout=_startup_timeout(deadline, _CLEANUP_TIMEOUT_SEC),
+            )
+            result = await asyncio.to_thread(
+                self.stop_sync, vm_id, serial, str(msg.get("request_id") or ""), deadline=deadline,
+            )
+        except (TimeoutError, ValueError) as exc:
+            result = self._cleanup_failure(vm_id, serial, exc)
         await client.send(self._status_payload(
             msg,
             state="stopped" if result.get("ok") else "error",
@@ -180,11 +188,12 @@ class AndroidVmManager:
         先停 emulator 再删 AVD；AVD 名按 vm_id 独占（``aiphone_vm_<vmid>``），只命中
         这一台，不影响其它 VM / 真机链路；只有资源清理确认完成后才回报 deleted。
         """
-        result = await asyncio.to_thread(
-            self.delete_sync,
-            str(msg.get("vm_id") or ""),
-            str(msg.get("adb_serial") or ""),
-        )
+        vm_id, serial = str(msg.get("vm_id") or ""), str(msg.get("adb_serial") or "")
+        try:
+            deadline = _cleanup_deadline(msg)
+            result = await asyncio.to_thread(self.delete_sync, vm_id, serial, deadline=deadline)
+        except (TimeoutError, ValueError) as exc:
+            result = self._cleanup_failure(vm_id, serial, exc)
         await client.send(self._status_payload(
             msg,
             state="stopped" if result.get("ok") else "error",
@@ -494,7 +503,13 @@ class AndroidVmManager:
                         "error": "未取得本次创建成功证据，保留现有文件等待对账",
                     }
                 else:
-                    cleanup = self.delete_sync(vm_id, adb_serial) if rollback_new and created_here else self.stop_sync(vm_id)
+                    # 启动已失败：只做一次独立有界收尾，不续启动，也不能因启动预算耗尽而跳过回收。
+                    cleanup_deadline = time.monotonic() + _CLEANUP_TIMEOUT_SEC
+                    cleanup = (
+                        self.delete_sync(vm_id, adb_serial, deadline=cleanup_deadline)
+                        if rollback_new and created_here
+                        else self.stop_sync(vm_id, deadline=cleanup_deadline)
+                    )
             except Exception as cleanup_exc:  # noqa: BLE001
                 cleanup = {"ok": False, "error": str(cleanup_exc)}
             if not cleanup.get("ok"):
@@ -503,17 +518,40 @@ class AndroidVmManager:
             exc.cleanup_confirmed = bool(cleanup.get("ok"))
             raise
 
-    def stop_sync(self, vm_id: str, adb_serial: str = "", request_id: str = "") -> Dict[str, Any]:
+    def stop_sync(
+        self, vm_id: str, adb_serial: str = "", request_id: str = "", *, deadline: Optional[float] = None,
+    ) -> Dict[str, Any]:
         if not vm_id:
             return {"ok": False, "reason": "bad_request", "error": "vm_id required"}
-        with self._vm_lock(vm_id):
-            return self._stop_sync_locked(vm_id, adb_serial, request_id)
+        deadline = time.monotonic() + _CLEANUP_TIMEOUT_SEC if deadline is None else deadline
+        try:
+            with _startup_lock(self._vm_lock(vm_id), deadline):
+                return self._stop_sync_locked(vm_id, adb_serial, request_id, deadline)
+        except TimeoutError as exc:
+            return self._cleanup_failure(vm_id, adb_serial, exc)
 
-    def _stop_sync_locked(self, vm_id: str, adb_serial: str = "", request_id: str = "") -> Dict[str, Any]:
+    def _cleanup_failure(self, vm_id: str, serial: str, exc: Exception) -> Dict[str, Any]:
+        runtime = self._runtimes.get(vm_id)
+        return {
+            "ok": False, "reason": "operation_timeout" if isinstance(exc, TimeoutError) else "bad_request",
+            "error": "本次停止/清理操作超时，尚未确认资源释放" if isinstance(exc, TimeoutError) else str(exc),
+            "adb_serial": runtime.adb_serial if runtime else serial,
+            "avd_name": _safe_avd_name(vm_id),
+            "details": {"avd_name": _safe_avd_name(vm_id), "port": runtime.port if runtime else _emulator_port(serial),
+                        "cleanup_pending": True, "cleanup_confirmed": False,
+                        "instance_created": vm_id in self._created_vm_ids,
+                        "exit_evidence": (runtime.exit_evidence or {}) if runtime else {}},
+        }
+
+    def _stop_sync_locked(
+        self, vm_id: str, adb_serial: str, request_id: str, deadline: float,
+    ) -> Dict[str, Any]:
+        _startup_timeout(deadline, 1)
         runtime = self._runtimes.get(vm_id)
         was_tracked = runtime is not None
         avd_name = _safe_avd_name(vm_id)
         matches, _complete = _find_avd_processes(avd_name)
+        _startup_timeout(deadline, 1)
         if runtime is None:
             # Agent 重启或 ADB 失联后仍能按持久 AVD 身份收回实例，绝不按旧 serial 盲杀。
             port = next((port for _proc, port in matches if port), _emulator_port(adb_serial))
@@ -528,10 +566,26 @@ class AndroidVmManager:
         serials = {runtime.adb_serial} | {f"emulator-{port}" for _proc, port in matches if port}
         tools, _missing = find_android_tools()
         graceful = False
+        grace_seconds = None
+        grace_deadline = None
         if tools is not None:
             for serial in serials:
-                if _emulator_port(serial) and self._emulator_avd_name(tools, serial) == avd_name:
-                    graceful = self._kill_emulator(tools, serial) or graceful
+                _startup_timeout(deadline, 1)
+                if _emulator_port(serial) and self._emulator_avd_name(tools, serial, deadline) == avd_name:
+                    accepted = self._kill_emulator(tools, serial, deadline)
+                    _startup_timeout(deadline, 1)
+                    if accepted:
+                        accepted_at = time.monotonic()
+                        if not graceful:
+                            # 只在确需等待原生退出时取已核 AVD 进程的单键，不能猜新 Agent 环境。
+                            grace_seconds = _native_shutdown_grace([proc for proc, _port in matches])
+                            _startup_timeout(deadline, 1)
+                        # 一个 VM 的所有 PID 共用窗口；未知覆盖值只等本次剩余预算。
+                        # 多 serial 的较晚请求也要获得 SDK 窗口，但每个 PID 的 wait 不会重开。
+                        grace_deadline = deadline if grace_seconds is None else min(
+                            deadline, max(grace_deadline or 0, accepted_at + grace_seconds),
+                        )
+                    graceful = accepted or graceful
         owned_processes = ([runtime.process] if runtime.process is not None else [])
         owned_processes.extend(proc for proc, _port in matches)
         stopped_pids: set[int] = set()
@@ -541,12 +595,19 @@ class AndroidVmManager:
                 continue
             stopped_pids.add(pid)
             try:
-                _stop_owned_process(proc, graceful=graceful)
+                _stop_owned_process(proc, graceful=graceful, deadline=deadline, grace_deadline=grace_deadline)
+            except TimeoutError:
+                raise
             except Exception as exc:  # noqa: BLE001
                 logger.warning("停止 Android VM 进程失败 vm_id={}: {}", vm_id, exc)
-        deadline = time.monotonic() + _STOP_VERIFY_TIMEOUT_SEC
-        while not self._runtime_exit_confirmed(runtime):
-            if time.monotonic() >= deadline:
+        verify_deadline = min(deadline, max(time.monotonic() + _STOP_VERIFY_TIMEOUT_SEC, grace_deadline or 0))
+        while True:
+            _startup_timeout(deadline, 1)
+            confirmed = self._runtime_exit_confirmed(runtime)
+            _startup_timeout(deadline, 1)
+            if confirmed:
+                break
+            if time.monotonic() >= verify_deadline:
                 return {
                     "ok": False, "reason": "stop_unconfirmed",
                     "error": "未确认实例进程退出及端口释放，保留管理记录", "adb_serial": runtime.adb_serial,
@@ -555,7 +616,7 @@ class AndroidVmManager:
                                 "instance_created": vm_id in self._created_vm_ids,
                                 "exit_evidence": runtime.exit_evidence or {}},
                 }
-            time.sleep(0.1)
+            time.sleep(min(0.1, _startup_timeout(deadline, 0.1)))
         self._forget_runtime(runtime)
         return {
             "ok": True, "reason": "stopped" if was_tracked or matches or graceful else "not_running",
@@ -610,19 +671,23 @@ class AndroidVmManager:
         vm_ids = list(self._runtimes.keys())
         return sum(bool(self.stop_sync(vm_id).get("ok")) for vm_id in vm_ids)
 
-    def delete_sync(self, vm_id: str, adb_serial: str = "") -> Dict[str, Any]:
+    def delete_sync(self, vm_id: str, adb_serial: str = "", *, deadline: Optional[float] = None) -> Dict[str, Any]:
         """先停 emulator，再删该 VM 独占的 AVD。AVD 不存在视为成功（幂等）。"""
         vm_id = (vm_id or "").strip()
         if not vm_id:
             return {"ok": False, "reason": "bad_request", "error": "vm_id required", "avd_name": ""}
         # 与 start/stop 同一把 per-VM 锁串行：删除不会和正在进行的启动/停止交叉
-        with self._vm_lock(vm_id):
-            return self._delete_sync_locked(vm_id, adb_serial)
+        deadline = time.monotonic() + _CLEANUP_TIMEOUT_SEC if deadline is None else deadline
+        try:
+            with _startup_lock(self._vm_lock(vm_id), deadline):
+                return self._delete_sync_locked(vm_id, adb_serial, deadline)
+        except TimeoutError as exc:
+            return self._cleanup_failure(vm_id, adb_serial, exc)
 
-    def _delete_sync_locked(self, vm_id: str, adb_serial: str) -> Dict[str, Any]:
+    def _delete_sync_locked(self, vm_id: str, adb_serial: str, deadline: float) -> Dict[str, Any]:
         avd_name = _safe_avd_name(vm_id)
         # 1) 必须确认停妥；旧 serial 即使被别人复用也不能关闭另一台实例。
-        stopped = self.stop_sync(vm_id, adb_serial)
+        stopped = self.stop_sync(vm_id, adb_serial, deadline=deadline)
         if not stopped.get("ok"):
             return {**stopped, "avd_name": avd_name}
         tools, _missing = find_android_tools()
@@ -630,7 +695,9 @@ class AndroidVmManager:
             return {"ok": False, "reason": "tools_missing", "error": "android tools missing", "avd_name": avd_name,
                     "details": {"instance_created": vm_id in self._created_vm_ids, "cleanup_confirmed": False}}
         # 2) 删除 AVD 一次；失败返回本次结果，不在后台继续或重试。
-        ok = self._delete_avd(tools, avd_name)
+        _startup_timeout(deadline, 1)
+        ok = self._delete_avd(tools, avd_name, deadline)
+        _startup_timeout(deadline, 1)
         if ok:
             self._created_vm_ids.discard(vm_id)
             self._avd_inventory_proofs.pop(vm_id, None)
@@ -642,25 +709,26 @@ class AndroidVmManager:
             "details": {"cleanup_confirmed": ok, "instance_created": vm_id in self._created_vm_ids},
         }
 
-    def _delete_avd(self, tools: AndroidVmTools, avd_name: str) -> bool:
+    def _delete_avd(self, tools: AndroidVmTools, avd_name: str, deadline: Optional[float] = None) -> bool:
         try:
             proc = subprocess.run(
                 [tools.avdmanager, "delete", "avd", "-n", avd_name],
-                check=False, capture_output=True, text=True, timeout=30,
+                check=False, capture_output=True, text=True, timeout=_startup_timeout(deadline, 30),
             )
         except Exception as exc:  # noqa: BLE001
             logger.error("avdmanager delete 失败 avd={}: {}", avd_name, exc)
             return False
         out = ((proc.stdout or "") + (proc.stderr or "")).strip()
+        _startup_timeout(deadline, 1)
         if proc.returncode == 0:
-            return self._remove_avd_dir(tools, avd_name)
+            return self._remove_avd_dir(tools, avd_name, deadline)
         # AVD 本就不存在 → 幂等成功。
         if "no Android Virtual Device" in out or "not found" in out.lower():
-            return self._remove_avd_dir(tools, avd_name)
+            return self._remove_avd_dir(tools, avd_name, deadline)
         logger.error("avdmanager delete 失败 avd={}: {}", avd_name, out or "(无输出)")
         return False
 
-    def _remove_avd_dir(self, tools: AndroidVmTools, avd_name: str) -> bool:
+    def _remove_avd_dir(self, tools: AndroidVmTools, avd_name: str, deadline: Optional[float] = None) -> bool:
         """兜底清理 avdmanager 没删干净的残留目录 / .ini。"""
         cfg = _avd_config_path(tools, avd_name)
         if cfg is None:
@@ -668,14 +736,21 @@ class AndroidVmManager:
         avd_dir = cfg.parent
         ini = avd_dir.parent / f"{avd_name}.ini"
         try:
+            _startup_timeout(deadline, 1)
             if avd_dir.exists():
                 shutil.rmtree(avd_dir)
+        except TimeoutError:
+            raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("清理 AVD 目录失败 {}: {}", avd_dir, exc)
             return False  # 保留 .ini 索引，供下次明确清理/重连对账发现残留。
         try:
+            _startup_timeout(deadline, 1)
             if ini.exists():
                 ini.unlink()
+            _startup_timeout(deadline, 1)
+        except TimeoutError:
+            raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("清理 AVD .ini 失败 {}: {}", avd_name, exc)
         return not avd_dir.exists() and not ini.exists()
@@ -1062,7 +1137,7 @@ class AndroidVmManager:
             encoding="utf-8",
         )
 
-    def _emulator_avd_name(self, tools: AndroidVmTools, serial: str) -> str:
+    def _emulator_avd_name(self, tools: AndroidVmTools, serial: str, deadline: Optional[float] = None) -> str:
         if not _emulator_port(serial):
             return ""
         try:
@@ -1071,7 +1146,7 @@ class AndroidVmManager:
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=_startup_timeout(deadline, 5),
             )
         except Exception:
             return ""
@@ -1096,13 +1171,13 @@ class AndroidVmManager:
             return ""
         return (proc.stdout or "").strip() if proc.returncode == 0 else ""
 
-    def _kill_emulator(self, tools: AndroidVmTools, serial: str) -> bool:
+    def _kill_emulator(self, tools: AndroidVmTools, serial: str, deadline: Optional[float] = None) -> bool:
         try:
             proc = subprocess.run(
                 [tools.adb, "-s", serial, "emu", "kill"],
                 check=False,
                 capture_output=True,
-                timeout=5,
+                timeout=_startup_timeout(deadline, 5),
             )
             return proc.returncode == 0
         except Exception:
@@ -1286,6 +1361,46 @@ class AndroidVmManager:
 
 _AVD_NAME_PREFIX = "aiphone_vm_"
 _STOP_VERIFY_TIMEOUT_SEC = 5.0
+_CLEANUP_TIMEOUT_SEC = 120.0
+_NATIVE_GRACE_TIMEOUT_SEC = 20.0
+_NATIVE_GRACE_ENV = "ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL"
+
+
+def _cleanup_deadline(msg: Dict[str, Any]) -> float:
+    # 只接收相对预算；跨进程传来的 monotonic 值不是本机 deadline。
+    try:
+        seconds = float(msg.get("operation_timeout_sec", _CLEANUP_TIMEOUT_SEC))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("operation_timeout_sec must be a positive finite number") from exc
+    return _start_deadline({"operation_timeout_sec": seconds})
+
+
+def _native_shutdown_grace(processes: List[Any]) -> Optional[float]:
+    """只读取精确受管进程的单个覆盖值；未知时不得用新 Agent 环境猜测。"""
+    if not processes:
+        return None
+    values = []
+    seen = set()
+    for proc in processes:
+        pid = getattr(proc, "pid", id(proc))
+        if pid in seen:
+            continue
+        seen.add(pid)
+        try:
+            raw = proc.environ().get(_NATIVE_GRACE_ENV)
+            if raw is None:
+                value = _NATIVE_GRACE_TIMEOUT_SEC
+            else:
+                # SDK 读整数秒；不能把 atoi("0.5") 的默认 20 秒误缩成 0.5 秒。
+                if not isinstance(raw, str) or not re.fullmatch(r"\+?[0-9]+", raw.strip()):
+                    return None
+                value = float(int(raw.strip()))
+            if not math.isfinite(value) or value <= 0:
+                return None
+        except (psutil.Error, OSError, AttributeError, TypeError, ValueError, OverflowError):
+            return None
+        values.append(value)
+    return max(values)
 
 
 def _start_deadline(msg: Dict[str, Any]) -> Optional[float]:
@@ -1384,26 +1499,38 @@ def _emulator_process_inventory() -> tuple[list[tuple[Any, str, int]], bool]:
     return processes, complete
 
 
-def _stop_owned_process(proc: Any, *, graceful: bool) -> None:
+def _stop_owned_process(
+    proc: Any, *, graceful: bool, deadline: Optional[float] = None, grace_deadline: Optional[float] = None,
+) -> None:
     """Popen 或按精确 AVD 名找到的 psutil.Process；后者在发信号时还校验 PID 代次。"""
+    deadline = time.monotonic() + _CLEANUP_TIMEOUT_SEC if deadline is None else deadline
+    _startup_timeout(deadline, 1)
     try:
         if graceful:
+            grace_deadline = min(deadline, grace_deadline if grace_deadline is not None else deadline)
             try:
-                proc.wait(timeout=5)
-                return
+                remaining = grace_deadline - time.monotonic()
+                if remaining > 0:
+                    proc.wait(timeout=remaining)
+                    _startup_timeout(deadline, 1)
+                    return
             except (subprocess.TimeoutExpired, psutil.TimeoutExpired):
-                pass
+                if grace_deadline >= deadline:
+                    raise TimeoutError("Android VM cleanup deadline exceeded during native exit")
+        _startup_timeout(deadline, 1)
         if hasattr(proc, "poll"):
             if proc.poll() is not None:
                 return
         elif not proc.is_running():
             return
+        _startup_timeout(deadline, 1)
         proc.terminate()
         try:
-            proc.wait(timeout=5)
+            proc.wait(timeout=_startup_timeout(deadline, 5))
         except (subprocess.TimeoutExpired, psutil.TimeoutExpired):
+            _startup_timeout(deadline, 1)
             proc.kill()
-            proc.wait(timeout=5)
+            proc.wait(timeout=_startup_timeout(deadline, 5))
     except (psutil.NoSuchProcess, psutil.ZombieProcess):
         return
 

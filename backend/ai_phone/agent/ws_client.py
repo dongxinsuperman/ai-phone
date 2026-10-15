@@ -424,6 +424,9 @@ class AgentWSClient:
 
     async def _dispatch_vm_handler(self, handler: Handler, msg: Dict[str, Any]) -> None:
         received_at = time.monotonic()
+        if msg["type"] in {P.MSG_VM_STOP, P.MSG_VM_DELETE} and "operation_timeout_sec" not in msg:
+            # 旧 Android 指令及对账删除也只有一次预算，排队不能留到任意未来再执行。
+            msg = {**msg, "operation_timeout_sec": 120.0}
         platform_name, _ = _VM_MESSAGES[msg["type"]]
         is_probe = msg["type"].endswith("capability_probe")
         deadline = None
