@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,7 +23,8 @@ class AndroidVmTools:
     sdk_root: str = ""
 
 
-_IMAGE_CACHE: dict[str, tuple[float, list[str]]] = {}
+_IMAGE_CACHE: dict[tuple[str, str], tuple[float, list[str]]] = {}
+_IMAGE_CACHE_LOCK = threading.Lock()
 
 
 def available_memory_mb() -> Optional[int]:
@@ -210,30 +212,30 @@ def list_installed_system_images(tools: AndroidVmTools) -> list[str]:
     if not tools.sdkmanager:
         return []
     cache_sec = get_settings().android_vm_image_cache_sec
-    cache_key = tools.sdkmanager
-    cached = _IMAGE_CACHE.get(cache_key)
-    now = time.monotonic()
-    if cached and now - cached[0] <= cache_sec:
-        return list(cached[1])
-    try:
-        proc = subprocess.run(
-            [tools.sdkmanager, "--list_installed"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-    except Exception:
-        return []
-    out = (proc.stdout or "") + "\n" + (proc.stderr or "")
-    images: list[str] = []
-    for line in out.splitlines():
-        value = line.strip().split("|", 1)[0].strip()
-        if value.startswith("system-images;"):
-            images.append(value)
-    result = sorted(set(images))
-    _IMAGE_CACHE[cache_key] = (now, result)
-    return result
+    cache_key = (tools.sdkmanager, tools.sdk_root)
+    # 重连预热、候选探查和启动可以同时来到；同一次冷查询只执行一次 sdkmanager。
+    with _IMAGE_CACHE_LOCK:
+        cached = _IMAGE_CACHE.get(cache_key)
+        now = time.monotonic()
+        if cached and now - cached[0] <= cache_sec:
+            return list(cached[1])
+        try:
+            proc = subprocess.run(
+                [tools.sdkmanager, "--list_installed"],
+                check=False, capture_output=True, text=True, timeout=15,
+            )
+        except Exception:
+            return []
+        if proc.returncode != 0:
+            return []
+        images: list[str] = []
+        for line in (proc.stdout or "").splitlines():
+            value = line.strip().split("|", 1)[0].strip()
+            if value.startswith("system-images;"):
+                images.append(value)
+        result = sorted(set(images))
+        _IMAGE_CACHE[cache_key] = (time.monotonic(), result)
+        return result
 
 
 def _sdk_root_from_tool(tool_path: str, tool: str) -> Optional[str]:

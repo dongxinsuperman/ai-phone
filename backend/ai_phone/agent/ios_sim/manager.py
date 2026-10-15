@@ -11,10 +11,8 @@
 
 1. **不需要 Server 端口租约。** 虚拟机 serial 是 UDID、天然全局唯一，WDA 端口纯
    本机事务（``ios_simulator_wda.allocate_ports``），两台 Mac 各用 8300 互不影响。
-2. **不需要「改配置 → 删了重建」这条产品路径。** 机型与系统版本创建后即由官方目录
-   锁定、不可修改（Server 侧照抄鸿蒙 ``CATALOG_LOCKED_FIELDS``），要换配置就新建
-   一台。本文件里仍保留「检测到不一致就删除重建」的兜底，但那只防御异常情形
-   （手工改过实例、目录快照升级导致 identifier 变化等），不是正常业务路径。
+2. **不需要「改配置 → 删了重建」这条产品路径。** 机型与系统版本创建后锁定，
+   检测到不一致就报告错误，不能用一次启动指令暗中删除已有实例和数据。
 3. **就绪判据是 boot + WDA**。``simctl bootstatus`` 只证明系统起来了；能不能截图
    点击要看 WDA。对齐鸿蒙「HDC Connected 之后还要等 hmdriver2 握手」的做法，
    不把「开机完成」当「设备可用」。
@@ -23,8 +21,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import re
-import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
@@ -52,6 +50,32 @@ from .capability import find_ios_sim_tools, probe_ios_sim_capability
 # 受管虚拟机的名字前缀。与 Android 的 ``aiphone_vm_`` 同构：名字是持久身份锚点，
 # Agent 重启后靠它把仍在运行的实例认领回来。
 _MANAGED_NAME_PREFIX = "aiphone_sim_"
+
+
+def _start_deadline(msg: Dict[str, Any]) -> Optional[float]:
+    raw = msg.get("operation_timeout_sec")
+    if raw in (None, ""):
+        return None
+    budget = float(raw)
+    if not math.isfinite(budget) or budget <= 0:
+        raise ValueError("operation_timeout_sec must be a positive finite number")
+    deadline = time.monotonic() + budget
+    queued_deadline = msg.get("_operation_deadline")
+    if queued_deadline is not None:
+        queued_deadline = float(queued_deadline)
+        if not math.isfinite(queued_deadline):
+            raise ValueError("operation deadline must be finite")
+        deadline = min(deadline, queued_deadline)
+    return deadline
+
+
+def _startup_timeout(deadline: Optional[float], maximum: float) -> float:
+    if deadline is None:
+        return maximum
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("iOS Simulator startup deadline exceeded")
+    return min(maximum, remaining)
 
 
 def _register_wda_endpoint(udid: str, wda_port: int, mjpeg_port: int) -> None:
@@ -97,16 +121,19 @@ def _unregister_wda_endpoint(udid: str) -> None:
 
 
 def managed_sim_name(vm_id: str) -> str:
-    """``vm_id`` → 受管虚拟机名。vm_id 恒为短 hex，截断不会丢信息。"""
-    suffix = re.sub(r"[^A-Za-z0-9_]+", "_", vm_id or "")[:24]
-    return f"{_MANAGED_NAME_PREFIX}{suffix}"
+    """VM ID 原样进入持久名字；不能截断或替换字符造成身份碰撞。"""
+    if not re.fullmatch(r"[A-Za-z0-9_]+", vm_id or ""):
+        raise ValueError("vm_id must contain only letters, digits and underscores")
+    return f"{_MANAGED_NAME_PREFIX}{vm_id}"
 
 
 def vmid_from_sim_name(name: str) -> str:
     """从受管虚拟机名反解 vm_id；非受管返回空串。与 :func:`managed_sim_name` 互逆。"""
     n = (name or "").strip()
     if n.startswith(_MANAGED_NAME_PREFIX):
-        return n[len(_MANAGED_NAME_PREFIX):]
+        suffix = n[len(_MANAGED_NAME_PREFIX):]
+        if re.fullmatch(r"[A-Za-z0-9_]+", suffix):
+            return suffix
     return ""
 
 
@@ -116,6 +143,19 @@ class SimctlListFailed(RuntimeError):
     区分这两者对删除路径是必须的：把「没问到」当成「没有」，会让删除返回成功
     而实例还在。
     """
+
+
+class InstanceIdentityError(RuntimeError):
+    """VM ID、实例名或 UDID 对不上；禁止猜测目标后操作。"""
+
+
+class SimVmStartFailed(RuntimeError):
+    """启动失败仍携带已经创建的实例身份，Server 不能因此以为从未创建过。"""
+
+    def __init__(self, message: str, udid: str, details: Dict[str, Any]) -> None:
+        super().__init__(message)
+        self.udid = udid
+        self.details = details
 
 
 @dataclass
@@ -132,10 +172,10 @@ class SimVmRuntime:
     wda_port: int = 0
     mjpeg_port: int = 0
     launcher: Optional[IosSimulatorWdaLauncher] = None
-    # 运行期巡检：ready=已确认开机且 WDA 就绪（未就绪不判"消失"，避免启动中被误清）；
-    # missing_ticks=连续在设备快照里缺席的轮数（连续 2 轮才判消失，防单次抖动）。
+    # ready 只表示已确认 boot + WDA；缺席两轮仅触发严格状态核实，不等于消失。
     ready: bool = False
     missing_ticks: int = 0
+    start_request_id: str = ""
     details: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -163,6 +203,8 @@ class IosSimVmManager:
         self._start_lock = threading.Lock()
         self._vm_locks: Dict[str, threading.RLock] = {}
         self._vm_locks_guard = threading.Lock()
+        # 只用于拒绝认领/巡检开始后发生启停的旧快照，不改变对外状态或协议。
+        self._vm_generations: Dict[str, int] = {}
 
     def _vm_lock(self, vm_id: str) -> "threading.RLock":
         with self._vm_locks_guard:
@@ -192,7 +234,7 @@ class IosSimVmManager:
         UDID）。所以本方法只做「补字段」，不做「丢弃」。
         """
         udid_to_runtime = {
-            rt.udid: rt for rt in self._runtimes.values() if rt.udid
+            rt.udid: rt for rt in list(self._runtimes.values()) if rt.udid
         }
         for info in infos:
             rt = udid_to_runtime.get(info.serial)
@@ -227,15 +269,14 @@ class IosSimVmManager:
 
     async def handle_start(self, client: AgentWSClient, msg: Dict[str, Any]) -> None:
         await client.send(self._status_payload(msg, state="starting", ok=True, reason="starting"))
-        task = asyncio.create_task(
-            self._start_and_report(client, msg),
-            name=f"ios-sim-vm-start-{msg.get('vm_id')}",
-        )
-        task.add_done_callback(_log_task_error)
+        # WS 分发层按 VM 串行调度；这里必须等到操作真正结束，不能再另起脱队任务。
+        await self._start_and_report(client, msg)
 
     async def handle_stop(self, client: AgentWSClient, msg: Dict[str, Any]) -> None:
         await client.send(self._status_payload(msg, state="stopping", ok=True, reason="stopping"))
-        result = await asyncio.to_thread(self.stop_sync, str(msg.get("vm_id") or ""))
+        result = await asyncio.to_thread(
+            self.stop_sync, str(msg.get("vm_id") or ""), str(msg.get("udid") or "")
+        )
         await client.send(
             self._status_payload(
                 msg,
@@ -268,8 +309,10 @@ class IosSimVmManager:
                 reason=str(result.get("reason") or ""),
                 error=str(result.get("error") or ""),
                 details={
+                    **dict(result.get("details") or {}),
                     "sim_name": str(result.get("sim_name") or ""),
                     "deleted": bool(result.get("ok")),
+                    "cleanup_confirmed": bool(result.get("ok")),
                 },
             )
         )
@@ -277,12 +320,20 @@ class IosSimVmManager:
 
     async def _start_and_report(self, client: AgentWSClient, msg: Dict[str, Any]) -> None:
         try:
-            result = await asyncio.to_thread(self.start_sync, msg)
+            # 排入共享 executor 之前固定本机时限。网络消息中的同名内部字段必须
+            # 丢弃，不能把另一进程的 monotonic 值当成本机时钟或延长排队后的预算。
+            operation_msg = {key: value for key, value in msg.items() if key != "_operation_deadline"}
+            operation_msg["_operation_deadline"] = _start_deadline(operation_msg)
+            result = await asyncio.to_thread(self.start_sync, operation_msg)
         except Exception as exc:  # noqa: BLE001
             logger.exception("iOS 虚拟机启动失败 vm_id={}: {}", msg.get("vm_id"), exc)
+            runtime = self._runtimes.get(str(msg.get("vm_id") or ""))
             await client.send(
                 self._status_payload(
-                    msg, state="error", ok=False, reason="start_failed", error=str(exc)
+                    msg, state="error", ok=False, reason="start_failed", error=str(exc),
+                    udid=runtime.udid if runtime else str(getattr(exc, "udid", "")),
+                    details={**(dict(runtime.details) if runtime else {}),
+                             **dict(getattr(exc, "details", {}))},
                 )
             )
             await self._refresh_devices_safe(client)
@@ -319,18 +370,45 @@ class IosSimVmManager:
     # 启动
     # ------------------------------------------------------------------
     def start_sync(self, msg: Dict[str, Any]) -> Dict[str, Any]:
+        deadline = _start_deadline(msg)
         vm_id = str(msg.get("vm_id") or "").strip()
         if not vm_id:
             raise ValueError("vm_id is required")
         with self._vm_lock(vm_id):
-            return self._start_sync_locked(vm_id, msg)
+            self._vm_generations[vm_id] = self._vm_generations.get(vm_id, 0) + 1
+            attempt: Dict[str, Any] = {}
+            try:
+                return self._start_sync_locked(vm_id, msg, attempt, deadline)
+            except Exception as exc:
+                if not attempt.get("instance_selected") and not attempt.get("create_attempted"):
+                    if isinstance(exc, TimeoutError) and not attempt.get("operation_started"):
+                        raise SimVmStartFailed(str(exc), "", {
+                            "operation_not_started": True, "created_in_attempt": False,
+                            "instance_deleted": False, "cleanup_confirmed": True,
+                        }) from exc
+                    raise
+                raise self._finish_failed_start(vm_id, attempt, exc) from exc
 
-    def _start_sync_locked(self, vm_id: str, msg: Dict[str, Any]) -> Dict[str, Any]:
+    def _start_sync_locked(
+        self, vm_id: str, msg: Dict[str, Any], attempt: Optional[Dict[str, Any]] = None,
+        deadline: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        attempt = attempt if attempt is not None else {}
+        _startup_timeout(deadline, 30.0)
         existing = self._runtimes.get(vm_id)
-        if existing is not None and existing.ready:
-            return {"udid": existing.udid, "details": {"reused": True}}
+        # Server 仅首次绑定下发 rollback；有已绑定身份或当前可用实例时仍保护原数据。
+        attempt["rollback_allowed"] = bool(
+            msg.get("rollback_new_instance") and not msg.get("require_existing_instance")
+            and not msg.get("udid") and not (existing and existing.ready)
+        )
+        if existing is not None and existing.details.get("cleanup_pending"):
+            attempt["operation_started"] = True
+            stopped = self._stop_sync_locked(vm_id, existing.udid)
+            if not stopped.get("ok"):
+                raise RuntimeError(f"上次操作仍待清理，拒绝再次启动：{stopped.get('error')}")
 
         capability = self.probe(dict(msg))
+        _startup_timeout(deadline, 30.0)
         if not capability.get("ok"):
             raise RuntimeError(str(capability.get("reason") or "ios simulator capability unavailable"))
 
@@ -354,39 +432,47 @@ class IosSimVmManager:
                 sim_name=sim_name,
                 device_type=device_type,
                 runtime_id=resolved_runtime,
+                expected_udid=str(msg.get("udid") or (existing.udid if existing else "")),
+                require_existing=bool(msg.get("require_existing_instance") or existing),
+                attempt=attempt,
+                deadline=deadline,
             )
-            ports = allocate_ports(udid)
-            runtime = SimVmRuntime(
-                vm_id=vm_id,
-                name=alias,
-                udid=udid,
-                sim_name=sim_name,
-                device_type=device_type,
-                runtime_id=resolved_runtime,
-                started_at=time.time(),
-                wda_port=ports.wda,
-                mjpeg_port=ports.mjpeg,
+            attempt.update({"instance_selected": True, "udid": udid})
+            runtime = existing if existing is not None and existing.udid == udid else SimVmRuntime(
+                vm_id=vm_id, name=alias, udid=udid, sim_name=sim_name,
+                device_type=device_type, runtime_id=resolved_runtime, started_at=time.time(),
             )
+            runtime.ready = False
+            runtime.start_request_id = str(msg.get("request_id") or "")
             self._runtimes[vm_id] = runtime
+            try:
+                ports = allocate_ports(udid)
+            except Exception as exc:
+                # simctl create 已成功，即使端口预留失败也必须把这台身份报告回去。
+                runtime.details.update({"instance_created": True, "sim_name": sim_name})
+                raise SimVmStartFailed(str(exc), udid, dict(runtime.details)) from exc
+            runtime.wda_port, runtime.mjpeg_port = ports.wda, ports.mjpeg
 
-        try:
-            self._boot(udid)
-            # 实例名由 manager 算出（aiphone_sim_<vm_id>），必然正确——直接传给
-            # launcher 做身份校验，别让它回头去 simctl 查：查询会失败，而失败的
-            # 时刻恰恰最需要这道校验。
-            launcher = IosSimulatorWdaLauncher(udid, expect_sim_name=sim_name)
-            # 就绪判据第二段：光开机不算可用，WDA 起来才算（见模块 docstring 第 3 点）
+        self._boot(udid, deadline=deadline)
+        _startup_timeout(deadline, float(get_settings().wda_startup_timeout_s))
+        # 已核实的持久实例名直接用于 WDA 身份校验，不让查询失败削弱校验。
+        launcher = runtime.launcher or IosSimulatorWdaLauncher(
+            udid, expect_sim_name=sim_name, device_type=device_type
+        )
+        # start 抛错也必须持有 launcher，才能回收已拉起的 iPad xcodebuild。
+        runtime.launcher = launcher
+        if deadline is None:
             launcher.start()
-            runtime.launcher = launcher
-            runtime.ready = True
-            runtime.missing_ticks = 0
-            # 纳管登记：只有登记过的 UDID 才会被 list_ios_simulators 上报进设备池
-            mark_managed(udid)
-            _register_wda_endpoint(udid, ports.wda, ports.mjpeg)
-        except Exception:
-            # 启动链任一步失败都要把占位清干净，绝不留下幽灵 running
-            self._forget(vm_id, udid)
-            raise
+        else:
+            launcher.start(
+                wait_ready_s=_startup_timeout(deadline, float(get_settings().wda_startup_timeout_s)),
+                deadline=deadline,
+            )
+        _startup_timeout(deadline, 1.0)
+        runtime.ready = True
+        runtime.missing_ticks = 0
+        mark_managed(udid)
+        _register_wda_endpoint(udid, ports.wda, ports.mjpeg)
 
         details = {
             "sim_name": sim_name,
@@ -394,6 +480,8 @@ class IosSimVmManager:
             "runtime": resolved_runtime,
             "wda_port": ports.wda,
             "mjpeg_port": ports.mjpeg,
+            "reused": existing is runtime,
+            "created_in_attempt": bool(attempt.get("created_in_attempt")),
         }
         runtime.details = dict(details)
         logger.info(
@@ -402,31 +490,94 @@ class IosSimVmManager:
         )
         return {"udid": udid, "details": details}
 
-    def _ensure_instance(self, *, sim_name: str, device_type: str, runtime_id: str) -> str:
+    def _finish_failed_start(
+        self, vm_id: str, attempt: Dict[str, Any], error: Exception,
+    ) -> SimVmStartFailed:
+        """一次启动失败只做一次停止；首次绑定另做一次精确删除，不安排后台重试。"""
+        created_here = bool(attempt.get("created_in_attempt"))
+        rollback = bool(attempt.get("rollback_allowed") and created_here)
+        udid = str(attempt.get("udid") or "")
+        details: Dict[str, Any] = {
+            "sim_name": managed_sim_name(vm_id), "rollback_new_instance": rollback,
+            "instance_created": bool(udid), "cleanup_confirmed": False, "instance_deleted": False,
+            "created_in_attempt": created_here,
+        }
+        # create 命令失败/超时也可能已落盘。只能核实唯一的受管名字，不靠错误文本猜。
+        if not udid:
+            try:
+                udid = self._owned_target(vm_id, self._list_all_instances_strict())
+            except (SimctlListFailed, InstanceIdentityError) as exc:
+                details["cleanup_error"] = str(exc)
+                return SimVmStartFailed(f"{error}；无法确认创建结果：{exc}", "", details)
+            if not udid:
+                details.update({"cleanup_confirmed": True, "instance_deleted": False})
+                return SimVmStartFailed(str(error), "", details)
+            # 创建前严格清单确认没有同名实例，本次 create 后才出现唯一受管实例。
+            created_here = bool(attempt.get("create_attempted"))
+            rollback = bool(attempt.get("rollback_allowed") and created_here)
+            details.update({"created_in_attempt": created_here, "rollback_new_instance": rollback})
+            details["instance_created"] = True
+        runtime = self._runtimes.get(vm_id)
+        if runtime is not None:
+            runtime.ready = False
+        cleanup = self._stop_sync_locked(vm_id, udid)
+        if cleanup.get("ok") and rollback:
+            # 再核对身份和 Shutdown 后仅删除，不再发第二次 stop。
+            cleanup = self._delete_sync_locked(vm_id, udid, stop_first=False)
+        confirmed = bool(cleanup.get("ok"))
+        details.update({
+            "cleanup_confirmed": confirmed, "instance_deleted": rollback and confirmed,
+            "instance_created": not (rollback and confirmed),
+        })
+        if not confirmed:
+            details.update({"cleanup_pending": True, "cleanup_error": str(cleanup.get("error") or cleanup.get("reason"))})
+            runtime = self._runtimes.get(vm_id)
+            if runtime is not None:
+                runtime.details.update(details)
+            return SimVmStartFailed(
+                f"{error}；启动失败后的关机尚未完成或实例清理失败：{details['cleanup_error']}", udid, details
+            )
+        return SimVmStartFailed(str(error), udid, details)
+
+    def _ensure_instance(
+        self, *, sim_name: str, device_type: str, runtime_id: str,
+        expected_udid: str = "", require_existing: bool = False,
+        attempt: Optional[Dict[str, Any]] = None,
+        deadline: Optional[float] = None,
+    ) -> str:
         """确保存在一台名为 ``sim_name`` 的虚拟机，返回其 UDID。
 
         实例是**常驻**的（方案 §6.5.1）：同一个 vm_id 永远对应同一台虚拟机，已装的
         App 与数据跨启停留存。所以这里优先复用同名实例，而不是每次新建。
 
-        机型或系统版本与记录不一致时**删除重建**——这两项是虚拟机唯一可配的东西，
-        改任一项等价于换一台机器；重建成本实测仅 0.19 秒 / 17 MB。这与鸿蒙
-        「DevEco 没有 update 命令，只能删了重建」的处理同构。
+        机型或系统版本不一致时拒绝启动，已有实例的数据不能被隐式删除重建。
         """
-        found = self._find_by_name(sim_name)
+        if attempt is not None:
+            attempt["created_in_attempt"] = False
+        _startup_timeout(deadline, 30.0)
+        found = self._find_by_name(sim_name, deadline=deadline)
+        _startup_timeout(deadline, 30.0)
         if found is not None:
             udid, cur_type, cur_runtime = found
+            if expected_udid and udid != expected_udid:
+                raise InstanceIdentityError(
+                    f"已有实例 {sim_name} 的 UDID={udid} 与记录 {expected_udid} 不一致，未执行启动"
+                )
             if cur_type == device_type and cur_runtime == runtime_id:
                 logger.info("复用已有受管虚拟机 name={} udid={}", sim_name, udid)
                 return udid
-            logger.info(
-                "受管虚拟机 {} 配置已变（机型 {}→{}，系统 {}→{}），删除重建",
-                sim_name, cur_type, device_type, cur_runtime, runtime_id,
+            raise RuntimeError(
+                f"已有虚拟机 {sim_name} 的配置不一致（机型 {cur_type}→{device_type}，"
+                f"系统 {cur_runtime}→{runtime_id}）；未修改已有实例，请明确删除后新建"
             )
-            self._delete_instance(udid)
+        if require_existing or expected_udid:
+            raise RuntimeError(f"原虚拟机实例 {sim_name} 已缺失，未自动创建空白替代实例")
 
+        if attempt is not None:
+            attempt["create_attempted"] = True
         try:
             udid = simctl_run(
-                "create", sim_name, device_type, runtime_id, timeout=120.0
+                "create", sim_name, device_type, runtime_id, timeout=_startup_timeout(deadline, 120.0)
             ).strip()
         except SimctlError as exc:
             raise RuntimeError(
@@ -435,14 +586,25 @@ class IosSimVmManager:
             ) from exc
         if not udid:
             raise RuntimeError(f"创建虚拟机成功但未返回 UDID：name={sim_name}")
+        if attempt is not None:
+            attempt.update({"created_in_attempt": True, "udid": udid})
+        _startup_timeout(deadline, 1.0)
         logger.info("已创建受管虚拟机 name={} udid={}", sim_name, udid)
         return udid
 
-    def _find_by_name(self, sim_name: str) -> Optional[tuple]:
+    def _find_by_name(self, sim_name: str, *, deadline: Optional[float] = None) -> Optional[tuple]:
         """按名字找已存在的实例，返回 ``(udid, device_type, runtime_id)``。"""
-        for udid, meta in self._list_all_instances().items():
-            if meta.get("name") == sim_name:
-                return udid, meta.get("device_type", ""), meta.get("runtime", "")
+        instances = (self._list_all_instances_strict() if deadline is None else
+                     self._list_all_instances_strict(timeout=_startup_timeout(deadline, 30.0)))
+        matches = [
+            (udid, meta) for udid, meta in instances.items()
+            if meta.get("name") == sim_name
+        ]
+        if len(matches) > 1:
+            raise InstanceIdentityError(f"存在多个同名实例 {sim_name}，拒绝选择或创建")
+        if matches:
+            udid, meta = matches[0]
+            return udid, meta.get("device_type", ""), meta.get("runtime", "")
         return None
 
     def _list_all_instances(self) -> Dict[str, Dict[str, Any]]:
@@ -452,23 +614,24 @@ class IosSimVmManager:
         会滤掉 ``isAvailable=False`` 的实例；而生命周期管理必须看到全部，否则
         「runtime 被卸载导致实例不可用」这种情况会被误判成「实例不存在」而重复创建。
         """
-        try:
-            return self._list_all_instances_strict()
-        except SimctlListFailed as exc:
-            logger.warning("列举虚拟机实例失败：{}", exc)
-            return {}
+        return self._list_all_instances_strict()
 
-    def _list_all_instances_strict(self) -> Dict[str, Dict[str, Any]]:
+    def _list_all_instances_strict(self, *, timeout: float = 30.0) -> Dict[str, Dict[str, Any]]:
         """同上，但**列举失败抛错**而不是返回空表。
 
-        扫描类调用（发现、认领、查重）拿空表继续是合理的：最坏是这一轮少看见
-        几台，下一轮补上。但**删除不行**——空表会被读成「这个 UDID 不存在」，
-        于是回一个 ok=True/not_found，而实例其实还在。删除报告成功、东西还在，
-        只能等后续孤儿对账兜底，那不是即时的、必然的。
+        生命周期中的创建、停止、删除和对账都必须区分「查不到」与「没有」。
         """
         try:
-            raw = simctl_run("list", "devices", "-j", timeout=30.0)
-            payload = json.loads(raw) if raw else {}
+            raw = simctl_run("list", "devices", "-j", timeout=timeout)
+            payload = json.loads(raw)
+            if not isinstance(payload, dict) or not isinstance(payload.get("devices"), dict):
+                raise ValueError("simctl list devices 返回的清单结构无效")
+            for entries in payload["devices"].values():
+                if not isinstance(entries, list) or any(
+                    not isinstance(entry, dict) or not entry.get("udid") or not entry.get("name")
+                    for entry in entries
+                ):
+                    raise ValueError("simctl list devices 返回的实例记录不完整")
         except Exception as exc:  # noqa: BLE001
             raise SimctlListFailed(str(exc)) from exc
         out: Dict[str, Dict[str, Any]] = {}
@@ -488,10 +651,10 @@ class IosSimVmManager:
                 }
         return out
 
-    def _boot(self, udid: str) -> None:
+    def _boot(self, udid: str, *, deadline: Optional[float] = None) -> None:
         """开机并等待完成。已经开着的视为成功（幂等）。"""
         try:
-            simctl_run("boot", udid, timeout=120.0)
+            simctl_run("boot", udid, timeout=_startup_timeout(deadline, 120.0))
         except SimctlError as exc:
             text = f"{exc.stdout} {exc.stderr}".lower()
             # 已经 Booted 时 simctl 会报 "Unable to boot device in current state: Booted"
@@ -501,7 +664,7 @@ class IosSimVmManager:
                 raise RuntimeError(f"虚拟机开机失败 udid={udid}：{exc}") from exc
         # bootstatus 是官方的开机完成判据（等价鸿蒙的 bootevent.boot.completed）
         try:
-            simctl_run("bootstatus", udid, timeout=float(self.boot_timeout_sec))
+            simctl_run("bootstatus", udid, timeout=_startup_timeout(deadline, float(self.boot_timeout_sec)))
         except SimctlError as exc:
             raise RuntimeError(
                 f"等待虚拟机开机完成超时 udid={udid}（上限 {self.boot_timeout_sec}s）：{exc}"
@@ -510,31 +673,99 @@ class IosSimVmManager:
     # ------------------------------------------------------------------
     # 停止 / 删除
     # ------------------------------------------------------------------
-    def stop_sync(self, vm_id: str) -> Dict[str, Any]:
+    def stop_sync(self, vm_id: str, udid: str = "") -> Dict[str, Any]:
+        vm_id = (vm_id or "").strip()
+        if not vm_id:
+            return {"ok": False, "reason": "bad_request", "error": "vm_id required", "udid": ""}
         with self._vm_lock(vm_id):
-            return self._stop_sync_locked(vm_id)
+            self._vm_generations[vm_id] = self._vm_generations.get(vm_id, 0) + 1
+            return self._stop_sync_locked(vm_id, udid)
 
-    def _stop_sync_locked(self, vm_id: str) -> Dict[str, Any]:
+    @staticmethod
+    def _owned_target(vm_id: str, instances: Dict[str, Dict[str, Any]], udid: str = "") -> str:
+        """校验持久身份后选目标，外部 UDID 只作校验，不能覆盖 VM ID 所有权。"""
+        sim_name = managed_sim_name(vm_id)
+        if udid in instances and instances[udid].get("name") != sim_name:
+            raise InstanceIdentityError(
+                f"udid={udid} 的实例名是「{instances[udid].get('name')}」，"
+                f"与本配置的「{sim_name}」不符，已拒绝操作"
+            )
+        matches = [u for u, meta in instances.items() if meta.get("name") == sim_name]
+        if len(matches) > 1:
+            raise InstanceIdentityError(f"存在多个同名实例 {sim_name}，拒绝选择目标")
+        return matches[0] if matches else ""
+
+    def _stop_sync_locked(self, vm_id: str, udid: str = "") -> Dict[str, Any]:
         runtime = self._runtimes.get(vm_id)
-        if runtime is None:
-            return {"ok": True, "reason": "not_running", "udid": ""}
-        udid = runtime.udid
+        try:
+            instances = self._list_all_instances_strict()
+            target = self._owned_target(vm_id, instances, udid)
+            if runtime is not None:
+                self._owned_target(vm_id, instances, runtime.udid)
+        except SimctlListFailed as exc:
+            return {"ok": False, "reason": "instance_list_failed", "error": str(exc), "udid": udid}
+        except (InstanceIdentityError, ValueError) as exc:
+            return {"ok": False, "reason": "udid_name_mismatch", "error": str(exc), "udid": udid}
+        if not target:
+            if runtime is not None:
+                if runtime.launcher is not None:
+                    try:
+                        runtime.launcher.stop()
+                    except Exception as exc:  # noqa: BLE001
+                        return {"ok": False, "reason": "wda_stop_failed", "error": str(exc),
+                                "udid": runtime.udid}
+                self._forget(vm_id, runtime.udid)
+            return {"ok": True, "reason": "not_running", "udid": "",
+                    "details": {"cleanup_confirmed": True}}
+        udid = target
+        meta = instances[target]
+        if runtime is None or runtime.udid != target:
+            runtime = SimVmRuntime(
+                vm_id=vm_id, name=vm_id, udid=udid, sim_name=managed_sim_name(vm_id),
+                device_type=str(meta.get("device_type") or ""),
+                runtime_id=str(meta.get("runtime") or ""), started_at=time.time(),
+            )
+            self._runtimes[vm_id] = runtime
+        if str(meta.get("state") or "").lower() == "shutdown":
+            if runtime.launcher is not None:
+                try:
+                    runtime.launcher.stop()
+                except Exception as exc:  # noqa: BLE001
+                    return {"ok": False, "reason": "wda_stop_failed", "error": str(exc), "udid": udid}
+            self._forget(vm_id, udid)
+            return {"ok": True, "reason": "stopped", "udid": udid,
+                    "details": {"cleanup_confirmed": True}}
+
+        runtime.ready = False
         # 先停 WDA 再关机：反过来会让 launcher 的 terminate 打在一台已经没了的设备上
+        wda_error = ""
         if runtime.launcher is not None:
             try:
                 runtime.launcher.stop()
             except Exception as exc:  # noqa: BLE001
-                logger.debug("停止 WDA 失败（忽略）udid={}：{}", udid, exc)
+                wda_error = str(exc)
+                logger.warning("停止 WDA 失败，继续确认 guest 关机 udid={}：{}", udid, exc)
+        shutdown_error = ""
         try:
             simctl_run("shutdown", udid, timeout=60.0)
-        except SimctlError as exc:
-            text = f"{exc.stdout} {exc.stderr}".lower()
-            if "current state: shutdown" in text or "unable to shutdown" in text:
-                logger.debug("虚拟机 {} 已关机", udid)
-            else:
-                logger.warning("虚拟机关机失败 udid={}：{}", udid, exc)
+        except Exception as exc:  # noqa: BLE001
+            shutdown_error = str(exc)
+        # 命令成功、already-shutdown、超时都读回同一份事实；不靠宽泛错误文本猜成功。
+        try:
+            after = self._list_all_instances_strict()
+            self._owned_target(vm_id, after, udid)
+            stopped = udid not in after or str(after[udid].get("state") or "").lower() == "shutdown"
+        except (SimctlListFailed, InstanceIdentityError) as exc:
+            stopped = False
+            shutdown_error = f"{shutdown_error}; {exc}".strip("; ")
+        if not stopped or wda_error:
+            error = shutdown_error or wda_error or "simctl shutdown 后实例仍未确认关机"
+            runtime.details.update({"cleanup_pending": True, "cleanup_error": error})
+            return {"ok": False, "reason": "stop_failed", "error": error, "udid": udid,
+                    "details": dict(runtime.details)}
         self._forget(vm_id, udid)
-        return {"ok": True, "reason": "stopped", "udid": udid}
+        return {"ok": True, "reason": "stopped", "udid": udid,
+                "details": {"cleanup_confirmed": True}}
 
     def restart_wda_sync(self, udid: str) -> bool:
         """只重启这台虚拟机的 WDA，**不关机、不删实例**。
@@ -563,6 +794,7 @@ class IosSimVmManager:
             # 再确认一次：拿锁期间这台可能已经被停掉了
             if self._runtimes.get(vm_id) is not runtime:
                 return False
+            self._vm_generations[vm_id] = self._vm_generations.get(vm_id, 0) + 1
             launcher = runtime.launcher
             if launcher is None:
                 return False
@@ -592,12 +824,11 @@ class IosSimVmManager:
         if not vm_id:
             return {"ok": False, "reason": "bad_request", "error": "vm_id required", "sim_name": ""}
         with self._vm_lock(vm_id):
+            self._vm_generations[vm_id] = self._vm_generations.get(vm_id, 0) + 1
             return self._delete_sync_locked(vm_id, udid)
 
-    def _delete_sync_locked(self, vm_id: str, udid: str) -> Dict[str, Any]:
+    def _delete_sync_locked(self, vm_id: str, udid: str, *, stop_first: bool = True) -> Dict[str, Any]:
         sim_name = managed_sim_name(vm_id)
-        if vm_id in self._runtimes:
-            self.stop_sync(vm_id)
 
         # 只删名字确实是 aiphone_sim_<vm_id> 的那一台。
         #
@@ -617,80 +848,70 @@ class IosSimVmManager:
                 "error": f"无法列举虚拟机实例，未执行删除：{exc}",
                 "sim_name": sim_name,
             }
-        target = udid
-        if target:
-            meta = instances.get(target)
-            if meta is None:
-                # 这个 udid 已经不存在了：退回按名字找，处理「实例还在但
-                # 记录里的 udid 过期了」的情况
-                logger.debug("udid={} 已不存在，退回按名字 {} 查找", target, sim_name)
-                target = ""
-            elif meta.get("name") != sim_name:
-                logger.error(
-                    "拒绝删除：udid={} 的实例名是「{}」，不是本配置的「{}」——"
-                    "疑似记录错乱，删错会永久抹掉别人的虚拟机和数据",
-                    target, meta.get("name"), sim_name,
-                )
-                return {
-                    "ok": False,
-                    "reason": "udid_name_mismatch",
-                    "error": (
-                        f"udid={target} 的实例名是「{meta.get('name')}」，"
-                        f"与本配置的「{sim_name}」不符，已拒绝删除"
-                    ),
-                    "sim_name": sim_name,
-                }
-        if not target:
-            # 用上面那份严格清单按名字找，不再调 _find_by_name——它内部会重新
-            # 列举一次（宽松版），失败时又退回空表，等于把刚堵上的盲区放回来。
-            for cand_udid, meta in instances.items():
-                if meta.get("name") == sim_name:
-                    target = cand_udid
-                    break
+        try:
+            target = self._owned_target(vm_id, instances, udid)
+        except InstanceIdentityError as exc:
+            return {"ok": False, "reason": "udid_name_mismatch", "error": str(exc), "sim_name": sim_name}
         if not target:
             # 列举成功且确实找不到 → 实例本来就不在，幂等成功
-            return {"ok": True, "reason": "not_found", "error": "", "sim_name": sim_name}
+            runtime = self._runtimes.get(vm_id)
+            if runtime is not None:
+                stopped = self._stop_sync_locked(vm_id, runtime.udid)
+                if not stopped.get("ok"):
+                    return {**stopped, "sim_name": sim_name}
+            try:
+                for absent_udid in {udid, runtime.udid if runtime else ""} - {""}:
+                    drop_port_reservation(absent_udid)
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "reason": "port_release_failed", "error": str(exc),
+                        "sim_name": sim_name}
+            return {"ok": True, "reason": "not_found", "error": "", "sim_name": sim_name,
+                    "details": {"cleanup_confirmed": True}}
+        if stop_first:
+            stopped = self._stop_sync_locked(vm_id, target)
+            if not stopped.get("ok"):
+                return {**stopped, "sim_name": sim_name}
+        elif str(instances[target].get("state") or "").lower() != "shutdown":
+            return {"ok": False, "reason": "stop_unconfirmed", "error": "删除前实例不再处于 Shutdown，未重试停止",
+                    "sim_name": sim_name}
         ok = self._delete_instance(target)
         return {
             "ok": ok,
             "reason": "deleted" if ok else "delete_failed",
             "error": "" if ok else "simctl delete failed",
             "sim_name": sim_name,
+            "details": {"cleanup_confirmed": ok},
         }
 
     def _delete_instance(self, udid: str) -> bool:
-        # 删除前先确保关机，否则 simctl 会拒绝
-        try:
-            simctl_run("shutdown", udid, timeout=60.0, check=False)
-        except Exception:  # noqa: BLE001
-            pass
-        unmark_managed(udid)
+        # 调用方已按 VM ID 验证所有权并确认停止。删除后必须确认实例确实消失，
+        # 才能归还端口；未知错误文本不能作为释放依据。
         try:
             simctl_run("delete", udid, timeout=120.0)
-        except SimctlError as exc:
-            text = f"{exc.stdout} {exc.stderr}".lower()
-            if "invalid device" in text or "not found" in text:
-                # 已经没了，幂等成功——号可以还
-                drop_port_reservation(udid)
-                return True
+        except Exception as exc:  # noqa: BLE001
             logger.warning("删除虚拟机失败 udid={}：{}", udid, exc)
-            # **删除失败就不还号**。实例还在，它下次还要用同一个端口；提前还了
-            # 等于把这台的稳定身份弄丢，下次启动可能拿到别人的号。
+        try:
+            if udid in self._list_all_instances_strict():
+                return False
+        except SimctlListFailed as exc:
+            logger.warning("无法确认虚拟机删除结果 udid={}：{}", udid, exc)
             return False
-        # 删除确认成功后才归还预留。停止只解进程内绑定（见 _forget）——实例和
-        # 数据都还在，下次启动还是这台设备，端口必须还是同一个。
-        drop_port_reservation(udid)
+        unmark_managed(udid)
+        try:
+            drop_port_reservation(udid)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("实例已删除但端口预留未释放 udid={}：{}", udid, exc)
+            return False
         return True
 
     def _forget(self, vm_id: str, udid: str) -> None:
-        """从进程内状态与纳管表里摘掉，并释放端口。"""
+        """确认停止后摘掉运行登记；仅释放端口缓存，保留磁盘预留。"""
         self._runtimes.pop(vm_id, None)
         self._last_reclaimed_ids.discard(vm_id)
         if udid:
             unmark_managed(udid)
             release_ports(udid)
-            # 端点也要摘：留着的话实例都停了，readiness 探针还会去连那个端口，
-            # 而端口已经回池、可能被下一台实例拿走，探到的就是别人的 WDA。
+            # 端点也要摘：已停止实例不能继续贡献 readiness；持久端口只在删除后回池。
             _unregister_wda_endpoint(udid)
             # driver 缓存必须一起摘。只摘端点不摘 driver 会留下一个更隐蔽的坑：
             # 重启后进工作台，_get_or_open_driver 命中缓存直接返回，
@@ -718,60 +939,72 @@ class IosSimVmManager:
 
         adopted: List[SimVmRuntime] = []
         seen: set[str] = set()
-        for udid, meta in self._list_all_instances().items():
+        generations = dict(self._vm_generations)
+        instances = self._list_all_instances_strict()
+        for udid, meta in instances.items():
             if str(meta.get("state") or "").lower() != "booted":
                 continue
             vm_id = vmid_from_sim_name(str(meta.get("name") or ""))
             if not vm_id:
                 # 用户自己在 Xcode 里开的实例，不属于本平台，一概不碰
                 continue
-            seen.add(vm_id)
-            ports = allocate_ports(udid)
-            adopted_name = str(meta.get("name") or "")
-            launcher = IosSimulatorWdaLauncher(
-                udid, ports=ports, expect_sim_name=adopted_name
-            )
-            # 必须带实例名校验：端口上应答的未必是这台设备的 WDA。认错的后果是
-            # 两台设备互换身份（操作 A 实际驱动 B），而且界面上完全看不出来。
-            wda_alive = launcher.is_alive(expect_sim_name=adopted_name)
-
-            rt = self._runtimes.get(vm_id)
-            if rt is None:
-                rt = SimVmRuntime(
-                    vm_id=vm_id,
-                    name=vm_id,
-                    udid=udid,
-                    sim_name=str(meta.get("name") or ""),
+            lock = self._vm_lock(vm_id)
+            # 正在启动/停止的实例由该操作持有，重连不得抢走 launcher 或提前报就绪。
+            if not lock.acquire(blocking=False):
+                continue
+            try:
+                if self._vm_generations.get(vm_id, 0) != generations.get(vm_id, 0):
+                    continue
+                try:
+                    self._owned_target(vm_id, instances, udid)
+                except InstanceIdentityError as exc:
+                    logger.error("拒绝认领身份冲突的 iOS 虚拟机：{}", exc)
+                    continue
+                rt = self._runtimes.get(vm_id)
+                if rt is not None:
+                    # 同一 Agent 仅重连时沿用原 launcher（iPad 持有 xcodebuild 句柄）。
+                    if rt.udid == udid:
+                        rt.ready = bool(
+                            not rt.details.get("cleanup_pending") and rt.launcher is not None
+                            and rt.launcher.is_alive(expect_sim_name=rt.sim_name)
+                        )
+                        rt.details.update({"wda_alive": rt.ready, "guest_state": "Booted"})
+                        if rt.ready:
+                            mark_managed(udid)
+                            _register_wda_endpoint(udid, rt.wda_port, rt.mjpeg_port)
+                        else:
+                            unmark_managed(udid)
+                            _unregister_wda_endpoint(udid)
+                        seen.add(vm_id)
+                        adopted.append(rt)
+                    continue
+                ports = allocate_ports(udid)
+                adopted_name = str(meta.get("name") or "")
+                launcher = IosSimulatorWdaLauncher(
+                    udid, ports=ports, expect_sim_name=adopted_name,
                     device_type=str(meta.get("device_type") or ""),
-                    runtime_id=str(meta.get("runtime") or ""),
-                    started_at=time.time(),
                 )
+                wda_alive = launcher.is_alive(expect_sim_name=adopted_name)
+                rt = SimVmRuntime(
+                    vm_id=vm_id, name=vm_id, udid=udid, sim_name=adopted_name,
+                    device_type=str(meta.get("device_type") or ""),
+                    runtime_id=str(meta.get("runtime") or ""), started_at=time.time(),
+                    wda_port=ports.wda, mjpeg_port=ports.mjpeg,
+                    launcher=launcher, ready=wda_alive,
+                    details={"reclaimed": True, "sim_name": adopted_name,
+                             "wda_port": ports.wda, "wda_alive": wda_alive, "guest_state": "Booted"},
+                )
+                seen.add(vm_id)
                 self._runtimes[vm_id] = rt
-            rt.udid = udid
-            rt.wda_port = ports.wda
-            rt.mjpeg_port = ports.mjpeg
-            rt.launcher = launcher
-            rt.ready = wda_alive
-            rt.missing_ticks = 0
-            rt.details = {
-                "reclaimed": True,
-                "sim_name": rt.sim_name,
-                "wda_port": ports.wda,
-                "wda_alive": wda_alive,
-            }
-            # 只有 WDA 也活着才算真正可用，才登记进设备池；否则留待显式 start 拉起
-            if wda_alive:
-                mark_managed(udid)
-                # 与首次启动同理：不登记端点，readiness 探针就一直看不到这台，
-                # Agent 重启后认领回来的实例会永远停在「未就绪」。
-                _register_wda_endpoint(udid, ports.wda, ports.mjpeg)
-            else:
-                unmark_managed(udid)
-                logger.info(
-                    "受管虚拟机 {} 仍在运行但 WDA 未就绪，暂不进设备池（等一次 start）",
-                    rt.sim_name,
-                )
-            adopted.append(rt)
+                if wda_alive:
+                    mark_managed(udid)
+                    _register_wda_endpoint(udid, ports.wda, ports.mjpeg)
+                else:
+                    unmark_managed(udid)
+                    logger.info("受管虚拟机 {} 仍在运行但 WDA 未就绪", rt.sim_name)
+                adopted.append(rt)
+            finally:
+                lock.release()
 
         self._last_reclaimed_ids = set(seen)
         if adopted:
@@ -788,22 +1021,19 @@ class IosSimVmManager:
                 if vm_id in self._runtimes
             ]
         for rt in runtimes:
-            # WDA 没活着就报 stopped，**不能报 starting**——没有任何东西正在启动它，
-            # 而 starting 在前端不显示「启动」按钮（只显示「停止」），用户会卡在
-            # 永远的「启动中」里出不来。报 stopped 才给出正确的下一步动作。
-            #
-            # 这条对 iPad 尤其要紧：它走 xcodebuild，Agent 一重启 WDA 就跟着没了
-            # （与 iOS 真机同族的固有性质），于是「实例还在、WDA 已死」从 iPhone 上
-            # 的罕见边界变成了 iPad 上的常态。
+            # Booted + WDA 不可用是自动化故障，不是关机；使用既有 error 状态，
+            # 可显式重试启动 WDA 或停止，不制造一个无人推进的 starting。
             await client.send(
                 {
                     "type": P.MSG_IOS_SIM_VM_STATUS,
                     "vm_id": rt.vm_id,
-                    "state": "running" if rt.ready else "stopped",
-                    "ok": True,
-                    "reason": "reclaimed",
+                    "state": "running" if rt.ready else "error",
+                    "ok": rt.ready,
+                    "reason": "reclaimed" if rt.ready else "wda_not_ready",
+                    "error": "" if rt.ready else "虚拟机仍在运行，但 WDA 尚未就绪",
                     "udid": rt.udid,
                     "details": dict(rt.details),
+                    **({"observed_request_id": rt.start_request_id} if rt.start_request_id else {}),
                 }
             )
         if runtimes:
@@ -813,7 +1043,7 @@ class IosSimVmManager:
     def list_managed_vmids(self) -> List[str]:
         """本机全部受管实例的 vm_id（含未启动的）。用于孤儿对账。"""
         out: set[str] = set()
-        for meta in self._list_all_instances().values():
+        for meta in self._list_all_instances_strict().values():
             vm_id = vmid_from_sim_name(str(meta.get("name") or ""))
             if vm_id:
                 out.add(vm_id)
@@ -821,67 +1051,168 @@ class IosSimVmManager:
         return sorted(out)
 
     async def report_orphan_reconcile(self, client: AgentWSClient) -> int:
-        """(重)连后上报本机受管实例清单，区分在跑/没跑，由 Server 认领归属并清孤儿。
+        """(重)连后上报严格实例清单，由 Server 按总账核对归属并清理孤儿。
 
         即使一台都没有也要发空清单——让 Server 对「归本 Agent 但已不在本机」的实例
         做差集收敛（置 agent_offline），否则 Server 重启后会滞留假 running。
         """
-        vm_ids = await asyncio.to_thread(self.list_managed_vmids)
-        running = sorted(set(self._last_reclaimed_ids) & set(vm_ids))
-        stopped = sorted(set(vm_ids) - set(running))
+        try:
+            inventory = await asyncio.to_thread(self._reconcile_inventory_sync)
+        except SimctlListFailed as exc:
+            # 空清单会让 Server 做差集收敛，失败时不可伪造「本机没有实例」。
+            logger.warning("iOS 对账清单查询失败，本轮不上报：{}", exc)
+            return 0
+        vm_ids = inventory["vm_ids"]
         await client.send(
             {
                 "type": P.MSG_IOS_SIM_VM_RECONCILE,
                 "agent_id": client.agent_id,
-                "vm_ids": vm_ids,
-                "running_vm_ids": running,
-                "stopped_vm_ids": stopped,
+                **inventory,
             }
         )
         logger.info(
             "已上报 iOS 虚拟机对账清单：在跑 {} / 没跑 {}（共 {}）",
-            len(running), len(stopped), len(vm_ids),
+            len(inventory["running_vm_ids"]), len(inventory["stopped_vm_ids"]), len(vm_ids),
         )
         return len(vm_ids)
 
-    async def sweep_vanished_vms(self, client: AgentWSClient, present_serials: set) -> int:
-        """运行中存活巡检（蹭 rescan 节拍，零额外扫描）。
+    def _reconcile_inventory_sync(self) -> Dict[str, Any]:
+        generations = dict(self._vm_generations)
+        instances = self._list_all_instances_strict()
+        vm_ids: set[str] = set()
+        running: set[str] = set()
+        stopped: set[str] = set()
+        unknown: set[str] = set()
+        proofs: Dict[str, Dict[str, str]] = {}
+        for udid, meta in instances.items():
+            vm_id = vmid_from_sim_name(str(meta.get("name") or ""))
+            if not vm_id:
+                continue
+            if vm_id in vm_ids:
+                unknown.add(vm_id)  # 同名重复实例，不能随便挑一台解释事实
+            vm_ids.add(vm_id)
+            if str(meta.get("name") or "") == managed_sim_name(vm_id):
+                proofs[vm_id] = {"udid": udid, "name": str(meta["name"]),
+                                 "state": str(meta.get("state") or "")}
+            state = str(meta.get("state") or "").lower()
+            if state == "booted":
+                running.add(vm_id)
+            elif state == "shutdown":
+                stopped.add(vm_id)
+            else:
+                unknown.add(vm_id)
+        for vm_id in set(self._runtimes) | set(self._vm_generations) | vm_ids:
+            lock = self._vm_lock(vm_id)
+            if not lock.acquire(blocking=False):
+                unknown.add(vm_id)
+                continue
+            try:
+                if (self._vm_generations.get(vm_id, 0) != generations.get(vm_id, 0)
+                        or (vm_id in self._runtimes and vm_id not in vm_ids)):
+                    unknown.add(vm_id)
+            finally:
+                lock.release()
+        vm_ids.update(unknown)
+        return {
+            "vm_ids": sorted(vm_ids), "running_vm_ids": sorted(running - unknown),
+            "stopped_vm_ids": sorted(stopped - unknown), "unknown_vm_ids": sorted(unknown),
+            "inventory_complete": True,
+            "instance_proofs": {vm_id: proof for vm_id, proof in proofs.items() if vm_id not in unknown},
+        }
 
-        本机以为在跑、但 UDID 已从设备快照消失的实例（被外部关机 / 被删）→ 上报
-        stopped 并清理。语义与 Android ``sweep_vanished_vms`` 完全一致，包括
-        「连续缺席 2 轮才判消失」这条防抖规则。
-        """
-        reported = 0
+    async def sweep_vanished_vms(self, client: AgentWSClient, present_serials: set) -> int:
+        """缺席只触发核实；只有严格清单确认 Shutdown/不存在才报告停止。"""
+        if not self._runtimes:
+            return 0
+        payloads = await asyncio.to_thread(self._sweep_vanished_sync, present_serials)
+        for payload in payloads:
+            await client.send(payload)
+        return len(payloads)
+
+    def _sweep_vanished_sync(self, present_serials: set) -> List[Dict[str, Any]]:
+        payloads: List[Dict[str, Any]] = []
+        candidates = []
         for vm_id, rt in list(self._runtimes.items()):
-            # 只巡检已就绪的：启动中的 UDID 还没进设备快照，绝不能判消失
-            if not rt.ready or not rt.udid:
+            lock = self._vm_lock(vm_id)
+            if not lock.acquire(blocking=False):
                 continue
-            if rt.udid in present_serials:
-                rt.missing_ticks = 0
+            try:
+                if self._runtimes.get(vm_id) is not rt or not rt.udid:
+                    continue
+                if rt.udid in present_serials:
+                    rt.missing_ticks = 0
+                    if rt.details.pop("discovery_uncertain", False):
+                        rt.details.pop("discovery_reason", None)
+                        if rt.ready:
+                            payloads.append({**self._status_payload(
+                                {"vm_id": vm_id}, state="running", ok=True,
+                                reason="discovery_recovered", udid=rt.udid, details=dict(rt.details),
+                            ), **({"observed_request_id": rt.start_request_id} if rt.start_request_id else {})})
+                    continue
+                rt.missing_ticks += 1
+                if rt.missing_ticks >= 2:
+                    candidates.append((vm_id, rt, self._vm_generations.get(vm_id, 0), rt.start_request_id))
+            finally:
+                lock.release()
+        if not candidates:
+            return payloads
+        # 一轮异常最多补查一次，不为每个设备重复扫描；不占用 asyncio 事件循环。
+        list_error = ""
+        try:
+            instances = self._list_all_instances_strict()
+        except SimctlListFailed as exc:
+            instances = {}
+            list_error = str(exc)
+        for vm_id, rt, generation, observed_request_id in candidates:
+            lock = self._vm_lock(vm_id)
+            if not lock.acquire(blocking=False):
                 continue
-            rt.missing_ticks += 1
-            if rt.missing_ticks < 2:
-                logger.debug(
-                    "iOS 虚拟机 {} ({}) 本轮缺席（第 {} 次），暂不判消失",
-                    vm_id, rt.udid, rt.missing_ticks,
-                )
-                continue
-            udid = rt.udid
-            self._forget(vm_id, udid)
-            await client.send(
-                {
-                    "type": P.MSG_IOS_SIM_VM_STATUS,
-                    "vm_id": vm_id,
-                    "state": "stopped",
-                    "ok": True,
-                    "reason": "vanished",
-                    "udid": "",
-                    "details": {"sim_name": rt.sim_name},
-                }
-            )
-            logger.info("iOS 虚拟机 {} ({}) 连续缺席，已消失，上报 stopped", vm_id, udid)
-            reported += 1
-        return reported
+            try:
+                if (self._runtimes.get(vm_id) is not rt
+                        or self._vm_generations.get(vm_id, 0) != generation):
+                    continue
+                error = list_error
+                reason = "instance_list_failed" if error else "device_not_discovered"
+                meta = instances.get(rt.udid)
+                if not error:
+                    try:
+                        target = self._owned_target(vm_id, instances, rt.udid)
+                        if target and target != rt.udid:
+                            raise InstanceIdentityError("受管实例的 UDID 已变化，未自动接管")
+                    except InstanceIdentityError as exc:
+                        error, reason = str(exc), "udid_name_mismatch"
+                        rt.ready = False
+                        unmark_managed(rt.udid)
+                        _unregister_wda_endpoint(rt.udid)
+                    if not error and (meta is None or str(meta.get("state") or "").lower() == "shutdown"):
+                        if rt.details.get("cleanup_pending"):
+                            error = str(rt.details.get("cleanup_error") or "上次清理失败，等待显式操作")
+                            reason = "cleanup_pending"
+                        elif rt.launcher is not None:
+                            try:
+                                rt.launcher.stop()
+                            except Exception as exc:  # noqa: BLE001
+                                error, reason = str(exc), "wda_stop_failed"
+                        if not error:
+                            self._forget(vm_id, rt.udid)
+                            payloads.append({**self._status_payload(
+                                {"vm_id": vm_id}, state="stopped", ok=True, reason="vanished",
+                                udid=rt.udid, details={"sim_name": rt.sim_name},
+                            ), **({"observed_request_id": observed_request_id} if observed_request_id else {})})
+                            continue
+                previous = rt.details.get("discovery_reason")
+                rt.details.update({"discovery_uncertain": True, "discovery_reason": reason})
+                # 保留纳管登记，下一轮发现成功后才有机会回到设备池；不因暂时缺席
+                # 关闭 guest、不释放端口、不丢掉后续停止/删除需要的所有权。
+                if previous != reason:
+                    payloads.append({**self._status_payload(
+                        {"vm_id": vm_id}, state="error", ok=False, reason=reason,
+                        error=error or "虚拟机未出现在设备扫描中，尚未确认停止", udid=rt.udid,
+                        details={**rt.details, "guest_state": meta.get("state", "") if meta else "unknown"},
+                    ), **({"observed_request_id": observed_request_id} if observed_request_id else {})})
+            finally:
+                lock.release()
+        return payloads
 
     # ------------------------------------------------------------------
     @staticmethod
@@ -906,12 +1237,3 @@ class IosSimVmManager:
             "udid": udid,
             "details": details or {},
         }
-
-
-def _log_task_error(task: "asyncio.Task") -> None:
-    try:
-        exc = task.exception()
-    except Exception:  # noqa: BLE001
-        return
-    if exc is not None:
-        logger.error("iOS 虚拟机后台任务异常 name={}：{}", task.get_name(), exc)

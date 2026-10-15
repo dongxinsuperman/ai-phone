@@ -19,6 +19,7 @@ Supervisor 不关心"设备集合怎么变"，每轮都按最新快照重新迭�
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import time
 from typing import Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -81,6 +82,7 @@ class _State:
 # 为什么不取更小：一条普通 WDA 指令只要一两百毫秒，探针 3 秒超时排在它后面绰绰
 # 有余；要连续半分钟都排不上队，那不是「忙」，是真卡住了。
 _SELF_HEAL_AFTER_FAILS = 6
+_SELF_HEAL_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="readiness-repair")
 
 
 class ReadinessSupervisor:
@@ -92,6 +94,8 @@ class ReadinessSupervisor:
         resend_interval_sec: float = 30.0,
         self_heal: Optional[Callable[[str, str], bool]] = None,
         scan_stale: Optional[ScanStaleChecker] = None,
+        device_identity: Optional[Callable[[str, str], str]] = None,
+        device_generation: Optional[Callable[[str, str], str]] = None,
     ) -> None:
         """
         Args:
@@ -102,11 +106,17 @@ class ReadinessSupervisor:
             scan_stale: 可选回调，判定设备是否本轮扫描缺失、仅靠快照
                 暂时保留。这类设备若定向 probe 也失败，立即降级，避免真拔线
                 期间仍被派单。
+            device_identity: 返回受管 VM 的 vm_instance_id，真机返回空串；
+                VM readiness 带此身份，避免端口复用后认错机器。
+            device_generation: 返回本次运行的代次（如启动时间/维护序号）；
+                探测期间身份或代次变化就丢弃结果。回调只读本地状态，不做 I/O。
         """
         self._device_lister = device_lister
         self._send = send_message
         self._self_heal = self_heal
         self._scan_stale = scan_stale
+        self._device_identity = device_identity
+        self._device_generation = device_generation
         self._resend_interval_sec = max(1.0, float(resend_interval_sec))
         self._task: Optional[asyncio.Task] = None
         self._stop = asyncio.Event()
@@ -115,6 +125,9 @@ class ReadinessSupervisor:
         # _resend_interval_sec keepalive，防止 Server 端 Hub 快照陈旧。
         self._last_sent: Dict[DeviceKey, Tuple[bool, Optional[str]]] = {}
         self._last_sent_at: Dict[DeviceKey, float] = {}
+        self._probes: Dict[DeviceKey, BaseProbe] = {}
+        self._heal_tasks: Dict[DeviceKey, asyncio.Task] = {}
+        self._observations: Dict[DeviceKey, Tuple[str, str]] = {}
 
     # ---------------- lifecycle ----------------
     def start(self, loop: Optional[asyncio.AbstractEventLoop] = None) -> None:
@@ -185,11 +198,11 @@ class ReadinessSupervisor:
         fail_threshold = int(settings.readiness_fail_threshold)
 
         try:
-            snapshot: List[DeviceKey] = [
+            snapshot: List[DeviceKey] = list(dict.fromkeys(
                 (str(s), str(p))
                 for (s, p) in self._device_lister()
                 if s and p
-            ]
+            ))
         except Exception as exc:  # noqa: BLE001
             logger.warning("[readiness] 取设备快照失败：{}", exc)
             return
@@ -201,6 +214,12 @@ class ReadinessSupervisor:
                 self._states.pop(k, None)
                 self._last_sent.pop(k, None)
                 self._last_sent_at.pop(k, None)
+                self._observations.pop(k, None)
+        # Keep unfinished native probes even if a device temporarily vanishes;
+        # rediscovery must not create a second thread for the same endpoint.
+        for key, probe in list(self._probes.items()):
+            if key not in current_keys and not probe.in_flight:
+                self._probes.pop(key, None)
 
         # 1.5) iOS USB 扫描不可信短路（配合 _apply_ios_snapshot_freshness）
         #
@@ -255,27 +274,61 @@ class ReadinessSupervisor:
         # Harmony 在同一 Agent 内串行。hdc server 是全局单例，两台鸿蒙
         # 同时跑 readiness 会和 5s rescan 争用 hdc，此处串行只限于
         # Harmony readiness，不改任务执行、镜像或其他平台的并发语义。
-        async def _probe_one(key: DeviceKey) -> Tuple[DeviceKey, Optional[ProbeOutcome]]:
+        slots = asyncio.Semaphore(4)
+
+        async def _probe_one(key: DeviceKey) -> None:
             serial, platform = key
-            probe: Optional[BaseProbe] = build_probe_for(
-                platform, serial, timeout_sec=timeout_sec
-            )
+            observed = self._observe_device(key)
+            if self._observations.get(key, observed) != observed:
+                self._states.pop(key, None)
+                self._last_sent.pop(key, None)
+                self._last_sent_at.pop(key, None)
+            self._observations[key] = observed
+            if key in self._heal_tasks:
+                # A repair changes automation readiness; do not run a probe
+                # against a WDA endpoint while it is being replaced.
+                return
+            probe = self._probes.get(key)
+            if probe is None or not probe.in_flight:
+                probe = build_probe_for(platform, serial, timeout_sec=timeout_sec)
             if probe is None:
                 # 未知平台：默认视为 ready，不上报
-                return key, None
-            outcome = await probe.probe()
-            return key, outcome
+                return
+            self._probes[key] = probe
+            async with slots:
+                outcome = await probe.probe()
+            if not getattr(probe, "in_flight", False):
+                self._probes.pop(key, None)
+            # The VM may have stopped/disappeared while the native probe ran.
+            # Never publish that late ready result into the next instance.
+            if key not in set(self._device_lister()) or self._observe_device(key) != observed:
+                return
+            await self._apply_outcome(key, outcome, fail_threshold, observed=observed)
 
         harmony_targets = [k for k in probe_targets if k[1] == "harmony"]
         parallel_targets = [k for k in probe_targets if k[1] != "harmony"]
-        results = list(
-            await asyncio.gather(
-                *[_probe_one(k) for k in parallel_targets],
-                return_exceptions=False,
-            )
-        )
-        for key in harmony_targets:
-            results.append(await _probe_one(key))
+
+        async def _probe_harmony() -> None:
+            for key in harmony_targets:
+                await _probe_one(key)
+
+        # Publish from each worker as it finishes. Harmony keeps its existing
+        # one-at-a-time HDC policy, independently of Android / iOS latency.
+        tasks = [asyncio.create_task(_probe_one(k)) for k in parallel_targets]
+        if harmony_targets:
+            tasks.append(asyncio.create_task(_probe_harmony()))
+        try:
+            await asyncio.gather(*tasks)
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _apply_outcome(
+        self, key: DeviceKey, outcome: ProbeOutcome, fail_threshold: int,
+        *, observed: Optional[Tuple[str, str]] = None,
+    ) -> None:
 
         # 3) 结合连续失败阈值，决定是否升/降级 + 是否上报
         #
@@ -287,54 +340,54 @@ class ReadinessSupervisor:
         #   - 设备**曾经** ready 过（ever_ready=True）→ 沿用原"连续失败到阈值
         #     才降级"的稳态防刷语义，避免一次偶发 probe 失败把已 ready 的设备
         #     翻车，UI/调度器不会被抖动刷屏。
-        for key, outcome in results:
-            if outcome is None:
-                continue
-            state = self._states.setdefault(key, _State())
+        state = self._states.setdefault(key, _State())
 
-            if outcome.ready:
-                state.consecutive_fail = 0
-                state.ever_ready = True
-                new_ready = True
-                new_reason: Optional[str] = None
-                new_hint = ""
+        if outcome.ready:
+            state.consecutive_fail = 0
+            state.ever_ready = True
+            new_ready = True
+            new_reason: Optional[str] = None
+            new_hint = ""
+        else:
+            state.consecutive_fail += 1
+            # 首次盖章前 OR 累计失败到阈值 OR 只靠扫描快照保留
+            # → 立刻降级；其它情况保持上次广播态。
+            from ai_phone.agent.drivers import was_last_device_scan_ok
+
+            scan_stale = not was_last_device_scan_ok(key[1])
+            if self._scan_stale is not None:
+                try:
+                    scan_stale = scan_stale or bool(self._scan_stale(*key))
+                except Exception as exc:  # noqa: BLE001
+                    # 判定器本身异常时安全优先：本次 probe 已经失败，
+                    # 不能再依赖无法确认的防抖状态继续派单。
+                    scan_stale = True
+                    logger.warning(
+                        "[readiness] 扫描快照状态判定异常 key={}，"
+                        "本次 probe 失败按 fail-closed 降级：{}",
+                        key,
+                        exc,
+                    )
+            if (
+                scan_stale
+                or state.consecutive_fail >= fail_threshold
+                or not state.ever_ready
+            ):
+                new_ready = False
+                new_reason = outcome.not_ready_reason
+                new_hint = outcome.hint
             else:
-                state.consecutive_fail += 1
-                self._maybe_self_heal(key, state)
-                # 首次盖章前 OR 累计失败到阈值 OR 只靠扫描快照保留
-                # → 立刻降级；其它情况保持上次广播态。
-                scan_stale = False
-                if self._scan_stale is not None:
-                    try:
-                        scan_stale = bool(self._scan_stale(*key))
-                    except Exception as exc:  # noqa: BLE001
-                        # 判定器本身异常时安全优先：本次 probe 已经失败，
-                        # 不能再依赖无法确认的防抖状态继续派单。
-                        scan_stale = True
-                        logger.warning(
-                            "[readiness] 扫描快照状态判定异常 key={}，"
-                            "本次 probe 失败按 fail-closed 降级：{}",
-                            key,
-                            exc,
-                        )
-                if (
-                    scan_stale
-                    or state.consecutive_fail >= fail_threshold
-                    or not state.ever_ready
-                ):
-                    new_ready = False
-                    new_reason = outcome.not_ready_reason
-                    new_hint = outcome.hint
-                else:
-                    new_ready = state.ready
-                    new_reason = state.reason
-                    new_hint = state.hint
+                new_ready = state.ready
+                new_reason = state.reason
+                new_hint = state.hint
 
-            state.ready = new_ready
-            state.reason = new_reason
-            state.hint = new_hint
+        state.ready = new_ready
+        state.reason = new_reason
+        state.hint = new_hint
 
-            await self._maybe_send(key, state)
+        await self._maybe_send(key, state, observed=observed)
+        if not outcome.ready and (observed is None or self._observe_device(key) == observed):
+            self._maybe_self_heal(key, state)
 
     def _maybe_self_heal(self, key: DeviceKey, state: _State) -> None:
         """连续探不通到阈值时，给自愈回调一次机会。
@@ -347,18 +400,44 @@ class ReadinessSupervisor:
             return
         if state.consecutive_fail != _SELF_HEAL_AFTER_FAILS:
             return
-        serial, platform = key
-        try:
-            handled = self._self_heal(serial, platform)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[readiness] {} 自愈回调异常（忽略）：{}", serial, exc)
+        if key in self._heal_tasks or len(self._heal_tasks) >= 2:
             return
-        if handled:
-            # 给一次干净的重试机会：自愈刚做完，计数清零重新开始攒
-            state.consecutive_fail = 0
-            logger.info("[readiness] {}:{} 已尝试自愈，下一轮立即重探", platform, serial)
+        serial, platform = key
+        observed = self._observe_device(key)
 
-    async def _maybe_send(self, key: DeviceKey, state: _State) -> None:
+        def repair_current_device() -> bool:
+            # The one-worker repair queue may outlive this device's instance.
+            if self._states.get(key) is not state or self._observe_device(key) != observed:
+                return False
+            return bool(self._self_heal(serial, platform))
+
+        async def repair() -> None:
+            try:
+                handled = await asyncio.get_running_loop().run_in_executor(
+                    _SELF_HEAL_EXECUTOR, repair_current_device
+                )
+                if handled and self._states.get(key) is state and not state.ready:
+                    state.consecutive_fail = 0
+                    logger.info("[readiness] {}:{} 已尝试自愈，下一轮立即重探", platform, serial)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[readiness] {} 自愈回调异常（忽略）：{}", serial, exc)
+            finally:
+                self._heal_tasks.pop(key, None)
+
+        self._heal_tasks[key] = asyncio.create_task(repair(), name=f"readiness-repair-{serial}")
+
+    def _observe_device(self, key: DeviceKey) -> Tuple[str, str]:
+        return (
+            str(self._device_identity(*key) or "") if self._device_identity else "",
+            str(self._device_generation(*key) or "") if self._device_generation else "",
+        )
+
+    async def _maybe_send(
+        self, key: DeviceKey, state: _State, *, observed: Optional[Tuple[str, str]] = None
+    ) -> None:
+        current = self._observe_device(key)
+        if observed is not None and current != observed:
+            return
         prev = self._last_sent.get(key)
         cur = (state.ready, state.reason)
         now_monotonic = time.monotonic()
@@ -380,6 +459,7 @@ class ReadinessSupervisor:
             "hint": state.hint,
             "fail_streak": state.consecutive_fail,
             "ts": time.time(),
+            **({"vm_instance_id": current[0]} if current[0] else {}),
         }
         try:
             sent = await self._send(msg)

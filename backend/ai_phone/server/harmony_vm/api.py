@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from loguru import logger
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.shared import protocol as P
@@ -15,7 +15,15 @@ from ai_phone.shared import protocol as P
 from ..api._deps import DBSession, HubDep
 from ..api.submissions import RequireBearer
 from ..hub import Hub
-from ..models import Device
+from ..vm_lifecycle import (
+    is_untouched_draft,
+    require_retirement_allowed, send_operation_once,
+    begin_operation, maintenance, require_idle, require_startable,
+    require_device_idle, require_owner_host, runtime as lifecycle_runtime,
+    transaction_lock, record_send_failure, delete_device_record, forget_device_route,
+    cleanup_command, send_cleanup_once, cancel_operation_timeout, arm_operation_timeout,
+    host_id as agent_host_id, update_runtime,
+)
 from .catalog import normalize_manifest
 from .models import (
     HarmonyVmCatalogSnapshot,
@@ -38,10 +46,7 @@ from .service import (
     get_capability_waiter,
     get_vm_or_404,
     normalize_abi,
-    now_utc,
-    quarantine_current_lease,
     release_port_lease,
-    placeholder_serial,
     reserve_placeholder_alias,
     vm_payload,
 )
@@ -55,13 +60,6 @@ def _require_harmony_vm_db(request: Request) -> None:
         )
 
 
-async def _forget_vm_device(hub: Hub, vm_id: str) -> None:
-    """Remove only the deleted VM's route and transient device state."""
-    identity = placeholder_serial(vm_id)
-    owner = hub.agent_id_for_serial(identity)
-    if owner:
-        await hub.detach_device(owner, identity)
-    hub.clear_device_extra({identity})
 
 
 router = APIRouter(
@@ -533,10 +531,12 @@ async def patch_instance(
     vm_id: str = Path(..., min_length=1, max_length=64),
     session: AsyncSession = DBSession,
 ) -> Dict[str, Any]:
+    await transaction_lock(session, f"harmony-vm:{vm_id}")
     try:
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="harmony vm not found")
+    require_idle(vm, allow_running=True)
     patch = body.model_dump(exclude_unset=True)
     patch.pop("name", None)
     alias_only = set(patch).issubset({"alias"})
@@ -579,6 +579,12 @@ async def patch_instance(
                 ),
             },
         )
+    if vm.assigned_agent_id or lifecycle_runtime(vm).get("instance_created"):
+        immutable_changes = [key for key in ("memory_gb", "storage_gb", "config_json")
+                             if key in patch and patch[key] is not None and patch[key] != getattr(vm, key)]
+        if immutable_changes:
+            raise HTTPException(409, {"reason": "bound_configuration_immutable",
+                "message": "已绑定实例的硬件与镜像配置不能原位修改，请新建配置：" + "、".join(immutable_changes)})
     for key in ("memory_gb", "storage_gb", "boot_mode", "config_json"):
         if key in patch and patch[key] is not None:
             setattr(vm, key, patch[key])
@@ -588,62 +594,32 @@ async def patch_instance(
 
 
 @router.delete("/{vm_id}")
-async def delete_instance(
-    vm_id: str = Path(..., min_length=1, max_length=64),
-    session: AsyncSession = DBSession,
-    hub: Hub = HubDep,
-) -> Dict[str, Any]:
+async def delete_instance(vm_id: str, session: AsyncSession = DBSession, hub: Hub = HubDep) -> Dict[str, Any]:
+    await transaction_lock(session, f"harmony-vm:{vm_id}")
     try:
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="harmony vm not found")
-    # 删除的准入条件与 Android 完全一致：只拦"活动中"，不拦租约。
-    # （Android: `if vm.state in ACTIVE_STATES` 之后即可删，见 android_vm/api.py）
-    if vm.state in ACTIVE_STATES:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="active vm cannot be deleted")
-    old_agent = vm.assigned_agent_id or ""
-    old_hdc_serial = vm.hdc_serial or ""
-    old_lease_token = vm.lease_token or ""
-    quarantined_port: Optional[int] = None
-    if vm.lease_token:
-        # 非活动态却仍持租约，只可能是 agent_offline / error / unavailable ——
-        # 此时停止命令送不到 Agent，若按租约拦住删除就会死锁（配置永远删不掉）。
-        # 处置：放行删除，但把端口转入 quarantined 而不是直接释放。这样既拿到了
-        # 与 Android 相同的删除自由度，又不会在"端口是否真的空了"未确认时就把它
-        # 重新分配出去。隔离端口需要显式 force-release 才回到可用池。
-        quarantined_port = vm.hdc_port
-        await quarantine_current_lease(
-            session,
-            vm,
-            reason="vm_deleted_while_lease_held",
-            error=f"配置在 {vm.state} 状态下被删除，端口保留隔离待人工确认",
-            details={"deleted_vm_id": vm_id, "agent_id": old_agent},
-        )
-    await delete_owned_alias(session, vm)
-    # A stopped VM may still have a stale Agent hello row while asynchronous
-    # local cleanup is pending.  Remove only this VM's logical Device row.
-    await session.execute(
-        delete(Device).where(Device.serial == placeholder_serial(vm_id))
-    )
-    await session.delete(vm)
+        raise HTTPException(404, "实例不存在")
+    require_retirement_allowed(hub, vm)
+    target, command, alias_deleted = await _retire_configuration(session, vm, hub)
     await session.commit()
-    await _forget_vm_device(hub, vm_id)
-    cleanup_sent = False
-    if old_agent:
-        cleanup_sent = await hub.send_to_agent(old_agent, {
-            "type": P.MSG_HARMONY_VM_DELETE,
-            "request_id": _request_id(),
-            "vm_id": vm_id,
-            "hdc_serial": old_hdc_serial,
-            "lease_token": old_lease_token,
-        })
-    return {
-        "id": vm_id,
-        "deleted": True,
-        "cleanup_sent": cleanup_sent,
-        "quarantined_port": quarantined_port,
-    }
+    await forget_device_route(hub, vm)
+    sent = await send_cleanup_once(hub, vm, target, command)
+    return {"id": vm_id, "deleted": True, "alias_deleted": alias_deleted,
+            "cleanup_sent": sent, "avd_cleanup_sent": sent}
 
+
+async def _retire_configuration(session: AsyncSession, vm: HarmonyVmInstance, hub: Hub):
+    """Remove only ledger state; the caller commits before any network send."""
+    target, command = cleanup_command(vm, P.MSG_HARMONY_VM_DELETE)
+    alias_deleted = await delete_owned_alias(session, vm)
+    cancel_operation_timeout(vm)
+    maintenance(hub, vm, True)
+    await release_port_lease(session, vm, reason="configuration_deleted")
+    await delete_device_record(session, vm)
+    await session.delete(vm)
+    await session.flush()
+    return target, command, alias_deleted
 
 @router.post("/{vm_id}/force-release")
 async def force_release_instance_lease(
@@ -652,53 +628,16 @@ async def force_release_instance_lease(
     session: AsyncSession = DBSession,
     hub: Hub = HubDep,
 ) -> Dict[str, Any]:
-    """Explicit operator escape hatch; never called automatically."""
+    """Compatibility endpoint: a confirmation string is not cleanup evidence."""
+    await transaction_lock(session, f"harmony-vm:{vm_id}")
     try:
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="harmony vm not found")
-    if not body.confirmed:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail="confirmed=true is required for force release",
-        )
-    reason = body.reason.strip()
-    if len(reason) < 8:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail="force release reason must contain at least 8 non-space characters",
-        )
-    if vm.state in ACTIVE_STATES:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail="active harmony vm cannot be force released",
-        )
-    if vm.lease_token or vm.hdc_port is not None or vm.hdc_serial:
-        await reserve_placeholder_alias(session, vm)
-        await release_port_lease(
-            session,
-            vm,
-            reason=f"force_release:{reason}",
-        )
-    await session.execute(
-        delete(Device).where(Device.serial == placeholder_serial(vm_id))
-    )
-    vm.assigned_agent_id = None
-    vm.state = "stopped"
-    vm.error_code = "lease_force_released"
-    vm.error_message = reason
-    vm.stopped_at = now_utc()
-    await session.commit()
-    await session.refresh(vm)
-    await _forget_vm_device(hub, vm_id)
-    return {
-        "released": True,
-        "warning": (
-            "operator confirmed external cleanup; a still-running old Agent "
-            "will be rejected by VM identity checks"
-        ),
-        "instance": vm.to_dict(),
-    }
+        raise HTTPException(404, "harmony vm not found")
+    require_idle(vm)
+    if vm.assigned_agent_id or vm.lease_token or vm.hdc_port is not None or vm.hdc_serial:
+        raise HTTPException(409, "请先停止或删除实例，等待宿主确认清理；人工确认不能替代清理结果")
+    return {"released": True, "instance": vm.to_dict()}
 
 
 @router.post("/{vm_id}/dispatch-candidates")
@@ -730,59 +669,47 @@ async def dispatch_instance(
 @router.post("/{vm_id}/start")
 async def start_instance(
     vm_id: str = Path(..., min_length=1, max_length=64),
-    session: AsyncSession = DBSession,
-    hub: Hub = HubDep,
+    session: AsyncSession = DBSession, hub: Hub = HubDep,
 ) -> Dict[str, Any]:
     try:
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="harmony vm not found")
-    agent_id = (vm.assigned_agent_id or "").strip()
-    if not agent_id or not hub.has_agent(agent_id):
-        if vm.lease_token or vm.hdc_port is not None or vm.hdc_serial:
-            raise HTTPException(status.HTTP_409_CONFLICT, detail=LEASE_CLEANUP_REQUIRED)
-        vm.assigned_agent_id = None
-        vm.state = "stopped"
-        vm.error_code = "redispatch_required"
-        vm.error_message = REDISPATCH_REQUIRED
-        await session.commit()
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=REDISPATCH_REQUIRED)
+        raise HTTPException(404, "harmony vm not found")
+    agent_id = str(vm.assigned_agent_id or "")
+    if not agent_id:
+        raise HTTPException(409, "实例尚未绑定 Agent，请先探查并下发")
     return await _send_start(vm_id, agent_id, session, hub)
 
 
 @router.post("/{vm_id}/stop")
 async def stop_instance(
     vm_id: str = Path(..., min_length=1, max_length=64),
-    session: AsyncSession = DBSession,
-    hub: Hub = HubDep,
+    session: AsyncSession = DBSession, hub: Hub = HubDep,
 ) -> Dict[str, Any]:
+    await transaction_lock(session, f"harmony-vm:{vm_id}")
     try:
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="harmony vm not found")
-    if not vm.assigned_agent_id and (vm.lease_token or vm.hdc_port is not None or vm.hdc_serial):
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=LEASE_CLEANUP_REQUIRED)
-    if not vm.lease_token:
-        if vm.hdc_port is not None or vm.hdc_serial:
-            raise HTTPException(status.HTTP_409_CONFLICT, detail=LEASE_CLEANUP_REQUIRED)
-        vm.state = "stopped"
-        vm.stopped_at = now_utc()
-        await reserve_placeholder_alias(session, vm)
-        await session.commit()
-        await session.refresh(vm)
+        raise HTTPException(404, "harmony vm not found")
+    require_idle(vm, allow_running=True)
+    if not vm.assigned_agent_id:
+        if vm.lease_token or vm.hdc_port is not None or vm.hdc_serial:
+            raise HTTPException(409, LEASE_CLEANUP_REQUIRED)
         return {"sent": False, "instance": vm.to_dict()}
-    sent = await hub.send_to_agent(vm.assigned_agent_id, {
-        "type": P.MSG_HARMONY_VM_STOP,
-        "request_id": _request_id(),
-        "vm_id": vm.id,
-        "hdc_serial": vm.hdc_serial or "",
-        "lease_token": vm.lease_token,
-    })
-    vm.state = "stopping" if sent else "agent_offline"
-    if not sent:
-        vm.error_code = "agent_offline"
-        vm.error_message = "assigned agent offline"
+    require_owner_host(vm, hub)
+    require_device_idle(hub, vm)
+    request_id = begin_operation(vm, "stop", target_agent_id=vm.assigned_agent_id,
+                                 target_host_id=agent_host_id(hub, vm.assigned_agent_id))
+    vm.state = "stopping"
+    maintenance(hub, vm, True)
     await session.commit()
+    arm_operation_timeout(vm, hub)
+    sent = await send_operation_once(hub, vm.assigned_agent_id, {
+        "type": P.MSG_HARMONY_VM_STOP, "request_id": request_id, "vm_id": vm.id,
+        "hdc_serial": vm.hdc_serial or "", "lease_token": vm.lease_token or "",
+    })
+    if not sent:
+        await record_send_failure(session, vm, request_id, "所属 Agent 离线，尚未确认停止")
     await session.refresh(vm)
     return {"sent": sent, "instance": vm.to_dict()}
 
@@ -792,23 +719,23 @@ async def _send_start(
     agent_id: str,
     session: AsyncSession,
     hub: Hub,
+    *, expected_draft: bool = False,
 ) -> Dict[str, Any]:
     try:
         vm = await get_vm_or_404(session, vm_id)
+        await session.refresh(vm)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="harmony vm not found")
-    if vm.state in ACTIVE_STATES:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="active vm cannot be dispatched")
-    if vm.lease_token or vm.hdc_port is not None or vm.hdc_serial:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=LEASE_CLEANUP_REQUIRED)
-    old_agent = (vm.assigned_agent_id or "").strip()
+    if expected_draft and not is_untouched_draft(vm):
+        raise HTTPException(409, "新配置已被另一操作接管，本次换机不会重复启动")
+    require_idle(vm)
+    old_agent = str(vm.assigned_agent_id or "")
     if old_agent and old_agent != agent_id:
-        return await _switch_agent(
-            vm=vm,
-            new_agent_id=agent_id,
-            session=session,
-            hub=hub,
-        )
+        return await _switch_agent(vm=vm, new_agent_id=agent_id, session=session, hub=hub)
+    require_startable(vm)
+    if not hub.has_agent(agent_id):
+        raise HTTPException(409, "所属 Agent 离线，请等待连接")
+    probed_payload = vm_payload(vm)
     capability_waiter = get_capability_waiter()
     live_capability = await capability_waiter.probe_agent(
         hub=hub,
@@ -831,6 +758,28 @@ async def _send_start(
                 ),
             },
         )
+    # Do not block status/reconcile on this VM while waiting for the same
+    # Agent to answer the capability probe.
+    await transaction_lock(session, f"harmony-vm:{vm_id}")
+    try:
+        vm = await get_vm_or_404(session, vm_id)
+    except LookupError:
+        raise HTTPException(404, "实例已删除")
+    if expected_draft and not is_untouched_draft(vm):
+        raise HTTPException(409, "新配置已被另一操作接管，本次换机不会重复启动")
+    require_startable(vm)
+    if vm_payload(vm) != probed_payload:
+        raise HTTPException(409, "探查期间配置已修改，请重新探查")
+    if vm.lease_token or vm.hdc_port is not None or vm.hdc_serial:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=LEASE_CLEANUP_REQUIRED)
+    old_agent = (vm.assigned_agent_id or "").strip()
+    if old_agent and old_agent != agent_id:
+        return await _switch_agent(
+            vm=vm,
+            new_agent_id=agent_id,
+            session=session,
+            hub=hub,
+        )
     excluded = capability_waiter.excluded_ports_for(agent_id)
     try:
         lease = await allocate_port_lease(
@@ -838,9 +787,17 @@ async def _send_start(
         )
     except RuntimeError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
+    require_owner_host(vm, hub)
+    require_device_idle(hub, vm)
+    first_bind = not bool(vm.assigned_agent_id)
+    request_id = begin_operation(vm, "start", target_agent_id=agent_id,
+        target_host_id=agent_host_id(hub, agent_id), first_bind=first_bind)
     payload = {
         "type": P.MSG_HARMONY_VM_START,
-        **vm_payload(vm, request_id=_request_id()),
+        **vm_payload(vm, request_id=request_id),
+        "require_existing_instance": bool(lifecycle_runtime(vm).get("instance_created") or vm.started_at),
+        "rollback_new_instance": first_bind,
+        "operation_timeout_sec": lifecycle_runtime(vm)["operation"]["timeout_sec"],
         "assigned_port": lease.port,
         "lease_token": lease.lease_token,
         # 全局固定 UUID 与退役历史：非空时统一身份；清空后，Agent 只重置
@@ -850,150 +807,65 @@ async def _send_start(
     # 先提交租约与 starting 状态，再下发。反序会有丢状态窗口：Agent 可能在
     # 几十毫秒内就回失败，而租约尚未落库，handle_vm_status 因查不到租约而丢弃
     # 该消息，界面永远卡在“启动中”。
-    vm.assigned_agent_id = agent_id
     vm.state = "starting"
     vm.error_code = ""
     vm.error_message = ""
     vm.stopped_at = None
+    maintenance(hub, vm, True)
     await session.commit()
+    arm_operation_timeout(vm, hub)
     await session.refresh(vm)
 
-    sent = await hub.send_to_agent(agent_id, payload)
+    sent = await send_operation_once(hub, agent_id, payload)
     if not sent:
-        await release_port_lease(session, vm, reason="send_failed")
-        vm.assigned_agent_id = None
-        vm.state = "stopped"
-        vm.error_code = "redispatch_required"
-        vm.error_message = REDISPATCH_REQUIRED
-        await session.commit()
+        await record_send_failure(session, vm, request_id, "启动下发失败，保留绑定与端口等待对账")
         raise HTTPException(status.HTTP_409_CONFLICT, detail=REDISPATCH_REQUIRED)
     return {"sent": True, "instance": vm.to_dict()}
 
 
-async def _switch_agent(
-    *,
-    vm: HarmonyVmInstance,
-    new_agent_id: str,
-    session: AsyncSession,
-    hub: Hub,
-) -> Dict[str, Any]:
-    """Copy Android's switch contract: retire old vm_id and create a new one."""
-    old_agent = (vm.assigned_agent_id or "").strip()
+async def _switch_agent(*, vm: HarmonyVmInstance, new_agent_id: str, session: AsyncSession, hub: Hub) -> Dict[str, Any]:
+    await transaction_lock(session, f"harmony-vm:{vm.id}")
+    try:
+        vm = await get_vm_or_404(session, vm.id)
+    except LookupError:
+        raise HTTPException(404, "实例已删除")
+    require_retirement_allowed(hub, vm)
+    inherited = {key: getattr(vm, key) for key in ('name', 'alias', 'device_type', 'os_version', 'api_version', 'abi', 'image_id', 'screen_profile', 'screen_width', 'screen_height', 'density', 'screen_size_in', 'memory_gb', 'storage_gb', 'boot_mode', 'config_json')}
     old_vm_id = vm.id
-    old_serial = (vm.hdc_serial or "").strip()
-    if vm.lease_token or vm.hdc_port is not None or vm.hdc_serial:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail=LEASE_CLEANUP_REQUIRED,
-        )
-    capability_waiter = get_capability_waiter()
-    live_capability = await capability_waiter.probe_agent(
-        hub=hub,
-        vm=vm,
-        agent_id=new_agent_id,
-    )
-    if not bool(live_capability.get("ok")):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail={
-                "reason": "harmony_agent_capability_unavailable",
-                "message": str(
-                    live_capability.get("reason")
-                    or "新 Agent 鸿蒙虚拟机能力不可用"
-                ),
-                "details": (
-                    live_capability.get("details")
-                    if isinstance(live_capability.get("details"), dict)
-                    else {}
-                ),
-            },
-        )
-    inherited = {
-        "name": vm.name,
-        "alias": vm.alias,
-        "device_type": vm.device_type,
-        "os_version": vm.os_version,
-        "api_version": vm.api_version,
-        "abi": vm.abi,
-        "image_id": vm.image_id,
-        "screen_profile": vm.screen_profile,
-        "screen_width": vm.screen_width,
-        "screen_height": vm.screen_height,
-        "density": vm.density,
-        "screen_size_in": vm.screen_size_in,
-        "memory_gb": vm.memory_gb,
-        "storage_gb": vm.storage_gb,
-        "boot_mode": vm.boot_mode,
-        "config_json": dict(vm.config_json or {}),
-    }
-    await delete_owned_alias(session, vm)
-    await session.execute(
-        delete(Device).where(Device.serial == placeholder_serial(old_vm_id))
-    )
-    await session.delete(vm)
-    await session.flush()
-
+    old_target, old_command, _ = await _retire_configuration(session, vm, hub)
     new_vm = HarmonyVmInstance(state="draft", **inherited)
     session.add(new_vm)
     await session.flush()
     await reserve_placeholder_alias(session, new_vm)
-    excluded = capability_waiter.excluded_ports_for(new_agent_id)
-    lease = await allocate_port_lease(
-        session,
-        new_vm,
-        agent_id=new_agent_id,
-        excluded_ports=excluded,
-    )
-    payload = {
-        "type": P.MSG_HARMONY_VM_START,
-        **vm_payload(new_vm, request_id=_request_id()),
-        "assigned_port": lease.port,
-        "lease_token": lease.lease_token,
-        **(await _harmony_identity_payload(session)),
-    }
-    # 必须先提交租约与 starting 状态，再下发。
-    # 反过来的话（先下发、后提交）存在丢状态的窗口：Agent 可能在几十毫秒内就返回
-    # 失败，而此时 Server 这边租约和 lease_token 还没落库，handle_vm_status 查不到
-    # 对应租约会直接丢弃该消息，界面就永远卡在“启动中”。
-    new_vm.assigned_agent_id = new_agent_id
-    new_vm.state = "starting"
-    new_vm.error_code = ""
-    new_vm.error_message = ""
-    new_vm.stopped_at = None
+    # Retire old ID and establish the replacement configuration atomically.
+    # An unreachable old WebSocket cannot leave the ledger with neither row.
+    new_vm_id = new_vm.id
     await session.commit()
-    await session.refresh(new_vm)
-    await _forget_vm_device(hub, old_vm_id)
-
-    sent = await hub.send_to_agent(new_agent_id, payload)
-    if not sent:
-        # 已提交，不能再 rollback：显式回退到可重新下发的状态并释放租约。
-        await reserve_placeholder_alias(session, new_vm)
-        await release_port_lease(session, new_vm, reason="dispatch_send_failed")
-        new_vm.state = "stopped"
-        new_vm.error_code = "dispatch_send_failed"
-        new_vm.error_message = "下发失败：Agent 连接不可用"
+    await forget_device_route(hub, vm)
+    cleanup_sent = await send_cleanup_once(hub, vm, old_target, old_command)
+    try:
+        result = await _send_start(new_vm_id, new_agent_id, session, hub, expected_draft=True)
+        sent = bool(result.get("sent"))
+        instance = result.get("instance") or new_vm.to_dict()
+    except HTTPException as exc:
+        await transaction_lock(session, f"harmony-vm:{new_vm_id}")
+        current = await session.get(HarmonyVmInstance, new_vm_id, populate_existing=True)
+        if current is None:
+            await session.commit()
+            raise HTTPException(409, "新配置已被其他操作删除") from exc
+        # A different caller may have started/stopped/deleted the visible new
+        # configuration while old-host cleanup was in flight. Never overwrite
+        # its operation or result with this switch call's stale exception.
+        if is_untouched_draft(current):
+            current.state = "error"
+            current.error_message = f"新配置启动失败：{exc.detail}"
+            update_runtime(current, last_status={"state": "error", "ok": False,
+                           "details": {"cleanup_confirmed": True, "instance_created": False}},
+                           details={"cleanup_confirmed": True, "instance_created": False})
+        instance = current.to_dict()
         await session.commit()
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=REDISPATCH_REQUIRED)
-
-    if old_agent:
-        try:
-            await hub.send_to_agent(
-                old_agent,
-                {
-                    "type": P.MSG_HARMONY_VM_DELETE,
-                    "request_id": _request_id(),
-                    "vm_id": old_vm_id,
-                    "hdc_serial": old_serial,
-                },
-            )
-        except Exception:  # noqa: BLE001
-            pass
-    return {
-        "sent": True,
-        "switched": True,
-        "old_vm_id": old_vm_id,
-        "instance": new_vm.to_dict(),
-    }
-
+        sent = False
+    return {"sent": sent, "switched": True, "old_vm_id": old_vm_id,
+            "old_cleanup_sent": cleanup_sent, "instance": instance}
 
 __all__ = ["router"]

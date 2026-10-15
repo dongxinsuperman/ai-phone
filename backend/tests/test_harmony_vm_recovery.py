@@ -17,7 +17,11 @@ from ai_phone.agent.harmony_vm.registry import (
 )
 from ai_phone.server.harmony_vm import api as harmony_api
 from ai_phone.server.harmony_vm.models import HarmonyVmInstance, HarmonyVmPortLease
-from ai_phone.server.harmony_vm.service import allocate_port_lease
+from ai_phone.server.harmony_vm.service import (
+    allocate_port_lease,
+    handle_vm_reconcile,
+    handle_vm_status,
+)
 from ai_phone.server.hub import Hub
 from ai_phone.server.models import Device
 from ai_phone.shared import protocol as P
@@ -31,9 +35,10 @@ class _RecordingHub(Hub):
     def __init__(self) -> None:
         super().__init__()
         self.messages: list[tuple[str, dict[str, Any]]] = []
+        self.online = {"new-agent"}
 
     def has_agent(self, agent_id: str) -> bool:
-        return agent_id == "new-agent"
+        return agent_id in self.online
 
     async def send_to_agent(self, agent_id: str, payload: dict[str, Any]) -> bool:
         self.messages.append((agent_id, payload))
@@ -80,21 +85,16 @@ async def _vm_with_lease(
     return lease.port, lease.lease_token
 
 
-async def test_offline_vm_requires_confirmed_release_before_new_dispatch(
-    client, app, session, monkeypatch
+@pytest.mark.parametrize("start_ok", [True, False])
+async def test_offline_vm_switch_creates_new_id_before_old_orphan_cleanup(
+    client, app, session, monkeypatch, start_ok
 ):
-    """A stuck old lease must not silently disappear or block recovery forever."""
+    """Switch is delete plus one fresh start; old reports never revive the ledger."""
     old_port, old_token = await _vm_with_lease(
-        session,
-        vm_id="offline-vm",
-        state="agent_offline",
-        agent_id="old-agent",
+        session, vm_id="offline-vm", state="agent_offline", agent_id="old-agent",
     )
     other_port, other_token = await _vm_with_lease(
-        session,
-        vm_id="running-vm",
-        state="running",
-        agent_id="other-agent",
+        session, vm_id="running-vm", state="running", agent_id="other-agent",
     )
     hub = _RecordingHub()
     app.state.hub = hub
@@ -109,109 +109,178 @@ async def test_offline_vm_requires_confirmed_release_before_new_dispatch(
     hub.set_device_readiness(old_identity, {"ready": True})
     hub.set_device_extra(other_identity, {"owner": "other"})
     hub.set_device_readiness(other_identity, {"ready": True})
-    session.add_all(
-        [
-            Device(serial=old_identity, agent_id="old-agent", platform="harmony"),
-            Device(serial=other_identity, agent_id="other-agent", platform="harmony"),
-        ]
-    )
+    session.add_all([
+        Device(serial=old_identity, agent_id="old-agent", platform="harmony"),
+        Device(serial=other_identity, agent_id="other-agent", platform="harmony"),
+    ])
     await session.commit()
 
-    # Reproduce the UI's "stop it first" conflict: the old Agent is gone, so
-    # dispatch cannot switch owners while its lease is still held.
-    blocked = await client.post(
-        "/api/internal/harmony-vm/instances/offline-vm/dispatch",
-        headers=AUTH,
-        json={"agent_id": "new-agent"},
-    )
-    assert blocked.status_code == 409
-    assert hub.messages == []
-
-    unconfirmed = await client.post(
-        "/api/internal/harmony-vm/instances/offline-vm/force-release",
-        headers=AUTH,
-        json={"confirmed": False, "reason": REASON},
-    )
-    assert unconfirmed.status_code == 400
-    blank_reason = await client.post(
-        "/api/internal/harmony-vm/instances/offline-vm/force-release",
-        headers=AUTH,
-        json={"confirmed": True, "reason": "        "},
-    )
-    assert blank_reason.status_code == 400
+    # Manual confirmation is still not evidence that a bound VM stopped.
+    for body in (
+        {"confirmed": False, "reason": REASON},
+        {"confirmed": True, "reason": "        "},
+        {"confirmed": True, "reason": REASON},
+    ):
+        rejected = await client.post(
+            "/api/internal/harmony-vm/instances/offline-vm/force-release",
+            headers=AUTH, json=body,
+        )
+        assert rejected.status_code == 409, rejected.text
     session.expire_all()
     old = await session.get(HarmonyVmInstance, "offline-vm")
-    assert old is not None
-    assert old.to_dict()["cleanup_pending"] is True
-    assert "lease_token" not in old.to_dict()
     assert (old.state, old.assigned_agent_id, old.lease_token) == (
-        "agent_offline",
-        "old-agent",
-        old_token,
+        "agent_offline", "old-agent", old_token,
     )
-    assert await session.get(HarmonyVmPortLease, old_port) is not None
-
-    # Even explicit confirmation must not free a VM that is still active.
+    assert "lease_token" not in old.to_dict()
+    assert (await session.get(HarmonyVmPortLease, old_port)).lease_token == old_token
+    assert hub.agent_id_for_serial(old_identity) == "old-agent"
+    assert hub.messages == []
     active = await client.post(
         "/api/internal/harmony-vm/instances/running-vm/force-release",
-        headers=AUTH,
-        json={"confirmed": True, "reason": REASON},
+        headers=AUTH, json={"confirmed": True, "reason": REASON},
     )
     assert active.status_code == 409
-    session.expire_all()
-    running = await session.get(HarmonyVmInstance, "running-vm")
-    assert running is not None
-    assert (running.state, running.lease_token) == ("running", other_token)
 
-    released = await client.post(
-        "/api/internal/harmony-vm/instances/offline-vm/force-release",
-        headers=AUTH,
-        json={"confirmed": True, "reason": REASON},
-    )
-    assert released.status_code == 200, released.text
-    assert released.json()["instance"]["state"] == "stopped"
-    assert released.json()["instance"]["cleanup_pending"] is False
-    session.expire_all()
-    assert await session.get(HarmonyVmPortLease, old_port) is None
-    assert (await session.get(HarmonyVmPortLease, other_port)).lease_token == other_token
-    assert await session.get(Device, old_identity) is None
-    assert await session.get(Device, other_identity) is not None
-    assert hub.agent_id_for_serial(old_identity) is None
-    assert hub.agent_id_for_serial(other_identity) == "other-agent"
-    assert hub.get_device_extra(old_identity) == {}
-    assert hub.get_device_extra(other_identity) == {
-        "owner": "other",
-        "readiness": {"ready": True},
-    }
-
-    dispatched = await client.post(
+    switched = await client.post(
         "/api/internal/harmony-vm/instances/offline-vm/dispatch",
-        headers=AUTH,
-        json={"agent_id": "new-agent"},
+        headers=AUTH, json={"agent_id": "new-agent"},
     )
-    assert dispatched.status_code == 200, dispatched.text
-    assert dispatched.json()["sent"] is True
-    assert dispatched.json()["instance"]["state"] == "starting"
-
+    assert switched.status_code == 200, switched.text
+    body = switched.json()
+    assert body["switched"] is True and body["sent"] is True
+    assert body["old_vm_id"] == "offline-vm"
+    replacement_id = body["instance"]["id"]
+    assert replacement_id != "offline-vm"
+    assert body["instance"]["state"] == "starting"
+    assert body["instance"]["assigned_agent_id"] is None
     session.expire_all()
-    recovered = await session.get(HarmonyVmInstance, "offline-vm")
-    running = await session.get(HarmonyVmInstance, "running-vm")
-    assert recovered is not None and running is not None
-    assert recovered.assigned_agent_id == "new-agent"
-    assert recovered.hdc_port == old_port
-    assert recovered.lease_token != old_token
-    assert (running.state, running.hdc_port, running.lease_token) == (
-        "running",
-        other_port,
-        other_token,
-    )
-    assert len(hub.messages) == 1
-    agent_id, payload = hub.messages[0]
-    assert agent_id == "new-agent"
-    assert payload["type"] == P.MSG_HARMONY_VM_START
-    assert payload["vm_id"] == "offline-vm"
+    assert await session.get(HarmonyVmInstance, "offline-vm") is None
+    assert await session.get(Device, old_identity) is None
+    assert hub.agent_id_for_serial(old_identity) is None
+    assert hub.get_device_extra(old_identity) == {}
+    assert await session.get(Device, other_identity) is not None
+    assert hub.agent_id_for_serial(other_identity) == "other-agent"
+    assert hub.get_device_extra(other_identity) == {
+        "owner": "other", "readiness": {"ready": True},
+    }
+    recovered = await session.get(HarmonyVmInstance, replacement_id)
+    assert recovered.assigned_agent_id is None
+    assert recovered.hdc_port == old_port and recovered.lease_token != old_token
+    assert recovered.runtime["operation"]["target_agent_id"] == "new-agent"
+    assert recovered.runtime["operation"]["first_bind"] is True
+    assert recovered.runtime["operation"]["pending"] is True
+    assert (await session.get(HarmonyVmPortLease, old_port)).vm_id == replacement_id
+    starts = [item for item in hub.messages if item[1]["type"] == P.MSG_HARMONY_VM_START]
+    assert len(starts) == 1
+    agent_id, payload = starts[0]
+    assert agent_id == "new-agent" and payload["vm_id"] == replacement_id
     assert payload["assigned_port"] == old_port
     assert payload["lease_token"] == recovered.lease_token
+    assert payload["require_existing_instance"] is False
+
+    # The former offline host later reports its deleted VM. It receives only
+    # cleanup for that old ID; its reply cannot continue or repeat the new start.
+    hub.online.add("old-agent")
+    await handle_vm_reconcile(
+        "old-agent",
+        {"instances": [{"vm_id": "offline-vm", "state": "stopped",
+                        "lease_token": old_token, "hdc_serial": f"127.0.0.1:{old_port}"}],
+         "inventory_complete": True},
+        hub,
+    )
+    target, cleanup = hub.messages[-1]
+    assert target == "old-agent" and cleanup["type"] == P.MSG_HARMONY_VM_DELETE
+    assert cleanup["vm_id"] == "offline-vm" and cleanup["lease_token"] == old_token
+    await handle_vm_status(
+        "old-agent",
+        {"vm_id": "offline-vm", "request_id": cleanup["request_id"],
+         "lease_token": old_token, "state": "stopped", "ok": True,
+         "reason": "deleted", "details": {"cleanup_confirmed": True}},
+        hub,
+    )
+    session.expire_all()
+    recovered = await session.get(HarmonyVmInstance, replacement_id)
+    assert recovered.state == "starting" and recovered.assigned_agent_id is None
+    assert (await session.get(HarmonyVmPortLease, old_port)).vm_id == replacement_id
+    assert len([item for item in hub.messages if item[1]["type"] == P.MSG_HARMONY_VM_START]) == 1
+
+    await handle_vm_status(
+        "new-agent",
+        {"vm_id": replacement_id, "request_id": payload["request_id"],
+         "lease_token": payload["lease_token"], "state": "running" if start_ok else "error",
+         "ok": start_ok, "reason": "started" if start_ok else "boot_failed",
+         "hdc_serial": f"127.0.0.1:{old_port}",
+         "details": {} if start_ok else {"cleanup_confirmed": True}},
+        hub,
+    )
+    session.expire_all()
+    recovered = await session.get(HarmonyVmInstance, replacement_id)
+    running = await session.get(HarmonyVmInstance, "running-vm")
+    assert recovered.state == ("running" if start_ok else "error")
+    assert recovered.assigned_agent_id == ("new-agent" if start_ok else None)
+    assert recovered.runtime["operation"]["pending"] is False
+    assert len([item for item in hub.messages if item[1]["type"] == P.MSG_HARMONY_VM_START]) == 1
+    assert await session.get(HarmonyVmInstance, "offline-vm") is None
+    assert (running.state, running.hdc_port, running.lease_token) == (
+        "running", other_port, other_token,
+    )
+    assert (await session.get(HarmonyVmPortLease, other_port)).lease_token == other_token
+
+
+async def test_failed_first_binding_cannot_be_revived_by_late_status_or_inventory(
+    client, app, session, monkeypatch
+):
+    hub = _RecordingHub()
+    app.state.hub = hub
+    monkeypatch.setattr(harmony_api, "get_capability_waiter", lambda: _ReadyProbe())
+    vm = HarmonyVmInstance(name="single-attempt", alias="single-attempt")
+    session.add(vm)
+    await session.commit()
+    vm_id = vm.id
+    response = await client.post(
+        f"/api/internal/harmony-vm/instances/{vm_id}/dispatch",
+        headers=AUTH, json={"agent_id": "new-agent"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["instance"]["assigned_agent_id"] is None
+    _, start = next(item for item in hub.messages if item[1]["type"] == P.MSG_HARMONY_VM_START)
+    report = {
+        "vm_id": vm_id, "request_id": start["request_id"],
+        "lease_token": start["lease_token"], "hdc_serial": f"127.0.0.1:{start['assigned_port']}",
+    }
+    await handle_vm_status(
+        "new-agent",
+        {**report, "request_id": "different-attempt", "state": "running", "ok": True},
+        hub,
+    )
+    session.expire_all()
+    pending = await session.get(HarmonyVmInstance, vm_id)
+    assert pending.state == "starting" and pending.assigned_agent_id is None
+
+    await handle_vm_status(
+        "new-agent",
+        {**report, "state": "error", "ok": False, "reason": "boot_failed",
+         "details": {"cleanup_confirmed": True}},
+        hub,
+    )
+    session.expire_all()
+    failed = await session.get(HarmonyVmInstance, vm_id)
+    assert failed.state == "error" and failed.assigned_agent_id is None
+    assert failed.runtime["operation"]["pending"] is False
+    assert failed.runtime["operation"]["outcome"] == "failed"
+    assert await session.get(HarmonyVmPortLease, start["assigned_port"]) is None
+
+    late = {**report, "state": "running", "ok": True,
+            "details": {"instance_name": f"aiphone_harmony_{vm_id}", "managed_instance_present": True}}
+    await handle_vm_status("new-agent", late, hub)
+    await handle_vm_reconcile(
+        "new-agent", {"instances": [late], "inventory_complete": True}, hub
+    )
+    session.expire_all()
+    failed = await session.get(HarmonyVmInstance, vm_id)
+    assert failed.state == "error" and failed.assigned_agent_id is None
+    assert failed.runtime["operation"]["outcome"] == "failed"
+    assert len([item for item in hub.messages if item[1]["type"] == P.MSG_HARMONY_VM_START]) == 1
 
 
 async def test_start_on_offline_agent_preserves_old_lease(client, session):

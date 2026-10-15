@@ -35,9 +35,13 @@ class SpyHub(Hub):
         super().__init__()
         self.sent = []
         self.online = set(online)
+        self.hosts = {}
 
     def has_agent(self, agent_id):
         return agent_id in self.online
+
+    def agent_host_id(self, agent_id):
+        return self.hosts.get(agent_id, "")
 
     async def send_to_agent(self, agent_id, payload):
         if agent_id not in self.online:
@@ -344,7 +348,7 @@ class _Row:
 
 
 # --------------------------------------------------------------------------
-# 换 Agent：照搬 Android 的「删旧 vm_id + 新建继承」（android-vm-plan §21.3）
+# 首次绑定确认 / 换 Agent：删旧总账，再用新 vm_id 创建空白实例
 # --------------------------------------------------------------------------
 async def _answer_probe(hub, agent_id, seen_before):
     """替指定 Agent 回一个「可承接」的探查结果。
@@ -373,13 +377,105 @@ async def _answer_probe(hub, agent_id, seen_before):
 async def _dispatch(client, hub, vm_id, agent_id):
     seen = len(hub.of_type(P.MSG_IOS_SIM_VM_CAPABILITY_PROBE))
     task = asyncio.create_task(_answer_probe(hub, agent_id, seen))
-    r = await client.post(
-        f"{_BASE}/instances/{vm_id}/dispatch",
-        json={"agent_id": agent_id},
-        headers=AUTH,
+    try:
+        return await client.post(
+            f"{_BASE}/instances/{vm_id}/dispatch",
+            json={"agent_id": agent_id},
+            headers=AUTH,
+        )
+    finally:
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+async def _report_running(hub, vm_id, agent_id="agent-1", udid="UDID-ORIGINAL"):
+    from ai_phone.server.ios_sim.service import handle_vm_status
+
+    start = next(
+        payload for owner, payload in reversed(hub.sent)
+        if owner == agent_id
+        and payload.get("type") == P.MSG_IOS_SIM_VM_START
+        and payload.get("vm_id") == vm_id
     )
-    await task
-    return r
+    await handle_vm_status(
+        agent_id,
+        {"vm_id": vm_id, "request_id": start["request_id"],
+         "state": "running", "ok": True, "reason": "running", "udid": udid},
+        hub,
+    )
+
+
+@pytest.mark.asyncio
+async def test_first_dispatch_binds_only_after_matching_running_ack(client, hub):
+    """下发先记录目标，只有该目标的当前启动成功回包才能建立正式绑定。"""
+    from ai_phone.server.ios_sim.service import handle_vm_status
+
+    hub.hosts = {"agent-1": "host-one", "agent-2": "host-two"}
+    vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
+    response = await _dispatch(client, hub, vm["id"], "agent-1")
+    assert response.status_code == 200
+    assert response.json()["sent"] is True
+    starting = response.json()["instance"]
+    assert starting["state"] == "starting"
+    assert starting["assigned_agent_id"] is None
+    operation = starting["runtime_state"]["operation"]
+    assert operation["action"] == "start"
+    assert operation["target_agent_id"] == "agent-1"
+    assert operation["target_host_id"] == "host-one"
+    assert operation["first_bind"] is True
+    assert operation["pending"] is True
+    assert operation["deadline_at"], "启动必须有终止等待的期限"
+
+    for reporter, request_id in (
+        ("agent-2", operation["request_id"]),
+        ("agent-1", "obsolete-start"),
+    ):
+        await handle_vm_status(
+            reporter,
+            {"vm_id": vm["id"], "request_id": request_id, "state": "running",
+             "ok": True, "reason": "running", "udid": "WRONG-UDID"},
+            hub,
+        )
+        got = (await client.get(f"{_BASE}/instances/{vm['id']}", headers=AUTH)).json()
+        assert got["state"] == "starting"
+        assert got["assigned_agent_id"] is None
+        assert got["udid"] is None
+
+    await _report_running(hub, vm["id"], udid="UDID-CONFIRMED")
+    got = (await client.get(f"{_BASE}/instances/{vm['id']}", headers=AUTH)).json()
+    assert got["state"] == "running"
+    assert got["assigned_agent_id"] == "agent-1"
+    assert got["udid"] == "UDID-CONFIRMED"
+    assert got["runtime_state"]["operation"]["pending"] is False
+
+
+@pytest.mark.asyncio
+async def test_failed_first_start_does_not_bind_or_accept_late_success(client, hub):
+    """首次启动失败不建立归属，已结束操作的晚到成功也不能变成有效绑定。"""
+    from ai_phone.server.ios_sim.service import handle_vm_status
+
+    vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
+    response = await _dispatch(client, hub, vm["id"], "agent-1")
+    assert response.status_code == 200
+    request_id = response.json()["instance"]["runtime_state"]["operation"]["request_id"]
+    await handle_vm_status(
+        "agent-1",
+        {"vm_id": vm["id"], "request_id": request_id, "state": "error", "ok": False,
+         "reason": "start_failed", "error": "WDA failed"},
+        hub,
+    )
+    failed = (await client.get(f"{_BASE}/instances/{vm['id']}", headers=AUTH)).json()
+    assert failed["state"] == "error"
+    assert failed["assigned_agent_id"] is None
+    assert failed["runtime_state"]["operation"]["pending"] is False
+    await _report_running(hub, vm["id"])
+    got = (await client.get(f"{_BASE}/instances/{vm['id']}", headers=AUTH)).json()
+    assert got["state"] == "error"
+    assert got["assigned_agent_id"] is None
 
 
 @pytest.mark.asyncio
@@ -390,32 +486,32 @@ async def test_dispatch_to_active_instance_is_rejected(client, hub):
     assert (await _dispatch(client, hub, vm["id"], "agent-1")).status_code == 200
 
     # 上一步把状态置成 starting（active）
-    r = await _dispatch(client, hub, vm["id"], "agent-2")
+    hub.sent.clear()
+    r = await client.post(
+        f"{_BASE}/instances/{vm['id']}/dispatch",
+        json={"agent_id": "agent-2"}, headers=AUTH,
+    )
     assert r.status_code == 409
-    assert "先停止" in r.json()["detail"]
+    assert "等待本次结果" in r.json()["detail"]
+    assert hub.sent == [], "启动中不得重新探查、清理或下发"
 
 
 @pytest.mark.asyncio
 async def test_switch_agent_creates_new_vm_id_and_inherits_alias(
     client, hub, session
 ):
-    """换 Agent 必须换 vm_id。
-
-    对账规则是「谁报谁绑」：只改归属字段的话，旧 Agent 离线期间没收到删除指令，
-    回来一报同一个 vm_id 就把实例抢回去了。换掉 id，旧记录已删，旧 Agent 再报
-    必然被判孤儿清掉。
-    """
+    """换 Agent 立即替换总账，新实例继承配置和别名，不继承 VM ID 或 UDID。"""
     from ai_phone.server.ios_sim.models import IosSimVmInstance
 
     hub.online = ("agent-1", "agent-2")
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
     old_id, alias = vm["id"], vm["alias"]
     assert (await _dispatch(client, hub, old_id, "agent-1")).status_code == 200
+    await _report_running(hub, old_id, udid="UDID-OLD")
 
-    # 模拟 agent-1 掉线：状态退出 active，归属仍指向 agent-1
+    # 旧实例已停止，归属及持久身份仍指向 agent-1。
     row = await session.get(IosSimVmInstance, old_id)
-    row.state = "agent_offline"
-    row.udid = "UDID-OLD"
+    row.state = "stopped"
     await session.commit()
 
     hub.sent.clear()
@@ -423,12 +519,23 @@ async def test_switch_agent_creates_new_vm_id_and_inherits_alias(
     assert r.status_code == 200
     body = r.json()
     assert body["switched"] is True
-
-    new_id = body["instance"]["id"]
+    assert body["sent"] is True
+    assert not body.get("pending_cleanup")
+    assert body["old_vm_id"] == old_id
+    replacement = body["instance"]
+    new_id = replacement["id"]
     assert new_id != old_id, "换 Agent 必须换 vm_id"
-    assert body["instance"]["alias"] == alias, "别名要继承"
-    assert body["instance"]["assigned_agent_id"] == "agent-2"
-    assert body["instance"]["state"] == "starting"
+    assert replacement["alias"] == alias, "别名要继承"
+    assert replacement["assigned_agent_id"] is None
+    assert replacement["state"] == "starting"
+    assert replacement["runtime_state"]["operation"]["target_agent_id"] == "agent-2"
+    assert replacement["runtime_state"]["operation"]["first_bind"] is True
+    assert replacement["udid"] is None, "新宿主必须创建空白实例"
+    assert replacement["device_type"] == vm["device_type"]
+    assert replacement["runtime"] == vm["runtime"]
+    assert await _alias_rows(session) == {f"ios-sim:{new_id}": alias}
+    rows = (await client.get(f"{_BASE}/instances", headers=AUTH)).json()
+    assert [item["id"] for item in rows] == [new_id]
 
     # 旧记录已删（测试会话有自己的身份映射，先失效再查）
     session.expire_all()
@@ -437,34 +544,55 @@ async def test_switch_agent_creates_new_vm_id_and_inherits_alias(
     # 新 Agent 收到启动，旧 Agent 收到删除（且带上旧 udid 便于本地清理）
     starts = [p for a, p in hub.sent if p["type"] == P.MSG_IOS_SIM_VM_START]
     deletes = [(a, p) for a, p in hub.sent if p["type"] == P.MSG_IOS_SIM_VM_DELETE]
-    assert starts and starts[-1]["vm_id"] == new_id
+    assert len(starts) == 1 and starts[0]["vm_id"] == new_id
     assert deletes and deletes[-1][0] == "agent-1"
     assert deletes[-1][1]["vm_id"] == old_id
     assert deletes[-1][1]["udid"] == "UDID-OLD"
+    assert starts[-1]["udid"] == ""
+    assert starts[-1]["require_existing_instance"] is False
+
+    await _report_running(hub, new_id, agent_id="agent-2", udid="UDID-NEW")
+    running = (await client.get(f"{_BASE}/instances/{new_id}", headers=AUTH)).json()
+    assert running["assigned_agent_id"] == "agent-2"
+    assert running["udid"] == "UDID-NEW"
 
 
 @pytest.mark.asyncio
-async def test_switch_agent_notifies_old_agent_after_commit(client, hub, session):
-    """通知旧 Agent 删除必须发生在新记录落库之后。
-
-    反过来的话，中间任何一步回滚都会留下「旧实例已被删、库里还是旧记录」的空洞。
-    """
+async def test_switch_agent_commits_deletion_before_notifying_old_agent(client, hub, session):
+    """通知宿主清理前，旧总账已删除，清理结果不参与创建新实例。"""
+    from ai_phone.server.db import get_session_factory
     from ai_phone.server.ios_sim.models import IosSimVmInstance
 
     hub.online = ("agent-1", "agent-2")
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
     await _dispatch(client, hub, vm["id"], "agent-1")
+    await _report_running(hub, vm["id"])
     row = await session.get(IosSimVmInstance, vm["id"])
     row.state = "stopped"
     await session.commit()
 
     hub.sent.clear()
-    await _dispatch(client, hub, vm["id"], "agent-2")
+    seen_at_send = {}
+    original = hub.send_to_agent
 
-    kinds = [p["type"] for _a, p in hub.sent]
-    assert kinds.index(P.MSG_IOS_SIM_VM_START) < kinds.index(
-        P.MSG_IOS_SIM_VM_DELETE
-    ), "应先发启动给新 Agent，落库成功后再通知旧 Agent 清理"
+    async def _spy_send(agent_id, payload):
+        if payload.get("type") == P.MSG_IOS_SIM_VM_DELETE:
+            async with get_session_factory()() as s2:
+                got = await s2.get(IosSimVmInstance, payload["vm_id"])
+                seen_at_send["old_missing"] = got is None
+        return await original(agent_id, payload)
+
+    hub.send_to_agent = _spy_send
+    try:
+        response = await _dispatch(client, hub, vm["id"], "agent-2")
+    finally:
+        hub.send_to_agent = original
+
+    assert response.status_code == 200
+    new_id = response.json()["instance"]["id"]
+    assert seen_at_send["old_missing"] is True
+    assert new_id != vm["id"]
+    assert [item["vm_id"] for item in hub.of_type(P.MSG_IOS_SIM_VM_START)] == [new_id]
 
 
 @pytest.mark.asyncio
@@ -480,6 +608,7 @@ async def test_switch_agent_commits_starting_before_sending(client, hub, session
     hub.online = ("agent-1", "agent-2")
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
     await _dispatch(client, hub, vm["id"], "agent-1")
+    await _report_running(hub, vm["id"])
     row = await session.get(IosSimVmInstance, vm["id"])
     row.state = "stopped"
     await session.commit()
@@ -495,6 +624,8 @@ async def test_switch_agent_commits_starting_before_sending(client, hub, session
                 got = await s2.get(IosSimVmInstance, payload["vm_id"])
                 seen_at_send["visible"] = got is not None
                 seen_at_send["state"] = got.state if got else None
+                seen_at_send["owner"] = got.assigned_agent_id if got else None
+                seen_at_send["target"] = got.runtime_state["operation"]["target_agent_id"] if got else None
         hub.sent.append((agent_id, payload))
         return True
 
@@ -502,35 +633,119 @@ async def test_switch_agent_commits_starting_before_sending(client, hub, session
     hub.send_to_agent = _spy_send
     try:
         r = await _dispatch(client, hub, vm["id"], "agent-2")
+        assert r.status_code == 200
     finally:
         hub.send_to_agent = original
 
-    assert r.status_code == 200
     assert seen_at_send.get("visible") is True, "下发时新记录还没落库"
     assert seen_at_send.get("state") == "starting"
+    assert seen_at_send["owner"] is None
+    assert seen_at_send["target"] == "agent-2"
 
 
 @pytest.mark.asyncio
-async def test_switch_agent_reports_unconfirmed_cleanup(client, hub, session):
-    """旧 Agent 没收到清理指令时，接口要如实告知，不能只报成功。"""
+async def test_switch_agent_replaces_offline_owner_and_cleans_orphan_on_reconnect(client, hub, session):
+    """旧 Agent 离线也立即换新 ID，下次连接按总账删除旧实例。"""
     from ai_phone.server.ios_sim.models import IosSimVmInstance
+    from ai_phone.server.ios_sim.service import handle_vm_reconcile, handle_vm_status
 
     hub.online = ("agent-1", "agent-2")
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
     await _dispatch(client, hub, vm["id"], "agent-1")
+    await _report_running(hub, vm["id"])
     row = await session.get(IosSimVmInstance, vm["id"])
-    row.state = "stopped"
+    row.state = "agent_offline"
     await session.commit()
 
     # agent-1 掉线：清理指令发不出去
     hub.online = ("agent-2",)
+    hub.sent.clear()
     r = await _dispatch(client, hub, vm["id"], "agent-2")
 
     assert r.status_code == 200
-    body = r.json()
+    assert r.json()["switched"] is True
+    assert not r.json().get("pending_cleanup")
+    new_id = r.json()["instance"]["id"]
+    assert new_id != vm["id"]
+    rows = (await client.get(f"{_BASE}/instances", headers=AUTH)).json()
+    assert [item["id"] for item in rows] == [new_id]
+    assert rows[0]["state"] == "starting"
+    assert rows[0]["assigned_agent_id"] is None
+    assert not (rows[0]["runtime_state"] or {}).get("pending_cleanup")
+    assert [p["vm_id"] for p in hub.of_type(P.MSG_IOS_SIM_VM_START)] == [new_id]
+    assert hub.of_type(P.MSG_IOS_SIM_VM_DELETE) == []
+
+    hub.online = {"agent-1", "agent-2"}
+    await handle_vm_reconcile(
+        "agent-1",
+        {"vm_ids": [vm["id"]], "running_vm_ids": [],
+         "stopped_vm_ids": [vm["id"]], "inventory_complete": True},
+        hub,
+    )
+    deletes = hub.of_type(P.MSG_IOS_SIM_VM_DELETE)
+    assert [p["vm_id"] for p in deletes] == [vm["id"]]
+
+    for ok, reason in ((True, "deleted"), (False, "delete_failed")):
+        await handle_vm_status(
+            "agent-1",
+            {"vm_id": vm["id"], "request_id": deletes[-1]["request_id"],
+             "state": "stopped" if ok else "error", "ok": ok, "reason": reason},
+            hub,
+        )
+    rows = (await client.get(f"{_BASE}/instances", headers=AUTH)).json()
+    assert [item["id"] for item in rows] == [new_id]
+    assert [p["vm_id"] for p in hub.of_type(P.MSG_IOS_SIM_VM_START)] == [new_id]
+
+
+@pytest.mark.asyncio
+async def test_switch_start_send_failure_keeps_only_new_unbound_error(client, hub, session):
+    """新宿主启动下发失败只留下新配置的错误，不能复活旧记录或自动再次启动。"""
+    from ai_phone.server.ios_sim.models import IosSimVmInstance
+    from ai_phone.server.ios_sim.service import handle_vm_status
+
+    hub.online = {"agent-1", "agent-2"}
+    vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
+    await _dispatch(client, hub, vm["id"], "agent-1")
+    await _report_running(hub, vm["id"])
+    row = await session.get(IosSimVmInstance, vm["id"])
+    row.state = "stopped"
+    await session.commit()
+    hub.sent.clear()
+    original = hub.send_to_agent
+
+    async def _fail_new_start(agent_id, payload):
+        if agent_id == "agent-2" and payload.get("type") == P.MSG_IOS_SIM_VM_START:
+            hub.sent.append((agent_id, payload))
+            return False
+        return await original(agent_id, payload)
+
+    hub.send_to_agent = _fail_new_start
+    try:
+        response = await _dispatch(client, hub, vm["id"], "agent-2")
+    finally:
+        hub.send_to_agent = original
+    assert response.status_code == 200
+    body = response.json()
     assert body["switched"] is True
-    assert body["old_cleanup_sent"] is False
-    assert body["old_vm_id"] == vm["id"]
+    assert body["sent"] is False
+    new_vm = body["instance"]
+    assert new_vm["id"] != vm["id"]
+    assert new_vm["state"] == "error"
+    assert new_vm["assigned_agent_id"] is None
+    assert new_vm["runtime_state"]["operation"]["pending"] is False
+    assert await _alias_rows(session) == {f"ios-sim:{new_vm['id']}": vm["alias"]}
+
+    delete = hub.of_type(P.MSG_IOS_SIM_VM_DELETE)[-1]
+    await handle_vm_status(
+        "agent-1",
+        {"vm_id": vm["id"], "request_id": delete["request_id"],
+         "state": "stopped", "ok": True, "reason": "deleted"},
+        hub,
+    )
+    rows = (await client.get(f"{_BASE}/instances", headers=AUTH)).json()
+    assert [item["id"] for item in rows] == [new_vm["id"]]
+    assert rows[0]["state"] == "error"
+    assert [p["vm_id"] for p in hub.of_type(P.MSG_IOS_SIM_VM_START)] == [new_vm["id"]]
 
 
 @pytest.mark.asyncio
@@ -540,6 +755,7 @@ async def test_dispatch_to_same_agent_keeps_vm_id(client, hub, session):
 
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
     await _dispatch(client, hub, vm["id"], "agent-1")
+    await _report_running(hub, vm["id"])
     row = await session.get(IosSimVmInstance, vm["id"])
     row.state = "stopped"
     await session.commit()
@@ -547,7 +763,10 @@ async def test_dispatch_to_same_agent_keeps_vm_id(client, hub, session):
     r = await _dispatch(client, hub, vm["id"], "agent-1")
     assert r.status_code == 200
     assert r.json()["instance"]["id"] == vm["id"]
+    assert r.json()["instance"]["assigned_agent_id"] == "agent-1"
+    assert r.json()["instance"]["udid"] == "UDID-ORIGINAL"
     assert "switched" not in r.json()
+    assert hub.of_type(P.MSG_IOS_SIM_VM_START)[-1]["require_existing_instance"] is True
 
 
 @pytest.mark.asyncio
@@ -566,7 +785,7 @@ async def test_start_without_agent_is_conflict(client, hub):
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
     r = await client.post(f"{_BASE}/instances/{vm['id']}/start", headers=AUTH)
     assert r.status_code == 409
-    assert "尚未下发" in r.json()["detail"]
+    assert "尚未绑定" in r.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -591,7 +810,7 @@ async def test_start_sends_payload_without_ports(client, hub, session):
 
 
 @pytest.mark.asyncio
-async def test_stop_offline_agent_settles_state(client, hub, session):
+async def test_stop_offline_agent_fails_attempt_without_losing_owner(client, hub, session):
     from ai_phone.server.ios_sim.models import IosSimVmInstance
 
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
@@ -603,24 +822,95 @@ async def test_stop_offline_agent_settles_state(client, hub, session):
     r = await client.post(f"{_BASE}/instances/{vm['id']}/stop", headers=AUTH)
     assert r.status_code == 200
     assert r.json()["sent"] is False
-    assert r.json()["instance"]["state"] == "agent_offline"
+    got = r.json()["instance"]
+    assert got["state"] == "error"
+    assert got["assigned_agent_id"] == "agent-gone"
+    assert got["runtime_state"]["operation"]["pending"] is False
+    assert got["runtime_state"]["operation"]["outcome"] == "failed"
 
 
 @pytest.mark.asyncio
-async def test_delete_sends_cleanup(client, hub, session):
+@pytest.mark.parametrize("delivery", ["online", "offline", "send_error"])
+async def test_delete_removes_ledger_and_alias_immediately(client, hub, session, monkeypatch, delivery):
+    """删除以总账为准立即完成，在线清理尽力发送，离线也不保留待清理配置。"""
     from ai_phone.server.ios_sim.models import IosSimVmInstance
+    from ai_phone.server.ios_sim.service import handle_vm_status
 
+    agent_online = delivery != "offline"
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
     row = await session.get(IosSimVmInstance, vm["id"])
     row.assigned_agent_id = "agent-1"
     row.udid = "UDID-X"
+    row.state = "stopped" if agent_online else "agent_offline"
     await session.commit()
+    hub.online = {"agent-1"} if agent_online else set()
+    if delivery == "send_error":
+        original = hub.send_to_agent
+
+        async def _send_error(agent_id, payload):
+            if payload.get("type") == P.MSG_IOS_SIM_VM_DELETE:
+                raise RuntimeError("connection closed during cleanup send")
+            return await original(agent_id, payload)
+
+        monkeypatch.setattr(hub, "send_to_agent", _send_error)
 
     r = await client.delete(f"{_BASE}/instances/{vm['id']}", headers=AUTH)
     assert r.status_code == 200
     assert r.json()["deleted"] is True
+    assert not r.json().get("pending_cleanup")
+    assert (await client.get(f"{_BASE}/instances/{vm['id']}", headers=AUTH)).status_code == 404
+    assert await _alias_rows(session) == {}
     deletes = hub.of_type(P.MSG_IOS_SIM_VM_DELETE)
-    assert deletes and deletes[-1]["udid"] == "UDID-X"
+    if delivery == "online":
+        assert len(deletes) == 1
+        assert deletes[0]["vm_id"] == vm["id"]
+        assert deletes[0]["udid"] == "UDID-X"
+    else:
+        assert deletes == []
+
+    # 删除失败的晚到回包不能把总账或别名重新建回来。
+    await handle_vm_status(
+        "agent-1",
+        {"vm_id": vm["id"], "request_id": deletes[0]["request_id"] if deletes else "late-delete",
+         "state": "error", "ok": False, "reason": "delete_failed"},
+        hub,
+    )
+    assert (await client.get(f"{_BASE}/instances/{vm['id']}", headers=AUTH)).status_code == 404
+    assert await _alias_rows(session) == {}
+
+
+@pytest.mark.asyncio
+async def test_offline_deleted_instance_reconcile_does_not_touch_reused_alias(client, hub, session):
+    """离线删除后别名可立即复用；旧 ID 重连补删不能影响同名的新配置。"""
+    from ai_phone.server.ios_sim.models import IosSimVmInstance
+    from ai_phone.server.ios_sim.service import handle_vm_reconcile
+
+    old = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
+    row = await session.get(IosSimVmInstance, old["id"])
+    row.assigned_agent_id = "agent-1"
+    row.udid = "UDID-OLD"
+    row.state = "agent_offline"
+    await session.commit()
+    hub.online = set()
+    response = await client.delete(f"{_BASE}/instances/{old['id']}", headers=AUTH)
+    assert response.status_code == 200 and response.json()["deleted"] is True
+    new = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
+    assert new["id"] != old["id"]
+
+    hub.online = {"agent-1"}
+    await handle_vm_reconcile(
+        "agent-1",
+        {"vm_ids": [old["id"]], "running_vm_ids": [old["id"]],
+         "stopped_vm_ids": [], "inventory_complete": True},
+        hub,
+    )
+    assert [p["vm_id"] for p in hub.of_type(P.MSG_IOS_SIM_VM_DELETE)] == [old["id"]]
+    assert hub.of_type(P.MSG_IOS_SIM_VM_START) == []
+    rows = (await client.get(f"{_BASE}/instances", headers=AUTH)).json()
+    assert [item["id"] for item in rows] == [new["id"]]
+    assert rows[0]["state"] == "draft"
+    assert rows[0]["assigned_agent_id"] is None
+    assert await _alias_rows(session) == {f"ios-sim:{new['id']}": "sim-01"}
 
 
 # --------------------------------------------------------------------------
@@ -703,14 +993,16 @@ async def test_status_from_wrong_agent_is_rejected(client, hub, session):
 
 
 @pytest.mark.asyncio
-async def test_reclaimed_rebinds_to_physical_holder(client, hub, session):
-    """reclaimed 是例外：实例物理上在上报者那里，按物理持有者重新绑定。"""
+async def test_reclaimed_does_not_steal_from_existing_owner(client, hub, session):
+    """reclaimed 本身不是归属证据，不能覆盖 Server 总账中的在线所有者。"""
     from ai_phone.server.ios_sim.models import IosSimVmInstance
     from ai_phone.server.ios_sim.service import handle_vm_status
 
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
     row = await session.get(IosSimVmInstance, vm["id"])
     row.assigned_agent_id = "agent-1"
+    row.state = "stopped"
+    row.udid = "UDID-B"
     await session.commit()
 
     await handle_vm_status(
@@ -720,8 +1012,89 @@ async def test_reclaimed_rebinds_to_physical_holder(client, hub, session):
         hub,
     )
     got = (await client.get(f"{_BASE}/instances/{vm['id']}", headers=AUTH)).json()
+    assert got["state"] == "stopped"
+    assert got["assigned_agent_id"] == "agent-1"
+    assert got["udid"] == "UDID-B"
+    assert hub.of_type(P.MSG_IOS_SIM_VM_DELETE) == []
+
+
+@pytest.mark.asyncio
+async def test_reclaimed_rebinds_restarted_agent_on_known_same_host(client, hub, session):
+    """旧连接离线且持久宿主 ID 一致时，允许同一宿主的新 Agent 连接认回实例。"""
+    from ai_phone.server.ios_sim.models import IosSimVmInstance
+    from ai_phone.server.ios_sim.service import handle_vm_status
+
+    vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
+    row = await session.get(IosSimVmInstance, vm["id"])
+    row.assigned_agent_id = "agent-1"
+    row.state = "agent_offline"
+    row.udid = "UDID-B"
+    row.runtime_state = {"owner_host_id": "host-one"}
+    await session.commit()
+    hub.online = {"agent-restarted"}
+    hub.hosts = {"agent-restarted": "host-one"}
+
+    await handle_vm_status(
+        "agent-restarted",
+        {"vm_id": vm["id"], "state": "running", "ok": True,
+         "reason": "reclaimed", "udid": "UDID-B"},
+        hub,
+    )
+    got = (await client.get(f"{_BASE}/instances/{vm['id']}", headers=AUTH)).json()
     assert got["state"] == "running"
-    assert got["assigned_agent_id"] == "agent-2"
+    assert got["assigned_agent_id"] == "agent-restarted"
+    assert got["runtime_state"]["owner_host_id"] == "host-one"
+    assert got["udid"] == "UDID-B"
+    assert hub.of_type(P.MSG_IOS_SIM_VM_DELETE) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reported_udid, accepted", [("UDID-B", True), ("UDID-OTHER", False)])
+async def test_legacy_reclaimed_requires_exact_udid_and_offline_owner(
+    client, hub, session, reported_udid, accepted
+):
+    """升级前没有宿主 ID 的记录，只有旧归属离线且 UDID 完全一致才允许认回。"""
+    from ai_phone.server.ios_sim.models import IosSimVmInstance
+    from ai_phone.server.ios_sim.service import handle_vm_status
+
+    vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
+    row = await session.get(IosSimVmInstance, vm["id"])
+    row.assigned_agent_id = "agent-1"
+    row.state = "agent_offline"
+    row.udid = "UDID-B"
+    await session.commit()
+    hub.online = {"agent-restarted"}
+
+    await handle_vm_status(
+        "agent-restarted",
+        {"vm_id": vm["id"], "state": "running", "ok": True,
+         "reason": "reclaimed", "udid": reported_udid},
+        hub,
+    )
+    got = (await client.get(f"{_BASE}/instances/{vm['id']}", headers=AUTH)).json()
+    assert got["state"] == ("running" if accepted else "agent_offline")
+    assert got["assigned_agent_id"] == ("agent-restarted" if accepted else "agent-1")
+    assert got["udid"] == "UDID-B"
+
+
+@pytest.mark.asyncio
+async def test_unbound_config_cannot_be_claimed_by_status(client, hub):
+    """新建配置仍未绑定，Agent 的普通上报或 reclaimed 都不能越过下发建立归属。"""
+    from ai_phone.server.ios_sim.service import handle_vm_status
+
+    vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
+    for reason in ("running", "reclaimed"):
+        await handle_vm_status(
+            "agent-1",
+            {"vm_id": vm["id"], "state": "running", "ok": True,
+             "reason": reason, "udid": "UNASSIGNED-UDID"},
+            hub,
+        )
+        got = (await client.get(f"{_BASE}/instances/{vm['id']}", headers=AUTH)).json()
+        assert got["state"] == "draft"
+        assert got["assigned_agent_id"] is None
+        assert got["udid"] is None
+    assert hub.of_type(P.MSG_IOS_SIM_VM_DELETE) == []
 
 
 @pytest.mark.asyncio
@@ -755,7 +1128,7 @@ async def test_unknown_vm_without_reclaimed_does_not_loop(client, hub):
 # --------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_reconcile_converges_missing_instances(client, hub, session):
-    """库里归本 Agent、Agent 却没报 → 置 agent_offline（差集收敛）。"""
+    """完整清单确认原实例缺失时保留归属并报异常，不谎报离线也不自动重建。"""
     from ai_phone.server.ios_sim.models import IosSimVmInstance
     from ai_phone.server.ios_sim.service import handle_vm_reconcile
 
@@ -766,11 +1139,16 @@ async def test_reconcile_converges_missing_instances(client, hub, session):
     await session.commit()
 
     await handle_vm_reconcile(
-        "agent-1", {"vm_ids": [], "running_vm_ids": [], "stopped_vm_ids": []}, hub
+        "agent-1",
+        {"vm_ids": [], "running_vm_ids": [], "stopped_vm_ids": [], "inventory_complete": True},
+        hub,
     )
     got = (await client.get(f"{_BASE}/instances/{vm['id']}", headers=AUTH)).json()
-    assert got["state"] == "agent_offline"
-    assert got["error_code"] == "not_on_agent"
+    assert got["state"] == "error"
+    assert got["error_code"] == "instance_missing"
+    assert got["assigned_agent_id"] == "agent-1"
+    assert hub.of_type(P.MSG_IOS_SIM_VM_START) == []
+    assert hub.of_type(P.MSG_IOS_SIM_VM_DELETE) == []
 
 
 @pytest.mark.asyncio
@@ -851,6 +1229,7 @@ async def test_server_restart_resets_states(client, session):
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
     row = await session.get(IosSimVmInstance, vm["id"])
     row.state = "running"
+    row.assigned_agent_id = "agent-1"
     row.udid = "UDID-KEEP"
     await session.commit()
 
@@ -919,6 +1298,15 @@ def test_route_prefix_is_independent(app):
 # 别名要在设备总览卡片上显示出来，就必须写进共享的 device_aliases 表。
 # 漏掉这一步的后果是：虚拟机页面显示别名，设备卡片却是「未命名」。
 # --------------------------------------------------------------------------
+async def _assign_owner(session, vm_id, agent_id="agent-1"):
+    """别名测试预置已完成下发的归属，不让状态上报偷偷认领未绑定配置。"""
+    from ai_phone.server.ios_sim.models import IosSimVmInstance
+
+    vm = await session.get(IosSimVmInstance, vm_id)
+    vm.assigned_agent_id = agent_id
+    await session.commit()
+
+
 async def _alias_rows(session):
     from sqlalchemy import select as _select
 
@@ -941,6 +1329,7 @@ async def test_running_moves_alias_to_udid(client, session):
     from ai_phone.server.ios_sim.service import handle_vm_status
 
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
+    await _assign_owner(session, vm["id"])
     await handle_vm_status(
         "agent-1",
         {"vm_id": vm["id"], "state": "running", "ok": True, "udid": "UDID-RUN"},
@@ -954,11 +1343,14 @@ async def test_stopped_returns_alias_to_placeholder(client, session):
     from ai_phone.server.ios_sim.service import handle_vm_status
 
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
+    await _assign_owner(session, vm["id"])
     for state in ("running", "stopped"):
         await handle_vm_status(
             "agent-1",
             {"vm_id": vm["id"], "state": state, "ok": True, "udid": "UDID-RUN"},
         )
+        if state == "running":
+            assert await _alias_rows(session) == {"UDID-RUN": "sim-01"}
     assert await _alias_rows(session) == {f"ios-sim:{vm['id']}": "sim-01"}
 
 
@@ -968,6 +1360,7 @@ async def test_restart_after_stop_does_not_self_conflict(client, session):
     from ai_phone.server.ios_sim.service import handle_vm_status
 
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
+    await _assign_owner(session, vm["id"])
     for state in ("running", "stopped", "running"):
         await handle_vm_status(
             "agent-1",
@@ -981,11 +1374,13 @@ async def test_agent_offline_returns_alias_to_placeholder(client, session):
     from ai_phone.server.ios_sim.service import handle_vm_status, mark_agent_vms_offline
 
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
+    await _assign_owner(session, vm["id"])
     await handle_vm_status(
         "agent-1",
         {"vm_id": vm["id"], "state": "running", "ok": True, "udid": "UDID-RUN"},
     )
-    await mark_agent_vms_offline("agent-1")
+    assert await _alias_rows(session) == {"UDID-RUN": "sim-01"}
+    assert await mark_agent_vms_offline("agent-1") == 1
     assert await _alias_rows(session) == {f"ios-sim:{vm['id']}": "sim-01"}
 
 
@@ -1004,6 +1399,7 @@ async def test_rename_while_running_keeps_alias_on_udid(client, session):
     from ai_phone.server.ios_sim.service import handle_vm_status
 
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
+    await _assign_owner(session, vm["id"])
     await handle_vm_status(
         "agent-1",
         {"vm_id": vm["id"], "state": "running", "ok": True, "udid": "UDID-RUN"},
@@ -1060,6 +1456,7 @@ async def test_alias_binding_failure_does_not_break_state_machine(client, sessio
     from ai_phone.server.models import DeviceAlias
 
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
+    await _assign_owner(session, vm["id"])
     # 制造冲突：让目标 UDID 先被别的别名占住
     session.add(DeviceAlias(serial="UDID-RUN", alias="someone-else", note=""))
     await session.commit()

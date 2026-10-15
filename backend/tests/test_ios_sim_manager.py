@@ -33,10 +33,11 @@ class FakeLauncher:
     instances = []
     alive_udids: set = set()
 
-    def __init__(self, udid, ports=None, expect_sim_name=""):
+    def __init__(self, udid, ports=None, expect_sim_name="", device_type=""):
         self.udid = udid
         self.ports = ports or wda_mod.allocate_ports(udid)
         self.expect_sim_name = expect_sim_name
+        self.device_type = device_type
         self.started = 0
         self.stopped = 0
         FakeLauncher.instances.append(self)
@@ -109,7 +110,7 @@ def env(monkeypatch, tmp_path):
             return ""
         return ""
 
-    def fake_list_all(self):
+    def fake_list_all(self, **_kwargs):
         # 置 True 可模拟 simctl 列举失败（严格版会抛，宽松版返回空表）
         if state.get("list_fails"):
             raise mgr_mod.SimctlListFailed("simctl 挂了")
@@ -203,17 +204,18 @@ def test_start_reuses_existing_instance_by_name(env):
     assert [c[0] for c in env["calls"]].count("create") == 1
 
 
-def test_start_recreates_when_config_changed(env):
-    """机型/系统版本变了等于换一台机器 → 删了重建（成本仅 0.19s/17MB）。"""
+def test_start_refuses_changed_config_without_deleting_data(env):
+    """启动不能暗中把一台已有机器替换成空白机器。"""
     m = IosSimVmManager()
     m.start_sync(_msg())
     m2 = IosSimVmManager()
     env["create_udid"] = "NEW-UDID"
-    res = m2.start_sync(_msg(device_type=_DT + "-Plus"))
-    assert res["udid"] == "NEW-UDID"
+    with pytest.raises(RuntimeError, match="配置不一致"):
+        m2.start_sync(_msg(device_type=_DT + "-Plus"))
     cmds = [c[0] for c in env["calls"]]
-    assert "delete" in cmds
-    assert cmds.count("create") == 2
+    assert "delete" not in cmds
+    assert cmds.count("create") == 1
+    assert _UDID in env["instances"]
 
 
 def test_start_is_idempotent_within_process(env):
@@ -240,7 +242,7 @@ def test_already_booted_is_not_an_error(env, monkeypatch):
 
 
 def test_start_failure_leaves_no_ghost(env, monkeypatch):
-    """启动链失败必须把占位、纳管、端口全部清干净，不留幽灵 running。"""
+    """失败必须实际关闭 guest 再清登记，保留实例数据与持久端口。"""
     class BoomLauncher(FakeLauncher):
         def start(self, **_kw):
             raise RuntimeError("WDA 起不来")
@@ -252,6 +254,8 @@ def test_start_failure_leaves_no_ghost(env, monkeypatch):
     assert m._runtimes == {}
     assert not sim_disc.is_managed(_UDID)
     assert wda_mod.peek_ports(_UDID) is None
+    assert env["instances"][_UDID]["state"] == "Shutdown"
+    assert _UDID in wda_mod._load_reservations()
 
 
 # --------------------------------------------------------------------------
@@ -523,15 +527,8 @@ def test_reconcile_passes_expected_name_to_launcher(env):
 
 
 @pytest.mark.asyncio
-async def test_reclaimed_without_wda_reports_stopped_not_starting(env):
-    """实例在、WDA 没了 → 必须报 stopped，**不能报 starting**。
-
-    starting 在前端不显示「启动」按钮（只显示「停止」），用户会卡在永远的
-    「启动中」里出不来。报 stopped 才给出正确的下一步动作。
-
-    这条对 iPad 尤其要紧：它走 xcodebuild，Agent 一重启 WDA 就跟着没了，
-    于是这个分支从 iPhone 上的罕见边界变成 iPad 上的常态。
-    """
+async def test_reclaimed_without_wda_reports_error_not_false_stopped(env):
+    """guest 仍在运行但 WDA 未就绪：报告可处理的 error，不伪装成已关机。"""
     env["instances"][_UDID] = {
         "name": managed_sim_name(_VM), "state": "Booted", "runtime": _RT,
         "device_type": _DT, "is_available": True,
@@ -553,8 +550,9 @@ async def test_reclaimed_without_wda_reports_stopped_not_starting(env):
 
     status = [p for p in client.sent if p.get("type") == P.MSG_IOS_SIM_VM_STATUS]
     assert len(status) == 1
-    assert status[0]["state"] == "stopped", "WDA 没活着却报了 starting，用户会卡死"
-    assert status[0]["reason"] == "reclaimed"
+    assert status[0]["state"] == "error"
+    assert status[0]["reason"] == "wda_not_ready"
+    assert status[0]["details"]["guest_state"] == "Booted"
 
 
 @pytest.mark.asyncio
@@ -588,7 +586,7 @@ def test_reported_states_are_actionable_in_ui():
     """
     can_start = {"stopped", "error", "unavailable", "agent_offline"}
     can_stop = {"starting", "running"}
-    for state in ("running", "stopped"):  # report_reclaimed_vms 只会报这两个
+    for state in ("running", "error"):
         assert state in can_start | can_stop, f"{state} 在界面上没有任何按钮可点"
 
 
@@ -650,7 +648,8 @@ async def test_sweep_needs_two_consecutive_misses(env):
 
     assert await m.sweep_vanished_vms(client, set()) == 0   # 第一轮只记账
     assert _VM in m._runtimes
-    assert await m.sweep_vanished_vms(client, set()) == 1   # 第二轮才判消失
+    env["instances"][_UDID]["state"] = "Shutdown"
+    assert await m.sweep_vanished_vms(client, set()) == 1   # 确认停止后才清登记
     assert _VM not in m._runtimes
     assert sent[-1]["state"] == "stopped"
     assert sent[-1]["reason"] == "vanished"
@@ -675,3 +674,742 @@ async def test_sweep_resets_counter_when_present(env):
     assert m._runtimes[_VM].missing_ticks == 1
     await m.sweep_vanished_vms(client, {_UDID})
     assert m._runtimes[_VM].missing_ticks == 0
+
+
+# --------------------------------------------------------------------------
+# 失败、重连与扫描交错：只允许已确认的事实改变所有权和资源预留。
+# --------------------------------------------------------------------------
+class RecordingClient:
+    agent_id = "isolated-test-agent"
+
+    def __init__(self):
+        self.sent = []
+
+    async def send(self, payload):
+        self.sent.append(payload)
+        return True
+
+    async def refresh_devices(self):
+        return None
+
+
+def test_sim_names_do_not_collapse_distinct_vm_ids():
+    a = "a" * 24 + "1"
+    b = "a" * 24 + "2"
+    assert managed_sim_name(a) != managed_sim_name(b)
+    assert vmid_from_sim_name(managed_sim_name(a)) == a
+    with pytest.raises(ValueError):
+        managed_sim_name("a-b")
+    assert vmid_from_sim_name("aiphone_sim_a-b") == ""
+
+
+def test_start_inventory_failure_never_creates_duplicate(env):
+    m = IosSimVmManager()
+    m.start_sync(_msg())
+    env["list_fails"] = True
+    with pytest.raises(mgr_mod.SimctlListFailed):
+        IosSimVmManager().start_sync(_msg())
+    assert [c[0] for c in env["calls"]].count("create") == 1
+    assert env["instances"][_UDID]["state"] == "Booted"
+
+
+@pytest.mark.parametrize("fields", [{"udid": _UDID}, {"require_existing_instance": True}])
+def test_missing_previously_created_instance_is_not_rebuilt(env, fields):
+    with pytest.raises(RuntimeError, match="已缺失"):
+        IosSimVmManager().start_sync(_msg(**fields))
+    assert not any(c[0] == "create" for c in env["calls"])
+
+
+def test_start_refuses_udid_different_from_server_record(env):
+    IosSimVmManager().start_sync(_msg())
+    with pytest.raises(mgr_mod.InstanceIdentityError, match="UDID"):
+        IosSimVmManager().start_sync(_msg(udid="STALE-UDID"))
+    assert [c[0] for c in env["calls"]].count("create") == 1
+
+
+def test_duplicate_names_block_start_and_delete(env):
+    m = IosSimVmManager()
+    m.start_sync(_msg())
+    env["instances"]["DUPLICATE"] = dict(env["instances"][_UDID])
+    with pytest.raises(mgr_mod.InstanceIdentityError):
+        IosSimVmManager().start_sync(_msg())
+    result = m.delete_sync(_VM)
+    assert result["ok"] is False
+    assert not any(c[0] in {"shutdown", "delete"} for c in env["calls"])
+
+
+@pytest.mark.parametrize("message", ["CoreSimulator unavailable", "Unable to shutdown device"])
+def test_shutdown_failure_preserves_runtime_and_reservation(env, monkeypatch, message):
+    m = IosSimVmManager()
+    m.start_sync(_msg())
+    ports = wda_mod.peek_ports(_UDID)
+    original = mgr_mod.simctl_run
+
+    def fail_shutdown(*args, **kwargs):
+        if args[0] == "shutdown":
+            raise SimctlError(list(args), 1, "", message)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(mgr_mod, "simctl_run", fail_shutdown)
+    result = m.stop_sync(_VM)
+    assert result["ok"] is False
+    assert result["reason"] == "stop_failed"
+    assert _VM in m._runtimes
+    assert env["instances"][_UDID]["state"] == "Booted"
+    assert wda_mod.peek_ports(_UDID) == ports
+    assert _UDID in wda_mod._load_reservations()
+    assert m.delete_sync(_VM)["ok"] is False
+    assert not any(c[0] == "delete" for c in env["calls"])
+
+
+def test_shutdown_return_code_alone_is_not_stop_confirmation(env, monkeypatch):
+    m = IosSimVmManager()
+    m.start_sync(_msg())
+    original = mgr_mod.simctl_run
+    monkeypatch.setattr(mgr_mod, "simctl_run", lambda *a, **k: "" if a[0] == "shutdown" else original(*a, **k))
+    assert m.stop_sync(_VM)["ok"] is False
+    assert _VM in m._runtimes
+
+
+def test_stop_after_agent_restart_finds_owned_instance(env):
+    IosSimVmManager().start_sync(_msg())
+    fresh = IosSimVmManager()
+    result = fresh.stop_sync(_VM)
+    assert result["ok"] is True
+    assert env["instances"][_UDID]["state"] == "Shutdown"
+    assert _UDID in wda_mod._load_reservations()
+
+
+def test_stop_refuses_wrong_udid_without_side_effect(env):
+    m = IosSimVmManager()
+    m.start_sync(_msg())
+    env["instances"]["OTHER"] = {**env["instances"][_UDID], "name": "personal-unmanaged-simulator"}
+    result = m.stop_sync(_VM, "OTHER")
+    assert result["ok"] is False
+    assert result["reason"] == "udid_name_mismatch"
+    assert not any(c[0] == "shutdown" for c in env["calls"])
+    assert m._runtimes[_VM].ready is True
+
+
+def test_stop_failed_inventory_keeps_runtime(env):
+    m = IosSimVmManager()
+    m.start_sync(_msg())
+    env["list_fails"] = True
+    result = m.stop_sync(_VM)
+    assert result["ok"] is False
+    assert result["reason"] == "instance_list_failed"
+    assert _VM in m._runtimes
+    assert sim_disc.is_managed(_UDID)
+
+
+def test_start_failed_cleanup_keeps_launcher_for_retry(env, monkeypatch):
+    class BrokenWda(FakeLauncher):
+        def start(self, **_kw):
+            super().start()
+            raise RuntimeError("WDA did not become ready")
+
+    original = mgr_mod.simctl_run
+
+    def fail_shutdown(*args, **kwargs):
+        if args[0] == "shutdown":
+            raise SimctlError(list(args), 1, "", "CoreSimulator unavailable")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(mgr_mod, "IosSimulatorWdaLauncher", BrokenWda)
+    monkeypatch.setattr(mgr_mod, "simctl_run", fail_shutdown)
+    m = IosSimVmManager()
+    with pytest.raises(RuntimeError, match="关机尚未完成"):
+        m.start_sync(_msg())
+    rt = m._runtimes[_VM]
+    assert rt.launcher is FakeLauncher.instances[-1]
+    assert rt.launcher.stopped == 1
+    assert rt.details["cleanup_pending"] is True
+    assert rt.ready is False
+    assert wda_mod.peek_ports(_UDID) is not None
+    with pytest.raises(RuntimeError, match="仍待清理"):
+        m.start_sync(_msg())
+    assert len(FakeLauncher.instances) == 1
+    monkeypatch.setattr(mgr_mod, "simctl_run", original)
+    assert m.stop_sync(_VM)["ok"] is True
+    assert m._runtimes == {}
+
+
+def test_bootstatus_failure_shuts_down_without_deleting_data(env, monkeypatch):
+    original = mgr_mod.simctl_run
+
+    def fail_bootstatus(*args, **kwargs):
+        if args[0] == "bootstatus":
+            raise SimctlError(list(args), 1, "", "boot timed out")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(mgr_mod, "simctl_run", fail_bootstatus)
+    m = IosSimVmManager()
+    with pytest.raises(RuntimeError):
+        m.start_sync(_msg())
+    assert env["instances"][_UDID]["state"] == "Shutdown"
+    assert not any(c[0] == "delete" for c in env["calls"])
+    assert m._runtimes == {}
+
+
+def test_delete_failure_does_not_release_reserved_port(env, monkeypatch):
+    m = IosSimVmManager()
+    m.start_sync(_msg())
+    reservation = wda_mod._load_reservations()[_UDID]
+    original = mgr_mod.simctl_run
+
+    def fail_delete(*args, **kwargs):
+        if args[0] == "delete":
+            raise SimctlError(list(args), 1, "", "invalid device response")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(mgr_mod, "simctl_run", fail_delete)
+    assert m.delete_sync(_VM)["ok"] is False
+    assert _UDID in env["instances"]
+    assert wda_mod._load_reservations()[_UDID] == reservation
+
+
+@pytest.mark.asyncio
+async def test_scan_failure_preserves_managed_instance_and_recovers(env):
+    m = IosSimVmManager()
+    m.start_sync(_msg())
+    client = RecordingClient()
+    env["list_fails"] = True
+    await m.sweep_vanished_vms(client, set())
+    await m.sweep_vanished_vms(client, set())
+    assert client.sent[-1]["state"] == "error"
+    assert _VM in m._runtimes
+    assert sim_disc.is_managed(_UDID)
+    assert not any(c[0] == "shutdown" for c in env["calls"])
+    env["list_fails"] = False
+    await m.sweep_vanished_vms(client, {_UDID})
+    assert client.sent[-1]["state"] == "running"
+    assert client.sent[-1]["reason"] == "discovery_recovered"
+
+
+@pytest.mark.asyncio
+async def test_live_guest_missing_from_device_scan_is_never_stopped(env):
+    m = IosSimVmManager()
+    m.start_sync(_msg())
+    client = RecordingClient()
+    await m.sweep_vanished_vms(client, set())
+    await m.sweep_vanished_vms(client, set())
+    assert client.sent[-1]["state"] == "error"
+    assert client.sent[-1]["details"]["guest_state"] == "Booted"
+    assert _VM in m._runtimes and sim_disc.is_managed(_UDID)
+    assert m.stop_sync(_VM)["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_failed_orphan_inventory_is_not_reported_as_empty(env):
+    m = IosSimVmManager()
+    m.start_sync(_msg())
+    env["list_fails"] = True
+    client = RecordingClient()
+    assert await m.report_orphan_reconcile(client) == 0
+    assert client.sent == []
+
+
+@pytest.mark.asyncio
+async def test_orphan_inventory_classifies_guest_not_wda_state(env):
+    env["instances"][_UDID] = {"name": managed_sim_name(_VM), "state": "Booted",
+                                 "runtime": _RT, "device_type": _DT}
+    env["instances"]["BOOTING"] = {"name": managed_sim_name("booting"), "state": "Booting",
+                                      "runtime": _RT, "device_type": _DT}
+    env["instances"]["STOPPED"] = {"name": managed_sim_name("stopped"), "state": "Shutdown",
+                                      "runtime": _RT, "device_type": _DT}
+    client = RecordingClient()
+    m = IosSimVmManager()
+    assert await m.report_orphan_reconcile(client) == 3
+    result = client.sent[-1]
+    assert result["inventory_complete"] is True
+    assert result["running_vm_ids"] == [_VM]
+    assert result["stopped_vm_ids"] == ["stopped"]
+    assert result["unknown_vm_ids"] == ["booting"]
+    assert result["instance_proofs"][_VM] == {
+        "udid": _UDID, "name": managed_sim_name(_VM), "state": "Booted"
+    }
+    assert "booting" not in result["instance_proofs"]
+
+
+@pytest.mark.asyncio
+async def test_delete_ack_confirms_absence_and_preserves_request_id(env):
+    m = IosSimVmManager()
+    m.start_sync(_msg())
+    client = RecordingClient()
+    await m.handle_delete(client, {"vm_id": _VM, "udid": _UDID, "request_id": "delete-1"})
+    result = client.sent[-1]
+    assert result["ok"] is True and result["reason"] == "deleted"
+    assert result["details"]["cleanup_confirmed"] is True
+    assert result["request_id"] == "delete-1"
+    await m.handle_delete(client, {"vm_id": _VM, "udid": _UDID, "request_id": "delete-2"})
+    assert client.sent[-1]["reason"] == "not_found"
+    assert client.sent[-1]["details"]["cleanup_confirmed"] is True
+
+
+@pytest.mark.asyncio
+async def test_sweep_observations_refer_to_original_start_request(env):
+    m = IosSimVmManager()
+    m.start_sync(_msg(request_id="start-1"))
+    client = RecordingClient()
+    await m.sweep_vanished_vms(client, set())
+    await m.sweep_vanished_vms(client, set())
+    assert client.sent[-1]["observed_request_id"] == "start-1"
+    await m.sweep_vanished_vms(client, {_UDID})
+    assert client.sent[-1]["observed_request_id"] == "start-1"
+    env["instances"][_UDID]["state"] = "Shutdown"
+    await m.sweep_vanished_vms(client, set())
+    await m.sweep_vanished_vms(client, set())
+    assert client.sent[-1]["state"] == "stopped"
+    assert client.sent[-1]["observed_request_id"] == "start-1"
+
+
+@pytest.mark.asyncio
+async def test_port_allocation_error_still_reports_created_instance(env, monkeypatch):
+    def fail_ports(_udid):
+        raise OSError("reservation is read-only")
+
+    monkeypatch.setattr(mgr_mod, "allocate_ports", fail_ports)
+    m = IosSimVmManager()
+    client = RecordingClient()
+    await m.handle_start(client, _msg())
+    assert client.sent[-1]["state"] == "error"
+    assert client.sent[-1]["udid"] == _UDID
+    assert client.sent[-1]["details"]["instance_created"] is True
+    assert env["instances"][_UDID]["state"] == "Shutdown"
+    assert not any(c[0] == "boot" for c in env["calls"])
+
+
+@pytest.mark.asyncio
+async def test_start_failure_reports_created_identity_after_cleanup(env, monkeypatch):
+    class BrokenWda(FakeLauncher):
+        def start(self, **_kw):
+            raise RuntimeError("WDA failed")
+
+    monkeypatch.setattr(mgr_mod, "IosSimulatorWdaLauncher", BrokenWda)
+    client = RecordingClient()
+    m = IosSimVmManager()
+    await m.handle_start(client, _msg())
+    assert client.sent[-1]["state"] == "error"
+    assert client.sent[-1]["udid"] == _UDID
+    assert client.sent[-1]["details"]["instance_created"] is True
+    assert client.sent[-1]["details"]["cleanup_confirmed"] is True
+    assert env["instances"][_UDID]["state"] == "Shutdown"
+
+
+def test_reconnect_keeps_original_launcher_process_handle(env):
+    m = IosSimVmManager()
+    m.start_sync(_msg())
+    launcher = m._runtimes[_VM].launcher
+    m.reconcile_running_vms_sync()
+    assert m._runtimes[_VM].launcher is launcher
+    assert len(FakeLauncher.instances) == 1
+
+
+def test_reclaim_cannot_resurrect_instance_stopped_during_scan(env, monkeypatch):
+    m = IosSimVmManager()
+    m.start_sync(_msg())
+    original_list = m._list_all_instances_strict
+
+    def stale_inventory():
+        snapshot = original_list()
+        monkeypatch.setattr(m, "_list_all_instances_strict", original_list)
+        assert m.stop_sync(_VM)["ok"] is True
+        return snapshot
+
+    monkeypatch.setattr(m, "_list_all_instances_strict", stale_inventory)
+    assert m.reconcile_running_vms_sync() == []
+    assert _VM not in m._runtimes
+    assert not sim_disc.is_managed(_UDID)
+
+
+def test_reclaim_skips_start_in_progress(env, monkeypatch):
+    import threading
+
+    entered = threading.Event()
+    release = threading.Event()
+    failures = []
+
+    class SlowLauncher(FakeLauncher):
+        def start(self, **_kw):
+            entered.set()
+            assert release.wait(2)
+            super().start()
+
+    monkeypatch.setattr(mgr_mod, "IosSimulatorWdaLauncher", SlowLauncher)
+    m = IosSimVmManager()
+
+    def run_start():
+        try:
+            m.start_sync(_msg())
+        except Exception as exc:
+            failures.append(exc)
+
+    worker = threading.Thread(target=run_start)
+    worker.start()
+    try:
+        assert entered.wait(2)
+        assert m.reconcile_running_vms_sync() == []
+        assert m._runtimes[_VM].ready is False
+        assert not sim_disc.is_managed(_UDID)
+    finally:
+        release.set()
+        worker.join(2)
+    assert not worker.is_alive() and failures == []
+    assert m._runtimes[_VM].ready is True
+
+
+@pytest.mark.asyncio
+async def test_start_handler_returns_only_after_terminal_report(env):
+    client = RecordingClient()
+    await IosSimVmManager().handle_start(client, _msg())
+    assert [p["state"] for p in client.sent] == ["starting", "running"]
+
+
+@pytest.mark.parametrize("payload", ["", "{}", "[]", '{"devices": []}', '{"devices": {"ios": [{}]}}'])
+def test_malformed_inventory_is_not_absence(monkeypatch, payload, tmp_path):
+    monkeypatch.setattr(mgr_mod, "simctl_run", lambda *a, **k: payload)
+    m = IosSimVmManager(runtime_dir=tmp_path)
+    with pytest.raises(mgr_mod.SimctlListFailed):
+        m._list_all_instances_strict()
+
+
+# 首次绑定失败回滚是本次请求的一次清理；旧实例重启失败不删除数据。
+def _fail_wda_start(monkeypatch):
+    class BrokenWda(FakeLauncher):
+        def start(self, **_kwargs):
+            super().start()
+            raise RuntimeError("WDA startup failed")
+
+    monkeypatch.setattr(mgr_mod, "IosSimulatorWdaLauncher", BrokenWda)
+
+
+@pytest.mark.asyncio
+async def test_first_bind_failure_rolls_back_new_instance_once(env, monkeypatch):
+    _fail_wda_start(monkeypatch)
+    manager = IosSimVmManager()
+    client = RecordingClient()
+    await manager.handle_start(client, _msg(rollback_new_instance=True, request_id="first-bind"))
+    result = client.sent[-1]
+    assert result["state"] == "error" and result["request_id"] == "first-bind"
+    assert result["udid"] == _UDID
+    assert result["details"]["rollback_new_instance"] is True
+    assert result["details"]["cleanup_confirmed"] is True
+    assert result["details"]["instance_deleted"] is True
+    assert result["details"]["instance_created"] is False
+    assert result["details"]["created_in_attempt"] is True
+    assert _UDID not in env["instances"]
+    assert _UDID not in wda_mod._load_reservations()
+    assert manager._runtimes == {}
+    commands = [c[0] for c in env["calls"]]
+    assert commands.count("shutdown") == 1
+    assert commands.count("delete") == 1
+
+
+@pytest.mark.parametrize("rollback_flag", [False, True])
+def test_bound_restart_failure_never_deletes_existing_data(env, monkeypatch, rollback_flag):
+    manager = IosSimVmManager()
+    manager.start_sync(_msg())
+    manager.stop_sync(_VM)
+    env["instances"][_UDID]["test_data"] = "preserve-existing-data"
+    _fail_wda_start(monkeypatch)
+    restarted = IosSimVmManager()
+    with pytest.raises(mgr_mod.SimVmStartFailed) as failure:
+        restarted.start_sync(_msg(udid=_UDID, require_existing_instance=True,
+                                  rollback_new_instance=rollback_flag))
+    assert failure.value.details["rollback_new_instance"] is False
+    assert failure.value.details["instance_deleted"] is False
+    assert failure.value.details["created_in_attempt"] is False
+    assert env["instances"][_UDID]["test_data"] == "preserve-existing-data"
+    assert _UDID in wda_mod._load_reservations()
+    assert not any(c[0] == "delete" for c in env["calls"])
+
+
+@pytest.mark.asyncio
+async def test_first_bind_stop_failure_does_not_retry_or_delete(env, monkeypatch):
+    _fail_wda_start(monkeypatch)
+    original = mgr_mod.simctl_run
+    stop_calls = []
+
+    def fail_stop(*args, **kwargs):
+        if args[0] == "shutdown":
+            stop_calls.append(args)
+            raise SimctlError(list(args), 1, "", "shutdown failed")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(mgr_mod, "simctl_run", fail_stop)
+    manager = IosSimVmManager()
+    client = RecordingClient()
+    await manager.handle_start(client, _msg(rollback_new_instance=True))
+    assert client.sent[-1]["details"]["cleanup_confirmed"] is False
+    assert len(stop_calls) == 1
+    assert _VM in manager._runtimes
+    assert _UDID in env["instances"]
+    await manager.sweep_vanished_vms(client, set())
+    await manager.sweep_vanished_vms(client, set())
+    assert len(stop_calls) == 1
+    assert not any(c[0] == "delete" for c in env["calls"])
+
+
+@pytest.mark.asyncio
+async def test_first_bind_delete_failure_is_terminal_without_retry(env, monkeypatch):
+    _fail_wda_start(monkeypatch)
+    original = mgr_mod.simctl_run
+    delete_calls = []
+
+    def fail_delete(*args, **kwargs):
+        if args[0] == "delete":
+            delete_calls.append(args)
+            raise SimctlError(list(args), 1, "", "delete failed")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(mgr_mod, "simctl_run", fail_delete)
+    manager = IosSimVmManager()
+    client = RecordingClient()
+    await manager.handle_start(client, _msg(rollback_new_instance=True))
+    assert client.sent[-1]["state"] == "error"
+    assert client.sent[-1]["details"]["cleanup_confirmed"] is False
+    assert env["instances"][_UDID]["state"] == "Shutdown"
+    assert _UDID in wda_mod._load_reservations()
+    await manager.sweep_vanished_vms(client, set())
+    await manager.sweep_vanished_vms(client, set())
+    assert len(delete_calls) == 1
+
+
+@pytest.mark.parametrize("create_result", ["error", "empty"])
+def test_create_failed_after_side_effect_rolls_back_only_exact_instance(env, monkeypatch, create_result):
+    original = mgr_mod.simctl_run
+
+    def create_with_uncertain_result(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if args[0] == "create":
+            if create_result == "error":
+                raise SimctlError(list(args), 1, "", "creation response lost")
+            return ""
+        return result
+
+    monkeypatch.setattr(mgr_mod, "simctl_run", create_with_uncertain_result)
+    with pytest.raises(mgr_mod.SimVmStartFailed) as failure:
+        IosSimVmManager().start_sync(_msg(rollback_new_instance=True))
+    assert failure.value.udid == _UDID
+    assert failure.value.details["cleanup_confirmed"] is True
+    assert failure.value.details["instance_deleted"] is True
+    assert failure.value.details["created_in_attempt"] is True
+    assert _UDID not in env["instances"]
+    assert [c[0] for c in env["calls"]].count("create") == 1
+    assert [c for c in env["calls"] if c[0] == "delete"] == [("delete", _UDID)]
+
+
+def test_create_failure_with_duplicate_names_never_guesses_cleanup_target(env, monkeypatch):
+    original = mgr_mod.simctl_run
+
+    def duplicate_create(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if args[0] == "create":
+            env["instances"]["DUPLICATE"] = dict(env["instances"][_UDID])
+            raise SimctlError(list(args), 1, "", "creation failed")
+        return result
+
+    monkeypatch.setattr(mgr_mod, "simctl_run", duplicate_create)
+    with pytest.raises(mgr_mod.SimVmStartFailed) as failure:
+        IosSimVmManager().start_sync(_msg(rollback_new_instance=True))
+    assert failure.value.details["cleanup_confirmed"] is False
+    assert failure.value.udid == ""
+    assert set(env["instances"]) == {_UDID, "DUPLICATE"}
+    assert not any(c[0] in {"delete", "shutdown"} for c in env["calls"])
+
+
+def test_create_failure_with_unknown_inventory_never_guesses_absence(env, monkeypatch):
+    original = mgr_mod.simctl_run
+
+    def fail_create_and_inventory(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if args[0] == "create":
+            env["list_fails"] = True
+            raise SimctlError(list(args), 1, "", "creation response lost")
+        return result
+
+    monkeypatch.setattr(mgr_mod, "simctl_run", fail_create_and_inventory)
+    with pytest.raises(mgr_mod.SimVmStartFailed) as failure:
+        IosSimVmManager().start_sync(_msg(rollback_new_instance=True))
+    assert failure.value.details["cleanup_confirmed"] is False
+    assert _UDID in env["instances"]
+    assert not any(c[0] in {"delete", "shutdown"} for c in env["calls"])
+
+
+def test_successful_first_bind_does_not_rollback(env):
+    result = IosSimVmManager().start_sync(_msg(rollback_new_instance=True))
+    assert result["udid"] == _UDID
+    assert env["instances"][_UDID]["state"] == "Booted"
+    assert not any(c[0] in {"delete", "shutdown"} for c in env["calls"])
+
+
+@pytest.mark.asyncio
+async def test_first_bind_flag_cannot_delete_reused_disk_instance_after_boot_failure(env, monkeypatch):
+    """Server 尚未绑定不等于宿主没有旧数据；真实 ensure 复用时禁止首次失败回滚删除。"""
+    env["instances"][_UDID] = {
+        "name": managed_sim_name(_VM), "state": "Shutdown", "runtime": _RT,
+        "device_type": _DT, "is_available": True, "test_data": "old-data-survives",
+    }
+    original = mgr_mod.simctl_run
+
+    def fail_boot(*args, **kwargs):
+        if args[0] == "boot":
+            raise SimctlError(list(args), 1, "", "boot failed")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(mgr_mod, "simctl_run", fail_boot)
+    client = RecordingClient()
+    await IosSimVmManager().handle_start(client, _msg(rollback_new_instance=True,
+                                                     require_existing_instance=False))
+    result = client.sent[-1]
+    assert result["state"] == "error"
+    assert result["details"]["created_in_attempt"] is False
+    assert result["details"]["rollback_new_instance"] is False
+    assert result["details"]["instance_deleted"] is False
+    assert result["details"]["instance_created"] is True
+    assert env["instances"][_UDID]["test_data"] == "old-data-survives"
+    assert not any(c[0] in {"create", "delete"} for c in env["calls"])
+
+
+@pytest.mark.asyncio
+async def test_wda_timeout_preserves_cleanup_proof_across_to_thread(env, monkeypatch):
+    class TimedOutWda(FakeLauncher):
+        def start(self, **_kwargs):
+            raise TimeoutError("native WDA wait timed out")
+
+    monkeypatch.setattr(mgr_mod, "IosSimulatorWdaLauncher", TimedOutWda)
+    client = RecordingClient()
+    await IosSimVmManager().handle_start(client, _msg(rollback_new_instance=True))
+    result = client.sent[-1]
+    assert result["state"] == "error"
+    assert result["udid"] == _UDID
+    assert result["details"]["cleanup_confirmed"] is True
+    assert result["details"]["instance_deleted"] is True
+    assert result["details"]["created_in_attempt"] is True
+
+
+@pytest.mark.parametrize("preexisting", [False, True])
+def test_start_deadline_stops_before_wda_and_preserves_existing_data(env, monkeypatch, preexisting):
+    clock = [0.0]
+    original = mgr_mod.simctl_run
+    boot_timeouts = []
+    if preexisting:
+        env["instances"][_UDID] = {
+            "name": managed_sim_name(_VM), "state": "Shutdown", "runtime": _RT,
+            "device_type": _DT, "is_available": True, "test_data": "keep",
+        }
+
+    def delayed_boot(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if args[0] == "boot":
+            boot_timeouts.append(kwargs["timeout"])
+            clock[0] += 0.03  # 模拟原生调用超过余下的 1ms，而不是更改生产阶段逻辑。
+        return result
+
+    monkeypatch.setattr(mgr_mod.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(mgr_mod, "simctl_run", delayed_boot)
+    with pytest.raises(mgr_mod.SimVmStartFailed, match="deadline exceeded") as failure:
+        IosSimVmManager().start_sync(_msg(rollback_new_instance=True, operation_timeout_sec=0.001))
+    assert boot_timeouts == [pytest.approx(0.001)]
+    assert FakeLauncher.instances == [], "预算耗尽后仍进入了 WDA 启动阶段"
+    assert not any(c[0] == "bootstatus" for c in env["calls"])
+    assert failure.value.details["created_in_attempt"] is (not preexisting)
+    if preexisting:
+        assert env["instances"][_UDID]["test_data"] == "keep"
+        assert not any(c[0] == "delete" for c in env["calls"])
+    else:
+        assert _UDID not in env["instances"]
+        assert failure.value.details["instance_deleted"] is True
+
+
+def test_bootstatus_receives_only_remaining_operation_budget(env, monkeypatch):
+    clock = [0.0]
+    original = mgr_mod.simctl_run
+    timeouts = {}
+
+    def timed_calls(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if args[0] in {"boot", "bootstatus"}:
+            timeouts[args[0]] = kwargs["timeout"]
+            clock[0] += 0.2
+        return result
+
+    monkeypatch.setattr(mgr_mod.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(mgr_mod, "simctl_run", timed_calls)
+    IosSimVmManager().start_sync(_msg(operation_timeout_sec=1.0))
+    assert timeouts["boot"] == pytest.approx(1.0)
+    assert timeouts["bootstatus"] == pytest.approx(0.8)
+
+
+@pytest.mark.parametrize("budget", [0, -1, float("nan"), float("inf")])
+def test_invalid_operation_budget_never_touches_instance(env, budget):
+    with pytest.raises(ValueError):
+        IosSimVmManager().start_sync(_msg(operation_timeout_sec=budget))
+    assert env["calls"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wire_deadline", [None, float("nan"), 10**12])
+async def test_executor_queue_consumes_start_budget_before_any_native_action(env, monkeypatch, wire_deadline):
+    """实际 handler→start_sync 链路：线程池等 60ms 后不能刷新原本仅 20ms 的预算。"""
+    import asyncio
+
+    async def delayed_worker(func, *args, **kwargs):
+        await asyncio.sleep(0.06)
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(mgr_mod.asyncio, "to_thread", delayed_worker)
+    message = _msg(operation_timeout_sec=0.02, rollback_new_instance=True,
+                   _operation_deadline=wire_deadline)
+    client = RecordingClient()
+    await IosSimVmManager().handle_start(client, message)
+    assert [payload["state"] for payload in client.sent] == ["starting", "error"]
+    assert "deadline exceeded" in client.sent[-1]["error"]
+    assert client.sent[-1]["details"]["operation_not_started"] is True
+    assert client.sent[-1]["details"]["cleanup_confirmed"] is True
+    assert client.sent[-1]["details"]["created_in_attempt"] is False
+    assert env["calls"] == [], "executor 排队超时后仍调用了 create/boot 或清理"
+    assert FakeLauncher.instances == []
+    assert message["_operation_deadline"] is wire_deadline, "不能改写原始网络消息"
+
+
+@pytest.mark.asyncio
+async def test_network_monotonic_deadline_is_not_trusted(env):
+    message = _msg(operation_timeout_sec=5.0, _operation_deadline=-1)
+    client = RecordingClient()
+    await IosSimVmManager().handle_start(client, message)
+    assert client.sent[-1]["state"] == "running"
+    assert message["_operation_deadline"] == -1
+
+
+@pytest.mark.asyncio
+async def test_expired_queue_report_does_not_inherit_old_creation_proof(env, monkeypatch):
+    import asyncio
+
+    manager = IosSimVmManager()
+    manager.start_sync(_msg())
+    assert manager._runtimes[_VM].details["created_in_attempt"] is True
+    env["calls"].clear()
+
+    async def delayed_worker(func, *args, **kwargs):
+        await asyncio.sleep(0.03)
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(mgr_mod.asyncio, "to_thread", delayed_worker)
+    client = RecordingClient()
+    await manager.handle_start(client, _msg(operation_timeout_sec=0.01, rollback_new_instance=True))
+    assert client.sent[-1]["details"]["operation_not_started"] is True
+    assert client.sent[-1]["details"]["created_in_attempt"] is False
+    assert client.sent[-1]["details"]["instance_deleted"] is False
+    assert client.sent[-1]["udid"] == _UDID
+    assert env["calls"] == []
+    assert env["instances"][_UDID]["state"] == "Booted"
+
+
+@pytest.mark.parametrize("with_budget", [False, True])
+def test_direct_start_remains_supported_without_internal_deadline(env, with_budget):
+    message = _msg(**({"operation_timeout_sec": 5.0} if with_budget else {}))
+    result = IosSimVmManager().start_sync(message)
+    assert result["udid"] == _UDID
+    assert env["instances"][_UDID]["state"] == "Booted"
+    assert "_operation_deadline" not in message

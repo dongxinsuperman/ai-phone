@@ -11,14 +11,21 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional
 
-from loguru import logger
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.shared import protocol as P
 
 from ..db import get_session_factory
 from ..hub import Hub
+from ..vm_lifecycle import (
+    record_creation_provenance, proves_live_managed_instance, send_operation_once,
+    expire_operation_if_due,
+    is_abandoned_cleanup_receipt, record_abandoned_cleanup_receipt,
+    accept_owner, accept_status, bind_owner, cleanup_foreign_copy, cleanup_abandoned_first_bind,
+    finish_operation, maintenance, runtime as lifecycle_runtime,
+    transaction_lock, update_runtime, host_id as agent_host_id, fail_attempt,
+)
 from ..models import AndroidVmInstance, DeviceAlias
 
 
@@ -77,23 +84,26 @@ def _pick_free_port(used: set[int]) -> Optional[int]:
     return None
 
 
-async def assign_emulator_port(
-    session: AsyncSession, vm: AndroidVmInstance
-) -> tuple[Optional[int], list[int]]:
-    """给待启动 VM 在全局端口池里分配一个不与其它 VM 冲突的端口。
-
-    返回 ``(assigned_port, exclude_ports)``：
-    - ``assigned_port``：Server 钦定的端口（池满返回 ``None``，退回 Agent 自选）。
-    - ``exclude_ports``：全局已占端口列表，随 ``vm_start`` 下发给 Agent 作兜底避让。
-
-    **副作用（轻量预占）**：把 ``assigned_port`` 写进 ``vm.adb_serial`` 占坑，让随后并发
-    发起的另一台 VM 启动在计算 ``used`` 时就能看见它、不会撞同一端口。本机该端口若被其它
-    进程占用，由 Agent 侧 ``_choose_port`` 的本机探测兜底改选，并经 ``vm_status`` 回填真实 serial。
-    """
+async def assign_emulator_port(session: AsyncSession, vm: AndroidVmInstance, hub: Optional[Hub] = None) -> tuple[Optional[int], list[int]]:
+    """Reserve a global serial atomically until the caller commits or rolls back."""
+    await transaction_lock(session, "android-vm-ports")
     used = await used_emulator_ports(session, exclude_vm_id=vm.id)
-    port = _pick_free_port(used)
-    if port is not None:
-        vm.adb_serial = f"emulator-{port}"
+    if hub is not None and not vm.assigned_agent_id and not lifecycle_runtime(vm).get("instance_created"):
+        from ..lockstore import get_default_lock_store
+        store = getattr(hub, "vm_lock_store", None) or get_default_lock_store()
+        for serial in store.snapshot():
+            occupied = _port_from_serial(serial)
+            if occupied is not None:
+                used.add(occupied)
+        for candidate in range(_EMULATOR_PORT_MIN, _EMULATOR_PORT_MAX + 1, 2):
+            if hub.subscriber_count(f"emulator-{candidate}"):
+                used.add(candidate)
+    previous = _port_from_serial(vm.adb_serial)
+    port = previous if previous is not None and previous not in used else _pick_free_port(used)
+    if port is None:
+        raise RuntimeError("android_emulator_port_pool_exhausted")
+    vm.adb_serial = f"emulator-{port}"
+    await session.flush()
     return port, sorted(used)
 
 
@@ -163,7 +173,7 @@ def _cfg(config: Dict[str, Any], group: str, key: str, *, default: Any) -> Any:
 
 
 async def get_vm_or_404(session: AsyncSession, vm_id: str) -> AndroidVmInstance:
-    vm = await session.get(AndroidVmInstance, vm_id)
+    vm = await session.get(AndroidVmInstance, vm_id, populate_existing=True)
     if vm is None:
         raise LookupError("android vm not found")
     return vm
@@ -205,36 +215,35 @@ async def mark_agent_vms_unavailable(
 
 
 async def _mark_agent_vms_unavailable(session: AsyncSession, agent_id: str) -> int:
-    res = await session.execute(
-        select(AndroidVmInstance).where(AndroidVmInstance.assigned_agent_id == agent_id)
-    )
-    rows = list(res.scalars().all())
-    for vm in rows:
-        vm.state = "agent_offline"
-        vm.error_message = f"agent_offline_waiting_reclaim: {agent_id}"
-        vm.runtime = {
-            **(vm.runtime or {}),
-            "agent_offline_at": now_utc().isoformat(),
-            "last_known_adb_serial": vm.adb_serial or "",
-        }
+    rows = list((await session.execute(select(AndroidVmInstance).where(
+        (AndroidVmInstance.assigned_agent_id == agent_id) |
+        (AndroidVmInstance.runtime["operation"]["target_agent_id"].as_string() == agent_id)
+    ))).scalars().all())
+    for vm in sorted(rows, key=lambda row: row.id):
+        await transaction_lock(session, f"android-vm:{vm.id}")
+        vm = await session.get(AndroidVmInstance, vm.id, populate_existing=True)
+        if vm is None:
+            continue
+        op = lifecycle_runtime(vm).get("operation") or {}
+        if op.get("pending") and op.get("target_agent_id") == agent_id:
+            fail_attempt(vm, "agent_disconnected", "Agent 断开，本次操作已结束；不会自动重试")
+        elif vm.assigned_agent_id == agent_id:
+            vm.state, vm.error_message = "agent_offline", f"agent offline: {agent_id}"
+        update_runtime(vm, agent_offline_at=now_utc().isoformat(), last_known_adb_serial=vm.adb_serial or "")
     if rows:
         await session.commit()
     return len(rows)
 
 
 async def reset_vm_states_on_startup(session: AsyncSession) -> int:
-    """Server 启动重置：把所有非 draft 的 VM 运行态归零为 ``agent_offline``（绑定关系保留）。
-
-    **必须在 Server 开始接收 Agent 上报之前执行**（放在 lifespan startup、yield 之前）——
-    那时还没有任何 Agent 能连上来，从根上避免"Agent 先标 running、重置又把它打回"的竞态。
-    之后 Agent 重连各自认领回真实 running/stopped；永不回来的就正确停在 agent_offline。
-    """
-    res = await session.execute(
-        update(AndroidVmInstance)
-        .where(AndroidVmInstance.state != "draft")
-        .values(state="agent_offline", adb_serial=None)
-    )
-    return res.rowcount or 0
+    rows = list((await session.execute(select(AndroidVmInstance).where(AndroidVmInstance.state != "draft"))).scalars().all())
+    for vm in rows:
+        op = lifecycle_runtime(vm).get("operation") or {}
+        if op.get("pending"):
+            fail_attempt(vm, "server_restarted", "服务重启，本次未完成操作已结束；不会自动重试")
+        elif vm.assigned_agent_id:
+            vm.state = "agent_offline"
+    return len(rows)
 
 
 async def handle_vm_status(
@@ -259,7 +268,7 @@ async def handle_vm_status(
 async def _cleanup_remote_avd(hub: Optional[Hub], agent_id: str, vm_id: str) -> None:
     if hub is None or not agent_id or not vm_id:
         return
-    await hub.send_to_agent(
+    await send_operation_once(hub,
         agent_id,
         {
             "type": P.MSG_VM_DELETE,
@@ -273,15 +282,7 @@ async def _cleanup_remote_avd(hub: Optional[Hub], agent_id: str, vm_id: str) -> 
 async def handle_vm_reconcile(
     agent_id: str, msg: Dict[str, Any], hub: Hub, *, session: Optional[AsyncSession] = None
 ) -> None:
-    """认领 + 孤儿对账（所有权 = 物理占有）：
-
-    Agent 上报本机受管 AVD 的 vm_id 清单（区分 running_vm_ids / stopped_vm_ids）。Server：
-    - vm_id **库里有**：归属改为上报者（谁报谁绑）；按实测落态——在 stopped 集 → stopped；
-      在 running 集 → 不降级（由 vm_status reclaimed 置 running + serial）。
-      旧 Agent 只发 vm_ids（未分类）时退回保守口径：非 active → stopped。
-    - vm_id **库里没有** → 孤儿（删除残留 / 换 Agent 后的旧 vmid）→ 回发删除指令。
-    - 差集收敛：DB 里归本 Agent、却**不在本轮清单**的 → 它已不在本机 → 置 agent_offline（不删）。
-    """
+    """Agent reports inventory; Server preserves recorded ownership and cleanup intent."""
     def _clean(key: str) -> list[str]:
         return [str(v).strip() for v in (msg.get(key) or []) if str(v).strip()]
 
@@ -291,73 +292,55 @@ async def handle_vm_reconcile(
     vm_ids = _clean("vm_ids") or sorted(set(running_ids) | set(stopped_ids))
     # 注意：空清单也要处理——代表"该 Agent 本机一台受管 VM 都没有"，需对其名下 DB VM 做差集收敛。
     if session is not None:
-        await _handle_vm_reconcile(session, agent_id, vm_ids, running_ids, stopped_ids, hub)
+        await _handle_vm_reconcile(session, agent_id, vm_ids, running_ids, stopped_ids, hub, inventory_complete=msg.get("inventory_complete", True), unknown_ids=msg.get("unknown_vm_ids") or [], instance_proofs=msg.get("instance_proofs") or {})
         return
     session_factory = get_session_factory()
     async with session_factory() as session:
-        await _handle_vm_reconcile(session, agent_id, vm_ids, running_ids, stopped_ids, hub)
+        await _handle_vm_reconcile(session, agent_id, vm_ids, running_ids, stopped_ids, hub, inventory_complete=msg.get("inventory_complete", True), unknown_ids=msg.get("unknown_vm_ids") or [], instance_proofs=msg.get("instance_proofs") or {})
 
 
 async def _handle_vm_reconcile(
-    session: AsyncSession,
-    agent_id: str,
-    vm_ids: list[str],
-    running_ids: list[str],
-    stopped_ids: list[str],
-    hub: Hub,
+    session: AsyncSession, agent_id: str, vm_ids: list[str], running_ids: list[str],
+    stopped_ids: list[str], hub: Hub, *, inventory_complete: bool = True, unknown_ids: list[str] = (),
+    instance_proofs: Optional[dict] = None,
 ) -> None:
-    res = await session.execute(
-        select(AndroidVmInstance).where(AndroidVmInstance.id.in_(vm_ids))
-    )
-    rows = {vm.id: vm for vm in res.scalars().all()}
-    orphans = [v for v in vm_ids if v not in rows]
-    running_set = set(running_ids)
-    stopped_set = set(stopped_ids)
-    classified = bool(running_set or stopped_set)
-    # 谁报谁绑：库里有的，归属一律改为上报者；状态按 Agent 实测的在跑/没跑精确落。
-    for vm in rows.values():
-        vm.assigned_agent_id = agent_id
-        if classified:
-            if vm.id in stopped_set:
-                # 实测没跑 → 明确 stopped（修正"DB 旧 running 但进程已没"的假 running）
-                vm.state = "stopped"
-                vm.adb_serial = None
-            # 在跑的（running_set）不在此降级——由 vm_status(reclaimed) 置 running + serial
-        elif vm.state not in _ACTIVE_STATES:
-            # 旧 Agent 未分类清单：退回保守口径（非 active → stopped）
-            vm.state = "stopped"
-            vm.adb_serial = None
-    # 差集收敛：DB 里归本 Agent、但本轮没上报的 → 已不在本机 → agent_offline（不删，等下次认领）。
-    # 覆盖"Server 重启后未经断线 handler、且某 VM 的 AVD 已不在 Agent 上"的滞留假 running。
-    # 只跳过在途指令态（starting/stopping，AVD 可能还没建好）；running 的若不在清单必为滞留
-    # （在跑的一定在 list_managed_avd_vmids 里），照样收敛。
-    stale_stmt = select(AndroidVmInstance).where(
-        AndroidVmInstance.assigned_agent_id == agent_id
-    )
-    if vm_ids:
-        stale_stmt = stale_stmt.where(AndroidVmInstance.id.not_in(vm_ids))
-    res_stale = await session.execute(stale_stmt)
-    for vm in res_stale.scalars().all():
-        if vm.state in ("starting", "stopping", "agent_offline"):
+    reported, stopped, unknown = set(vm_ids), set(stopped_ids), set(unknown_ids)
+    reporter_host = agent_host_id(hub, agent_id)
+    owner_query = (AndroidVmInstance.assigned_agent_id == agent_id) | AndroidVmInstance.id.in_(reported)
+    if reporter_host:
+        owner_query |= AndroidVmInstance.runtime["owner_host_id"].as_string() == reporter_host
+    rows = list((await session.execute(select(AndroidVmInstance).where(owner_query))).scalars().all())
+    known = {vm.id for vm in rows}
+    for vm in sorted(rows, key=lambda row: row.id):
+        await transaction_lock(session, f"android-vm:{vm.id}")
+        vm = await session.get(AndroidVmInstance, vm.id, populate_existing=True)
+        if vm is None:
             continue
-        vm.state = "agent_offline"
-        vm.adb_serial = None
+        proof = (instance_proofs or {}).get(vm.id) or {}
+        op = lifecycle_runtime(vm).get("operation") or {}
+        if not vm.assigned_agent_id and op.get("first_bind") and not op.get("pending"):
+            await cleanup_abandoned_first_bind(hub, vm, agent_id, proof)
+            continue
+        legacy = bool(inventory_complete and vm.id in reported and
+                      proof.get("avd_name") == f"aiphone_vm_{vm.id}")
+        if not accept_owner(vm, agent_id, hub, legacy_evidence=legacy):
+            if inventory_complete:
+                await cleanup_foreign_copy(hub, vm, agent_id, proof)
+            continue  # cleanup addresses the copy, never rewrites the ledger
+        if vm.id in reported:
+            update_runtime(vm, instance_created=True)
+            if vm.id in stopped and vm.id not in unknown and vm.state not in {"starting", "stopping"} and not (vm.state == "running" and lifecycle_runtime(vm).get("operation")):
+                vm.state = "stopped"
+                vm.error_message = ""
+                vm.stopped_at = vm.stopped_at or now_utc()
+                finish_operation(vm, {"state": "stopped"})
+                maintenance(hub, vm, True)
+        elif inventory_complete and vm.id not in unknown and vm.state not in {"draft", "starting", "stopping"}:
+            vm.state = "error"
+            vm.error_message = "instance_missing: Agent 未发现原实例；未自动重建"
     await session.commit()
-    if orphans:
-        logger.info(
-            "Agent {} 上报受管 VM {} 个：认领 {} 个、孤儿 {} 个，下发清理：{}",
-            agent_id, len(vm_ids), len(rows), len(orphans), orphans,
-        )
-    for vm_id in orphans:
-        await hub.send_to_agent(
-            agent_id,
-            {
-                "type": P.MSG_VM_DELETE,
-                "request_id": uuid.uuid4().hex[:16],
-                "vm_id": vm_id,
-                "adb_serial": "",
-            },
-        )
+    for vm_id in reported - known:
+        await _cleanup_remote_avd(hub, agent_id, vm_id)
 
 
 async def _handle_vm_status(
@@ -367,27 +350,50 @@ async def _handle_vm_status(
     vm_id: str,
     hub: Optional[Hub] = None,
 ) -> None:
+    await transaction_lock(session, f"android-vm:{vm_id}")
     reason = str(msg.get("reason") or "")
     vm = await session.get(AndroidVmInstance, vm_id)
     if vm is None:
-        # 认领上报但 DB 已无此 vm = 删除残留（删除时 Agent 离线漏了指令），回发清理
-        if reason == "reclaimed":
+        if reason == "reclaimed" or proves_live_managed_instance(vm_id, msg, "android"):
             await _cleanup_remote_avd(hub, agent_id, vm_id)
-            logger.info("Agent {} 认领 DB 已删除的 VM {}，下发清理", agent_id, vm_id)
-        else:
-            logger.warning("收到未知 VM 状态 vm_id={} agent={}", vm_id, agent_id)
         return
-    # 所有权 = 物理占有：谁上报谁认领。vm_id 全局唯一，能上报 reclaimed 就代表该 Agent 本机
-    # 物理有这台 AVD → 直接把归属落到上报者（即便 DB 里还记着旧 Agent ID，重启换名也认）。
-    # 旧"agent_id 不一致就当抢占、下发清理"的判定已废除——换 Agent 走"删旧 vmid"路径，
-    # 旧机回来报的旧 vmid 会因"库里没有"被 reconcile 清掉，不会落到这里。
     state = str(msg.get("state") or vm.state or "draft")
     ok = bool(msg.get("ok", True))
     adb_serial = str(msg.get("adb_serial") or "").strip()
     error = str(msg.get("error") or msg.get("reason") or "")
     details = msg.get("details") if isinstance(msg.get("details"), dict) else {}
-
-    vm.assigned_agent_id = agent_id
+    legacy = (reason == "reclaimed" and details.get("avd_name") == f"aiphone_vm_{vm.id}"
+              and (not vm.adb_serial or vm.adb_serial == adb_serial))
+    if not accept_owner(vm, agent_id, hub, legacy_evidence=legacy):
+        if reason == "reclaimed":
+            await cleanup_foreign_copy(hub, vm, agent_id, details, msg)
+        return
+    record_creation_provenance(vm, msg)
+    expired = expire_operation_if_due(vm, hub)
+    if is_abandoned_cleanup_receipt(vm, msg):
+        maintenance(hub, vm, False)
+        vm.adb_serial = None
+        record_abandoned_cleanup_receipt(vm)
+        await session.commit()
+        return
+    if not accept_status(vm, msg):
+        expired = expire_operation_if_due(vm, hub) or expired
+        cleaned = await cleanup_abandoned_first_bind(hub, vm, agent_id, details, msg)
+        if expired or cleaned:
+            await session.commit()
+        return
+    if state == "stopped" and not ok:
+        state = "error"
+    if adb_serial and vm.adb_serial and adb_serial != vm.adb_serial:
+        # The Agent may not silently select a different globally reserved port.
+        state, ok, error = "error", False, f"adb_serial_mismatch: expected {vm.adb_serial}, got {adb_serial}"
+        adb_serial = ""
+    if state == "running" and ok:
+        bind_owner(vm, agent_id, hub)
+    if (state == "running" and ok) or details.get("instance_created") is True:
+        update_runtime(vm, instance_created=True)
+    finish_operation(vm, {**msg, "state": state})
+    maintenance(hub, vm, not (state == "running" and ok))
     vm.state = state
     vm.error_message = "" if ok else error[:4000]
     vm.runtime = {
@@ -418,10 +424,17 @@ async def _handle_vm_status(
                         "ts": now_utc().isoformat(),
                     },
                 }
-    if state in ("stopped", "unavailable", "error"):
+    if state == "stopped" and ok:
         vm.stopped_at = now_utc()
-        if state != "running":
-            vm.adb_serial = adb_serial or None
+    # Stop/offline/error preserve this identity. Ledger deletion retires the
+    # reservation; reconnect orphan reconciliation removes old host residues.
+    op = lifecycle_runtime(vm).get("operation") or {}
+    if op.get("first_bind") and op.get("outcome") == "failed" and not ok:
+        vm.assigned_agent_id = None
+        if details.get("instance_deleted") or (details.get("cleanup_confirmed") and details.get("instance_created") is False):
+            maintenance(hub, vm, False)
+            vm.adb_serial = None
+            update_runtime(vm, instance_created=False)
     await session.commit()
 
 
@@ -534,10 +547,10 @@ class VmCapabilityWaiter:
 
         try:
             for agent_id in sorted(agent_ids):
-                sent = await hub.send_to_agent(agent_id, payload)
+                sent = await send_operation_once(hub, agent_id, payload)
                 if not sent:
                     state.sent_failures[agent_id] = "send_failed"
-            if state.expected and len(state.responses) < len(state.expected):
+            if state.expected - (state.responses.keys() | state.sent_failures.keys()):
                 try:
                     await asyncio.wait_for(state.event.wait(), timeout=timeout_sec)
                 except asyncio.TimeoutError:

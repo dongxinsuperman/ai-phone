@@ -228,6 +228,7 @@ async def test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity(
     stop_messages: asyncio.Queue[dict] = asyncio.Queue()
     delete_messages: asyncio.Queue[dict] = asyncio.Queue()
     run_messages: asyncio.Queue[dict] = asyncio.Queue()
+    allow_start = asyncio.Event()
 
     def devices():
         # Simulated native HDC discovery reports the target only while a VM runs.
@@ -249,6 +250,7 @@ async def test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity(
 
     async def on_start(client, msg):
         await start_messages.put(msg)
+        await allow_start.wait()
         await manager.handle_start(client, msg)
 
     async def on_stop(client, msg):
@@ -285,6 +287,7 @@ async def test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity(
                 return response.json()["id"]
 
             async def dispatch(vm_id):
+                allow_start.clear()
                 response = await http.post(
                     f"/api/internal/harmony-vm/instances/{vm_id}/dispatch",
                     headers=AUTH,
@@ -292,14 +295,18 @@ async def test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity(
                 )
                 assert response.status_code == 200, response.text
                 assert response.json()["sent"] is True
+                assert response.json()["instance"]["state"] == "starting"
+                assert response.json()["instance"]["assigned_agent_id"] is None
                 start = await asyncio.wait_for(start_messages.get(), timeout=5)
                 assert start["vm_id"] == vm_id
                 assert start["assigned_port"] == 10007
+                allow_start.set()
                 identity = f"harmony-vm:{vm_id}"
-                await _eventually(
+                running = await _eventually(
                     lambda: http.get(f"/api/internal/harmony-vm/instances/{vm_id}", headers=AUTH),
                     lambda result: result.json()["state"] == "running",
                 )
+                assert running.json()["assigned_agent_id"] == AGENT_ID
                 device = await _eventually(
                     lambda: http.get(f"/api/devices/{identity}"),
                     lambda result: result.status_code == 200 and result.json()["status"] == "online",
@@ -345,6 +352,21 @@ async def test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity(
             )
             assert completed_a.json()["device_serial"] == identity_a
 
+            # A manual API caller owns its lock until it explicitly releases it;
+            # a terminal Run alone must not authorize destroying that device.
+            blocked_stop = await http.post(
+                f"/api/internal/harmony-vm/instances/{vm_a}/stop", headers=AUTH
+            )
+            assert blocked_stop.status_code == 409
+            assert "device_busy" in blocked_stop.text
+            assert stop_messages.empty()
+            unlocked = await http.request(
+                "DELETE", f"/api/devices/{identity_a}/lock",
+                json={"token": run_a.json()["job_lock_token"]},
+            )
+            assert unlocked.status_code == 200, unlocked.text
+            assert unlocked.json()["released"] is True
+
             stopped = await http.post(
                 f"/api/internal/harmony-vm/instances/{vm_a}/stop", headers=AUTH
             )
@@ -363,6 +385,12 @@ async def test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity(
             assert deleted.json()["deleted"] is True
             assert deleted.json()["cleanup_sent"] is True
             delete_a = await asyncio.wait_for(delete_messages.get(), 5)
+            # Server removal is immediate. Separately observe best-effort Agent
+            # cleanup before testing a fresh instance on this same fake host.
+            await _eventually(
+                lambda: http.get(f"/api/internal/harmony-vm/instances/{vm_a}", headers=AUTH),
+                lambda result: result.status_code == 404,
+            )
             await _eventually(
                 lambda: asyncio.sleep(0, result=manager._known.get(vm_a)),  # noqa: SLF001
                 lambda known: known is None,

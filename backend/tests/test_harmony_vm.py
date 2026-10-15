@@ -936,8 +936,9 @@ async def test_harmony_vm_alias_can_be_cleared_like_android(client, session):
     assert await session.get(DeviceAlias, f"harmony-vm:{vm_id}") is None
 
 
-async def test_harmony_vm_delete_requires_confirmed_cleanup_and_force_is_explicit(
-    client, app, session
+@pytest.mark.parametrize("confirmed", [False, True])
+async def test_harmony_vm_force_release_cannot_replace_host_cleanup(
+    client, app, session, confirmed
 ):
     app.state.hub = Hub()
     created = await client.post(
@@ -951,29 +952,25 @@ async def test_harmony_vm_delete_requires_confirmed_cleanup_and_force_is_explici
     )
     vm_id = created.json()["id"]
     vm = await session.get(HarmonyVmInstance, vm_id)
-    await allocate_port_lease(session, vm, agent_id="offline-agent")
+    lease = await allocate_port_lease(session, vm, agent_id="offline-agent")
+    port, token = lease.port, lease.lease_token
     vm.assigned_agent_id = "offline-agent"
     vm.state = "agent_offline"
     await session.commit()
 
-    unconfirmed = await client.post(
+    rejected = await client.post(
         f"/api/internal/harmony-vm/instances/{vm_id}/force-release",
         headers=AUTH,
-        json={"confirmed": False, "reason": "宿主机已人工确认关机"},
+        json={"confirmed": confirmed, "reason": "宿主机已人工确认关机"},
     )
-    assert unconfirmed.status_code == 400
-
-    released = await client.post(
-        f"/api/internal/harmony-vm/instances/{vm_id}/force-release",
-        headers=AUTH,
-        json={"confirmed": True, "reason": "宿主机已人工确认关机"},
-    )
-    assert released.status_code == 200, released.text
-    body = released.json()["instance"]
-    assert body["state"] == "stopped"
-    assert body["hdc_serial"] is None
-    assert "lease_token" not in body
-    assert await session.get(HarmonyVmPortLease, 10000) is None
+    assert rejected.status_code == 409, rejected.text
+    assert "人工确认不能替代清理结果" in rejected.json()["detail"]
+    session.expire_all()
+    preserved = await session.get(HarmonyVmInstance, vm_id)
+    assert preserved.state == "agent_offline"
+    assert preserved.assigned_agent_id == "offline-agent"
+    assert preserved.lease_token == token
+    assert (await session.get(HarmonyVmPortLease, port)).vm_id == vm_id
 
 
 async def test_harmony_reconcile_restores_lease_free_stopped_vm_after_server_reload(
@@ -1027,7 +1024,7 @@ async def test_harmony_reconcile_restores_lease_free_stopped_vm_after_server_rel
     assert alias is not None and alias.alias == alias_value
 
 
-async def test_harmony_stopped_reconcile_binds_reporter_but_preserves_active_lease(
+async def test_harmony_stopped_reconcile_preserves_server_owner_and_active_lease(
     session,
 ):
     owned = HarmonyVmInstance(
@@ -1087,18 +1084,18 @@ async def test_harmony_stopped_reconcile_binds_reporter_but_preserves_active_lea
     session.expire_all()
     rebound = await session.get(HarmonyVmInstance, owned_id)
     still_active = await session.get(HarmonyVmInstance, active_id)
-    # 与 Android 一致：本机实际实例由谁上报，所有权就绑定给谁。
-    assert rebound.assigned_agent_id == "agent-old"
-    assert rebound.state == "stopped"
-    assert rebound.error_message == ""
-    # 鸿蒙必须保留的差异：带有效 HDC 端口租约的记录不能被 stopped 对账覆盖。
+    # An unproven reporter cannot take the owner recorded in the Server ledger.
+    assert rebound.assigned_agent_id == "agent-new"
+    assert rebound.state == "agent_offline"
+    assert rebound.error_message == "waiting for owner"
+    # A stopped inventory without cleanup evidence cannot release an active lease.
     assert still_active.state == "agent_offline"
     assert still_active.lease_token == lease_token
     assert still_active.hdc_port == lease_port
     assert await session.get(HarmonyVmPortLease, lease_port) is not None
 
 
-async def test_harmony_running_reclaim_binds_reporter_and_transfers_lease(
+async def test_harmony_running_reclaim_cannot_replace_an_online_owner(
     session,
 ):
     vm = HarmonyVmInstance(
@@ -1111,6 +1108,7 @@ async def test_harmony_running_reclaim_binds_reporter_and_transfers_lease(
     session.add(vm)
     await session.flush()
     lease = await allocate_port_lease(session, vm, agent_id="agent-old")
+    lease.state = "active"
     vm.state = "running"
     await session.commit()
     vm_id = vm.id
@@ -1137,23 +1135,80 @@ async def test_harmony_running_reclaim_binds_reporter_and_transfers_lease(
 
     session.expire_all()
     rebound = await session.get(HarmonyVmInstance, vm_id)
-    transferred = await session.get(HarmonyVmPortLease, port)
-    assert rebound.assigned_agent_id == "agent-new"
+    preserved_lease = await session.get(HarmonyVmPortLease, port)
+    assert rebound.assigned_agent_id == "agent-old"
     assert rebound.state == "running"
     assert rebound.hdc_serial == f"127.0.0.1:{port}"
-    assert transferred.agent_id == "agent-new"
-    assert transferred.state == "active"
+    assert preserved_lease.agent_id == "agent-old"
+    assert preserved_lease.state == "active"
 
 
-async def test_harmony_vm_delete_admission_matches_android_and_quarantines_port(
+async def test_harmony_old_stopped_reconcile_cannot_release_a_new_running_lease(session):
+    vm = HarmonyVmInstance(
+        name="restarted-vm", alias="restarted-vm", state="running",
+        assigned_agent_id="owner",
+    )
+    session.add(vm)
+    await session.flush()
+    lease = await allocate_port_lease(session, vm, agent_id="owner")
+    lease.state = "active"
+    vm_id, token, port = vm.id, lease.lease_token, lease.port
+    await session.commit()
+
+    await handle_vm_reconcile(
+        "owner",
+        {"instances": [{
+            "vm_id": vm_id,
+            "state": "stopped",
+            "lease_token": "previous-start-token",
+            "hdc_serial": f"127.0.0.1:{port}",
+            "details": {"cleanup_confirmed": True, "orphan_reconcile": True},
+        }]},
+    )
+
+    session.expire_all()
+    preserved = await session.get(HarmonyVmInstance, vm_id)
+    assert preserved.state == "running"
+    assert preserved.lease_token == token
+    assert (await session.get(HarmonyVmPortLease, port)).state == "active"
+
+    # The current lease's confirmed stop still converges after a lost ACK.
+    await handle_vm_reconcile(
+        "owner",
+        {"instances": [{
+            "vm_id": vm_id, "state": "stopped", "lease_token": token,
+            "hdc_serial": f"127.0.0.1:{port}",
+            "details": {"cleanup_confirmed": True, "orphan_reconcile": True},
+        }]},
+    )
+    session.expire_all()
+    stopped = await session.get(HarmonyVmInstance, vm_id)
+    assert stopped.state == "stopped" and stopped.lease_token is None
+    assert await session.get(HarmonyVmPortLease, port) is None
+
+
+async def test_harmony_stop_without_owner_cannot_release_an_existing_lease(client, app, session):
+    app.state.hub = Hub()
+    vm = HarmonyVmInstance(name="missing-owner", alias="missing-owner", state="agent_offline")
+    session.add(vm)
+    await session.flush()
+    lease = await allocate_port_lease(session, vm, agent_id="old-owner")
+    vm_id, token, port = vm.id, lease.lease_token, lease.port
+    await session.commit()
+
+    stopped = await client.post(f"/api/internal/harmony-vm/instances/{vm_id}/stop", headers=AUTH)
+    assert stopped.status_code == 409
+    session.expire_all()
+    preserved = await session.get(HarmonyVmInstance, vm_id)
+    assert preserved.state == "agent_offline"
+    assert preserved.lease_token == token
+    assert (await session.get(HarmonyVmPortLease, port)).agent_id == "old-owner"
+
+
+async def test_harmony_vm_offline_delete_removes_ledger_and_cleans_reconnected_orphan(
     client, app, session
 ):
-    """删除准入必须与 Android 一致：只拦活动态，不拦租约。
-
-    Android 的 delete 只有 ``state in ACTIVE_STATES`` 一道门。鸿蒙多出的租约检查会
-    造成死锁——Agent 离线时停止命令送不到，配置就永远删不掉。这里锁住的行为是：
-    放行删除，同时把端口转入 quarantined，避免在"端口是否真空"未确认时被重分配。
-    """
+    """Delete the ledger immediately; a late orphan cannot own a replacement."""
     app.state.hub = Hub()
     created = await client.post(
         "/api/internal/harmony-vm/instances",
@@ -1163,7 +1218,7 @@ async def test_harmony_vm_delete_admission_matches_android_and_quarantines_port(
     vm_id = created.json()["id"]
     vm = await session.get(HarmonyVmInstance, vm_id)
     lease = await allocate_port_lease(session, vm, agent_id="offline-agent")
-    port = lease.port
+    port, token = lease.port, lease.lease_token
     vm.assigned_agent_id = "offline-agent"
     vm.state = "agent_offline"
     await session.commit()
@@ -1173,14 +1228,58 @@ async def test_harmony_vm_delete_admission_matches_android_and_quarantines_port(
         headers=AUTH,
     )
     assert deleted.status_code == 200, deleted.text
-    assert deleted.json()["quarantined_port"] == port
+    assert deleted.json()["deleted"] is True
+    assert "pending_cleanup" not in deleted.json()
+    assert deleted.json()["cleanup_sent"] is False
 
     session.expire_all()
     assert await session.get(HarmonyVmInstance, vm_id) is None
-    held = await session.get(HarmonyVmPortLease, port)
-    assert held is not None, "端口必须保留隔离，不能随配置一起消失"
-    assert held.state == "quarantined"
-    assert held.vm_id is None
+    assert await session.get(HarmonyVmPortLease, port) is None
+    assert await session.get(DeviceAlias, f"harmony-vm:{vm_id}") is None
+
+    replacement = HarmonyVmInstance(
+        name="replacement", alias="replacement", state="running",
+        assigned_agent_id="new-agent",
+    )
+    session.add(replacement)
+    await session.flush()
+    replacement_lease = await allocate_port_lease(session, replacement, agent_id="new-agent")
+    replacement_lease.state = "active"
+    replacement_id, replacement_token = replacement.id, replacement_lease.lease_token
+    assert replacement_id != vm_id and replacement_lease.port == port
+    assert replacement_token != token
+    await session.commit()
+
+    replies = []
+
+    class AgentSocket:
+        async def send_json(self, payload):
+            replies.append(payload)
+
+    hub = app.state.hub
+    await hub.register_agent("offline-agent", "reconnected", "macos", AgentSocket())
+    await handle_vm_reconcile(
+        "offline-agent",
+        {"instances": [{"vm_id": vm_id, "state": "stopped", "lease_token": token,
+                        "hdc_serial": f"127.0.0.1:{port}"}], "inventory_complete": True},
+        hub,
+    )
+    assert len(replies) == 1
+    assert replies[0]["vm_id"] == vm_id
+    assert replies[0]["lease_token"] == token
+    assert replies[0]["request_id"]
+
+    ack = {
+        "vm_id": vm_id, "lease_token": token, "state": "stopped",
+        "ok": True, "reason": "deleted", "details": {"cleanup_confirmed": True},
+    }
+    await handle_vm_status("offline-agent", {**ack, "request_id": replies[0]["request_id"]}, hub)
+    session.expire_all()
+    assert await session.get(HarmonyVmInstance, vm_id) is None
+    preserved = await session.get(HarmonyVmInstance, replacement_id)
+    assert preserved.state == "running" and preserved.lease_token == replacement_token
+    assert (await session.get(HarmonyVmPortLease, port)).vm_id == replacement_id
+    assert len(replies) == 1, "旧删除回报不能生成新的续跑或反复删除指令"
 
     # 活动态仍必须拦住，这一条与 Android 相同。
     running = await client.post(
@@ -1199,15 +1298,10 @@ async def test_harmony_vm_delete_admission_matches_android_and_quarantines_port(
     assert blocked.status_code == 409
 
 
-async def test_quarantined_port_returns_to_pool_when_probe_proves_it_free(
+async def test_quarantined_port_is_not_released_by_capability_scan_absence(
     client, app, session
 ):
-    """隔离端口必须能自动回到可用池，否则每出一次异常就永久损失一个端口。
-
-    quarantined 的语义是"还没有证据表明它空了"，不是"永久作废"。Agent 的实时
-    探查（excluded_ports 来自 hdc fport / 监听端口 / Connected target）若不再报告
-    该端口，就说明它已空闲——这与 Android 每次按实时证据重算占用是同一套逻辑。
-    """
+    """A missing scan entry is not evidence that the old instance was cleaned."""
     app.state.hub = Hub()
     first = await client.post(
         "/api/internal/harmony-vm/instances",
@@ -1224,7 +1318,7 @@ async def test_quarantined_port_returns_to_pool_when_probe_proves_it_free(
     held = await session.get(HarmonyVmPortLease, port)
     assert held is not None and held.state == "quarantined"
 
-    # 新实例申请端口时，探查没有把该端口报为占用 → 应被回收并重新分配。
+    # Even an empty exclusion list must not bypass an outstanding cleanup lease.
     second = await client.post(
         "/api/internal/harmony-vm/instances",
         headers=AUTH,
@@ -1233,9 +1327,10 @@ async def test_quarantined_port_returns_to_pool_when_probe_proves_it_free(
     vm_b = await session.get(HarmonyVmInstance, second.json()["id"])
     lease_b = await allocate_port_lease(session, vm_b, agent_id="agent-1")
     await session.commit()
-    assert lease_b.port == port, "隔离端口在被证明空闲后必须重新可用"
+    assert lease_b.port != port
+    assert (await session.get(HarmonyVmPortLease, port)).state == "quarantined"
 
-    # 反向：探查仍报告该端口占用时，不得回收。
+    # A further request also respects both quarantined leases.
     await quarantine_current_lease(
         session, vm_b, reason="cleanup_unconfirmed", error="仍在占用"
     )
@@ -1250,7 +1345,7 @@ async def test_quarantined_port_returns_to_pool_when_probe_proves_it_free(
         session, vm_c, agent_id="agent-1", excluded_ports=[port]
     )
     await session.commit()
-    assert lease_c.port != port, "探查仍报告占用时，隔离端口不能被回收"
+    assert lease_c.port not in {port, lease_b.port}
 
 
 async def test_unknown_delete_ack_does_not_trigger_delete_loop(_test_engine):
@@ -1409,6 +1504,11 @@ async def test_managed_harmony_serial_only_accepts_lease_owner(session):
     assert await filter_managed_devices_for_agent("other", [untagged_hdc]) == [
         untagged_hdc
     ]
+    # A valid owner/token cannot make a lifecycle operation appear usable early.
+    for state in ("starting", "stopping", "stopped", "agent_offline"):
+        vm.state = state
+        await session.commit()
+        assert await filter_managed_devices_for_agent("owner", [device]) == []
 
 
 def test_harmony_vm_device_tag_matches_generic_device_contract(tmp_path):

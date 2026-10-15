@@ -8,6 +8,7 @@ const catalogStats = ref({})
 const loading = ref(false)
 const loadingCatalog = ref(false)
 const busyId = ref('')
+const busyByVm = reactive({})
 const err = ref('')
 const candidates = ref([])
 const candidateVmId = ref('')
@@ -39,6 +40,9 @@ const importMsg = ref('')
 // 复制配置弹窗：复制 = 原机完整复制（参数一律不改），只让用户起一个新别名（必填、唯一）。
 const copyDlg = reactive({ open: false, vm: null, alias: '', busy: false, error: '' })
 let pollTimer = null
+let instanceSeq = 0
+let activeInstanceLoads = 0
+let candidateSeq = 0
 let searchTimer = null
 // 防竞态：递增序号，异步响应回来时只接受最新一次的结果
 let catalogSeq = 0
@@ -153,6 +157,7 @@ function setCandidatesRef(id, el) {
 }
 
 function closeCandidates() {
+  candidateSeq += 1
   candidateVmId.value = ''
   candidates.value = []
 }
@@ -313,15 +318,21 @@ function defaultForm() {
   }
 }
 
-async function refresh() {
-  loading.value = true
-  err.value = ''
+async function refresh({ quiet = false } = {}) {
+  const sequence = ++instanceSeq
+  activeInstanceLoads += 1
+  if (!quiet) {
+    loading.value = true
+    err.value = ''
+  }
   try {
-    instances.value = await internal.androidVms.list()
+    const result = await internal.androidVms.list()
+    if (sequence === instanceSeq) instances.value = result
   } catch (e) {
-    err.value = prettyErr(e)
+    if (!quiet && sequence === instanceSeq) err.value = prettyErr(e)
   } finally {
-    loading.value = false
+    activeInstanceLoads -= 1
+    if (!quiet) loading.value = false
   }
 }
 
@@ -686,7 +697,7 @@ async function createVm(options = {}) {
     })
     form.name = ''
     form.alias = ''
-    await refresh()
+    await refresh({ quiet: true })
     if (options.start) {
       await probe(created, { autoDispatchSingle: true })
     }
@@ -699,6 +710,7 @@ async function createVm(options = {}) {
 
 // 复制 = 纯复制：弹窗只收一个新别名，其余参数原机照搬、不允许改。
 function copyConfig(vm) {
+  if (isVmBusy(vm) || isTransitioning(vm)) return
   copyDlg.vm = vm
   copyDlg.alias = ''
   copyDlg.error = ''
@@ -715,6 +727,11 @@ function closeCopyDialog() {
 async function confirmCopy() {
   const src = copyDlg.vm
   if (!src) return
+  const current = instances.value.find((item) => item.id === src.id)
+  if (!current || isVmBusy(current) || isTransitioning(current)) {
+    copyDlg.error = '源设备正在处理或已删除，请等待完成后重试'
+    return
+  }
   const alias = (copyDlg.alias || '').trim()
   if (!alias) {
     copyDlg.error = '请填写新设备别名'
@@ -744,7 +761,7 @@ async function confirmCopy() {
       orientation: src.orientation,
     })
     closeCopyDialog()
-    await refresh()
+    await refresh({ quiet: true })
   } catch (e) {
     copyDlg.error = prettyErr(e)
   } finally {
@@ -753,111 +770,178 @@ async function confirmCopy() {
 }
 
 async function probe(vm, options = {}) {
+  if (isVmBusy(vm) || !canProbe(vm)) return
+  const sequence = ++candidateSeq
   err.value = ''
   candidateVmId.value = vm.id
   candidates.value = []
-  busyId.value = `probe:${vm.id}`
-  // 候选面板就在该卡片下方，滚动到可视区，让用户看到「探查中」反馈
+  busyByVm[vm.id] = 'probe'
   await nextTick()
   candidateEls.get(vm.id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   try {
-    const res = await internal.androidVms.dispatchCandidates(vm.id)
-    candidates.value = res?.agents || []
+    const result = await internal.androidVms.dispatchCandidates(vm.id)
+    if (sequence !== candidateSeq || candidateVmId.value !== vm.id) return
+    const current = instances.value.find((item) => item.id === vm.id)
+    if (current && !canProbe(current)) {
+      closeCandidates()
+      return
+    }
+    candidates.value = result?.agents || []
     const okAgents = candidates.value.filter((agent) => agent.ok)
     if (options.autoDispatchSingle && okAgents.length === 1) {
+      delete busyByVm[vm.id]
       await dispatchTo(vm, okAgents[0].agent_id)
     }
   } catch (e) {
-    err.value = prettyErr(e)
+    if (sequence === candidateSeq && candidateVmId.value === vm.id) err.value = prettyErr(e)
   } finally {
-    busyId.value = ''
+    if (busyByVm[vm.id] === 'probe') delete busyByVm[vm.id]
+  }
+}
+
+// 操作响应先落到当前卡片；此前发出的列表请求不能再覆盖新状态。
+function applyOperationResult(vm, result) {
+  instanceSeq += 1
+  if (result?.instance) {
+    const index = instances.value.findIndex((item) => item.id === vm.id)
+    if (index >= 0) instances.value.splice(index, 1, result.instance)
+    else if (!instances.value.some((item) => item.id === result.instance.id)) {
+      instances.value.unshift(result.instance)
+    }
+  } else if (result?.deleted) {
+    instances.value = instances.value.filter((item) => item.id !== vm.id)
   }
 }
 
 async function dispatchTo(vm, agentId) {
+  if (isVmBusy(vm) || !canProbe(vm)) return
+  if (vm.assigned_agent_id && vm.assigned_agent_id !== agentId
+    && !confirm('换 Agent 将删除原配置，并在目标 Agent 新建空白机器；原实例的数据不迁移。确定继续？')) return
+  busyByVm[vm.id] = 'dispatch'
   err.value = ''
-  busyId.value = `dispatch:${vm.id}:${agentId}`
   try {
-    await internal.androidVms.dispatch(vm.id, agentId)
-    candidates.value = []
-    candidateVmId.value = ''
-    await refresh()
+    const result = await internal.androidVms.dispatch(vm.id, agentId)
+    applyOperationResult(vm, result)
+    if (candidateVmId.value === vm.id) closeCandidates()
+    await refresh({ quiet: true })
   } catch (e) {
     err.value = prettyErr(e)
   } finally {
-    busyId.value = ''
+    delete busyByVm[vm.id]
   }
 }
 
 async function startVm(vm) {
+  if (isVmBusy(vm) || !canStart(vm)) return
+  busyByVm[vm.id] = 'start'
   err.value = ''
-  busyId.value = `start:${vm.id}`
+  if (candidateVmId.value === vm.id) closeCandidates()
   try {
-    await internal.androidVms.start(vm.id)
-    await refresh()
+    const result = await internal.androidVms.start(vm.id)
+    applyOperationResult(vm, result)
+    await refresh({ quiet: true })
   } catch (e) {
-    const message = prettyErr(e)
-    err.value = message
-    try {
-      await refresh()
-    } catch {
-      err.value = message
-    }
+    err.value = prettyErr(e)
+    await refresh({ quiet: true })
   } finally {
-    busyId.value = ''
+    delete busyByVm[vm.id]
   }
 }
 
 async function stopVm(vm) {
+  if (isVmBusy(vm) || !canStop(vm)) return
+  busyByVm[vm.id] = 'stop'
   err.value = ''
-  busyId.value = `stop:${vm.id}`
+  if (candidateVmId.value === vm.id) closeCandidates()
   try {
-    await internal.androidVms.stop(vm.id)
-    await refresh()
+    const result = await internal.androidVms.stop(vm.id)
+    applyOperationResult(vm, result)
+    await refresh({ quiet: true })
   } catch (e) {
     err.value = prettyErr(e)
   } finally {
-    busyId.value = ''
+    delete busyByVm[vm.id]
   }
 }
 
 async function removeVm(vm) {
+  if (isVmBusy(vm) || !canDelete(vm)) return
+  const name = vm.alias || vm.name || vm.id
   const tip = vm.assigned_agent_id
-    ? `确定删除虚拟机「${vm.name}」？将通知 Agent（${vm.assigned_agent_id}）清理远端镜像。`
-    : `确定删除虚拟机「${vm.name}」？`
+    ? `确定删除虚拟机“${name}”？将删除后台配置，原宿主上的实例及数据也不再保留。`
+    : `确定删除虚拟机“${name}”？`
   if (!confirm(tip)) return
+  busyByVm[vm.id] = 'delete'
   err.value = ''
-  busyId.value = `delete:${vm.id}`
   try {
-    await internal.androidVms.remove(vm.id)
-    if (candidateVmId.value === vm.id) {
-      candidateVmId.value = ''
-      candidates.value = []
-    }
-    await refresh()
+    const result = await internal.androidVms.remove(vm.id)
+    applyOperationResult(vm, result)
+    if (candidateVmId.value === vm.id) closeCandidates()
+    await refresh({ quiet: true })
   } catch (e) {
     err.value = prettyErr(e)
   } finally {
-    busyId.value = ''
+    delete busyByVm[vm.id]
   }
 }
 
-function canStart(vm) {
-  return !!vm.assigned_agent_id && ['stopped', 'unavailable', 'error', 'agent_offline'].includes(vm.state)
+function statusDetails(vm) {
+  return vm.runtime?.last_status?.details || {}
 }
-
-function canStop(vm) {
-  return ['starting', 'running'].includes(vm.state)
+function isTransitioning(vm) {
+  return ['dispatching', 'starting', 'stopping', 'probing', 'creating', 'connecting_hdc', 'checking_driver'].includes(vm.state)
 }
-
-// 探查/换 Agent：非运行类状态才有意义（运行中先停）
+function isVmBusy(vm) {
+  return Boolean(busyByVm[vm.id])
+}
+function hasUnconfirmedRuntime(vm) {
+  if (!vm.assigned_agent_id) return false
+  const details = statusDetails(vm)
+  if (details.cleanup_confirmed === true) return false
+  if (details.cleanup_pending === true || details.cleanup_confirmed === false) return true
+  return Boolean(vm.assigned_agent_id)
+    && ['running', 'error', 'unavailable', 'agent_offline'].includes(vm.state)
+}
 function canProbe(vm) {
-  return !['running', 'starting', 'stopping', 'dispatching'].includes(vm.state)
+  return !isTransitioning(vm) && vm.state !== 'running'
 }
-
-// 删除：运行类（启动中/运行中/停止中）禁止，与后端约束一致
+function canStart(vm) {
+  return Boolean(vm.assigned_agent_id) && !isTransitioning(vm)
+    && ['draft', 'stopped', 'error', 'unavailable', 'agent_offline'].includes(vm.state)
+    && !hasUnconfirmedRuntime(vm)
+}
+function canStop(vm) {
+  return Boolean(vm.assigned_agent_id) && !isTransitioning(vm)
+    && (vm.state === 'running' || hasUnconfirmedRuntime(vm))
+}
 function canDelete(vm) {
-  return !['starting', 'running', 'stopping'].includes(vm.state)
+  return !isTransitioning(vm) && vm.state !== 'running'
+}
+function canDispatchTo(vm, agent) {
+  return Boolean(agent.ok) && canProbe(vm)
+}
+function dispatchLabel(vm, agent) {
+  if (!agent.ok) return '不可用'
+  if (!canDispatchTo(vm, agent)) return '需先停止'
+  return vm.assigned_agent_id && agent.agent_id !== vm.assigned_agent_id
+    ? '换到这台'
+    : '下发'
+}
+function agentLabel(vm) {
+  if (vm.assigned_agent_id) return vm.assigned_agent_id
+  const target = vm.runtime?.operation?.target_agent_id
+  return isTransitioning(vm) && target ? `绑定中：${target}` : '未分配'
+}
+function operationError(vm) {
+  if (vm.state === 'agent_offline') return ''
+  return vm.error_message || ''
+}
+function lifecycleNotice(vm) {
+  if (vm.state === 'agent_offline') return '所属 Agent 已离线，实例状态暂时无法确认。'
+  if (!isTransitioning(vm) && vm.state !== 'running' && hasUnconfirmedRuntime(vm)) {
+    return '尚未确认实例停止；再次启动前，请先完成停止。'
+  }
+  return ''
 }
 
 function vmRam(vm) {
@@ -1004,6 +1088,10 @@ function stateLabel(state) {
     draft: '未下发',
     dispatching: '下发中',
     starting: '启动中',
+    probing: '探查中',
+    creating: '启动中',
+    connecting_hdc: '启动中',
+    checking_driver: '启动中',
     running: '运行中',
     stopping: '停止中',
     stopped: '已停止',
@@ -1015,7 +1103,7 @@ function stateLabel(state) {
 
 function stateClass(state) {
   if (state === 'running') return 'ok'
-  if (['starting', 'dispatching', 'stopping', 'agent_offline'].includes(state)) return 'busy'
+  if (['starting', 'dispatching', 'stopping', 'agent_offline', 'probing', 'creating', 'connecting_hdc', 'checking_driver'].includes(state)) return 'busy'
   if (['unavailable', 'error'].includes(state)) return 'bad'
   return 'idle'
 }
@@ -1023,18 +1111,26 @@ function stateClass(state) {
 function prettyErr(e) {
   const detail = e?.detail
   if (typeof detail === 'string') return detail
+  if (detail?.message) return detail.message
   if (detail) return JSON.stringify(detail)
   return String(e?.message || e)
+}
+
+function pollInstances() {
+  if (activeInstanceLoads) return
+  return refresh({ quiet: true })
 }
 
 onMounted(() => {
   loadCatalog()
   loadFacets()
   refresh()
-  pollTimer = setInterval(refresh, 3000)
+  pollTimer = setInterval(pollInstances, 3000)
 })
 
 onBeforeUnmount(() => {
+  instanceSeq += 1
+  closeCandidates()
   if (pollTimer) clearInterval(pollTimer)
 })
 
@@ -1447,33 +1543,36 @@ defineExpose({ refresh })
               <div><span>屏幕</span><b>{{ vm.screen_width }}×{{ vm.screen_height }} · {{ vm.density }}dpi</b></div>
               <div><span>内存</span><b>{{ vmRam(vm) }}</b></div>
               <div><span>GPU</span><b>{{ vmGpuLabel(vm) }}</b></div>
-              <div><span>Agent</span><b :title="vm.assigned_agent_id || ''">{{ vm.assigned_agent_id || '未分配' }}</b></div>
+              <div><span>Agent</span><b :title="agentLabel(vm)">{{ agentLabel(vm) }}</b></div>
               <div v-if="vm.adb_serial"><span>Serial</span><b>{{ vm.adb_serial }}</b></div>
             </div>
             <div class="actions">
-              <button v-if="canProbe(vm)" type="button" :disabled="busyId === `probe:${vm.id}`" @click="probe(vm)">
-                {{ busyId === `probe:${vm.id}` ? '探查中…' : (vm.assigned_agent_id ? '换 Agent（探查）' : '探查') }}
+              <button v-if="canProbe(vm)" type="button" :disabled="isVmBusy(vm)" @click="probe(vm)">
+                {{ busyByVm[vm.id] === 'probe' ? '探查中…' : (vm.assigned_agent_id ? '换 Agent（探查）' : '探查') }}
               </button>
-              <button v-if="canStart(vm)" type="button" :disabled="busyId === `start:${vm.id}`" @click="startVm(vm)">
-                {{ busyId === `start:${vm.id}` ? '启动中…' : '启动' }}
+              <button v-if="canStart(vm)" type="button" :disabled="isVmBusy(vm)" @click="startVm(vm)">
+                {{ busyByVm[vm.id] === 'start' ? '启动中…' : '启动' }}
               </button>
-              <button v-if="canStop(vm)" type="button" :disabled="busyId === `stop:${vm.id}`" @click="stopVm(vm)">
-                {{ busyId === `stop:${vm.id}` ? '停止中…' : '停止' }}
+              <button v-if="canStop(vm)" type="button" :disabled="isVmBusy(vm)" @click="stopVm(vm)">
+                {{ busyByVm[vm.id] === 'stop' ? '停止中…' : (vm.state === 'running' ? '停止' : '重试停止') }}
               </button>
-              <button type="button" @click="copyConfig(vm)">复制配置</button>
-              <button v-if="canDelete(vm)" type="button" class="danger" :disabled="busyId === `delete:${vm.id}`" @click="removeVm(vm)">删除</button>
+              <button type="button" :disabled="isVmBusy(vm) || isTransitioning(vm)" @click="copyConfig(vm)">复制配置</button>
+              <button v-if="canDelete(vm)" type="button" class="danger" :disabled="isVmBusy(vm)" @click="removeVm(vm)">{{ busyByVm[vm.id] === 'delete' ? '删除中…' : '删除' }}</button>
             </div>
 
-            <div v-if="candidateVmId === vm.id" :ref="(el) => setCandidatesRef(vm.id, el)" class="vm-candidates">
+            <p v-if="lifecycleNotice(vm)" class="lifecycle-notice">{{ lifecycleNotice(vm) }}</p>
+            <p v-if="operationError(vm)" class="vm-operation-error">{{ operationError(vm) }}</p>
+
+            <div v-if="candidateVmId === vm.id && canProbe(vm)" :ref="(el) => setCandidatesRef(vm.id, el)" class="vm-candidates">
               <div class="candidates-head">
                 <strong>可托管 Agent</strong>
                 <span class="spacer"></span>
-                <button type="button" class="ghost" :disabled="busyId === `probe:${vm.id}`" @click="probe(vm)">
-                  {{ busyId === `probe:${vm.id}` ? '探查中…' : '重新探查' }}
+                <button type="button" class="ghost" :disabled="isVmBusy(vm)" @click="probe(vm)">
+                  {{ busyByVm[vm.id] === 'probe' ? '探查中…' : '重新探查' }}
                 </button>
                 <button type="button" class="ghost" @click="closeCandidates">收起</button>
               </div>
-              <div v-if="busyId === `probe:${vm.id}`" class="empty probing">正在探查可托管的 Agent，请稍候…</div>
+              <div v-if="busyByVm[vm.id] === 'probe'" class="empty probing">正在探查可托管的 Agent，请稍候…</div>
               <div v-else class="candidate-grid">
                 <div v-for="agent in candidates" :key="agent.agent_id" class="candidate" :class="{ disabled: !agent.ok }">
                   <div>
@@ -1482,8 +1581,8 @@ defineExpose({ refresh })
                     <p v-if="agent.warning" class="candidate-warn">⚠ {{ agent.warning }}</p>
                     <p v-else>{{ agent.reason }}</p>
                   </div>
-                  <button type="button" :disabled="!agent.ok || busyId === `dispatch:${vm.id}:${agent.agent_id}`" @click="dispatchTo(vm, agent.agent_id)">
-                    {{ busyId === `dispatch:${vm.id}:${agent.agent_id}` ? '下发中…' : '下发' }}
+                  <button type="button" :disabled="!canDispatchTo(vm, agent) || isVmBusy(vm)" @click="dispatchTo(vm, agent.agent_id)">
+                    {{ busyByVm[vm.id] === 'dispatch' ? '下发中…' : dispatchLabel(vm, agent) }}
                   </button>
                 </div>
                 <div v-if="!candidates.length" class="empty">未找到可托管的 Agent（检查 Agent 是否在线、是否装好 Android SDK/emulator）</div>
@@ -1526,6 +1625,8 @@ defineExpose({ refresh })
 </template>
 
 <style scoped>
+.lifecycle-notice { margin: 10px 0 0; border-radius: 6px; background: #fffbeb; color: #92400e; padding: 9px 10px; font-size: 12px; line-height: 1.5; }
+.vm-operation-error { margin: 8px 0 0; color: #b91c1c; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
 .page {
   padding: 22px;
   display: flex;

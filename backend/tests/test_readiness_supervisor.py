@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from ai_phone.agent.health.probe import ProbeOutcome
@@ -214,6 +216,7 @@ async def test_self_heal_fires_once_at_threshold(monkeypatch, ios_scan_ok):
     # 跑足够多轮，跨过阈值后继续跑
     for _ in range(40):
         await sup._tick_once()
+        await asyncio.gather(*sup._heal_tasks.values())
         clock[0] += 30.0
 
     assert len(calls) == 1, f"自愈被触发了 {len(calls)} 次，应该只有 1 次"
@@ -244,6 +247,7 @@ async def test_self_heal_success_resets_fail_count(monkeypatch, ios_scan_ok):
     )
     for _ in range(sup_mod._SELF_HEAL_AFTER_FAILS):
         await sup._tick_once()
+        await asyncio.gather(*sup._heal_tasks.values())
         clock[0] += 5.0
 
     state = sup._states[("S1", "ios_sim")]
@@ -275,6 +279,7 @@ async def test_self_heal_retries_after_a_while_if_still_broken(
     )
     for _ in range(30):
         await sup._tick_once()
+        await asyncio.gather(*sup._heal_tasks.values())
         clock[0] += 30.0
 
     assert 2 <= len(calls) <= 6, f"重试节奏不合理：30 轮里试了 {len(calls)} 次"
@@ -302,6 +307,7 @@ async def test_self_heal_exception_does_not_break_the_loop(monkeypatch, ios_scan
     )
     for _ in range(10):
         await sup._tick_once()
+        await asyncio.gather(*sup._heal_tasks.values())
         clock[0] += 30.0
     # 不抛即通过，且探测照常继续
     assert len(probed) >= 6

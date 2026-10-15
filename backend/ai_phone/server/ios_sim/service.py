@@ -13,16 +13,10 @@ excluded_ports_for(agent)          不需要：Server 不分配端口
 按 lease_token 校验状态上报          不需要：按 vm_id + assigned_agent_id 校验即可
 ```
 
-状态机与 Android / 鸿蒙保持一致的对外语义：
-
-```text
-draft ──dispatch/start──▶ starting ──Agent 上报 running──▶ running
-                            │                                │
-                            └──失败──▶ error                  ├──stop──▶ stopping ──▶ stopped
-                                                             └──消失──▶ stopped
-任意活动态 ──Agent 断线──▶ agent_offline ──重连认领──▶ running / stopped
-Server 重启 ──▶ 非 draft 一律归 agent_offline（等 Agent 重连重新认领）
-```
+首次下发只记录临时目标；收到对应 running 回包后才建立绑定。
+启动、停止各执行一次原生操作，有固定截止时间；失败与重启不会自动续做。
+已绑定实例保留 UDID 与私有数据；离线仅表示事实待核对。
+删除立即退役 Server 配置，在线宿主尽力清理，离线残留由下次孤儿对账处理。
 """
 from __future__ import annotations
 
@@ -33,13 +27,21 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
 from loguru import logger
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.shared import protocol as P
 
 from ..db import get_session_factory
 from ..hub import Hub
+from ..vm_lifecycle import (
+    record_creation_provenance, proves_live_managed_instance, send_operation_once,
+    expire_operation_if_due,
+    is_abandoned_cleanup_receipt, record_abandoned_cleanup_receipt,
+    accept_owner, accept_status, bind_owner, cleanup_foreign_copy, cleanup_abandoned_first_bind,
+    finish_operation, maintenance, runtime as lifecycle_runtime,
+    transaction_lock, update_runtime, host_id as agent_host_id, fail_attempt,
+)
 from ..models import DeviceAlias
 from .models import IosSimVmInstance
 
@@ -78,7 +80,7 @@ def vm_payload(vm: IosSimVmInstance, *, request_id: str = "") -> Dict[str, Any]:
 
 
 async def get_vm_or_404(session: AsyncSession, vm_id: str) -> IosSimVmInstance:
-    vm = await session.get(IosSimVmInstance, vm_id)
+    vm = await session.get(IosSimVmInstance, vm_id, populate_existing=True)
     if vm is None:
         raise LookupError("ios simulator vm not found")
     return vm
@@ -220,261 +222,170 @@ async def delete_owned_alias(session: AsyncSession, vm: IosSimVmInstance) -> int
 
 
 async def reset_vm_states_on_startup(session: AsyncSession) -> int:
-    """Server 重启后把所有非 draft 实例归为 agent_offline。
-
-    与 Android / 鸿蒙一致：Server 内存里的 Agent 连接全丢了，任何"运行中"的记录
-    都不再可信，必须等 Agent 重连上报对账清单后重新认领。
-
-    与 Android 的一处差异：Android 会顺手清空 ``adb_serial`` 把端口还回池子；
-    我们**保留 udid**——它是虚拟机的持久身份，不是端口，清掉反而丢失了"这条记录
-    对应哪台实例"的线索。
-    """
-    result = await session.execute(
-        update(IosSimVmInstance)
-        .where(IosSimVmInstance.state != "draft")
-        .values(state="agent_offline", error_code="server_restarted")
-    )
-    return result.rowcount or 0
-
+    rows = list((await session.execute(select(IosSimVmInstance).where(IosSimVmInstance.state != "draft"))).scalars().all())
+    for vm in rows:
+        op = lifecycle_runtime(vm).get("operation") or {}
+        if op.get("pending"):
+            fail_attempt(vm, "server_restarted", "服务重启，本次未完成操作已结束；不会自动重试")
+        elif vm.assigned_agent_id:
+            vm.state = "agent_offline"
+    return len(rows)
 
 async def mark_agent_vms_offline(agent_id: str) -> int:
-    """Agent 断线：把它名下的实例标 agent_offline，并丢弃其探查快照。
-
-    保留 ``assigned_agent_id``——实例仍然物理存在于那台 Agent 上，重连后要认回去。
-    """
     get_capability_waiter().forget_agent(agent_id)
     factory = get_session_factory()
     async with factory() as session:
-        rows = list(
-            (
-                await session.execute(
-                    select(IosSimVmInstance).where(
-                        IosSimVmInstance.assigned_agent_id == agent_id
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        for vm in rows:
-            vm.state = "agent_offline"
-            vm.error_code = "agent_offline"
-            vm.error_message = f"agent offline: {agent_id}"
-            # 设备已不在池子里，别名退回占位符；否则那条 UDID 映射会一直挂着，
-            # 下次这台重新启动时反过来撞上自己的别名。
+        rows = list((await session.execute(select(IosSimVmInstance).where(
+            (IosSimVmInstance.assigned_agent_id == agent_id) |
+            (IosSimVmInstance.runtime_state["operation"]["target_agent_id"].as_string() == agent_id)
+        ))).scalars().all())
+        for vm in sorted(rows, key=lambda row: row.id):
+            await transaction_lock(session, f"ios-vm:{vm.id}")
+            vm = await session.get(IosSimVmInstance, vm.id, populate_existing=True)
+            if vm is None:
+                continue
+            op = lifecycle_runtime(vm).get("operation") or {}
+            if op.get("pending") and op.get("target_agent_id") == agent_id:
+                fail_attempt(vm, "agent_disconnected", "Agent 断开，本次操作已结束；不会自动重试")
+            elif vm.assigned_agent_id == agent_id:
+                vm.state, vm.error_code, vm.error_message = "agent_offline", "agent_offline", f"agent offline: {agent_id}"
             await _try_bind_alias(session, vm, placeholder_serial(vm.id))
         if rows:
             await session.commit()
         return len(rows)
 
-
-# ---------------------------------------------------------------------------
-# 状态上报
-# ---------------------------------------------------------------------------
-async def handle_vm_status(
-    agent_id: str,
-    msg: Dict[str, Any],
-    hub: Optional[Hub] = None,
-) -> None:
-    """处理 Agent 的生命周期状态上报。
-
-    校验方式比鸿蒙简单：鸿蒙必须核对 ``lease_token`` 才能确认"这台 VM 归你"，
-    因为它的 serial 是可复用的端口；我们的 UDID 天然唯一，按
-    ``vm_id`` + ``assigned_agent_id`` 判断归属就够了。
-    """
-    vm_id = str(msg.get("vm_id") or "").strip()
+async def handle_vm_status(agent_id: str, msg: Dict[str, Any], hub: Optional[Hub] = None) -> None:
+    vm_id = str(msg.get("vm_id") or "")
     if not vm_id:
         return
-    state = str(msg.get("state") or "").strip()
-    reason = str(msg.get("reason") or "").strip()
-    udid = str(msg.get("udid") or "").strip()
+    state, reason = str(msg.get("state") or ""), str(msg.get("reason") or "")
+    udid = str(msg.get("udid") or "")
     details = msg.get("details") if isinstance(msg.get("details"), dict) else {}
-
     factory = get_session_factory()
     async with factory() as session:
+        await transaction_lock(session, f"ios-vm:{vm_id}")
         vm = await session.get(IosSimVmInstance, vm_id)
         if vm is None:
-            # 与 Android / 鸿蒙相同：只有重连认领发现「本机有、DB 已无」的孤儿才
-            # 回发删除。普通 delete ack 不回发，避免 delete/status 无限循环。
-            if hub is not None and reason == "reclaimed":
-                await hub.send_to_agent(
-                    agent_id,
-                    {
-                        "type": P.MSG_IOS_SIM_VM_DELETE,
-                        "request_id": uuid.uuid4().hex[:16],
-                        "vm_id": vm_id,
-                        "udid": udid,
-                    },
-                )
-                logger.info(
-                    "iOS 虚拟机孤儿实例，已回发删除 vm_id={} agent={}", vm_id, agent_id
-                )
-            else:
-                logger.warning(
-                    "收到未知 iOS 虚拟机状态 vm_id={} agent={} state={}",
-                    vm_id, agent_id, state,
-                )
+            if hub and (reason == "reclaimed" or proves_live_managed_instance(vm_id, msg, "ios")):
+                await send_operation_once(hub, agent_id, {"type": P.MSG_IOS_SIM_VM_DELETE,
+                    "request_id": uuid.uuid4().hex[:16], "vm_id": vm_id, "udid": udid})
             return
-
-        owner = str(vm.assigned_agent_id or "").strip()
-        if owner and owner != agent_id and reason != "reclaimed":
-            # 非归属 Agent 的普通状态上报一律拒绝，防止两台 Agent 抢同一条记录。
-            # reclaimed 是例外：实例物理上就在上报者那里，按物理持有者重新绑定。
-            logger.warning(
-                "拒绝非归属 Agent 的 iOS 虚拟机状态上报 vm_id={} owner={} reporter={}",
-                vm_id, owner, agent_id,
-            )
+        legacy = bool(reason in {"reclaimed", "wda_not_ready"} and udid and vm.udid == udid)
+        if not accept_owner(vm, agent_id, hub, legacy_evidence=legacy):
+            if reason in {"reclaimed", "wda_not_ready"}:
+                await cleanup_foreign_copy(hub, vm, agent_id, details, msg)
             return
-
-        if reason == "reclaimed" and owner and owner != agent_id:
-            logger.info(
-                "iOS 虚拟机按物理持有者重新绑定 Agent vm_id={} owner={} reporter={}",
-                vm_id, owner, agent_id,
-            )
-
-        vm.assigned_agent_id = agent_id
-        if udid:
-            vm.udid = udid
-        wda_port = details.get("wda_port")
-        mjpeg_port = details.get("mjpeg_port")
-        if isinstance(wda_port, int):
-            vm.wda_port = wda_port
-        if isinstance(mjpeg_port, int):
-            vm.mjpeg_port = mjpeg_port
-
+        record_creation_provenance(vm, msg)
+        expired = expire_operation_if_due(vm, hub)
+        if is_abandoned_cleanup_receipt(vm, msg):
+            maintenance(hub, vm, False)
+            vm.udid, vm.wda_port, vm.mjpeg_port = None, None, None
+            record_abandoned_cleanup_receipt(vm)
+            await session.commit()
+            return
+        if not accept_status(vm, msg):
+            expired = expire_operation_if_due(vm, hub) or expired
+            cleaned = await cleanup_abandoned_first_bind(hub, vm, agent_id, details, msg)
+            if expired or cleaned:
+                await session.commit()
+            return
         ok = bool(msg.get("ok", True))
+        if udid and vm.udid and udid != vm.udid:
+            state, ok, reason = "error", False, "udid_mismatch"
+        elif udid:
+            vm.udid = udid
+            update_runtime(vm, instance_created=True)
+        if not ok:
+            state = "error"
+        if state not in {"running", "stopped", "starting", "stopping", "error", "unavailable"}:
+            return
+        vm.state = state
+        vm.error_code = "" if ok else reason
+        vm.error_message = "" if ok else str(msg.get("error") or reason)
         if state == "running" and ok:
-            vm.state = "running"
-            vm.error_code = ""
-            vm.error_message = ""
+            bind_owner(vm, agent_id, hub)
+        if state == "running" and ok:
+            update_runtime(vm, instance_created=True)
             vm.started_at = vm.started_at or now_utc()
-            # 跑起来才有 UDID，此时把别名从占位符移到真设备上，
-            # 设备总览的卡片才显示得出用户起的名字。
+            vm.stopped_at = None
+            for key in ("wda_port", "mjpeg_port"):
+                if isinstance(details.get(key), int):
+                    setattr(vm, key, details[key])
             if vm.udid:
                 await _try_bind_alias(session, vm, vm.udid)
-        elif state == "stopped":
-            vm.state = "stopped"
-            vm.error_code = ""
-            vm.error_message = ""
+        elif state == "stopped" and ok:
+            vm.wda_port, vm.mjpeg_port = None, None
             vm.stopped_at = now_utc()
-            # 停机不清 udid：实例还在磁盘上，数据留存（方案 §6.5.1）
-            vm.wda_port = None
-            vm.mjpeg_port = None
-            # 别名退回占位符：设备已不在池子里，留着旧 UDID 映射会让下次
-            # 启动时反过来撞上自己的别名。
             await _try_bind_alias(session, vm, placeholder_serial(vm.id))
-        elif state == "error" or not ok:
-            vm.state = "error"
-            vm.error_code = reason or "error"
-            vm.error_message = str(msg.get("error") or "")
-            await _try_bind_alias(session, vm, placeholder_serial(vm.id))
-        elif state in ("starting", "stopping"):
-            vm.state = state
-        else:
-            logger.debug("iOS 虚拟机上报了未识别状态，忽略 state={}", state)
-
-        vm.runtime_state = {
-            **(vm.runtime_state or {}),
-            "last_reason": reason,
-            "last_state": state,
-            "last_agent_id": agent_id,
-            "details": details,
-            "updated_at": now_utc().isoformat(),
-        }
+        update_runtime(vm, last_reason=reason, last_state=state, last_agent_id=agent_id,
+                       details=details, updated_at=now_utc().isoformat())
+        finish_operation(vm, {**msg, "state": state})
+        maintenance(hub, vm, not (state == "running" and ok))
+        op = lifecycle_runtime(vm).get("operation") or {}
+        if op.get("first_bind") and op.get("outcome") == "failed" and not ok:
+            vm.assigned_agent_id = None
+            if details.get("instance_deleted") or (details.get("cleanup_confirmed") and details.get("instance_created") is False):
+                maintenance(hub, vm, False)
+                vm.udid, vm.wda_port, vm.mjpeg_port = None, None, None
+                update_runtime(vm, instance_created=False)
         await session.commit()
 
 
-async def handle_vm_reconcile(
-    agent_id: str,
-    msg: Dict[str, Any],
-    hub: Optional[Hub] = None,
-) -> None:
-    """处理 Agent (重)连后的受管实例对账清单。
-
-    载荷结构与 **Android 一致**（``vm_ids`` / ``running_vm_ids`` / ``stopped_vm_ids``
-    三个 id 列表），不用鸿蒙那种带 lease_token 的完整对象数组——我们没有租约要核。
-
-    三件事：
-    1. Agent 报的在跑实例 → 由随后的 ``vm_status reason=reclaimed`` 置态
-    2. Agent 报的没跑实例 → 明确置 stopped
-    3. **库里归本 Agent、但 Agent 没报** → 置 agent_offline（差集收敛）
-    4. **Agent 有、库里没有** → 回发删除清理孤儿
-    """
-    reported = [str(x) for x in (msg.get("vm_ids") or []) if str(x)]
+async def handle_vm_reconcile(agent_id: str, msg: Dict[str, Any], hub: Optional[Hub] = None) -> None:
+    reported = {str(x) for x in (msg.get("vm_ids") or []) if str(x)}
     running = {str(x) for x in (msg.get("running_vm_ids") or []) if str(x)}
     stopped = {str(x) for x in (msg.get("stopped_vm_ids") or []) if str(x)}
-
+    reported |= running | stopped
+    unknown = set(msg.get("unknown_vm_ids") or [])
     factory = get_session_factory()
     async with factory() as session:
-        rows = list(
-            (
-                await session.execute(
-                    select(IosSimVmInstance).where(
-                        IosSimVmInstance.assigned_agent_id == agent_id
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        known_ids = {vm.id for vm in rows}
-
-        # 差集收敛：库里归我、但 Agent 说没有 → 实例已不在那台机器上
-        for vm in rows:
-            if vm.id in reported:
-                continue
-            if vm.state == "draft":
-                continue
-            vm.state = "agent_offline"
-            vm.error_code = "not_on_agent"
-            vm.error_message = f"agent {agent_id} 未报告该实例"
-            logger.info("iOS 虚拟机实例已不在 Agent 上，置 agent_offline vm_id={}", vm.id)
-
-        # Agent 说没跑的，明确置 stopped
-        for vm_id in sorted(stopped):
-            vm = await session.get(IosSimVmInstance, vm_id)
+        reporter_host = agent_host_id(hub, agent_id)
+        owner_query = (IosSimVmInstance.assigned_agent_id == agent_id) | IosSimVmInstance.id.in_(reported)
+        if reporter_host:
+            owner_query |= IosSimVmInstance.runtime_state["owner_host_id"].as_string() == reporter_host
+        rows = list((await session.execute(select(IosSimVmInstance).where(owner_query))).scalars().all())
+        known = {vm.id for vm in rows}
+        for vm in sorted(rows, key=lambda row: row.id):
+            await transaction_lock(session, f"ios-vm:{vm.id}")
+            vm = await session.get(IosSimVmInstance, vm.id, populate_existing=True)
             if vm is None:
                 continue
-            vm.assigned_agent_id = agent_id
-            vm.state = "stopped"
-            vm.error_code = ""
-            vm.error_message = ""
-            vm.wda_port = None
-            vm.mjpeg_port = None
-            vm.stopped_at = vm.stopped_at or now_utc()
-
+            proof = (msg.get("instance_proofs") or {}).get(vm.id) or {}
+            op = lifecycle_runtime(vm).get("operation") or {}
+            if not vm.assigned_agent_id and op.get("first_bind") and not op.get("pending"):
+                await cleanup_abandoned_first_bind(hub, vm, agent_id, proof)
+                continue
+            legacy = bool(msg.get("inventory_complete") and vm.id in reported and proof.get("udid")
+                          and proof.get("name") == f"aiphone_sim_{vm.id}"
+                          and (not vm.udid or vm.udid == proof.get("udid")))
+            if not accept_owner(vm, agent_id, hub, legacy_evidence=legacy):
+                if msg.get("inventory_complete"):
+                    await cleanup_foreign_copy(hub, vm, agent_id, proof)
+                continue
+            if legacy and not vm.udid:
+                vm.udid = proof["udid"]
+            if vm.id in reported:
+                update_runtime(vm, instance_created=True)
+                if vm.id in stopped and vm.id not in unknown and vm.state not in {"starting", "stopping"} and not (vm.state == "running" and lifecycle_runtime(vm).get("operation")):
+                    vm.state, vm.error_code, vm.error_message = "stopped", "", ""
+                    vm.wda_port, vm.mjpeg_port = None, None
+                    vm.stopped_at = vm.stopped_at or now_utc()
+                    await _try_bind_alias(session, vm, placeholder_serial(vm.id))
+                    finish_operation(vm, {"state": "stopped"})
+                    maintenance(hub, vm, True)
+            elif msg.get("inventory_complete", True) and vm.id not in unknown and vm.state not in {"draft", "starting", "stopping"}:
+                vm.state, vm.error_code = "error", "instance_missing"
+                vm.error_message = "Agent 未发现原实例；未自动重建"
         await session.commit()
-
-    # 孤儿清理：Agent 有、库里没有 → 回发删除（复用删除链路，无需单独消息）
-    if hub is not None:
-        orphans = [vm_id for vm_id in reported if vm_id not in known_ids]
-        for vm_id in orphans:
-            await hub.send_to_agent(
-                agent_id,
-                {
-                    "type": P.MSG_IOS_SIM_VM_DELETE,
-                    "request_id": uuid.uuid4().hex[:16],
-                    "vm_id": vm_id,
-                    "udid": "",
-                },
-            )
-        if orphans:
-            logger.info(
-                "iOS 虚拟机孤儿实例已回发删除 agent={} 共 {} 台", agent_id, len(orphans)
-            )
-
-    logger.info(
-        "iOS 虚拟机对账完成 agent={} 上报 {} 台（在跑 {} / 没跑 {}）",
-        agent_id, len(reported), len(running), len(stopped),
-    )
+    if hub:
+        for vm_id in reported - known:
+            await send_operation_once(hub, agent_id, {"type": P.MSG_IOS_SIM_VM_DELETE,
+                "request_id": uuid.uuid4().hex[:16], "vm_id": vm_id, "udid": ""})
 
 
-# ---------------------------------------------------------------------------
-# 能力探查等待器
-# ---------------------------------------------------------------------------
 @dataclass
 class _ProbeState:
-    expected: set
+    expected: set[str]
     responses: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     failures: Dict[str, str] = field(default_factory=dict)
     event: asyncio.Event = field(default_factory=asyncio.Event)
@@ -514,9 +425,9 @@ class IosSimCapabilityWaiter:
         }
         try:
             for agent_id in sorted(agent_ids):
-                if not await hub.send_to_agent(agent_id, payload):
+                if not await send_operation_once(hub, agent_id, payload):
                     state.failures[agent_id] = "send_failed"
-            if state.expected:
+            if state.expected - (state.responses.keys() | state.failures.keys()):
                 try:
                     await asyncio.wait_for(state.event.wait(), timeout=timeout_sec)
                 except asyncio.TimeoutError:
@@ -542,7 +453,7 @@ class IosSimCapabilityWaiter:
             **vm_payload(vm, request_id=request_id),
         }
         try:
-            if not await hub.send_to_agent(agent_id, payload):
+            if not await send_operation_once(hub, agent_id, payload):
                 state.failures[agent_id] = "send_failed"
             else:
                 try:

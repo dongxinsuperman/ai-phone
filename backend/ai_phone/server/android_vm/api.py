@@ -20,6 +20,15 @@ from ..models import (
 from ..api._deps import DBSession, HubDep
 from ..api.submissions import RequireBearer
 from ..hub import Hub
+from ..vm_lifecycle import (
+    is_untouched_draft,
+    require_retirement_allowed, send_operation_once,
+    begin_operation, maintenance, require_idle, require_startable,
+    require_device_idle, require_owner_host, runtime as lifecycle_runtime,
+    transaction_lock, record_send_failure, delete_device_record, forget_device_route,
+    cleanup_command, send_cleanup_once, cancel_operation_timeout, arm_operation_timeout,
+    host_id as agent_host_id, update_runtime,
+)
 from .catalog import (
     builtin_coverage_profiles,
     cap_profile_fields,
@@ -43,7 +52,6 @@ from .service import (
     delete_vm_alias,
     get_capability_waiter,
     get_vm_or_404,
-    now_utc,
     sync_vm_alias,
     vm_payload,
 )
@@ -172,10 +180,12 @@ async def patch_instance(
     vm_id: str = Path(..., min_length=1, max_length=64),
     session: AsyncSession = DBSession,
 ) -> Dict[str, Any]:
+    await transaction_lock(session, f"android-vm:{vm_id}")
     try:
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="android vm not found")
+    require_idle(vm, allow_running=True)
     patch = body.model_dump(exclude_unset=True)
     # 别名是设备身份，像真机一样随时可改（含运行态）。其余物理/运行参数仍要求非运行态。
     # name 不再单独可改：永远镜像 alias，这里直接丢弃外部传入的 name。
@@ -634,62 +644,31 @@ async def list_coverage_profiles(session: AsyncSession = DBSession) -> Dict[str,
 
 
 @router.delete("/{vm_id}")
-async def delete_instance(
-    vm_id: str = Path(..., min_length=1, max_length=64),
-    session: AsyncSession = DBSession,
-    hub: Hub = HubDep,
-) -> Dict[str, Any]:
+async def delete_instance(vm_id: str, session: AsyncSession = DBSession, hub: Hub = HubDep) -> Dict[str, Any]:
+    await transaction_lock(session, f"android-vm:{vm_id}")
     try:
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="android vm not found")
-    if vm.state in ACTIVE_STATES:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="active vm cannot be deleted")
-    # 顺序：先删 DB（提交成功）→ 再 best-effort 通知 Agent 清远端 AVD。
-    # 反过来"先通知后删 DB"若 commit 失败，会变成"AVD 已删、配置还在"的不一致；
-    # 漏通知（Agent 离线）由 reconcile「库里没有就删」兜底。与 _switch_agent 口径一致。
-    old_agent = (vm.assigned_agent_id or "").strip()
-    old_serial = (vm.adb_serial or "").strip()
-    alias_deleted = await delete_vm_alias(session, vm)
-    await session.delete(vm)
+        raise HTTPException(404, "实例不存在")
+    require_retirement_allowed(hub, vm)
+    target, command, alias_deleted = await _retire_configuration(session, vm, hub)
     await session.commit()
-    cleanup_sent = False
-    if old_agent:
-        try:
-            cleanup_sent = await hub.send_to_agent(old_agent, {
-                "type": P.MSG_VM_DELETE,
-                "request_id": _request_id(),
-                "vm_id": vm_id,
-                "adb_serial": old_serial,
-            })
-        except Exception:  # noqa: BLE001
-            cleanup_sent = False
-    return {
-        "id": vm_id,
-        "deleted": True,
-        "alias_deleted": alias_deleted,
-        "avd_cleanup_sent": cleanup_sent,
-    }
+    await forget_device_route(hub, vm)
+    sent = await send_cleanup_once(hub, vm, target, command)
+    return {"id": vm_id, "deleted": True, "alias_deleted": alias_deleted,
+            "cleanup_sent": sent, "avd_cleanup_sent": sent}
 
 
-async def _notify_agent_cleanup_avd(hub: Hub, agent_id: str | None, vm: AndroidVmInstance) -> bool:
-    """通知指定 Agent 清理某 VM 的远端 AVD（删除/换绑时调用）。Agent 侧执行 avdmanager delete。"""
-    target = (agent_id or "").strip()
-    if not target:
-        return False
-    try:
-        return await hub.send_to_agent(
-            target,
-            {
-                "type": P.MSG_VM_DELETE,
-                "request_id": _request_id(),
-                "vm_id": vm.id,
-                "adb_serial": vm.adb_serial or "",
-            },
-        )
-    except Exception:  # noqa: BLE001
-        return False
-
+async def _retire_configuration(session: AsyncSession, vm: AndroidVmInstance, hub: Hub):
+    """Remove only ledger state; the caller commits before any network send."""
+    target, command = cleanup_command(vm, P.MSG_VM_DELETE)
+    alias_deleted = await delete_vm_alias(session, vm)
+    cancel_operation_timeout(vm)
+    maintenance(hub, vm, True)
+    await delete_device_record(session, vm)
+    await session.delete(vm)
+    await session.flush()
+    return target, command, alias_deleted
 
 @router.post("/{vm_id}/dispatch-candidates")
 async def dispatch_candidates(
@@ -719,7 +698,6 @@ async def dispatch_instance(
         agent_id=agent_id,
         session=session,
         hub=hub,
-        clear_assignment_on_send_failure=True,
     )
 
 
@@ -736,183 +714,139 @@ async def start_instance(
     assigned_agent_id = (vm.assigned_agent_id or "").strip()
     if not assigned_agent_id:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="vm has no assigned agent")
-    if not hub.has_agent(assigned_agent_id):
-        await _clear_vm_assignment_for_redispatch(vm, session)
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=REDISPATCH_REQUIRED_DETAIL)
     return await _send_start(
         vm_id=vm_id,
         agent_id=assigned_agent_id,
         session=session,
         hub=hub,
-        clear_assignment_on_send_failure=True,
     )
 
 
 @router.post("/{vm_id}/stop")
 async def stop_instance(
     vm_id: str = Path(..., min_length=1, max_length=64),
-    session: AsyncSession = DBSession,
-    hub: Hub = HubDep,
+    session: AsyncSession = DBSession, hub: Hub = HubDep,
 ) -> Dict[str, Any]:
+    await transaction_lock(session, f"android-vm:{vm_id}")
     try:
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="android vm not found")
+        raise HTTPException(404, "android vm not found")
+    require_idle(vm, allow_running=True)
     if not vm.assigned_agent_id:
-        vm.state = "stopped"
-        vm.adb_serial = None
-        vm.stopped_at = now_utc()
-        await session.commit()
-        await session.refresh(vm)
         return {"sent": False, "instance": vm.to_dict()}
-    sent = await hub.send_to_agent(
-        vm.assigned_agent_id,
-        {
-            "type": P.MSG_VM_STOP,
-            "request_id": _request_id(),
-            "vm_id": vm.id,
-            "adb_serial": vm.adb_serial or "",
-        },
-    )
-    vm.state = "stopping" if sent else "unavailable"
-    if not sent:
-        vm.error_message = "assigned agent offline"
-        vm.adb_serial = None
-        vm.stopped_at = now_utc()
+    require_owner_host(vm, hub)
+    require_device_idle(hub, vm)
+    request_id = begin_operation(vm, "stop", target_agent_id=vm.assigned_agent_id,
+                                 target_host_id=agent_host_id(hub, vm.assigned_agent_id))
+    vm.state = "stopping"
+    maintenance(hub, vm, True)
     await session.commit()
+    arm_operation_timeout(vm, hub)
+    sent = await send_operation_once(hub, vm.assigned_agent_id, {
+        "type": P.MSG_VM_STOP, "request_id": request_id,
+        "vm_id": vm.id, "adb_serial": vm.adb_serial or "",
+    })
+    if not sent:
+        await record_send_failure(session, vm, request_id, "所属 Agent 离线，尚未确认停止")
     await session.refresh(vm)
     return {"sent": sent, "instance": vm.to_dict()}
 
 
 async def _send_start(
-    *,
-    vm_id: str,
-    agent_id: str,
-    session: AsyncSession,
-    hub: Hub,
-    clear_assignment_on_send_failure: bool = False,
+    *, vm_id: str, agent_id: str, session: AsyncSession, hub: Hub, expected_draft: bool = False,
 ) -> Dict[str, Any]:
+    await transaction_lock(session, f"android-vm:{vm_id}")
     try:
         vm = await get_vm_or_404(session, vm_id)
+        await session.refresh(vm)
     except LookupError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="android vm not found")
-    if vm.state in ACTIVE_STATES:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="active vm cannot be dispatched")
-    # 换 Agent（下发到与原来不同的、且已绑定过的 Agent）：删旧 vm_id + 新建 vm_id（继承别名/配置）。
-    # 这样旧 Agent 即便离线漏了清理，回来报旧 vmid 也会因"库里没有"被 reconcile 清掉，
-    # 不会出现"旧 Agent 抢回 / 两台同款同时在跑"。详见 android-vm-plan §21.3。
+        raise HTTPException(404, "android vm not found")
+    if expected_draft and not is_untouched_draft(vm):
+        raise HTTPException(409, "新配置已被另一操作接管，本次换机不会重复启动")
+    require_idle(vm)
+    old_agent = str(vm.assigned_agent_id or "")
+    if old_agent and old_agent != agent_id:
+        return await _switch_agent(vm=vm, new_agent_id=agent_id, session=session, hub=hub)
+    require_startable(vm)
     old_agent = (vm.assigned_agent_id or "").strip()
     if old_agent and old_agent != agent_id:
         return await _switch_agent(vm=vm, new_agent_id=agent_id, session=session, hub=hub)
-    # Server 全局统一分配 emulator 端口（并预占 adb_serial），保证全网 serial 不撞 → 不串台。
-    assigned_port, exclude_ports = await assign_emulator_port(session, vm)
+    if not hub.has_agent(agent_id):
+        raise HTTPException(409, "所属 Agent 离线，请等待其重新连接")
+    require_device_idle(hub, vm)
+    try:
+        assigned_port, exclude_ports = await assign_emulator_port(session, vm, hub=hub)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
+    require_owner_host(vm, hub)
+    require_device_idle(hub, vm)
+    first_bind = not bool(vm.assigned_agent_id)
+    request_id = begin_operation(vm, "start", target_agent_id=agent_id,
+        target_host_id=agent_host_id(hub, agent_id), first_bind=first_bind)
     payload = {
-        "type": P.MSG_VM_START,
-        **vm_payload(vm, request_id=_request_id()),
-        "assigned_port": assigned_port,
-        "exclude_ports": exclude_ports,
+        "type": P.MSG_VM_START, **vm_payload(vm, request_id=request_id),
+        "assigned_port": assigned_port, "exclude_ports": exclude_ports,
+        "require_existing_instance": bool(lifecycle_runtime(vm).get("instance_created") or vm.started_at),
+        "rollback_new_instance": first_bind,
+        "operation_timeout_sec": lifecycle_runtime(vm)["operation"]["timeout_sec"],
     }
-    sent = await hub.send_to_agent(agent_id, payload)
-    if not sent and clear_assignment_on_send_failure:
-        await _clear_vm_assignment_for_redispatch(vm, session)
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=REDISPATCH_REQUIRED_DETAIL)
-    vm.assigned_agent_id = agent_id
-    vm.state = "starting" if sent else "unavailable"
-    vm.error_message = "" if sent else "selected agent offline"
-    if sent:
-        vm.stopped_at = None
-    else:
-        # 没发出去：释放刚才预占的端口，别让离线 VM 长期占着全局槽位。
-        vm.adb_serial = None
+    vm.state = "starting"
+    vm.error_message = ""
+    vm.stopped_at = None
+    maintenance(hub, vm, True)
     await session.commit()
+    arm_operation_timeout(vm, hub)
+    sent = await send_operation_once(hub, agent_id, payload)
+    if not sent:
+        await record_send_failure(session, vm, request_id, "启动下发失败，保留原绑定等待对账")
     await session.refresh(vm)
     return {"sent": sent, "instance": vm.to_dict()}
 
 
-async def _clear_vm_assignment_for_redispatch(
-    vm: AndroidVmInstance,
-    session: AsyncSession,
-) -> None:
-    vm.assigned_agent_id = None
-    vm.state = "stopped"
-    vm.error_message = REDISPATCH_REQUIRED_DETAIL
-    vm.adb_serial = None
-    vm.stopped_at = now_utc()
-    await session.commit()
-
-
-async def _switch_agent(
-    *, vm: AndroidVmInstance, new_agent_id: str, session: AsyncSession, hub: Hub
-) -> Dict[str, Any]:
-    """换 Agent：删旧 vm_id（通知旧 Agent 清 AVD + 清旧别名映射）+ 新建 vm_id（继承别名/配置）绑新 Agent。"""
-    old_agent = (vm.assigned_agent_id or "").strip()
+async def _switch_agent(*, vm: AndroidVmInstance, new_agent_id: str, session: AsyncSession, hub: Hub) -> Dict[str, Any]:
+    await transaction_lock(session, f"android-vm:{vm.id}")
+    try:
+        vm = await get_vm_or_404(session, vm.id)
+    except LookupError:
+        raise HTTPException(404, "实例已删除")
+    require_retirement_allowed(hub, vm)
+    inherited = {key: getattr(vm, key) for key in ('name', 'alias', 'profile_ref_type', 'profile_ref_id', 'profile_id', 'profile_name', 'config_version', 'config_json', 'capability_marks', 'api_level', 'abi', 'system_type', 'system_image', 'screen_width', 'screen_height', 'density', 'orientation')}
     old_vm_id = vm.id
-    old_serial = (vm.adb_serial or "").strip()
-    # 1) 快照旧机全部可继承字段（别名 / 画像 / 运行参数），新机原样复制
-    inherited = dict(
-        name=vm.name,
-        alias=vm.alias,
-        profile_ref_type=vm.profile_ref_type,
-        profile_ref_id=vm.profile_ref_id,
-        profile_id=vm.profile_id,
-        profile_name=vm.profile_name,
-        config_version=vm.config_version,
-        config_json=dict(vm.config_json or {}),
-        capability_marks=dict(vm.capability_marks or {}),
-        api_level=vm.api_level,
-        abi=vm.abi,
-        system_type=vm.system_type,
-        system_image=vm.system_image,
-        screen_width=vm.screen_width,
-        screen_height=vm.screen_height,
-        density=vm.density,
-        orientation=vm.orientation,
-    )
-    # 2) 删旧 vm（含别名映射），flush 释放别名供新 vm 复用
-    await delete_vm_alias(session, vm)
-    await session.delete(vm)
-    await session.flush()
-    # 3) 新建 vm（新 vm_id 自动生成；别名/配置全继承），绑新 Agent
+    old_target, old_command, _ = await _retire_configuration(session, vm, hub)
     new_vm = AndroidVmInstance(state="draft", **inherited)
     session.add(new_vm)
     await session.flush()
-    # 4) 发 start 给新 Agent（Server 全局统一分配 emulator 端口，保证 serial 不撞）
-    assigned_port, exclude_ports = await assign_emulator_port(session, new_vm)
-    payload = {
-        "type": P.MSG_VM_START,
-        **vm_payload(new_vm, request_id=_request_id()),
-        "assigned_port": assigned_port,
-        "exclude_ports": exclude_ports,
-    }
-    sent = await hub.send_to_agent(new_agent_id, payload)
-    if not sent:
-        await session.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=REDISPATCH_REQUIRED_DETAIL)
-    new_vm.assigned_agent_id = new_agent_id
-    new_vm.state = "starting"
-    new_vm.error_message = ""
-    new_vm.stopped_at = None
+    # Retire old ID and establish the replacement configuration atomically.
+    # An unreachable old WebSocket cannot leave the ledger with neither row.
+    new_vm_id = new_vm.id
     await session.commit()
-    await session.refresh(new_vm)
-    # 5) DB 提交成功后，才通知旧 Agent 清理旧 AVD（在线即删；离线靠 reconcile「库里没有就删」兜底）。
-    #    放到 commit 之后：避免上面任何步骤异常回滚后，旧 AVD 已被删而 DB 仍是旧 vm 的不一致。
-    if old_agent:
-        try:
-            await hub.send_to_agent(old_agent, {
-                "type": P.MSG_VM_DELETE,
-                "request_id": _request_id(),
-                "vm_id": old_vm_id,
-                "adb_serial": old_serial,
-            })
-        except Exception:  # noqa: BLE001
-            pass
-    return {
-        "sent": sent,
-        "switched": True,
-        "old_vm_id": old_vm_id,
-        "instance": new_vm.to_dict(),
-    }
-
+    await forget_device_route(hub, vm)
+    cleanup_sent = await send_cleanup_once(hub, vm, old_target, old_command)
+    try:
+        result = await _send_start(vm_id=new_vm_id, agent_id=new_agent_id, session=session, hub=hub, expected_draft=True)
+        sent = bool(result.get("sent"))
+        instance = result.get("instance") or new_vm.to_dict()
+    except HTTPException as exc:
+        await transaction_lock(session, f"android-vm:{new_vm_id}")
+        current = await session.get(AndroidVmInstance, new_vm_id, populate_existing=True)
+        if current is None:
+            await session.commit()
+            raise HTTPException(409, "新配置已被其他操作删除") from exc
+        # A different caller may have started/stopped/deleted the visible new
+        # configuration while old-host cleanup was in flight. Never overwrite
+        # its operation or result with this switch call's stale exception.
+        if is_untouched_draft(current):
+            current.state = "error"
+            current.error_message = f"新配置启动失败：{exc.detail}"
+            update_runtime(current, last_status={"state": "error", "ok": False,
+                           "details": {"cleanup_confirmed": True, "instance_created": False}},
+                           details={"cleanup_confirmed": True, "instance_created": False})
+        instance = current.to_dict()
+        await session.commit()
+        sent = False
+    return {"sent": sent, "switched": True, "old_vm_id": old_vm_id,
+            "old_cleanup_sent": cleanup_sent, "instance": instance}
 
 def _normalize_abi(value: str) -> str:
     raw = (value or "auto").strip().lower()

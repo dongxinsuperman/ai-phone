@@ -11,6 +11,7 @@ import httpx
 from loguru import logger
 
 from ai_phone.agent.ws_client import AgentWSClient
+from ai_phone.agent.device_activity import device_activity
 from ai_phone.shared import protocol as P
 
 from .android import install_apk
@@ -23,12 +24,21 @@ _TASKS: Set[asyncio.Task] = set()
 
 async def handle_app_install_start(client: AgentWSClient, msg: Dict[str, Any]) -> None:
     """收到安装任务后立即后台执行，避免阻塞 Agent WS 接收循环。"""
+    serial = str(msg.get("serial") or "")
+    if not device_activity.acquire(serial):
+        await client.send({"type": P.MSG_APP_INSTALL_RESULT, "serial": serial,
+            "task_id": msg.get("task_id", ""), "item_id": msg.get("item_id", ""),
+            "request_id": msg.get("request_id", ""), "platform": msg.get("platform", ""),
+            "package_name": msg.get("package_name", ""), "success": False,
+            "reason": "device_under_maintenance", "message": "虚拟机正在启停或清理，请稍后重试"})
+        return
     task = asyncio.create_task(
         _run_app_install(client, dict(msg)),
         name=f"app-install-{msg.get('item_id') or msg.get('serial') or 'unknown'}",
     )
     _TASKS.add(task)
     task.add_done_callback(_TASKS.discard)
+    task.add_done_callback(lambda _: device_activity.release(serial))
 
 
 async def _run_app_install(client: AgentWSClient, msg: Dict[str, Any]) -> None:

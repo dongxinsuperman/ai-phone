@@ -40,10 +40,11 @@ class _RefreshFailClient:
         raise RuntimeError("device scan failed")
 
 
-class _RecordingHub:
+class _RecordingHub(Hub):
     """只记录 send_to_agent 调用的假 hub，用于断言孤儿清理指令。"""
 
     def __init__(self):
+        super().__init__()
         self.sent = []
 
     async def send_to_agent(self, agent_id, payload):
@@ -53,6 +54,7 @@ class _RecordingHub:
 
 class _FailingSendHub(Hub):
     def __init__(self):
+        super().__init__()
         self.sent = []
 
     def has_agent(self, agent_id):
@@ -295,7 +297,8 @@ async def test_android_vm_dispatch_sends_start_to_agent(client, app):
     body = resp.json()
     assert body["sent"] is True
     assert body["instance"]["state"] == "starting"
-    assert body["instance"]["assigned_agent_id"] == "agent-1"
+    assert body["instance"]["assigned_agent_id"] is None
+    assert body["instance"]["runtime"]["operation"]["target_agent_id"] == "agent-1"
     assert ws.sent[-1]["type"] == P.MSG_VM_START
     assert ws.sent[-1]["vm_id"] == vm_id
     assert ws.sent[-1]["profile_ref_type"] == "coverage_strategy"
@@ -364,7 +367,7 @@ async def test_android_vm_active_instance_is_not_dispatched_or_deleted(client, a
     assert delete.status_code == 409
 
 
-async def test_android_vm_start_clears_missing_assigned_agent(client, app, session):
+async def test_android_vm_start_preserves_missing_assigned_agent(client, app, session):
     app.state.hub = Hub()
     created = await client.post(
         "/api/internal/vm/instances",
@@ -380,14 +383,14 @@ async def test_android_vm_start_clears_missing_assigned_agent(client, app, sessi
     resp = await client.post(f"/api/internal/vm/instances/{vm_id}/start", headers=AUTH)
 
     assert resp.status_code == 409
-    assert "probe and dispatch again" in resp.json()["detail"]
+    assert "离线" in resp.json()["detail"]
     await session.refresh(vm)
-    assert vm.assigned_agent_id is None
+    assert vm.assigned_agent_id == "agent-old"
     assert vm.state == "stopped"
-    assert vm.error_message == "assigned agent offline; please probe and dispatch again"
+    assert vm.error_message == ""
 
 
-async def test_android_vm_start_send_failure_clears_assignment(client, app, session):
+async def test_android_vm_start_send_failure_preserves_assignment(client, app, session):
     hub = _FailingSendHub()
     app.state.hub = hub
     created = await client.post(
@@ -403,12 +406,15 @@ async def test_android_vm_start_send_failure_clears_assignment(client, app, sess
 
     resp = await client.post(f"/api/internal/vm/instances/{vm_id}/start", headers=AUTH)
 
-    assert resp.status_code == 409
+    assert resp.status_code == 200
+    assert resp.json()["sent"] is False
     assert hub.sent[-1][0] == "agent-1"
     await session.refresh(vm)
-    assert vm.assigned_agent_id is None
-    assert vm.state == "stopped"
-    assert vm.error_message == "assigned agent offline; please probe and dispatch again"
+    assert vm.assigned_agent_id == "agent-1"
+    assert vm.state == "error"
+    assert vm.runtime["operation"]["pending"] is False
+    assert vm.adb_serial == "emulator-5554"
+    assert "保留原绑定" in vm.error_message
 
 
 async def test_android_vm_dispatch_rejects_offline_agent_without_switching(client, app, session):
@@ -437,7 +443,7 @@ async def test_android_vm_dispatch_rejects_offline_agent_without_switching(clien
     assert vm.state == "stopped"
 
 
-async def test_android_vm_dispatch_send_failure_clears_assignment(client, app, session):
+async def test_android_vm_dispatch_send_failure_preserves_assignment(client, app, session):
     hub = _FailingSendHub()
     app.state.hub = hub
     created = await client.post(
@@ -453,12 +459,16 @@ async def test_android_vm_dispatch_send_failure_clears_assignment(client, app, s
         json={"agent_id": "agent-1"},
     )
 
-    assert resp.status_code == 409
+    assert resp.status_code == 200
+    assert resp.json()["sent"] is False
     assert hub.sent[-1][0] == "agent-1"
     vm = await session.get(AndroidVmInstance, vm_id)
     assert vm.assigned_agent_id is None
-    assert vm.state == "stopped"
-    assert vm.error_message == "assigned agent offline; please probe and dispatch again"
+    assert vm.runtime["operation"]["target_agent_id"] == "agent-1"
+    assert vm.state == "error"
+    assert vm.runtime["operation"]["pending"] is False
+    assert vm.adb_serial == "emulator-5554"
+    assert "保留原绑定" in vm.error_message
 
 
 async def test_android_vm_alias_is_renamable_with_uniqueness(client):
@@ -630,7 +640,9 @@ async def test_android_vm_delete_removes_owned_alias_and_allows_reuse(client, se
 
     resp = await client.delete(f"/api/internal/vm/instances/{vm_id}", headers=AUTH)
     assert resp.status_code == 200, resp.text
-    assert resp.json()["alias_deleted"] == 1
+    assert resp.json()["deleted"] is True
+    session.expire_all()
+    assert await session.get(AndroidVmInstance, vm_id) is None
     assert await session.get(DeviceAlias, "emulator-5554") is None
 
     recreated = await client.post(
@@ -692,13 +704,15 @@ async def test_android_vm_status_updates_instance(session):
 
     moved = await session.get(DeviceAlias, "emulator-5560")
     old = await session.get(DeviceAlias, "emulator-5554")
-    assert moved is not None
-    assert moved.alias == "vm-a"
-    assert old is None
+    assert moved is None
+    assert old is not None and old.alias == "vm-a"
+    await session.refresh(vm)
+    assert vm.state == "error" and vm.adb_serial == "emulator-5554"
+    assert "adb_serial_mismatch" in vm.error_message
 
 
 async def test_android_vm_reconcile_binds_and_cleans_orphans(session):
-    # 新模型（所有权=物理占有）：上报的 vm_id 库里有→谁报谁绑、非 active 归 stopped；库里没有→清。
+    # 升级首次对账有真实 AVD 证据且旧会话离线，才允许采用新的会话 ID。
     mine = AndroidVmInstance(
         name="mine", alias="mine", api_level=35, abi="arm64",
         state="agent_offline", assigned_agent_id="agent-old",
@@ -711,13 +725,14 @@ async def test_android_vm_reconcile_binds_and_cleans_orphans(session):
     hub = _RecordingHub()
     await handle_vm_reconcile(
         "agent-new",
-        {"vm_ids": [mine_id, deleted_vmid]},
+        {"vm_ids": [mine_id, deleted_vmid], "stopped_vm_ids": [mine_id], "inventory_complete": True,
+         "instance_proofs": {mine_id: {"avd_name": f"aiphone_vm_{mine_id}"}}},
         hub,
         session=session,
     )
 
     await session.refresh(mine)
-    assert mine.assigned_agent_id == "agent-new"  # 谁报谁绑（不再要求 agent_id 一致）
+    assert mine.assigned_agent_id == "agent-new"  # 旧归属离线且实体证据匹配
     assert mine.state == "stopped"                # 非 active → 归一为 stopped
 
     cleaned = {payload["vm_id"] for _agent, payload in hub.sent}
@@ -753,7 +768,7 @@ async def test_android_vm_reconcile_corrects_stale_running(session):
 
     await session.refresh(stale)
     await session.refresh(live)
-    assert stale.state == "stopped" and stale.adb_serial is None  # 假 running 被纠正
+    assert stale.state == "stopped" and stale.adb_serial == "emulator-5554"  # 假 running 被纠正
     assert live.state == "running"                                 # 在跑的不降级
     assert not hub.sent                                            # 都在库里，无孤儿
 
@@ -783,13 +798,13 @@ async def test_android_vm_reset_states_on_startup(session):
     await session.refresh(stopped)
     await session.refresh(draft)
     assert n == 2
-    assert running.state == "agent_offline" and running.adb_serial is None
+    assert running.state == "agent_offline" and running.adb_serial == "emulator-5554"
     assert stopped.state == "agent_offline"
     assert running.assigned_agent_id == "agent-1"   # 绑定关系保留
     assert draft.state == "draft"                    # draft 不动
 
 
-async def test_android_vm_reconcile_offlines_unreported(session):
+async def test_android_vm_reconcile_marks_missing_without_releasing_identity(session):
     # 差集收敛：归 agent-1 的 VM 若本轮上报清单里没有 → 置 agent_offline；别的 Agent 的不动
     gone = AndroidVmInstance(
         name="gone", alias="gone", api_level=35, abi="arm64",
@@ -818,14 +833,15 @@ async def test_android_vm_reconcile_offlines_unreported(session):
     await session.refresh(gone)
     await session.refresh(other)
     await session.refresh(starting)
-    assert gone.state == "agent_offline" and gone.adb_serial is None  # 归己、没上报 → offline
+    assert gone.state == "error" and gone.adb_serial == "emulator-5554"
+    assert "instance_missing" in gone.error_message
     assert other.state == "running"                                    # 归 agent-2 → 不动
     assert starting.state == "starting"                                # 在途指令态 → 保护不降
     assert not hub.sent                                                # 无孤儿删除
 
 
 async def test_android_vm_reclaim_binds_to_reporter(session):
-    # 重启换名后的新 Agent 认领：直接绑到上报者，不再"抢占清理"
+    # 重启会话首次迁移需要精确 AVD 身份证明和离线旧 owner
     vm = AndroidVmInstance(
         name="vm", alias="vm", api_level=35, abi="arm64",
         state="agent_offline", assigned_agent_id="agent-old",
@@ -844,6 +860,7 @@ async def test_android_vm_reclaim_binds_to_reporter(session):
             "ok": True,
             "reason": "reclaimed",
             "adb_serial": "emulator-5554",
+            "details": {"avd_name": f"aiphone_vm_{vm_id}"},
         },
         hub,
         session=session,
@@ -857,45 +874,45 @@ async def test_android_vm_reclaim_binds_to_reporter(session):
 
 
 async def test_android_vm_switch_agent_deletes_old_creates_new(client, app, session):
-    # 换 Agent：删旧 vm_id + 新建 vm_id（继承别名/配置）；旧记录消失、新记录绑新 Agent
     hub = Hub()
     app.state.hub = hub
-    await hub.register_agent("agent-B", "mac-b", "Darwin", _FakeWs())
-    created = await client.post(
-        "/api/internal/vm/instances",
-        headers=AUTH,
+    old_ws, new_ws = _FakeWs(), _FakeWs()
+    await hub.register_agent("agent-A", "mac-a", "Darwin", old_ws)
+    await hub.register_agent("agent-B", "mac-b", "Darwin", new_ws)
+    created = await client.post("/api/internal/vm/instances", headers=AUTH,
         json={"name": "切机测试", "alias": "切机测试", "api_level": 35, "abi": "auto",
-              "screen_width": 1080, "screen_height": 2400, "density": 440},
-    )
+              "screen_width": 1080, "screen_height": 2400, "density": 440})
     old_id = created.json()["id"]
-    # 先让它"已绑定"到 agent-A（非 active 态，dispatch 才允许）
     vm = await session.get(AndroidVmInstance, old_id)
-    vm.assigned_agent_id = "agent-A"
-    vm.state = "stopped"
+    vm.assigned_agent_id, vm.state = "agent-A", "stopped"
     await session.commit()
-
-    resp = await client.post(
-        f"/api/internal/vm/instances/{old_id}/dispatch",
-        headers=AUTH,
-        json={"agent_id": "agent-B"},
-    )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body.get("switched") is True
-    assert body["old_vm_id"] == old_id
-    new = body["instance"]
-    assert new["id"] != old_id                       # vm_id 换新
-    assert new["alias"] == "切机测试"                 # 别名继承
-    assert new["screen_width"] == 1080 and new["density"] == 440  # 配置继承
-    assert new["assigned_agent_id"] == "agent-B"
-
-    # 旧记录已删除（清掉 session 身份映射缓存，强制重查 DB）
+    response = await client.post(f"/api/internal/vm/instances/{old_id}/dispatch",
+                                headers=AUTH, json={"agent_id": "agent-B"})
+    assert response.status_code == 200, response.text
+    new = response.json()["instance"]
+    assert response.json()["switched"] and new["id"] != old_id
+    assert new["alias"] == "切机测试" and new["screen_width"] == 1080 and new["density"] == 440
+    assert new["assigned_agent_id"] is None and new["state"] == "starting"
+    assert new["runtime"]["operation"]["target_agent_id"] == "agent-B"
+    assert old_ws.sent[-1]["type"] == P.MSG_VM_DELETE
+    assert len(new_ws.sent) == 1 and new_ws.sent[-1]["type"] == P.MSG_VM_START
+    assert new_ws.sent[-1]["require_existing_instance"] is False
     session.expire_all()
     assert await session.get(AndroidVmInstance, old_id) is None
+    # Old cleanup replies are factual receipts; they do not continue/repeat switch.
+    await handle_vm_status("agent-A", {"vm_id": old_id, "request_id": old_ws.sent[-1]["request_id"],
+        "state": "stopped", "reason": "deleted", "ok": True}, hub, session=session)
+    assert len(new_ws.sent) == 1
+    await handle_vm_status("agent-B", {"vm_id": new["id"], "request_id": new_ws.sent[-1]["request_id"],
+        "state": "running", "reason": "started", "ok": True, "adb_serial": new["adb_serial"]}, hub, session=session)
+    fresh = await session.get(AndroidVmInstance, new["id"])
+    assert fresh.assigned_agent_id == "agent-B" and fresh.state == "running"
 
 
-async def test_android_vm_sweep_reports_vanished(tmp_path):
-    # 运行期巡检：① 未就绪(启动中)的绝不判消失；② 已就绪的需连续 2 轮缺席才判 stopped（防抖）
+async def test_android_vm_sweep_reports_vanished(tmp_path, monkeypatch):
+    # 两轮缺席仅触发核验，确认无匹配进程且端口可用后才允许 stopped。
+    monkeypatch.setattr("ai_phone.agent.android_vm.manager._find_avd_processes", lambda _name: ([], True))
+    monkeypatch.setattr("ai_phone.agent.android_vm.manager._is_port_free", lambda _port: True)
     manager = AndroidVmManager(runtime_dir=tmp_path)
     manager._runtimes["vm_a"] = VmRuntime(  # 一直在 → 不动
         vm_id="vm_a", name="a", adb_serial="emulator-5554", port=5554,
@@ -1027,6 +1044,9 @@ def test_delete_sync_reentrant_stop_no_deadlock(tmp_path, monkeypatch):
         "sdk_root": "",
     })()
     monkeypatch.setattr(mgr, "find_android_tools", lambda: (tools, []))
+    monkeypatch.setattr(mgr, "_find_avd_processes", lambda _name: ([], True))
+    monkeypatch.setattr(mgr, "_is_port_free", lambda _port: True)
+    monkeypatch.setenv("ANDROID_AVD_HOME", str(tmp_path / "avd-home"))
 
     def _fake_run(args, **kwargs):  # noqa: ANN001
         class _Proc:
@@ -1043,7 +1063,8 @@ def test_delete_sync_reentrant_stop_no_deadlock(tmp_path, monkeypatch):
     assert "v1" not in manager._runtimes  # 内部 stop_sync 重入成功，已 pop
 
 
-def test_choose_port_skips_registered_runtimes(tmp_path):
+def test_choose_port_skips_registered_runtimes(tmp_path, monkeypatch):
+    monkeypatch.setattr("ai_phone.agent.android_vm.manager._is_port_free", lambda _port: True)
     # 端口预留：已注册(占位)的 runtime 端口必须被排除，防并发启动选到同一端口
     manager = AndroidVmManager(runtime_dir=tmp_path)
     manager._runtimes["a"] = VmRuntime(
@@ -1281,6 +1302,8 @@ def test_android_vm_manager_stop_all_clears_runtimes(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "ai_phone.agent.android_vm.manager.find_android_tools", lambda: (None, [])
     )
+    monkeypatch.setattr("ai_phone.agent.android_vm.manager._find_avd_processes", lambda _name: ([], True))
+    monkeypatch.setattr("ai_phone.agent.android_vm.manager._is_port_free", lambda _port: True)
     manager = AndroidVmManager(runtime_dir=tmp_path, max_instances=2)
     manager._runtimes["vm-1"] = VmRuntime(
         vm_id="vm-1",
@@ -1325,6 +1348,8 @@ def test_android_vm_manager_reclaims_only_vmid_emulators(tmp_path, monkeypatch):
                 return _Proc("vm-1\n")
             if prop == "debug.aiphone.alias":
                 return _Proc("支付回归机-01\n")
+            if prop == "sys.boot_completed":
+                return _Proc("1\n")
         if args[:4] == ["/fake/adb", "-s", "emulator-5556", "shell"]:
             return _Proc("\n")
         if args[:4] == ["/fake/adb", "-s", "emulator-5554", "emu"]:
@@ -1378,6 +1403,8 @@ def test_android_vm_reclaim_preserves_existing_process_handle(tmp_path, monkeypa
                 return _Proc("vm-1\n")
             if prop == "debug.aiphone.alias":
                 return _Proc("new-name\n")
+            if prop == "sys.boot_completed":
+                return _Proc("1\n")
         if args[:4] == ["/fake/adb", "-s", "emulator-5556", "emu"]:
             return _Proc("aiphone_vm_vm_1\nOK\n")
         return _Proc("")
@@ -1479,6 +1506,7 @@ def test_android_vm_manager_start_translates_advanced_config_to_emulator_args(
     monkeypatch.setattr(manager, "_ensure_avd", _fake_ensure_avd)
     monkeypatch.setattr(manager, "_choose_port", lambda *args, **kwargs: 5554)
     monkeypatch.setattr(manager, "_wait_boot_completed", lambda *args, **kwargs: None)
+    monkeypatch.setattr(manager, "_emulator_avd_name", lambda *args: "aiphone_vm_vm_advanced")
     monkeypatch.setattr(manager, "_provision_device", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         "ai_phone.agent.android_vm.manager.subprocess.Popen",

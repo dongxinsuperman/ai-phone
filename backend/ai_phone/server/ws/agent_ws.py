@@ -21,6 +21,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 from loguru import logger
 from sqlalchemy import delete, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.config import get_settings
@@ -209,9 +210,11 @@ async def agent_ws(
         await ws.close(code=status.WS_1002_PROTOCOL_ERROR, reason="missing agent_id")
         return
 
+    host_id = str(first.get("host_id") or "").strip()[:64]
     devices = await filter_managed_devices_for_agent(agent_id, devices)
+    devices = await _filter_managed_vm_devices(agent_id, devices, host_id=host_id)
     serials = {str(d.get("serial")) for d in devices if d.get("serial")}
-    await hub.register_agent(agent_id, agent_name, host_os, ws)
+    await hub.register_agent(agent_id, agent_name, host_os, ws, host_id=host_id)
     hub.set_agent_capabilities(agent_id, first.get("capabilities"))
     await hub.set_devices(agent_id, serials)
     await _upsert_devices(agent_id, devices, hub)
@@ -252,6 +255,8 @@ async def agent_ws(
     try:
         while True:
             msg = await ws.receive_json()
+            if not hub.is_current_agent_socket(agent_id, ws):
+                break
             try:
                 await _dispatch(hub, lock_store, agent_id, msg)
             except WebSocketDisconnect:
@@ -296,6 +301,7 @@ async def _dispatch(
         devices = msg.get("devices") or []
         hub.set_agent_capabilities(agent_id, msg.get("capabilities"))
         devices = await filter_managed_devices_for_agent(agent_id, devices)
+        devices = await _filter_managed_vm_devices(agent_id, devices, host_id=hub.agent_host_id(agent_id))
         serials = {str(d.get("serial")) for d in devices if d.get("serial")}
         await hub.set_devices(agent_id, serials)
         await _upsert_devices(agent_id, devices, hub)
@@ -422,6 +428,10 @@ async def _dispatch(
         return
 
     if t == P.MSG_DEVICE_READINESS:
+        reported_vm = str(msg.get("vm_instance_id") or "")
+        current_vm = str((hub.get_device_extra(serial) or {}).get("vm_instance_id") or "") if serial else ""
+        if reported_vm and reported_vm != current_vm:
+            return
         # Readiness Gate（v1 第 1 梯队）：agent 旁路探活的状态跳变上报。
         # 落到 hub 的 _device_readiness 缓存，/api/devices 轮询会合并返回；
         # 同时广播给订阅的浏览器（设备总览页 / 工作台可响应"未就绪"提示）。
@@ -624,6 +634,9 @@ def _current_managed_harmony_route(hub: Hub, agent_id: str, serial: str) -> bool
                 return False
         return True
     if not serial.startswith("harmony-vm:"):
+        extra = hub.get_device_extra(serial)
+        if extra.get("vm_instance_id") or serial.startswith("emulator-"):
+            return hub.agent_id_for_serial(serial) == agent_id
         return True
     vm_id = serial.removeprefix("harmony-vm:")
     extra = hub.get_device_extra(serial)
@@ -637,6 +650,43 @@ def _current_managed_harmony_route(hub: Hub, agent_id: str, serial: str) -> bool
 # ---------------------------------------------------------------------------
 # DB helpers（每次开一个 session）
 # ---------------------------------------------------------------------------
+async def _filter_managed_vm_devices(agent_id: str, devices: list[Dict[str, Any]], *, host_id: str = "") -> list[Dict[str, Any]]:
+    """A stale scan must not re-admit stopped/deleting VMs to the device pool.
+
+    Physical devices are unchanged. Reclaimed VMs become visible after their
+    authoritative status report establishes ownership and running state.
+    """
+    from ..models import AndroidVmInstance
+    from ..ios_sim.models import IosSimVmInstance
+    from ..harmony_vm.models import HarmonyVmInstance
+
+    models = {"android": AndroidVmInstance, "ios_sim": IosSimVmInstance, "harmony": HarmonyVmInstance}
+    tagged = [d for d in devices if (d.get("extra") or {}).get("vm_instance_id") and d.get("platform") in models]
+    if not tagged:
+        return devices
+    allowed: set[int] = set()
+    async with get_session_factory()() as session:
+        for device in tagged:
+            extra = device.get("extra") or {}
+            model = models[device.get("platform")]
+            try:
+                vm = await session.get(model, str(extra["vm_instance_id"]))
+            except SQLAlchemyError as exc:
+                # Optional simulator schema failure must not drop co-located
+                # physical devices or poison subsequent queries in PostgreSQL.
+                await session.rollback()
+                logger.warning("受管虚拟机身份查询失败，仅跳过该实例 vm_id={} error={}", extra["vm_instance_id"], type(exc).__name__)
+                continue
+            serial = (f"harmony-vm:{vm.id}" if isinstance(vm, HarmonyVmInstance) else
+                      vm.adb_serial if isinstance(vm, AndroidVmInstance) else getattr(vm, "udid", None))
+            data = (getattr(vm, "runtime_state", None) or getattr(vm, "runtime", None) or {}) if vm is not None else {}
+            owner_host = str(data.get("owner_host_id") or "")
+            if vm is not None and (not owner_host or owner_host == host_id) and vm.assigned_agent_id == agent_id and vm.state == "running" and serial == device.get("serial"):
+                allowed.add(id(device))
+    tagged_ids = {id(d) for d in tagged}
+    return [d for d in devices if id(d) not in tagged_ids or id(d) in allowed]
+
+
 async def _with_session(fn):
     factory = get_session_factory()
     async with factory() as session:

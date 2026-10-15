@@ -33,6 +33,7 @@ class AgentConn:
     serials: Set[str] = field(default_factory=set)
     run_ids: Set[str] = field(default_factory=set)
     capabilities: Set[str] = field(default_factory=set)
+    host_id: str = ""
 
 
 class Hub:
@@ -53,6 +54,8 @@ class Hub:
         # ready=True 的设备在这里保留最新一条（便于前端判断"曾经 ready 过"），
         # 也可用于 API 层直接渲染"空闲/未就绪"。
         self._device_readiness: Dict[str, Dict[str, Any]] = {}
+        self._readiness_received_at: Dict[str, float] = {}
+        self._vm_maintenance: Dict[str, str] = {}
 
     def set_device_extra(self, serial: str, extra: Optional[Dict[str, Any]]) -> None:
         """覆盖设备的 rescan 元信息；空 dict / None 会清空该 serial 的条目。
@@ -89,8 +92,29 @@ class Hub:
         """
         if not payload:
             self._device_readiness.pop(serial, None)
+            self._readiness_received_at.pop(serial, None)
             return
         self._device_readiness[serial] = dict(payload)
+        self._readiness_received_at[serial] = time.monotonic()
+
+    def set_vm_maintenance(self, serial: str, vm_id: Optional[str]) -> None:
+        """Prevent a late probe from admitting work during lifecycle changes."""
+        if not serial:
+            return
+        if vm_id:
+            self._vm_maintenance[serial] = vm_id
+        else:
+            self._vm_maintenance.pop(serial, None)
+        # A newly started/released instance must earn a fresh readiness probe.
+        self.set_device_readiness(serial, None)
+
+    def agent_host_id(self, agent_id: str) -> str:
+        conn = self._agents.get(agent_id)
+        return conn.host_id if conn else ""
+
+    def is_current_agent_socket(self, agent_id: str, ws: WebSocket) -> bool:
+        conn = self._agents.get(agent_id)
+        return conn is not None and conn.ws is ws
 
     def get_device_extra(self, serial: str) -> Dict[str, Any]:
         """合并 rescan 元信息 + WDA 启动阶段 + readiness 后返回。
@@ -105,6 +129,15 @@ class Hub:
         readiness = self._device_readiness.get(serial)
         if readiness:
             out["readiness"] = dict(readiness)
+            from ai_phone.config import get_settings
+
+            # Use receive time, not the Agent wall clock (hosts may disagree).
+            max_age = max(90.0, float(get_settings().readiness_poll_sec) * 3)
+            age = time.monotonic() - self._readiness_received_at.get(serial, 0.0)
+            if age > max_age:
+                out["readiness"].update(ready=False, not_ready_reason="probe_stale", hint="设备健康状态已过期，等待重新确认")
+        if serial in self._vm_maintenance:
+            out["readiness"] = {"ready": False, "not_ready_reason": "vm_maintenance", "hint": "虚拟机生命周期操作尚未完成"}
         return out
 
     def clear_device_extra(self, serials: Set[str]) -> None:
@@ -113,12 +146,13 @@ class Hub:
             self._device_extra.pop(s, None)
             self._device_stage.pop(s, None)
             self._device_readiness.pop(s, None)
+            self._readiness_received_at.pop(s, None)
 
     # ------------------------------------------------------------------
     # Agent 注册 / 注销
     # ------------------------------------------------------------------
     async def register_agent(
-        self, agent_id: str, agent_name: str, host_os: str, ws: WebSocket
+        self, agent_id: str, agent_name: str, host_os: str, ws: WebSocket, *, host_id: str = ""
     ) -> AgentConn:
         old = self._agents.pop(agent_id, None)
         if old is not None:
@@ -132,7 +166,7 @@ class Hub:
             except Exception:  # noqa: BLE001
                 pass
 
-        conn = AgentConn(agent_id=agent_id, agent_name=agent_name, host_os=host_os, ws=ws)
+        conn = AgentConn(agent_id=agent_id, agent_name=agent_name, host_os=host_os, ws=ws, host_id=host_id)
         # 把所有仍指向本 agent_id 的 run 路由并入新连接的 run_ids，覆盖两种来源：
         # ① 同 id 重连（网络抖动、同进程）——旧连接在飞的 Run，进程没死还在跑；
         # ② Server 重启恢复时 bind_run——彼时 Agent 还没连上、conn.run_ids 没写上。
@@ -336,6 +370,7 @@ class Hub:
                     "agent_id": c.agent_id,
                     "agent_name": c.agent_name,
                     "host_os": c.host_os,
+                    "host_id": c.host_id,
                     "connected_at": c.connected_at,
                     "last_seen_at": c.last_seen_at,
                     "serials": sorted(c.serials),

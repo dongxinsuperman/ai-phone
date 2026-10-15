@@ -5,7 +5,9 @@ iOS / Harmony 两支都走"按需 lazy import"——第三方库在各自可选 
 """
 from __future__ import annotations
 
-from typing import List
+from concurrent.futures import Future, ThreadPoolExecutor, wait
+from threading import Lock
+from typing import Dict, List
 
 from loguru import logger
 
@@ -93,27 +95,68 @@ except Exception:  # noqa: BLE001
     _HARMONY_AVAILABLE = False
 
 
-def list_all_devices(include_offline: bool = False) -> List[DeviceInfo]:
-    """合并扫描 Android + iOS 真机 + Harmony（+ 可选的 iOS 虚拟机）。
+_SCAN_BUDGET_SEC = 5.0
+_SCAN_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="device-discovery")
+_SCAN_LOCK = Lock()
+_SCAN_PENDING: Dict[str, tuple[bool, Future]] = {}
+_SCAN_LAST: Dict[tuple, List[DeviceInfo]] = {}
+_SCAN_OK: Dict[str, bool] = {}
 
-    顺序：Android 先（adb 通常最快）→ iOS → Harmony → iOS 虚拟机；前端按
-    platform 排序自己玩。任一平台扫描失败都不影响其他平台（各自 try/except）。
+
+def was_last_device_scan_ok(platform: str) -> bool:
+    """False means a retained snapshot, not evidence that the device is gone.
+
+    Readiness still performs a directed probe, but must not give retained
+    devices the normal multi-failure grace period if that probe also fails.
     """
-    out: List[DeviceInfo] = []
-    out.extend(list_android_devices(include_offline=include_offline))
-    out.extend(list_ios_devices(include_offline=include_offline))
-    out.extend(list_harmony_devices(include_offline=include_offline))
-    # iOS 虚拟机：独立旁路，与上面三条互不影响。
-    # - 只上报本平台亲手启动的实例（managed_only 默认 True），同事自己在 Xcode
-    #   里开的虚拟机不会进设备池。对齐 Android VM 丢弃未纳管 emulator 的做法。
-    #   生命周期能力落地前纳管表恒为空，因此这里恒返回空列表。
-    # - list_ios_simulators 内部 fail-closed，任何失败只返回空列表，不会把异常
-    #   带进这条三端公用的扫描链路；这里再兜一层，双保险。
-    try:
-        out.extend(list_ios_simulators(include_offline=include_offline))
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("iOS 虚拟机扫描入口异常（已跳过，不影响其他平台）：{}", exc)
-    return out
+    return _SCAN_OK.get(platform, True)
+
+
+def list_all_devices(include_offline: bool = False) -> List[DeviceInfo]:
+    """Bounded platform discovery, preserving the existing output order.
+
+    Four platforms may scan concurrently, but a platform never receives a
+    second scan while its first is still running. A hung native driver cannot
+    grow the executor queue on each refresh. Timeout/error retains its previous
+    snapshot and marks it untrusted; lifecycle code must check instance/process
+    evidence, not interpret a missing discovery result as a shutdown.
+    """
+    scanners = (
+        ("android", list_android_devices),
+        ("ios", list_ios_devices),
+        ("harmony", list_harmony_devices),
+        (PLATFORM_IOS_SIM, list_ios_simulators),
+    )
+    with _SCAN_LOCK:
+        submitted = []
+        for platform, scanner in scanners:
+            if platform not in _SCAN_PENDING:
+                future = _SCAN_EXECUTOR.submit(scanner, include_offline=include_offline)
+                _SCAN_PENDING[platform] = (
+                    include_offline,
+                    future,
+                )
+                submitted.append(future)
+        # A scan that already exceeded its budget gets no new five-second wait
+        # on every refresh; collect it only once its native work has finished.
+        wait(submitted, timeout=_SCAN_BUDGET_SEC)
+        out: List[DeviceInfo] = []
+        for platform, _ in scanners:
+            key = (platform, include_offline)
+            pending_offline, pending = _SCAN_PENDING[platform]
+            if pending.done():
+                _SCAN_PENDING.pop(platform)
+                try:
+                    _SCAN_LAST[(platform, pending_offline)] = list(pending.result())
+                    _SCAN_OK[platform] = pending_offline == include_offline
+                except Exception as exc:  # noqa: BLE001
+                    _SCAN_OK[platform] = False
+                    logger.warning("{} 设备扫描失败，暂留上次快照：{}", platform, exc)
+            else:
+                _SCAN_OK[platform] = False
+                logger.warning("{} 设备扫描超时，等待在途扫描结束", platform)
+            out.extend(_SCAN_LAST.get(key, []))
+        return out
 
 
 def open_driver(serial: str, platform: str, **kwargs) -> BaseDriver:
@@ -156,5 +199,6 @@ __all__ = [
     "mark_managed",
     "unmark_managed",
     "list_all_devices",
+    "was_last_device_scan_ok",
     "open_driver",
 ]

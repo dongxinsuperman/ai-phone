@@ -29,8 +29,10 @@ def lock_store(request: Request) -> DeviceLockStore:
 def hub(request: Request) -> Hub:
     h = getattr(request.app.state, "hub", None)
     if isinstance(h, Hub):
+        h.vm_lock_store = lock_store(request)
         return h
     h = Hub()
+    h.vm_lock_store = lock_store(request)
     request.app.state.hub = h
     return h
 

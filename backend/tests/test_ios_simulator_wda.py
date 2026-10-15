@@ -1,4 +1,5 @@
 """虚拟机 WDA 启动器：端口域隔离、产物路径、bundle id 动态读取、fail-closed。"""
+import json
 import plistlib
 from pathlib import Path
 
@@ -19,6 +20,11 @@ def _clean_ports(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_PHONE_STORAGE_DIR", str(tmp_path / "storage"))
     get_settings.cache_clear()
     wda_mod.reset_ports_for_tests()
+    # 隔离测试不得落到真实宿主的 simctl；各用例按需提供明确假响应。
+    def no_real_simctl(*_args, **_kwargs):
+        raise RuntimeError("test requires a mocked simctl response")
+
+    monkeypatch.setattr(wda_mod, "simctl_run", no_real_simctl)
     yield
     wda_mod.reset_ports_for_tests()
     get_settings.cache_clear()
@@ -273,6 +279,11 @@ def _all_slots_alive(monkeypatch, udids):
     monkeypatch.setattr(
         wda_mod, "list_simulators", lambda *a, **k: [_Dev(u) for u in udids]
     )
+    monkeypatch.setattr(
+        wda_mod, "simctl_run", lambda *a, **k: json.dumps({
+            "devices": {"ios-runtime": [{"udid": u, "isAvailable": True} for u in udids]}
+        })
+    )
 
 
 def test_port_exhaustion_raises_instead_of_random_fallback(monkeypatch):
@@ -323,11 +334,54 @@ def test_prune_keeps_reservations_when_simctl_fails(monkeypatch):
     def _boom(*_a, **_kw):
         raise RuntimeError("simctl 挂了")
 
-    monkeypatch.setattr(wda_mod, "list_simulators", _boom)
+    monkeypatch.setattr(wda_mod, "simctl_run", _boom)
     with pytest.raises(RuntimeError) as exc:
         wda_mod.allocate_ports("ONE-TOO-MANY")
     assert "端口域已耗尽" in str(exc.value)
     assert len(wda_mod._load_reservations()) == span, "查询失败却删了预留"
+
+
+@pytest.mark.parametrize("payload", ["", "{}", "[]", '{"devices": {"ios": [{}]}}'])
+def test_prune_does_not_treat_invalid_inventory_as_absence(monkeypatch, payload):
+    wda_mod.allocate_ports("LIVE")
+    reservations = wda_mod._load_reservations()
+    monkeypatch.setattr(wda_mod, "simctl_run", lambda *a, **k: payload)
+    assert wda_mod._prune_ghost_reservations(reservations, keep="NEW") == 0
+    assert "LIVE" in wda_mod._load_reservations()
+
+
+def test_prune_keeps_unavailable_runtime_instances(monkeypatch):
+    wda_mod.allocate_ports("UNAVAILABLE")
+    reservations = wda_mod._load_reservations()
+    monkeypatch.setattr(wda_mod, "simctl_run", lambda *a, **k: json.dumps({
+        "devices": {"old-ios": [{"udid": "UNAVAILABLE", "isAvailable": False}]}
+    }))
+    assert wda_mod._prune_ghost_reservations(reservations, keep="NEW") == 0
+    assert "UNAVAILABLE" in wda_mod._load_reservations()
+
+
+def test_reservation_release_failure_preserves_memory_and_disk(monkeypatch):
+    ports = wda_mod.allocate_ports("LIVE")
+    path = wda_mod._reservations_path()
+    before = path.read_text()
+
+    def fail_save(_data):
+        raise OSError("read-only storage")
+
+    monkeypatch.setattr(wda_mod, "_save_reservations", fail_save)
+    with pytest.raises(OSError):
+        wda_mod.drop_port_reservation("LIVE")
+    assert wda_mod.peek_ports("LIVE") == ports
+    assert "LIVE" in wda_mod._load_reservations()
+    assert path.read_text() == before
+
+
+def test_duplicate_persisted_port_is_rejected():
+    path = wda_mod._reservations_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"A": 8301, "B": 8301}))
+    with pytest.raises(wda_mod.SimulatorWdaError, match="重复"):
+        wda_mod.allocate_ports("A")
 
 
 # --------------------------------------------------------------------------
@@ -375,22 +429,84 @@ def test_ipad_detected_by_device_type(monkeypatch):
     assert mod.is_ipad("PHONE") is False
 
 
-def test_unknown_udid_falls_back_to_iphone_path(monkeypatch):
-    """查不到就按 iPhone 处理：轻量路径是默认，不为未知设备起常驻进程。"""
+def test_unknown_udid_does_not_guess_iphone_path(monkeypatch):
+    """查不到机型时拒绝猜测，防止 iPad 误走不兼容启动方式。"""
     import ai_phone.agent.drivers.ios_simulator_wda as mod
 
     monkeypatch.setattr(mod, "list_simulators", lambda: [])
-    assert mod.is_ipad("NOPE") is False
+    with pytest.raises(mod.SimulatorWdaError, match="无法确认"):
+        mod.is_ipad("NOPE")
 
 
-def test_simctl_failure_falls_back_to_iphone_path(monkeypatch):
+def test_simctl_failure_does_not_guess_iphone_path(monkeypatch):
     import ai_phone.agent.drivers.ios_simulator_wda as mod
 
     def boom():
         raise RuntimeError("simctl down")
 
     monkeypatch.setattr(mod, "list_simulators", boom)
-    assert mod.is_ipad("X") is False
+    with pytest.raises(mod.SimulatorWdaError, match="无法确认"):
+        mod.is_ipad("X")
+
+
+@pytest.mark.parametrize("device_type,expected", [
+    ("com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4-8GB", ["xcodebuild"]),
+    ("com.apple.CoreSimulator.SimDeviceType.iPhone-16e", ["install", "launch", "wait"]),
+])
+def test_known_device_type_preserves_wda_path_without_new_scan(monkeypatch, tmp_path, device_type, expected):
+    launcher = wda_mod.IosSimulatorWdaLauncher("TEST", expect_sim_name="aiphone_sim_test",
+                                            device_type=device_type)
+    monkeypatch.setattr(wda_mod, "build_wda_for_simulator", lambda **k: tmp_path)
+    monkeypatch.setattr(wda_mod, "read_runner_bundle_id", lambda _p: "test.wda")
+    monkeypatch.setattr(launcher, "is_alive", lambda **k: False)
+
+    def no_scan(_udid):
+        raise AssertionError("already supplied device type must not rescan")
+
+    monkeypatch.setattr(wda_mod, "is_ipad", no_scan)
+    calls = []
+    monkeypatch.setattr(launcher, "_start_via_xcodebuild", lambda _t: calls.append("xcodebuild"))
+    monkeypatch.setattr(launcher, "_install", lambda _a: calls.append("install"))
+    monkeypatch.setattr(launcher, "_launch", lambda: calls.append("launch"))
+    monkeypatch.setattr(launcher, "_wait_ready", lambda _t: calls.append("wait"))
+    launcher.start()
+    assert calls == expected
+
+
+def test_wda_deadline_blocks_install_after_slow_build(monkeypatch, tmp_path):
+    clock = [0.0]
+    build_args = []
+    phases = []
+    launcher = wda_mod.IosSimulatorWdaLauncher("DEADLINE", expect_sim_name="aiphone_sim_deadline",
+                                            device_type="com.apple.CoreSimulator.SimDeviceType.iPhone-16e")
+
+    def slow_build(**kwargs):
+        build_args.append(kwargs)
+        clock[0] += 0.03
+        return tmp_path
+
+    monkeypatch.setattr(wda_mod.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(wda_mod, "build_wda_for_simulator", slow_build)
+    monkeypatch.setattr(launcher, "_install", lambda _a: phases.append("install"))
+    monkeypatch.setattr(launcher, "_launch", lambda: phases.append("launch"))
+    with pytest.raises(TimeoutError, match="deadline exceeded"):
+        launcher.start(deadline=0.001, wait_ready_s=0.001)
+    assert phases == []
+    assert build_args[0]["timeout"] == pytest.approx(0.001)
+    assert build_args[0]["deadline"] == pytest.approx(0.001)
+    assert launcher._startup_deadline is None
+
+
+def test_waiting_for_wda_build_lock_obeys_operation_deadline():
+    import time
+
+    assert wda_mod._build_lock.acquire(blocking=False)
+    try:
+        with pytest.raises(TimeoutError, match="build lock deadline"):
+            with wda_mod._bounded_build_lock(time.monotonic() + 0.001):
+                raise AssertionError("expired build must not start")
+    finally:
+        wda_mod._build_lock.release()
 
 
 def test_xctestrun_copy_stays_beside_original(tmp_path):
@@ -510,6 +626,10 @@ def test_stop_terminates_xcodebuild_when_owned():
         def terminate(self):
             self.terminated = True
 
+        def wait(self, timeout=None):
+            assert self.terminated
+            return 0
+
     launcher = mod.IosSimulatorWdaLauncher("U2")
     proc = FakeProc()
     launcher._xcodebuild_proc = proc
@@ -517,6 +637,29 @@ def test_stop_terminates_xcodebuild_when_owned():
     launcher.stop()
     assert proc.terminated is True
     assert "U2" not in mod._XCODEBUILD_PROCS
+
+
+def test_failed_xcodebuild_stop_keeps_process_handle():
+    class StuckProc:
+        pid = 100
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            raise OSError("termination failed")
+
+    launcher = wda_mod.IosSimulatorWdaLauncher("STUCK")
+    proc = StuckProc()
+    launcher._xcodebuild_proc = proc
+    wda_mod._remember_xcodebuild("STUCK", proc)
+    try:
+        with pytest.raises(wda_mod.SimulatorWdaError, match="终止"):
+            launcher.stop()
+        assert launcher._xcodebuild_proc is proc
+        assert wda_mod._XCODEBUILD_PROCS["STUCK"] is proc
+    finally:
+        wda_mod._forget_xcodebuild("STUCK")
 
 
 def test_runner_app_path_layout(tmp_path):

@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -59,26 +61,15 @@ def test_state_labels_match_android(page: Path):
     )
 
 
-@pytest.mark.parametrize(
-    "page", [_HARMONY, _IOS_SIM], ids=["harmony", "ios_sim"]
-)
-def test_recoverable_state_is_not_rendered_as_error(page: Path):
-    """``agent_offline`` 不能渲染成红色错误行。
-
-    它会自动恢复（Agent 重连即认领回来），后端把原因写进 error_message 只为
-    留痕。Android 压根不展示这个字段；另外两端要展示的话，至少必须把这个
-    状态排除掉。
-    """
+@pytest.mark.parametrize("page", [_ANDROID, _HARMONY, _IOS_SIM])
+def test_lifecycle_result_and_failure_are_visible(page: Path):
+    """三端都展示真实失败，不提供待清理、后台接力或清理重试流程。"""
     src = page.read_text(encoding="utf-8")
-    if "error_message" not in src:
-        pytest.skip("本页不展示 error_message，与 Android 完全一致")
-
-    for match in re.finditer(r'v-if="vm\.error_message([^"]*)"', src):
-        condition = match.group(1)
-        assert "agent_offline" in condition, (
-            f"{page.name} 展示 error_message 时没有排除 agent_offline，"
-            "会把可自动恢复的中间态显示成故障"
-        )
+    assert "pending_cleanup" not in src
+    assert "待清理" not in src
+    assert "重试清理" not in src
+    assert 'v-if="lifecycleNotice(vm)"' in src
+    assert 'v-if="operationError(vm)"' in src
 
 
 @pytest.mark.parametrize(
@@ -101,10 +92,13 @@ def test_meta_fields_are_laid_out_horizontally(page: Path):
         )
 
 
-def test_android_does_not_render_error_message():
-    """基准自身的行为：Android 卡片上只有状态徽章，不铺红字。
-
-    这条钉住基准。哪天 Android 改了口径，上面两个检查的前提就变了，
-    应该由这条先红，提醒人重新对齐，而不是让另外两端悄悄跑偏。
-    """
-    assert "vm.error_message" not in _ANDROID.read_text(encoding="utf-8")
+def test_vm_page_lifecycle_behavior():
+    """运行页面原始 JS：验证冲突操作、立即删账换机、首次绑定失败、乱序响应和逐实例锁。"""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for the frontend behavior checks")
+    script = _PAGES.parents[1] / "tests" / "vm-lifecycle.test.mjs"
+    result = subprocess.run(
+        [node, "--test", str(script)], capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

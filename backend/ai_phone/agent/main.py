@@ -205,6 +205,8 @@ class _LatestMirrorPayloadSender:
 _serial_platform: Dict[str, str] = {}
 _serial_screen_size: Dict[str, Tuple[int, int]] = {}
 _serial_product_type: Dict[str, str] = {}
+_serial_vm_ids: Dict[str, str] = {}
+_serial_lifecycle_epochs: Dict[str, int] = {}
 
 
 # iOS 会先以 UIKit scale 渲染、再缩放到物理屏幕的机型。
@@ -242,6 +244,12 @@ def _record_serial_platform(infos: List[Any]) -> None:
             serial_s = str(serial)
             current_serials.add(serial_s)
             _serial_platform[serial_s] = str(platform)
+            extra = getattr(info, "extra", None) or (info.get("extra", {}) if isinstance(info, dict) else {})
+            vm_id = str(extra.get("vm_instance_id") or "")
+            if vm_id:
+                _serial_vm_ids[serial_s] = vm_id
+            else:
+                _serial_vm_ids.pop(serial_s, None)
             try:
                 product_type = getattr(info, "model", None) or info["model"]
             except Exception:  # noqa: BLE001
@@ -260,6 +268,7 @@ def _record_serial_platform(infos: List[Any]) -> None:
         _serial_platform.pop(serial, None)
         _serial_screen_size.pop(serial, None)
         _serial_product_type.pop(serial, None)
+        _serial_vm_ids.pop(serial, None)
 
 
 def _get_or_open_driver(
@@ -545,6 +554,9 @@ async def _send_ios_readiness_probe_once(ws_client: "AgentWSClient", serial: str
         logger.debug("iOS WDA ready 后补发 readiness 失败 serial={}: {}", serial, exc)
 
 
+from .device_activity import device_activity
+
+
 class _RunSupervisor:
     """跟踪当前 Agent 正在跑的所有 run（run_id → task / bridge）。"""
 
@@ -559,9 +571,11 @@ class _RunSupervisor:
         return any(r["serial"] == serial for r in self._runs.values())
 
     def register(self, run_id: str, serial: str, task: asyncio.Task, bridge: RunnerBridge) -> None:
+        device_activity.acquire(serial)
         self._runs[run_id] = {"serial": serial, "task": task, "bridge": bridge}
 
         def _cleanup(done: asyncio.Task) -> None:
+            device_activity.release(serial)
             self._runs.pop(run_id, None)
             if done.cancelled():
                 return
@@ -3079,11 +3093,14 @@ def run(
     _ios_sim_manager = IosSimVmManager(
         drop_driver_cache=_drop_ios_sim_driver_cache
     )
+    from .identity import load_host_identity
+
     client = AgentWSClient(
         ws_url=effective_ws,
         token=effective_token,
         agent_id=agent_id,
         agent_name=effective_name,
+        host_id=load_host_identity(settings.storage_dir),
         server_http_base=effective_http_base,
         device_provider=_device_provider,
     )
@@ -3097,13 +3114,44 @@ def run(
     supervisor.reporter = reporter
 
     async def _start_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
-        await _handle_start_run(c, supervisor, msg)
+        serial = str(msg.get("device_serial") or "")
+        with device_activity.hold(serial) as acquired:
+            if not acquired:
+                await reporter.enqueue({"type": P.MSG_RUN_DONE, "run_id": msg.get("run_id"),
+                    "serial": serial, "attempt": msg.get("attempt", 1), "result": "error",
+                    "message": "device_under_maintenance", "steps": 0, "elapsed_ms": 0, "token_stats": {}})
+                return
+            await _handle_start_run(c, supervisor, msg)
 
     async def _stop_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         await _handle_stop_run(c, supervisor, msg)
 
     async def _input_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
-        await _handle_input(c, msg, mirror_sup)
+        with device_activity.hold(str(msg.get("serial") or "")) as acquired:
+            if acquired:
+                await _handle_input(c, msg, mirror_sup)
+
+    async def _lifecycle(c, msg, manager, action, platform):
+        vm_id = str(msg.get("vm_id") or "")
+        runtime = manager._runtimes.get(vm_id)
+        if platform == "harmony":
+            serial = f"harmony-vm:{vm_id}"
+        elif platform == "ios_sim":
+            serial = str(getattr(runtime, "udid", "") or msg.get("udid") or f"ios-vm:{vm_id}")
+        else:
+            serial = str(getattr(runtime, "adb_serial", "") or msg.get("adb_serial") or f"android-vm:{vm_id}")
+        with device_activity.hold(serial, maintenance=True) as acquired:
+            if not acquired or supervisor.is_busy(serial) or mirror_sup.get_session(serial) is not None:
+                await c.send(manager._status_payload(msg, state="error", ok=False,
+                    reason="device_busy", error="设备正在使用，请结束任务、安装或工作台会话后重试",
+                    details={"cleanup_confirmed": False}))
+                return
+            _serial_lifecycle_epochs[serial] = _serial_lifecycle_epochs.get(serial, 0) + 1
+            try:
+                await getattr(manager, f"handle_{action}")(c, msg)
+            finally:
+                _serial_lifecycle_epochs[serial] = _serial_lifecycle_epochs.get(serial, 0) + 1
+        readiness.mark_all_dirty()
 
     async def _vm_capability_probe_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         assert _android_vm_manager is not None
@@ -3111,15 +3159,15 @@ def run(
 
     async def _vm_start_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         assert _android_vm_manager is not None
-        await _android_vm_manager.handle_start(c, msg)
+        await _lifecycle(c, msg, _android_vm_manager, "start", "android")
 
     async def _vm_stop_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         assert _android_vm_manager is not None
-        await _android_vm_manager.handle_stop(c, msg)
+        await _lifecycle(c, msg, _android_vm_manager, "stop", "android")
 
     async def _vm_delete_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         assert _android_vm_manager is not None
-        await _android_vm_manager.handle_delete(c, msg)
+        await _lifecycle(c, msg, _android_vm_manager, "delete", "android")
 
     async def _harmony_vm_capability_probe_handler(
         c: AgentWSClient, msg: Dict[str, Any]
@@ -3131,19 +3179,19 @@ def run(
         c: AgentWSClient, msg: Dict[str, Any]
     ) -> None:
         assert _harmony_vm_manager is not None
-        await _harmony_vm_manager.handle_start(c, msg)
+        await _lifecycle(c, msg, _harmony_vm_manager, "start", "harmony")
 
     async def _harmony_vm_stop_handler(
         c: AgentWSClient, msg: Dict[str, Any]
     ) -> None:
         assert _harmony_vm_manager is not None
-        await _harmony_vm_manager.handle_stop(c, msg)
+        await _lifecycle(c, msg, _harmony_vm_manager, "stop", "harmony")
 
     async def _harmony_vm_delete_handler(
         c: AgentWSClient, msg: Dict[str, Any]
     ) -> None:
         assert _harmony_vm_manager is not None
-        await _harmony_vm_manager.handle_delete(c, msg)
+        await _lifecycle(c, msg, _harmony_vm_manager, "delete", "harmony")
 
     async def _ios_sim_capability_probe_handler(
         c: AgentWSClient, msg: Dict[str, Any]
@@ -3153,18 +3201,21 @@ def run(
 
     async def _ios_sim_start_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         assert _ios_sim_manager is not None
-        await _ios_sim_manager.handle_start(c, msg)
+        await _lifecycle(c, msg, _ios_sim_manager, "start", "ios_sim")
 
     async def _ios_sim_stop_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         assert _ios_sim_manager is not None
-        await _ios_sim_manager.handle_stop(c, msg)
+        await _lifecycle(c, msg, _ios_sim_manager, "stop", "ios_sim")
 
     async def _ios_sim_delete_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         assert _ios_sim_manager is not None
-        await _ios_sim_manager.handle_delete(c, msg)
+        await _lifecycle(c, msg, _ios_sim_manager, "delete", "ios_sim")
 
     async def _start_mirror_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
-        await _handle_start_mirror(mirror_sup, msg)
+        serial = str(msg.get("serial") or "")
+        with device_activity.hold(serial) as acquired:
+            if acquired:
+                await _handle_start_mirror(mirror_sup, msg)
 
     async def _stop_mirror_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         await _handle_stop_mirror(mirror_sup, msg)
@@ -3249,17 +3300,20 @@ def run(
         """
         if platform != "ios_sim":
             return False
-        if supervisor.is_busy(serial):
-            logger.debug("[self-heal] {} 正在跑 run，不重启 WDA", serial)
-            return False
-        if mirror_sup.get_session(serial) is not None:
-            logger.debug("[self-heal] {} 正在被工作台使用，不重启 WDA", serial)
-            return False
         if _ios_sim_manager is None:
             return False
-        logger.warning("[self-heal] iOS 虚拟机 {} 长时间探不通且空闲，重启其 WDA", serial)
         try:
-            return bool(_ios_sim_manager.restart_wda_sync(serial))
+            with device_activity.hold(serial, maintenance=True) as acquired:
+                # Check users only after reserving maintenance: a mirror may
+                # otherwise finish opening between the check and this lock.
+                if not acquired:
+                    return False
+                if supervisor.is_busy(serial):
+                    return False
+                if mirror_sup.get_session(serial) is not None:
+                    return False
+                logger.warning("[self-heal] iOS 虚拟机 {} 长时间探不通且空闲，重启其 WDA", serial)
+                return bool(_ios_sim_manager.restart_wda_sync(serial))
         except Exception as exc:  # noqa: BLE001
             logger.warning("[self-heal] 重启 {} 的 WDA 失败：{}", serial, exc)
             return False
@@ -3269,6 +3323,8 @@ def run(
         send_message=_readiness_send,
         self_heal=_readiness_self_heal,
         scan_stale=_readiness_scan_stale,
+        device_identity=lambda serial, platform: _serial_vm_ids.get(serial, ""),
+        device_generation=lambda serial, platform: str(_serial_lifecycle_epochs.get(serial, 0)),
     )
 
     async def _readiness_on_connect(_client: AgentWSClient) -> None:
@@ -3394,7 +3450,7 @@ def run(
         except Exception as exc:  # noqa: BLE001
             logger.debug("预热 VM 能力缓存失败（忽略）：{}", exc)
 
-    client.on_connect(_vm_warm_capability_on_connect)
+    # Static SDK cache warming runs once beside the connection, not ahead of recv.
 
     async def _vm_liveness_sweep_on_rescan(c: AgentWSClient, present_serials: set) -> None:
         # 蹭 5s rescan 节拍：在跑的 VM 若 serial 消失（崩溃/外部关闭）→ 上报 stopped
@@ -3447,9 +3503,12 @@ def run(
                 "iOS 即插即用模式已开启 (AI_PHONE_IOS_WDA_PRELOAD=true)：插上 iPhone 就会后台拉 WDA"
             )
         readiness.start(_event_loop_ref)
+        warm_task = asyncio.create_task(_vm_warm_capability_on_connect(client), name="vm-capability-warm")
         try:
             await client.run_forever()
         finally:
+            warm_task.cancel()
+            await asyncio.gather(warm_task, return_exceptions=True)
             await readiness.stop()
 
     try:

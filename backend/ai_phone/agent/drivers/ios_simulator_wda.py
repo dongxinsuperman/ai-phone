@@ -5,7 +5,7 @@
 usbmux 端口转发）保持原样不动——这是方案铁律，见
 ``docs-internal/ios-simulator-plan（iOS虚拟机独立接入方案）.md`` §3。
 
-启动方式（方案 §4.2 第三档，已实测，见 §1.8）：**不跑常驻 ``xcodebuild``**。
+启动方式：iPhone 走以下 simctl 路径；iPad 沿用已验证的常驻 xcodebuild 兼容路径。
 
 ```text
 ① 一次性 build-for-testing        产出 WebDriverAgentRunner-Runner.app，全实例共享
@@ -45,6 +45,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -109,6 +110,15 @@ class SimulatorWdaError(RuntimeError):
     """虚拟机 WDA 构建 / 启动失败。"""
 
 
+def _startup_timeout(deadline: Optional[float], maximum: float) -> float:
+    if deadline is None:
+        return maximum
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("iOS Simulator WDA startup deadline exceeded")
+    return min(maximum, remaining)
+
+
 _reservations_cache: Optional[Dict[str, int]] = None
 
 
@@ -153,10 +163,13 @@ def _load_reservations() -> Dict[str, int]:
     for udid, port in raw.items():
         try:
             port_i = int(port)
-        except (TypeError, ValueError):
-            continue
-        if _SIM_WDA_PORT_BASE <= port_i <= _SIM_WDA_PORT_LIMIT:
-            data[str(udid)] = port_i
+        except (TypeError, ValueError) as exc:
+            raise SimulatorWdaError(f"iOS 虚拟机端口预留无效：{udid}={port!r}") from exc
+        if not udid or not (_SIM_WDA_PORT_BASE <= port_i <= _SIM_WDA_PORT_LIMIT):
+            raise SimulatorWdaError(f"iOS 虚拟机端口预留越界：{udid}={port_i}")
+        if port_i in data.values():
+            raise SimulatorWdaError(f"iOS 虚拟机端口预留重复：{port_i}，拒绝把同一端口交给两台实例")
+        data[str(udid)] = port_i
     _reservations_cache = data
     return data
 
@@ -277,20 +290,35 @@ def _prune_ghost_reservations(reservations: Dict[str, int], *, keep: str) -> int
     耗尽，也不能因为一次查询失败就把在跑设备的号收回去，那会让它们下次启动换号。
     """
     try:
-        alive = {dev.udid for dev in list_simulators()}
+        # 发现用 list_simulators 会吞掉查询错误并返回 []，且过滤不可用 runtime；
+        # 不能把它作为释放持久端口的依据，必须直接核实全量磁盘实例。
+        payload = json.loads(simctl_run("list", "devices", "-j", timeout=30.0))
+        if not isinstance(payload, dict) or not isinstance(payload.get("devices"), dict):
+            raise ValueError("invalid simctl instance inventory")
+        alive = set()
+        for entries in payload["devices"].values():
+            if not isinstance(entries, list):
+                raise ValueError("invalid simctl instance entries")
+            for entry in entries:
+                if not isinstance(entry, dict) or not entry.get("udid"):
+                    raise ValueError("incomplete simctl instance entry")
+                alive.add(str(entry["udid"]))
     except Exception as exc:  # noqa: BLE001
         logger.warning("清理幽灵端口预留时查询实例清单失败，跳过清理：{}", exc)
         return 0
     ghosts = [u for u in reservations if u != keep and u not in alive]
     if not ghosts:
         return 0
-    for u in ghosts:
-        reservations.pop(u, None)
-        _udid_to_ports.pop(u, None)
+    remaining = {u: port for u, port in reservations.items() if u not in ghosts}
     try:
-        _save_reservations(reservations)
+        _save_reservations(remaining)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("清理幽灵端口预留后落盘失败（本次仍按内存生效）：{}", exc)
+        logger.warning("清理幽灵端口预留落盘失败，保留原预留：{}", exc)
+        return 0
+    reservations.clear()
+    reservations.update(remaining)
+    for u in ghosts:
+        _udid_to_ports.pop(u, None)
     return len(ghosts)
 
 
@@ -310,10 +338,12 @@ def drop_port_reservation(udid: str) -> None:
     对应「删除」：实例本身不存在了，再占着号只会挤占端口域。
     """
     with _ports_lock:
-        _udid_to_ports.pop(udid, None)
         reservations = _load_reservations()
-        if reservations.pop(udid, None) is not None:
-            _save_reservations(reservations)
+        if udid in reservations:
+            remaining = dict(reservations)
+            remaining.pop(udid)
+            _save_reservations(remaining)
+        _udid_to_ports.pop(udid, None)
 
 
 def peek_ports(udid: str) -> Optional[SimulatorPorts]:
@@ -334,6 +364,18 @@ def reset_ports_for_tests() -> None:
 # ---------------------------------------------------------------------------
 _RUNNER_APP_NAME = "WebDriverAgentRunner-Runner.app"
 _build_lock = threading.Lock()
+
+
+@contextmanager
+def _bounded_build_lock(deadline: Optional[float]):
+    acquired = (_build_lock.acquire() if deadline is None else
+                _build_lock.acquire(timeout=_startup_timeout(deadline, 600.0)))
+    if not acquired:
+        raise TimeoutError("iOS Simulator WDA build lock deadline exceeded")
+    try:
+        yield
+    finally:
+        _build_lock.release()
 
 
 def _find_xcodebuild() -> Optional[str]:
@@ -413,6 +455,7 @@ def build_wda_for_simulator(
     build_dir: Optional[Path] = None,
     force: bool = False,
     timeout: float = 600.0,
+    deadline: Optional[float] = None,
 ) -> Path:
     """构建（或复用）虚拟机版 WDA 产物，返回 ``Runner.app`` 路径。
 
@@ -441,7 +484,8 @@ def build_wda_for_simulator(
     out_dir = _abs_build_dir(build_dir) if build_dir else default_build_dir()
     app = runner_app_path(out_dir)
 
-    with _build_lock:
+    with _bounded_build_lock(deadline):
+        _startup_timeout(deadline, timeout)
         if app.is_dir() and not force:
             logger.debug("复用已有的虚拟机版 WDA 产物：{}", app)
             return app
@@ -484,7 +528,7 @@ def build_wda_for_simulator(
                 cwd=str(proj),
                 capture_output=True,
                 text=True,
-                timeout=timeout,
+                timeout=_startup_timeout(deadline, timeout),
                 encoding="utf-8",
                 errors="replace",
             )
@@ -596,14 +640,16 @@ def _probe_wda(port: int, timeout_s: float = 1.5) -> Optional[dict]:
 
 
 def is_ipad(udid: str) -> bool:
-    """这台虚拟机是不是 iPad。查不到按 iPhone 处理（轻量路径是默认）。"""
+    """按真实机型选择 WDA 路径；查询失败不能把 iPad 猜成 iPhone。"""
     try:
         for dev in list_simulators():
             if dev.udid == udid:
-                return ".ipad-" in (dev.device_type_id or "").lower()
+                device_type = (dev.device_type_id or "").lower()
+                if device_type:
+                    return ".ipad-" in device_type
     except Exception as exc:  # noqa: BLE001
-        logger.debug("判断 udid={} 是否 iPad 失败，按 iPhone 处理：{}", udid, exc)
-    return False
+        raise SimulatorWdaError(f"无法确认虚拟机 {udid} 的机型，未选择 WDA 启动方式：{exc}") from exc
+    raise SimulatorWdaError(f"无法确认虚拟机 {udid} 的机型，未选择 WDA 启动方式")
 
 
 class IosSimulatorWdaLauncher:
@@ -628,9 +674,8 @@ class IosSimulatorWdaLauncher:
     HTTP 服务永远起不来。换 ``xcodebuild`` 后时序不同（先跑测试、后处理切后台），
     实测 3 秒就绪。根因与实验记录见方案 §1.8.0。
 
-    iPad 这条路的行为**与 iOS 真机完全一致**（见 :class:`~.ios_wda_launcher.
-    IosWdaXcodeLauncher`）：子进程生命周期 = WDA 生命周期，Agent 退出即回收，
-    重启后需要重新拉起。这不是 iPad 特殊，是 xcodebuild 这一族的固有性质。
+    当前实现用 atexit 在 Agent 正常退出时主动回收 iPad 的 xcodebuild，因此需要
+    重新确认 WDA 就绪；这不代表 guest 已关机，也不是所有退出方式下的系统保证。
     """
 
     def __init__(
@@ -643,6 +688,7 @@ class IosSimulatorWdaLauncher:
         build_dir: Optional[Path] = None,
         ports: Optional[SimulatorPorts] = None,
         expect_sim_name: str = "",
+        device_type: str = "",
     ) -> None:
         """
         Args:
@@ -658,6 +704,8 @@ class IosSimulatorWdaLauncher:
         self._bundle_id = bundle_id
         self._build_dir = build_dir
         self._expect_sim_name = (expect_sim_name or "").strip()
+        self._device_type = (device_type or "").strip()
+        self._startup_deadline: Optional[float] = None
         self.ports = ports or allocate_ports(udid)
         self._runner_bundle_id: Optional[str] = None
         # 仅 iPad 路径使用：常驻的 xcodebuild 子进程
@@ -732,7 +780,17 @@ class IosSimulatorWdaLauncher:
         return name
 
     # ------------------------------------------------------------------
-    def start(self, *, wait_ready_s: Optional[float] = None, force_build: bool = False) -> None:
+    def start(
+        self, *, wait_ready_s: Optional[float] = None, force_build: bool = False,
+        deadline: Optional[float] = None,
+    ) -> None:
+        self._startup_deadline = deadline
+        try:
+            self._start(wait_ready_s=wait_ready_s, force_build=force_build)
+        finally:
+            self._startup_deadline = None
+
+    def _start(self, *, wait_ready_s: Optional[float], force_build: bool) -> None:
         """构建（首次）→ install → launch → 轮询到 ready。失败直接抛错。"""
         settings = get_settings()
         timeout = (
@@ -747,7 +805,10 @@ class IosSimulatorWdaLauncher:
             bundle_id=self._bundle_id,
             build_dir=self._build_dir,
             force=force_build,
+            timeout=_startup_timeout(self._startup_deadline, 600.0),
+            deadline=self._startup_deadline,
         )
+        _startup_timeout(self._startup_deadline, timeout)
         self._runner_bundle_id = read_runner_bundle_id(app)
 
         # 已经在跑就不重装重启，直接复用（等价真机 launcher 的 attach 优先）。
@@ -757,31 +818,46 @@ class IosSimulatorWdaLauncher:
         # 「不校验」直接放行，那样复用这条路就绕过了身份校验——而它比新起 WDA
         # 更危险，因为它连 _wait_ready 都不会走到。
         if self.is_alive(expect_sim_name=self._require_sim_name()):
+            _startup_timeout(self._startup_deadline, timeout)
             logger.info(
                 "udid={} 端口 {} 上已有本设备 ready 的 WDA，直接复用",
                 self.udid, self.ports.wda,
             )
             return
 
-        if is_ipad(self.udid):
-            self._start_via_xcodebuild(timeout)
+        use_xcodebuild = (
+            ".ipad-" in self._device_type.lower() if self._device_type else is_ipad(self.udid)
+        )
+        _startup_timeout(self._startup_deadline, timeout)
+        if use_xcodebuild:
+            self._start_via_xcodebuild(_startup_timeout(self._startup_deadline, timeout))
+            _startup_timeout(self._startup_deadline, timeout)
             return
 
         self._install(app)
+        _startup_timeout(self._startup_deadline, timeout)
         self._launch()
-        self._wait_ready(timeout)
+        self._wait_ready(_startup_timeout(self._startup_deadline, timeout))
+        _startup_timeout(self._startup_deadline, timeout)
 
     def stop(self) -> None:
         """停掉 WDA。不删除已安装的 App（下次启动可省掉 install）。"""
         proc = self._xcodebuild_proc
         if proc is not None:
-            self._xcodebuild_proc = None
-            _forget_xcodebuild(self.udid)
             try:
-                proc.terminate()
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=10.0)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait(timeout=5.0)
                 logger.info("udid={} 已终止 xcodebuild pid={}", self.udid, proc.pid)
             except Exception as exc:  # noqa: BLE001
-                logger.debug("udid={} 终止 xcodebuild 失败（忽略）：{}", self.udid, exc)
+                # 保留句柄和登记，下次停止仍能处理；不能只发 terminate 就宣称释放。
+                raise SimulatorWdaError(f"终止 xcodebuild 失败 udid={self.udid}：{exc}") from exc
+            self._xcodebuild_proc = None
+            _forget_xcodebuild(self.udid)
             return
 
         bundle_id = self._runner_bundle_id
@@ -817,6 +893,7 @@ class IosSimulatorWdaLauncher:
             str(out_dir),
         ]
         _prune_test_results(out_dir)
+        _startup_timeout(self._startup_deadline, timeout)
         logger.info("udid={} iPad 走 xcodebuild 启动 WDA：{}", self.udid, " ".join(cmd))
         try:
             proc = subprocess.Popen(  # noqa: S603
@@ -831,7 +908,7 @@ class IosSimulatorWdaLauncher:
         self._xcodebuild_proc = proc
         _remember_xcodebuild(self.udid, proc)
         try:
-            self._wait_ready(timeout)
+            self._wait_ready(_startup_timeout(self._startup_deadline, timeout))
         except Exception:
             self.stop()
             raise
@@ -912,13 +989,14 @@ class IosSimulatorWdaLauncher:
         用 0.1 秒的 ``get_app_container`` 换掉它。
         """
         if self._install_is_current(app):
+            _startup_timeout(self._startup_deadline, 120.0)
             logger.info(
                 "udid={} 已装的 WDA runner 即当前产物，跳过安装：{}",
                 self.udid, self._runner_bundle_id,
             )
             return
         try:
-            simctl_run("install", self.udid, str(app), timeout=120.0)
+            simctl_run("install", self.udid, str(app), timeout=_startup_timeout(self._startup_deadline, 120.0))
         except SimctlError as exc:
             raise SimulatorWdaError(
                 f"安装 WDA 到虚拟机失败 udid={self.udid}：{exc}"
@@ -949,7 +1027,8 @@ class IosSimulatorWdaLauncher:
         ]
         try:
             proc = subprocess.run(
-                cmd, env=env, capture_output=True, text=True, timeout=60.0,
+                cmd, env=env, capture_output=True, text=True,
+                timeout=_startup_timeout(self._startup_deadline, 60.0),
                 encoding="utf-8", errors="replace",
             )
         except subprocess.TimeoutExpired as exc:
@@ -985,7 +1064,7 @@ class IosSimulatorWdaLauncher:
         查询；走到这里还拿不到，说明调用方没接线，那是 bug，应该暴露。
         """
         expect = self._require_sim_name()
-        deadline = time.monotonic() + max(1.0, timeout)
+        deadline = time.monotonic() + max(0.0, timeout)
         mismatch: str = ""
         while time.monotonic() < deadline:
             value = _probe_wda(self.ports.wda)
@@ -1003,14 +1082,14 @@ class IosSimulatorWdaLauncher:
                     # 不立刻抛：本设备的 WDA 可能还在起，端口上暂时是别人的
                     # 应答。继续等到超时，用最后一次观测结果给出可操作的报错。
                     mismatch = actual or "(读不出设备名)"
-                    time.sleep(0.5)
+                    time.sleep(min(0.5, max(0.0, deadline - time.monotonic())))
                     continue
                 logger.info(
                     "udid={} WDA ready（simulator {}）{}",
                     self.udid, sim_ver, self.wda_url,
                 )
                 return
-            time.sleep(0.5)
+            time.sleep(min(0.5, max(0.0, deadline - time.monotonic())))
         if mismatch:
             raise SimulatorWdaError(
                 f"端口 {self.ports.wda} 上的 WDA 属于「{mismatch}」而非「{expect}」"

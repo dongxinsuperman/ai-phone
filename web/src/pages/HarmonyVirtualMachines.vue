@@ -9,6 +9,7 @@ const candidateEls = new Map()
 const loading = ref(false)
 const catalogLoading = ref(false)
 const busyId = ref('')
+const busyByVm = reactive({})
 const err = ref('')
 const catalogErr = ref('')
 const modelSearch = ref('')
@@ -22,16 +23,10 @@ const catalog = reactive({
   stats: {},
 })
 const copyDlg = reactive({ open: false, vm: null, alias: '', busy: false, error: '' })
-const releaseDlg = reactive({
-  open: false,
-  vm: null,
-  processStopped: false,
-  hdcCleared: false,
-  reason: '',
-  busy: false,
-  error: '',
-})
 let pollTimer = null
+let instanceSeq = 0
+let activeInstanceLoads = 0
+let candidateSeq = 0
 
 const form = reactive(defaultForm())
 
@@ -142,6 +137,7 @@ function setCandidatesRef(id, el) {
 }
 
 function closeCandidates() {
+  candidateSeq += 1
   candidateVmId.value = ''
   candidates.value = []
 }
@@ -261,12 +257,16 @@ function payloadFrom(source, alias = source.alias) {
 }
 
 async function loadInstances({ quiet = false } = {}) {
+  const sequence = ++instanceSeq
+  activeInstanceLoads += 1
   if (!quiet) loading.value = true
   try {
-    instances.value = await internal.harmonyVms.list()
+    const result = await internal.harmonyVms.list()
+    if (sequence === instanceSeq) instances.value = result
   } catch (e) {
-    if (!quiet) err.value = prettyErr(e)
+    if (!quiet && sequence === instanceSeq) err.value = prettyErr(e)
   } finally {
+    activeInstanceLoads -= 1
     if (!quiet) loading.value = false
   }
 }
@@ -330,151 +330,118 @@ async function createVm() {
 }
 
 async function probe(vm) {
+  if (isVmBusy(vm) || !canProbe(vm)) return
+  const sequence = ++candidateSeq
   err.value = ''
   candidateVmId.value = vm.id
   candidates.value = []
-  busyId.value = `probe:${vm.id}`
+  busyByVm[vm.id] = 'probe'
   await nextTick()
   candidateEls.get(vm.id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   try {
     const result = await internal.harmonyVms.dispatchCandidates(vm.id)
+    if (sequence !== candidateSeq || candidateVmId.value !== vm.id) return
+    const current = instances.value.find((item) => item.id === vm.id)
+    if (current && !canProbe(current)) {
+      closeCandidates()
+      return
+    }
     candidates.value = result?.agents || []
   } catch (e) {
-    err.value = prettyErr(e)
+    if (sequence === candidateSeq && candidateVmId.value === vm.id) err.value = prettyErr(e)
   } finally {
-    busyId.value = ''
+    if (busyByVm[vm.id] === 'probe') delete busyByVm[vm.id]
+  }
+}
+
+// 操作响应先落到当前卡片；此前发出的列表请求不能再覆盖新状态。
+function applyOperationResult(vm, result) {
+  instanceSeq += 1
+  if (result?.instance) {
+    const index = instances.value.findIndex((item) => item.id === vm.id)
+    if (index >= 0) instances.value.splice(index, 1, result.instance)
+    else if (!instances.value.some((item) => item.id === result.instance.id)) {
+      instances.value.unshift(result.instance)
+    }
+  } else if (result?.deleted) {
+    instances.value = instances.value.filter((item) => item.id !== vm.id)
   }
 }
 
 async function dispatchTo(vm, agentId) {
-  busyId.value = `dispatch:${vm.id}:${agentId}`
+  if (isVmBusy(vm) || !canProbe(vm)) return
+  if (vm.assigned_agent_id && vm.assigned_agent_id !== agentId
+    && !confirm('换 Agent 将删除原配置，并在目标 Agent 新建空白机器；原实例的数据不迁移。确定继续？')) return
+  busyByVm[vm.id] = 'dispatch'
   err.value = ''
   try {
-    await internal.harmonyVms.dispatch(vm.id, agentId)
-    candidateVmId.value = ''
-    candidates.value = []
+    const result = await internal.harmonyVms.dispatch(vm.id, agentId)
+    applyOperationResult(vm, result)
+    if (candidateVmId.value === vm.id) closeCandidates()
     await loadInstances({ quiet: true })
   } catch (e) {
     err.value = prettyErr(e)
   } finally {
-    busyId.value = ''
+    delete busyByVm[vm.id]
   }
 }
 
 async function startVm(vm) {
-  busyId.value = `start:${vm.id}`
+  if (isVmBusy(vm) || !canStart(vm)) return
+  busyByVm[vm.id] = 'start'
   err.value = ''
+  if (candidateVmId.value === vm.id) closeCandidates()
   try {
-    await internal.harmonyVms.start(vm.id)
+    const result = await internal.harmonyVms.start(vm.id)
+    applyOperationResult(vm, result)
     await loadInstances({ quiet: true })
   } catch (e) {
-    const message = prettyErr(e)
-    err.value = message
-    try {
-      await loadInstances({ quiet: true })
-    } catch {
-      err.value = message
-    }
+    err.value = prettyErr(e)
+    await loadInstances({ quiet: true })
   } finally {
-    busyId.value = ''
+    delete busyByVm[vm.id]
   }
 }
 
 async function stopVm(vm) {
-  busyId.value = `stop:${vm.id}`
+  if (isVmBusy(vm) || !canStop(vm)) return
+  busyByVm[vm.id] = 'stop'
   err.value = ''
+  if (candidateVmId.value === vm.id) closeCandidates()
   try {
     const result = await internal.harmonyVms.stop(vm.id)
+    applyOperationResult(vm, result)
     await loadInstances({ quiet: true })
-    if (!result.sent && cleanupPending(result.instance || vm)) {
-      err.value = '旧 Agent 未在线，停止请求未送达。请先核实旧宿主实例和 HDC 连接，再人工确认释放旧占用。'
-    }
   } catch (e) {
     err.value = prettyErr(e)
   } finally {
-    busyId.value = ''
-  }
-}
-
-function openReleaseDialog(vm) {
-  if (!canForceRelease(vm)) return
-  Object.assign(releaseDlg, {
-    open: true,
-    vm,
-    processStopped: false,
-    hdcCleared: false,
-    reason: '',
-    busy: false,
-    error: '',
-  })
-}
-
-function closeReleaseDialog() {
-  if (releaseDlg.busy) return
-  releaseDlg.open = false
-  releaseDlg.vm = null
-  releaseDlg.error = ''
-}
-
-async function confirmForceRelease() {
-  const vm = releaseDlg.vm
-  if (!vm || !releaseDlg.processStopped || !releaseDlg.hdcCleared) {
-    releaseDlg.error = '请先核实旧宿主上的实例进程和 HDC 连接均已停止'
-    return
-  }
-  const reason = releaseDlg.reason.trim()
-  if (reason.length < 8) {
-    releaseDlg.error = '请填写至少 8 个字的核验记录'
-    return
-  }
-  releaseDlg.busy = true
-  releaseDlg.error = ''
-  try {
-    // 页面每 3 秒刷新；提交前再次核对，避免对话框打开期间 VM 恢复或端口变化。
-    const latest = await internal.harmonyVms.list()
-    instances.value = latest
-    const current = latest.find((item) => item.id === vm.id)
-    if (!current || !canForceRelease(current)
-      || current.hdc_serial !== vm.hdc_serial
-      || current.hdc_port !== vm.hdc_port
-      || current.cleanup_pending !== vm.cleanup_pending
-      || current.assigned_agent_id !== vm.assigned_agent_id
-      || current.state !== vm.state
-      || current.updated_at !== vm.updated_at) {
-      throw new Error('虚拟机状态或占用信息已变化，请重新核实后操作')
-    }
-    await internal.harmonyVms.forceRelease(vm.id, { confirmed: true, reason })
-    releaseDlg.busy = false
-    closeReleaseDialog()
-    if (candidateVmId.value === vm.id) closeCandidates()
-    await loadInstances({ quiet: true })
-  } catch (e) {
-    releaseDlg.error = prettyErr(e)
-  } finally {
-    releaseDlg.busy = false
+    delete busyByVm[vm.id]
   }
 }
 
 async function removeVm(vm) {
+  if (isVmBusy(vm) || !canDelete(vm)) return
   const name = vm.alias || vm.name || vm.id
   const tip = vm.assigned_agent_id
-    ? `确定删除鸿蒙虚拟机“${name}”？将通知 Agent（${vm.assigned_agent_id}）清理远端实例。`
-    : `确定删除鸿蒙虚拟机“${name}”？`
+    ? `确定删除虚拟机“${name}”？将删除后台配置，原宿主上的实例及数据也不再保留。`
+    : `确定删除虚拟机“${name}”？`
   if (!confirm(tip)) return
-  busyId.value = `delete:${vm.id}`
+  busyByVm[vm.id] = 'delete'
   err.value = ''
   try {
-    await internal.harmonyVms.remove(vm.id)
+    const result = await internal.harmonyVms.remove(vm.id)
+    applyOperationResult(vm, result)
     if (candidateVmId.value === vm.id) closeCandidates()
     await loadInstances({ quiet: true })
   } catch (e) {
     err.value = prettyErr(e)
   } finally {
-    busyId.value = ''
+    delete busyByVm[vm.id]
   }
 }
 
 function copyConfig(vm) {
+  if (isVmBusy(vm) || isTransitioning(vm)) return
   copyDlg.vm = vm
   copyDlg.alias = ''
   copyDlg.error = ''
@@ -491,6 +458,11 @@ function closeCopyDialog() {
 async function confirmCopy() {
   const source = copyDlg.vm
   if (!source) return
+  const current = instances.value.find((item) => item.id === source.id)
+  if (!current || isVmBusy(current) || isTransitioning(current)) {
+    copyDlg.error = '源设备正在处理或已删除，请等待完成后重试'
+    return
+  }
   const alias = (copyDlg.alias || '').trim()
   if (!alias) {
     copyDlg.error = '请填写新设备别名'
@@ -509,48 +481,75 @@ async function confirmCopy() {
   }
 }
 
-function canProbe(vm) {
-  return !['starting', 'running', 'stopping', 'dispatching'].includes(vm.state)
+function statusDetails(vm) {
+  return vm.runtime?.last_status?.details || {}
 }
-function cleanupPending(vm) {
-  return Boolean(vm.cleanup_pending || vm.hdc_serial || vm.hdc_port != null)
+function isTransitioning(vm) {
+  return ['dispatching', 'starting', 'stopping', 'probing', 'creating', 'connecting_hdc', 'checking_driver'].includes(vm.state)
+}
+function isVmBusy(vm) {
+  return Boolean(busyByVm[vm.id])
+}
+function hasUnconfirmedRuntime(vm) {
+  if (!vm.assigned_agent_id) return false
+  const details = statusDetails(vm)
+  if (vm.cleanup_pending) return true
+  if (details.cleanup_confirmed === true) return false
+  if (details.cleanup_pending === true || details.cleanup_confirmed === false) return true
+  if (vm.hdc_serial || vm.hdc_port != null) return true
+  return Boolean(vm.assigned_agent_id)
+    && ['running', 'error', 'unavailable', 'agent_offline'].includes(vm.state)
+}
+function canProbe(vm) {
+  return !isTransitioning(vm) && vm.state !== 'running'
 }
 function canStart(vm) {
-  return !!vm.assigned_agent_id && !cleanupPending(vm)
-    && ['stopped', 'error', 'unavailable', 'agent_offline'].includes(vm.state)
+  return Boolean(vm.assigned_agent_id) && !isTransitioning(vm)
+    && ['draft', 'stopped', 'error', 'unavailable', 'agent_offline'].includes(vm.state)
+    && !hasUnconfirmedRuntime(vm)
 }
 function canStop(vm) {
-  return ['starting', 'running'].includes(vm.state)
-    || (Boolean(cleanupPending(vm) && vm.assigned_agent_id)
-      && ['stopping', 'stopped', 'error', 'unavailable', 'agent_offline'].includes(vm.state))
-}
-function hasOldPort(vm) {
-  return cleanupPending(vm)
-    && ['stopped', 'error', 'unavailable', 'agent_offline'].includes(vm.state)
-}
-function canForceRelease(vm) {
-  return hasOldPort(vm)
+  return Boolean(vm.assigned_agent_id) && !isTransitioning(vm)
+    && (vm.state === 'running' || hasUnconfirmedRuntime(vm))
 }
 function canDelete(vm) {
-  // 先确认释放旧占用再删除配置；否则 Server 会隔离端口并删掉本页的确认入口。
-  return !cleanupPending(vm) && !['starting', 'running', 'stopping'].includes(vm.state)
+  return !isTransitioning(vm) && vm.state !== 'running'
 }
 function canDispatchTo(vm, agent) {
-  if (!agent.ok) return false
-  return !cleanupPending(vm)
+  return Boolean(agent.ok) && canProbe(vm)
 }
 function dispatchLabel(vm, agent) {
   if (!agent.ok) return '不可用'
-  if (!canDispatchTo(vm, agent)) return '需处理旧占用'
-  return '下发'
+  if (!canDispatchTo(vm, agent)) return '需先停止'
+  return vm.assigned_agent_id && agent.agent_id !== vm.assigned_agent_id
+    ? '换到这台'
+    : '下发'
 }
-// 状态值与 Android 完全相同，措辞也必须一致：同一个状态在两个页面叫不同名字，
-// 会让人以为是两套机制。尤其 agent_offline 是可自动恢复的中间态，叫「Agent 离线」
-// 像故障，叫「待恢复」才符合它的实际含义（Agent 重连后会自动认领回来）。
+function agentLabel(vm) {
+  if (vm.assigned_agent_id) return vm.assigned_agent_id
+  const target = vm.runtime?.operation?.target_agent_id
+  return isTransitioning(vm) && target ? `绑定中：${target}` : '未分配'
+}
+function operationError(vm) {
+  if (vm.state === 'agent_offline') return ''
+  return vm.error_message || ''
+}
+function lifecycleNotice(vm) {
+  if (vm.state === 'agent_offline') return '所属 Agent 已离线，实例状态暂时无法确认。'
+  if (!isTransitioning(vm) && vm.state !== 'running' && hasUnconfirmedRuntime(vm)) {
+    return '尚未确认实例停止；再次启动前，请先完成停止。'
+  }
+  return ''
+}
+
 function stateLabel(state) {
   return {
     draft: '未下发',
     starting: '启动中',
+    probing: '探查中',
+    creating: '启动中',
+    connecting_hdc: '启动中',
+    checking_driver: '启动中',
     running: '运行中',
     stopping: '停止中',
     stopped: '已停止',
@@ -561,7 +560,7 @@ function stateLabel(state) {
 }
 function stateClass(state) {
   if (state === 'running') return 'ok'
-  if (['starting', 'stopping', 'agent_offline'].includes(state)) return 'busy'
+  if (['starting', 'stopping', 'agent_offline', 'probing', 'creating', 'connecting_hdc', 'checking_driver'].includes(state)) return 'busy'
   if (['error', 'unavailable'].includes(state)) return 'bad'
   return ''
 }
@@ -638,11 +637,18 @@ function prettyErr(e) {
   return String(e || '操作失败')
 }
 
+function pollInstances() {
+  if (activeInstanceLoads) return
+  return loadInstances({ quiet: true })
+}
+
 onMounted(() => {
   refresh()
-  pollTimer = setInterval(() => loadInstances({ quiet: true }), 3000)
+  pollTimer = setInterval(pollInstances, 3000)
 })
 onBeforeUnmount(() => {
+  instanceSeq += 1
+  closeCandidates()
   if (pollTimer) clearInterval(pollTimer)
 })
 
@@ -658,9 +664,6 @@ defineExpose({ refresh })
         <div class="section-title">
           <h2>
             新建鸿蒙虚拟设备
-            <span class="mode-roadmap">
-              （当前：Agent 本地 GUI；官方支持后直接切换 Headless，另规划 Linux gRPC 资源池）
-            </span>
           </h2>
           <p>设备机型与系统版本统一读取 Server 保存的 DevEco 官方目录。</p>
           <div class="catalog-meta">
@@ -796,50 +799,36 @@ defineExpose({ refresh })
               <div><span>内存</span><b>{{ vm.memory_gb }}GB</b></div>
               <div><span>存储</span><b>{{ vm.storage_gb }}GB</b></div>
               <div><span>架构</span><b>{{ abiLabel(vm.abi) }}</b></div>
-              <div><span>Agent</span><b :title="vm.assigned_agent_id || ''">{{ vm.assigned_agent_id || '未分配' }}</b></div>
+              <div><span>Agent</span><b :title="agentLabel(vm)">{{ agentLabel(vm) }}</b></div>
               <div v-if="vm.hdc_serial"><span>Serial</span><b>{{ vm.hdc_serial }}</b></div>
-              <!-- agent_offline 是等待 Agent 重连认领的正常中间态，后端顺手写进
-                   error_message 只为留痕。把它标成红色「错误」会让人以为出了故障，
-                   Android 侧也从不展示这条。真正的失败（error / unavailable）仍然要显示，
-                   否则创建失败的原因就没地方看了。 -->
-              <div
-                v-if="vm.error_message && vm.state !== 'agent_offline'"
-                class="wide error-text"
-              ><span>错误</span><b>{{ vm.error_message }}</b></div>
             </div>
             <div class="actions">
-              <button v-if="canProbe(vm)" type="button" :disabled="busyId === `probe:${vm.id}`" @click="probe(vm)">
-                {{ busyId === `probe:${vm.id}` ? '探查中…' : (vm.assigned_agent_id ? '换 Agent（探查）' : '探查') }}
+              <button v-if="canProbe(vm)" type="button" :disabled="isVmBusy(vm)" @click="probe(vm)">
+                {{ busyByVm[vm.id] === 'probe' ? '探查中…' : (vm.assigned_agent_id ? '换 Agent（探查）' : '探查') }}
               </button>
-              <button v-if="canStart(vm)" type="button" :disabled="busyId === `start:${vm.id}`" @click="startVm(vm)">
-                {{ busyId === `start:${vm.id}` ? '启动中…' : '启动' }}
+              <button v-if="canStart(vm)" type="button" :disabled="isVmBusy(vm)" @click="startVm(vm)">
+                {{ busyByVm[vm.id] === 'start' ? '启动中…' : '启动' }}
               </button>
-              <button v-if="canStop(vm)" type="button" :disabled="busyId === `stop:${vm.id}`" @click="stopVm(vm)">
-                {{ busyId === `stop:${vm.id}` ? '停止中…' : (['starting', 'running'].includes(vm.state) ? '停止' : '重试停止') }}
+              <button v-if="canStop(vm)" type="button" :disabled="isVmBusy(vm)" @click="stopVm(vm)">
+                {{ busyByVm[vm.id] === 'stop' ? '停止中…' : (vm.state === 'running' ? '停止' : '重试停止') }}
               </button>
-              <button v-if="canForceRelease(vm)" type="button" class="danger" @click="openReleaseDialog(vm)">
-                人工确认释放旧占用
-              </button>
-              <button type="button" @click="copyConfig(vm)">复制配置</button>
-              <button v-if="canDelete(vm)" type="button" class="danger" :disabled="busyId === `delete:${vm.id}`" @click="removeVm(vm)">删除</button>
+              <button type="button" :disabled="isVmBusy(vm) || isTransitioning(vm)" @click="copyConfig(vm)">复制配置</button>
+              <button v-if="canDelete(vm)" type="button" class="danger" :disabled="isVmBusy(vm)" @click="removeVm(vm)">{{ busyByVm[vm.id] === 'delete' ? '删除中…' : '删除' }}</button>
             </div>
-            <p v-if="hasOldPort(vm)" class="lease-notice">
-              {{ vm.hdc_serial || (vm.hdc_port != null ? `HDC 端口 ${vm.hdc_port}` : '旧实例') }} 仍有旧占用，换 Agent 前需完成停止确认。旧 Agent 可用时先点“重试停止”；若无法送达，请在旧宿主核实 DevEco 实例进程和该 HDC 连接都已结束，再人工确认释放。
-            </p>
-            <p v-else-if="vm.state === 'stopping' && cleanupPending(vm)" class="lease-notice">
-              停止请求尚待旧 Agent 确认；长时间无响应可点“重试停止”。
-            </p>
 
-            <div v-if="candidateVmId === vm.id" :ref="(el) => setCandidatesRef(vm.id, el)" class="candidates">
+            <p v-if="lifecycleNotice(vm)" class="lifecycle-notice">{{ lifecycleNotice(vm) }}</p>
+            <p v-if="operationError(vm)" class="vm-operation-error">{{ operationError(vm) }}</p>
+
+            <div v-if="candidateVmId === vm.id && canProbe(vm)" :ref="(el) => setCandidatesRef(vm.id, el)" class="candidates">
               <div class="candidate-head">
                 <strong>可托管 Agent</strong>
                 <span class="spacer"></span>
-                <button type="button" class="ghost" :disabled="busyId === `probe:${vm.id}`" @click="probe(vm)">
-                  {{ busyId === `probe:${vm.id}` ? '探查中…' : '重新探查' }}
+                <button type="button" class="ghost" :disabled="isVmBusy(vm)" @click="probe(vm)">
+                  {{ busyByVm[vm.id] === 'probe' ? '探查中…' : '重新探查' }}
                 </button>
                 <button type="button" class="ghost" @click="closeCandidates">收起</button>
               </div>
-              <div v-if="busyId === `probe:${vm.id}`" class="empty probing">正在探查可托管的 Agent，请稍候…</div>
+              <div v-if="busyByVm[vm.id] === 'probe'" class="empty probing">正在探查可托管的 Agent，请稍候…</div>
               <div v-else class="candidate-grid">
                 <div v-for="agent in candidates" :key="agent.agent_id" class="candidate" :class="{ disabled: !agent.ok }">
                   <div>
@@ -847,8 +836,8 @@ defineExpose({ refresh })
                     <p>{{ agent.host_os || '-' }} · {{ agent.details?.host_abi || '未知架构' }}</p>
                     <p :class="{ warn: agent.warning }">{{ agent.warning || agent.reason }}</p>
                   </div>
-                  <button type="button" :disabled="!canDispatchTo(vm, agent) || busyId.startsWith('dispatch:')" @click="dispatchTo(vm, agent.agent_id)">
-                    {{ busyId === `dispatch:${vm.id}:${agent.agent_id}` ? '下发中…' : dispatchLabel(vm, agent) }}
+                  <button type="button" :disabled="!canDispatchTo(vm, agent) || isVmBusy(vm)" @click="dispatchTo(vm, agent.agent_id)">
+                    {{ busyByVm[vm.id] === 'dispatch' ? '下发中…' : dispatchLabel(vm, agent) }}
                   </button>
                 </div>
                 <div v-if="!candidates.length" class="empty">
@@ -889,55 +878,17 @@ defineExpose({ refresh })
         </div>
       </div>
     </div>
-
-    <div v-if="releaseDlg.open" class="copy-mask" @click.self="closeReleaseDialog">
-      <div class="copy-modal" role="dialog" aria-modal="true" aria-labelledby="release-title">
-        <div class="copy-modal-hd">
-          <strong id="release-title">人工确认释放旧占用</strong>
-          <button type="button" class="copy-x" :disabled="releaseDlg.busy" @click="closeReleaseDialog">×</button>
-        </div>
-        <p class="copy-src">
-          {{ releaseDlg.vm?.alias || releaseDlg.vm?.name || releaseDlg.vm?.id }}
-          · 旧 Agent：{{ releaseDlg.vm?.assigned_agent_id || '未记录' }}
-          · HDC：{{ releaseDlg.vm?.hdc_serial || releaseDlg.vm?.hdc_port || '未记录' }}
-        </p>
-        <p class="copy-tip">
-          此操作只解除 Server 对旧端口的占用，不会停止旧宿主上的实例。请先在旧宿主核实以下两项；未确认时不能释放或改派。
-        </p>
-        <label class="release-check">
-          <input v-model="releaseDlg.processStopped" type="checkbox" :disabled="releaseDlg.busy" />
-          <span>已核实旧宿主上的 DevEco 实例进程已停止</span>
-        </label>
-        <label class="release-check">
-          <input v-model="releaseDlg.hdcCleared" type="checkbox" :disabled="releaseDlg.busy" />
-          <span>已核实该 HDC 地址不再连接旧实例</span>
-        </label>
-        <label class="copy-field">
-          <span>核验记录（至少 8 个字）</span>
-          <input v-model="releaseDlg.reason" placeholder="例如：旧宿主进程和 HDC 连接均已核实停止" :disabled="releaseDlg.busy" />
-        </label>
-        <p v-if="releaseDlg.error" class="copy-err">{{ releaseDlg.error }}</p>
-        <div class="copy-modal-ft">
-          <button type="button" :disabled="releaseDlg.busy" @click="closeReleaseDialog">取消</button>
-          <button
-            type="button"
-            class="danger"
-            :disabled="releaseDlg.busy || !releaseDlg.processStopped || !releaseDlg.hdcCleared || releaseDlg.reason.trim().length < 8"
-            @click="confirmForceRelease"
-          >{{ releaseDlg.busy ? '释放中…' : '确认释放旧占用' }}</button>
-        </div>
-      </div>
-    </div>
   </section>
 </template>
 
 <style scoped>
+.lifecycle-notice { margin: 10px 0 0; border-radius: 6px; background: #fffbeb; color: #92400e; padding: 9px 10px; font-size: 12px; line-height: 1.5; }
+.vm-operation-error { margin: 8px 0 0; color: #b91c1c; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
 .page { padding: 22px; display: flex; flex-direction: column; gap: 16px; }
 .list-head, .card-head, .candidate-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .section-title p { margin: 4px 0 0; color: #64748b; font-size: 12px; }
 h2, h3 { margin: 0; color: #111827; }
 h2 { font-size: 15px; }
-.mode-roadmap { color: #64748b; font-size: 12px; font-weight: 500; line-height: 1.5; }
 h3 { font-size: 12px; }
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 .panel { max-height: calc(100vh - 140px); overflow-y: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
@@ -989,7 +940,6 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .meta b { overflow: hidden; color: #475569; font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .meta .error-text b { color: #b91c1c; white-space: normal; }
 .actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
-.lease-notice { margin: 10px 0 0; border-radius: 6px; background: #fffbeb; color: #92400e; padding: 9px 10px; font-size: 11px; line-height: 1.5; }
 .candidates { border-top: 1px solid #e5e7eb; margin-top: 12px; padding-top: 12px; }
 .candidate-head .spacer { flex: 1; }
 .candidate { display: flex; justify-content: space-between; gap: 10px; border: 1px solid #e5e7eb; border-radius: 7px; margin-top: 8px; padding: 10px; }
@@ -1004,8 +954,6 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .copy-src { margin: 0 0 4px; color: #374151; font-size: 13px; }
 .copy-tip { margin: 0 0 12px; color: #6b7280; font-size: 12px; }
 .copy-field input { box-sizing: border-box; width: 100%; }
-.release-check { flex-direction: row; align-items: flex-start; gap: 8px; margin: 8px 0; line-height: 1.4; }
-.release-check input { margin: 2px 0 0; }
 .copy-err { margin: 8px 0 0; color: #dc2626; font-size: 12px; }
 .copy-modal-ft { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 @media (max-width: 1180px) {

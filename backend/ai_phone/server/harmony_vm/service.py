@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional
 
 from loguru import logger
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +17,14 @@ from ai_phone.shared import protocol as P
 
 from ..db import get_session_factory
 from ..hub import Hub
+from ..vm_lifecycle import (
+    record_creation_provenance, proves_live_managed_instance, send_operation_once,
+    expire_operation_if_due,
+    is_abandoned_cleanup_receipt, record_abandoned_cleanup_receipt,
+    accept_owner, accept_status, bind_owner, cleanup_foreign_copy, cleanup_abandoned_first_bind,
+    finish_operation, maintenance, runtime as lifecycle_runtime,
+    transaction_lock, update_runtime, host_id as agent_host_id, fail_attempt,
+)
 from ..models import AndroidVmInstance, DeviceAlias
 from .models import HarmonyVmInstance, HarmonyVmPortLease
 
@@ -77,7 +86,7 @@ def vm_payload(vm: HarmonyVmInstance, *, request_id: str = "") -> Dict[str, Any]
 
 
 async def get_vm_or_404(session: AsyncSession, vm_id: str) -> HarmonyVmInstance:
-    vm = await session.get(HarmonyVmInstance, vm_id)
+    vm = await session.get(HarmonyVmInstance, vm_id, populate_existing=True)
     if vm is None:
         raise LookupError("harmony vm not found")
     return vm
@@ -207,37 +216,8 @@ async def allocate_port_lease(
         for port in excluded_ports
         if HDC_PORT_MIN <= int(port) <= HDC_PORT_MAX
     }
-    # 隔离端口的自动回收：必须同时满足两个条件，缺一不可。
-    #
-    #   1) 该端口原持有者就是本次探查的这台 Agent
-    #   2) 这台 Agent 的实时探查里确实没有该端口
-    #
-    # 只看条件 2 是不够的——那等于用"一次探查没看见"去替代"确认端口已释放"这个
-    # 更强的证据。反例：旧 Agent 已离线但它上面的 VM 仍在运行，本次探查（来自另
-    # 一台 Agent）自然看不见那个端口，于是被误判空闲并重新分配，两台 VM 抢同一
-    # 个 serial，正是 4.3 节要防的跨机串台。
-    #
-    # 收紧后：Agent 在线就能自愈（不会死锁），Agent 离线则一直隔离（不会误抢）。
-    reclaimable = (
-        await session.execute(
-            select(HarmonyVmPortLease).where(
-                HarmonyVmPortLease.state == "quarantined",
-                HarmonyVmPortLease.agent_id == agent_id,
-                HarmonyVmPortLease.port.notin_(excluded or {-1}),
-            )
-        )
-    ).scalars().all()
-    for stale in reclaimable:
-        logger.info(
-            "隔离端口 {} 由原持有 Agent {} 的实时探查确认空闲，放回可用池（原因：{}）",
-            stale.port,
-            agent_id,
-            stale.quarantine_reason or "-",
-        )
-        await session.delete(stale)
-    if reclaimable:
-        await session.flush()
-
+    # A capability scan cannot prove an old process has released a port.
+    # Quarantined leases are released only by confirmed stop/delete replies.
     # 先跳过当前事务已经加载/占用的端口，避免为每个已用端口制造一次
     # 主键冲突；并发请求之间仍由下面的嵌套事务 + PK 唯一约束兜底仲裁。
     occupied = set(
@@ -323,33 +303,30 @@ async def quarantine_current_lease(
     lease.last_error = error[:4000]
     lease.quarantine_reason = reason[:128]
     lease.quarantine_details_json = details or {}
-    lease.vm_id = None
+    # Keep the VM link while cleanup is outstanding.
 
 
 async def mark_agent_vms_offline(agent_id: str) -> int:
-    # 与 Android 对齐：Android 的端口占用每次实时查库算出，Agent 断线时
-    # adb_serial 被清空、端口自动回到可用池。鸿蒙的探查结果缓存在进程内存里，
-    # 断线不清就会让该 Agent 上报过的端口被永久排除。
     get_capability_waiter().forget_agent(agent_id)
     factory = get_session_factory()
     async with factory() as session:
-        rows = list(
-            (
-                await session.execute(
-                    select(HarmonyVmInstance).where(
-                        HarmonyVmInstance.assigned_agent_id == agent_id
-                    )
-                )
-            ).scalars().all()
-        )
-        for vm in rows:
-            vm.state = "agent_offline"
-            vm.error_code = "agent_offline"
-            vm.error_message = f"agent offline: {agent_id}"
+        rows = list((await session.execute(select(HarmonyVmInstance).where(
+            (HarmonyVmInstance.assigned_agent_id == agent_id) |
+            (HarmonyVmInstance.runtime["operation"]["target_agent_id"].as_string() == agent_id)
+        ))).scalars().all())
+        for vm in sorted(rows, key=lambda row: row.id):
+            await transaction_lock(session, f"harmony-vm:{vm.id}")
+            vm = await session.get(HarmonyVmInstance, vm.id, populate_existing=True)
+            if vm is None:
+                continue
+            op = lifecycle_runtime(vm).get("operation") or {}
+            if op.get("pending") and op.get("target_agent_id") == agent_id:
+                fail_attempt(vm, "agent_disconnected", "Agent 断开，本次操作已结束；不会自动重试")
+            elif vm.assigned_agent_id == agent_id:
+                vm.state, vm.error_code, vm.error_message = "agent_offline", "agent_offline", f"agent offline: {agent_id}"
         if rows:
             await session.commit()
         return len(rows)
-
 
 async def filter_managed_devices_for_agent(
     agent_id: str, devices: list[Dict[str, Any]]
@@ -405,7 +382,7 @@ async def filter_managed_devices_for_agent(
                     and (lease.agent_id or "") == agent_id
                     and lease.vm_id == vm_id
                     and lease.state in {"reserved", "active"}
-                    and vm.state in ACTIVE_STATES
+                    and vm.state == "running"
                 ):
                     # lease_token is an internal authority credential.  Device
                     # extra is exposed by public device-list endpoints.
@@ -425,7 +402,6 @@ async def filter_managed_devices_for_agent(
                         select(HarmonyVmInstance).where(
                             HarmonyVmInstance.assigned_agent_id == agent_id,
                             HarmonyVmInstance.hdc_serial.in_(untagged_hdc),
-                            HarmonyVmInstance.state.in_(ACTIVE_STATES),
                         )
                     )
                 ).scalars().all()
@@ -473,247 +449,200 @@ async def filter_managed_devices_for_agent(
 
 
 async def reset_vm_states_on_startup(session: AsyncSession) -> int:
-    result = await session.execute(
-        update(HarmonyVmInstance)
-        .where(HarmonyVmInstance.state != "draft")
-        .values(state="agent_offline", error_code="server_restarted")
-    )
-    return result.rowcount or 0
+    rows = list((await session.execute(select(HarmonyVmInstance).where(HarmonyVmInstance.state != "draft"))).scalars().all())
+    for vm in rows:
+        op = lifecycle_runtime(vm).get("operation") or {}
+        if op.get("pending"):
+            fail_attempt(vm, "server_restarted", "服务重启，本次未完成操作已结束；不会自动重试")
+        elif vm.assigned_agent_id:
+            vm.state = "agent_offline"
+    return len(rows)
 
-
-async def handle_vm_status(
-    agent_id: str,
-    msg: Dict[str, Any],
-    hub: Optional[Hub] = None,
-) -> None:
-    vm_id = str(msg.get("vm_id") or "").strip()
+async def handle_vm_status(agent_id: str, msg: Dict[str, Any], hub: Optional[Hub] = None) -> None:
+    vm_id = str(msg.get("vm_id") or "")
     if not vm_id:
         return
     factory = get_session_factory()
     async with factory() as session:
+        await transaction_lock(session, f"harmony-vm:{vm_id}")
         vm = await session.get(HarmonyVmInstance, vm_id)
-        if vm is None:
-            # 与 Android 相同：只有重连认领发现“本地有、DB 已无”的孤儿
-            # 才回发删除。普通 delete ack 不回发，避免 delete/status 循环。
-            if hub is not None and str(msg.get("reason") or "") == "reclaimed":
-                await hub.send_to_agent(agent_id, {
-                    "type": P.MSG_HARMONY_VM_DELETE,
-                    "request_id": uuid.uuid4().hex[:16],
-                    "vm_id": vm_id,
-                    "hdc_serial": str(msg.get("hdc_serial") or ""),
-                    "lease_token": str(msg.get("lease_token") or ""),
-                })
-            else:
-                logger.warning(
-                    "收到未知 Harmony VM 状态 vm_id={} agent={}",
-                    vm_id,
-                    agent_id,
-                )
-            return
+        reason = str(msg.get("reason") or "")
         token = str(msg.get("lease_token") or "")
-        if not token or token != (vm.lease_token or ""):
-            logger.warning(
-                "忽略过期 Harmony VM 状态 vm_id={} agent={} token={}",
-                vm_id,
-                agent_id,
-                token[:8],
-            )
+        serial = str(msg.get("hdc_serial") or "")
+        if vm is None:
+            if hub and (reason == "reclaimed" or proves_live_managed_instance(vm_id, msg, "harmony")):
+                await send_operation_once(hub, agent_id, {"type": P.MSG_HARMONY_VM_DELETE,
+                    "request_id": uuid.uuid4().hex[:16], "vm_id": vm_id,
+                    "hdc_serial": serial, "lease_token": token})
             return
-        lease = (
-            await session.execute(
-                select(HarmonyVmPortLease).where(
-                    HarmonyVmPortLease.lease_token == token
-                )
-            )
-        ).scalar_one_or_none()
-        if lease is None:
-            logger.warning("忽略无有效租约的 Harmony VM 状态 vm_id={} agent={}", vm_id, agent_id)
+        details = msg.get("details") if isinstance(msg.get("details"), dict) else {}
+        legacy = bool(reason == "reclaimed" and token and token == vm.lease_token
+                      and serial and serial == vm.hdc_serial)
+        if not accept_owner(vm, agent_id, hub, legacy_evidence=legacy):
+            if reason == "reclaimed":
+                await cleanup_foreign_copy(hub, vm, agent_id, details, msg)
             return
-
+        record_creation_provenance(vm, msg)
+        expired = expire_operation_if_due(vm, hub)
+        if is_abandoned_cleanup_receipt(vm, msg):
+            maintenance(hub, vm, False)
+            await release_port_lease(session, vm, reason="abandoned_first_bind_deleted")
+            record_abandoned_cleanup_receipt(vm)
+            await session.commit()
+            return
+        if not accept_status(vm, msg):
+            expired = expire_operation_if_due(vm, hub) or expired
+            cleaned = await cleanup_abandoned_first_bind(hub, vm, agent_id, details, msg)
+            if expired or cleaned:
+                await session.commit()
+            return
         state = str(msg.get("state") or vm.state)
         ok = bool(msg.get("ok", True))
-        error_code = str(msg.get("error_code") or ("" if ok else msg.get("reason") or "error"))
-        error_message = str(msg.get("error") or msg.get("reason") or "")
         details = msg.get("details") if isinstance(msg.get("details"), dict) else {}
-        serial = str(msg.get("hdc_serial") or "").strip()
-        expected_serial = serial_for_port(lease.port)
-        old_owners = {
-            owner
-            for owner in (
-                str(vm.assigned_agent_id or "").strip(),
-                str(lease.agent_id or "").strip(),
-            )
-            if owner and owner != agent_id
-        }
-        if old_owners:
-            # 与 Android 一致：所有权跟随物理持有者。Harmony 比 Android
-            # 多出的唯一准入是上方已经通过的 lease_token；能带有效 token
-            # 上报本机实例状态，就把 VM 与端口租约一起绑定到上报者。
-            logger.info(
-                "Harmony VM 按物理持有者重新绑定 Agent "
-                "vm_id={} owners={} reporter={}",
-                vm_id,
-                sorted(old_owners),
-                agent_id,
-            )
-            lease.agent_id = agent_id
-        if serial and serial != expected_serial:
-            ok = False
-            state = "error"
-            error_code = "hdc_serial_mismatch"
+        lease = None
+        if vm.lease_token:
+            if token != vm.lease_token:
+                return
+            lease = (await session.execute(select(HarmonyVmPortLease).where(
+                HarmonyVmPortLease.lease_token == token))).scalar_one_or_none()
+            if lease is None:
+                return
+        else:
+            op = lifecycle_runtime(vm).get("operation") or {}
+            if token or op.get("action") != "stop" or msg.get("request_id") != op.get("request_id"):
+                return
+        if state == "running" and lease is None:
+            return
+        expected_serial = serial_for_port(lease.port) if lease is not None else ""
+        error_code = str(msg.get("error_code") or ("" if ok else reason or "error"))
+        error_message = str(msg.get("error") or reason)
+        if serial and expected_serial and serial != expected_serial:
+            state, ok, error_code = "error", False, "hdc_serial_mismatch"
             error_message = f"expected {expected_serial}, got {serial}"
-
-        vm.assigned_agent_id = agent_id
+        if not ok:
+            state = "error"
+        if state not in {"starting", "running", "stopping", "stopped", "error", "unavailable"}:
+            return
+        if lease is not None:
+            lease.agent_id = agent_id
         vm.state = state
         vm.error_code = "" if ok else error_code[:128]
         vm.error_message = "" if ok else error_message[:4000]
-        vm.runtime = {
-            **(vm.runtime or {}),
-            "last_status": {
-                "state": state,
-                "ok": ok,
-                "reason": msg.get("reason") or "",
-                "details": details,
-                "ts": now_utc().isoformat(),
-            },
-        }
+        update_runtime(vm, last_status={"state": state, "ok": ok, "reason": reason,
+                       "details": details, "ts": now_utc().isoformat()})
+        if details.get("instance_created") is True:
+            update_runtime(vm, instance_created=True)
+        if state == "running" and ok:
+            bind_owner(vm, agent_id, hub)
         if state == "running" and ok:
             lease.state = "active"
+            lease.vm_id = vm.id
             lease.activated_at = lease.activated_at or now_utc()
-            vm.hdc_port = lease.port
-            vm.hdc_serial = expected_serial
-            vm.started_at = vm.started_at or now_utc()
-            vm.stopped_at = None
+            vm.hdc_port, vm.hdc_serial = lease.port, expected_serial
+            vm.started_at, vm.stopped_at = vm.started_at or now_utc(), None
+            update_runtime(vm, instance_created=True)
             await reserve_placeholder_alias(session, vm)
-        elif state == "stopped":
+        elif state == "stopped" and ok:
             await reserve_placeholder_alias(session, vm)
             await release_port_lease(session, vm, reason="stopped")
             vm.stopped_at = now_utc()
         elif state in {"error", "unavailable"}:
-            vm.stopped_at = now_utc()
-            if bool(details.get("cleanup_confirmed")):
-                await reserve_placeholder_alias(session, vm)
+            await reserve_placeholder_alias(session, vm)
+            if details.get("cleanup_confirmed"):
                 await release_port_lease(session, vm, reason=error_code or state)
             else:
-                # 即使端口被隔离，别名也必须先退回稳定的 vm_id 占位；
-                # 否则下一次换新端口启动时，旧 serial 映射会反向制造别名冲突。
-                await reserve_placeholder_alias(session, vm)
-                await quarantine_current_lease(
-                    session,
-                    vm,
-                    reason=error_code or state,
-                    error=error_message,
-                    details=details,
-                )
+                await quarantine_current_lease(session, vm, reason=error_code or state,
+                                               error=error_message, details=details)
+        finish_operation(vm, {**msg, "state": state})
+        maintenance(hub, vm, not (state == "running" and ok))
+        op = lifecycle_runtime(vm).get("operation") or {}
+        if op.get("first_bind") and op.get("outcome") == "failed" and not ok:
+            vm.assigned_agent_id = None
+            if details.get("instance_deleted") or (details.get("cleanup_confirmed") and details.get("instance_created") is False):
+                maintenance(hub, vm, False)
+                pass
+                update_runtime(vm, instance_created=False)
         await session.commit()
 
 
-async def handle_vm_reconcile(
-    agent_id: str,
-    msg: Dict[str, Any],
-    hub: Optional[Hub] = None,
-) -> None:
+async def handle_vm_reconcile(agent_id: str, msg: Dict[str, Any], hub: Optional[Hub] = None) -> None:
     rows = msg.get("instances") if isinstance(msg.get("instances"), list) else []
+    reported = set()
     for item in rows:
         if not isinstance(item, dict):
             continue
-        if str(item.get("state") or "").strip() == "stopped":
+        reported.add(str(item.get("vm_id") or ""))
+        if item.get("state") == "stopped":
             await _handle_stopped_vm_reconcile(agent_id, item, hub)
-            continue
-        await handle_vm_status(
-            agent_id,
-            {
-                "type": P.MSG_HARMONY_VM_STATUS,
-                "reason": "reclaimed",
-                "ok": True,
-                **item,
-            },
-            hub,
-        )
+        else:
+            await handle_vm_status(agent_id, {"type": P.MSG_HARMONY_VM_STATUS,
+                "reason": "reclaimed", "ok": item.get("state") == "running", **item}, hub)
+    factory = get_session_factory()
+    async with factory() as session:
+        reporter_host = agent_host_id(hub, agent_id)
+        owner_query = HarmonyVmInstance.assigned_agent_id == agent_id
+        if reporter_host:
+            owner_query |= HarmonyVmInstance.runtime["owner_host_id"].as_string() == reporter_host
+        owned = list((await session.execute(select(HarmonyVmInstance).where(owner_query))).scalars().all())
+        unknown = set(msg.get("unknown_vm_ids") or [])
+        for vm in sorted(owned, key=lambda row: row.id):
+            await transaction_lock(session, f"harmony-vm:{vm.id}")
+            vm = await session.get(HarmonyVmInstance, vm.id, populate_existing=True)
+            if vm is None:
+                continue
+            if not accept_owner(vm, agent_id, hub):
+                continue
+            if (msg.get("inventory_complete", False) and vm.id not in reported | unknown
+                  and vm.state not in {"draft", "starting", "stopping"}):
+                vm.state, vm.error_code = "error", "instance_missing"
+                vm.error_message = "Agent 未发现原实例；未自动重建"
+        await session.commit()
 
 
-async def _handle_stopped_vm_reconcile(
-    agent_id: str,
-    item: Dict[str, Any],
-    hub: Optional[Hub],
-) -> None:
-    """Restore a lease-free stopped VM after Server/Agent reconnection.
-
-    A stopped VM has already released its HDC port lease, so routing it through
-    ``handle_vm_status`` can never succeed: that handler deliberately requires
-    a live lease for runtime updates. Android reconciliation has the same
-    running/stopped split. Ownership follows the Agent that reports the locally
-    existing managed instance, regardless of the previous process-scoped id.
-    """
-    vm_id = str(item.get("vm_id") or "").strip()
+async def _handle_stopped_vm_reconcile(agent_id: str, item: Dict[str, Any], hub: Optional[Hub]) -> None:
+    vm_id = str(item.get("vm_id") or "")
     if not vm_id:
         return
     factory = get_session_factory()
     async with factory() as session:
+        await transaction_lock(session, f"harmony-vm:{vm_id}")
         vm = await session.get(HarmonyVmInstance, vm_id)
         if vm is None:
-            # Agent still has a local instance whose Server configuration was
-            # deleted.  Reuse the existing orphan cleanup command.
-            if hub is not None:
-                await hub.send_to_agent(
-                    agent_id,
-                    {
-                        "type": P.MSG_HARMONY_VM_DELETE,
-                        "request_id": uuid.uuid4().hex[:16],
-                        "vm_id": vm_id,
-                        "hdc_serial": str(item.get("hdc_serial") or ""),
-                        "lease_token": str(item.get("lease_token") or ""),
-                    },
-                )
+            if hub:
+                await send_operation_once(hub, agent_id, {"type": P.MSG_HARMONY_VM_DELETE,
+                    "request_id": uuid.uuid4().hex[:16], "vm_id": vm_id,
+                    "hdc_serial": str(item.get("hdc_serial") or ""),
+                    "lease_token": str(item.get("lease_token") or "")})
             return
-
-        # No guessing: if Server still has any runtime/lease evidence, a
-        # lease-free stopped report is not authoritative.  The Agent must
-        # reclaim it through the normal running+lease path or leave it offline
-        # for explicit investigation.
-        if (
-            vm.state in ACTIVE_STATES
-            or vm.lease_token
-            or vm.hdc_port is not None
-            or vm.hdc_serial
-        ):
-            logger.warning(
-                "忽略仍有活动证据的 stopped Harmony VM 对账 "
-                "vm_id={} agent={} state={} port={} serial={}",
-                vm_id,
-                agent_id,
-                vm.state,
-                vm.hdc_port,
-                vm.hdc_serial or "",
-            )
-            return
-
         details = item.get("details") if isinstance(item.get("details"), dict) else {}
-        old_owner = str(vm.assigned_agent_id or "").strip()
-        if old_owner and old_owner != agent_id:
-            logger.info(
-                "已停止 Harmony VM 按物理持有者重新绑定 Agent "
-                "vm_id={} owner={} reporter={}",
-                vm_id,
-                old_owner,
-                agent_id,
-            )
-        vm.assigned_agent_id = agent_id
-        vm.state = "stopped"
-        vm.error_code = ""
-        vm.error_message = ""
+        safe_name = "aiphone_harmony_" + re.sub(r"[^A-Za-z0-9_]+", "_", vm.id)[:32]
+        op = lifecycle_runtime(vm).get("operation") or {}
+        if not vm.assigned_agent_id and op.get("first_bind") and not op.get("pending"):
+            if await cleanup_abandoned_first_bind(hub, vm, agent_id, details, item):
+                await session.commit()
+            return
+        legacy = bool(details.get("managed_instance_present") and details.get("instance_name") == safe_name)
+        if not accept_owner(vm, agent_id, hub, legacy_evidence=legacy):
+            await cleanup_foreign_copy(hub, vm, agent_id, details, item)
+            return
+        if vm.state in {"starting", "stopping"} or (vm.state == "running" and lifecycle_runtime(vm).get("operation")):
+            return
+        details = item.get("details") if isinstance(item.get("details"), dict) else {}
+        if vm.lease_token or vm.hdc_port is not None or vm.hdc_serial:
+            reported_token = str(item.get("lease_token") or details.get("released_lease_token") or "")
+            reported_serial = str(item.get("hdc_serial") or "")
+            if (not details.get("cleanup_confirmed") or not reported_token
+                    or reported_token != vm.lease_token
+                    or (reported_serial and reported_serial != vm.hdc_serial)):
+                return
+            await release_port_lease(session, vm, reason="reconcile_stopped")
+        vm.state, vm.error_code, vm.error_message = "stopped", "", ""
         vm.stopped_at = vm.stopped_at or now_utc()
-        vm.runtime = {
-            **(vm.runtime or {}),
-            "last_status": {
-                "state": "stopped",
-                "ok": True,
-                "reason": "reclaimed",
-                "details": details,
-                "ts": now_utc().isoformat(),
-            },
-        }
+        update_runtime(vm, instance_created=True, last_status={"state": "stopped", "ok": True,
+            "reason": "reclaimed", "details": details, "ts": now_utc().isoformat()})
+        finish_operation(vm, {"state": "stopped"})
         await reserve_placeholder_alias(session, vm)
+        maintenance(hub, vm, True)
         await session.commit()
 
 
@@ -752,9 +681,9 @@ class HarmonyVmCapabilityWaiter:
         }
         try:
             for agent_id in sorted(agent_ids):
-                if not await hub.send_to_agent(agent_id, payload):
+                if not await send_operation_once(hub, agent_id, payload):
                     state.failures[agent_id] = "send_failed"
-            if state.expected:
+            if state.expected - (state.responses.keys() | state.failures.keys()):
                 try:
                     await asyncio.wait_for(state.event.wait(), timeout=timeout_sec)
                 except asyncio.TimeoutError:
@@ -786,7 +715,7 @@ class HarmonyVmCapabilityWaiter:
             **vm_payload(vm, request_id=request_id),
         }
         try:
-            if not await hub.send_to_agent(agent_id, payload):
+            if not await send_operation_once(hub, agent_id, payload):
                 state.failures[agent_id] = "send_failed"
             else:
                 try:

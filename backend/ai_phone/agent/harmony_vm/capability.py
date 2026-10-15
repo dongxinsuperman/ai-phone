@@ -10,7 +10,11 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import threading
+import time
+from copy import deepcopy
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, Optional, Set, Tuple
 
@@ -32,6 +36,22 @@ HDC_PORT_MAX = 16555
 # 下发前 dry run 用的实例名。固定名字便于识别残留，且它建在临时目录里，
 # 不会与受管实例重名。
 _DRY_RUN_NAME = "aiphone_capability_dryrun"
+
+# Cache only installed-image/create compatibility, never port occupancy,
+# current instances or memory. A host/tool/image change invalidates it early.
+_STATIC_PROBE_TTL_SEC = 60.0
+_STATIC_PROBE_CACHE_SIZE = 64
+_STATIC_PROBE_CACHE: Dict[str, tuple[float, Dict[str, Any]]] = {}
+_STATIC_PROBE_LOCK = threading.Lock()
+
+
+def startup_timeout(deadline: Optional[float], maximum: float) -> float:
+    if deadline is None:
+        return maximum
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("Harmony VM startup deadline exceeded")
+    return min(maximum, remaining)
 
 
 @dataclass(frozen=True)
@@ -111,10 +131,26 @@ def _emulator_candidates() -> Iterator[str]:
         yield path_candidate
 
 
-def _is_deveco_emulator(candidate: str) -> bool:
+def _is_deveco_emulator(candidate: str, *, deadline: Optional[float] = None) -> bool:
+    startup_timeout(deadline, 1.0)
     if not candidate or not os.path.isfile(candidate) or not os.access(candidate, os.X_OK):
         return False
-    rc, raw = _run([candidate, "-help"], timeout=8.0)
+    try:
+        stat = Path(candidate).stat()
+    except OSError:
+        return False
+    return _emulator_help_supported(
+        candidate, stat.st_mtime_ns, stat.st_size, int(time.monotonic() // 60),
+        startup_timeout(deadline, 3.0),
+    )
+
+
+@lru_cache(maxsize=32)
+def _emulator_help_supported(
+    candidate: str, modified_ns: int, size: int, ttl_bucket: int, timeout: float
+) -> bool:
+    del modified_ns, size, ttl_bucket
+    rc, raw = _run([candidate, "-help"], timeout=timeout)
     if rc != 0:
         return False
     lower = raw.lower()
@@ -126,16 +162,22 @@ def _is_deveco_emulator(candidate: str) -> bool:
     )
 
 
-def find_harmony_tools() -> Tuple[Optional[HarmonyVmTools], list[str]]:
+def find_harmony_tools(*, deadline: Optional[float] = None) -> Tuple[Optional[HarmonyVmTools], list[str]]:
     # Android SDK 也可能在 PATH 暴露同名 Emulator，因此必须先找 DevEco
     # 官方安装位置，并对命令面做校验，不能只看文件名。
     seen: set[str] = set()
     for candidate in _emulator_candidates():
+        startup_timeout(deadline, 1.0)
         resolved = str(Path(candidate).expanduser().resolve())
         if resolved in seen:
             continue
         seen.add(resolved)
-        if _is_deveco_emulator(resolved):
+        supported = (
+            _is_deveco_emulator(resolved) if deadline is None
+            else _is_deveco_emulator(resolved, deadline=deadline)
+        )
+        startup_timeout(deadline, 1.0)
+        if supported:
             return HarmonyVmTools(emulator=resolved), []
     missing = ["DevEco Emulator"]
     if not hdc_available():
@@ -144,13 +186,23 @@ def find_harmony_tools() -> Tuple[Optional[HarmonyVmTools], list[str]]:
 
 
 def format_os_version(os_version: str, api_version: str) -> str:
-    os_value = (os_version or "").strip()
+    os_value = re.sub(r"^HarmonyOS\s*", "", (os_version or "").strip(), flags=re.IGNORECASE)
     api_value = (api_version or "").strip()
-    if os_value.startswith("HarmonyOS ") and re.search(r"\(\d+\)", os_value):
-        return os_value
-    if os_value and api_value:
-        return f"HarmonyOS {os_value}({api_value})"
-    return ""
+    match = re.fullmatch(
+        r"(\d+(?:\.\d+)*)(?:\s*\(\s*(\d+)\s*\))?(?:\s*Beta\s*(\d+))?",
+        os_value,
+        re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    embedded_api = match.group(2) or ""
+    if embedded_api and api_value and embedded_api != api_value:
+        return ""
+    api = embedded_api or api_value
+    if not api.isdigit():
+        return ""
+    beta = f" Beta{match.group(3)}" if match.group(3) else ""
+    return f"HarmonyOS {match.group(1)}({api}){beta}"
 
 
 def _run(
@@ -338,26 +390,41 @@ def list_downloaded_images(
     *,
     image_roots: Iterable[Path | str] = (),
 ) -> Tuple[bool, str]:
-    """本机已安装镜像的权威来源是 DevEco 自己，不是目录扫描。
+    """Read installed candidates locally, then ask DevEco for unknown layouts.
 
-    单纯扫目录只能从目录名反推形态，因此无法识别 ``phone_all_arm`` 这类
-    **一份镜像覆盖 phone / foldable / widefold / triplefold 全部形态** 的官方
-    打包方式——实测会把"折叠屏 + 6.0.31"误判成未安装并拒绝下发。
-
-    因此优先问 ``Emulator -imageList -downloaded true``（不传 ``-imageRoot``，
-    让 DevEco 用它自己配置的镜像目录，与 Android 不自带 SDK 路径同理）；该命令
-    不可用或返回异常时，再退回目录扫描作为离线兜底。
+    ``phone_all`` covers the phone/folding families on both architectures.
+    Metadata establishes the candidate, not create compatibility: the actual
+    CLI create probe remains mandatory before a candidate is accepted.
     """
-    del requirement
-    rc, raw = _run([tools.emulator, "-imageList", "-downloaded", "true"], timeout=30.0)
+    # The local metadata is enough to identify an installed candidate; the
+    # bounded create probe below remains the compatibility authority. Avoid a
+    # network-backed catalog request on every dispatch when it is available.
+    deadline = requirement.get("_operation_deadline")
+    startup_timeout(deadline, 1.0)
+    local_images = scan_downloaded_images(image_roots)
+    startup_timeout(deadline, 1.0)
+    version_spec = format_os_version(
+        str(requirement.get("os_version") or ""), str(requirement.get("api_version") or "")
+    )
+    device_type = str(requirement.get("device_type") or "Phone").strip()
+    requested_abi = normalize_abi(str(requirement.get("abi") or "auto"))
+    if any(
+        row["device_type"] == device_type and row["os_version"] == version_spec
+        and row["abi"] == requested_abi for row in local_images
+    ):
+        return True, json.dumps(local_images, ensure_ascii=False)
+    rc, raw = _run(
+        [tools.emulator, "-imageList", "-downloaded", "true"],
+        timeout=startup_timeout(deadline, 8.0),
+    )
+    startup_timeout(deadline, 1.0)
     lowered = (raw or "").lower()
     cli_failed = rc != 0 or any(marker in lowered for marker in _CLI_ERROR_MARKERS)
     if not cli_failed:
         images = _normalize_images(raw, downloaded=True)
         if images:
             return True, json.dumps(images, ensure_ascii=False)
-    images = scan_downloaded_images(image_roots)
-    return bool(images), json.dumps(images, ensure_ascii=False)
+    return bool(local_images), json.dumps(local_images, ensure_ascii=False)
 
 
 def dry_run_create(
@@ -373,10 +440,11 @@ def dry_run_create(
     情况——磁盘上有 6 GB 内容，``-downloaded`` 说有，但当前 CLI 统一去找
     ``phone_all_arm``，真创建时报 ``Cannot find image``。半截下载的镜像同理。
 
-    ``-create`` 只校验参数并写几个配置文件，不碰镜像内容，实测几十毫秒，
-    所以放在下发前的能力探查里代价可以忽略，却能把"探查通过却创建失败"
-    这类下发后才暴露的错误挡在前面。
+    结果只在工具、镜像和配置未变化时短暂复用；命令有明确上限，不把正常
+    环境下的一次耗时当作故障时延保证。
     """
+    deadline = requirement.get("_operation_deadline")
+    startup_timeout(deadline, 1.0)
     version_spec = format_os_version(
         str(requirement.get("os_version") or ""),
         str(requirement.get("api_version") or ""),
@@ -407,11 +475,11 @@ def dry_run_create(
         ]
         if screen_profile:
             args.extend(["-screenProfile", screen_profile])
-        rc, raw = _run(args, timeout=120.0)
-        if "create success" not in (raw or "").lower():
+        rc, raw = _run(args, timeout=startup_timeout(deadline, 15.0))
+        if rc != 0 or "create success" not in (raw or "").lower():
             return False, _first_cli_message(raw) or f"exit {rc}"
         # 删不掉残留实例会让下一次同名 dry run 被误判成不可创建。
-        _run(
+        delete_rc, delete_raw = _run(
             [
                 tools.emulator,
                 "-delete",
@@ -419,9 +487,12 @@ def dry_run_create(
                 "-instancePath",
                 tmp,
             ],
-            timeout=60.0,
+            timeout=5.0,
             input_text="y\n",
         )
+        if delete_rc != 0 or (Path(tmp) / _DRY_RUN_NAME).exists():
+            return False, "临时实例清理未确认：" + (_first_cli_message(delete_raw) or str(delete_rc))
+        startup_timeout(deadline, 1.0)
     return True, ""
 
 
@@ -492,25 +563,33 @@ def scan_downloaded_images(
                 except (OSError, json.JSONDecodeError):
                     continue
                 api_version = str(info.get("apiVersion") or "").strip()
-                device_type = _device_type_from_image_dir(image_dir.name)
-                if not api_version or not device_type:
+                device_types = _device_types_from_image_dir(image_dir.name)
+                if not api_version or not device_types:
                     continue
-                os_version = f"HarmonyOS {version_name}({api_version})"
-                abi = normalize_abi(str(info.get("abi") or ""))
-                key = (device_type, os_version, abi)
-                # Discovery order is authoritative (existing instance/configured
-                # root before defaults), so the first matching image wins.
-                found.setdefault(key, {
-                    "id": f"{device_type}|{os_version}|{abi}",
-                    "device_type": device_type,
-                    "os_version": os_version,
-                    "api_version": api_version,
-                    "software_version": str(info.get("version") or ""),
-                    "abi": abi,
-                    "downloaded": True,
-                    "image_root": str(root.resolve()),
-                    "image_path": str(image_dir.resolve()),
-                })
+                os_version = format_os_version(version_name, api_version)
+                raw_abi = str(_pick(info, "abi", "cpuArch", "architecture") or "")
+                if not raw_abi:
+                    match = re.search(r"_(arm64|arm|x86_64|x86|x64)$", image_dir.name, re.IGNORECASE)
+                    raw_abi = match.group(1) if match else ""
+                if not os_version or not raw_abi:
+                    continue
+                abi = normalize_abi(raw_abi)
+                for device_type in device_types:
+                    key = (device_type, os_version, abi)
+                    # Discovery order is authoritative. phone_all is one
+                    # package shared by the phone/folding display families;
+                    # actual create compatibility is still checked below.
+                    found.setdefault(key, {
+                        "id": f"{device_type}|{os_version}|{abi}",
+                        "device_type": device_type,
+                        "os_version": os_version,
+                        "api_version": api_version,
+                        "software_version": str(info.get("version") or ""),
+                        "abi": abi,
+                        "downloaded": True,
+                        "image_root": str(root.resolve()),
+                        "image_path": str(image_dir.resolve()),
+                    })
     return sorted(
         found.values(),
         key=lambda row: (
@@ -539,6 +618,14 @@ def _device_type_from_image_dir(name: str) -> str:
         if normalized.startswith(prefix):
             return device_type
     return ""
+
+
+def _device_types_from_image_dir(name: str) -> tuple[str, ...]:
+    normalized = re.sub(r"[^a-z0-9]+", "", (name or "").lower())
+    if normalized.startswith("phoneall"):
+        return ("Phone", "Foldable", "WideFold", "TripleFold")
+    single = _device_type_from_image_dir(name)
+    return (single,) if single else ()
 
 
 def _cli_output_failed(raw: str) -> bool:
@@ -603,12 +690,8 @@ def _version_spec_from_row(row: Dict[str, Any]) -> str:
         )
         or ""
     ).strip()
-    if re.fullmatch(
-        r"HarmonyOS\s+\d+(?:\.\d+)*(?:\(\d+\))(?:\s+Beta\d+)?", direct
-    ):
-        return direct
     api = str(_pick(row, "apiVersion", "api", "apiLevel") or "").strip()
-    return format_os_version(direct, api) if direct and api else ""
+    return format_os_version(direct, api)
 
 
 def _device_type_from_row(row: Dict[str, Any], raw: str = "") -> str:
@@ -625,7 +708,7 @@ def _device_type_from_row(row: Dict[str, Any], raw: str = "") -> str:
 
 
 def _normalize_images(raw: str, *, downloaded: bool) -> list[Dict[str, Any]]:
-    found: Dict[tuple[str, str], Dict[str, Any]] = {}
+    found: Dict[tuple[str, str, str], Dict[str, Any]] = {}
     parsed = _json_value(raw)
     if parsed is not None:
         for row in _objects(parsed):
@@ -638,13 +721,14 @@ def _normalize_images(raw: str, *, downloaded: bool) -> list[Dict[str, Any]]:
                 continue
             api_match = re.search(r"\((\d+)\)", version_spec)
             abi = str(_pick(row, "abi", "cpuArch", "architecture") or "").strip()
-            key = (device_type, version_spec)
+            resolved_abi = normalize_abi(abi) if abi else "auto"
+            key = (device_type, version_spec, resolved_abi)
             found[key] = {
                 "id": f"{device_type}|{version_spec}",
                 "device_type": device_type,
                 "os_version": version_spec,
                 "api_version": api_match.group(1) if api_match else "",
-                "abi": normalize_abi(abi) if abi else "auto",
+                "abi": resolved_abi,
                 "downloaded": downloaded
                 or str(
                     _pick(row, "downloaded", "isDownloaded", "installed") or ""
@@ -665,7 +749,8 @@ def _normalize_images(raw: str, *, downloaded: bool) -> list[Dict[str, Any]]:
                 if not device_type:
                     continue
                 api_match = re.search(r"\((\d+)\)", version_spec)
-                key = (device_type, version_spec)
+                version_spec = format_os_version(version_spec, "")
+                key = (device_type, version_spec, "auto")
                 found[key] = {
                     "id": f"{device_type}|{version_spec}",
                     "device_type": device_type,
@@ -679,15 +764,24 @@ def _normalize_images(raw: str, *, downloaded: bool) -> list[Dict[str, Any]]:
     )
 
 
-def _forwarded_ports() -> Set[int]:
+def _forwarded_ports(
+    targets: Optional[Iterable[Any]] = None, *, deadline: Optional[float] = None
+) -> Set[int]:
     ports: Set[int] = set()
-    for target in hdc_list_targets():
+    local_deadline = time.monotonic() + 5.0
+    deadline = min(local_deadline, deadline) if deadline is not None else local_deadline
+    for target in targets if targets is not None else hdc_list_targets():
+        if str(target.status).strip().lower() != "connected":
+            continue
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("harmony_fport_probe_timeout")
         try:
             raw = hdc_run(
-                "fport", "ls", serial=target.serial, timeout=3.0, check=False
+                "fport", "ls", serial=target.serial, timeout=min(1.0, remaining), check=False
             )
-        except Exception:  # noqa: BLE001
-            continue
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"harmony_fport_probe_failed:{target.serial}") from exc
         for local in re.findall(r"tcp:(\d+)\s+tcp:\d+", raw or ""):
             try:
                 ports.add(int(local))
@@ -696,7 +790,7 @@ def _forwarded_ports() -> Set[int]:
     return ports
 
 
-def _listener_ports() -> Set[int]:
+def _listener_ports(*, deadline: Optional[float] = None) -> Set[int]:
     """Return occupied HDC ports using the same bind test as Android.
 
     ``psutil.net_connections`` can be denied by macOS even for the current
@@ -704,6 +798,7 @@ def _listener_ports() -> Set[int]:
     10000 while another desktop process already owned it.  Bind-testing the
     dedicated Harmony HDC pool is local, deterministic, and permission-free.
     """
+    startup_timeout(deadline, 1.0)
     result: Set[int] = set()
     try:
         import psutil  # noqa: PLC0415
@@ -725,7 +820,7 @@ def _listener_ports() -> Set[int]:
         if lsof:
             rc, raw = _run(
                 [lsof, "-nP", "-iTCP", "-sTCP:LISTEN"],
-                timeout=8.0,
+                timeout=startup_timeout(deadline, 2.0),
             )
             if rc == 0:
                 for value in re.findall(r":(\d+)\s+\(LISTEN\)", raw):
@@ -734,6 +829,8 @@ def _listener_ports() -> Set[int]:
                         result.add(port)
 
     for port in range(HDC_PORT_MIN, HDC_PORT_MAX + 1):
+        if (port - HDC_PORT_MIN) % 128 == 0:
+            startup_timeout(deadline, 1.0)
         if port in result:
             continue
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -750,6 +847,103 @@ def _listener_ports() -> Set[int]:
     return result
 
 
+def _static_probe_key(
+    tools: HarmonyVmTools, requirement: Dict[str, Any], roots: list[str]
+) -> str:
+    paths = {Path(tools.emulator), *_emulator_config_files()}
+    for root in roots:
+        images = Path(root) / "system-image"
+        paths.add(images)
+        for info in images.glob("*/*/info.json"):
+            paths.update((info.parent, info, info.parent / "system.img"))
+    stamps = []
+    for path in sorted(paths, key=str):
+        try:
+            stat = path.stat()
+            stamps.append((str(path), stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            stamps.append((str(path), None, None))
+    fields = (
+        "device_type", "os_version", "api_version", "abi",
+        "screen_profile", "display", "config_json",
+    )
+    return json.dumps(
+        {
+            "files": stamps, "roots": roots, "host_abi": host_abi(),
+            "config": {key: requirement.get(key) for key in fields},
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+
+
+def _probe_image_compatibility(
+    tools: HarmonyVmTools,
+    requirement: Dict[str, Any],
+    roots: list[str],
+) -> Dict[str, Any]:
+    """Reuse only successful static checks; every caller still probes live ports."""
+    deadline = requirement.get("_operation_deadline")
+    startup_timeout(deadline, 1.0)
+    key = _static_probe_key(tools, requirement, roots)
+    # Contending probes must not build an unbounded backlog of create/delete
+    # subprocesses. The caller can explicitly probe again after this check.
+    if not _STATIC_PROBE_LOCK.acquire(timeout=startup_timeout(deadline, 1.0)):
+        return {"ok": False, "reason": "该 Agent 正在检查鸿蒙镜像，请稍后重新探查", "details": {}}
+    try:
+        startup_timeout(deadline, 1.0)
+        now = time.monotonic()
+        cached = _STATIC_PROBE_CACHE.get(key)
+        if cached is not None and cached[0] > now:
+            result = deepcopy(cached[1])
+            result["details"]["static_probe_cached"] = True
+            return result
+        for expired in [entry for entry, (expires, _) in _STATIC_PROBE_CACHE.items() if expires <= now]:
+            _STATIC_PROBE_CACHE.pop(expired, None)
+
+        details: Dict[str, Any] = {"image_roots": roots, "static_probe_cached": False}
+        images_ok, image_raw = list_downloaded_images(tools, requirement, image_roots=roots)
+        details["downloaded_images_raw"] = image_raw[-8000:]
+        if not images_ok:
+            return {
+                "ok": False,
+                "reason": "无法确认 DevEco 已下载镜像；不会用联网镜像或未知目录兜底",
+                "details": details,
+            }
+        version_spec = format_os_version(
+            str(requirement.get("os_version") or ""), str(requirement.get("api_version") or "")
+        )
+        device_type = str(requirement.get("device_type") or "Phone").strip()
+        requested_abi = normalize_abi(str(requirement.get("abi") or "auto"))
+        images = _normalize_images(image_raw, downloaded=True)
+        if not any(
+            row["device_type"] == device_type and row["os_version"] == version_spec
+            and row["abi"] in {"auto", requested_abi}
+            for row in images
+        ):
+            return {
+                "ok": False,
+                "reason": f"缺少指定的鸿蒙虚拟镜像：{device_type} / {version_spec} / {requested_abi}",
+                "details": details,
+            }
+        create_ok, create_reason = dry_run_create(tools, requirement, image_roots=roots)
+        startup_timeout(deadline, 1.0)
+        details["dry_run_create"] = create_reason or "ok"
+        if not create_ok:
+            return {
+                "ok": False,
+                "reason": _create_failure_reason(create_reason, device_type, version_spec),
+                "details": details,
+            }
+        result = {"ok": True, "reason": "可用", "details": details}
+        while len(_STATIC_PROBE_CACHE) >= _STATIC_PROBE_CACHE_SIZE:
+            _STATIC_PROBE_CACHE.pop(next(iter(_STATIC_PROBE_CACHE)))
+        _STATIC_PROBE_CACHE[key] = (time.monotonic() + _STATIC_PROBE_TTL_SEC, deepcopy(result))
+        return result
+    finally:
+        _STATIC_PROBE_LOCK.release()
+
+
 def probe_harmony_vm_capability(
     requirement: Dict[str, Any],
     *,
@@ -757,6 +951,8 @@ def probe_harmony_vm_capability(
     max_instances: int,
     image_roots: Iterable[Path | str] = (),
 ) -> Dict[str, Any]:
+    deadline = requirement.get("_operation_deadline")
+    startup_timeout(deadline, 1.0)
     requested_abi = normalize_abi(str(requirement.get("abi") or "auto"))
     version_spec = format_os_version(
         str(requirement.get("os_version") or ""),
@@ -778,7 +974,10 @@ def probe_harmony_vm_capability(
         "detected_gpu_renderer": "unknown",
     }
 
-    tools, missing = find_harmony_tools()
+    tools, missing = (
+        find_harmony_tools() if deadline is None else find_harmony_tools(deadline=deadline)
+    )
+    startup_timeout(deadline, 1.0)
     if tools is None:
         details["missing_tools"] = missing
         return {
@@ -826,53 +1025,27 @@ def probe_harmony_vm_capability(
     details["license_policy"] = "deferred_to_install_or_create_cli"
 
     roots = discover_harmony_image_roots(image_roots)
-    details["image_roots"] = roots
-    images_ok, image_raw = list_downloaded_images(
-        tools,
-        requirement,
-        image_roots=roots,
-    )
-    details["downloaded_images_raw"] = image_raw[-8000:]
-    if not images_ok:
-        return {
-            "ok": False,
-            "reason": "无法确认 DevEco 已下载镜像；不会用联网镜像或未知目录兜底",
-            "details": details,
-        }
-    device_type = str(requirement.get("device_type") or "Phone").strip()
-    downloaded_images = _normalize_images(image_raw, downloaded=True)
-    if downloaded_images:
-        image_present = any(
-            row.get("device_type") == device_type
-            and row.get("os_version") == version_spec
-            for row in downloaded_images
-        )
-    else:
-        lower = image_raw.lower()
-        image_present = (
-            version_spec.lower() in lower and device_type.lower() in lower
-        )
-    if not image_present:
-        return {
-            "ok": False,
-            "reason": f"缺少指定的鸿蒙虚拟镜像：{device_type} / {version_spec}",
-            "details": details,
-        }
+    startup_timeout(deadline, 1.0)
+    compatibility = _probe_image_compatibility(tools, requirement, roots)
+    startup_timeout(deadline, 1.0)
+    details.update(compatibility["details"])
+    if not compatibility["ok"]:
+        return {"ok": False, "reason": compatibility["reason"], "details": details}
 
-    create_ok, create_reason = dry_run_create(tools, requirement, image_roots=roots)
-    details["dry_run_create"] = create_reason or "ok"
-    if not create_ok:
+    try:
+        startup_timeout(deadline, 1.0)
+        targets = hdc_list_targets()
+        startup_timeout(deadline, 1.0)
+        listener_ports = _listener_ports() if deadline is None else _listener_ports(deadline=deadline)
+        startup_timeout(deadline, 1.0)
+        fport_ports = _forwarded_ports(targets) if deadline is None else _forwarded_ports(targets, deadline=deadline)
+        startup_timeout(deadline, 1.0)
+    except Exception as exc:  # noqa: BLE001
         return {
             "ok": False,
-            "reason": _create_failure_reason(
-                create_reason, device_type, version_spec
-            ),
+            "reason": f"无法确认鸿蒙端口占用：{exc}",
             "details": details,
         }
-
-    targets = hdc_list_targets()
-    listener_ports = _listener_ports()
-    fport_ports = _forwarded_ports()
     # 只统计 Connected 的 target。hdc 会长期保留已消失实例的 Offline target
     # （官方 tconn -remove 也删不掉），但实测这些端口并没有任何进程监听，
     # 属于 hdc 的陈旧记账而非真实占用。若把它们计入已占端口，可用池会随实例
@@ -912,6 +1085,7 @@ def probe_harmony_vm_capability(
             f"{vm_ram_mb + reserve_mb}MB）。"
         )
     details["warning"] = warning
+    startup_timeout(deadline, 1.0)
     return {
         "ok": True,
         "reason": warning or "可用",

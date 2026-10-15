@@ -39,6 +39,9 @@ def stub_scans(monkeypatch):
     monkeypatch.setattr(drivers_pkg, "list_ios_devices", lambda **k: [])
     monkeypatch.setattr(drivers_pkg, "list_harmony_devices", lambda **k: [])
     monkeypatch.setattr(drivers_pkg, "list_ios_simulators", lambda **k: [_sim_info()])
+    monkeypatch.setattr(drivers_pkg, "_SCAN_PENDING", {})
+    monkeypatch.setattr(drivers_pkg, "_SCAN_LAST", {})
+    monkeypatch.setattr(drivers_pkg, "_SCAN_OK", {})
 
 
 # --------------------------------------------------------------------------

@@ -29,6 +29,7 @@ from ai_phone.server.harmony_vm.service import (
 )
 from ai_phone.server.hub import Hub
 from ai_phone.server.models import Device, DeviceAlias, Run
+from ai_phone.server.vm_lifecycle import begin_operation
 from ai_phone.server.ws.agent_ws import _dispatch, _upsert_devices
 from ai_phone.shared.harmony_identity import harmony_udid_from_uuid
 from ai_phone.shared import protocol as P
@@ -95,17 +96,24 @@ async def _start_on_10007(session, vm_id: str) -> str:
     )
     assert lease.port == 10007
     token = lease.lease_token
+    request_id = begin_operation(vm, "start", target_agent_id=AGENT_ID, first_bind=True)
+    vm.state = "starting"
+    assert vm.assigned_agent_id is None
     await session.commit()
     await handle_vm_status(
         AGENT_ID,
         {
             "vm_id": vm_id,
+            "request_id": request_id,
             "lease_token": token,
             "state": "running",
             "ok": True,
             "hdc_serial": HDC_SERIAL,
         },
     )
+    session.expire_all()
+    running = await session.get(HarmonyVmInstance, vm_id)
+    assert running.state == "running" and running.assigned_agent_id == AGENT_ID
     return token
 
 
@@ -177,15 +185,35 @@ async def test_deleted_vm_and_new_vm_reusing_10007_keep_all_identities_apart(
         },
     )
     await _agent_reports(hub, [])
+    blocked = await client.delete(f"/api/internal/harmony-vm/instances/{vm_a}", headers=AUTH)
+    assert blocked.status_code == 409
+    assert "device_busy" in blocked.text
+    await app.state.lock_store.release(identity_a, lock_a.token)
     deleted = await client.delete(f"/api/internal/harmony-vm/instances/{vm_a}", headers=AUTH)
     assert deleted.status_code == 200, deleted.text
     assert deleted.json()["deleted"] is True
+    assert deleted.json()["cleanup_sent"] is True
+    session.expire_all()
+    assert await session.get(HarmonyVmInstance, vm_a) is None
     assert any(message.get("vm_id") == vm_a for message in sent)
+    assert hub.agent_id_for_serial(identity_a) is None
+    assert hub.get_device_extra(identity_a) == {}
+    await _dispatch(
+        hub,
+        app.state.lock_store,
+        AGENT_ID,
+        {"type": P.MSG_DEVICE_READINESS, "serial": identity_a,
+         "platform": "harmony", "ready": True, "ts": 0.5},
+    )
+    assert hub.get_device_extra(identity_a) == {}
 
     # Simulate a stale in-memory A lock/readiness surviving deletion.  B must
     # still start with its own empty state rather than inheriting port 10007's.
     hub.set_device_readiness(identity_a, {"ready": True, "platform": "harmony"})
-    assert app.state.lock_store.peek(identity_a).token == lock_a.token
+    deleted_a_readiness = hub.get_device_extra(identity_a)["readiness"]
+    assert hub.agent_id_for_serial(identity_a) is None
+    stale_lock_a = await app.state.lock_store.acquire(identity_a, "A-stale-run", "auto")
+    assert app.state.lock_store.peek(identity_a).token == stale_lock_a.token
 
     vm_b = await _create_vm(client, "别名B")
     identity_b = placeholder_serial(vm_b)
@@ -244,7 +272,7 @@ async def test_deleted_vm_and_new_vm_reusing_10007_keep_all_identities_apart(
             "ts": 2.0,
         },
     )
-    assert hub.get_device_extra(identity_a)["readiness"]["ready"] is True
+    assert hub.get_device_extra(identity_a)["readiness"] == deleted_a_readiness
     await _dispatch(
         hub,
         app.state.lock_store,
@@ -280,6 +308,18 @@ async def test_deleted_vm_and_new_vm_reusing_10007_keep_all_identities_apart(
 
     # A's delayed report has an obsolete VM id/token.  It cannot take B's route.
     assert await filter_managed_devices_for_agent(AGENT_ID, [_report(vm_a, token_a, reason="stale-A")]) == []
+    delete_a = next(message for message in sent if message.get("type") == P.MSG_HARMONY_VM_DELETE)
+    await handle_vm_status(
+        AGENT_ID,
+        {"vm_id": vm_a, "request_id": delete_a["request_id"], "lease_token": token_a,
+         "state": "stopped", "ok": True, "reason": "deleted",
+         "details": {"cleanup_confirmed": True}},
+        hub,
+    )
+    session.expire_all()
+    assert await session.get(HarmonyVmInstance, vm_a) is None
+    current = await session.get(HarmonyVmInstance, vm_b)
+    assert current.state == "running" and current.lease_token == token_b
     assert hub.agent_id_for_serial(identity_b) == AGENT_ID
 
 

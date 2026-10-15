@@ -15,12 +15,29 @@ supervisor 再结合"连续失败阈值"决定是否真的降级。
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from threading import BoundedSemaphore
+import time
 from typing import Optional
 
 from loguru import logger
 
 from ai_phone.config import get_settings
+
+
+# A read-only health check must never consume the control/scan thread pool.
+# Admission counts the native work until it actually exits, not until asyncio
+# gives up waiting for it. Four workers + four queued checks is a hard bound.
+_PROBE_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="readiness")
+_PROBE_SLOTS = BoundedSemaphore(8)
+
+
+def _remaining_timeout(deadline: float, cap: Optional[float] = None) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("readiness I/O deadline exceeded")
+    return min(remaining, cap) if cap is not None else remaining
 
 
 # ---------------------------------------------------------------------------
@@ -61,10 +78,21 @@ class BaseProbe:
     def __init__(self, serial: str, *, timeout_sec: float = 3.0) -> None:
         self.serial = serial
         self.timeout_sec = float(timeout_sec)
+        self._pending: Optional[asyncio.Task] = None
+
+    @property
+    def in_flight(self) -> bool:
+        return self._pending is not None and not self._pending.done()
 
     async def probe(self) -> ProbeOutcome:
+        if self.in_flight:
+            return _fail("driver_probe_failed", "上一次探测仍在结束，未重复提交")
+        # Late results are deliberately discarded. A completion after the
+        # deadline must not resurrect readiness for a stopped/replaced device.
+        self._pending = asyncio.create_task(self._do_probe())
+        self._pending.add_done_callback(_consume_probe_error)
         try:
-            return await asyncio.wait_for(self._do_probe(), timeout=self.timeout_sec)
+            return await asyncio.wait_for(asyncio.shield(self._pending), timeout=self.timeout_sec)
         except asyncio.TimeoutError:
             logger.debug(
                 "[readiness:{}:{}] probe 超时 (>{:.1f}s)",
@@ -80,6 +108,25 @@ class BaseProbe:
 
     async def _do_probe(self) -> ProbeOutcome:
         raise NotImplementedError
+
+    async def _run_sync_probe(self) -> ProbeOutcome:
+        if not _PROBE_SLOTS.acquire(blocking=False):
+            return _fail("driver_probe_failed", "readiness 探针工作池繁忙，等待下一轮")
+        try:
+            future = _PROBE_EXECUTOR.submit(self._probe_sync)
+        except BaseException:
+            _PROBE_SLOTS.release()
+            raise
+        future.add_done_callback(lambda _: _PROBE_SLOTS.release())
+        return await asyncio.wrap_future(future)
+
+    def _probe_sync(self) -> ProbeOutcome:
+        raise NotImplementedError
+
+
+def _consume_probe_error(task: asyncio.Task) -> None:
+    if not task.cancelled():
+        task.exception()
 
 
 # ---------------------------------------------------------------------------
@@ -100,9 +147,10 @@ class AndroidProbe(BaseProbe):
 
     async def _do_probe(self) -> ProbeOutcome:
         # adb 操作全是阻塞 I/O，扔到线程池不阻塞事件循环
-        return await asyncio.to_thread(self._probe_sync)
+        return await self._run_sync_probe()
 
     def _probe_sync(self) -> ProbeOutcome:
+        deadline = time.monotonic() + self.timeout_sec
         try:
             from adbutils import adb  # noqa: PLC0415
         except Exception as exc:  # noqa: BLE001
@@ -116,7 +164,7 @@ class AndroidProbe(BaseProbe):
 
         # 1) 先摸一条最轻的 shell，确认 adb 通路活着；不通 → adb_offline
         try:
-            echo = device.shell("echo ok")
+            echo = device.shell("echo ok", timeout=_remaining_timeout(deadline))
         except Exception as exc:  # noqa: BLE001
             return _fail("adb_offline", f"shell 失败：{exc}")
         if "ok" not in (echo or ""):
@@ -124,7 +172,10 @@ class AndroidProbe(BaseProbe):
 
         # 2) 屏幕电源状态（dumpsys power 含 "Display Power: state=..."）
         try:
-            power_out = device.shell("dumpsys power | grep -E 'Display Power|mWakefulness='")
+            power_out = device.shell(
+                "dumpsys power | grep -E 'Display Power|mWakefulness='",
+                timeout=_remaining_timeout(deadline),
+            )
         except Exception as exc:  # noqa: BLE001
             return _fail("driver_probe_failed", f"dumpsys power 失败：{exc}")
         if "state=OFF" in power_out or "state=DOZE" in power_out:
@@ -141,7 +192,8 @@ class AndroidProbe(BaseProbe):
         #    "显式处于锁屏态"的信号。
         try:
             win_out = device.shell(
-                "dumpsys window | grep -E 'mDreamingLockscreen|mShowingLockscreen|mKeyguardOccluded'"
+                "dumpsys window | grep -E 'mDreamingLockscreen|mShowingLockscreen|mKeyguardOccluded'",
+                timeout=_remaining_timeout(deadline),
             )
         except Exception as exc:  # noqa: BLE001
             return _fail("driver_probe_failed", f"dumpsys window 失败：{exc}")
@@ -153,7 +205,7 @@ class AndroidProbe(BaseProbe):
             if (
                 settings.android_screen_off_dispatchable
                 and settings.android_wake_before_run
-                and _android_keyguard_can_be_dismissed(device)
+                and _android_keyguard_can_be_dismissed(device, deadline=deadline)
             ):
                 logger.debug(
                     "[readiness:android:{}] non-secure keyguard but dispatchable by env",
@@ -173,19 +225,22 @@ def _android_keyguard_showing(win_out: str) -> bool:
     )
 
 
-def _android_keyguard_can_be_dismissed(device) -> bool:
+def _android_keyguard_can_be_dismissed(device, *, deadline: Optional[float] = None) -> bool:
     """Return True only for non-secure keyguard layers.
 
     This is intentionally conservative: if the secure/deviceLocked signals cannot
     be read, readiness stays not-ready and asks the user to unlock manually.
     """
 
+    deadline = deadline if deadline is not None else time.monotonic() + 3.0
     try:
         policy_out = device.shell(
-            "dumpsys window policy | grep -E 'showing=|secure=|screenState=|interactiveState='"
+            "dumpsys window policy | grep -E 'showing=|secure=|screenState=|interactiveState='",
+            timeout=_remaining_timeout(deadline),
         )
         trust_out = device.shell(
-            "dumpsys trust | grep -E 'deviceLocked|strongAuthRequired|trusted|trustManaged'"
+            "dumpsys trust | grep -E 'deviceLocked|strongAuthRequired|trusted|trustManaged'",
+            timeout=_remaining_timeout(deadline),
         )
     except Exception as exc:  # noqa: BLE001
         logger.debug("[readiness:android] keyguard security probe failed: {}", exc)
@@ -226,9 +281,10 @@ class IosProbe(BaseProbe):
     platform = "ios"
 
     async def _do_probe(self) -> ProbeOutcome:
-        return await asyncio.to_thread(self._probe_sync)
+        return await self._run_sync_probe()
 
     def _probe_sync(self) -> ProbeOutcome:
+        deadline = time.monotonic() + self.timeout_sec
         try:
             from ai_phone.agent.drivers.ios import _WDA_CLIENT_MAP  # noqa: PLC0415
         except Exception as exc:  # noqa: BLE001
@@ -248,14 +304,14 @@ class IosProbe(BaseProbe):
             return _fail("driver_probe_failed", f"httpx 未安装：{exc}")
 
         try:
-            resp = httpx.get(f"{base_url.rstrip('/')}/status", timeout=2.0)
+            resp = httpx.get(f"{base_url.rstrip('/')}/status", timeout=_remaining_timeout(deadline, 2.0))
         except Exception as exc:  # noqa: BLE001
             return _fail("wda_not_ready", f"/status 不通：{exc}")
         if resp.status_code != 200:
             return _fail("wda_not_ready", f"/status HTTP {resp.status_code}")
 
         try:
-            locked_resp = httpx.get(f"{base_url.rstrip('/')}/wda/locked", timeout=2.0)
+            locked_resp = httpx.get(f"{base_url.rstrip('/')}/wda/locked", timeout=_remaining_timeout(deadline, 2.0))
         except Exception as exc:  # noqa: BLE001
             return _fail("driver_probe_failed", f"/wda/locked 不通：{exc}")
         if locked_resp.status_code != 200:
@@ -315,9 +371,10 @@ class IosSimProbe(BaseProbe):
     platform = "ios_sim"
 
     async def _do_probe(self) -> ProbeOutcome:
-        return await asyncio.to_thread(self._probe_sync)
+        return await self._run_sync_probe()
 
     def _probe_sync(self) -> ProbeOutcome:
+        deadline = time.monotonic() + self.timeout_sec
         try:
             from ai_phone.agent.drivers.ios_simulator_driver import (  # noqa: PLC0415
                 get_sim_endpoint,
@@ -342,7 +399,7 @@ class IosSimProbe(BaseProbe):
             return _fail("driver_probe_failed", f"httpx 未安装：{exc}")
 
         try:
-            resp = httpx.get(f"{base_url.rstrip('/')}/status", timeout=2.0)
+            resp = httpx.get(f"{base_url.rstrip('/')}/status", timeout=_remaining_timeout(deadline, 2.0))
         except Exception as exc:  # noqa: BLE001
             return _fail("wda_not_ready", f"/status 不通：{exc}")
         if resp.status_code != 200:
@@ -369,7 +426,7 @@ class HarmonyProbe(BaseProbe):
     platform = "harmony"
 
     async def _do_probe(self) -> ProbeOutcome:
-        return await asyncio.to_thread(self._probe_sync)
+        return await self._run_sync_probe()
 
     def _probe_sync(self) -> ProbeOutcome:
         try:

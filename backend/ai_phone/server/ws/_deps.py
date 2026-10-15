@@ -12,6 +12,7 @@ def get_hub(ws: WebSocket) -> Hub:
     if hub is None:
         hub = Hub()
         ws.app.state.hub = hub
+    hub.vm_lock_store = get_lock_store(ws)
     return hub
 
 

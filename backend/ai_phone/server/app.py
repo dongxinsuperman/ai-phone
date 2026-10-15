@@ -132,6 +132,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.lock_store = DeviceLockStore()
     app.state.hub = Hub()
+    app.state.hub.vm_lock_store = app.state.lock_store
     app.state.run_dispatch_service = RunDispatchService(
         hub=app.state.hub,
         session_factory=get_session_factory(),

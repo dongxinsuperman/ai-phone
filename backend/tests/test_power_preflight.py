@@ -97,7 +97,8 @@ def test_harmony_prepare_for_run_skips_swipe_when_already_lit(monkeypatch):
 
 def test_android_screen_off_can_be_dispatchable_by_env(monkeypatch):
     class FakeDevice:
-        def shell(self, cmd: str) -> str:
+        def shell(self, cmd: str, *, timeout: float) -> str:
+            assert 0 < timeout <= 3.0
             if cmd == "echo ok":
                 return "ok"
             if "dumpsys power" in cmd:
@@ -119,7 +120,8 @@ def test_android_screen_off_can_be_dispatchable_by_env(monkeypatch):
 
 def test_android_non_secure_keyguard_can_be_dispatchable_before_run(monkeypatch):
     class FakeDevice:
-        def shell(self, cmd: str) -> str:
+        def shell(self, cmd: str, *, timeout: float) -> str:
+            assert 0 < timeout <= 3.0
             if cmd == "echo ok":
                 return "ok"
             if "dumpsys power" in cmd:
@@ -154,7 +156,8 @@ def test_android_non_secure_keyguard_can_be_dispatchable_before_run(monkeypatch)
 
 def test_android_secure_keyguard_stays_not_ready(monkeypatch):
     class FakeDevice:
-        def shell(self, cmd: str) -> str:
+        def shell(self, cmd: str, *, timeout: float) -> str:
+            assert 0 < timeout <= 3.0
             if cmd == "echo ok":
                 return "ok"
             if "dumpsys power" in cmd:
@@ -190,7 +193,8 @@ def test_android_secure_keyguard_stays_not_ready(monkeypatch):
 
 def test_android_non_secure_keyguard_requires_wake_before_run(monkeypatch):
     class FakeDevice:
-        def shell(self, cmd: str) -> str:
+        def shell(self, cmd: str, *, timeout: float) -> str:
+            assert 0 < timeout <= 3.0
             if cmd == "echo ok":
                 return "ok"
             if "dumpsys power" in cmd:
