@@ -1,6 +1,8 @@
 # 生命周期简化：隔离 HTTP 与浏览器验收准备
 
-当前仅完成脚本、语法与 14 项离线守卫检查。**没有启动本轮服务、浏览器、Agent 或真实设备，没有生成最终源码冻结文件，也没有执行 HTTP/browser 验收。** 产品仍在并行修改，等待 root 冻结后才能运行。
+本文件保留执行前的准备说明；最终隔离 HTTP/浏览器验收已通过，见 [交接结果](RESULT.md) 和 [最终摘要](final-result.json)。root 已复核三端启动失败卡片、终态及清理。本轮始终没有启动真实 Agent/VM/设备或访问主服务及公司服务。
+
+准备阶段完成脚本、语法与 14 项离线守卫检查后等待 root 冻结，未提前启动验收；执行中补齐两个已定位的夹具入口回归守卫，最终为 16 项。
 
 范围是实际三端 FastAPI VM 路由、实际状态处理器和统一 lifecycle DTO，以及现场构建的 Vue 页面。Agent 端使用可控协议桩：只发送 capability/status 输入，不构造 lifecycle 输出，不导入或调用任何原生 Manager。它证明 Server 与页面的契约，不能宣称真实 VM/设备行为通过。
 
@@ -47,6 +49,6 @@ backend/.venv/bin/python docs/experiments/vm-lifecycle-simple-20261016/acceptanc
 
 正常收尾关闭私有浏览器，通知本轮 Server 停止，核实精确子进程退出、端口释放、DB/runtime 与临时 profile 删除、探查 waiter 清空、blocked_calls/fake_errors 为空。异常时也只清理本轮持有的 Popen 与目录，不搜索或终止其他进程。日志、截图、原始请求/回报、最终数据库记录及 source hash 会保留在运行目录；不自动补发失败操作或再跑一轮。
 
-## 当前检查
+## 准备阶段检查记录
 
-14 项纯离线守卫通过，Python AST 和两份 JavaScript 语法通过。已只读核实当前 Playwright 包为 1.62.1，Vite 支持所用的 configLoader runner 参数。没有创建 runs 目录，没有生成 frozen-final.json，没有构建或启动 HTTP/browser。最终服务回包接线仍由 Server owner 收尾，具体结果以冻结后的实际验收为准。
+准备阶段 14 项纯离线守卫、Python AST 和两份 JavaScript 语法通过，并只读核实 Playwright 1.62.1 与 Vite configLoader runner 参数。该阶段没有创建 runs 目录、冻结文件或启动 HTTP/browser。后续实际执行结果、失败原件和最终来源摘要均保留在 RESULT.md 链接的记录中，不把准备阶段检查当作浏览器验收。

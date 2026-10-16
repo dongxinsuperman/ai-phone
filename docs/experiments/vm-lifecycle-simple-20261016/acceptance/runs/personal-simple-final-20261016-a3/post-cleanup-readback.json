@@ -1,0 +1,43 @@
+{
+  "at": "2026-10-16T03:47:07.257061+00:00",
+  "scope": "exact owned fake-Server and private BrowserServer only",
+  "processes": {
+    "35057": {
+      "exists": false
+    },
+    "35059": {
+      "exists": false
+    }
+  },
+  "port": 52241,
+  "ports": {
+    "127.0.0.1": {
+      "bindable": true
+    },
+    "::1": {
+      "bindable": true
+    }
+  },
+  "browser_profiles": [
+    {
+      "path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/runs/personal-simple-final-20261016-a3/browser-tmp-t3PQ5w/playwright_chromiumdev_profile-n2y5Ta",
+      "inside_owned_browser_scratch": true,
+      "exists": false
+    }
+  ],
+  "browser_scratch_exists": false,
+  "db_runtime_exists": false,
+  "vite_cache_exists": false,
+  "empty_env_exists": false,
+  "blocked_calls": [],
+  "fake_errors": [],
+  "pending": {
+    "android": 0,
+    "ios": 0,
+    "harmony": 0
+  },
+  "source_count": 269,
+  "source_mismatches": [],
+  "main_service_ports_probed": false,
+  "real_native_or_agent_started": false
+}

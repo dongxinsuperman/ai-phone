@@ -26,5 +26,7 @@
   "real_agent_or_vm_started": false,
   "company_access": false,
   "pending_contract_review": "Harmony no-lease failed-start passive stopped observation acceptance flagged to server_lifecycle for final check",
-  "harmony_native_identity_retention_guard": "passed actual read_vm/observed AST replay"
+  "harmony_native_identity_retention_guard": "passed actual read_vm/observed AST replay",
+  "final_result": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/final-result.json",
+  "preparation_record_is_historical": true
 }

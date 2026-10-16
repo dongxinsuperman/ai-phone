@@ -1,0 +1,90 @@
+{
+  "status": "passed",
+  "target_commit": "6fd9d740ffbc779eb9179f7a777cc57b708361b5",
+  "base_commit": "82e48bc899fe9334fd683149d01c2c8aeeacc85b",
+  "started_at": "2026-10-16T11:48:37.506731+08:00",
+  "completed_at": "2026-10-16T11:50:20.230686+08:00",
+  "vm_counts_before": {
+    "vm": 12,
+    "ios-sim": 5,
+    "harmony-vm": 3
+  },
+  "vm_counts_after": {
+    "vm": 12,
+    "ios-sim": 5,
+    "harmony-vm": 3
+  },
+  "vm_configurations_and_identities_unchanged": true,
+  "config_and_host_identity_unchanged": true,
+  "source_files_verified": 38,
+  "premerge_untracked_collision_check_passed": true,
+  "untracked_count_before": 83,
+  "untracked_count_after": 83,
+  "pre_native": {
+    "processes": [],
+    "booted_simulators": []
+  },
+  "post_native": {
+    "processes": [],
+    "booted_simulators": []
+  },
+  "agents": [
+    {
+      "agent_id": "dongxindeMacBook-Pro.local-eabe7cdf",
+      "serials": [
+        "6ad9243"
+      ]
+    }
+  ],
+  "startup_check_correction": "Read-only launcher health check expected ok boolean; actual API uses status=ok. Corrected launcher check; no product change or VM command.",
+  "scope": "Existing personal localhost services only; no VM start/stop/delete commands; company resources untouched",
+  "harmony_cards": [
+    {
+      "id": "8ef590502d89",
+      "alias": "测2",
+      "lifecycle": {
+        "state": "stopped",
+        "agent_online": true,
+        "actions": {
+          "start": true,
+          "stop": false,
+          "dispatch": true,
+          "delete": true,
+          "edit": true,
+          "copy": true
+        },
+        "notice": "",
+        "error": ""
+      }
+    },
+    {
+      "id": "35c4c5d9bfe8",
+      "alias": "wai",
+      "lifecycle": {
+        "state": null,
+        "agent_online": false,
+        "actions": {
+          "start": false,
+          "stop": false,
+          "dispatch": true,
+          "delete": true,
+          "edit": true,
+          "copy": true
+        },
+        "notice": "所属 Agent 离线，当前机器状态无法确认",
+        "error": ""
+      }
+    }
+  ],
+  "ui_verification": {
+    "url": "http://127.0.0.1:5180/virtual-machines",
+    "platform": "harmony",
+    "source": "existing user in-app browser, refreshed after service update",
+    "screenshot": "local-harmony-after.jpg",
+    "checked": [
+      "测2 is stopped with ordinary Start and no Stop/retry action",
+      "wai is unconfirmed due to offline owner, no start/stop action, delete/switch preserved",
+      "No waiting-for-recovery or retry-start/stop workflow"
+    ]
+  }
+}

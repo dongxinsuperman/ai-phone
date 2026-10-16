@@ -5,3 +5,5 @@ runs/*/browser-tmp-*/
 runs/*/vite-cache/
 runs/*/empty-env/
 runs/*/fixture-runtime.json
+runs/*/browser-runtime.json
+runs/*/isolated-vite.config.mjs

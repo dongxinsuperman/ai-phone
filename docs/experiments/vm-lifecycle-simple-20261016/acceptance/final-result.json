@@ -1,0 +1,84 @@
+{
+  "status": "passed",
+  "scope": "real API + real persistence/projection + built Vue, controlled FakeHub only; no real VM/device acceptance",
+  "run_dir": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/runs/personal-simple-final-20261016-a3",
+  "browser_checks": {
+    "passed": 334,
+    "failed": 0,
+    "note": "Includes bounded polling readback assertions; not added to backend regression totals"
+  },
+  "screenshot_count": 12,
+  "focused_visual_images_complete": 9,
+  "overview_images_with_capture_limit": 3,
+  "asgi_smoke": {
+    "status": "passed",
+    "terminal_actions": 6,
+    "run_dir": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/runs/personal-simple-smoke-20261016-a2"
+  },
+  "pure_guards": {
+    "passed": 16,
+    "log": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/preparation-guards-final.log"
+  },
+  "source_manifest": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/frozen-final-20261016-a3b.json",
+  "source_count": 269,
+  "source_unchanged": true,
+  "cleanup": {
+    "at": "2026-10-16T03:47:07.257061+00:00",
+    "scope": "exact owned fake-Server and private BrowserServer only",
+    "processes": {
+      "35057": {
+        "exists": false
+      },
+      "35059": {
+        "exists": false
+      }
+    },
+    "port": 52241,
+    "ports": {
+      "127.0.0.1": {
+        "bindable": true
+      },
+      "::1": {
+        "bindable": true
+      }
+    },
+    "browser_profiles": [
+      {
+        "path": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/runs/personal-simple-final-20261016-a3/browser-tmp-t3PQ5w/playwright_chromiumdev_profile-n2y5Ta",
+        "inside_owned_browser_scratch": true,
+        "exists": false
+      }
+    ],
+    "browser_scratch_exists": false,
+    "db_runtime_exists": false,
+    "vite_cache_exists": false,
+    "empty_env_exists": false,
+    "blocked_calls": [],
+    "fake_errors": [],
+    "pending": {
+      "android": 0,
+      "ios": 0,
+      "harmony": 0
+    },
+    "source_count": 269,
+    "source_mismatches": [],
+    "main_service_ports_probed": false,
+    "real_native_or_agent_started": false
+  },
+  "visual_review": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/runs/personal-simple-final-20261016-a3/visual-review.json",
+  "raw_browser_report": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/runs/personal-simple-final-20261016-a3/browser-report.json",
+  "raw_http_evidence": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/runs/personal-simple-final-20261016-a3/http-evidence.json",
+  "raw_summary": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/runs/personal-simple-final-20261016-a3/acceptance-summary.json",
+  "prior_attempts_preserved": [
+    "personal-simple-final-20261016-a1",
+    "personal-simple-final-20261016-a2",
+    "personal-simple-smoke-20261016-a1"
+  ],
+  "generated_build_and_runtime_git_ignored": true,
+  "root_review": {
+    "status": "passed",
+    "scope": "Three-platform start_failure cards, terminal result and cleanup independently accepted by root",
+    "full_retest_requested": false
+  },
+  "handoff_index": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/RESULT.md"
+}

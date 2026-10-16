@@ -1,0 +1,24 @@
+{
+  "at": "2026-10-16T03:47:07.258980+00:00",
+  "reviewer": "fleet_inventory",
+  "reviewed_original_png_count": 12,
+  "focused_card_images_complete": 9,
+  "initial_overview_images_partially_clipped_by_scroll_container": 3,
+  "failure_state_separation": "All three platforms: start failure badge remains 已停止; stop failure badge remains 运行中; red 上次操作未成功： prefix and concrete reason are separate from the badge. No recovery-only buttons.",
+  "unknown_running": "All three focused images show 运行中 with Stop available and explicit refusal to duplicate Start.",
+  "overview_limit": "Initial tall container screenshots have blank/clipped lower parts; do not claim all seven cards are visually visible in one overview. All seven were asserted through real DOM/HTTP; focused images separately cover failures and observed running.",
+  "source_images_sha256": {
+    "android-initial-states.png": "77777debbba5419566dd20f6b03b4401d5a6a53fdd852ee7bb77d90908006449",
+    "android-start_failure-reason-retained.png": "611983dbe960230151fdc2d96653462b70d749d3531ce51ef5122fc23a10de37",
+    "android-stop_failure-reason-retained.png": "4f2edf124a25b6e42a0192be6e11ccf7573c0420b4f51ddff38e888fdfd704f5",
+    "android-unknown-running-observed.png": "2db0b387ff9c2f09485937ef7b925fe7a5f115e28164e1e375255a7d02e64074",
+    "harmony-initial-states.png": "b14a510cd5f04841f02ad08471694d07c6a37bd5018e7c5d9cc0c6109ca09917",
+    "harmony-start_failure-reason-retained.png": "cd6e4481d706dbc45dc663bfce47c0868365d1d650ff454888ba655fc1cc7397",
+    "harmony-stop_failure-reason-retained.png": "1b95821d11d9c83f05fac9cc8f55f2e4f9b9a260a61e0c8123c39a99b7aabcb6",
+    "harmony-unknown-running-observed.png": "0ffe50b56485c6c0dd57ae90c96e9e1d078691da6b3b085887eea78cb4c363d5",
+    "ios-initial-states.png": "bb0276c54b3996fa1c09db9357f2b8cbea140dab3593bdf74934a535b1a15dcf",
+    "ios-start_failure-reason-retained.png": "08ae3902dbd8dbfc38e6bd534d6619b2904cd0a94fe4c671a3bb52650c8664fd",
+    "ios-stop_failure-reason-retained.png": "5cb2d559498df5a34990ca99f9883c8a14052163eb52326450fdd0b7bc06dbae",
+    "ios-unknown-running-observed.png": "807967b3c3d233320b70f20a102a7aca4483f3e397e61961e10ac764ca4e3d83"
+  }
+}
