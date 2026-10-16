@@ -1,0 +1,1203 @@
+......................FF................................................ [ 22%]
+........................................................................ [ 45%]
+........................................................................ [ 68%]
+........................................................................ [ 91%]
+........F...................                                             [100%]
+=================================== FAILURES ===================================
+_ test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None] _
+
+session = <sqlalchemy.ext.asyncio.session.AsyncSession object at 0x10b8e0150>
+tmp_path = PosixPath('/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-lifecycle-simple-regression-9w6wg11v/pytest/test_legacy_unconfirmed_lease_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b953610>
+owner_host_id = None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("owner_host_id", [None, "host-one"])
+    async def test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence(
+        session, tmp_path, monkeypatch, owner_host_id,
+    ):
+        import ai_phone.agent.harmony_vm.manager as manager_module
+    
+        vm, manager, client, payload, directory = await legacy_setup(
+            session, tmp_path, monkeypatch, owner_host_id=owner_host_id,
+        )
+        identity = (vm.hdc_port, vm.hdc_serial, vm.lease_token)
+        hub = ContractHub(online=("restarted",))
+        await service.handle_vm_reconcile("restarted", payload, hub)
+        await session.refresh(vm)
+        assert vm.assigned_agent_id == "restarted"
+        assert vm.runtime["owner_host_id"] == "host-one"
+        assert vm.state == "stopped", "本次确切进程观察可以证明停机，但不能证明旧端口释放"
+        view = lifecycle_view(vm, hub)
+        assert view["state"] == "stopped" and view["error"] == "old stop was not confirmed"
+        assert view["actions"]["stop"] is False, "已停页面不新增恢复动作；既有失败仍持续可见"
+        assert vm.runtime["last_status"]["details"]["cleanup_confirmed"] is False
+        assert (vm.hdc_port, vm.hdc_serial, vm.lease_token) == identity
+        lease = await session.get(HarmonyVmPortLease, identity[0], populate_existing=True)
+        assert lease.lease_token == identity[2] and lease.state == "active"
+        assert not hub.sent, "inventory only observes; it must not issue a stop or deletion"
+    
+        inspected = []
+        monkeypatch.setattr(manager, "_active_instance_serial", lambda vm_id, _known: inspected.append(vm_id) or "")
+        monkeypatch.setattr(manager, "_port_is_free", lambda _port: True)
+        monkeypatch.setattr(manager, "_cleanup_crash_service", lambda *_args: (True, []))
+        monkeypatch.setattr(manager_module, "hdc_list_targets", lambda: [])
+        monkeypatch.setattr(manager_module, "managed_vm_owner", lambda _serial: None)
+        result = await api.stop_instance(vm_id=vm.id, session=session, hub=hub)
+        assert result["sent"] is True
+        assert hub.sent[-1][0] == "restarted"
+        command = hub.sent[-1][1]
+        assert command["type"] == P.MSG_HARMONY_VM_STOP
+        assert (command["hdc_serial"], command["lease_token"]) == identity[1:]
+        try:
+            await manager.handle_stop(client, command)
+            receipt = client.sent[-1]
+            assert inspected == [vm.id], "legacy ready=False alone is not fresh stop evidence"
+>           assert receipt["details"]["exit_evidence"]["instance_process_status"] == "absent"
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'exit_evidence'
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py:134: KeyError
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 14:45:27.758 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-6afb7a65633e413e93578f6ec876834c?mode=memory&cache=shared&uri=true
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 14:45:27.825 | ERROR    | ai_phone.agent.harmony_vm.manager:handle_stop:561 - Harmony VM 停止收口异常 vm_id=abc012def345
+Traceback (most recent call last):
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-review-fixes-20261016/harmony/run_isolated.py", line 21, in <module>
+    exec(compile(source, str(runner), "exec"), {
+                 │           └ PosixPath('/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-review-fixes-20261016/run_regr...
+                 └ '"""Two reviewed VM failures: unified regression with guarded I/O and retained red evidence."""\nfrom __future__ import annot...
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-review-fixes-20261016/run_regression.py", line 177, in <module>
+    if __name__ == "__main__":
+       └ '__main__'
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-review-fixes-20261016/run_regression.py", line 156, in main
+    started = time.monotonic()
+              │    └ <built-in function monotonic>
+              └ <module 'time' (built-in)>
+
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/config/__init__.py", line 199, in main
+    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)
+         │                │      │    │                          └ <_pytest.config.Config object at 0x103f63fd0>
+         │                │      │    └ <HookCaller 'pytest_cmdline_main'>
+         │                │      └ <_pytest.config.compat.PathAwareHookProxy object at 0x1038e4990>
+         │                └ <_pytest.config.Config object at 0x103f63fd0>
+         └ <enum 'ExitCode'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'config': <_pytest.config.Config object at 0x103f63fd0>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_cmdline_main'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_cmdline_main'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_cmdline_main'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'config': <_pytest.config.Config object at 0x103f63fd0>}
+           │    │               │          └ [<HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyt...
+           │    │               └ 'pytest_cmdline_main'
+           │    └ <function _multicall at 0x102c387c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102acc890>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<_pytest.config.Config object at 0x103f63fd0>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyth...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 365, in pytest_cmdline_main
+    return wrap_session(config, _main)
+           │            │       └ <function _main at 0x103d47740>
+           │            └ <_pytest.config.Config object at 0x103f63fd0>
+           └ <function wrap_session at 0x103d47600>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 318, in wrap_session
+    session.exitstatus = doit(config, session) or 0
+    │       │            │    │       └ <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=316>
+    │       │            │    └ <_pytest.config.Config object at 0x103f63fd0>
+    │       │            └ <function _main at 0x103d47740>
+    │       └ <ExitCode.OK: 0>
+    └ <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=316>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 372, in _main
+    config.hook.pytest_runtestloop(session=session)
+    │      │    │                          └ <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=316>
+    │      │    └ <HookCaller 'pytest_runtestloop'>
+    │      └ <_pytest.config.compat.PathAwareHookProxy object at 0x1038e4990>
+    └ <_pytest.config.Config object at 0x103f63fd0>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'session': <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=316>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_runtestloop'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_runtestloop'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_runtestloop'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'session': <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=316>}
+           │    │               │          └ [<HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyt...
+           │    │               └ 'pytest_runtestloop'
+           │    └ <function _multicall at 0x102c387c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102acc890>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=316>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyth...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 396, in pytest_runtestloop
+    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+    │    │                                        │              └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>
+    │    │                                        └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>
+    │    └ <member 'config' of 'Node' objects>
+    └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'item': <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>, 'nextitem': <Cor...
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_runtest_protocol'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_runtest_protocol'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_runtest_protocol'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'item': <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>, 'nextitem': <Cor...
+           │    │               │          └ [<HookImpl plugin_name='runner', plugin=<module '_pytest.runner' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib...
+           │    │               └ 'pytest_runtest_protocol'
+           │    └ <function _multicall at 0x102c387c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102acc890>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>, <Coroutine test_legacy_u...
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='runner', plugin=<module '_pytest.runner' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 118, in pytest_runtest_protocol
+    runtestprotocol(item, nextitem=nextitem)
+    │               │              └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>
+    │               └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>
+    └ <function runtestprotocol at 0x103d46840>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 137, in runtestprotocol
+    reports.append(call_and_report(item, "call", log))
+    │       │      │               │             └ True
+    │       │      │               └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>
+    │       │      └ <function call_and_report at 0x103d46ca0>
+    │       └ <method 'append' of 'list' objects>
+    └ [<TestReport 'tests/test_harmony_legacy_lease_upgrade.py::test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_c...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 244, in call_and_report
+    call = CallInfo.from_call(
+           │        └ <classmethod(<function CallInfo.from_call at 0x103d47060>)>
+           └ <class '_pytest.runner.CallInfo'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 353, in from_call
+    result: TResult | None = func()
+            │                └ <function call_and_report.<locals>.<lambda> at 0x10b95c0e0>
+            └ +TResult
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 245, in <lambda>
+    lambda: runtest_hook(item=item, **kwds),
+            │                 │       └ {}
+            │                 └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>
+            └ <HookCaller 'pytest_runtest_call'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ False
+           │    │         │    │     │    │                  └ {'item': <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_runtest_call'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_runtest_call'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_runtest_call'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ False
+           │    │               │          │        └ {'item': <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>}
+           │    │               │          └ [<HookImpl plugin_name='threadexception', plugin=<module '_pytest.threadexception' from '/Users/dongxin/代码文件/sonic合集/ai-phone...
+           │    │               └ 'pytest_runtest_call'
+           │    └ <function _multicall at 0x102c387c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102acc890>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='runner', plugin=<module '_pytest.runner' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 179, in pytest_runtest_call
+    item.runtest()
+    │    └ <function PytestAsyncioFunction.runtest at 0x10445ed40>
+    └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py", line 469, in runtest
+    super().runtest()
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/python.py", line 1720, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+    │    │                                   └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>
+    │    └ <property object at 0x103b7a1b0>
+    └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'pyfuncitem': <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_pyfunc_call'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_pyfunc_call'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_pyfunc_call'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'pyfuncitem': <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>}
+           │    │               │          └ [<HookImpl plugin_name='python', plugin=<module '_pytest.python' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib...
+           │    │               └ 'pytest_pyfunc_call'
+           │    └ <function _multicall at 0x102c387c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102acc890>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='python', plugin=<module '_pytest.python' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/python.py", line 166, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+             │              └ {'session': <sqlalchemy.ext.asyncio.session.AsyncSession object at 0x10b8e0150>, 'tmp_path': PosixPath('/private/var/folders/...
+             └ <function test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence at 0x10b95c040>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py", line 716, in inner
+    runner.run(coro, context=context)
+    │      │   │             └ <_contextvars.Context object at 0x10c79e480>
+    │      │   └ <coroutine object test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence at 0x12cc6f830>
+    │      └ <function Runner.run at 0x1043a0680>
+    └ <asyncio.runners.Runner object at 0x106db2110>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           │    │     │                  └ <Task pending name='Task-4' coro=<test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence() running ...
+           │    │     └ <function BaseEventLoop.run_until_complete at 0x10439e2a0>
+           │    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+           └ <asyncio.runners.Runner object at 0x106db2110>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 641, in run_until_complete
+    self.run_forever()
+    │    └ <function BaseEventLoop.run_forever at 0x10439e200>
+    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 608, in run_forever
+    self._run_once()
+    │    └ <function BaseEventLoop._run_once at 0x1043a0040>
+    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 1936, in _run_once
+    handle._run()
+    │      └ <function Handle._run at 0x104110d60>
+    └ <Handle Task.task_wakeup(<Future finis... 'deadline'")>)>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/events.py", line 84, in _run
+    self._context.run(self._callback, *self._args)
+    │    │            │    │           │    └ <member '_args' of 'Handle' objects>
+    │    │            │    │           └ <Handle Task.task_wakeup(<Future finis... 'deadline'")>)>
+    │    │            │    └ <member '_callback' of 'Handle' objects>
+    │    │            └ <Handle Task.task_wakeup(<Future finis... 'deadline'")>)>
+    │    └ <member '_context' of 'Handle' objects>
+    └ <Handle Task.task_wakeup(<Future finis... 'deadline'")>)>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py", line 131, in test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence
+    await manager.handle_stop(client, command)
+          │       │           │       └ {'type': 'harmony_vm_stop', 'request_id': '3d46c746277d41d5', 'vm_id': 'abc012def345', 'hdc_serial': '127.0.0.1:10000', 'leas...
+          │       │           └ <tests.test_harmony_legacy_lease_upgrade.RecordingClient object at 0x10b90fdd0>
+          │       └ <function HarmonyVmManager.handle_stop at 0x10738bc40>
+          └ <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x107233c50>
+
+> File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/harmony_vm/manager.py", line 555, in handle_stop
+    result = await asyncio.to_thread(
+                   │       └ <function to_thread at 0x1043c89a0>
+                   └ <module 'asyncio' from '/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asy...
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+                 │    │                     └ functools.partial(<built-in method run of _contextvars.Context object at 0x10cbfdbc0>, <bound method HarmonyVmManager.stop_sy...
+                 │    └ <function BaseEventLoop.run_in_executor at 0x10439eb60>
+                 └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             │        │            └ None
+             │        └ None
+             └ None
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/harmony_vm/manager.py", line 1374, in stop_sync
+    self._active_instance_serial(vm_id, known, deadline=deadline))
+    │    │                       │      │               └ 137240.047092708
+    │    │                       │      └ {'vm_id': 'abc012def345', 'name': 'legacy', 'instance_name': 'aiphone_harmony_abc012def345', 'instance_path': '/private/var/f...
+    │    │                       └ 'abc012def345'
+    │    └ <function test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence.<locals>.<lambda> at 0x10b95c4a0>
+    └ <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x107233c50>
+
+TypeError: test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence.<locals>.<lambda>() got an unexpected keyword argument 'deadline'
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 14:45:27.869 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one] _
+
+session = <sqlalchemy.ext.asyncio.session.AsyncSession object at 0x10c805390>
+tmp_path = PosixPath('/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-lifecycle-simple-regression-9w6wg11v/pytest/test_legacy_unconfirmed_lease_1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b953f90>
+owner_host_id = 'host-one'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("owner_host_id", [None, "host-one"])
+    async def test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence(
+        session, tmp_path, monkeypatch, owner_host_id,
+    ):
+        import ai_phone.agent.harmony_vm.manager as manager_module
+    
+        vm, manager, client, payload, directory = await legacy_setup(
+            session, tmp_path, monkeypatch, owner_host_id=owner_host_id,
+        )
+        identity = (vm.hdc_port, vm.hdc_serial, vm.lease_token)
+        hub = ContractHub(online=("restarted",))
+        await service.handle_vm_reconcile("restarted", payload, hub)
+        await session.refresh(vm)
+        assert vm.assigned_agent_id == "restarted"
+        assert vm.runtime["owner_host_id"] == "host-one"
+        assert vm.state == "stopped", "本次确切进程观察可以证明停机，但不能证明旧端口释放"
+        view = lifecycle_view(vm, hub)
+        assert view["state"] == "stopped" and view["error"] == "old stop was not confirmed"
+        assert view["actions"]["stop"] is False, "已停页面不新增恢复动作；既有失败仍持续可见"
+        assert vm.runtime["last_status"]["details"]["cleanup_confirmed"] is False
+        assert (vm.hdc_port, vm.hdc_serial, vm.lease_token) == identity
+        lease = await session.get(HarmonyVmPortLease, identity[0], populate_existing=True)
+        assert lease.lease_token == identity[2] and lease.state == "active"
+        assert not hub.sent, "inventory only observes; it must not issue a stop or deletion"
+    
+        inspected = []
+        monkeypatch.setattr(manager, "_active_instance_serial", lambda vm_id, _known: inspected.append(vm_id) or "")
+        monkeypatch.setattr(manager, "_port_is_free", lambda _port: True)
+        monkeypatch.setattr(manager, "_cleanup_crash_service", lambda *_args: (True, []))
+        monkeypatch.setattr(manager_module, "hdc_list_targets", lambda: [])
+        monkeypatch.setattr(manager_module, "managed_vm_owner", lambda _serial: None)
+        result = await api.stop_instance(vm_id=vm.id, session=session, hub=hub)
+        assert result["sent"] is True
+        assert hub.sent[-1][0] == "restarted"
+        command = hub.sent[-1][1]
+        assert command["type"] == P.MSG_HARMONY_VM_STOP
+        assert (command["hdc_serial"], command["lease_token"]) == identity[1:]
+        try:
+            await manager.handle_stop(client, command)
+            receipt = client.sent[-1]
+            assert inspected == [vm.id], "legacy ready=False alone is not fresh stop evidence"
+>           assert receipt["details"]["exit_evidence"]["instance_process_status"] == "absent"
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'exit_evidence'
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py:134: KeyError
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 14:45:27.871 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-5854b3d28f0a4cac8c3cf57167a052e3?mode=memory&cache=shared&uri=true
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 14:45:27.912 | ERROR    | ai_phone.agent.harmony_vm.manager:handle_stop:561 - Harmony VM 停止收口异常 vm_id=abc012def345
+Traceback (most recent call last):
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-review-fixes-20261016/harmony/run_isolated.py", line 21, in <module>
+    exec(compile(source, str(runner), "exec"), {
+                 │           └ PosixPath('/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-review-fixes-20261016/run_regr...
+                 └ '"""Two reviewed VM failures: unified regression with guarded I/O and retained red evidence."""\nfrom __future__ import annot...
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-review-fixes-20261016/run_regression.py", line 177, in <module>
+    if __name__ == "__main__":
+       └ '__main__'
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-review-fixes-20261016/run_regression.py", line 156, in main
+    started = time.monotonic()
+              │    └ <built-in function monotonic>
+              └ <module 'time' (built-in)>
+
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/config/__init__.py", line 199, in main
+    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)
+         │                │      │    │                          └ <_pytest.config.Config object at 0x103f63fd0>
+         │                │      │    └ <HookCaller 'pytest_cmdline_main'>
+         │                │      └ <_pytest.config.compat.PathAwareHookProxy object at 0x1038e4990>
+         │                └ <_pytest.config.Config object at 0x103f63fd0>
+         └ <enum 'ExitCode'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'config': <_pytest.config.Config object at 0x103f63fd0>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_cmdline_main'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_cmdline_main'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_cmdline_main'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'config': <_pytest.config.Config object at 0x103f63fd0>}
+           │    │               │          └ [<HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyt...
+           │    │               └ 'pytest_cmdline_main'
+           │    └ <function _multicall at 0x102c387c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102acc890>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<_pytest.config.Config object at 0x103f63fd0>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyth...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 365, in pytest_cmdline_main
+    return wrap_session(config, _main)
+           │            │       └ <function _main at 0x103d47740>
+           │            └ <_pytest.config.Config object at 0x103f63fd0>
+           └ <function wrap_session at 0x103d47600>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 318, in wrap_session
+    session.exitstatus = doit(config, session) or 0
+    │       │            │    │       └ <Session  exitstatus=<ExitCode.OK: 0> testsfailed=1 testscollected=316>
+    │       │            │    └ <_pytest.config.Config object at 0x103f63fd0>
+    │       │            └ <function _main at 0x103d47740>
+    │       └ <ExitCode.OK: 0>
+    └ <Session  exitstatus=<ExitCode.OK: 0> testsfailed=1 testscollected=316>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 372, in _main
+    config.hook.pytest_runtestloop(session=session)
+    │      │    │                          └ <Session  exitstatus=<ExitCode.OK: 0> testsfailed=1 testscollected=316>
+    │      │    └ <HookCaller 'pytest_runtestloop'>
+    │      └ <_pytest.config.compat.PathAwareHookProxy object at 0x1038e4990>
+    └ <_pytest.config.Config object at 0x103f63fd0>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'session': <Session  exitstatus=<ExitCode.OK: 0> testsfailed=1 testscollected=316>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_runtestloop'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_runtestloop'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_runtestloop'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'session': <Session  exitstatus=<ExitCode.OK: 0> testsfailed=1 testscollected=316>}
+           │    │               │          └ [<HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyt...
+           │    │               └ 'pytest_runtestloop'
+           │    └ <function _multicall at 0x102c387c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102acc890>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Session  exitstatus=<ExitCode.OK: 0> testsfailed=1 testscollected=316>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyth...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 396, in pytest_runtestloop
+    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+    │    │                                        │              └ <Coroutine test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof[complete]>
+    │    │                                        └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>
+    │    └ <member 'config' of 'Node' objects>
+    └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'item': <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>, 'nextitem': ...
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_runtest_protocol'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_runtest_protocol'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_runtest_protocol'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'item': <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>, 'nextitem': ...
+           │    │               │          └ [<HookImpl plugin_name='runner', plugin=<module '_pytest.runner' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib...
+           │    │               └ 'pytest_runtest_protocol'
+           │    └ <function _multicall at 0x102c387c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102acc890>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>, <Coroutine test_lega...
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='runner', plugin=<module '_pytest.runner' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 118, in pytest_runtest_protocol
+    runtestprotocol(item, nextitem=nextitem)
+    │               │              └ <Coroutine test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof[complete]>
+    │               └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>
+    └ <function runtestprotocol at 0x103d46840>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 137, in runtestprotocol
+    reports.append(call_and_report(item, "call", log))
+    │       │      │               │             └ True
+    │       │      │               └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>
+    │       │      └ <function call_and_report at 0x103d46ca0>
+    │       └ <method 'append' of 'list' objects>
+    └ [<TestReport 'tests/test_harmony_legacy_lease_upgrade.py::test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_c...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 244, in call_and_report
+    call = CallInfo.from_call(
+           │        └ <classmethod(<function CallInfo.from_call at 0x103d47060>)>
+           └ <class '_pytest.runner.CallInfo'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 353, in from_call
+    result: TResult | None = func()
+            │                └ <function call_and_report.<locals>.<lambda> at 0x10b947c40>
+            └ +TResult
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 245, in <lambda>
+    lambda: runtest_hook(item=item, **kwds),
+            │                 │       └ {}
+            │                 └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>
+            └ <HookCaller 'pytest_runtest_call'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ False
+           │    │         │    │     │    │                  └ {'item': <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_runtest_call'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_runtest_call'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_runtest_call'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ False
+           │    │               │          │        └ {'item': <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>}
+           │    │               │          └ [<HookImpl plugin_name='threadexception', plugin=<module '_pytest.threadexception' from '/Users/dongxin/代码文件/sonic合集/ai-phone...
+           │    │               └ 'pytest_runtest_call'
+           │    └ <function _multicall at 0x102c387c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102acc890>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='runner', plugin=<module '_pytest.runner' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 179, in pytest_runtest_call
+    item.runtest()
+    │    └ <function PytestAsyncioFunction.runtest at 0x10445ed40>
+    └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py", line 469, in runtest
+    super().runtest()
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/python.py", line 1720, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+    │    │                                   └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>
+    │    └ <property object at 0x103b7a1b0>
+    └ <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'pyfuncitem': <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_pyfunc_call'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_pyfunc_call'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_pyfunc_call'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'pyfuncitem': <Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>}
+           │    │               │          └ [<HookImpl plugin_name='python', plugin=<module '_pytest.python' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib...
+           │    │               └ 'pytest_pyfunc_call'
+           │    └ <function _multicall at 0x102c387c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102acc890>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Coroutine test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='python', plugin=<module '_pytest.python' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/python.py", line 166, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+             │              └ {'session': <sqlalchemy.ext.asyncio.session.AsyncSession object at 0x10c805390>, 'tmp_path': PosixPath('/private/var/folders/...
+             └ <function test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence at 0x10b95c360>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py", line 716, in inner
+    runner.run(coro, context=context)
+    │      │   │             └ <_contextvars.Context object at 0x10cbfdbc0>
+    │      │   └ <coroutine object test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence at 0x12cc9f9c0>
+    │      └ <function Runner.run at 0x1043a0680>
+    └ <asyncio.runners.Runner object at 0x106dbd510>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           │    │     │                  └ <Task pending name='Task-18' coro=<test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence() running...
+           │    │     └ <function BaseEventLoop.run_until_complete at 0x10439e2a0>
+           │    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+           └ <asyncio.runners.Runner object at 0x106dbd510>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 641, in run_until_complete
+    self.run_forever()
+    │    └ <function BaseEventLoop.run_forever at 0x10439e200>
+    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 608, in run_forever
+    self._run_once()
+    │    └ <function BaseEventLoop._run_once at 0x1043a0040>
+    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 1936, in _run_once
+    handle._run()
+    │      └ <function Handle._run at 0x104110d60>
+    └ <Handle Task.task_wakeup(<Future finis... 'deadline'")>)>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/events.py", line 84, in _run
+    self._context.run(self._callback, *self._args)
+    │    │            │    │           │    └ <member '_args' of 'Handle' objects>
+    │    │            │    │           └ <Handle Task.task_wakeup(<Future finis... 'deadline'")>)>
+    │    │            │    └ <member '_callback' of 'Handle' objects>
+    │    │            └ <Handle Task.task_wakeup(<Future finis... 'deadline'")>)>
+    │    └ <member '_context' of 'Handle' objects>
+    └ <Handle Task.task_wakeup(<Future finis... 'deadline'")>)>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py", line 131, in test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence
+    await manager.handle_stop(client, command)
+          │       │           │       └ {'type': 'harmony_vm_stop', 'request_id': '03d28b81e36b4be5', 'vm_id': 'abc012def345', 'hdc_serial': '127.0.0.1:10000', 'leas...
+          │       │           └ <tests.test_harmony_legacy_lease_upgrade.RecordingClient object at 0x10b880110>
+          │       └ <function HarmonyVmManager.handle_stop at 0x10738bc40>
+          └ <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x10cd7d190>
+
+> File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/harmony_vm/manager.py", line 555, in handle_stop
+    result = await asyncio.to_thread(
+                   │       └ <function to_thread at 0x1043c89a0>
+                   └ <module 'asyncio' from '/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asy...
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+                 │    │                     └ functools.partial(<built-in method run of _contextvars.Context object at 0x10b8b3e80>, <bound method HarmonyVmManager.stop_sy...
+                 │    └ <function BaseEventLoop.run_in_executor at 0x10439eb60>
+                 └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             │        │            └ None
+             │        └ None
+             └ None
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/harmony_vm/manager.py", line 1374, in stop_sync
+    self._active_instance_serial(vm_id, known, deadline=deadline))
+    │    │                       │      │               └ 137240.134143208
+    │    │                       │      └ {'vm_id': 'abc012def345', 'name': 'legacy', 'instance_name': 'aiphone_harmony_abc012def345', 'instance_path': '/private/var/f...
+    │    │                       └ 'abc012def345'
+    │    └ <function test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence.<locals>.<lambda> at 0x10ce0bec0>
+    └ <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x10cd7d190>
+
+TypeError: test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence.<locals>.<lambda>() got an unexpected keyword argument 'deadline'
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 14:45:27.918 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+______ test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity ______
+
+protocol_app = <fastapi.applications.FastAPI object at 0x10d612d50>
+native_simulator = <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x10de7ce90>
+
+    @pytest.mark.asyncio
+    async def test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity(
+        protocol_app, native_simulator
+    ):
+        manager = native_simulator
+        server, server_task, listener, port = await _serve_loopback(protocol_app)
+        base_url = f"http://127.0.0.1:{port}"
+        start_messages: asyncio.Queue[dict] = asyncio.Queue()
+        stop_messages: asyncio.Queue[dict] = asyncio.Queue()
+        delete_messages: asyncio.Queue[dict] = asyncio.Queue()
+        run_messages: asyncio.Queue[dict] = asyncio.Queue()
+        allow_start = asyncio.Event()
+    
+        def devices():
+            # Simulated native HDC discovery reports the target only while a VM runs.
+            physical = (
+                [DeviceInfo(serial=HDC, platform="harmony")]
+                if manager._runtimes else []  # noqa: SLF001
+            )
+            return [info.to_dict() for info in manager.decorate_devices(physical)]
+    
+        agent = AgentWSClient(
+            ws_url=f"ws://127.0.0.1:{port}/ws/agent",
+            token=get_settings().agent_token,
+            agent_id=AGENT_ID,
+            agent_name=AGENT_ID,
+            device_provider=devices,
+            ping_interval=3600,
+            rescan_interval=3600,
+        )
+    
+        async def on_start(client, msg):
+            await start_messages.put(msg)
+            await allow_start.wait()
+            await manager.handle_start(client, msg)
+    
+        async def on_stop(client, msg):
+            await stop_messages.put(msg)
+            await manager.handle_stop(client, msg)
+    
+        async def on_delete(client, msg):
+            await delete_messages.put(msg)
+            await manager.handle_delete(client, msg)
+    
+        async def on_run(_client, msg):
+            # Runner/VLM execution is outside this VM identity protocol test.
+            await run_messages.put(msg)
+    
+        agent.on(P.MSG_HARMONY_VM_START, on_start)
+        agent.on(P.MSG_HARMONY_VM_STOP, on_stop)
+        agent.on(P.MSG_HARMONY_VM_DELETE, on_delete)
+        agent.on(P.MSG_START_RUN, on_run)
+        agent_task = asyncio.create_task(agent.run_forever(), name="harmony-e2e-agent")
+    
+        try:
+            await _eventually(
+                lambda: asyncio.sleep(0, result=protocol_app.state.hub.has_agent(AGENT_ID)),
+                lambda online: online,
+            )
+            async with AsyncClient(base_url=base_url, timeout=5.0) as http:
+                async def create(alias):
+                    response = await http.post(
+                        "/api/internal/harmony-vm/instances",
+                        headers=AUTH,
+                        json={"alias": alias, "os_version": "6.0.0", "api_version": "20"},
+                    )
+                    assert response.status_code == 201, response.text
+                    return response.json()["id"]
+    
+                async def dispatch(vm_id):
+                    allow_start.clear()
+                    response = await http.post(
+                        f"/api/internal/harmony-vm/instances/{vm_id}/dispatch",
+                        headers=AUTH,
+                        json={"agent_id": AGENT_ID},
+                    )
+                    assert response.status_code == 200, response.text
+                    assert response.json()["sent"] is True
+                    assert response.json()["instance"]["state"] == "starting"
+                    assert response.json()["instance"]["assigned_agent_id"] is None
+                    start = await asyncio.wait_for(start_messages.get(), timeout=5)
+                    assert start["vm_id"] == vm_id
+                    assert start["assigned_port"] == 10007
+                    allow_start.set()
+                    identity = f"harmony-vm:{vm_id}"
+                    running = await _eventually(
+                        lambda: http.get(f"/api/internal/harmony-vm/instances/{vm_id}", headers=AUTH),
+                        lambda result: result.json()["state"] == "running",
+                    )
+                    assert running.json()["assigned_agent_id"] == AGENT_ID
+                    device = await _eventually(
+                        lambda: http.get(f"/api/devices/{identity}"),
+                        lambda result: result.status_code == 200 and result.json()["status"] == "online",
+                    )
+                    return start, device.json()
+    
+                vm_a = await create("别名A")
+                identity_a = f"harmony-vm:{vm_a}"
+                start_a, device_a = await dispatch(vm_a)
+                assert (await http.get("/api/devices")).json()[0]["alias"] == "别名A"
+                assert device_a["extra"]["hdc_serial"] == HDC
+                assert device_a["extra"]["vm_instance_id"] == vm_a
+                assert managed_vm_owner(HDC) == (vm_a, start_a["lease_token"])
+    
+                await agent.send({
+                    "type": P.MSG_DEVICE_READINESS,
+                    "serial": identity_a,
+                    "platform": "harmony",
+                    "ready": True,
+                    "ts": 1.0,
+                })
+                await _eventually(
+                    lambda: http.get(f"/api/devices/{identity_a}"),
+                    lambda result: result.json()["extra"].get("readiness", {}).get("ready") is True,
+                )
+                run_a = await http.post("/api/runs", json={"device_serial": identity_a, "goal": "A 的运行"})
+                assert run_a.status_code == 201, run_a.text
+                assert run_a.json()["dispatched"] is True
+                run_a_id = run_a.json()["id"]
+                assert (await asyncio.wait_for(run_messages.get(), 5))["device_serial"] == identity_a
+                # The Agent's terminal message checks the Run readback path without
+                # starting a VLM Runner or modifying the Case execution chain.
+                await agent.send({
+                    "type": P.MSG_RUN_DONE,
+                    "run_id": run_a_id,
+                    "serial": identity_a,
+                    "result": "finished",
+                    "steps": 0,
+                })
+                completed_a = await _eventually(
+                    lambda: http.get(f"/api/runs/{run_a_id}"),
+                    lambda result: result.json()["status"] == "success",
+                )
+                assert completed_a.json()["device_serial"] == identity_a
+    
+                # A manual API caller owns its lock until it explicitly releases it;
+                # a terminal Run alone must not authorize destroying that device.
+                blocked_stop = await http.post(
+                    f"/api/internal/harmony-vm/instances/{vm_a}/stop", headers=AUTH
+                )
+                assert blocked_stop.status_code == 409
+                assert "device_busy" in blocked_stop.text
+                assert stop_messages.empty()
+                unlocked = await http.request(
+                    "DELETE", f"/api/devices/{identity_a}/lock",
+                    json={"token": run_a.json()["job_lock_token"]},
+                )
+                assert unlocked.status_code == 200, unlocked.text
+                assert unlocked.json()["released"] is True
+    
+                stopped = await http.post(
+                    f"/api/internal/harmony-vm/instances/{vm_a}/stop", headers=AUTH
+                )
+                assert stopped.status_code == 200, stopped.text
+                assert stopped.json()["sent"] is True
+                assert (await asyncio.wait_for(stop_messages.get(), 5))["vm_id"] == vm_a
+>               await _eventually(
+                    lambda: http.get(f"/api/internal/harmony-vm/instances/{vm_a}", headers=AUTH),
+                    lambda result: result.json()["state"] == "stopped"
+                    and result.json()["hdc_port"] is None,
+                )
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_ws_e2e.py:383: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+call = <function test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity.<locals>.<lambda> at 0x10e51b240>
+predicate = <function test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity.<locals>.<lambda> at 0x10e55ac00>
+
+    async def _eventually(call, predicate, *, timeout=5.0):
+        deadline = time.monotonic() + timeout
+        last = None
+        while time.monotonic() < deadline:
+            last = await call()
+            if predicate(last):
+                return last
+            await asyncio.sleep(0.02)
+>       raise AssertionError(f"condition not met; last result={last!r}")
+E       AssertionError: condition not met; last result=<Response [200 OK]>
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_ws_e2e.py:205: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 14:45:32.736 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:////private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-lifecycle-simple-regression-9w6wg11v/pytest/test_http_ws_agent_a_to_b_reus0/harmony-e2e.db
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 14:45:32.869 | INFO     | ai_phone.agent.ws_client:run_forever:221 - 连接 Server WS ws://127.0.0.1:62997/ws/agent?token=***
+2026-10-16 14:45:32.871 | INFO     | ai_phone.agent.ws_client:_on_connected:275 - hello sent | devices=[]
+2026-10-16 14:45:32.872 | INFO     | ai_phone.agent.ws_client:_rescan_loop:514 - rescan_loop 启动，间隔 3600.0s
+2026-10-16 14:45:32.872 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=local-harmony-agent name=local-harmony-agent host_os=Darwin 24.6.0
+2026-10-16 14:45:32.873 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:222 - Agent hello | id=local-harmony-agent devices=[]
+2026-10-16 14:45:32.873 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:234 - 已向 Agent local-harmony-agent 下发执行配置
+2026-10-16 14:45:32.873 | DEBUG    | ai_phone.agent.ws_client:_recv_loop:378 - 无 handler 的消息 type=agent_config
+2026-10-16 14:45:32.954 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 [] → ['harmony-vm:8c16caad4d99']
+2026-10-16 14:45:32.963 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=local-harmony-agent devices=['harmony-vm:8c16caad4d99']
+2026-10-16 14:45:33.015 | ERROR    | ai_phone.agent.harmony_vm.manager:handle_stop:561 - Harmony VM 停止收口异常 vm_id=8c16caad4d99
+Traceback (most recent call last):
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-review-fixes-20261016/harmony/run_isolated.py", line 21, in <module>
+    exec(compile(source, str(runner), "exec"), {
+                 │           └ PosixPath('/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-review-fixes-20261016/run_regr...
+                 └ '"""Two reviewed VM failures: unified regression with guarded I/O and retained red evidence."""\nfrom __future__ import annot...
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-review-fixes-20261016/run_regression.py", line 177, in <module>
+    if __name__ == "__main__":
+       └ '__main__'
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-review-fixes-20261016/run_regression.py", line 156, in main
+    started = time.monotonic()
+              │    └ <built-in function monotonic>
+              └ <module 'time' (built-in)>
+
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/config/__init__.py", line 199, in main
+    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)
+         │                │      │    │                          └ <_pytest.config.Config object at 0x103f63fd0>
+         │                │      │    └ <HookCaller 'pytest_cmdline_main'>
+         │                │      └ <_pytest.config.compat.PathAwareHookProxy object at 0x1038e4990>
+         │                └ <_pytest.config.Config object at 0x103f63fd0>
+         └ <enum 'ExitCode'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'config': <_pytest.config.Config object at 0x103f63fd0>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_cmdline_main'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_cmdline_main'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_cmdline_main'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'config': <_pytest.config.Config object at 0x103f63fd0>}
+           │    │               │          └ [<HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyt...
+           │    │               └ 'pytest_cmdline_main'
+           │    └ <function _multicall at 0x102c387c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102acc890>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<_pytest.config.Config object at 0x103f63fd0>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyth...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 365, in pytest_cmdline_main
+    return wrap_session(config, _main)
+           │            │       └ <function _main at 0x103d47740>
+           │            └ <_pytest.config.Config object at 0x103f63fd0>
+           └ <function wrap_session at 0x103d47600>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 318, in wrap_session
+    session.exitstatus = doit(config, session) or 0
+    │       │            │    │       └ <Session  exitstatus=<ExitCode.OK: 0> testsfailed=2 testscollected=316>
+    │       │            │    └ <_pytest.config.Config object at 0x103f63fd0>
+    │       │            └ <function _main at 0x103d47740>
+    │       └ <ExitCode.OK: 0>
+    └ <Session  exitstatus=<ExitCode.OK: 0> testsfailed=2 testscollected=316>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 372, in _main
+    config.hook.pytest_runtestloop(session=session)
+    │      │    │                          └ <Session  exitstatus=<ExitCode.OK: 0> testsfailed=2 testscollected=316>
+    │      │    └ <HookCaller 'pytest_runtestloop'>
+    │      └ <_pytest.config.compat.PathAwareHookProxy object at 0x1038e4990>
+    └ <_pytest.config.Config object at 0x103f63fd0>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'session': <Session  exitstatus=<ExitCode.OK: 0> testsfailed=2 testscollected=316>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_runtestloop'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_runtestloop'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_runtestloop'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'session': <Session  exitstatus=<ExitCode.OK: 0> testsfailed=2 testscollected=316>}
+           │    │               │          └ [<HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyt...
+           │    │               └ 'pytest_runtestloop'
+           │    └ <function _multicall at 0x102c387c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102acc890>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Session  exitstatus=<ExitCode.OK: 0> testsfailed=2 testscollected=316>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyth...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 396, in pytest_runtestloop
+    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+    │    │                                        │              └ <Function test_hdc_list_targets_ignores_empty_with_orphan_hdc>
+    │    │                                        └ <Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>
+    │    └ <member 'config' of 'Node' objects>
+    └ <Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'item': <Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>, 'nextitem': <Function test_hdc_list_...
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_runtest_protocol'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_runtest_protocol'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_runtest_protocol'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'item': <Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>, 'nextitem': <Function test_hdc_list_...
+           │    │               │          └ [<HookImpl plugin_name='runner', plugin=<module '_pytest.runner' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib...
+           │    │               └ 'pytest_runtest_protocol'
+           │    └ <function _multicall at 0x102c387c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102acc890>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>, <Function test_hdc_list_targets_ignores_empt...
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='runner', plugin=<module '_pytest.runner' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 118, in pytest_runtest_protocol
+    runtestprotocol(item, nextitem=nextitem)
+    │               │              └ <Function test_hdc_list_targets_ignores_empty_with_orphan_hdc>
+    │               └ <Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>
+    └ <function runtestprotocol at 0x103d46840>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 137, in runtestprotocol
+    reports.append(call_and_report(item, "call", log))
+    │       │      │               │             └ True
+    │       │      │               └ <Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>
+    │       │      └ <function call_and_report at 0x103d46ca0>
+    │       └ <method 'append' of 'list' objects>
+    └ [<TestReport 'tests/test_harmony_vm_ws_e2e.py::test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity' when='setu...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 244, in call_and_report
+    call = CallInfo.from_call(
+           │        └ <classmethod(<function CallInfo.from_call at 0x103d47060>)>
+           └ <class '_pytest.runner.CallInfo'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 353, in from_call
+    result: TResult | None = func()
+            │                └ <function call_and_report.<locals>.<lambda> at 0x10ddf23e0>
+            └ +TResult
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 245, in <lambda>
+    lambda: runtest_hook(item=item, **kwds),
+            │                 │       └ {}
+            │                 └ <Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>
+            └ <HookCaller 'pytest_runtest_call'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ False
+           │    │         │    │     │    │                  └ {'item': <Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_runtest_call'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_runtest_call'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_runtest_call'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ False
+           │    │               │          │        └ {'item': <Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>}
+           │    │               │          └ [<HookImpl plugin_name='threadexception', plugin=<module '_pytest.threadexception' from '/Users/dongxin/代码文件/sonic合集/ai-phone...
+           │    │               └ 'pytest_runtest_call'
+           │    └ <function _multicall at 0x102c387c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102acc890>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='runner', plugin=<module '_pytest.runner' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 179, in pytest_runtest_call
+    item.runtest()
+    │    └ <function PytestAsyncioFunction.runtest at 0x10445ed40>
+    └ <Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py", line 469, in runtest
+    super().runtest()
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/python.py", line 1720, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+    │    │                                   └ <Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>
+    │    └ <property object at 0x103b7a1b0>
+    └ <Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'pyfuncitem': <Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_pyfunc_call'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_pyfunc_call'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_pyfunc_call'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'pyfuncitem': <Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>}
+           │    │               │          └ [<HookImpl plugin_name='python', plugin=<module '_pytest.python' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib...
+           │    │               └ 'pytest_pyfunc_call'
+           │    └ <function _multicall at 0x102c387c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102acc890>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Coroutine test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='python', plugin=<module '_pytest.python' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/python.py", line 166, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+             │              └ {'protocol_app': <fastapi.applications.FastAPI object at 0x10d612d50>, 'native_simulator': <ai_phone.agent.harmony_vm.manager...
+             └ <function test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity at 0x10ddf2340>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py", line 716, in inner
+    runner.run(coro, context=context)
+    │      │   │             └ <_contextvars.Context object at 0x10b8b3e80>
+    │      │   └ <coroutine object test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity at 0x12cf86200>
+    │      └ <function Runner.run at 0x1043a0680>
+    └ <asyncio.runners.Runner object at 0x10cd843d0>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           │    │     │                  └ <Task pending name='Task-1145' coro=<test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity() running at /Users/d...
+           │    │     └ <function BaseEventLoop.run_until_complete at 0x10439e2a0>
+           │    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+           └ <asyncio.runners.Runner object at 0x10cd843d0>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 641, in run_until_complete
+    self.run_forever()
+    │    └ <function BaseEventLoop.run_forever at 0x10439e200>
+    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 608, in run_forever
+    self._run_once()
+    │    └ <function BaseEventLoop._run_once at 0x1043a0040>
+    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 1936, in _run_once
+    handle._run()
+    │      └ <function Handle._run at 0x104110d60>
+    └ <Handle Task.task_wakeup(<Future finis... 'deadline'")>)>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/events.py", line 84, in _run
+    self._context.run(self._callback, *self._args)
+    │    │            │    │           │    └ <member '_args' of 'Handle' objects>
+    │    │            │    │           └ <Handle Task.task_wakeup(<Future finis... 'deadline'")>)>
+    │    │            │    └ <member '_callback' of 'Handle' objects>
+    │    │            └ <Handle Task.task_wakeup(<Future finis... 'deadline'")>)>
+    │    └ <member '_context' of 'Handle' objects>
+    └ <Handle Task.task_wakeup(<Future finis... 'deadline'")>)>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/ws_client.py", line 489, in run
+    await self._call_handler(handler, handler_msg)
+          │    │             │        └ {'type': 'harmony_vm_stop', 'request_id': 'c1f68ff8666f4a24', 'vm_id': '8c16caad4d99', 'hdc_serial': '127.0.0.1:10007', 'leas...
+          │    │             └ <function test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity.<locals>.on_stop at 0x10dd40cc0>
+          │    └ <function AgentWSClient._call_handler at 0x1070e6200>
+          └ AgentWSClient(ws_url='ws://127.0.0.1:62997/ws/agent', token='harmony-e2e', agent_id='local-harmony-agent', agent_name='local-...
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/ws_client.py", line 387, in _call_handler
+    await handler(self, msg)
+          │       │     └ {'type': 'harmony_vm_stop', 'request_id': 'c1f68ff8666f4a24', 'vm_id': '8c16caad4d99', 'hdc_serial': '127.0.0.1:10007', 'leas...
+          │       └ AgentWSClient(ws_url='ws://127.0.0.1:62997/ws/agent', token='harmony-e2e', agent_id='local-harmony-agent', agent_name='local-...
+          └ <function test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity.<locals>.on_stop at 0x10dd40cc0>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_ws_e2e.py", line 265, in on_stop
+    await manager.handle_stop(client, msg)
+          │       │           │       └ {'type': 'harmony_vm_stop', 'request_id': 'c1f68ff8666f4a24', 'vm_id': '8c16caad4d99', 'hdc_serial': '127.0.0.1:10007', 'leas...
+          │       │           └ AgentWSClient(ws_url='ws://127.0.0.1:62997/ws/agent', token='harmony-e2e', agent_id='local-harmony-agent', agent_name='local-...
+          │       └ <function HarmonyVmManager.handle_stop at 0x10738bc40>
+          └ <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x10de7ce90>
+
+> File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/harmony_vm/manager.py", line 555, in handle_stop
+    result = await asyncio.to_thread(
+                   │       └ <function to_thread at 0x1043c89a0>
+                   └ <module 'asyncio' from '/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asy...
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+                 │    │                     └ functools.partial(<built-in method run of _contextvars.Context object at 0x10e1cfdc0>, <bound method HarmonyVmManager.stop_sy...
+                 │    └ <function BaseEventLoop.run_in_executor at 0x10439eb60>
+                 └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             │        │            └ None
+             │        └ None
+             └ None
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/harmony_vm/manager.py", line 1466, in stop_sync
+    return self._stop_runtime(runtime, keep_instance=True, deadline=deadline)
+           │    │             │                                     └ 137245.23749529102
+           │    │             └ HarmonyVmRuntime(vm_id='8c16caad4d99', name='别名A', instance_name='aiphone_harmony_8c16caad4d99', instance_path='/private/var/...
+           │    └ <function HarmonyVmManager._stop_runtime at 0x1073a4540>
+           └ <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x10de7ce90>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/harmony_vm/manager.py", line 1491, in _stop_runtime
+    return self._stop_runtime_locked(runtime, keep_instance=keep_instance, deadline=deadline)
+           │    │                    │                      │                       └ 137245.23749529102
+           │    │                    │                      └ True
+           │    │                    └ HarmonyVmRuntime(vm_id='8c16caad4d99', name='别名A', instance_name='aiphone_harmony_8c16caad4d99', instance_path='/private/var/...
+           │    └ <function HarmonyVmManager._stop_runtime_locked at 0x1073a4680>
+           └ <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x10de7ce90>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/harmony_vm/manager.py", line 1541, in _stop_runtime_locked
+    tools, _missing = find_harmony_tools() if deadline is None else find_harmony_tools(deadline=deadline)
+                      │                       │                     │                           └ 137245.23749529102
+                      │                       │                     └ <function native_simulator.<locals>.<lambda> at 0x10e0f7c40>
+                      │                       └ 137245.23749529102
+                      └ <function native_simulator.<locals>.<lambda> at 0x10e0f7c40>
+
+TypeError: native_simulator.<locals>.<lambda>() got an unexpected keyword argument 'deadline'
+2026-10-16 14:45:33.018 | INFO     | ai_phone.agent.ws_client:_scan_and_publish:330 - 设备集合变化 ['harmony-vm:8c16caad4d99'] → []
+2026-10-16 14:45:33.027 | INFO     | ai_phone.server.ws.agent_ws:op:763 - Agent local-harmony-agent 移除已拔出设备 ['harmony-vm:8c16caad4d99']
+2026-10-16 14:45:33.027 | INFO     | ai_phone.server.ws.agent_ws:_dispatch:308 - Agent rehello | id=local-harmony-agent devices=[]
+2026-10-16 14:45:38.045 | INFO     | ai_phone.server.ws.agent_ws:agent_ws:273 - Agent 断开 | id=local-harmony-agent
+2026-10-16 14:45:38.045 | INFO     | ai_phone.server.hub:unregister_agent:201 - Agent 下线 | id=local-harmony-agent serials=[]
+2026-10-16 14:45:38.050 | INFO     | ai_phone.server.ws.agent_ws:_on_disconnect:1096 - Agent local-harmony-agent 断开，已标记 Harmony VM agent_offline 1 台
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 14:45:38.234 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+=============================== warnings summary ===============================
+tests/test_harmony_vm_ws_e2e.py::test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity
+  /Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/websockets/legacy/server.py:1187: DeprecationWarning: remove second argument of ws_handler
+    warnings.warn("remove second argument of ws_handler", DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 12 durations =============================
+5.39s call     tests/test_harmony_vm_ws_e2e.py::test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity
+0.49s call     tests/test_harmony_driver_concurrency.py::test_call_with_reconnect_serializes_same_serial
+0.19s setup    tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[harmony-online-control]
+0.17s call     tests/test_harmony_driver_concurrency.py::test_dead_session_replacement_does_not_change_android_or_ios
+0.16s setup    tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[ios-online-control]
+0.15s call     tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[harmony-online-control]
+0.14s setup    tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[harmony-offline-then-manual-dispatch]
+0.13s call     tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[harmony-offline-then-manual-dispatch]
+0.10s setup    tests/test_harmony_vm_recovery.py::test_offline_vm_switch_creates_new_id_before_old_orphan_cleanup[False]
+0.10s setup    tests/test_harmony_vm_ws_e2e.py::test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity
+0.09s setup    tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[ios-offline-then-manual-dispatch]
+0.09s call     tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[ios-online-control]
+=========================== short test summary info ============================
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py::test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py::test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_ws_e2e.py::test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity
+3 failed, 313 passed, 1 warning in 12.66s
+{"final_exit_code": 1, "source_unchanged": true, "duration_seconds": 13.599}

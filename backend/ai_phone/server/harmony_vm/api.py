@@ -20,7 +20,7 @@ from ..vm_lifecycle import (
     vm_view, require_action, require_editable,
     ensure_start_observation, start_preflight_snapshot, reject_start_preflight,
     operation_failure_detail,
-    is_untouched_draft,
+    is_untouched_draft, record_failure,
     require_retirement_allowed, send_operation_once,
     begin_operation, maintenance, require_idle, require_startable,
     require_device_idle, require_owner_host, runtime as lifecycle_runtime,
@@ -719,6 +719,7 @@ async def stop_instance(
     sent = await send_operation_once(hub, vm.assigned_agent_id, {
         "type": P.MSG_HARMONY_VM_STOP, "request_id": request_id, "vm_id": vm.id,
         "hdc_serial": vm.hdc_serial or "", "lease_token": vm.lease_token or "",
+        "operation_timeout_sec": lifecycle_runtime(vm)["operation"]["timeout_sec"],
     })
     if not sent:
         await record_send_failure(session, vm, request_id, "所属 Agent 离线，尚未确认停止")
@@ -883,6 +884,11 @@ async def _switch_agent(*, vm: HarmonyVmInstance, new_agent_id: str, session: As
         if is_untouched_draft(current):
             current.state = "error"
             current.error_message = f"新配置启动失败：{exc.detail}"
+            # The locked replacement is still untouched: no native command
+            # was accepted. Keep the failure visible and permit a later
+            # explicit dispatch, without resuming this failed switch.
+            record_failure(current, current.error_message, reason="switch_target_not_dispatched",
+                           action="start", preflight=True)
             update_runtime(current, last_status={"state": "error", "ok": False,
                            "details": {"cleanup_confirmed": True, "instance_created": False}},
                            details={"cleanup_confirmed": True, "instance_created": False})

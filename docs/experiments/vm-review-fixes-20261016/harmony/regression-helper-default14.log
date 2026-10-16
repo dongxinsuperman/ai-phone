@@ -1,0 +1,16 @@
+..............                                                           [100%]
+============================= slowest 12 durations =============================
+0.09s setup    tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[harmony-online-control]
+0.07s setup    tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[android-online-control]
+0.06s setup    tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[ios-online-control]
+0.06s setup    tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[android-offline-then-manual-dispatch]
+0.06s setup    tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[ios-offline-then-manual-dispatch]
+0.05s setup    tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[harmony-offline-then-manual-dispatch]
+0.05s call     tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[android-online-control]
+0.03s call     tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[ios-offline-then-manual-dispatch]
+0.02s call     tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[harmony-offline-then-manual-dispatch]
+0.02s call     tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[harmony-online-control]
+0.02s call     tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[ios-online-control]
+0.02s call     tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[android-offline-then-manual-dispatch]
+14 passed in 0.63s
+{"final_exit_code": 0, "source_unchanged": true, "duration_seconds": 1.438}

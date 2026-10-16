@@ -840,22 +840,37 @@ class IosSimulatorWdaLauncher:
         self._wait_ready(_startup_timeout(self._startup_deadline, timeout))
         _startup_timeout(self._startup_deadline, timeout)
 
-    def stop(self) -> None:
+    def stop(self, *, deadline: Optional[float] = None) -> None:
         """停掉 WDA。不删除已安装的 App（下次启动可省掉 install）。"""
+        def remaining(maximum: float) -> float:
+            if deadline is None:
+                return maximum
+            seconds = deadline - time.monotonic()
+            if seconds <= 0:
+                raise TimeoutError("iOS Simulator WDA stop deadline exceeded")
+            return min(maximum, seconds)
+
+        remaining(1.0)
         proc = self._xcodebuild_proc
         if proc is not None:
             try:
                 if proc.poll() is None:
+                    remaining(1.0)
                     proc.terminate()
                     try:
-                        proc.wait(timeout=10.0)
+                        proc.wait(timeout=remaining(10.0))
                     except subprocess.TimeoutExpired:
+                        remaining(1.0)
                         proc.kill()
-                        proc.wait(timeout=5.0)
+                        proc.wait(timeout=remaining(5.0))
+                remaining(1.0)
                 logger.info("udid={} 已终止 xcodebuild pid={}", self.udid, proc.pid)
             except Exception as exc:  # noqa: BLE001
+                if deadline is not None and isinstance(exc, TimeoutError):
+                    raise
                 # 保留句柄和登记，下次停止仍能处理；不能只发 terminate 就宣称释放。
                 raise SimulatorWdaError(f"终止 xcodebuild 失败 udid={self.udid}：{exc}") from exc
+            remaining(1.0)
             self._xcodebuild_proc = None
             _forget_xcodebuild(self.udid)
             return
@@ -864,9 +879,10 @@ class IosSimulatorWdaLauncher:
         if not bundle_id:
             return
         try:
-            simctl_run("terminate", self.udid, bundle_id, check=False, timeout=15.0)
+            simctl_run("terminate", self.udid, bundle_id, check=False, timeout=remaining(15.0))
         except SimctlError as exc:
             logger.debug("udid={} 终止 WDA 失败（忽略）：{}", self.udid, exc)
+        remaining(1.0)
 
     # ------------------------------------------------------------------
     # iPad 路径：xcodebuild test-without-building

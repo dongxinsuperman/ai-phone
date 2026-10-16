@@ -153,7 +153,7 @@ def native_simulator(tmp_path, monkeypatch):
     monkeypatch.setattr(
         manager_module,
         "find_harmony_tools",
-        lambda: (SimpleNamespace(emulator="/fake/Emulator"), []),
+        lambda **_kwargs: (SimpleNamespace(emulator="/fake/Emulator"), []),
     )
     monkeypatch.setattr(manager, "_resolve_image_root", lambda _msg: "")
     monkeypatch.setattr(manager, "_port_conflict", lambda _port, _serial: "")
@@ -167,11 +167,11 @@ def native_simulator(tmp_path, monkeypatch):
     monkeypatch.setattr(manager_module, "_spawn_harmony_emulator", lambda *_a, **_kw: _FakeProcess())
     monkeypatch.setattr(manager, "_wait_hdc", lambda _runtime, **_kw: None)
     monkeypatch.setattr(manager, "_wait_driver", lambda _runtime, **_kw: _FakeDriver())
-    monkeypatch.setattr(manager, "_wait_removed", lambda _serial, _port: (True, "removed"))
+    monkeypatch.setattr(manager, "_wait_removed", lambda _serial, _port, **_kwargs: (True, "removed"))
     monkeypatch.setattr(manager_module, "hdc_run", lambda *_a, **_kw: "")
     # hdc_list_targets closes over the driver's hdc_run, so patching only the
     # manager alias above does not isolate its inventory query.
-    monkeypatch.setattr(manager_module, "hdc_list_targets", lambda: [
+    monkeypatch.setattr(manager_module, "hdc_list_targets", lambda **_kwargs: [
         SimpleNamespace(serial=runtime.hdc_serial, status="Connected")
         for runtime in manager._runtimes.values()
         if runtime.process is not None and runtime.process.poll() is None

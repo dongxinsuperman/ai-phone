@@ -46,7 +46,7 @@ class FakeLauncher:
         self.started += 1
         FakeLauncher.alive_udids.add(self.udid)
 
-    def stop(self):
+    def stop(self, **_kw):
         self.stopped += 1
         FakeLauncher.alive_udids.discard(self.udid)
 

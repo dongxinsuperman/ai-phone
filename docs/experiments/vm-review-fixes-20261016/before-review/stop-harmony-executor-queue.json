@@ -1,0 +1,60 @@
+{
+  "original_deadline": 105.0,
+  "handler_remaining_seconds": [
+    1.0
+  ],
+  "native_events": [
+    {
+      "command": "Emulator -stop",
+      "at": 106.0,
+      "timeout": 20
+    }
+  ],
+  "reports": [
+    {
+      "type": "harmony_vm_status",
+      "request_id": "fixture-stop",
+      "vm_id": "abcd12345678",
+      "lease_token": "fixture-lease",
+      "state": "stopping",
+      "ok": true,
+      "reason": "stopping",
+      "error": "",
+      "hdc_serial": "",
+      "details": {}
+    },
+    {
+      "type": "harmony_vm_status",
+      "request_id": "fixture-stop",
+      "vm_id": "abcd12345678",
+      "lease_token": "fixture-lease",
+      "state": "stopped",
+      "ok": true,
+      "reason": "stopped",
+      "error": "",
+      "hdc_serial": "127.0.0.1:12345",
+      "details": {
+        "cleanup_confirmed": true,
+        "cleanup_mode": "fixture exit",
+        "stale_hdc_target": "",
+        "stop_errors": [],
+        "crash_service_cleanup_confirmed": true,
+        "hdc_port": 12345,
+        "exit_evidence": {
+          "process_handle_present": false,
+          "process_return_code": null,
+          "process_sampled_unix": 1792126279.9595578,
+          "instance_process_status": "absent",
+          "instance_process_sampled_unix": 1792126279.959559
+        },
+        "instance_observation": {
+          "vm_id": "abcd12345678",
+          "state": "stopped",
+          "identity": {},
+          "resources_released": true,
+          "reason": "fixture exit"
+        }
+      }
+    }
+  ]
+}

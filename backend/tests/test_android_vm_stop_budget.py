@@ -404,12 +404,15 @@ async def test_failed_start_has_one_bounded_cleanup_but_preserves_existing_avd(i
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind", [P.MSG_VM_STOP, P.MSG_VM_DELETE])
-async def test_ws_default_cleanup_budget_includes_prior_lane_wait(isolated, kind):
+@pytest.mark.parametrize("kind,platform", [
+    (P.MSG_VM_STOP, "android"), (P.MSG_VM_DELETE, "android"),
+    (P.MSG_IOS_SIM_VM_STOP, "ios_sim"), (P.MSG_HARMONY_VM_STOP, "harmony"),
+])
+async def test_ws_default_stop_and_android_cleanup_budget_includes_prior_lane_wait(isolated, kind, platform):
     clock, _ = isolated
     client = AgentWSClient(ws_url="ws://unused", token="isolated", agent_id="isolated", agent_name="isolated")
     previous = asyncio.get_running_loop().create_future()
-    client._vm_lanes[("android", "a")] = previous
+    client._vm_lanes[(platform, "a")] = previous
     client._send_vm_failure = AsyncMock()
     handler = AsyncMock()
     message = {"type": kind, "vm_id": "a"}
@@ -424,13 +427,17 @@ async def test_ws_default_cleanup_budget_includes_prior_lane_wait(isolated, kind
 
 
 @pytest.mark.asyncio
-async def test_ws_explicit_remaining_budget_is_not_replaced_by_default(isolated):
+@pytest.mark.parametrize("kind,platform", [
+    (P.MSG_VM_STOP, "android"), (P.MSG_IOS_SIM_VM_STOP, "ios_sim"),
+    (P.MSG_HARMONY_VM_STOP, "harmony"),
+])
+async def test_ws_explicit_remaining_budget_is_not_replaced_by_default(isolated, kind, platform):
     clock, _ = isolated
     client = AgentWSClient(ws_url="ws://unused", token="isolated", agent_id="isolated", agent_name="isolated")
     previous = asyncio.get_running_loop().create_future()
-    client._vm_lanes[("android", "a")] = previous
+    client._vm_lanes[(platform, "a")] = previous
     handler = AsyncMock()
-    message = {"type": P.MSG_VM_STOP, "vm_id": "a", "operation_timeout_sec": 10}
+    message = {"type": kind, "vm_id": "a", "operation_timeout_sec": 10}
     await client._dispatch_vm_handler(handler, message)
     tasks = list(client._vm_tasks)
     clock.advance(3)
@@ -441,8 +448,8 @@ async def test_ws_explicit_remaining_budget_is_not_replaced_by_default(isolated)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind", [P.MSG_VM_START, P.MSG_VM_CAPABILITY_PROBE, P.MSG_HARMONY_VM_STOP, P.MSG_IOS_SIM_VM_STOP])
-async def test_ws_android_cleanup_default_does_not_change_other_messages(isolated, kind):
+@pytest.mark.parametrize("kind", [P.MSG_VM_START, P.MSG_VM_CAPABILITY_PROBE, P.MSG_HARMONY_VM_DELETE, P.MSG_IOS_SIM_VM_DELETE])
+async def test_ws_stop_budget_default_does_not_change_other_messages(isolated, kind):
     client = AgentWSClient(ws_url="ws://unused", token="isolated", agent_id="isolated", agent_name="isolated")
     handler = AsyncMock()
     message = {"type": kind, "vm_id": "a"}

@@ -24,7 +24,7 @@ from ..vm_probe import probe_stream_response
 from ..vm_lifecycle import (
     vm_view, require_action, machine_state, require_editable,
     ensure_start_observation, operation_failure_detail,
-    is_untouched_draft,
+    is_untouched_draft, record_failure,
     require_retirement_allowed, send_operation_once,
     begin_operation, maintenance, require_idle, require_startable,
     require_device_idle, require_owner_host, runtime as lifecycle_runtime,
@@ -859,6 +859,11 @@ async def _switch_agent(*, vm: AndroidVmInstance, new_agent_id: str, session: As
         if is_untouched_draft(current):
             current.state = "error"
             current.error_message = f"新配置启动失败：{exc.detail}"
+            # The locked replacement is still untouched: no native command
+            # was accepted. Keep the failure visible and permit a later
+            # explicit dispatch, without resuming this failed switch.
+            record_failure(current, current.error_message, reason="switch_target_not_dispatched",
+                           action="start", preflight=True)
             update_runtime(current, last_status={"state": "error", "ok": False,
                            "details": {"cleanup_confirmed": True, "instance_created": False}},
                            details={"cleanup_confirmed": True, "instance_created": False})

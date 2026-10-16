@@ -1,0 +1,14 @@
+{
+  "base_commit": "578fb711f0d26b1ba7aa29aeefe6b8a208ff9847",
+  "tested_source_label": "578fb71 plus iOS Stop shared deadline and current WS budget entry",
+  "source_sha256": {
+    "backend/ai_phone/agent/ios_sim/manager.py": "82f4c26c4646e181155240de6409342acdbf143447da3042e31152d7df9692cc",
+    "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "c8cb4609c93f948e47af930a98f1c2c41293f76c00b70452a76b2881f9666973",
+    "backend/ai_phone/agent/ws_client.py": "971cbe76b2e430328a3c414326fbdb1827bbdf731f53d382d495e509dbcc85f6",
+    "backend/tests/test_ios_sim_stop_budget.py": "29d71194456bf542e051fb8ad470fc6d28a21aa2e79c826028c2907a76c03feb",
+    "backend/tests/test_ios_sim_manager.py": "add10a287c0094925f7b7988b99a99d73098a72fa896fe870ea892be3fb27cc0",
+    "backend/tests/test_ios_sim_instance_observation.py": "512cd44ff826d782cb62f2943f0a288b66498203b4eeba923f968f6ef4c9d181",
+    "backend/tests/test_ios_simulator_wda.py": "183aecad1cb92ad30116fe5086992e96d55dd19441214441cda70aa9964d7a76",
+    "backend/tests/test_ios_sim_agent_wiring.py": "92bde2e8bb8aa7fe7793a3f26f8b2289e421d019f88af8b972d5b785b27b1c7a"
+  }
+}

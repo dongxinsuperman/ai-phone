@@ -30,6 +30,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -351,7 +352,7 @@ def hdc_version() -> str:
         return ""
 
 
-def hdc_list_targets() -> List[HdcTarget]:
+def hdc_list_targets(*, deadline: Optional[float] = None, strict: bool = False) -> List[HdcTarget]:
     """解析 ``hdc list targets -v`` 输出。
 
     实测输出格式兼容两种（不同 hdc 版本）：
@@ -377,17 +378,31 @@ def hdc_list_targets() -> List[HdcTarget]:
     ``[Empty]`` / ``hdc server is not started`` / ``Connect server failed`` /
     hmdriver2 warning 等空列表或日志场景返空。
     """
+    def remaining() -> float:
+        if deadline is None:
+            return 5.0
+        seconds = deadline - time.monotonic()
+        if seconds <= 0:
+            raise TimeoutError("HDC target query deadline exceeded")
+        return min(5.0, seconds)
+
     try:
-        raw = hdc_run("list", "targets", "-v", timeout=5.0)
+        raw = hdc_run("list", "targets", "-v", timeout=remaining())
     except HdcError as exc:
         # -v 参数在某些老版本不支持，回退无参数
         if exc.returncode != -2:
             logger.debug("hdc list targets -v 失败，回退不带 -v: {}", exc.stderr)
         try:
-            raw = hdc_run("list", "targets", timeout=5.0)
+            raw = hdc_run("list", "targets", timeout=remaining())
         except HdcError as exc2:
             logger.debug("hdc list targets 失败: {}", exc2.stderr)
+            if strict:
+                raise
             return []
+
+    remaining()
+    if strict and any(marker in raw.lower() for marker in ("[fail]", "connect server failed", "server is not started")):
+        raise HdcError(["hdc", "list", "targets"], 1, raw, "target query did not establish absence")
 
     targets: List[HdcTarget] = []
     for line in raw.splitlines():

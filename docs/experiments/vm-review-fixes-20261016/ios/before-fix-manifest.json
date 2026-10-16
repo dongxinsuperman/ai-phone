@@ -1,0 +1,14 @@
+{
+  "base_commit": "578fb711f0d26b1ba7aa29aeefe6b8a208ff9847",
+  "tested_source_label": "578fb71 before iOS Stop deadline correction",
+  "source_sha256": {
+    "backend/ai_phone/agent/ios_sim/manager.py": "f4a99d187037d46722957bcd30a8e91e78cac7e8f9aa4bcb6a344c82465acfd8",
+    "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+    "backend/ai_phone/agent/ws_client.py": "aadad560bfa0788b0b6eefe6636be7b7f2e95cae96b31d423f2dcaa34252592e",
+    "backend/tests/test_ios_sim_stop_budget.py": "e9c5df2558795c068c9d396d910ae694b3f4d0d678098af6941dc615e372caf1",
+    "backend/tests/test_ios_sim_manager.py": "5abe15d84dd0714c396d5bff0d6d36f0485db8743c3bcc4fe529f5d3f99a80b9",
+    "backend/tests/test_ios_sim_instance_observation.py": "512cd44ff826d782cb62f2943f0a288b66498203b4eeba923f968f6ef4c9d181",
+    "backend/tests/test_ios_simulator_wda.py": "183aecad1cb92ad30116fe5086992e96d55dd19441214441cda70aa9964d7a76",
+    "backend/tests/test_ios_sim_agent_wiring.py": "92bde2e8bb8aa7fe7793a3f26f8b2289e421d019f88af8b972d5b785b27b1c7a"
+  }
+}

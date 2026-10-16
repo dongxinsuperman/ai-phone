@@ -424,8 +424,11 @@ class AgentWSClient:
 
     async def _dispatch_vm_handler(self, handler: Handler, msg: Dict[str, Any]) -> None:
         received_at = time.monotonic()
-        if msg["type"] in {P.MSG_VM_STOP, P.MSG_VM_DELETE} and "operation_timeout_sec" not in msg:
-            # 旧 Android 指令及对账删除也只有一次预算，排队不能留到任意未来再执行。
+        if msg["type"] in {
+            P.MSG_VM_STOP, P.MSG_IOS_SIM_VM_STOP, P.MSG_HARMONY_VM_STOP, P.MSG_VM_DELETE,
+        } and "operation_timeout_sec" not in msg:
+            # 三端旧停止指令从收件时起共用一次预算；保留 Android 删除的既有默认值。
+            # 排队时间必须扣除，不能到 handler 才重新获得完整停止预算。
             msg = {**msg, "operation_timeout_sec": 120.0}
         platform_name, _ = _VM_MESSAGES[msg["type"]]
         is_probe = msg["type"].endswith("capability_probe")

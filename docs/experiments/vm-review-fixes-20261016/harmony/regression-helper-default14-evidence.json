@@ -1,0 +1,88 @@
+{
+  "tested_source_label": "two targeted review findings after 578fb71",
+  "source_root": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone",
+  "runtime": "/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-lifecycle-simple-regression-3lhn_que",
+  "source_sha256": {
+    "backend/ai_phone/agent/android_vm/capability.py": "ed8630cb9f20d1791eea36d142bce755e73147b50a6e1621b2f6b4192d210b31",
+    "backend/ai_phone/agent/android_vm/manager.py": "7c9b52f074cc16869fc2bb48283b042130fbeac8a4974c7f268a244e1b613c8c",
+    "backend/ai_phone/agent/app_install/handler.py": "31abda8902919971a2879a3b6e262ddb16509213b7a1a249392a560ba7a81d22",
+    "backend/ai_phone/agent/app_uninstall/handler.py": "b373f34caf73043d54bc297cacd929c18783342486b8330acbb97c0c44b7714d",
+    "backend/ai_phone/agent/device_activity.py": "cc2e96d66080f7aa60fa8d0b9956e433e186fd892dfc26c00a8c904060395e31",
+    "backend/ai_phone/agent/drivers/__init__.py": "67dd1c2ac123154794e17d584ec5fb5335baec68293f16acea0fd1f14de506c8",
+    "backend/ai_phone/agent/drivers/android.py": "af3b1fe42b0ce93e2ad1717143e8959bc2a438e2a73955a2a7ca0c6224136d9a",
+    "backend/ai_phone/agent/drivers/hdc.py": "eeca4bd37f1b5fe841424d894f6c661b8f63e9ca9808fcd315125a70e15676b0",
+    "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "c8cb4609c93f948e47af930a98f1c2c41293f76c00b70452a76b2881f9666973",
+    "backend/ai_phone/agent/harmony_vm/capability.py": "6716584a4ee555fd49b2297db5136e004679806d2af0b12a2c4edb3eac5003fa",
+    "backend/ai_phone/agent/harmony_vm/manager.py": "5b212a658cb8836e44cbda6e125c4692ee975d76080a85db639864fbbc5505c5",
+    "backend/ai_phone/agent/health/probe.py": "a4ec72f21e4dc6b1bf4b0c3bcfcdde37b74b57305cc57b9d2ce738fc91139c33",
+    "backend/ai_phone/agent/health/supervisor.py": "8393340453f02129d1c342e1815806cfe4f039ff00d7f117fbab94c462678858",
+    "backend/ai_phone/agent/identity.py": "0249617b5d434997e75c993ed1a2efb69ea849da29a9d808586ca03483cc861e",
+    "backend/ai_phone/agent/ios_sim/manager.py": "82f4c26c4646e181155240de6409342acdbf143447da3042e31152d7df9692cc",
+    "backend/ai_phone/agent/main.py": "33941428605993c5c6b4ec709e2bb4f42d014ea57634a5133d5e3bd2d8e33d99",
+    "backend/ai_phone/agent/native_operation.py": "1fbc78e1560cf21ba3dc6e68d50adfc9a025831fba3d3848c407e291ff901255",
+    "backend/ai_phone/agent/vm_ports.py": "7911fd14b074abf29b20e967b0e04ec3b6aa6ce4a129da12976ed94b112d14a8",
+    "backend/ai_phone/agent/ws_client.py": "971cbe76b2e430328a3c414326fbdb1827bbdf731f53d382d495e509dbcc85f6",
+    "backend/ai_phone/server/android_vm/api.py": "20a7d7a9f173cfd5c8b76ab5c113851ca1abd652730f9987c03dec0c692e56a1",
+    "backend/ai_phone/server/android_vm/service.py": "4c3ece2ef0372b4a68d65ba45eef045092980b6c9fb9a0840fb4ee53a5d76e97",
+    "backend/ai_phone/server/api/_deps.py": "83e8ecdb97ae92480c6034200039d080ad0e024bcd26f6cf361e68c3b9ea6bd7",
+    "backend/ai_phone/server/app.py": "2db57a8e7f596d36cbc4772808ad840d59ec134767d7e8ce8837bf5100435f73",
+    "backend/ai_phone/server/harmony_vm/api.py": "4c8a100c684c3c687619d76307655d3604bdc68709749a61d6a91344f0f5a1f4",
+    "backend/ai_phone/server/harmony_vm/service.py": "fb8988139d99a221cdeb0918d7d42ac86c429eaa2861b3bf4a4af84bd197f4e0",
+    "backend/ai_phone/server/hub.py": "7252018d5468f7e0ccc3f7b28e3fa238053751e61925cef1b3538050c6ee4b33",
+    "backend/ai_phone/server/ios_sim/api.py": "df82f7ac4aa88989932549e36c2a721652ca85dd7a339826bdb7e562ac2a59a1",
+    "backend/ai_phone/server/ios_sim/service.py": "59d4796fee682792ff1c1484394ca501a6a70ca0d6f7e4b7bd2e9fe3b0611575",
+    "backend/ai_phone/server/vm_lifecycle.py": "f9268bf6e1a97968f82ddeb460f2fe2c43f5abde932f09a9d893e477fbf8b4db",
+    "backend/ai_phone/server/vm_probe.py": "c26d01f7ab02dd34cbb79f96f9273184a3a62945468df8d77527f7f7baba87d2",
+    "backend/ai_phone/server/ws/_deps.py": "a35024e4a79af02d098e71ab3f5a6f1ae5bad0130d35097a6a97ead977bacfcf",
+    "backend/ai_phone/server/ws/agent_ws.py": "5e2280f850d6af8304e8a426be34ebd3b407790bd3dc6c5a5bbb82d5357055e6",
+    "web/src/lib/api.js": "e727e99d298fb416ef0cca8b603ca66a5efc8084b05a843285cd0fca87e76552",
+    "web/src/lib/candidateStream.js": "cc4e6104088336fbba934490c84589f2abf04be38e16dee8536a926115787b31",
+    "web/src/lib/vmCandidateProbe.js": "ebadbb2fd70b6e0156c76484a9a81cdd6cfce689c5c7e4094a8995b5ca9957f5",
+    "web/src/lib/vmLifecycle.js": "1605cefd866685cf31afadf10259e280b9c9e7000bfa63da2177457473e1bf06",
+    "web/src/pages/HarmonyVirtualMachines.vue": "a72b7f6e378753122b3676024b15c67bd959b811b4f90dde662e1675ef677372",
+    "web/src/pages/IosSimVirtualMachines.vue": "60b2e89aae6072195054d555291767bd3394df7f41c6dcf09ce6c03fb0c94827",
+    "web/src/pages/VirtualMachines.vue": "c5c903d7d26a249a8e588b27ed248bb320746cbd8b97efefa2dbe8f95fc84ba9"
+  },
+  "selected_tests": [
+    "backend/tests/test_vm_review_regressions.py"
+  ],
+  "test_files": [
+    "backend/tests/test_vm_review_regressions.py"
+  ],
+  "test_sha256": {
+    "backend/tests/test_vm_review_regressions.py": "b4c30f33591e8ec3a188a22a17cdcef5ea5be862f1633ab901c756fbe26f25dd"
+  },
+  "frontend_test_sha256": {
+    "web/tests/vm-lifecycle-view.test.mjs": "98c99d8d8977aa7add7423c62a360ba37f38d69fefc1127c3dffa2d62e366716",
+    "web/tests/candidate-stream.test.mjs": "45097aab29ac3298d0482c0ddbdc05390f009fd4436a408ede86edd53bce9443",
+    "web/tests/vm-lifecycle.test.mjs": "0261062ea93f74dc76d193b073f786ee9115639c3646e548d5a7dc298a22fb83",
+    "web/tests/fixtures/vmLifecycleFixtures.mjs": "559d8fd346720979796bce869396aea0f5af95bd7af9c44c304544e7bfba2527"
+  },
+  "fixture_sha256": {
+    "backend/tests/fixtures/legacy_ios_reconcile_452e7d7.py.txt": "66a4022e50e0b98857ba02edfec10e00a6c3bb162c0e13b3b22606da40c9e6c2"
+  },
+  "blocked_calls": [],
+  "allowed_subprocesses": [],
+  "collected_nodeids": [
+    "tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[android-online-control]",
+    "tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[android-offline-then-manual-dispatch]",
+    "tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[ios-online-control]",
+    "tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[ios-offline-then-manual-dispatch]",
+    "tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[harmony-online-control]",
+    "tests/test_vm_review_regressions.py::test_replacement_can_be_manually_dispatched_after_target_returns[harmony-offline-then-manual-dispatch]",
+    "tests/test_vm_review_regressions.py::test_stop_does_not_begin_native_mutation_after_original_deadline[none-ios]",
+    "tests/test_vm_review_regressions.py::test_stop_does_not_begin_native_mutation_after_original_deadline[none-harmony]",
+    "tests/test_vm_review_regressions.py::test_stop_does_not_begin_native_mutation_after_original_deadline[progress-send-ios]",
+    "tests/test_vm_review_regressions.py::test_stop_does_not_begin_native_mutation_after_original_deadline[progress-send-harmony]",
+    "tests/test_vm_review_regressions.py::test_stop_does_not_begin_native_mutation_after_original_deadline[executor-queue-ios]",
+    "tests/test_vm_review_regressions.py::test_stop_does_not_begin_native_mutation_after_original_deadline[executor-queue-harmony]",
+    "tests/test_vm_review_regressions.py::test_stop_does_not_begin_native_mutation_after_original_deadline[instance-lock-ios]",
+    "tests/test_vm_review_regressions.py::test_stop_does_not_begin_native_mutation_after_original_deadline[instance-lock-harmony]"
+  ],
+  "exit_code": 0,
+  "duration_seconds": 1.438,
+  "source_unchanged": true,
+  "test_sources_unchanged": true,
+  "final_exit_code": 0,
+  "runtime_removed": true
+}

@@ -1,0 +1,10 @@
+{
+  "base_commit": "578fb71",
+  "source_sha256": {
+    "backend/ai_phone/agent/harmony_vm/manager.py": "5b212a658cb8836e44cbda6e125c4692ee975d76080a85db639864fbbc5505c5",
+    "backend/ai_phone/agent/drivers/hdc.py": "eeca4bd37f1b5fe841424d894f6c661b8f63e9ca9808fcd315125a70e15676b0",
+    "backend/tests/test_harmony_vm_stop_budget.py": "c90546e20b88b480606e2c6eb91a2d02f65e478b59d44f19657a03527f6b43be",
+    "backend/tests/test_harmony_legacy_lease_upgrade.py": "ba2f97606621e7bd110a0ef757b3661dc8790ac05cd798a8dcac2a3cb6be52ff",
+    "backend/tests/test_harmony_vm_ws_e2e.py": "36c37964eeb9178b8c1d6a47cad356db0a400a049ff0f27743063a5165803415"
+  }
+}

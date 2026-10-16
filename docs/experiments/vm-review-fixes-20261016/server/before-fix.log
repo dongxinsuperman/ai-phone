@@ -1,0 +1,42 @@
+FFF......                                                                [100%]
+=================================== FAILURES ===================================
+_ test_failed_unsent_switch_allows_one_later_manual_dispatch_and_success[android] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_switch_failure_recovery.py:91: in test_failed_unsent_switch_allows_one_later_manual_dispatch_and_success
+    failed_view = assert_lifecycle(failure["instance"], state="draft")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_view_api.py:137: in assert_lifecycle
+    assert value["state"] == state
+E   AssertionError: assert None == 'draft'
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 13:03:10.084 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-19ae3fcfc9534083b041f9c3b96334ec?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 13:03:10.238 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_failed_unsent_switch_allows_one_later_manual_dispatch_and_success[ios] __
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_switch_failure_recovery.py:91: in test_failed_unsent_switch_allows_one_later_manual_dispatch_and_success
+    failed_view = assert_lifecycle(failure["instance"], state="draft")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_view_api.py:137: in assert_lifecycle
+    assert value["state"] == state
+E   AssertionError: assert None == 'draft'
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 13:03:10.239 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-2bc942eca310485e83bedbd27b2c09a6?mode=memory&cache=shared&uri=true
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 13:03:10.306 | INFO     | ai_phone.server.ios_sim.api:create_instance:196 - 已创建 iOS 虚拟机配置 vm_id=44025b359718 alias=view-vm 机型=iPhone 17 Pro 系统=iOS 26.0
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 13:03:10.323 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_failed_unsent_switch_allows_one_later_manual_dispatch_and_success[harmony] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_switch_failure_recovery.py:91: in test_failed_unsent_switch_allows_one_later_manual_dispatch_and_success
+    failed_view = assert_lifecycle(failure["instance"], state="draft")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_view_api.py:137: in assert_lifecycle
+    assert value["state"] == state
+E   AssertionError: assert None == 'draft'
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 13:03:10.324 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-a3b049609a664716b18fd041e10d4ff8?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 13:03:10.406 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+=========================== short test summary info ============================
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_switch_failure_recovery.py::test_failed_unsent_switch_allows_one_later_manual_dispatch_and_success[android]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_switch_failure_recovery.py::test_failed_unsent_switch_allows_one_later_manual_dispatch_and_success[ios]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_switch_failure_recovery.py::test_failed_unsent_switch_allows_one_later_manual_dispatch_and_success[harmony]
+3 failed, 6 passed, 2 warnings in 0.88s

@@ -541,40 +541,48 @@ class HarmonyVmManager:
     async def handle_stop(
         self, client: AgentWSClient, msg: Dict[str, Any]
     ) -> None:
-        await client.send(
-            self._status_payload(msg, state="stopping", ok=True, reason="stopping")
-        )
+        vm_id = str(msg.get("vm_id") or "")
+        serial = str(msg.get("hdc_serial") or "")
+        deadline: Optional[float] = None
         try:
-            result = await asyncio.to_thread(
-                self.stop_sync,
-                str(msg.get("vm_id") or ""),
-                str(msg.get("hdc_serial") or ""),
-                str(msg.get("lease_token") or ""),
+            # WS already deducted its queue time. Progress, executor and locks
+            # all consume this same local deadline, never a network timestamp.
+            deadline = _stop_deadline(msg)
+            await asyncio.wait_for(
+                client.send(self._status_payload(msg, state="stopping", ok=True, reason="stopping")),
+                timeout=_stop_timeout(deadline, 120.0),
             )
+            result = await asyncio.to_thread(
+                self.stop_sync, vm_id, serial, str(msg.get("lease_token") or ""), deadline=deadline,
+            )
+        except (TimeoutError, ValueError) as exc:
+            result = self._stop_budget_failure(vm_id, serial, exc)
         except Exception as exc:  # noqa: BLE001
-            logger.exception("Harmony VM 停止收口异常 vm_id={}", msg.get("vm_id"))
+            logger.exception("Harmony VM 停止收口异常 vm_id={}", vm_id)
             result = {
-                "ok": False,
-                "reason": "stop_failed",
-                "error": str(exc),
+                "ok": False, "reason": "stop_failed", "error": str(exc),
                 "details": {"cleanup_confirmed": False},
             }
-        if not result.get("ok"):
-            result["details"] = await self._failure_details(
-                str(msg.get("vm_id") or ""), dict(result.get("details") or {})
-            )
-        await client.send(
-            self._status_payload(
-                msg,
-                state="stopped" if result.get("ok") else "error",
-                ok=bool(result.get("ok")),
-                reason=str(result.get("reason") or ""),
-                error=str(result.get("error") or ""),
-                hdc_serial=str(result.get("hdc_serial") or ""),
-                details=dict(result.get("details") or {}),
-            )
-        )
-        await self._refresh_devices_safe(client)
+        if not result.get("ok") and result.get("reason") not in {"operation_timeout", "bad_request"}:
+            # A failed operation may be observed only within its original
+            # budget. Expiry never opens another five-second inspection.
+            if deadline is not None and time.monotonic() >= deadline:
+                result = self._stop_budget_failure(vm_id, serial, TimeoutError("stop deadline exceeded"))
+            else:
+                details = dict(result.get("details") or {})
+                if "instance_observation" not in details:
+                    details["instance_observation"] = await asyncio.to_thread(self.observe_instance, vm_id, deadline)
+                result["details"] = details
+                if deadline is not None and time.monotonic() >= deadline:
+                    result = self._stop_budget_failure(vm_id, serial, TimeoutError("stop deadline exceeded"))
+        await client.send(self._status_payload(
+            msg, state="stopped" if result.get("ok") else "error",
+            ok=bool(result.get("ok")), reason=str(result.get("reason") or ""),
+            error=str(result.get("error") or ""), hdc_serial=str(result.get("hdc_serial") or ""),
+            details=dict(result.get("details") or {}),
+        ))
+        if deadline is None or time.monotonic() < deadline:
+            await self._refresh_devices_safe(client)
 
     async def handle_delete(
         self, client: AgentWSClient, msg: Dict[str, Any]
@@ -1332,7 +1340,8 @@ class HarmonyVmManager:
         )
 
     def stop_sync(
-        self, vm_id: str, hdc_serial: str = "", lease_token: str = ""
+        self, vm_id: str, hdc_serial: str = "", lease_token: str = "",
+        *, deadline: Optional[float] = None,
     ) -> Dict[str, Any]:
         vm_id = (vm_id or "").strip()
         if not vm_id:
@@ -1344,111 +1353,142 @@ class HarmonyVmManager:
             }
         if not self._registry_readable:
             return self._stop_rejected("registry_unreadable", hdc_serial)
-        with self._vm_lock(vm_id):
-            runtime = self._runtimes.get(vm_id)
-            if runtime is None:
-                known = self._known.get(vm_id) or {}
-                known_token = str(known.get("lease_token") or "")
-                known_serial = str(known.get("hdc_serial") or "")
-                if lease_token and lease_token != known_token:
-                    return self._stop_rejected("lease_mismatch", known_serial)
-                if hdc_serial and known_serial and hdc_serial != known_serial:
-                    return self._stop_rejected("hdc_mismatch", known_serial)
-                # A stored confirmation describes an earlier observation. An
-                # explicit stop must verify current identity/transport facts,
-                # including registries written by older Agent versions.
-                inspection_started = time.monotonic()
-                inspection_unix = time.time()
-                serial = self._active_instance_serial(vm_id, known)
-                if serial is None:
-                    return self._stop_rejected("instance_owner_unverified", known_serial)
-                if not serial:
-                    owner = managed_vm_owner(known_serial)
-                    port = _serial_port(known_serial)
-                    exit_evidence: Dict[str, Any] = {
-                        "source": "registry_instance_absence",
-                        "hdc_serial": known_serial,
-                        "hdc_port": port,
-                        "started_unix": inspection_unix,
-                        "instance_process_status": "absent",
-                        "process_handle_present": False,
-                        "sample_count": 1,
-                        "last_sample": {"target_status": "not_checked_owned_transport", "port_bindable": None},
-                    }
-                    if owner is None:
-                        target_rows = hdc_list_targets()
-                        targets = {
-                            target.serial: target.status.lower() for target in target_rows
+        try:
+            with _stop_lock(self._vm_lock(vm_id), deadline):
+                runtime = self._runtimes.get(vm_id)
+                if runtime is None:
+                    known = self._known.get(vm_id) or {}
+                    known_token = str(known.get("lease_token") or "")
+                    known_serial = str(known.get("hdc_serial") or "")
+                    if lease_token and lease_token != known_token:
+                        return self._stop_rejected("lease_mismatch", known_serial)
+                    if hdc_serial and known_serial and hdc_serial != known_serial:
+                        return self._stop_rejected("hdc_mismatch", known_serial)
+                    # A stored confirmation describes an earlier observation. An
+                    # explicit stop must verify current identity/transport facts,
+                    # including registries written by older Agent versions.
+                    inspection_started = time.monotonic()
+                    inspection_unix = time.time()
+                    _stop_timeout(deadline, 1.0)
+                    serial = (self._active_instance_serial(vm_id, known) if deadline is None else
+                              self._active_instance_serial(vm_id, known, deadline=deadline))
+                    _stop_timeout(deadline, 1.0)
+                    if serial is None:
+                        return self._stop_rejected("instance_owner_unverified", known_serial)
+                    if not serial:
+                        owner = managed_vm_owner(known_serial)
+                        port = _serial_port(known_serial)
+                        exit_evidence: Dict[str, Any] = {
+                            "source": "registry_instance_absence",
+                            "hdc_serial": known_serial,
+                            "hdc_port": port,
+                            "started_unix": inspection_unix,
+                            "instance_process_status": "absent",
+                            "process_handle_present": False,
+                            "sample_count": 1,
+                            "last_sample": {"target_status": "not_checked_owned_transport", "port_bindable": None},
                         }
-                        connected = any(
-                            target.serial == known_serial and target.status.lower() == "connected"
-                            for target in target_rows
-                        )
-                        target_status = "connected" if connected else targets.get(known_serial)
-                        port_bindable = (
-                            self._port_is_free(port) if port and not connected else None
-                        )
-                        exit_evidence["last_sample"] = {
-                            "target_status": target_status if target_status is not None else "absent",
-                            "port_bindable": port_bindable,
-                            "duration_sec": round(time.monotonic() - inspection_started, 3),
-                        }
+                        if owner is None:
+                            _stop_timeout(deadline, 1.0)
+                            target_rows = (hdc_list_targets() if deadline is None else
+                                           hdc_list_targets(deadline=deadline, strict=True))
+                            _stop_timeout(deadline, 1.0)
+                            targets = {
+                                target.serial: target.status.lower() for target in target_rows
+                            }
+                            connected = any(
+                                target.serial == known_serial and target.status.lower() == "connected"
+                                for target in target_rows
+                            )
+                            target_status = "connected" if connected else targets.get(known_serial)
+                            port_bindable = (
+                                self._port_is_free(port) if port and not connected else None
+                            )
+                            _stop_timeout(deadline, 1.0)
+                            exit_evidence["last_sample"] = {
+                                "target_status": target_status if target_status is not None else "absent",
+                                "port_bindable": port_bindable,
+                                "duration_sec": round(time.monotonic() - inspection_started, 3),
+                            }
+                            exit_evidence["elapsed_sec"] = round(time.monotonic() - inspection_started, 3)
+                            if connected or (port and not port_bindable):
+                                rejected = self._stop_rejected(
+                                    "instance_absence_unconfirmed", known_serial
+                                )
+                                rejected["details"]["exit_evidence"] = exit_evidence
+                                rejected["details"]["instance_observation"] = self._observation_from_exit(
+                                    vm_id, known, exit_evidence, resources_released=False,
+                                    reason="instance_absence_unconfirmed",
+                                )
+                                return rejected
                         exit_evidence["elapsed_sec"] = round(time.monotonic() - inspection_started, 3)
-                        if connected or (port and not port_bindable):
-                            rejected = self._stop_rejected(
-                                "instance_absence_unconfirmed", known_serial
-                            )
-                            rejected["details"]["exit_evidence"] = exit_evidence
-                            rejected["details"]["instance_observation"] = self._observation_from_exit(
-                                vm_id, known, exit_evidence, resources_released=False,
-                                reason="instance_absence_unconfirmed",
-                            )
-                            return rejected
-                    exit_evidence["elapsed_sec"] = round(time.monotonic() - inspection_started, 3)
-                    crash_clean, crash_errors = self._cleanup_crash_service(
-                        vm_id, known
-                    )
-                    if not crash_clean:
-                        logger.warning(
-                            "Harmony VM crash-service 清理未确认 vm_id={} errors={}",
-                            vm_id,
-                            crash_errors,
+                        _stop_timeout(deadline, 1.0)
+                        crash_clean, crash_errors = (
+                            self._cleanup_crash_service(vm_id, known) if deadline is None else
+                            self._cleanup_crash_service(vm_id, known, deadline=deadline)
                         )
-                    self._known[vm_id] = {
-                        **known,
-                        "ready": False,
-                        "cleanup_pending": False,
-                        "cleanup_confirmed": True,
-                        "exit_evidence": exit_evidence,
-                    }
-                    self._save_registry()
-                    unregister_managed_vm(vm_id, known_token)
-                    return {
-                        "ok": True,
-                        "reason": "not_running",
-                        "hdc_serial": known_serial,
-                        "details": {
-                            "cleanup_confirmed": True, "exit_evidence": exit_evidence,
-                            "instance_observation": self._observation_from_exit(
-                                vm_id, known, exit_evidence,
-                                resources_released=owner is None, reason="not_running",
-                            ),
-                        },
-                    }
-                if serial != known_serial:
-                    return self._stop_rejected("instance_hdc_mismatch", known_serial)
-                runtime = self._runtime_from_known(vm_id, known, serial)
-            elif lease_token and lease_token != runtime.lease_token:
-                return self._stop_rejected("lease_mismatch", runtime.hdc_serial)
-            elif hdc_serial and hdc_serial != runtime.hdc_serial:
-                return self._stop_rejected("hdc_mismatch", runtime.hdc_serial)
-            return self._stop_runtime(runtime, keep_instance=True)
+                        _stop_timeout(deadline, 1.0)
+                        if not crash_clean:
+                            logger.warning(
+                                "Harmony VM crash-service 清理未确认 vm_id={} errors={}",
+                                vm_id,
+                                crash_errors,
+                            )
+                        self._known[vm_id] = {
+                            **known,
+                            "ready": False,
+                            "cleanup_pending": False,
+                            "cleanup_confirmed": True,
+                            "exit_evidence": exit_evidence,
+                        }
+                        self._save_registry()
+                        _stop_timeout(deadline, 1.0)
+                        unregister_managed_vm(vm_id, known_token)
+                        return {
+                            "ok": True,
+                            "reason": "not_running",
+                            "hdc_serial": known_serial,
+                            "details": {
+                                "cleanup_confirmed": True, "exit_evidence": exit_evidence,
+                                "instance_observation": self._observation_from_exit(
+                                    vm_id, known, exit_evidence,
+                                    resources_released=owner is None, reason="not_running",
+                                ),
+                            },
+                        }
+                    if serial != known_serial:
+                        return self._stop_rejected("instance_hdc_mismatch", known_serial)
+                    runtime = self._runtime_from_known(vm_id, known, serial)
+                elif lease_token and lease_token != runtime.lease_token:
+                    return self._stop_rejected("lease_mismatch", runtime.hdc_serial)
+                elif hdc_serial and hdc_serial != runtime.hdc_serial:
+                    return self._stop_rejected("hdc_mismatch", runtime.hdc_serial)
+                return self._stop_runtime(runtime, keep_instance=True, deadline=deadline)
+        except TimeoutError as exc:
+            if deadline is None:
+                raise
+            return self._stop_budget_failure(vm_id, hdc_serial, exc)
+
+    def _stop_budget_failure(self, vm_id: str, serial: str, exc: Exception) -> Dict[str, Any]:
+        runtime = self._runtimes.get(vm_id)
+        known = dict(self._known.get(vm_id) or {})
+        if runtime is not None:
+            known.update(runtime.persistent_dict())
+        reason = "operation_timeout" if isinstance(exc, TimeoutError) else "bad_request"
+        return {
+            "ok": False, "reason": reason, "error": str(exc),
+            "hdc_serial": str(known.get("hdc_serial") or serial),
+            "details": {
+                "cleanup_confirmed": False, "cleanup_pending": True, "exit_evidence": {},
+                "instance_observation": self._instance_observation(vm_id, known, reason=reason),
+            },
+        }
 
     def _stop_runtime(
-        self, runtime: HarmonyVmRuntime, *, keep_instance: bool
+        self, runtime: HarmonyVmRuntime, *, keep_instance: bool, deadline: Optional[float] = None
     ) -> Dict[str, Any]:
-        with self._start_lock:
-            return self._stop_runtime_locked(runtime, keep_instance=keep_instance)
+        with _stop_lock(self._start_lock, deadline):
+            return self._stop_runtime_locked(runtime, keep_instance=keep_instance, deadline=deadline)
 
     @staticmethod
     def _stop_rejected(reason: str, hdc_serial: str) -> Dict[str, Any]:
@@ -1461,18 +1501,23 @@ class HarmonyVmManager:
         }
 
     def _stop_runtime_locked(
-        self, runtime: HarmonyVmRuntime, *, keep_instance: bool
+        self, runtime: HarmonyVmRuntime, *, keep_instance: bool, deadline: Optional[float] = None
     ) -> Dict[str, Any]:
+        _stop_timeout(deadline, 1.0)
         owner = managed_vm_owner(runtime.hdc_serial)
         if owner is not None and owner != (runtime.vm_id, runtime.lease_token):
             return self._stop_rejected("hdc_owned_by_another_vm", runtime.hdc_serial)
-        self._runtimes.pop(runtime.vm_id, None)
+        # Keep the exact runtime/lease identity until exit is confirmed.
+        self._runtimes[runtime.vm_id] = runtime
+        runtime.ready = False
         self._last_reclaimed_ids.discard(runtime.vm_id)
-        unregister_managed_vm(runtime.vm_id, runtime.lease_token)
         if self._drop_driver_cache is not None:
             try:
+                _stop_timeout(deadline, 1.0)
                 self._drop_driver_cache(vm_device_identity(runtime.vm_id))
+                _stop_timeout(deadline, 1.0)
             except Exception as exc:  # noqa: BLE001
+                _stop_timeout(deadline, 1.0)
                 logger.warning(
                     "清理 Harmony VM 通用 driver cache 失败 serial={}: {}",
                     runtime.hdc_serial,
@@ -1480,12 +1525,21 @@ class HarmonyVmManager:
                 )
         if runtime.driver is not None:
             try:
+                _stop_timeout(deadline, 1.0)
                 runtime.driver.close()
+                _stop_timeout(deadline, 1.0)
             except Exception as exc:  # noqa: BLE001
+                _stop_timeout(deadline, 1.0)
                 logger.debug("关闭 Harmony VM driver 失败：{}", exc)
+        _stop_timeout(deadline, 1.0)
         runtime.driver = None
-        self._remove_fport(runtime)
-        tools, _missing = find_harmony_tools()
+        if deadline is None:
+            self._remove_fport(runtime)
+        else:
+            self._remove_fport(runtime, deadline=deadline)
+        _stop_timeout(deadline, 1.0)
+        tools, _missing = find_harmony_tools() if deadline is None else find_harmony_tools(deadline=deadline)
+        _stop_timeout(deadline, 1.0)
         stop_errors: list[str] = []
         if tools is not None:
             try:
@@ -1494,52 +1548,65 @@ class HarmonyVmManager:
                     check=False,
                     capture_output=True,
                     text=True,
-                    timeout=20,
+                    timeout=_stop_timeout(deadline, 20.0),
                 )
+                _stop_timeout(deadline, 1.0)
                 if proc.returncode != 0:
                     stop_errors.append(
                         f"Emulator -stop rc={proc.returncode}:"
                         f"{(proc.stderr or proc.stdout or '').strip()[-500:]}"
                     )
             except Exception as exc:  # noqa: BLE001
+                _stop_timeout(deadline, 1.0)
                 stop_errors.append(f"Emulator -stop: {exc}")
         else:
             stop_errors.append("DevEco Emulator missing during stop")
+        _stop_timeout(deadline, 1.0)
         if runtime.process is not None:
             try:
                 if runtime.process.poll() is None:
+                    _stop_timeout(deadline, 1.0)
                     runtime.process.terminate()
                     try:
-                        runtime.process.wait(timeout=5)
+                        runtime.process.wait(timeout=_stop_timeout(deadline, 5.0))
                     except Exception:  # noqa: BLE001
+                        _stop_timeout(deadline, 1.0)
+                        _stop_timeout(deadline, 1.0)
                         runtime.process.kill()
-                        runtime.process.wait(timeout=5)
+                        runtime.process.wait(timeout=_stop_timeout(deadline, 5.0))
             except Exception as exc:  # noqa: BLE001
+                _stop_timeout(deadline, 1.0)
                 stop_errors.append(f"emulator process cleanup: {exc}")
+        _stop_timeout(deadline, 1.0)
         if runtime.log_file is not None:
             try:
                 runtime.log_file.close()
             except Exception:  # noqa: BLE001
+                _stop_timeout(deadline, 1.0)
                 pass
         try:
             remove_output = hdc_run(
                 "tconn",
                 runtime.hdc_serial,
                 "-remove",
-                timeout=5.0,
+                timeout=_stop_timeout(deadline, 5.0),
                 check=False,
             )
+            _stop_timeout(deadline, 1.0)
             if _looks_like_cli_error(remove_output):
                 stop_errors.append(
                     f"hdc tconn -remove: {remove_output[-500:]}"
                 )
         except Exception as exc:  # noqa: BLE001
+            _stop_timeout(deadline, 1.0)
             stop_errors.append(f"hdc tconn -remove: {exc}")
+        _stop_timeout(deadline, 1.0)
         self._last_removal_evidence: Dict[str, Any] = {}
-        cleanup_confirmed, cleanup_mode = self._wait_removed(
-            runtime.hdc_serial,
-            runtime.hdc_port,
+        cleanup_confirmed, cleanup_mode = (
+            self._wait_removed(runtime.hdc_serial, runtime.hdc_port) if deadline is None else
+            self._wait_removed(runtime.hdc_serial, runtime.hdc_port, deadline=deadline)
         )
+        _stop_timeout(deadline, 1.0)
         process_return_code = runtime.process.poll() if runtime.process is not None else None
         exit_evidence = {
             **self._last_removal_evidence,
@@ -1554,9 +1621,11 @@ class HarmonyVmManager:
         elif runtime.process is None:
             # A reconnected Agent has no Popen handle. Transport removal alone
             # cannot prove that its exact native instance stopped successfully.
-            active_serial = self._active_instance_serial(
-                runtime.vm_id, runtime.persistent_dict()
+            active_serial = (
+                self._active_instance_serial(runtime.vm_id, runtime.persistent_dict()) if deadline is None else
+                self._active_instance_serial(runtime.vm_id, runtime.persistent_dict(), deadline=deadline)
             )
+            _stop_timeout(deadline, 1.0)
             exit_evidence["instance_process_status"] = (
                 "unknown" if active_serial is None
                 else "running" if active_serial else "absent"
@@ -1572,9 +1641,12 @@ class HarmonyVmManager:
                     "exact emulator process exit could not be confirmed"
                     if active_serial is None else "exact emulator process is still running"
                 )
-        crash_clean, crash_errors = self._cleanup_crash_service(
-            runtime.vm_id, runtime.persistent_dict()
+        _stop_timeout(deadline, 1.0)
+        crash_clean, crash_errors = (
+            self._cleanup_crash_service(runtime.vm_id, runtime.persistent_dict()) if deadline is None else
+            self._cleanup_crash_service(runtime.vm_id, runtime.persistent_dict(), deadline=deadline)
         )
+        _stop_timeout(deadline, 1.0)
         stop_errors.extend(crash_errors)
         if not crash_clean:
             logger.warning(
@@ -1582,7 +1654,6 @@ class HarmonyVmManager:
                 runtime.vm_id,
                 crash_errors,
             )
-        unregister_managed_serial(runtime.hdc_serial)
         if keep_instance:
             # A failed stop has already dropped the live driver and VM route,
             # but the old process/HDC address may still be present. Persist a
@@ -1594,12 +1665,18 @@ class HarmonyVmManager:
                 **(self._known.get(runtime.vm_id) or {}),
                 **runtime.persistent_dict(),
                 "ready": False,
-                "driver_fport_port": None,
+                "driver_fport_port": None if cleanup_confirmed else runtime.driver_fport_port,
                 "cleanup_pending": not cleanup_confirmed,
                 "cleanup_confirmed": cleanup_confirmed,
                 "exit_evidence": exit_evidence,
             }
             self._save_registry()
+        _stop_timeout(deadline, 1.0)
+        if cleanup_confirmed:
+            self._runtimes.pop(runtime.vm_id, None)
+            unregister_managed_vm(runtime.vm_id, runtime.lease_token)
+            if managed_vm_owner(runtime.hdc_serial) is None:
+                unregister_managed_serial(runtime.hdc_serial)
         # 清理后的事实是停止成功的判据。HDC 若保留已离线 TCP target，
         # 残留 serial 只作为诊断上报；后续分配仍按租约和实时端口检查判断。
         # CLI 的“本来就没在跑”等输出仍原样放在 stop_errors 里供排障，但不把
@@ -1628,6 +1705,8 @@ class HarmonyVmManager:
                 ),
             },
         }
+
+
 
     def delete_sync(
         self, vm_id: str, hdc_serial: str = "", lease_token: str = ""
@@ -2128,18 +2207,20 @@ class HarmonyVmManager:
         )
 
     def _active_instance_serial(
-        self, vm_id: str, known: Dict[str, Any]
+        self, vm_id: str, known: Dict[str, Any], *, deadline: Optional[float] = None
     ) -> Optional[str]:
         """Read the live DevEco process; never infer ownership from HDC alone.
 
         Empty string means the exact instance is absent. None means process
         inspection was unavailable and callers must leave the lease isolated.
         """
+        _stop_timeout(deadline, 1.0)
         try:
             import psutil  # noqa: PLC0415
 
             processes = psutil.process_iter(["name", "cmdline"])
         except Exception as exc:  # noqa: BLE001
+            _stop_timeout(deadline, 1.0)
             logger.warning("Harmony VM 进程归属不可查 vm_id={}: {}", vm_id, exc)
             return None
         expected_name = _safe_instance_name(vm_id)
@@ -2148,9 +2229,11 @@ class HarmonyVmManager:
         uncertain = False
         try:
             for process in processes:
+                _stop_timeout(deadline, 1.0)
                 try:
                     args = [str(part) for part in (process.info.get("cmdline") or [])]
                 except Exception:  # noqa: BLE001
+                    _stop_timeout(deadline, 1.0)
                     uncertain = True
                     continue
                 if not args and str(process.info.get("name") or "").lower() in {"emulator", "emulator.exe"}:
@@ -2179,12 +2262,14 @@ class HarmonyVmManager:
                     return None
                 return f"127.0.0.1:{port}"
         except Exception as exc:  # noqa: BLE001
+            _stop_timeout(deadline, 1.0)
             logger.warning("Harmony VM 进程归属不可查 vm_id={}: {}", vm_id, exc)
             return None
+        _stop_timeout(deadline, 1.0)
         return None if uncertain else ""
 
     def _cleanup_crash_service(
-        self, vm_id: str, known: Dict[str, Any]
+        self, vm_id: str, known: Dict[str, Any], *, deadline: Optional[float] = None
     ) -> tuple[bool, list[str]]:
         """Terminate only this VM's DevEco crash helper after stop/delete.
 
@@ -2192,6 +2277,7 @@ class HarmonyVmManager:
         alone is not ownership evidence: both its socket and data directory
         must exactly identify this managed instance.
         """
+        _stop_timeout(deadline, 1.0)
         instance_name = str(known.get("instance_name") or "")
         instance_path = str(known.get("instance_path") or "")
         if not instance_name and not instance_path:
@@ -2216,15 +2302,18 @@ class HarmonyVmManager:
 
             processes = psutil.process_iter(["name", "cmdline"])
         except Exception as exc:  # noqa: BLE001
+            _stop_timeout(deadline, 1.0)
             return False, [f"crash service process scan unavailable: {exc}"]
 
         errors: list[str] = []
         try:
             for process in processes:
+                _stop_timeout(deadline, 1.0)
                 try:
                     info = process.info
                     args = [str(part) for part in (info.get("cmdline") or [])]
                 except Exception as exc:  # noqa: BLE001
+                    _stop_timeout(deadline, 1.0)
                     # Without argv, ownership cannot be proved. Never kill it.
                     if str(getattr(process, "info", {}).get("name") or "") == "emulator-crash-service":
                         errors.append(f"crash service pid={process.pid} argv unavailable: {exc}")
@@ -2239,38 +2328,49 @@ class HarmonyVmManager:
                 if not data_dir or Path(data_dir).resolve() != expected_dir:
                     continue
                 try:
+                    _stop_timeout(deadline, 1.0)
                     process.terminate()
-                    process.wait(timeout=3)
+                    process.wait(timeout=_stop_timeout(deadline, 3.0))
                 except psutil.NoSuchProcess:
                     continue
                 except psutil.TimeoutExpired:
                     try:
+                        _stop_timeout(deadline, 1.0)
                         process.kill()
-                        process.wait(timeout=2)
+                        process.wait(timeout=_stop_timeout(deadline, 2.0))
                     except psutil.NoSuchProcess:
                         continue
                     except Exception as exc:  # noqa: BLE001
+                        _stop_timeout(deadline, 1.0)
                         errors.append(f"crash service pid={process.pid}: {exc}")
                 except Exception as exc:  # noqa: BLE001
+                    _stop_timeout(deadline, 1.0)
                     errors.append(f"crash service pid={process.pid}: {exc}")
         except Exception as exc:  # noqa: BLE001
+            _stop_timeout(deadline, 1.0)
             errors.append(f"crash service process scan failed: {exc}")
+        _stop_timeout(deadline, 1.0)
         return not errors, errors
 
-    def _remove_fport(self, runtime: HarmonyVmRuntime) -> None:
+
+    def _remove_fport(self, runtime: HarmonyVmRuntime, *, deadline: Optional[float] = None) -> None:
+        _stop_timeout(deadline, 1.0)
         ports: set[int] = set()
         if runtime.driver_fport_port:
             ports.add(runtime.driver_fport_port)
         try:
             raw = hdc_run(
-                "fport", "ls", serial=runtime.hdc_serial, timeout=3.0, check=False
+                "fport", "ls", serial=runtime.hdc_serial, timeout=_stop_timeout(deadline, 3.0), check=False
             )
+            _stop_timeout(deadline, 1.0)
             ports.update(
                 int(local)
                 for local in re.findall(r"tcp:(\d+)\s+tcp:8012", raw or "")
             )
         except Exception:  # noqa: BLE001
+            _stop_timeout(deadline, 1.0)
             pass
+        _stop_timeout(deadline, 1.0)
         for port in ports:
             try:
                 hdc_run(
@@ -2279,20 +2379,24 @@ class HarmonyVmManager:
                     f"tcp:{port}",
                     "tcp:8012",
                     serial=runtime.hdc_serial,
-                    timeout=3.0,
+                    timeout=_stop_timeout(deadline, 3.0),
                     check=False,
                 )
+                _stop_timeout(deadline, 1.0)
             except Exception as exc:  # noqa: BLE001
+                _stop_timeout(deadline, 1.0)
                 logger.debug("清理 fport {} 失败：{}", port, exc)
 
-    def _wait_removed(self, serial: str, port: int) -> tuple[bool, str]:
+
+    def _wait_removed(self, serial: str, port: int, *, deadline: Optional[float] = None) -> tuple[bool, str]:
+        _stop_timeout(deadline, 1.0)
         started = time.monotonic()
-        deadline = started + 15.0
+        verify_deadline = min(started + 15.0, deadline) if deadline is not None else started + 15.0
         evidence: Dict[str, Any] = {
             "hdc_serial": serial,
             "hdc_port": port,
             "started_unix": time.time(),
-            "budget_sec": 15.0,
+            "budget_sec": round(verify_deadline - started, 3),
             "sample_count": 0,
             "max_sample_duration_sec": 0.0,
             "max_offline_free_samples": 0,
@@ -2308,15 +2412,20 @@ class HarmonyVmManager:
             return confirmed, mode
 
         offline_ticks = 0
-        while time.monotonic() < deadline:
+        while time.monotonic() < verify_deadline:
             sample_started = time.monotonic()
             evidence["sample_count"] += 1
             try:
+                _stop_timeout(deadline, 1.0)
+                target_rows = (hdc_list_targets() if deadline is None else
+                               hdc_list_targets(deadline=deadline, strict=True))
+                _stop_timeout(deadline, 1.0)
                 targets = {
                     target.serial: target.status.lower()
-                    for target in hdc_list_targets()
+                    for target in target_rows
                 }
                 port_free = self._port_is_free(port)
+                _stop_timeout(deadline, 1.0)
                 status = targets.get(serial)
                 duration = round(time.monotonic() - sample_started, 3)
                 evidence["max_sample_duration_sec"] = max(evidence["max_sample_duration_sec"], duration)
@@ -2341,6 +2450,7 @@ class HarmonyVmManager:
                 else:
                     offline_ticks = 0
             except Exception as exc:  # noqa: BLE001
+                _stop_timeout(deadline, 1.0)
                 duration = round(time.monotonic() - sample_started, 3)
                 evidence["max_sample_duration_sec"] = max(evidence["max_sample_duration_sec"], duration)
                 evidence["last_sample"] = {
@@ -2355,8 +2465,11 @@ class HarmonyVmManager:
                     serial,
                     exc,
                 )
-            time.sleep(0.5)
+            _stop_timeout(deadline, 1.0)
+            time.sleep(min(0.5, max(0.0, verify_deadline - time.monotonic())))
+        _stop_timeout(deadline, 1.0)
         return finish(False, "unconfirmed")
+
 
     def _port_conflict(self, port: int, expected_serial: str) -> str:
         owner = managed_vm_owner(expected_serial)
@@ -2460,6 +2573,39 @@ class HarmonyVmManager:
                 if msg.get("observed_request_id") else {}
             ),
         }
+
+
+def _stop_deadline(msg: Dict[str, Any]) -> float:
+    try:
+        seconds = float(msg.get("operation_timeout_sec", 120.0))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("operation_timeout_sec must be a positive finite number") from exc
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("operation_timeout_sec must be a positive finite number")
+    return time.monotonic() + seconds
+
+
+def _stop_timeout(deadline: Optional[float], maximum: float) -> float:
+    if deadline is None:
+        return maximum
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("Harmony VM stop deadline exceeded")
+    return min(maximum, remaining)
+
+
+@contextmanager
+def _stop_lock(lock: Any, deadline: Optional[float]):
+    acquired = lock.acquire() if deadline is None else lock.acquire(
+        timeout=_stop_timeout(deadline, threading.TIMEOUT_MAX)
+    )
+    if not acquired:
+        raise TimeoutError("Harmony VM stop deadline exceeded waiting for lifecycle lock")
+    try:
+        _stop_timeout(deadline, 1.0)
+        yield
+    finally:
+        lock.release()
 
 
 def _inspection_deadline(msg: Dict[str, Any]) -> float:

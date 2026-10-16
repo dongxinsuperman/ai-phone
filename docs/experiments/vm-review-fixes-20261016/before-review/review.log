@@ -1,0 +1,107 @@
+2026-10-16 12:51:19.104 | DEBUG    | ai_phone.agent.drivers.harmony:_neutralize_hmdriver_del_once:114 - hmdriver2.Driver.__del__ 已阉割（去除 _instance.clear + fport 副作用）
+.F.F.F..FFFFFF                                                           [100%]
+=================================== FAILURES ===================================
+_ test_replacement_can_be_manually_dispatched_after_target_returns[android-offline-then-manual-dispatch] _
+../test_findings.py:66: in test_replacement_can_be_manually_dispatched_after_target_returns
+    assert second.status_code == 200, f"User-requested new dispatch is blocked: {second.text}"
+E   AssertionError: User-requested new dispatch is blocked: {"detail":{"message":"当前机器状态尚未核实；普通启动会先只读核验原实例","sent":false,"vm_id":"e9a40d880d3a","request_id":"","instance":{"id":"e9a40d880d3a","name":"view-vm","alias":"view-vm","profile_ref_type":"custom","profile_ref_id":"","profile_id":"","profile_name":"","config_version":1,"config_json":{"system":{"api_level":33,"system_type":"google_apis","abi":"arm64"},"display":{"screen_width":1080,"screen_height":2400,"density":420,"orientation":"portrait","screen_size_in":"","cutout":"","shape_note":""},"performance":{"ram_mb":4096,"cpu_cores":4,"vm_heap_mb":384,"gpu_mode":"auto"},"storage":{"internal_storage_mb":8192,"sdcard_mb":0,"wipe_data":false,"snapshot_policy":"discard_changes"},"network":{"speed":"full","delay":"none","dns_server":"","http_proxy":""},"hardware":{"back_camera":"emulated","front_camera":"none","gps":true,"accelerometer":true,"gyroscope":true,"proximity":false,"hardware_keyboard":false,"navigation_style":"none"},"startup":{"no_window":true,"no_audio":true,"no_boot_anim":true,"writable_system":false},"identity":{}},"capability_marks":{},"api_level":33,"abi":"arm64","system_type":"google_apis","system_image":"","screen_width":1080,"screen_height":2400,"density":420,"orientation":"portrait","state":"error","assigned_agent_id":null,"adb_serial":null,"error_message":"新配置启动失败：所属 Agent 离线，请等待其重新连接","runtime":{"last_status":{"state":"error","ok":false,"details":{"cleanup_confirmed":true,"instance_created":false}},"details":{"cleanup_confirmed":true,"instance_created":false}},"created_at":"2026-10-16T04:51:19.556258","updated_at":"2026-10-16T04:51:19.557429","started_at":null,"stopped_at":null,"lifecycle":{"state":null,"agent_online":false,"actions":{"start":false,"stop":false,"dispatch":false,"delete":true,"edit":true,"copy":true},"notice":"当前机器状态尚未核实；普通启动会先只读核验原实例","error":"新配置启动失败：所属 Agent 离线，请等待其重新连接"}}}}
+E   assert 409 == 200
+E    +  where 409 = <Response [409 Conflict]>.status_code
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 12:51:19.496 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-a57d0f55fb4c40dcbdb754fde9bbc0f7?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 12:51:19.592 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_replacement_can_be_manually_dispatched_after_target_returns[ios-offline-then-manual-dispatch] _
+../test_findings.py:66: in test_replacement_can_be_manually_dispatched_after_target_returns
+    assert second.status_code == 200, f"User-requested new dispatch is blocked: {second.text}"
+E   AssertionError: User-requested new dispatch is blocked: {"detail":{"message":"当前机器状态尚未核实；普通启动会先只读核验原实例","sent":false,"vm_id":"a4d8fd60b811","request_id":"","instance":{"id":"a4d8fd60b811","name":"view-vm","alias":"view-vm","device_type":"com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro","device_type_name":"iPhone 17 Pro","runtime":"com.apple.CoreSimulator.SimRuntime.iOS-26-0","runtime_name":"iOS 26.0","os_version":"26.0","config_json":{},"state":"error","assigned_agent_id":null,"udid":null,"wda_port":null,"mjpeg_port":null,"runtime_state":{"last_status":{"state":"error","ok":false,"details":{"cleanup_confirmed":true,"instance_created":false}},"details":{"cleanup_confirmed":true,"instance_created":false}},"error_code":"","error_message":"新配置启动失败：所属 Agent 离线，请等待连接","created_at":"2026-10-16T04:51:19.729324","updated_at":"2026-10-16T04:51:19.731467","started_at":null,"stopped_at":null,"lifecycle":{"state":null,"agent_online":false,"actions":{"start":false,"stop":false,"dispatch":false,"delete":true,"edit":true,"copy":true},"notice":"当前机器状态尚未核实；普通启动会先只读核验原实例","error":"新配置启动失败：所属 Agent 离线，请等待连接"}}}}
+E   assert 409 == 200
+E    +  where 409 = <Response [409 Conflict]>.status_code
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 12:51:19.663 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-c62a51d1bc4e4cf3bbeeac9e835e8c07?mode=memory&cache=shared&uri=true
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 12:51:19.725 | INFO     | ai_phone.server.ios_sim.api:create_instance:196 - 已创建 iOS 虚拟机配置 vm_id=757525c41bde alias=view-vm 机型=iPhone 17 Pro 系统=iOS 26.0
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 12:51:19.738 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_replacement_can_be_manually_dispatched_after_target_returns[harmony-offline-then-manual-dispatch] _
+../test_findings.py:66: in test_replacement_can_be_manually_dispatched_after_target_returns
+    assert second.status_code == 200, f"User-requested new dispatch is blocked: {second.text}"
+E   AssertionError: User-requested new dispatch is blocked: {"detail":{"message":"当前机器状态尚未核实；普通启动会先只读核验原实例","sent":false,"vm_id":"c24ca9928db5","request_id":"","instance":{"id":"c24ca9928db5","name":"view-vm","alias":"view-vm","device_type":"Phone","os_version":"HarmonyOS 6.0.0(20)","api_version":"20","abi":"arm64","image_id":"Phone|HarmonyOS 6.0.0(20)|arm64","screen_profile":"Fixture Phone","screen_width":1080,"screen_height":2340,"density":420,"screen_size_in":"6.5","memory_gb":4,"storage_gb":8,"boot_mode":"cold","config_json":{"display":{"mode":"profile"}},"state":"error","assigned_agent_id":null,"hdc_port":null,"hdc_serial":null,"cleanup_pending":false,"runtime":{"last_status":{"state":"error","ok":false,"details":{"cleanup_confirmed":true,"instance_created":false}},"details":{"cleanup_confirmed":true,"instance_created":false}},"error_code":"","error_message":"新配置启动失败：所属 Agent 离线，请等待连接","created_at":"2026-10-16T04:51:19.923186","updated_at":"2026-10-16T04:51:19.925627","started_at":null,"stopped_at":null,"lifecycle":{"state":null,"agent_online":false,"actions":{"start":false,"stop":false,"dispatch":false,"delete":true,"edit":true,"copy":true},"notice":"当前机器状态尚未核实；普通启动会先只读核验原实例","error":"新配置启动失败：所属 Agent 离线，请等待连接"}}}}
+E   assert 409 == 200
+E    +  where 409 = <Response [409 Conflict]>.status_code
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 12:51:19.813 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-b995d22f3f324dbfbd95efeaaf1cc633?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 12:51:19.933 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_stop_does_not_begin_native_mutation_after_original_deadline[progress-send-ios] _
+../test_findings.py:154: in test_stop_does_not_begin_native_mutation_after_original_deadline
+    assert native == [], f"Native stop began after expiry: {native}"
+E   AssertionError: Native stop began after expiry: [{'command': 'simctl shutdown', 'at': 106.0, 'timeout': 60.0}]
+E   assert [{'at': 106.0...meout': 60.0}] == []
+E     
+E     Left contains one more item: {'at': 106.0, 'command': 'simctl shutdown', 'timeout': 60.0}
+E     Use -v to get more diff
+_ test_stop_does_not_begin_native_mutation_after_original_deadline[progress-send-harmony] _
+../test_findings.py:154: in test_stop_does_not_begin_native_mutation_after_original_deadline
+    assert native == [], f"Native stop began after expiry: {native}"
+E   AssertionError: Native stop began after expiry: [{'command': 'Emulator -stop', 'at': 106.0, 'timeout': 20}]
+E   assert [{'at': 106.0...timeout': 20}] == []
+E     
+E     Left contains one more item: {'at': 106.0, 'command': 'Emulator -stop', 'timeout': 20}
+E     Use -v to get more diff
+_ test_stop_does_not_begin_native_mutation_after_original_deadline[executor-queue-ios] _
+../test_findings.py:154: in test_stop_does_not_begin_native_mutation_after_original_deadline
+    assert native == [], f"Native stop began after expiry: {native}"
+E   AssertionError: Native stop began after expiry: [{'command': 'simctl shutdown', 'at': 106.0, 'timeout': 60.0}]
+E   assert [{'at': 106.0...meout': 60.0}] == []
+E     
+E     Left contains one more item: {'at': 106.0, 'command': 'simctl shutdown', 'timeout': 60.0}
+E     Use -v to get more diff
+_ test_stop_does_not_begin_native_mutation_after_original_deadline[executor-queue-harmony] _
+../test_findings.py:154: in test_stop_does_not_begin_native_mutation_after_original_deadline
+    assert native == [], f"Native stop began after expiry: {native}"
+E   AssertionError: Native stop began after expiry: [{'command': 'Emulator -stop', 'at': 106.0, 'timeout': 20}]
+E   assert [{'at': 106.0...timeout': 20}] == []
+E     
+E     Left contains one more item: {'at': 106.0, 'command': 'Emulator -stop', 'timeout': 20}
+E     Use -v to get more diff
+_ test_stop_does_not_begin_native_mutation_after_original_deadline[instance-lock-ios] _
+../test_findings.py:154: in test_stop_does_not_begin_native_mutation_after_original_deadline
+    assert native == [], f"Native stop began after expiry: {native}"
+E   AssertionError: Native stop began after expiry: [{'command': 'simctl shutdown', 'at': 106.0, 'timeout': 60.0}]
+E   assert [{'at': 106.0...meout': 60.0}] == []
+E     
+E     Left contains one more item: {'at': 106.0, 'command': 'simctl shutdown', 'timeout': 60.0}
+E     Use -v to get more diff
+_ test_stop_does_not_begin_native_mutation_after_original_deadline[instance-lock-harmony] _
+../test_findings.py:154: in test_stop_does_not_begin_native_mutation_after_original_deadline
+    assert native == [], f"Native stop began after expiry: {native}"
+E   AssertionError: Native stop began after expiry: [{'command': 'Emulator -stop', 'at': 106.0, 'timeout': 20}]
+E   assert [{'at': 106.0...timeout': 20}] == []
+E     
+E     Left contains one more item: {'at': 106.0, 'command': 'Emulator -stop', 'timeout': 20}
+E     Use -v to get more diff
+=============================== warnings summary ===============================
+../../../../.venv/lib/python3.11/site-packages/_pytest/config/__init__.py:1434
+  /Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/config/__init__.py:1434: PytestConfigWarning: Unknown config option: timeout
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+../../../../.venv/lib/python3.11/site-packages/_pytest/config/__init__.py:1434
+  /Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/config/__init__.py:1434: PytestConfigWarning: Unknown config option: timeout_method
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED ../test_findings.py::test_replacement_can_be_manually_dispatched_after_target_returns[android-offline-then-manual-dispatch]
+FAILED ../test_findings.py::test_replacement_can_be_manually_dispatched_after_target_returns[ios-offline-then-manual-dispatch]
+FAILED ../test_findings.py::test_replacement_can_be_manually_dispatched_after_target_returns[harmony-offline-then-manual-dispatch]
+FAILED ../test_findings.py::test_stop_does_not_begin_native_mutation_after_original_deadline[progress-send-ios]
+FAILED ../test_findings.py::test_stop_does_not_begin_native_mutation_after_original_deadline[progress-send-harmony]
+FAILED ../test_findings.py::test_stop_does_not_begin_native_mutation_after_original_deadline[executor-queue-ios]
+FAILED ../test_findings.py::test_stop_does_not_begin_native_mutation_after_original_deadline[executor-queue-harmony]
+FAILED ../test_findings.py::test_stop_does_not_begin_native_mutation_after_original_deadline[instance-lock-ios]
+FAILED ../test_findings.py::test_stop_does_not_begin_native_mutation_after_original_deadline[instance-lock-harmony]
+9 failed, 5 passed, 2 warnings in 0.63s
+{"source_unchanged": true, "runtime_removed": true, "counts": {"passed": 5, "failed": 9, "skipped": 0}, "evidence": "/Users/dongxin/\u4ee3\u7801\u6587\u4ef6/sonic\u5408\u96c6/ai-phone/backend/.data/reviews/578fb71-1792126264592/evidence.json"}

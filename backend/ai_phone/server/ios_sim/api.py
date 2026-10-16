@@ -36,7 +36,7 @@ from ..vm_lifecycle import (
     vm_view, require_action, require_editable,
     ensure_start_observation, start_preflight_snapshot, reject_start_preflight,
     operation_failure_detail,
-    is_untouched_draft,
+    is_untouched_draft, record_failure,
     require_retirement_allowed, send_operation_once,
     begin_operation, maintenance, require_startable,
     require_device_idle, require_owner_host, runtime as lifecycle_runtime,
@@ -484,6 +484,11 @@ async def _switch_agent(*, vm: IosSimVmInstance, new_agent_id: str, session: Asy
         if is_untouched_draft(current):
             current.state = "error"
             current.error_message = f"新配置启动失败：{exc.detail}"
+            # The locked replacement is still untouched: no native command
+            # was accepted. Keep the failure visible and permit a later
+            # explicit dispatch, without resuming this failed switch.
+            record_failure(current, current.error_message, reason="switch_target_not_dispatched",
+                           action="start", preflight=True)
             update_runtime(current, last_status={"state": "error", "ok": False,
                            "details": {"cleanup_confirmed": True, "instance_created": False}},
                            details={"cleanup_confirmed": True, "instance_created": False})
@@ -530,7 +535,8 @@ async def stop(vm_id: str, session: AsyncSession = DBSession, hub: Hub = HubDep)
     await session.commit()
     arm_operation_timeout(vm, hub)
     sent = await send_operation_once(hub, agent_id, {"type": P.MSG_IOS_SIM_VM_STOP,
-        "request_id": request_id, "vm_id": vm.id, "udid": vm.udid or ""})
+        "request_id": request_id, "vm_id": vm.id, "udid": vm.udid or "",
+        "operation_timeout_sec": lifecycle_runtime(vm)["operation"]["timeout_sec"]})
     if not sent:
         await record_send_failure(session, vm, request_id, "所属 Agent 离线，尚未确认停止")
         current_operation = lifecycle_runtime(vm).get("operation") or {}

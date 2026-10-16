@@ -1,0 +1,365 @@
+{
+  "first_http": 409,
+  "first_detail": {
+    "message": "所属 Agent 离线，请等待连接",
+    "sent": false,
+    "vm_id": "07835d05b974",
+    "request_id": "",
+    "instance": {
+      "id": "07835d05b974",
+      "name": "view-vm",
+      "alias": "view-vm",
+      "device_type": "Phone",
+      "os_version": "HarmonyOS 6.0.0(20)",
+      "api_version": "20",
+      "abi": "arm64",
+      "image_id": "Phone|HarmonyOS 6.0.0(20)|arm64",
+      "screen_profile": "Fixture Phone",
+      "screen_width": 1080,
+      "screen_height": 2340,
+      "density": 420,
+      "screen_size_in": "6.5",
+      "memory_gb": 4,
+      "storage_gb": 8,
+      "boot_mode": "cold",
+      "config_json": {
+        "display": {
+          "mode": "profile"
+        }
+      },
+      "state": "error",
+      "assigned_agent_id": null,
+      "hdc_port": null,
+      "hdc_serial": null,
+      "cleanup_pending": false,
+      "runtime": {
+        "last_failure": {
+          "message": "新配置启动失败：所属 Agent 离线，请等待连接",
+          "reason": "switch_target_not_dispatched",
+          "action": "start",
+          "request_id": "",
+          "at": "2026-10-16T05:04:18.448666+00:00",
+          "native_command_sent": false
+        },
+        "last_status": {
+          "state": "error",
+          "ok": false,
+          "details": {
+            "cleanup_confirmed": true,
+            "instance_created": false
+          }
+        },
+        "details": {
+          "cleanup_confirmed": true,
+          "instance_created": false
+        }
+      },
+      "error_code": "",
+      "error_message": "新配置启动失败：所属 Agent 离线，请等待连接",
+      "created_at": "2026-10-16T05:04:18.446436",
+      "updated_at": "2026-10-16T05:04:18.446437",
+      "started_at": null,
+      "stopped_at": null,
+      "lifecycle": {
+        "state": "draft",
+        "agent_online": false,
+        "actions": {
+          "start": false,
+          "stop": false,
+          "dispatch": true,
+          "delete": true,
+          "edit": true,
+          "copy": true
+        },
+        "notice": "",
+        "error": "新配置启动失败：所属 Agent 离线，请等待连接"
+      }
+    },
+    "switched": true,
+    "old_vm_id": "0bbf4b5be910",
+    "old_cleanup_sent": true
+  },
+  "old_id": "0bbf4b5be910",
+  "replacement_id": "07835d05b974",
+  "read_after_target_reconnect": {
+    "id": "07835d05b974",
+    "name": "view-vm",
+    "alias": "view-vm",
+    "device_type": "Phone",
+    "os_version": "HarmonyOS 6.0.0(20)",
+    "api_version": "20",
+    "abi": "arm64",
+    "image_id": "Phone|HarmonyOS 6.0.0(20)|arm64",
+    "screen_profile": "Fixture Phone",
+    "screen_width": 1080,
+    "screen_height": 2340,
+    "density": 420,
+    "screen_size_in": "6.5",
+    "memory_gb": 4,
+    "storage_gb": 8,
+    "boot_mode": "cold",
+    "config_json": {
+      "display": {
+        "mode": "profile"
+      }
+    },
+    "state": "error",
+    "assigned_agent_id": null,
+    "hdc_port": null,
+    "hdc_serial": null,
+    "cleanup_pending": false,
+    "runtime": {
+      "last_failure": {
+        "message": "新配置启动失败：所属 Agent 离线，请等待连接",
+        "reason": "switch_target_not_dispatched",
+        "action": "start",
+        "request_id": "",
+        "at": "2026-10-16T05:04:18.448666+00:00",
+        "native_command_sent": false
+      },
+      "last_status": {
+        "state": "error",
+        "ok": false,
+        "details": {
+          "cleanup_confirmed": true,
+          "instance_created": false
+        }
+      },
+      "details": {
+        "cleanup_confirmed": true,
+        "instance_created": false
+      }
+    },
+    "error_code": "",
+    "error_message": "新配置启动失败：所属 Agent 离线，请等待连接",
+    "created_at": "2026-10-16T05:04:18.446436",
+    "updated_at": "2026-10-16T05:04:18.448812",
+    "started_at": null,
+    "stopped_at": null,
+    "lifecycle": {
+      "state": "draft",
+      "agent_online": false,
+      "actions": {
+        "start": false,
+        "stop": false,
+        "dispatch": true,
+        "delete": true,
+        "edit": true,
+        "copy": true
+      },
+      "notice": "",
+      "error": "新配置启动失败：所属 Agent 离线，请等待连接"
+    }
+  },
+  "second_http": 200,
+  "second_body": {
+    "sent": true,
+    "instance": {
+      "id": "07835d05b974",
+      "name": "view-vm",
+      "alias": "view-vm",
+      "device_type": "Phone",
+      "os_version": "HarmonyOS 6.0.0(20)",
+      "api_version": "20",
+      "abi": "arm64",
+      "image_id": "Phone|HarmonyOS 6.0.0(20)|arm64",
+      "screen_profile": "Fixture Phone",
+      "screen_width": 1080,
+      "screen_height": 2340,
+      "density": 420,
+      "screen_size_in": "6.5",
+      "memory_gb": 4,
+      "storage_gb": 8,
+      "boot_mode": "cold",
+      "config_json": {
+        "display": {
+          "mode": "profile"
+        }
+      },
+      "state": "starting",
+      "assigned_agent_id": null,
+      "hdc_port": 10000,
+      "hdc_serial": "127.0.0.1:10000",
+      "cleanup_pending": true,
+      "runtime": {
+        "last_failure": null,
+        "last_status": {},
+        "details": {},
+        "instance_observation": null,
+        "operation": {
+          "action": "start",
+          "request_id": "a28baf1bf3c14cb1",
+          "pending": true,
+          "outcome": "pending",
+          "target_agent_id": "agent-2",
+          "target_host_id": "fixture-target",
+          "first_bind": true,
+          "started_at": "2026-10-16T05:04:18.455532+00:00",
+          "deadline_at": "2026-10-16T05:09:18.455532+00:00",
+          "timeout_sec": 300.0
+        }
+      },
+      "error_code": "",
+      "error_message": "",
+      "created_at": "2026-10-16T05:04:18.446436",
+      "updated_at": "2026-10-16T05:04:18.457324",
+      "started_at": null,
+      "stopped_at": null,
+      "lifecycle": {
+        "state": "starting",
+        "agent_online": false,
+        "actions": {
+          "start": false,
+          "stop": false,
+          "dispatch": false,
+          "delete": false,
+          "edit": false,
+          "copy": false
+        },
+        "notice": "",
+        "error": ""
+      }
+    }
+  },
+  "final_instance": {
+    "id": "07835d05b974",
+    "name": "view-vm",
+    "alias": "view-vm",
+    "device_type": "Phone",
+    "os_version": "HarmonyOS 6.0.0(20)",
+    "api_version": "20",
+    "abi": "arm64",
+    "image_id": "Phone|HarmonyOS 6.0.0(20)|arm64",
+    "screen_profile": "Fixture Phone",
+    "screen_width": 1080,
+    "screen_height": 2340,
+    "density": 420,
+    "screen_size_in": "6.5",
+    "memory_gb": 4,
+    "storage_gb": 8,
+    "boot_mode": "cold",
+    "config_json": {
+      "display": {
+        "mode": "profile"
+      }
+    },
+    "state": "running",
+    "assigned_agent_id": "agent-2",
+    "hdc_port": 10000,
+    "hdc_serial": "127.0.0.1:10000",
+    "cleanup_pending": true,
+    "runtime": {
+      "last_failure": null,
+      "last_status": {
+        "state": "running",
+        "ok": true,
+        "reason": "running",
+        "details": {
+          "instance_name": "aiphone_harmony_07835d05b974",
+          "instance_path": "/fixture-only/instances",
+          "lease_token": "673bc6aa62f64086a4428a751a9d9f0d",
+          "hdc_serial": "127.0.0.1:10000",
+          "instance_created": true,
+          "created_in_attempt": true,
+          "instance_observation": {
+            "vm_id": "07835d05b974",
+            "state": "running",
+            "identity": {
+              "instance_name": "aiphone_harmony_07835d05b974",
+              "instance_path": "/fixture-only/instances",
+              "lease_token": "673bc6aa62f64086a4428a751a9d9f0d",
+              "hdc_serial": "127.0.0.1:10000"
+            },
+            "resources_released": false,
+            "reason": "fixture_process_running"
+          }
+        },
+        "ts": "2026-10-16T05:04:18.459926+00:00"
+      },
+      "details": {},
+      "instance_observation": {
+        "vm_id": "07835d05b974",
+        "state": "running",
+        "identity": {
+          "instance_name": "aiphone_harmony_07835d05b974",
+          "instance_path": "/fixture-only/instances",
+          "lease_token": "673bc6aa62f64086a4428a751a9d9f0d",
+          "hdc_serial": "127.0.0.1:10000"
+        },
+        "resources_released": false,
+        "reason": "fixture_process_running"
+      },
+      "operation": {
+        "action": "start",
+        "request_id": "a28baf1bf3c14cb1",
+        "pending": false,
+        "outcome": "succeeded",
+        "target_agent_id": "agent-2",
+        "target_host_id": "fixture-target",
+        "first_bind": true,
+        "started_at": "2026-10-16T05:04:18.455532+00:00",
+        "deadline_at": "2026-10-16T05:09:18.455532+00:00",
+        "timeout_sec": 300.0,
+        "created_in_attempt": true,
+        "completed_at": "2026-10-16T05:04:18.461088+00:00"
+      },
+      "instance_created": true,
+      "owner_host_id": "fixture-target"
+    },
+    "error_code": "",
+    "error_message": "",
+    "created_at": "2026-10-16T05:04:18.446436",
+    "updated_at": "2026-10-16T05:04:18.461147",
+    "started_at": "2026-10-16T05:04:18.459939",
+    "stopped_at": null,
+    "lifecycle": {
+      "state": "running",
+      "agent_online": true,
+      "actions": {
+        "start": false,
+        "stop": true,
+        "dispatch": false,
+        "delete": false,
+        "edit": true,
+        "copy": true
+      },
+      "notice": "",
+      "error": ""
+    }
+  },
+  "native_start_commands": [
+    {
+      "type": "harmony_vm_start",
+      "vm_id": "07835d05b974",
+      "name": "view-vm",
+      "alias": "view-vm",
+      "device_type": "Phone",
+      "os_version": "HarmonyOS 6.0.0(20)",
+      "api_version": "20",
+      "abi": "arm64",
+      "image_id": "Phone|HarmonyOS 6.0.0(20)|arm64",
+      "screen_profile": "Fixture Phone",
+      "screen_width": 1080,
+      "screen_height": 2340,
+      "density": 420,
+      "screen_size_in": "6.5",
+      "memory_gb": 4,
+      "storage_gb": 8,
+      "boot_mode": "cold",
+      "config_json": {
+        "display": {
+          "mode": "profile"
+        }
+      },
+      "request_id": "a28baf1bf3c14cb1",
+      "require_existing_instance": false,
+      "rollback_new_instance": true,
+      "operation_timeout_sec": 300.0,
+      "assigned_port": 10000,
+      "lease_token": "673bc6aa62f64086a4428a751a9d9f0d",
+      "instance_uuid": "",
+      "retired_instance_uuids": []
+    }
+  ],
+  "old_ledger_present": false
+}

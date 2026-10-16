@@ -1,0 +1,46 @@
+{
+  "original_deadline": 105.0,
+  "handler_remaining_seconds": [
+    1.0
+  ],
+  "native_events": [
+    {
+      "command": "simctl shutdown",
+      "at": 106.0,
+      "timeout": 60.0
+    }
+  ],
+  "reports": [
+    {
+      "type": "ios_sim_vm_status",
+      "request_id": "fixture-stop",
+      "vm_id": "abcd12345678",
+      "state": "stopping",
+      "ok": true,
+      "reason": "stopping",
+      "error": "",
+      "udid": "",
+      "details": {}
+    },
+    {
+      "type": "ios_sim_vm_status",
+      "request_id": "fixture-stop",
+      "vm_id": "abcd12345678",
+      "state": "stopped",
+      "ok": true,
+      "reason": "stopped",
+      "error": "",
+      "udid": "fixture-ios-udid",
+      "details": {
+        "cleanup_confirmed": true,
+        "instance_observation": {
+          "vm_id": "abcd12345678",
+          "state": "stopped",
+          "identity": {},
+          "resources_released": true,
+          "reason": "fixture exit"
+        }
+      }
+    }
+  ]
+}

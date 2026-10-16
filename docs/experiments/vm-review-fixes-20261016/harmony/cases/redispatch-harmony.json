@@ -1,0 +1,93 @@
+{
+  "first_http": 409,
+  "replacement_id": "a51563c9b286",
+  "old_http": 404,
+  "replacement_state": "error",
+  "replacement_owner": null,
+  "lifecycle": {
+    "state": "draft",
+    "agent_online": false,
+    "actions": {
+      "start": false,
+      "stop": false,
+      "dispatch": true,
+      "delete": true,
+      "edit": true,
+      "copy": true
+    },
+    "notice": "",
+    "error": "新配置启动失败：所属 Agent 离线，请等待连接"
+  },
+  "target_online": true,
+  "second_http": 200,
+  "second_body": {
+    "sent": true,
+    "instance": {
+      "id": "a51563c9b286",
+      "name": "view-vm",
+      "alias": "view-vm",
+      "device_type": "Phone",
+      "os_version": "HarmonyOS 6.0.0(20)",
+      "api_version": "20",
+      "abi": "arm64",
+      "image_id": "Phone|HarmonyOS 6.0.0(20)|arm64",
+      "screen_profile": "Fixture Phone",
+      "screen_width": 1080,
+      "screen_height": 2340,
+      "density": 420,
+      "screen_size_in": "6.5",
+      "memory_gb": 4,
+      "storage_gb": 8,
+      "boot_mode": "cold",
+      "config_json": {
+        "display": {
+          "mode": "profile"
+        }
+      },
+      "state": "starting",
+      "assigned_agent_id": null,
+      "hdc_port": 10000,
+      "hdc_serial": "127.0.0.1:10000",
+      "cleanup_pending": true,
+      "runtime": {
+        "last_failure": null,
+        "last_status": {},
+        "details": {},
+        "instance_observation": null,
+        "operation": {
+          "action": "start",
+          "request_id": "96cef3b40154458b",
+          "pending": true,
+          "outcome": "pending",
+          "target_agent_id": "agent-2",
+          "target_host_id": "",
+          "first_bind": true,
+          "started_at": "2026-10-16T06:52:15.604954+00:00",
+          "deadline_at": "2026-10-16T06:57:15.604954+00:00",
+          "timeout_sec": 300.0
+        }
+      },
+      "error_code": "",
+      "error_message": "",
+      "created_at": "2026-10-16T06:52:15.598090",
+      "updated_at": "2026-10-16T06:52:15.606330",
+      "started_at": null,
+      "stopped_at": null,
+      "lifecycle": {
+        "state": "starting",
+        "agent_online": false,
+        "actions": {
+          "start": false,
+          "stop": false,
+          "dispatch": false,
+          "delete": false,
+          "edit": false,
+          "copy": false
+        },
+        "notice": "",
+        "error": ""
+      }
+    }
+  },
+  "native_start_commands": 1
+}

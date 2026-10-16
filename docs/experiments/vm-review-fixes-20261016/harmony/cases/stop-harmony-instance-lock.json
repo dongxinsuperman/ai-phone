@@ -1,0 +1,49 @@
+{
+  "original_deadline": 105.0,
+  "handler_remaining_seconds": [
+    1.0
+  ],
+  "native_events": [],
+  "reports": [
+    {
+      "type": "harmony_vm_status",
+      "request_id": "fixture-stop",
+      "vm_id": "abcd12345678",
+      "lease_token": "fixture-lease",
+      "state": "stopping",
+      "ok": true,
+      "reason": "stopping",
+      "error": "",
+      "hdc_serial": "",
+      "details": {}
+    },
+    {
+      "type": "harmony_vm_status",
+      "request_id": "fixture-stop",
+      "vm_id": "abcd12345678",
+      "lease_token": "fixture-lease",
+      "state": "error",
+      "ok": false,
+      "reason": "operation_timeout",
+      "error": "Harmony VM stop deadline exceeded",
+      "hdc_serial": "127.0.0.1:12345",
+      "details": {
+        "cleanup_confirmed": false,
+        "cleanup_pending": true,
+        "exit_evidence": {},
+        "instance_observation": {
+          "vm_id": "abcd12345678",
+          "state": "unknown",
+          "identity": {
+            "instance_name": "aiphone_harmony_abcd12345678",
+            "instance_path": "/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-lifecycle-simple-regression-3lhn_que/pytest/test_stop_does_not_begin_nativ7",
+            "lease_token": "fixture-lease",
+            "hdc_serial": "127.0.0.1:12345"
+          },
+          "resources_released": false,
+          "reason": "operation_timeout"
+        }
+      }
+    }
+  ]
+}

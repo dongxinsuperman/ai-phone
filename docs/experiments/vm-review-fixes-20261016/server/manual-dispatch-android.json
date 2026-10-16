@@ -1,0 +1,602 @@
+{
+  "first_http": 409,
+  "first_detail": {
+    "message": "所属 Agent 离线，请等待其重新连接",
+    "sent": false,
+    "vm_id": "4b9b260961e1",
+    "request_id": "",
+    "instance": {
+      "id": "4b9b260961e1",
+      "name": "view-vm",
+      "alias": "view-vm",
+      "profile_ref_type": "custom",
+      "profile_ref_id": "",
+      "profile_id": "",
+      "profile_name": "",
+      "config_version": 1,
+      "config_json": {
+        "system": {
+          "api_level": 33,
+          "system_type": "google_apis",
+          "abi": "arm64"
+        },
+        "display": {
+          "screen_width": 1080,
+          "screen_height": 2400,
+          "density": 420,
+          "orientation": "portrait",
+          "screen_size_in": "",
+          "cutout": "",
+          "shape_note": ""
+        },
+        "performance": {
+          "ram_mb": 4096,
+          "cpu_cores": 4,
+          "vm_heap_mb": 384,
+          "gpu_mode": "auto"
+        },
+        "storage": {
+          "internal_storage_mb": 8192,
+          "sdcard_mb": 0,
+          "wipe_data": false,
+          "snapshot_policy": "discard_changes"
+        },
+        "network": {
+          "speed": "full",
+          "delay": "none",
+          "dns_server": "",
+          "http_proxy": ""
+        },
+        "hardware": {
+          "back_camera": "emulated",
+          "front_camera": "none",
+          "gps": true,
+          "accelerometer": true,
+          "gyroscope": true,
+          "proximity": false,
+          "hardware_keyboard": false,
+          "navigation_style": "none"
+        },
+        "startup": {
+          "no_window": true,
+          "no_audio": true,
+          "no_boot_anim": true,
+          "writable_system": false
+        },
+        "identity": {}
+      },
+      "capability_marks": {},
+      "api_level": 33,
+      "abi": "arm64",
+      "system_type": "google_apis",
+      "system_image": "",
+      "screen_width": 1080,
+      "screen_height": 2400,
+      "density": 420,
+      "orientation": "portrait",
+      "state": "error",
+      "assigned_agent_id": null,
+      "adb_serial": null,
+      "error_message": "新配置启动失败：所属 Agent 离线，请等待其重新连接",
+      "runtime": {
+        "last_failure": {
+          "message": "新配置启动失败：所属 Agent 离线，请等待其重新连接",
+          "reason": "switch_target_not_dispatched",
+          "action": "start",
+          "request_id": "",
+          "at": "2026-10-16T05:03:28.722145+00:00",
+          "native_command_sent": false
+        },
+        "last_status": {
+          "state": "error",
+          "ok": false,
+          "details": {
+            "cleanup_confirmed": true,
+            "instance_created": false
+          }
+        },
+        "details": {
+          "cleanup_confirmed": true,
+          "instance_created": false
+        }
+      },
+      "created_at": "2026-10-16T05:03:28.720797",
+      "updated_at": "2026-10-16T05:03:28.720798",
+      "started_at": null,
+      "stopped_at": null,
+      "lifecycle": {
+        "state": "draft",
+        "agent_online": false,
+        "actions": {
+          "start": false,
+          "stop": false,
+          "dispatch": true,
+          "delete": true,
+          "edit": true,
+          "copy": true
+        },
+        "notice": "",
+        "error": "新配置启动失败：所属 Agent 离线，请等待其重新连接"
+      }
+    },
+    "switched": true,
+    "old_vm_id": "f81a9c74f842",
+    "old_cleanup_sent": true
+  },
+  "old_id": "f81a9c74f842",
+  "replacement_id": "4b9b260961e1",
+  "read_after_target_reconnect": {
+    "id": "4b9b260961e1",
+    "name": "view-vm",
+    "alias": "view-vm",
+    "profile_ref_type": "custom",
+    "profile_ref_id": "",
+    "profile_id": "",
+    "profile_name": "",
+    "config_version": 1,
+    "config_json": {
+      "system": {
+        "api_level": 33,
+        "system_type": "google_apis",
+        "abi": "arm64"
+      },
+      "display": {
+        "screen_width": 1080,
+        "screen_height": 2400,
+        "density": 420,
+        "orientation": "portrait",
+        "screen_size_in": "",
+        "cutout": "",
+        "shape_note": ""
+      },
+      "performance": {
+        "ram_mb": 4096,
+        "cpu_cores": 4,
+        "vm_heap_mb": 384,
+        "gpu_mode": "auto"
+      },
+      "storage": {
+        "internal_storage_mb": 8192,
+        "sdcard_mb": 0,
+        "wipe_data": false,
+        "snapshot_policy": "discard_changes"
+      },
+      "network": {
+        "speed": "full",
+        "delay": "none",
+        "dns_server": "",
+        "http_proxy": ""
+      },
+      "hardware": {
+        "back_camera": "emulated",
+        "front_camera": "none",
+        "gps": true,
+        "accelerometer": true,
+        "gyroscope": true,
+        "proximity": false,
+        "hardware_keyboard": false,
+        "navigation_style": "none"
+      },
+      "startup": {
+        "no_window": true,
+        "no_audio": true,
+        "no_boot_anim": true,
+        "writable_system": false
+      },
+      "identity": {}
+    },
+    "capability_marks": {},
+    "api_level": 33,
+    "abi": "arm64",
+    "system_type": "google_apis",
+    "system_image": "",
+    "screen_width": 1080,
+    "screen_height": 2400,
+    "density": 420,
+    "orientation": "portrait",
+    "state": "error",
+    "assigned_agent_id": null,
+    "adb_serial": null,
+    "error_message": "新配置启动失败：所属 Agent 离线，请等待其重新连接",
+    "runtime": {
+      "last_failure": {
+        "message": "新配置启动失败：所属 Agent 离线，请等待其重新连接",
+        "reason": "switch_target_not_dispatched",
+        "action": "start",
+        "request_id": "",
+        "at": "2026-10-16T05:03:28.722145+00:00",
+        "native_command_sent": false
+      },
+      "last_status": {
+        "state": "error",
+        "ok": false,
+        "details": {
+          "cleanup_confirmed": true,
+          "instance_created": false
+        }
+      },
+      "details": {
+        "cleanup_confirmed": true,
+        "instance_created": false
+      }
+    },
+    "created_at": "2026-10-16T05:03:28.720797",
+    "updated_at": "2026-10-16T05:03:28.722327",
+    "started_at": null,
+    "stopped_at": null,
+    "lifecycle": {
+      "state": "draft",
+      "agent_online": false,
+      "actions": {
+        "start": false,
+        "stop": false,
+        "dispatch": true,
+        "delete": true,
+        "edit": true,
+        "copy": true
+      },
+      "notice": "",
+      "error": "新配置启动失败：所属 Agent 离线，请等待其重新连接"
+    }
+  },
+  "second_http": 200,
+  "second_body": {
+    "sent": true,
+    "instance": {
+      "id": "4b9b260961e1",
+      "name": "view-vm",
+      "alias": "view-vm",
+      "profile_ref_type": "custom",
+      "profile_ref_id": "",
+      "profile_id": "",
+      "profile_name": "",
+      "config_version": 1,
+      "config_json": {
+        "system": {
+          "api_level": 33,
+          "system_type": "google_apis",
+          "abi": "arm64"
+        },
+        "display": {
+          "screen_width": 1080,
+          "screen_height": 2400,
+          "density": 420,
+          "orientation": "portrait",
+          "screen_size_in": "",
+          "cutout": "",
+          "shape_note": ""
+        },
+        "performance": {
+          "ram_mb": 4096,
+          "cpu_cores": 4,
+          "vm_heap_mb": 384,
+          "gpu_mode": "auto"
+        },
+        "storage": {
+          "internal_storage_mb": 8192,
+          "sdcard_mb": 0,
+          "wipe_data": false,
+          "snapshot_policy": "discard_changes"
+        },
+        "network": {
+          "speed": "full",
+          "delay": "none",
+          "dns_server": "",
+          "http_proxy": ""
+        },
+        "hardware": {
+          "back_camera": "emulated",
+          "front_camera": "none",
+          "gps": true,
+          "accelerometer": true,
+          "gyroscope": true,
+          "proximity": false,
+          "hardware_keyboard": false,
+          "navigation_style": "none"
+        },
+        "startup": {
+          "no_window": true,
+          "no_audio": true,
+          "no_boot_anim": true,
+          "writable_system": false
+        },
+        "identity": {}
+      },
+      "capability_marks": {},
+      "api_level": 33,
+      "abi": "arm64",
+      "system_type": "google_apis",
+      "system_image": "",
+      "screen_width": 1080,
+      "screen_height": 2400,
+      "density": 420,
+      "orientation": "portrait",
+      "state": "starting",
+      "assigned_agent_id": null,
+      "adb_serial": "emulator-5554",
+      "error_message": "",
+      "runtime": {
+        "last_failure": null,
+        "last_status": {},
+        "details": {},
+        "instance_observation": null,
+        "operation": {
+          "action": "start",
+          "request_id": "413e6bda80f64069",
+          "pending": true,
+          "outcome": "pending",
+          "target_agent_id": "agent-2",
+          "target_host_id": "fixture-target",
+          "first_bind": true,
+          "started_at": "2026-10-16T05:03:28.727539+00:00",
+          "deadline_at": "2026-10-16T05:07:28.727539+00:00",
+          "timeout_sec": 240.0
+        }
+      },
+      "created_at": "2026-10-16T05:03:28.720797",
+      "updated_at": "2026-10-16T05:03:28.727623",
+      "started_at": null,
+      "stopped_at": null,
+      "lifecycle": {
+        "state": "starting",
+        "agent_online": false,
+        "actions": {
+          "start": false,
+          "stop": false,
+          "dispatch": false,
+          "delete": false,
+          "edit": false,
+          "copy": false
+        },
+        "notice": "",
+        "error": ""
+      }
+    }
+  },
+  "final_instance": {
+    "id": "4b9b260961e1",
+    "name": "view-vm",
+    "alias": "view-vm",
+    "profile_ref_type": "custom",
+    "profile_ref_id": "",
+    "profile_id": "",
+    "profile_name": "",
+    "config_version": 1,
+    "config_json": {
+      "system": {
+        "api_level": 33,
+        "system_type": "google_apis",
+        "abi": "arm64"
+      },
+      "display": {
+        "screen_width": 1080,
+        "screen_height": 2400,
+        "density": 420,
+        "orientation": "portrait",
+        "screen_size_in": "",
+        "cutout": "",
+        "shape_note": ""
+      },
+      "performance": {
+        "ram_mb": 4096,
+        "cpu_cores": 4,
+        "vm_heap_mb": 384,
+        "gpu_mode": "auto"
+      },
+      "storage": {
+        "internal_storage_mb": 8192,
+        "sdcard_mb": 0,
+        "wipe_data": false,
+        "snapshot_policy": "discard_changes"
+      },
+      "network": {
+        "speed": "full",
+        "delay": "none",
+        "dns_server": "",
+        "http_proxy": ""
+      },
+      "hardware": {
+        "back_camera": "emulated",
+        "front_camera": "none",
+        "gps": true,
+        "accelerometer": true,
+        "gyroscope": true,
+        "proximity": false,
+        "hardware_keyboard": false,
+        "navigation_style": "none"
+      },
+      "startup": {
+        "no_window": true,
+        "no_audio": true,
+        "no_boot_anim": true,
+        "writable_system": false
+      },
+      "identity": {}
+    },
+    "capability_marks": {},
+    "api_level": 33,
+    "abi": "arm64",
+    "system_type": "google_apis",
+    "system_image": "",
+    "screen_width": 1080,
+    "screen_height": 2400,
+    "density": 420,
+    "orientation": "portrait",
+    "state": "running",
+    "assigned_agent_id": "agent-2",
+    "adb_serial": "emulator-5554",
+    "error_message": "",
+    "runtime": {
+      "last_failure": null,
+      "last_status": {
+        "state": "running",
+        "ok": true,
+        "reason": "running",
+        "details": {
+          "avd_name": "aiphone_vm_4b9b260961e1",
+          "instance_created": true,
+          "created_in_attempt": true,
+          "instance_observation": {
+            "vm_id": "4b9b260961e1",
+            "state": "running",
+            "identity": {
+              "avd_name": "aiphone_vm_4b9b260961e1"
+            },
+            "resources_released": false,
+            "reason": "fixture_process_running"
+          }
+        },
+        "ts": "2026-10-16T05:03:28.729052+00:00"
+      },
+      "details": {},
+      "instance_observation": {
+        "vm_id": "4b9b260961e1",
+        "state": "running",
+        "identity": {
+          "avd_name": "aiphone_vm_4b9b260961e1"
+        },
+        "resources_released": false,
+        "reason": "fixture_process_running"
+      },
+      "operation": {
+        "action": "start",
+        "request_id": "413e6bda80f64069",
+        "pending": false,
+        "outcome": "succeeded",
+        "target_agent_id": "agent-2",
+        "target_host_id": "fixture-target",
+        "first_bind": true,
+        "started_at": "2026-10-16T05:03:28.727539+00:00",
+        "deadline_at": "2026-10-16T05:07:28.727539+00:00",
+        "timeout_sec": 240.0,
+        "created_in_attempt": true,
+        "completed_at": "2026-10-16T05:03:28.729044+00:00"
+      },
+      "owner_host_id": "fixture-target",
+      "instance_created": true
+    },
+    "created_at": "2026-10-16T05:03:28.720797",
+    "updated_at": "2026-10-16T05:03:28.729225",
+    "started_at": "2026-10-16T05:03:28.729055",
+    "stopped_at": null,
+    "lifecycle": {
+      "state": "running",
+      "agent_online": true,
+      "actions": {
+        "start": false,
+        "stop": true,
+        "dispatch": false,
+        "delete": false,
+        "edit": true,
+        "copy": true
+      },
+      "notice": "",
+      "error": ""
+    }
+  },
+  "native_start_commands": [
+    {
+      "type": "vm_start",
+      "vm_id": "4b9b260961e1",
+      "name": "view-vm",
+      "alias": "view-vm",
+      "profile_ref_type": "custom",
+      "profile_ref_id": "",
+      "profile_id": "",
+      "profile_name": "",
+      "config_version": 1,
+      "config_json": {
+        "system": {
+          "api_level": 33,
+          "system_type": "google_apis",
+          "abi": "arm64"
+        },
+        "display": {
+          "screen_width": 1080,
+          "screen_height": 2400,
+          "density": 420,
+          "orientation": "portrait",
+          "screen_size_in": "",
+          "cutout": "",
+          "shape_note": ""
+        },
+        "performance": {
+          "ram_mb": 4096,
+          "cpu_cores": 4,
+          "vm_heap_mb": 384,
+          "gpu_mode": "auto"
+        },
+        "storage": {
+          "internal_storage_mb": 8192,
+          "sdcard_mb": 0,
+          "wipe_data": false,
+          "snapshot_policy": "discard_changes"
+        },
+        "network": {
+          "speed": "full",
+          "delay": "none",
+          "dns_server": "",
+          "http_proxy": ""
+        },
+        "hardware": {
+          "back_camera": "emulated",
+          "front_camera": "none",
+          "gps": true,
+          "accelerometer": true,
+          "gyroscope": true,
+          "proximity": false,
+          "hardware_keyboard": false,
+          "navigation_style": "none"
+        },
+        "startup": {
+          "no_window": true,
+          "no_audio": true,
+          "no_boot_anim": true,
+          "writable_system": false
+        },
+        "identity": {}
+      },
+      "capability_marks": {},
+      "api_level": 33,
+      "abi": "arm64",
+      "system_type": "google_apis",
+      "system_image": "",
+      "screen_width": 1080,
+      "screen_height": 2400,
+      "density": 420,
+      "orientation": "portrait",
+      "screen_size_in": "",
+      "ram_mb": 4096,
+      "cpu_cores": 4,
+      "vm_heap_mb": 384,
+      "gpu_mode": "auto",
+      "internal_storage_mb": 8192,
+      "sdcard_mb": 0,
+      "wipe_data": false,
+      "snapshot_policy": "discard_changes",
+      "network_speed": "full",
+      "network_delay": "none",
+      "dns_server": "",
+      "http_proxy": "",
+      "back_camera": "emulated",
+      "front_camera": "none",
+      "gps": true,
+      "accelerometer": true,
+      "gyroscope": true,
+      "proximity": false,
+      "hardware_keyboard": false,
+      "navigation_style": "none",
+      "no_window": true,
+      "no_audio": true,
+      "no_boot_anim": true,
+      "writable_system": false,
+      "request_id": "413e6bda80f64069",
+      "assigned_port": 5554,
+      "exclude_ports": [],
+      "require_existing_instance": false,
+      "rollback_new_instance": true,
+      "operation_timeout_sec": 240.0
+    }
+  ],
+  "old_ledger_present": false
+}

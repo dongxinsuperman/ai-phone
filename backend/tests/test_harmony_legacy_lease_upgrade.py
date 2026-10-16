@@ -116,10 +116,10 @@ async def test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_chec
     assert not hub.sent, "inventory only observes; it must not issue a stop or deletion"
 
     inspected = []
-    monkeypatch.setattr(manager, "_active_instance_serial", lambda vm_id, _known: inspected.append(vm_id) or "")
+    monkeypatch.setattr(manager, "_active_instance_serial", lambda vm_id, _known, **_kwargs: inspected.append(vm_id) or "")
     monkeypatch.setattr(manager, "_port_is_free", lambda _port: True)
-    monkeypatch.setattr(manager, "_cleanup_crash_service", lambda *_args: (True, []))
-    monkeypatch.setattr(manager_module, "hdc_list_targets", lambda: [])
+    monkeypatch.setattr(manager, "_cleanup_crash_service", lambda *_args, **_kwargs: (True, []))
+    monkeypatch.setattr(manager_module, "hdc_list_targets", lambda **_kwargs: [])
     monkeypatch.setattr(manager_module, "managed_vm_owner", lambda _serial: None)
     result = await api.stop_instance(vm_id=vm.id, session=session, hub=hub)
     assert result["sent"] is True

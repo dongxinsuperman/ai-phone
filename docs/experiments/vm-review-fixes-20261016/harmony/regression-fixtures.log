@@ -1,0 +1,18 @@
+...                                                                      [100%]
+=============================== warnings summary ===============================
+tests/test_harmony_vm_ws_e2e.py::test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity
+  /Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/websockets/legacy/server.py:1187: DeprecationWarning: remove second argument of ws_handler
+    warnings.warn("remove second argument of ws_handler", DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 12 durations =============================
+0.75s call     tests/test_harmony_vm_ws_e2e.py::test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity
+0.11s setup    tests/test_harmony_vm_ws_e2e.py::test_http_ws_agent_a_to_b_reused_hdc_keeps_device_and_run_identity
+0.04s setup    tests/test_harmony_legacy_lease_upgrade.py::test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]
+0.03s call     tests/test_harmony_legacy_lease_upgrade.py::test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]
+0.03s setup    tests/test_harmony_legacy_lease_upgrade.py::test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]
+0.03s call     tests/test_harmony_legacy_lease_upgrade.py::test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]
+
+(3 durations < 0.005s hidden.  Use -vv to show these durations.)
+3 passed, 1 warning in 1.09s
+{"final_exit_code": 0, "source_unchanged": true, "duration_seconds": 1.92}

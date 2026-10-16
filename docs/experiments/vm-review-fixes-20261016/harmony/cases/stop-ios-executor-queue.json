@@ -1,0 +1,44 @@
+{
+  "original_deadline": 105.0,
+  "handler_remaining_seconds": [
+    1.0
+  ],
+  "native_events": [],
+  "reports": [
+    {
+      "type": "ios_sim_vm_status",
+      "request_id": "fixture-stop",
+      "vm_id": "abcd12345678",
+      "state": "stopping",
+      "ok": true,
+      "reason": "stopping",
+      "error": "",
+      "udid": "",
+      "details": {}
+    },
+    {
+      "type": "ios_sim_vm_status",
+      "request_id": "fixture-stop",
+      "vm_id": "abcd12345678",
+      "state": "error",
+      "ok": false,
+      "reason": "operation_timeout",
+      "error": "iOS Simulator stop deadline exceeded",
+      "udid": "fixture-ios-udid",
+      "details": {
+        "cleanup_pending": true,
+        "cleanup_confirmed": false,
+        "instance_observation": {
+          "vm_id": "abcd12345678",
+          "state": "unknown",
+          "resources_released": false,
+          "identity": {
+            "sim_name": "",
+            "udid": ""
+          },
+          "reason": "operation_timeout"
+        }
+      }
+    }
+  ]
+}

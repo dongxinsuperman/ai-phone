@@ -53,6 +53,27 @@ from .capability import find_ios_sim_tools, probe_ios_sim_capability
 # Agent 重启后靠它把仍在运行的实例认领回来。
 _MANAGED_NAME_PREFIX = "aiphone_sim_"
 _OBSERVATION_TIMEOUT_SEC = 5.0
+_STOP_TIMEOUT_SEC = 120.0
+
+
+def _stop_timeout(deadline: Optional[float], maximum: float) -> float:
+    if deadline is None:
+        return maximum
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("iOS Simulator stop deadline exceeded")
+    return min(maximum, remaining)
+
+
+def _stop_deadline(msg: Dict[str, Any]) -> float:
+    # Only the relative budget crosses WS; another process's monotonic is not a clock here.
+    try:
+        budget = float(msg.get("operation_timeout_sec", _STOP_TIMEOUT_SEC))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("operation_timeout_sec must be a positive finite number") from exc
+    if not math.isfinite(budget) or budget <= 0:
+        raise ValueError("operation_timeout_sec must be a positive finite number")
+    return time.monotonic() + budget
 
 
 def _start_deadline(msg: Dict[str, Any]) -> Optional[float]:
@@ -289,10 +310,16 @@ class IosSimVmManager:
         await self._start_and_report(client, msg)
 
     async def handle_stop(self, client: AgentWSClient, msg: Dict[str, Any]) -> None:
-        await client.send(self._status_payload(msg, state="stopping", ok=True, reason="stopping"))
-        result = await asyncio.to_thread(
-            self.stop_sync, str(msg.get("vm_id") or ""), str(msg.get("udid") or "")
-        )
+        vm_id, udid = str(msg.get("vm_id") or ""), str(msg.get("udid") or "")
+        try:
+            deadline = _stop_deadline(msg)
+            await asyncio.wait_for(
+                client.send(self._status_payload(msg, state="stopping", ok=True, reason="stopping")),
+                timeout=_stop_timeout(deadline, _STOP_TIMEOUT_SEC),
+            )
+            result = await asyncio.to_thread(self.stop_sync, vm_id, udid, deadline=deadline)
+        except (TimeoutError, ValueError) as exc:
+            result = self._stop_failure(vm_id, udid, exc)
         await client.send(
             self._status_payload(
                 msg,
@@ -918,16 +945,48 @@ class IosSimVmManager:
     # ------------------------------------------------------------------
     # 停止 / 删除
     # ------------------------------------------------------------------
-    def stop_sync(self, vm_id: str, udid: str = "") -> Dict[str, Any]:
+    def stop_sync(
+        self, vm_id: str, udid: str = "", *, deadline: Optional[float] = None,
+    ) -> Dict[str, Any]:
         vm_id = (vm_id or "").strip()
         if not vm_id:
             return {"ok": False, "reason": "bad_request", "error": "vm_id required", "udid": ""}
-        with self._vm_lock(vm_id):
-            self._vm_generations[vm_id] = self._vm_generations.get(vm_id, 0) + 1
-            result = self._stop_sync_locked(vm_id, udid)
-            result["details"] = {**dict(result.get("details") or {}),
-                                 "instance_observation": self.observe_instance(vm_id)}
-            return result
+        try:
+            lock = self._vm_lock(vm_id)
+            acquired = lock.acquire() if deadline is None else lock.acquire(
+                timeout=_stop_timeout(deadline, threading.TIMEOUT_MAX)
+            )
+            if not acquired:
+                raise TimeoutError("iOS Simulator stop deadline exceeded waiting for lifecycle lock")
+            try:
+                _stop_timeout(deadline, 1.0)
+                self._vm_generations[vm_id] = self._vm_generations.get(vm_id, 0) + 1
+                result = self._stop_sync_locked(vm_id, udid, deadline=deadline)
+                udid = str(result.get("udid") or udid)
+                _stop_timeout(deadline, 1.0)
+                result["details"] = {**dict(result.get("details") or {}),
+                                     "instance_observation": self.observe_instance(vm_id, deadline)}
+                _stop_timeout(deadline, 1.0)
+                return result
+            finally:
+                lock.release()
+        except TimeoutError as exc:
+            return self._stop_failure(vm_id, udid, exc)
+
+    def _stop_failure(self, vm_id: str, udid: str, exc: Exception) -> Dict[str, Any]:
+        runtime = self._runtimes.get(vm_id)
+        reason = "operation_timeout" if isinstance(exc, TimeoutError) else "bad_request"
+        return {
+            "ok": False, "reason": reason, "error": str(exc),
+            "udid": runtime.udid if runtime else udid,
+            "details": {"cleanup_pending": True, "cleanup_confirmed": False,
+                        "instance_observation": {
+                            "vm_id": vm_id, "state": "unknown", "resources_released": False,
+                            "identity": {"sim_name": runtime.sim_name if runtime else "",
+                                         "udid": runtime.udid if runtime else ""},
+                            "reason": reason,
+                        }},
+        }
 
     @staticmethod
     def _owned_target(vm_id: str, instances: Dict[str, Dict[str, Any]], udid: str = "") -> str:
@@ -943,14 +1002,18 @@ class IosSimVmManager:
             raise InstanceIdentityError(f"存在多个同名实例 {sim_name}，拒绝选择目标")
         return matches[0] if matches else ""
 
-    def _stop_sync_locked(self, vm_id: str, udid: str = "") -> Dict[str, Any]:
+    def _stop_sync_locked(
+        self, vm_id: str, udid: str = "", *, deadline: Optional[float] = None,
+    ) -> Dict[str, Any]:
         runtime = self._runtimes.get(vm_id)
         try:
-            instances = self._list_all_instances_strict()
+            instances = self._list_all_instances_strict(timeout=_stop_timeout(deadline, 30.0))
+            _stop_timeout(deadline, 1.0)
             target = self._owned_target(vm_id, instances, udid)
             if runtime is not None:
                 self._owned_target(vm_id, instances, runtime.udid)
         except SimctlListFailed as exc:
+            _stop_timeout(deadline, 1.0)
             return {"ok": False, "reason": "instance_list_failed", "error": str(exc), "udid": udid}
         except (InstanceIdentityError, ValueError) as exc:
             return {"ok": False, "reason": "udid_name_mismatch", "error": str(exc), "udid": udid}
@@ -958,10 +1021,15 @@ class IosSimVmManager:
             if runtime is not None:
                 if runtime.launcher is not None:
                     try:
-                        runtime.launcher.stop()
+                        _stop_timeout(deadline, 1.0)
+                        runtime.launcher.stop(**({"deadline": deadline} if deadline is not None else {}))
+                        _stop_timeout(deadline, 1.0)
                     except Exception as exc:  # noqa: BLE001
+                        if deadline is not None and isinstance(exc, TimeoutError):
+                            raise
                         return {"ok": False, "reason": "wda_stop_failed", "error": str(exc),
                                 "udid": runtime.udid}
+                _stop_timeout(deadline, 1.0)
                 self._forget(vm_id, runtime.udid)
             return {"ok": True, "reason": "not_running", "udid": "",
                     "details": {"cleanup_confirmed": True}}
@@ -977,9 +1045,14 @@ class IosSimVmManager:
         if str(meta.get("state") or "").lower() == "shutdown":
             if runtime.launcher is not None:
                 try:
-                    runtime.launcher.stop()
+                    _stop_timeout(deadline, 1.0)
+                    runtime.launcher.stop(**({"deadline": deadline} if deadline is not None else {}))
+                    _stop_timeout(deadline, 1.0)
                 except Exception as exc:  # noqa: BLE001
+                    if deadline is not None and isinstance(exc, TimeoutError):
+                        raise
                     return {"ok": False, "reason": "wda_stop_failed", "error": str(exc), "udid": udid}
+            _stop_timeout(deadline, 1.0)
             self._forget(vm_id, udid)
             return {"ok": True, "reason": "stopped", "udid": udid,
                     "details": {"cleanup_confirmed": True}}
@@ -989,21 +1062,28 @@ class IosSimVmManager:
         wda_error = ""
         if runtime.launcher is not None:
             try:
-                runtime.launcher.stop()
+                _stop_timeout(deadline, 1.0)
+                runtime.launcher.stop(**({"deadline": deadline} if deadline is not None else {}))
             except Exception as exc:  # noqa: BLE001
+                if deadline is not None and isinstance(exc, TimeoutError):
+                    raise
                 wda_error = str(exc)
                 logger.warning("停止 WDA 失败，继续确认 guest 关机 udid={}：{}", udid, exc)
         shutdown_error = ""
+        _stop_timeout(deadline, 1.0)
         try:
-            simctl_run("shutdown", udid, timeout=60.0)
+            simctl_run("shutdown", udid, timeout=_stop_timeout(deadline, 60.0))
         except Exception as exc:  # noqa: BLE001
             shutdown_error = str(exc)
         # 命令成功、already-shutdown、超时都读回同一份事实；不靠宽泛错误文本猜成功。
+        _stop_timeout(deadline, 1.0)
         try:
-            after = self._list_all_instances_strict()
+            after = self._list_all_instances_strict(timeout=_stop_timeout(deadline, 30.0))
+            _stop_timeout(deadline, 1.0)
             self._owned_target(vm_id, after, udid)
             stopped = udid not in after or str(after[udid].get("state") or "").lower() == "shutdown"
         except (SimctlListFailed, InstanceIdentityError) as exc:
+            _stop_timeout(deadline, 1.0)
             stopped = False
             shutdown_error = f"{shutdown_error}; {exc}".strip("; ")
         if not stopped or wda_error:
@@ -1011,6 +1091,7 @@ class IosSimVmManager:
             runtime.details.update({"cleanup_pending": True, "cleanup_error": error})
             return {"ok": False, "reason": "stop_failed", "error": error, "udid": udid,
                     "details": dict(runtime.details)}
+        _stop_timeout(deadline, 1.0)
         self._forget(vm_id, udid)
         return {"ok": True, "reason": "stopped", "udid": udid,
                 "details": {"cleanup_confirmed": True}}

@@ -1,0 +1,26 @@
+.............FF                                                          [100%]
+=================================== FAILURES ===================================
+_________ test_stop_payload_uses_this_operations_recorded_budget[ios] __________
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_switch_failure_recovery.py:206: in test_stop_payload_uses_this_operations_recorded_budget
+    assert stops[0]["operation_timeout_sec"] == operation["timeout_sec"] == 7.25
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'operation_timeout_sec'
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 13:04:19.214 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-3c01eaca4cc94ef997652fa814b6ceb9?mode=memory&cache=shared&uri=true
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 13:04:19.304 | INFO     | ai_phone.server.ios_sim.api:create_instance:196 - 已创建 iOS 虚拟机配置 vm_id=0ab1442d8b1e alias=view-vm 机型=iPhone 17 Pro 系统=iOS 26.0
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 13:04:19.338 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_______ test_stop_payload_uses_this_operations_recorded_budget[harmony] ________
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_switch_failure_recovery.py:206: in test_stop_payload_uses_this_operations_recorded_budget
+    assert stops[0]["operation_timeout_sec"] == operation["timeout_sec"] == 7.25
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'operation_timeout_sec'
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 13:04:19.339 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-703672dacfc14fe2a305bddb83517956?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 13:04:19.406 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+=========================== short test summary info ============================
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_switch_failure_recovery.py::test_stop_payload_uses_this_operations_recorded_budget[ios]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_switch_failure_recovery.py::test_stop_payload_uses_this_operations_recorded_budget[harmony]
+2 failed, 13 passed, 2 warnings in 1.25s

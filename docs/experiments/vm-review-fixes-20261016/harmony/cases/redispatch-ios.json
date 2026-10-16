@@ -1,0 +1,81 @@
+{
+  "first_http": 409,
+  "replacement_id": "499292728515",
+  "old_http": 404,
+  "replacement_state": "error",
+  "replacement_owner": null,
+  "lifecycle": {
+    "state": "draft",
+    "agent_online": false,
+    "actions": {
+      "start": false,
+      "stop": false,
+      "dispatch": true,
+      "delete": true,
+      "edit": true,
+      "copy": true
+    },
+    "notice": "",
+    "error": "新配置启动失败：所属 Agent 离线，请等待连接"
+  },
+  "target_online": true,
+  "second_http": 200,
+  "second_body": {
+    "sent": true,
+    "instance": {
+      "id": "499292728515",
+      "name": "view-vm",
+      "alias": "view-vm",
+      "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+      "device_type_name": "iPhone 17 Pro",
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+      "runtime_name": "iOS 26.0",
+      "os_version": "26.0",
+      "config_json": {},
+      "state": "starting",
+      "assigned_agent_id": null,
+      "udid": null,
+      "wda_port": null,
+      "mjpeg_port": null,
+      "runtime_state": {
+        "last_failure": null,
+        "last_status": {},
+        "details": {},
+        "instance_observation": null,
+        "operation": {
+          "action": "start",
+          "request_id": "46a3731c0c9a4130",
+          "pending": true,
+          "outcome": "pending",
+          "target_agent_id": "agent-2",
+          "target_host_id": "",
+          "first_bind": true,
+          "started_at": "2026-10-16T06:52:15.407916+00:00",
+          "deadline_at": "2026-10-16T07:02:15.407916+00:00",
+          "timeout_sec": 600.0
+        }
+      },
+      "error_code": "",
+      "error_message": "",
+      "created_at": "2026-10-16T06:52:15.396477",
+      "updated_at": "2026-10-16T06:52:15.408075",
+      "started_at": null,
+      "stopped_at": null,
+      "lifecycle": {
+        "state": "starting",
+        "agent_online": false,
+        "actions": {
+          "start": false,
+          "stop": false,
+          "dispatch": false,
+          "delete": false,
+          "edit": false,
+          "copy": false
+        },
+        "notice": "",
+        "error": ""
+      }
+    }
+  },
+  "native_start_commands": 1
+}

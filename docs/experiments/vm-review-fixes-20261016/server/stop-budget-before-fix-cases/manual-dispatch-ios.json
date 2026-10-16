@@ -1,0 +1,314 @@
+{
+  "first_http": 409,
+  "first_detail": {
+    "message": "所属 Agent 离线，请等待连接",
+    "sent": false,
+    "vm_id": "7c05304b137d",
+    "request_id": "",
+    "instance": {
+      "id": "7c05304b137d",
+      "name": "view-vm",
+      "alias": "view-vm",
+      "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+      "device_type_name": "iPhone 17 Pro",
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+      "runtime_name": "iOS 26.0",
+      "os_version": "26.0",
+      "config_json": {},
+      "state": "error",
+      "assigned_agent_id": null,
+      "udid": null,
+      "wda_port": null,
+      "mjpeg_port": null,
+      "runtime_state": {
+        "last_failure": {
+          "message": "新配置启动失败：所属 Agent 离线，请等待连接",
+          "reason": "switch_target_not_dispatched",
+          "action": "start",
+          "request_id": "",
+          "at": "2026-10-16T05:04:18.369129+00:00",
+          "native_command_sent": false
+        },
+        "last_status": {
+          "state": "error",
+          "ok": false,
+          "details": {
+            "cleanup_confirmed": true,
+            "instance_created": false
+          }
+        },
+        "details": {
+          "cleanup_confirmed": true,
+          "instance_created": false
+        }
+      },
+      "error_code": "",
+      "error_message": "新配置启动失败：所属 Agent 离线，请等待连接",
+      "created_at": "2026-10-16T05:04:18.367179",
+      "updated_at": "2026-10-16T05:04:18.367180",
+      "started_at": null,
+      "stopped_at": null,
+      "lifecycle": {
+        "state": "draft",
+        "agent_online": false,
+        "actions": {
+          "start": false,
+          "stop": false,
+          "dispatch": true,
+          "delete": true,
+          "edit": true,
+          "copy": true
+        },
+        "notice": "",
+        "error": "新配置启动失败：所属 Agent 离线，请等待连接"
+      }
+    },
+    "switched": true,
+    "old_vm_id": "a1626c3d3bc6",
+    "old_cleanup_sent": true
+  },
+  "old_id": "a1626c3d3bc6",
+  "replacement_id": "7c05304b137d",
+  "read_after_target_reconnect": {
+    "id": "7c05304b137d",
+    "name": "view-vm",
+    "alias": "view-vm",
+    "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+    "device_type_name": "iPhone 17 Pro",
+    "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+    "runtime_name": "iOS 26.0",
+    "os_version": "26.0",
+    "config_json": {},
+    "state": "error",
+    "assigned_agent_id": null,
+    "udid": null,
+    "wda_port": null,
+    "mjpeg_port": null,
+    "runtime_state": {
+      "last_failure": {
+        "message": "新配置启动失败：所属 Agent 离线，请等待连接",
+        "reason": "switch_target_not_dispatched",
+        "action": "start",
+        "request_id": "",
+        "at": "2026-10-16T05:04:18.369129+00:00",
+        "native_command_sent": false
+      },
+      "last_status": {
+        "state": "error",
+        "ok": false,
+        "details": {
+          "cleanup_confirmed": true,
+          "instance_created": false
+        }
+      },
+      "details": {
+        "cleanup_confirmed": true,
+        "instance_created": false
+      }
+    },
+    "error_code": "",
+    "error_message": "新配置启动失败：所属 Agent 离线，请等待连接",
+    "created_at": "2026-10-16T05:04:18.367179",
+    "updated_at": "2026-10-16T05:04:18.369277",
+    "started_at": null,
+    "stopped_at": null,
+    "lifecycle": {
+      "state": "draft",
+      "agent_online": false,
+      "actions": {
+        "start": false,
+        "stop": false,
+        "dispatch": true,
+        "delete": true,
+        "edit": true,
+        "copy": true
+      },
+      "notice": "",
+      "error": "新配置启动失败：所属 Agent 离线，请等待连接"
+    }
+  },
+  "second_http": 200,
+  "second_body": {
+    "sent": true,
+    "instance": {
+      "id": "7c05304b137d",
+      "name": "view-vm",
+      "alias": "view-vm",
+      "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+      "device_type_name": "iPhone 17 Pro",
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+      "runtime_name": "iOS 26.0",
+      "os_version": "26.0",
+      "config_json": {},
+      "state": "starting",
+      "assigned_agent_id": null,
+      "udid": null,
+      "wda_port": null,
+      "mjpeg_port": null,
+      "runtime_state": {
+        "last_failure": null,
+        "last_status": {},
+        "details": {},
+        "instance_observation": null,
+        "operation": {
+          "action": "start",
+          "request_id": "7ec1da02e63149ec",
+          "pending": true,
+          "outcome": "pending",
+          "target_agent_id": "agent-2",
+          "target_host_id": "fixture-target",
+          "first_bind": true,
+          "started_at": "2026-10-16T05:04:18.374261+00:00",
+          "deadline_at": "2026-10-16T05:14:18.374261+00:00",
+          "timeout_sec": 600.0
+        }
+      },
+      "error_code": "",
+      "error_message": "",
+      "created_at": "2026-10-16T05:04:18.367179",
+      "updated_at": "2026-10-16T05:04:18.374346",
+      "started_at": null,
+      "stopped_at": null,
+      "lifecycle": {
+        "state": "starting",
+        "agent_online": false,
+        "actions": {
+          "start": false,
+          "stop": false,
+          "dispatch": false,
+          "delete": false,
+          "edit": false,
+          "copy": false
+        },
+        "notice": "",
+        "error": ""
+      }
+    }
+  },
+  "final_instance": {
+    "id": "7c05304b137d",
+    "name": "view-vm",
+    "alias": "view-vm",
+    "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+    "device_type_name": "iPhone 17 Pro",
+    "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+    "runtime_name": "iOS 26.0",
+    "os_version": "26.0",
+    "config_json": {},
+    "state": "running",
+    "assigned_agent_id": "agent-2",
+    "udid": "new-only-7c05304b137d",
+    "wda_port": null,
+    "mjpeg_port": null,
+    "runtime_state": {
+      "last_failure": null,
+      "last_status": {
+        "state": "running",
+        "ok": true,
+        "reason": "running",
+        "details": {
+          "sim_name": "aiphone_sim_7c05304b137d",
+          "udid": "new-only-7c05304b137d",
+          "instance_created": true,
+          "created_in_attempt": true,
+          "instance_observation": {
+            "vm_id": "7c05304b137d",
+            "state": "running",
+            "identity": {
+              "sim_name": "aiphone_sim_7c05304b137d",
+              "udid": "new-only-7c05304b137d"
+            },
+            "resources_released": false,
+            "reason": "fixture_process_running"
+          }
+        }
+      },
+      "details": {
+        "sim_name": "aiphone_sim_7c05304b137d",
+        "udid": "new-only-7c05304b137d",
+        "instance_created": true,
+        "created_in_attempt": true,
+        "instance_observation": {
+          "vm_id": "7c05304b137d",
+          "state": "running",
+          "identity": {
+            "sim_name": "aiphone_sim_7c05304b137d",
+            "udid": "new-only-7c05304b137d"
+          },
+          "resources_released": false,
+          "reason": "fixture_process_running"
+        }
+      },
+      "instance_observation": {
+        "vm_id": "7c05304b137d",
+        "state": "running",
+        "identity": {
+          "sim_name": "aiphone_sim_7c05304b137d",
+          "udid": "new-only-7c05304b137d"
+        },
+        "resources_released": false,
+        "reason": "fixture_process_running"
+      },
+      "operation": {
+        "action": "start",
+        "request_id": "7ec1da02e63149ec",
+        "pending": false,
+        "outcome": "succeeded",
+        "target_agent_id": "agent-2",
+        "target_host_id": "fixture-target",
+        "first_bind": true,
+        "started_at": "2026-10-16T05:04:18.374261+00:00",
+        "deadline_at": "2026-10-16T05:14:18.374261+00:00",
+        "timeout_sec": 600.0,
+        "created_in_attempt": true,
+        "completed_at": "2026-10-16T05:04:18.377351+00:00"
+      },
+      "instance_created": true,
+      "owner_host_id": "fixture-target",
+      "last_reason": "running",
+      "last_state": "running",
+      "last_agent_id": "agent-2",
+      "updated_at": "2026-10-16T05:04:18.377343+00:00"
+    },
+    "error_code": "",
+    "error_message": "",
+    "created_at": "2026-10-16T05:04:18.367179",
+    "updated_at": "2026-10-16T05:04:18.377465",
+    "started_at": "2026-10-16T05:04:18.375801",
+    "stopped_at": null,
+    "lifecycle": {
+      "state": "running",
+      "agent_online": true,
+      "actions": {
+        "start": false,
+        "stop": true,
+        "dispatch": false,
+        "delete": false,
+        "edit": true,
+        "copy": true
+      },
+      "notice": "",
+      "error": ""
+    }
+  },
+  "native_start_commands": [
+    {
+      "type": "ios_sim_vm_start",
+      "vm_id": "7c05304b137d",
+      "name": "view-vm",
+      "alias": "view-vm",
+      "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+      "device_type_name": "iPhone 17 Pro",
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-0",
+      "runtime_name": "iOS 26.0",
+      "os_version": "26.0",
+      "config_json": {},
+      "request_id": "7ec1da02e63149ec",
+      "udid": "",
+      "require_existing_instance": false,
+      "rollback_new_instance": true,
+      "operation_timeout_sec": 600.0
+    }
+  ],
+  "old_ledger_present": false
+}
