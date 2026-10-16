@@ -2221,23 +2221,48 @@ def test_harmony_capability_dry_run_uses_server_display_mode(monkeypatch):
     assert "-screenProfile" not in commands[0]
 
 
-def test_harmony_capability_waiter_drops_disconnected_agent_port_evidence():
+async def test_harmony_capability_waiter_drops_disconnected_agent_port_evidence():
     waiter = HarmonyVmCapabilityWaiter()
-    resolved = waiter.resolve(
-        "agent-a",
-        {
-            "request_id": "expired",
-            "details": {
-                "hdc_target_ports": [10001],
-                "fport_ports": [16557],
-                "tcp_listener_ports": [17000],
-            },
-        },
+    replies = []
+
+    class ProbeHub:
+        def snapshot(self):
+            return {"agents": [{"agent_id": "agent-a", "host_os": "Darwin"}]}
+
+        def has_agent(self, agent_id):
+            return agent_id == "agent-a"
+
+        async def send_to_agent(self, agent_id, payload):
+            reply = {
+                "request_id": payload["request_id"], "ok": True,
+                "details": {
+                    "hdc_target_ports": [10001],
+                    "fport_ports": [16557],
+                    "tcp_listener_ports": [17000],
+                },
+            }
+            replies.append((reply, waiter.resolve(agent_id, reply)))
+            return True
+
+    events = waiter.probe_stream(
+        hub=ProbeHub(),
+        vm=HarmonyVmInstance(id="cache-port-vm", name="cache-port-vm", alias="cache-port-vm"),
     )
-    assert resolved is False
+    try:
+        snapshot = await anext(events)
+        updates = [event async for event in events]
+    finally:
+        await events.aclose()
+    assert snapshot["type"] == "snapshot"
+    assert len(replies) == 1 and replies[0][1] is True
+    assert replies[0][0]["request_id"] == snapshot["request_id"]
+    assert updates[-1]["type"] == "done"
     assert waiter.excluded_ports_for("agent-a") == {10001, 16557, 17000}
 
     waiter.discard_agent("agent-a")
+    assert waiter.excluded_ports_for("agent-a") == set()
+    assert waiter.latest_for("agent-a") == {}
+    assert waiter.resolve("agent-a", replies[0][0]) is False
     assert waiter.excluded_ports_for("agent-a") == set()
 
 

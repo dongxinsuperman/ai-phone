@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { internal } from '../lib/api.js'
+import { candidateAvailable, createVmCandidateProbe } from '../lib/vmCandidateProbe.js'
 
 const instances = ref([])
 const deviceProfiles = ref([])
@@ -12,6 +13,7 @@ const busyByVm = reactive({})
 const err = ref('')
 const candidates = ref([])
 const candidateVmId = ref('')
+const candidateStatus = reactive({ error: '' })
 const candidateEls = new Map()
 const selectedFormFactor = ref('all')
 const selectedBrands = ref([])
@@ -42,7 +44,16 @@ const copyDlg = reactive({ open: false, vm: null, alias: '', busy: false, error:
 let pollTimer = null
 let instanceSeq = 0
 let activeInstanceLoads = 0
-let candidateSeq = 0
+const candidateProbe = createVmCandidateProbe({
+  candidateVmId, candidates, candidateStatus, busyByVm,
+  request: (id, options) => internal.androidVms.dispatchCandidatesStream(id, options),
+  canContinue: (vm) => {
+    const current = instances.value.find((item) => item.id === vm.id)
+    return Boolean(current && canProbe(current))
+  },
+  describeError: prettyErr,
+  onError: (reason) => { err.value = reason },
+})
 let searchTimer = null
 // 防竞态：递增序号，异步响应回来时只接受最新一次的结果
 let catalogSeq = 0
@@ -157,9 +168,10 @@ function setCandidatesRef(id, el) {
 }
 
 function closeCandidates() {
-  candidateSeq += 1
+  candidateProbe.cancel()
   candidateVmId.value = ''
   candidates.value = []
+  candidateStatus.error = ''
 }
 
 const selectedDevice = computed(() => (
@@ -771,31 +783,14 @@ async function confirmCopy() {
 
 async function probe(vm, options = {}) {
   if (isVmBusy(vm) || !canProbe(vm)) return
-  const sequence = ++candidateSeq
   err.value = ''
-  candidateVmId.value = vm.id
-  candidates.value = []
-  busyByVm[vm.id] = 'probe'
+  const pending = candidateProbe.run(vm)
   await nextTick()
   candidateEls.get(vm.id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  try {
-    const result = await internal.androidVms.dispatchCandidates(vm.id)
-    if (sequence !== candidateSeq || candidateVmId.value !== vm.id) return
-    const current = instances.value.find((item) => item.id === vm.id)
-    if (current && !canProbe(current)) {
-      closeCandidates()
-      return
-    }
-    candidates.value = result?.agents || []
-    const okAgents = candidates.value.filter((agent) => agent.ok)
-    if (options.autoDispatchSingle && okAgents.length === 1) {
-      delete busyByVm[vm.id]
-      await dispatchTo(vm, okAgents[0].agent_id)
-    }
-  } catch (e) {
-    if (sequence === candidateSeq && candidateVmId.value === vm.id) err.value = prettyErr(e)
-  } finally {
-    if (busyByVm[vm.id] === 'probe') delete busyByVm[vm.id]
+  const result = await pending
+  if (options.autoDispatchSingle && result?.completed && result.canAutoDispatch()) {
+    const available = candidates.value.filter(candidateAvailable)
+    if (available.length === 1) await dispatchTo(vm, available[0].agent_id)
   }
 }
 
@@ -814,9 +809,17 @@ function applyOperationResult(vm, result) {
 }
 
 async function dispatchTo(vm, agentId) {
-  if (isVmBusy(vm) || !canProbe(vm)) return
+  const busy = busyByVm[vm.id]
+  const selected = candidateVmId.value === vm.id
+    ? candidates.value.find((agent) => agent.agent_id === agentId)
+    : null
+  if (!canProbe(vm) || (busy && busy !== 'probe')) return
+  if (busy === 'probe' && (!selected || !canDispatchTo(vm, selected))) return
+  if (selected && !candidateAvailable(selected)) return
+  if (candidateVmId.value === vm.id) candidateProbe.disableAutoDispatch()
   if (vm.assigned_agent_id && vm.assigned_agent_id !== agentId
     && !confirm('换 Agent 将删除原配置，并在目标 Agent 新建空白机器；原实例的数据不迁移。确定继续？')) return
+  if (candidateVmId.value === vm.id) candidateProbe.cancel({ markCancelled: true })
   busyByVm[vm.id] = 'dispatch'
   err.value = ''
   try {
@@ -923,10 +926,15 @@ function canDelete(vm) {
   return !isTransitioning(vm) && vm.state !== 'running'
 }
 function canDispatchTo(vm, agent) {
-  return Boolean(agent.ok) && canProbe(vm)
+  const busy = busyByVm[vm.id]
+  return candidateAvailable(agent) && canProbe(vm)
+    && (!busy || (busy === 'probe' && candidateVmId.value === vm.id))
 }
 function dispatchLabel(vm, agent) {
-  if (!agent.ok) return '不可用'
+  if (agent.probe_state === 'probing') return '探查中…'
+  if (agent.probe_state === 'timeout') return '超时'
+  if (agent.probe_state === 'offline') return '离线'
+  if (!candidateAvailable(agent)) return '不可用'
   if (!canDispatchTo(vm, agent)) return '需先停止'
   return vm.assigned_agent_id && agent.agent_id !== vm.assigned_agent_id
     ? '换到这台'
@@ -1577,20 +1585,22 @@ defineExpose({ refresh })
                 </button>
                 <button type="button" class="ghost" @click="closeCandidates">收起</button>
               </div>
-              <div v-if="busyByVm[vm.id] === 'probe'" class="empty probing">正在探查可托管的 Agent，请稍候…</div>
-              <div v-else class="candidate-grid">
-                <div v-for="agent in candidates" :key="agent.agent_id" class="candidate" :class="{ disabled: !agent.ok }">
+              <div class="candidate-grid">
+                <div v-for="agent in candidates" :key="agent.agent_id" class="candidate" :class="{ disabled: !agent.ok && agent.probe_state !== 'probing', probing: agent.probe_state === 'probing' }">
                   <div>
                     <strong>{{ agent.agent_name || agent.agent_id }}</strong>
                     <p>{{ agent.host_os || '-' }}</p>
-                    <p v-if="agent.warning" class="candidate-warn">⚠ {{ agent.warning }}</p>
+                    <p v-if="agent.warning && agent.ok" class="candidate-warn">⚠ {{ agent.warning }}</p>
                     <p v-else>{{ agent.reason }}</p>
                   </div>
-                  <button type="button" :disabled="!canDispatchTo(vm, agent) || isVmBusy(vm)" @click="dispatchTo(vm, agent.agent_id)">
+                  <button type="button" :disabled="!canDispatchTo(vm, agent)" @click="dispatchTo(vm, agent.agent_id)">
+                    <span v-if="agent.probe_state === 'probing'" class="probe-spinner" aria-hidden="true"></span>
                     {{ busyByVm[vm.id] === 'dispatch' ? '下发中…' : dispatchLabel(vm, agent) }}
                   </button>
                 </div>
-                <div v-if="!candidates.length" class="empty">未找到可托管的 Agent（检查 Agent 是否在线、是否装好 Android SDK/emulator）</div>
+                <div v-if="!candidates.length" class="empty">
+                  {{ candidateStatus.error || (busyByVm[vm.id] === 'probe' ? '正在获取在线 Agent…' : '当前没有在线 Agent，请先连接 Agent 后重新探查。') }}
+                </div>
               </div>
             </div>
           </div>
@@ -1630,6 +1640,8 @@ defineExpose({ refresh })
 </template>
 
 <style scoped>
+.probe-spinner { display: inline-block; width: 11px; height: 11px; margin-right: 4px; border: 2px solid #cbd5e1; border-top-color: #2563eb; border-radius: 50%; vertical-align: -1px; animation: probe-spin .8s linear infinite; }
+@keyframes probe-spin { to { transform: rotate(360deg); } }
 .lifecycle-notice { margin: 10px 0 0; border-radius: 6px; background: #fffbeb; color: #92400e; padding: 9px 10px; font-size: 12px; line-height: 1.5; }
 .vm-operation-error { margin: 8px 0 0; color: #b91c1c; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
 .page {
@@ -2314,6 +2326,8 @@ button:disabled {
   background: #f9fafb;
   opacity: 0.72;
 }
+.candidate > div { min-width: 0; overflow-wrap: anywhere; }
+.candidate > button { flex: 0 0 auto; align-self: flex-start; white-space: nowrap; }
 .candidate p {
   margin: 4px 0 0;
   color: #6b7280;

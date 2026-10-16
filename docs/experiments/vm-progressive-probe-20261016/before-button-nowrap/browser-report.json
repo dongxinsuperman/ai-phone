@@ -1,0 +1,241 @@
+{
+  "checks": [
+    {
+      "passed": true,
+      "label": "android: complete online list is visible"
+    },
+    {
+      "passed": true,
+      "label": "android: fast Agent can dispatch before batch completion"
+    },
+    {
+      "passed": true,
+      "label": "android: 发送较慢的测试电脑 remains pending independently"
+    },
+    {
+      "passed": true,
+      "label": "android: 响应较慢的测试电脑 remains pending independently"
+    },
+    {
+      "passed": true,
+      "label": "android: fast row enabled while real Server batch is still open"
+    },
+    {
+      "passed": true,
+      "label": "android: batch remains unfinished immediately before dispatch click"
+    },
+    {
+      "passed": true,
+      "label": "android: actual dispatch route accepts the chosen Agent"
+    },
+    {
+      "passed": true,
+      "label": "android: exactly one lifecycle send to the selected Agent"
+    },
+    {
+      "passed": true,
+      "label": "android: successful dispatch closes the probe list"
+    },
+    {
+      "passed": true,
+      "label": "android: slow send and slow reply each reach a terminal timeout"
+    },
+    {
+      "passed": true,
+      "label": "android: another Agent timeout does not disable the good row"
+    },
+    {
+      "passed": true,
+      "label": "android: result updates preserve row positions"
+    },
+    {
+      "passed": true,
+      "label": "android: failed send is visible independently"
+    },
+    {
+      "passed": true,
+      "label": "android: closing does not reopen on a late reply"
+    },
+    {
+      "passed": true,
+      "label": "android: cancelled request replies are rejected by Server"
+    },
+    {
+      "passed": true,
+      "label": "android: existing JSON client contract remains intact"
+    },
+    {
+      "passed": true,
+      "label": "android: stream retains authorization check"
+    },
+    {
+      "passed": true,
+      "label": "harmony: complete online list is visible"
+    },
+    {
+      "passed": true,
+      "label": "harmony: fast Agent can dispatch before batch completion"
+    },
+    {
+      "passed": true,
+      "label": "harmony: 发送较慢的测试电脑 remains pending independently"
+    },
+    {
+      "passed": true,
+      "label": "harmony: 响应较慢的测试电脑 remains pending independently"
+    },
+    {
+      "passed": true,
+      "label": "harmony: fast row enabled while real Server batch is still open"
+    },
+    {
+      "passed": true,
+      "label": "harmony: batch remains unfinished immediately before dispatch click"
+    },
+    {
+      "passed": true,
+      "label": "harmony: actual dispatch route accepts the chosen Agent"
+    },
+    {
+      "passed": true,
+      "label": "harmony: exactly one lifecycle send to the selected Agent"
+    },
+    {
+      "passed": true,
+      "label": "harmony: successful dispatch closes the probe list"
+    },
+    {
+      "passed": true,
+      "label": "harmony: slow send and slow reply each reach a terminal timeout"
+    },
+    {
+      "passed": true,
+      "label": "harmony: another Agent timeout does not disable the good row"
+    },
+    {
+      "passed": true,
+      "label": "harmony: result updates preserve row positions"
+    },
+    {
+      "passed": true,
+      "label": "harmony: failed send is visible independently"
+    },
+    {
+      "passed": true,
+      "label": "harmony: closing does not reopen on a late reply"
+    },
+    {
+      "passed": true,
+      "label": "harmony: cancelled request replies are rejected by Server"
+    },
+    {
+      "passed": true,
+      "label": "harmony: existing JSON client contract remains intact"
+    },
+    {
+      "passed": true,
+      "label": "harmony: stream retains authorization check"
+    },
+    {
+      "passed": true,
+      "label": "ios: complete online list is visible"
+    },
+    {
+      "passed": true,
+      "label": "ios: fast Agent can dispatch before batch completion"
+    },
+    {
+      "passed": true,
+      "label": "ios: 发送较慢的测试电脑 remains pending independently"
+    },
+    {
+      "passed": true,
+      "label": "ios: 响应较慢的测试电脑 remains pending independently"
+    },
+    {
+      "passed": true,
+      "label": "ios: fast row enabled while real Server batch is still open"
+    },
+    {
+      "passed": true,
+      "label": "ios: batch remains unfinished immediately before dispatch click"
+    },
+    {
+      "passed": true,
+      "label": "ios: actual dispatch route accepts the chosen Agent"
+    },
+    {
+      "passed": true,
+      "label": "ios: exactly one lifecycle send to the selected Agent"
+    },
+    {
+      "passed": true,
+      "label": "ios: successful dispatch closes the probe list"
+    },
+    {
+      "passed": true,
+      "label": "ios: slow send and slow reply each reach a terminal timeout"
+    },
+    {
+      "passed": true,
+      "label": "ios: another Agent timeout does not disable the good row"
+    },
+    {
+      "passed": true,
+      "label": "ios: result updates preserve row positions"
+    },
+    {
+      "passed": true,
+      "label": "ios: failed send is visible independently"
+    },
+    {
+      "passed": true,
+      "label": "ios: closing does not reopen on a late reply"
+    },
+    {
+      "passed": true,
+      "label": "ios: cancelled request replies are rejected by Server"
+    },
+    {
+      "passed": true,
+      "label": "ios: existing JSON client contract remains intact"
+    },
+    {
+      "passed": true,
+      "label": "ios: stream retains authorization check"
+    },
+    {
+      "passed": true,
+      "label": "fixture made no blocked external/native call",
+      "detail": []
+    },
+    {
+      "passed": true,
+      "label": "browser made no non-fixture request",
+      "detail": []
+    },
+    {
+      "passed": true,
+      "label": "no browser runtime exception",
+      "detail": []
+    }
+  ],
+  "summary": {
+    "passed": 54,
+    "failed": 0,
+    "screenshots": 6
+  },
+  "runtimeErrors": [],
+  "blockedUrls": [],
+  "screenshots": [
+    "android-fast-ready.png",
+    "android-independent-timeout.png",
+    "harmony-fast-ready.png",
+    "harmony-independent-timeout.png",
+    "ios-fast-ready.png",
+    "ios-independent-timeout.png"
+  ],
+  "scope": "Built Vue UI and actual FastAPI VM routes with controlled fake Agents; transport acceptance only, no native VM execution.",
+  "duration_ms": 25466,
+  "playwright_version": "1.62.1"
+}

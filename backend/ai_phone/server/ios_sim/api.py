@@ -31,6 +31,7 @@ from ai_phone.shared import protocol as P
 from ..api._deps import DBSession, HubDep
 from ..api.submissions import RequireBearer
 from ..hub import Hub
+from ..vm_probe import probe_stream_response
 from ..vm_lifecycle import (
     operation_failure_detail,
     is_untouched_draft,
@@ -351,6 +352,7 @@ async def dispatch_candidates(
     vm_id: str,
     session: AsyncSession = DBSession,
     hub: Hub = HubDep,
+    stream: bool = False,
 ) -> Dict[str, Any]:
     """向所有在线 Agent 广播探查，返回各自能否承接。
 
@@ -360,7 +362,14 @@ async def dispatch_candidates(
         vm = await get_vm_or_404(session, vm_id)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="实例不存在") from exc
-    return await get_capability_waiter().probe(hub=hub, vm=vm)
+    waiter = get_capability_waiter()
+    events = waiter.probe_stream(hub=hub, vm=vm)
+    # Payload/snapshot are plain data now; do not pin a DB connection while
+    # slow Agents are being probed (including the legacy JSON collector).
+    await session.close()
+    if stream:
+        return probe_stream_response(events)
+    return await waiter.collect_probe(events)
 
 
 @router.post("/{vm_id}/dispatch")

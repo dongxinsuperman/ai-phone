@@ -1,10 +1,8 @@
 """Server orchestration helpers for managed HarmonyOS Emulator instances."""
 from __future__ import annotations
 
-import asyncio
 import re
 import uuid
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional
 
@@ -17,6 +15,7 @@ from ai_phone.shared import protocol as P
 
 from ..db import get_session_factory
 from ..hub import Hub
+from ..vm_probe import CapabilityProbeWaiter
 from ..vm_lifecycle import (
     record_creation_provenance, proves_live_managed_instance, send_operation_once,
     expire_operation_if_due,
@@ -306,27 +305,36 @@ async def quarantine_current_lease(
     # Keep the VM link while cleanup is outstanding.
 
 
-async def mark_agent_vms_offline(agent_id: str) -> int:
-    get_capability_waiter().forget_agent(agent_id)
+async def mark_agent_vms_offline(agent_id: str, *, hub: Optional[Hub] = None) -> int:
+    # Probe invalidation is synchronous in the exact-socket disconnect hook;
+    # an old DB cleanup must not erase a reconnected session's fresh result.
     factory = get_session_factory()
     async with factory() as session:
         rows = list((await session.execute(select(HarmonyVmInstance).where(
             (HarmonyVmInstance.assigned_agent_id == agent_id) |
             (HarmonyVmInstance.runtime["operation"]["target_agent_id"].as_string() == agent_id)
         ))).scalars().all())
+        changed = 0
         for vm in sorted(rows, key=lambda row: row.id):
             await transaction_lock(session, f"harmony-vm:{vm.id}")
             vm = await session.get(HarmonyVmInstance, vm.id, populate_existing=True)
             if vm is None:
                 continue
             op = lifecycle_runtime(vm).get("operation") or {}
+            # The old socket's DB tail cannot fail a reconnected session's
+            # newer operation after acquiring this same per-VM lock.
+            if hub is not None and hub.has_agent(agent_id):
+                continue
             if op.get("pending") and op.get("target_agent_id") == agent_id:
                 fail_attempt(vm, "agent_disconnected", "Agent 断开，本次操作已结束；不会自动重试")
             elif vm.assigned_agent_id == agent_id:
                 vm.state, vm.error_code, vm.error_message = "agent_offline", "agent_offline", f"agent offline: {agent_id}"
+            else:
+                continue
+            changed += 1
         if rows:
             await session.commit()
-        return len(rows)
+        return changed
 
 async def filter_managed_devices_for_agent(
     agent_id: str, devices: list[Dict[str, Any]]
@@ -663,177 +671,29 @@ async def _handle_stopped_vm_reconcile(agent_id: str, item: Dict[str, Any], hub:
         await session.commit()
 
 
-@dataclass
-class _ProbeState:
-    expected: set[str]
-    responses: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    failures: Dict[str, str] = field(default_factory=dict)
-    event: asyncio.Event = field(default_factory=asyncio.Event)
+def capability_excluded_ports(response: Dict[str, Any], *, include_local: bool = True) -> set[int]:
+    details = response.get("details") if isinstance(response.get("details"), dict) else {}
+    keys = ("hdc_target_ports", "fport_ports", "tcp_listener_ports", "local_excluded_ports") if include_local else ("hdc_target_ports",)
+    ports: set[int] = set()
+    for key in keys:
+        for value in details.get(key) or []:
+            try:
+                ports.add(int(value))
+            except (TypeError, ValueError):
+                pass
+    return ports
 
 
-class HarmonyVmCapabilityWaiter:
+class HarmonyVmCapabilityWaiter(CapabilityProbeWaiter):
     def __init__(self) -> None:
-        self._pending: Dict[str, _ProbeState] = {}
-        self._latest: Dict[str, Dict[str, Any]] = {}
-
-    async def probe(
-        self,
-        *,
-        hub: Hub,
-        vm: HarmonyVmInstance,
-        timeout_sec: float = 60.0,
-    ) -> Dict[str, Any]:
-        agents = list(hub.snapshot().get("agents") or [])
-        agent_ids = {
-            str(row.get("agent_id") or "").strip()
-            for row in agents
-            if str(row.get("agent_id") or "").strip()
-        }
-        request_id = uuid.uuid4().hex[:16]
-        state = _ProbeState(expected=agent_ids)
-        self._pending[request_id] = state
-        payload = {
-            "type": P.MSG_HARMONY_VM_CAPABILITY_PROBE,
-            **vm_payload(vm, request_id=request_id),
-        }
-        try:
-            for agent_id in sorted(agent_ids):
-                if not await send_operation_once(hub, agent_id, payload):
-                    state.failures[agent_id] = "send_failed"
-            if state.expected - (state.responses.keys() | state.failures.keys()):
-                try:
-                    await asyncio.wait_for(state.event.wait(), timeout=timeout_sec)
-                except asyncio.TimeoutError:
-                    pass
-            return {"request_id": request_id, "agents": self._rows(agents, state)}
-        finally:
-            self._pending.pop(request_id, None)
-
-    async def probe_agent(
-        self,
-        *,
-        hub: Hub,
-        vm: HarmonyVmInstance,
-        agent_id: str,
-        timeout_sec: float = 60.0,
-    ) -> Dict[str, Any]:
-        """Refresh one Agent immediately before reserving an HDC port.
-
-        A previous probe can become stale after a crashed Emulator leaves an
-        Offline HDC target. Android resolves its local emulator port at start;
-        Harmony keeps Server ownership, so Server must refresh this evidence
-        before choosing from its independent port pool.
-        """
-        request_id = uuid.uuid4().hex[:16]
-        state = _ProbeState(expected={agent_id})
-        self._pending[request_id] = state
-        payload = {
-            "type": P.MSG_HARMONY_VM_CAPABILITY_PROBE,
-            **vm_payload(vm, request_id=request_id),
-        }
-        try:
-            if not await send_operation_once(hub, agent_id, payload):
-                state.failures[agent_id] = "send_failed"
-            else:
-                try:
-                    await asyncio.wait_for(
-                        state.event.wait(),
-                        timeout=timeout_sec,
-                    )
-                except asyncio.TimeoutError:
-                    pass
-            response = state.responses.get(agent_id)
-            if response is not None:
-                return dict(response)
-            return {
-                "ok": False,
-                "reason": (
-                    "下发失败"
-                    if state.failures.get(agent_id)
-                    else "探查超时"
-                ),
-                "details": {},
-            }
-        finally:
-            self._pending.pop(request_id, None)
-
-    def resolve(self, agent_id: str, msg: Dict[str, Any]) -> bool:
-        self._latest[agent_id] = dict(msg)
-        request_id = str(msg.get("request_id") or "")
-        state = self._pending.get(request_id)
-        if state is None:
-            return False
-        state.responses[agent_id] = dict(msg)
-        if state.expected.issubset(state.responses.keys() | state.failures.keys()):
-            state.event.set()
-        return True
-
-    def discard_agent(self, agent_id: str) -> None:
-        """Drop stale port evidence and finish probes waiting on a disconnected Agent."""
-        self._latest.pop(agent_id, None)
-        for state in self._pending.values():
-            if (
-                agent_id in state.expected
-                and agent_id not in state.responses
-                and agent_id not in state.failures
-            ):
-                state.failures[agent_id] = "agent_disconnected"
-            if state.expected.issubset(
-                state.responses.keys() | state.failures.keys()
-            ):
-                state.event.set()
-
-    def forget_agent(self, agent_id: str) -> None:
-        """Agent 断线即丢弃其探查快照，避免其上报端口被永久排除。"""
-        self._latest.pop(agent_id, None)
+        super().__init__(P.MSG_HARMONY_VM_CAPABILITY_PROBE, vm_payload,
+            sort_rows=True, cache_latest=True)
 
     def excluded_ports_for(self, agent_id: str) -> set[int]:
         ports: set[int] = set()
         for aid, response in self._latest.items():
-            details = response.get("details") if isinstance(response.get("details"), dict) else {}
-            for value in details.get("hdc_target_ports") or []:
-                try:
-                    ports.add(int(value))
-                except (TypeError, ValueError):
-                    pass
-            if aid != agent_id:
-                continue
-            for key in ("fport_ports", "tcp_listener_ports", "local_excluded_ports"):
-                for value in details.get(key) or []:
-                    try:
-                        ports.add(int(value))
-                    except (TypeError, ValueError):
-                        pass
+            ports.update(capability_excluded_ports(response, include_local=aid == agent_id))
         return ports
-
-    @staticmethod
-    def _rows(agents: Iterable[Dict[str, Any]], state: _ProbeState) -> list[Dict[str, Any]]:
-        result = []
-        for agent in agents:
-            agent_id = str(agent.get("agent_id") or "")
-            response = state.responses.get(agent_id)
-            if response:
-                ok = bool(response.get("ok"))
-                result.append({
-                    "agent_id": agent_id,
-                    "agent_name": agent.get("agent_name") or "",
-                    "host_os": agent.get("host_os") or "",
-                    "ok": ok,
-                    "reason": str(response.get("reason") or ("可用" if ok else "不可用")),
-                    "warning": str(response.get("warning") or ""),
-                    "details": response.get("details") if isinstance(response.get("details"), dict) else {},
-                })
-            else:
-                result.append({
-                    "agent_id": agent_id,
-                    "agent_name": agent.get("agent_name") or "",
-                    "host_os": agent.get("host_os") or "",
-                    "ok": False,
-                    "reason": "下发失败" if state.failures.get(agent_id) else "探查超时",
-                    "details": {},
-                })
-        result.sort(key=lambda row: (not row["ok"], row["agent_name"] or row["agent_id"]))
-        return result
 
 
 _capability_waiter = HarmonyVmCapabilityWaiter()
@@ -848,6 +708,7 @@ __all__ = [
     "HDC_PORT_MAX",
     "HDC_PORT_MIN",
     "allocate_port_lease",
+    "capability_excluded_ports",
     "delete_owned_alias",
     "ensure_alias_available",
     "filter_managed_devices_for_agent",

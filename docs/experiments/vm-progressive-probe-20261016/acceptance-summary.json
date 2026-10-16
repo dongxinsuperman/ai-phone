@@ -1,0 +1,47 @@
+{
+  "at": "2026-10-16T02:07:47.602180+00:00",
+  "baseline": "32966de40195c47db5795e0d0afe1da7cbdc3c9c",
+  "status": "passed",
+  "product_source_files": 37,
+  "all_tested_sources_match_working_tree": true,
+  "regression": {
+    "passed": 1622,
+    "skipped": 2,
+    "warnings": 73,
+    "files": 78,
+    "evidence": "regression-evidence.json"
+  },
+  "frontend": {
+    "passed": 77,
+    "evidence": "frontend-node-tests.log",
+    "build": "frontend-build.log"
+  },
+  "browser": {
+    "passed": 54,
+    "screenshots": 6,
+    "evidence": "browser-report.json",
+    "scope": "Built Vue UI and actual FastAPI VM routes with controlled fake Agents; transport acceptance only, no native VM execution."
+  },
+  "visual_review": {
+    "reviewer": "root",
+    "status": "passed",
+    "findings": [
+      "All three platforms show the complete candidate list and a selectable fast row while slow rows remain pending.",
+      "Android pending button remains on one line even with long Agent names."
+    ],
+    "images": {
+      "harmony-fast-ready.png": "1d3605a59c98f7dc061ffda8e1f64855d06a11c1df6cfe5536761716747f0763",
+      "ios-fast-ready.png": "c7d566b511270087eadf8fe553a77a08290a8887a24c2684506043228645286a",
+      "android-fast-ready.png": "89888ddd2d0d6df16d56252932a5faf32b97dbc24b74cd8eb0bbd015dedd9494"
+    }
+  },
+  "cleanup": {
+    "fixture_process_absent": true,
+    "fixture_runtime_removed": true,
+    "fixture_port_rebindable": true,
+    "all_probe_waiters_empty": true,
+    "browser_context_and_process_closed_by_runner": true
+  },
+  "independent_code_review": "No remaining blocker; reconnect mutation guard and per-dispatch fresh Harmony port facts reviewed.",
+  "scope": "Personal repositories, guarded isolated tests and loopback fixture only; no native VM commands, company services, package publication or deployment."
+}

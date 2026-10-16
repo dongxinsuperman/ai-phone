@@ -5,11 +5,9 @@ runner, scheduler, and device APIs.
 """
 from __future__ import annotations
 
-import asyncio
 import uuid
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +16,7 @@ from ai_phone.shared import protocol as P
 
 from ..db import get_session_factory
 from ..hub import Hub
+from ..vm_probe import CapabilityProbeWaiter
 from ..vm_lifecycle import (
     record_creation_provenance, proves_live_managed_instance, send_operation_once,
     expire_operation_if_due,
@@ -204,35 +203,43 @@ def apply_vm_patch(vm: AndroidVmInstance, patch: Dict[str, Any]) -> None:
 
 
 async def mark_agent_vms_unavailable(
-    agent_id: str, *, session: Optional[AsyncSession] = None
+    agent_id: str, *, session: Optional[AsyncSession] = None, hub: Optional[Hub] = None
 ) -> int:
     """Mark all VMs assigned to a disconnected Agent as unavailable."""
     if session is not None:
-        return await _mark_agent_vms_unavailable(session, agent_id)
+        return await _mark_agent_vms_unavailable(session, agent_id, hub=hub)
     session_factory = get_session_factory()
     async with session_factory() as session:
-        return await _mark_agent_vms_unavailable(session, agent_id)
+        return await _mark_agent_vms_unavailable(session, agent_id, hub=hub)
 
 
-async def _mark_agent_vms_unavailable(session: AsyncSession, agent_id: str) -> int:
+async def _mark_agent_vms_unavailable(session: AsyncSession, agent_id: str, *, hub: Optional[Hub] = None) -> int:
     rows = list((await session.execute(select(AndroidVmInstance).where(
         (AndroidVmInstance.assigned_agent_id == agent_id) |
         (AndroidVmInstance.runtime["operation"]["target_agent_id"].as_string() == agent_id)
     ))).scalars().all())
+    changed = 0
     for vm in sorted(rows, key=lambda row: row.id):
         await transaction_lock(session, f"android-vm:{vm.id}")
         vm = await session.get(AndroidVmInstance, vm.id, populate_existing=True)
         if vm is None:
             continue
         op = lifecycle_runtime(vm).get("operation") or {}
+        # Recheck after the VM lock and final read: an old disconnect may
+        # have waited while this Agent ID reconnected and started a new op.
+        if hub is not None and hub.has_agent(agent_id):
+            continue
         if op.get("pending") and op.get("target_agent_id") == agent_id:
             fail_attempt(vm, "agent_disconnected", "Agent 断开，本次操作已结束；不会自动重试")
         elif vm.assigned_agent_id == agent_id:
             vm.state, vm.error_message = "agent_offline", f"agent offline: {agent_id}"
+        else:
+            continue
         update_runtime(vm, agent_offline_at=now_utc().isoformat(), last_known_adb_serial=vm.adb_serial or "")
+        changed += 1
     if rows:
         await session.commit()
-    return len(rows)
+    return changed
 
 
 async def reset_vm_states_on_startup(session: AsyncSession) -> int:
@@ -510,104 +517,11 @@ async def delete_vm_alias(session: AsyncSession, vm: AndroidVmInstance) -> int:
     return 1
 
 
-@dataclass
-class _ProbeState:
-    expected: set[str]
-    responses: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    sent_failures: Dict[str, str] = field(default_factory=dict)
-    event: asyncio.Event = field(default_factory=asyncio.Event)
-
-
-class VmCapabilityWaiter:
-    """Small in-process rendezvous for VM capability probe responses."""
-
+class VmCapabilityWaiter(CapabilityProbeWaiter):
     def __init__(self) -> None:
-        self._pending: Dict[str, _ProbeState] = {}
-
-    async def probe(
-        self,
-        *,
-        hub: Hub,
-        vm: AndroidVmInstance,
-        timeout_sec: float = 60.0,
-    ) -> Dict[str, Any]:
-        agents = list(hub.snapshot().get("agents") or [])
-        agent_ids = {
-            str(agent.get("agent_id") or "").strip()
-            for agent in agents
-            if str(agent.get("agent_id") or "").strip()
-        }
-        request_id = uuid.uuid4().hex[:16]
-        state = _ProbeState(expected=set(agent_ids))
-        self._pending[request_id] = state
-        payload = {
-            "type": P.MSG_VM_CAPABILITY_PROBE,
-            **vm_payload(vm, request_id=request_id),
-        }
-
-        try:
-            for agent_id in sorted(agent_ids):
-                sent = await send_operation_once(hub, agent_id, payload)
-                if not sent:
-                    state.sent_failures[agent_id] = "send_failed"
-            if state.expected - (state.responses.keys() | state.sent_failures.keys()):
-                try:
-                    await asyncio.wait_for(state.event.wait(), timeout=timeout_sec)
-                except asyncio.TimeoutError:
-                    pass
-            return {
-                "request_id": request_id,
-                "agents": self._build_rows(agents, state),
-            }
-        finally:
-            self._pending.pop(request_id, None)
-
-    def resolve(self, agent_id: str, msg: Dict[str, Any]) -> bool:
-        request_id = str(msg.get("request_id") or "")
-        state = self._pending.get(request_id)
-        if state is None:
-            return False
-        state.responses[agent_id] = dict(msg)
-        if state.expected.issubset(state.responses.keys() | state.sent_failures.keys()):
-            state.event.set()
-        return True
-
-    @staticmethod
-    def _build_rows(
-        agents: Iterable[Dict[str, Any]], state: _ProbeState
-    ) -> list[Dict[str, Any]]:
-        rows: list[Dict[str, Any]] = []
-        for agent in agents:
-            agent_id = str(agent.get("agent_id") or "")
-            resp = state.responses.get(agent_id)
-            if resp:
-                ok = bool(resp.get("ok"))
-                rows.append({
-                    "agent_id": agent_id,
-                    "agent_name": agent.get("agent_name") or "",
-                    "host_os": agent.get("host_os") or "",
-                    "ok": ok,
-                    "reason": str(resp.get("reason") or ("可用" if ok else "不可用")),
-                    "warning": str(resp.get("warning") or ""),
-                    "details": resp.get("details") if isinstance(resp.get("details"), dict) else {},
-                })
-                continue
-            # 超时不等于"不可用"，而是"Agent 未响应"——区分二者，提示可重试
-            reason = (
-                "下发通道异常，Agent 未收到探查"
-                if state.sent_failures.get(agent_id)
-                else "探查超时：Agent 未响应（可重试）"
-            )
-            rows.append({
-                "agent_id": agent_id,
-                "agent_name": agent.get("agent_name") or "",
-                "host_os": agent.get("host_os") or "",
-                "ok": False,
-                "reason": reason,
-                "details": {},
-            })
-        rows.sort(key=lambda row: (not row["ok"], str(row.get("agent_name") or row["agent_id"])))
-        return rows
+        super().__init__(P.MSG_VM_CAPABILITY_PROBE, vm_payload,
+            sort_rows=True, send_failure_reason="下发通道异常，Agent 未收到探查",
+            timeout_reason="探查超时：Agent 未响应（可重试）")
 
 
 _capability_waiter = VmCapabilityWaiter()

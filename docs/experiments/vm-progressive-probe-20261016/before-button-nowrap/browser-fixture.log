@@ -1,0 +1,3 @@
+2026-10-16 10:01:30.880 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:////private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-progressive-browser-gind8xuf/fixture.db
+PERSONAL_FIXTURE http://127.0.0.1:51992
+2026-10-16 10:04:59.507 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放

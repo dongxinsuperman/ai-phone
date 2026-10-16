@@ -20,11 +20,9 @@ excluded_ports_for(agent)          不需要：Server 不分配端口
 """
 from __future__ import annotations
 
-import asyncio
 import uuid
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Optional
 
 from loguru import logger
 from sqlalchemy import select
@@ -34,6 +32,7 @@ from ai_phone.shared import protocol as P
 
 from ..db import get_session_factory
 from ..hub import Hub
+from ..vm_probe import CapabilityProbeWaiter
 from ..vm_lifecycle import (
     record_creation_provenance, proves_live_managed_instance, send_operation_once,
     expire_operation_if_due,
@@ -231,28 +230,37 @@ async def reset_vm_states_on_startup(session: AsyncSession) -> int:
             vm.state = "agent_offline"
     return len(rows)
 
-async def mark_agent_vms_offline(agent_id: str) -> int:
-    get_capability_waiter().forget_agent(agent_id)
+async def mark_agent_vms_offline(agent_id: str, *, hub: Optional[Hub] = None) -> int:
+    # Probe invalidation is synchronous in the exact-socket disconnect hook;
+    # an old DB cleanup must not erase a reconnected session's fresh result.
     factory = get_session_factory()
     async with factory() as session:
         rows = list((await session.execute(select(IosSimVmInstance).where(
             (IosSimVmInstance.assigned_agent_id == agent_id) |
             (IosSimVmInstance.runtime_state["operation"]["target_agent_id"].as_string() == agent_id)
         ))).scalars().all())
+        changed = 0
         for vm in sorted(rows, key=lambda row: row.id):
             await transaction_lock(session, f"ios-vm:{vm.id}")
             vm = await session.get(IosSimVmInstance, vm.id, populate_existing=True)
             if vm is None:
                 continue
             op = lifecycle_runtime(vm).get("operation") or {}
+            # Same-ID reconnect can happen during the earlier DB awaits.
+            # Keep this guard under the same VM lock used by start/status.
+            if hub is not None and hub.has_agent(agent_id):
+                continue
             if op.get("pending") and op.get("target_agent_id") == agent_id:
                 fail_attempt(vm, "agent_disconnected", "Agent 断开，本次操作已结束；不会自动重试")
             elif vm.assigned_agent_id == agent_id:
                 vm.state, vm.error_code, vm.error_message = "agent_offline", "agent_offline", f"agent offline: {agent_id}"
+            else:
+                continue
             await _try_bind_alias(session, vm, placeholder_serial(vm.id))
+            changed += 1
         if rows:
             await session.commit()
-        return len(rows)
+        return changed
 
 async def handle_vm_status(agent_id: str, msg: Dict[str, Any], hub: Optional[Hub] = None) -> None:
     vm_id = str(msg.get("vm_id") or "")
@@ -383,167 +391,11 @@ async def handle_vm_reconcile(agent_id: str, msg: Dict[str, Any], hub: Optional[
                 "request_id": uuid.uuid4().hex[:16], "vm_id": vm_id, "udid": ""})
 
 
-@dataclass
-class _ProbeState:
-    expected: set[str]
-    responses: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    failures: Dict[str, str] = field(default_factory=dict)
-    event: asyncio.Event = field(default_factory=asyncio.Event)
-
-
-class IosSimCapabilityWaiter:
-    """向所有在线 Agent 广播探查、收齐回包。
-
-    与鸿蒙的差异：**没有 ``excluded_ports_for``**。鸿蒙需要把各 Agent 上报的已占
-    端口汇总起来供 Server 分配端口用；我们不分配端口，探查结果只用于"这台 Agent
-    能不能承接"这一个判断（方案 §6.5.5）。
-    """
-
+class IosSimCapabilityWaiter(CapabilityProbeWaiter):
     def __init__(self) -> None:
-        self._pending: Dict[str, _ProbeState] = {}
-        self._latest: Dict[str, Dict[str, Any]] = {}
-
-    async def probe(
-        self,
-        *,
-        hub: Hub,
-        vm: IosSimVmInstance,
-        timeout_sec: float = 60.0,
-    ) -> Dict[str, Any]:
-        agents = list(hub.snapshot().get("agents") or [])
-        agent_ids = {
-            str(row.get("agent_id") or "").strip()
-            for row in agents
-            if str(row.get("agent_id") or "").strip()
-        }
-        request_id = uuid.uuid4().hex[:16]
-        state = _ProbeState(expected=agent_ids)
-        self._pending[request_id] = state
-        payload = {
-            "type": P.MSG_IOS_SIM_VM_CAPABILITY_PROBE,
-            **vm_payload(vm, request_id=request_id),
-        }
-        try:
-            for agent_id in sorted(agent_ids):
-                if not await send_operation_once(hub, agent_id, payload):
-                    state.failures[agent_id] = "send_failed"
-            if state.expected - (state.responses.keys() | state.failures.keys()):
-                try:
-                    await asyncio.wait_for(state.event.wait(), timeout=timeout_sec)
-                except asyncio.TimeoutError:
-                    pass
-            return {"request_id": request_id, "agents": self._rows(agents, state)}
-        finally:
-            self._pending.pop(request_id, None)
-
-    async def probe_agent(
-        self,
-        *,
-        hub: Hub,
-        vm: IosSimVmInstance,
-        agent_id: str,
-        timeout_sec: float = 60.0,
-    ) -> Dict[str, Any]:
-        """只探一台 Agent。下发前做最后一次确认用。"""
-        request_id = uuid.uuid4().hex[:16]
-        state = _ProbeState(expected={agent_id})
-        self._pending[request_id] = state
-        payload = {
-            "type": P.MSG_IOS_SIM_VM_CAPABILITY_PROBE,
-            **vm_payload(vm, request_id=request_id),
-        }
-        try:
-            if not await send_operation_once(hub, agent_id, payload):
-                state.failures[agent_id] = "send_failed"
-            else:
-                try:
-                    await asyncio.wait_for(state.event.wait(), timeout=timeout_sec)
-                except asyncio.TimeoutError:
-                    pass
-            response = state.responses.get(agent_id)
-            if response is not None:
-                return dict(response)
-            return {
-                "ok": False,
-                "reason": (
-                    "下发失败"
-                    if state.failures.get(agent_id) == "send_failed"
-                    else "探查超时，Agent 未回应"
-                ),
-                "warning": "",
-                "details": {},
-            }
-        finally:
-            self._pending.pop(request_id, None)
-
-    def resolve(self, agent_id: str, msg: Dict[str, Any]) -> bool:
-        self._latest[agent_id] = dict(msg)
-        request_id = str(msg.get("request_id") or "")
-        state = self._pending.get(request_id)
-        if state is None:
-            return False
-        state.responses[agent_id] = dict(msg)
-        if state.expected.issubset(state.responses.keys() | state.failures.keys()):
-            state.event.set()
-        return True
-
-    def discard_agent(self, agent_id: str) -> None:
-        """Agent 断线时结束正在等它的探查，避免等满超时。"""
-        self._latest.pop(agent_id, None)
-        for state in self._pending.values():
-            if (
-                agent_id in state.expected
-                and agent_id not in state.responses
-                and agent_id not in state.failures
-            ):
-                state.failures[agent_id] = "agent_disconnected"
-            if state.expected.issubset(state.responses.keys() | state.failures.keys()):
-                state.event.set()
-
-    def forget_agent(self, agent_id: str) -> None:
-        self._latest.pop(agent_id, None)
-
-    def latest_for(self, agent_id: str) -> Dict[str, Any]:
-        return dict(self._latest.get(agent_id) or {})
-
-    @staticmethod
-    def _rows(agents: Iterable[Dict[str, Any]], state: _ProbeState) -> List[Dict[str, Any]]:
-        result: List[Dict[str, Any]] = []
-        for agent in agents:
-            agent_id = str(agent.get("agent_id") or "")
-            response = state.responses.get(agent_id)
-            if response:
-                ok = bool(response.get("ok"))
-                result.append(
-                    {
-                        "agent_id": agent_id,
-                        "agent_name": agent.get("agent_name") or "",
-                        "host_os": agent.get("host_os") or "",
-                        "ok": ok,
-                        "reason": str(response.get("reason") or ("可用" if ok else "不可用")),
-                        "warning": str(response.get("warning") or ""),
-                        "details": response.get("details")
-                        if isinstance(response.get("details"), dict)
-                        else {},
-                    }
-                )
-                continue
-            failure = state.failures.get(agent_id)
-            result.append(
-                {
-                    "agent_id": agent_id,
-                    "agent_name": agent.get("agent_name") or "",
-                    "host_os": agent.get("host_os") or "",
-                    "ok": False,
-                    "reason": {
-                        "send_failed": "下发失败",
-                        "agent_disconnected": "Agent 已断开",
-                    }.get(failure or "", "探查超时，Agent 未回应"),
-                    "warning": "",
-                    "details": {},
-                }
-            )
-        return result
+        super().__init__(P.MSG_IOS_SIM_VM_CAPABILITY_PROBE, vm_payload,
+            sort_rows=False, timeout_reason="探查超时，Agent 未回应",
+            failure_warning=True, cache_latest=True)
 
 
 _waiter: Optional[IosSimCapabilityWaiter] = None

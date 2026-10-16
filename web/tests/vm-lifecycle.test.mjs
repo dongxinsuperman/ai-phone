@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { createContext, runInContext } from 'node:vm'
+import { candidateAvailable, createVmCandidateProbe } from '../src/lib/vmCandidateProbe.js'
 
 const pages = [
   ['android', 'VirtualMachines.vue', 'androidVms'],
@@ -9,10 +10,24 @@ const pages = [
   ['ios', 'IosSimVirtualMachines.vue', 'iosSimVms'],
 ]
 
-function loadPage(filename, namespace, overrides = {}) {
+function loadPage(filename, namespace, overrides = {}, environment = {}) {
   const source = readFileSync(new URL(`../src/pages/${filename}`, import.meta.url), 'utf8')
     .split('<script setup>')[1].split('</script>')[0]
     .replace(/^import .*$/gm, '')
+  // Preserve the original JSON-based regression scenarios while pages now consume events.
+  if (overrides.dispatchCandidates && !overrides.dispatchCandidatesStream) {
+    overrides = { ...overrides, dispatchCandidatesStream: async (id, { signal, onEvent }) => {
+      const result = await overrides.dispatchCandidates(id)
+      if (signal.aborted) throw new DOMException('cancelled', 'AbortError')
+      const request_id = `regression-${id}`
+      onEvent({ type: 'snapshot', request_id, agents: result.agents || [] })
+      for (const agent of result.agents || []) {
+        onEvent({ type: 'agent', request_id, agent: { ...agent, probe_state: agent.ok ? 'available' : 'unavailable' } })
+      }
+      onEvent({ type: 'done', request_id })
+    } }
+  }
+  let onUnmount = () => {}
   const api = new Proxy(overrides, {
     get(target, key) {
       return target[key] || (() => { throw new Error(`Unexpected API call: ${String(key)}`) })
@@ -24,19 +39,21 @@ function loadPage(filename, namespace, overrides = {}) {
     computed: (get) => ({ get value() { return get() } }),
     nextTick: async () => {},
     onMounted: () => {},
-    onBeforeUnmount: () => {},
+    onBeforeUnmount: handler => { onUnmount = handler },
     defineExpose: () => {},
-    confirm: () => true,
+    confirm: environment.confirm || (() => true),
     internal: { [namespace]: api },
-    URLSearchParams,
+    URLSearchParams, AbortController, DOMException, candidateAvailable, createVmCandidateProbe,
   })
-  return runInContext(`${source}\n;({
-    instances, candidates, candidateVmId, busyByVm, err, copyDlg,
-    canStart, canStop, canDelete, canProbe, canDispatchTo, stateLabel,
+  const page = runInContext(`${source}\n;({
+    instances, candidates, candidateVmId, candidateStatus, busyByVm, err, copyDlg,
+    canStart, canStop, canDelete, canProbe, canDispatchTo, dispatchLabel, stateLabel,
     agentLabel, operationError, lifecycleNotice, isVmBusy, pollInstances,
     probe, closeCandidates, dispatchTo, startVm, stopVm, removeVm, copyConfig,
     reload: typeof loadInstances === 'function' ? loadInstances : refresh,
   })`, context, { filename })
+  page.unmount = () => onUnmount()
+  return page
 }
 
 function runtime(platform, details = {}) {
@@ -49,6 +66,29 @@ function deferred() {
   let resolve, reject
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
+}
+
+function probeStreams() {
+  const calls = []
+  return {
+    calls,
+    request: (id, { signal, onEvent }) => {
+      const gate = deferred()
+      const request_id = `stream-${calls.length + 1}`
+      const call = {
+        id, signal, request_id,
+        emit: onEvent,
+        snapshot: (agents) => onEvent({ type: 'snapshot', request_id, agents }),
+        row: (agent, requestId = request_id) => onEvent({ type: 'agent', request_id: requestId, agent }),
+        finish: () => { onEvent({ type: 'done', request_id }); gate.resolve() },
+        resolve: gate.resolve,
+        reject: gate.reject,
+      }
+      calls.push(call)
+      // Deliberately ignore abort at transport level to test protection against late callbacks/finally.
+      return gate.promise
+    },
+  }
 }
 
 for (const [platform, filename, namespace] of pages) {
@@ -338,4 +378,235 @@ for (const [platform, filename, namespace] of pages) {
     await starting
     assert.equal(page.isVmBusy(a), false)
   })
+
+  test(`${platform}: fast streamed candidate can dispatch while the slow row remains pending`, async () => {
+    const streams = probeStreams(), dispatchResult = deferred()
+    let dispatches = 0
+    const vm = { id: 'a', state: 'draft', assigned_agent_id: '' }
+    const starting = { ...vm, state: 'starting' }
+    const page = loadPage(filename, namespace, {
+      dispatchCandidatesStream: streams.request,
+      dispatch: () => { dispatches += 1; return dispatchResult.promise },
+      list: async () => [starting],
+    })
+    page.instances.value = [vm]
+    const probing = page.probe(vm, { autoDispatchSingle: true })
+    const stream = streams.calls[0]
+    stream.snapshot([{ agent_id: 'slow' }, { agent_id: 'fast' }])
+    stream.row({ agent_id: 'fast', probe_state: 'available', ok: true, reason: '可用' })
+    assert.equal(page.candidates.value.length, 2)
+    assert.equal(page.isVmBusy(vm), true)
+    assert.equal(page.canDispatchTo(vm, page.candidates.value[0]), false)
+    assert.equal(page.canDispatchTo(vm, page.candidates.value[1]), true)
+    assert.equal(page.dispatchLabel(vm, page.candidates.value[0]), '探查中…')
+    assert.equal(dispatches, 0, 'first available response is not the only available result')
+    await page.dispatchTo(vm, 'slow')
+    assert.equal(dispatches, 0)
+    const dispatching = page.dispatchTo(vm, 'fast')
+    assert.equal(stream.signal.aborted, true)
+    await page.dispatchTo(vm, 'fast')
+    assert.equal(dispatches, 1)
+    stream.row({ agent_id: 'slow', probe_state: 'available', ok: true })
+    stream.finish()
+    await probing
+    assert.equal(page.busyByVm[vm.id], 'dispatch', 'old probe finally must not unlock a dispatch')
+    assert.equal(page.candidates.value[0].probe_state, 'send_failed')
+    dispatchResult.resolve({ sent: true, instance: starting })
+    await dispatching
+    assert.equal(dispatches, 1, 'manual selection cancels later automatic dispatch')
+  })
+
+  test(`${platform}: A-B-A probes abort predecessors and late callbacks cannot replace the new round`, async () => {
+    const streams = probeStreams()
+    const page = loadPage(filename, namespace, { dispatchCandidatesStream: streams.request })
+    const a = { id: 'a', state: 'draft' }, b = { id: 'b', state: 'draft' }
+    page.instances.value = [a, b]
+    const a1 = page.probe(a), first = streams.calls[0]
+    first.snapshot([{ agent_id: 'old-a' }])
+    const b1 = page.probe(b), second = streams.calls[1]
+    assert.equal(first.signal.aborted, true)
+    assert.equal(page.isVmBusy(a), false)
+    const a2 = page.probe(a), current = streams.calls[2]
+    assert.equal(second.signal.aborted, true)
+    current.snapshot([{ agent_id: 'new-a' }])
+    first.row({ agent_id: 'old-a', probe_state: 'available', ok: true })
+    first.finish()
+    second.finish()
+    await Promise.all([a1, b1])
+    assert.equal(page.candidateVmId.value, 'a')
+    assert.equal(page.candidates.value[0].agent_id, 'new-a')
+    assert.equal(page.isVmBusy(a), true)
+    current.row({ agent_id: 'new-a', probe_state: 'available', ok: true }, first.request_id)
+    current.emit({ type: 'done', request_id: first.request_id })
+    assert.equal(page.candidates.value[0].probe_state, 'probing')
+    assert.equal(page.isVmBusy(a), true)
+    current.row({ agent_id: 'new-a', probe_state: 'available', ok: true })
+    current.finish()
+    await a2
+    assert.equal(page.canDispatchTo(a, page.candidates.value[0]), true)
+  })
+
+  test(`${platform}: close and unmount abort the stream and release only its probe lock`, async () => {
+    const streams = probeStreams()
+    const page = loadPage(filename, namespace, { dispatchCandidatesStream: streams.request })
+    const vm = { id: 'a', state: 'draft' }
+    page.instances.value = [vm]
+    const oldProbe = page.probe(vm), first = streams.calls[0]
+    first.snapshot([{ agent_id: 'old' }])
+    page.closeCandidates()
+    assert.equal(first.signal.aborted, true)
+    assert.equal(page.isVmBusy(vm), false)
+    assert.equal(page.candidateVmId.value, '')
+    const newProbe = page.probe(vm), current = streams.calls[1]
+    current.snapshot([{ agent_id: 'current' }])
+    first.finish()
+    await oldProbe
+    assert.equal(page.isVmBusy(vm), true)
+    assert.equal(page.candidates.value[0].agent_id, 'current')
+    page.unmount()
+    assert.equal(current.signal.aborted, true)
+    assert.equal(page.isVmBusy(vm), false)
+    current.row({ agent_id: 'current', ok: true, probe_state: 'available' })
+    current.finish()
+    await newProbe
+    assert.equal(page.candidates.value.length, 0)
+    assert.equal(page.err.value, '')
+  })
+
+  test(`${platform}: timeout and offline results stay terminal and row order never moves`, async () => {
+    const streams = probeStreams()
+    const page = loadPage(filename, namespace, { dispatchCandidatesStream: streams.request })
+    const vm = { id: 'a', state: 'draft' }
+    page.instances.value = [vm]
+    const probing = page.probe(vm), stream = streams.calls[0]
+    stream.snapshot([{ agent_id: 'slow' }, { agent_id: 'fast' }])
+    stream.row({ agent_id: 'fast', ok: true, probe_state: 'available' })
+    stream.row({ agent_id: 'slow', ok: false, probe_state: 'timeout', reason: '探查超时' })
+    stream.row({ agent_id: 'slow', ok: true, probe_state: 'available' })
+    stream.row({ agent_id: 'fast', ok: false, probe_state: 'offline', reason: '已离线' })
+    stream.row({ agent_id: 'fast', ok: true, probe_state: 'available' })
+    stream.row({ agent_id: 'unknown', ok: true, probe_state: 'available' })
+    stream.snapshot([{ agent_id: 'late-reset' }])
+    assert.deepEqual(Array.from(page.candidates.value, x => x.agent_id), ['slow', 'fast'])
+    assert.deepEqual(Array.from(page.candidates.value, x => x.probe_state), ['timeout', 'offline'])
+    assert.equal(page.canDispatchTo(vm, page.candidates.value[1]), false)
+    stream.finish()
+    await probing
+    assert.equal(page.isVmBusy(vm), false)
+    assert.equal(page.candidateStatus.error, '')
+  })
+
+  test(`${platform}: interrupted stream preserves completed rows and fails only unfinished rows`, async () => {
+    const streams = probeStreams()
+    let dispatches = 0
+    const page = loadPage(filename, namespace, {
+      dispatchCandidatesStream: streams.request,
+      dispatch: async () => { dispatches += 1 },
+    })
+    const vm = { id: 'a', state: 'draft' }
+    page.instances.value = [vm]
+    const probing = page.probe(vm, { autoDispatchSingle: true }), stream = streams.calls[0]
+    stream.snapshot([{ agent_id: 'fast' }, { agent_id: 'slow' }])
+    stream.row({ agent_id: 'fast', ok: true, probe_state: 'available', reason: '已确认' })
+    stream.reject(new Error('探查连接中断'))
+    await probing
+    assert.equal(page.candidates.value[0].probe_state, 'available')
+    assert.equal(page.candidates.value[0].reason, '已确认')
+    assert.equal(page.candidates.value[1].probe_state, 'send_failed')
+    assert.equal(page.candidates.value[1].ok, false)
+    assert.equal(page.canDispatchTo(vm, page.candidates.value[0]), true)
+    assert.equal(page.candidateStatus.error, '探查连接中断')
+    assert.equal(streams.calls.length, 1)
+    assert.equal(dispatches, 0)
+  })
+
+  test(`${platform}: empty done is not an error but EOF without done is incomplete`, async () => {
+    const streams = probeStreams()
+    const page = loadPage(filename, namespace, { dispatchCandidatesStream: streams.request })
+    const vm = { id: 'a', state: 'draft' }
+    page.instances.value = [vm]
+    const empty = page.probe(vm), first = streams.calls[0]
+    first.snapshot([])
+    first.finish()
+    await empty
+    assert.equal(page.candidates.value.length, 0)
+    assert.equal(page.candidateStatus.error, '')
+    assert.equal(page.isVmBusy(vm), false)
+    const truncated = page.probe(vm), second = streams.calls[1]
+    second.snapshot([{ agent_id: 'pending' }])
+    second.resolve()
+    await truncated
+    assert.equal(page.candidates.value[0].probe_state, 'send_failed')
+    assert.match(page.candidateStatus.error, /中断/)
+  })
+
 }
+
+
+for (const availableCount of [1, 2]) {
+  test(`android: autoDispatchSingle waits for done with ${availableCount} available candidates`, async () => {
+    const streams = probeStreams()
+    let dispatches = 0
+    const vm = { id: 'a', state: 'draft', assigned_agent_id: '' }
+    const page = loadPage('VirtualMachines.vue', 'androidVms', {
+      dispatchCandidatesStream: streams.request,
+      dispatch: async () => { dispatches += 1; return { instance: { ...vm, state: 'starting' } } },
+      list: async () => [{ ...vm, state: 'starting' }],
+    })
+    page.instances.value = [vm]
+    const probing = page.probe(vm, { autoDispatchSingle: true }), stream = streams.calls[0]
+    stream.snapshot([{ agent_id: 'fast' }, { agent_id: 'slow' }])
+    stream.row({ agent_id: 'fast', probe_state: 'available', ok: true })
+    await Promise.resolve()
+    assert.equal(dispatches, 0)
+    stream.row({ agent_id: 'slow', probe_state: availableCount === 1 ? 'unavailable' : 'available', ok: availableCount === 2 })
+    assert.equal(dispatches, 0)
+    stream.finish()
+    await probing
+    stream.finish()
+    assert.equal(dispatches, availableCount === 1 ? 1 : 0)
+  })
+}
+
+test('android: cancelling a manual switch confirmation keeps probing but suppresses auto dispatch', async () => {
+  const streams = probeStreams()
+  let dispatches = 0
+  const vm = { id: 'a', state: 'stopped', assigned_agent_id: 'old-host' }
+  const page = loadPage('VirtualMachines.vue', 'androidVms', {
+    dispatchCandidatesStream: streams.request,
+    dispatch: async () => { dispatches += 1 },
+  }, { confirm: () => false })
+  page.instances.value = [vm]
+  const probing = page.probe(vm, { autoDispatchSingle: true }), stream = streams.calls[0]
+  stream.snapshot([{ agent_id: 'fast' }, { agent_id: 'slow' }])
+  stream.row({ agent_id: 'fast', ok: true, probe_state: 'available' })
+  await page.dispatchTo(vm, 'fast')
+  assert.equal(stream.signal.aborted, false)
+  assert.equal(page.isVmBusy(vm), true)
+  stream.row({ agent_id: 'slow', ok: false, probe_state: 'unavailable' })
+  stream.finish()
+  await probing
+  assert.equal(dispatches, 0)
+})
+
+
+test('android: a lifecycle change after done still cancels deferred auto dispatch', async () => {
+  const streams = probeStreams()
+  let dispatches = 0
+  const vm = { id: 'a', state: 'draft' }
+  const page = loadPage('VirtualMachines.vue', 'androidVms', {
+    dispatchCandidatesStream: streams.request,
+    dispatch: async () => { dispatches += 1 },
+  })
+  page.instances.value = [vm]
+  const probing = page.probe(vm, { autoDispatchSingle: true }), stream = streams.calls[0]
+  stream.snapshot([{ agent_id: 'fast' }])
+  stream.row({ agent_id: 'fast', ok: true, probe_state: 'available' })
+  stream.emit({ type: 'done', request_id: stream.request_id })
+  page.instances.value = [{ ...vm, state: 'starting' }]
+  stream.resolve()
+  await probing
+  assert.equal(dispatches, 0)
+  assert.equal(page.candidateVmId.value, '')
+  assert.equal(stream.signal.aborted, true)
+})

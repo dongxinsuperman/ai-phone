@@ -1,10 +1,12 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { internal } from '../lib/api.js'
+import { candidateAvailable, createVmCandidateProbe } from '../lib/vmCandidateProbe.js'
 
 const instances = ref([])
 const candidates = ref([])
 const candidateVmId = ref('')
+const candidateStatus = reactive({ error: '' })
 const candidateEls = new Map()
 const loading = ref(false)
 const catalogLoading = ref(false)
@@ -24,7 +26,16 @@ const copyDlg = reactive({ open: false, vm: null, alias: '', busy: false, error:
 let pollTimer = null
 let instanceSeq = 0
 let activeInstanceLoads = 0
-let candidateSeq = 0
+const candidateProbe = createVmCandidateProbe({
+  candidateVmId, candidates, candidateStatus, busyByVm,
+  request: (id, options) => internal.iosSimVms.dispatchCandidatesStream(id, options),
+  canContinue: (vm) => {
+    const current = instances.value.find((item) => item.id === vm.id)
+    return Boolean(current && canProbe(current))
+  },
+  describeError: prettyErr,
+  onError: (reason) => { err.value = reason },
+})
 
 const form = reactive(defaultForm())
 
@@ -109,9 +120,10 @@ function setCandidatesRef(id, el) {
 }
 
 function closeCandidates() {
-  candidateSeq += 1
+  candidateProbe.cancel()
   candidateVmId.value = ''
   candidates.value = []
+  candidateStatus.error = ''
 }
 
 function chooseInitialCatalogValues() {
@@ -208,27 +220,11 @@ async function createVm() {
 
 async function probe(vm) {
   if (isVmBusy(vm) || !canProbe(vm)) return
-  const sequence = ++candidateSeq
   err.value = ''
-  candidateVmId.value = vm.id
-  candidates.value = []
-  busyByVm[vm.id] = 'probe'
+  const pending = candidateProbe.run(vm)
   await nextTick()
   candidateEls.get(vm.id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  try {
-    const result = await internal.iosSimVms.dispatchCandidates(vm.id)
-    if (sequence !== candidateSeq || candidateVmId.value !== vm.id) return
-    const current = instances.value.find((item) => item.id === vm.id)
-    if (current && !canProbe(current)) {
-      closeCandidates()
-      return
-    }
-    candidates.value = result?.agents || []
-  } catch (e) {
-    if (sequence === candidateSeq && candidateVmId.value === vm.id) err.value = prettyErr(e)
-  } finally {
-    if (busyByVm[vm.id] === 'probe') delete busyByVm[vm.id]
-  }
+  await pending
 }
 
 // 操作响应先落到当前卡片；此前发出的列表请求不能再覆盖新状态。
@@ -246,9 +242,17 @@ function applyOperationResult(vm, result) {
 }
 
 async function dispatchTo(vm, agentId) {
-  if (isVmBusy(vm) || !canProbe(vm)) return
+  const busy = busyByVm[vm.id]
+  const selected = candidateVmId.value === vm.id
+    ? candidates.value.find((agent) => agent.agent_id === agentId)
+    : null
+  if (!canProbe(vm) || (busy && busy !== 'probe')) return
+  if (busy === 'probe' && (!selected || !canDispatchTo(vm, selected))) return
+  if (selected && !candidateAvailable(selected)) return
+  if (candidateVmId.value === vm.id) candidateProbe.disableAutoDispatch()
   if (vm.assigned_agent_id && vm.assigned_agent_id !== agentId
     && !confirm('换 Agent 将删除原配置，并在目标 Agent 新建空白机器；原实例的数据不迁移。确定继续？')) return
+  if (candidateVmId.value === vm.id) candidateProbe.cancel({ markCancelled: true })
   busyByVm[vm.id] = 'dispatch'
   err.value = ''
   try {
@@ -401,10 +405,15 @@ function canDelete(vm) {
   return !isTransitioning(vm) && vm.state !== 'running'
 }
 function canDispatchTo(vm, agent) {
-  return Boolean(agent.ok) && canProbe(vm)
+  const busy = busyByVm[vm.id]
+  return candidateAvailable(agent) && canProbe(vm)
+    && (!busy || (busy === 'probe' && candidateVmId.value === vm.id))
 }
 function dispatchLabel(vm, agent) {
-  if (!agent.ok) return '不可用'
+  if (agent.probe_state === 'probing') return '探查中…'
+  if (agent.probe_state === 'timeout') return '超时'
+  if (agent.probe_state === 'offline') return '离线'
+  if (!candidateAvailable(agent)) return '不可用'
   if (!canDispatchTo(vm, agent)) return '需先停止'
   return vm.assigned_agent_id && agent.agent_id !== vm.assigned_agent_id
     ? '换到这台'
@@ -649,22 +658,22 @@ defineExpose({ refresh })
                 </button>
                 <button type="button" class="ghost" @click="closeCandidates">收起</button>
               </div>
-              <div v-if="busyByVm[vm.id] === 'probe'" class="empty probing">正在探查可托管的 Agent，请稍候…</div>
-              <div v-else class="candidate-grid">
-                <div v-for="agent in candidates" :key="agent.agent_id" class="candidate" :class="{ disabled: !agent.ok }">
+              <div class="candidate-grid">
+                <div v-for="agent in candidates" :key="agent.agent_id" class="candidate" :class="{ disabled: !agent.ok && agent.probe_state !== 'probing', probing: agent.probe_state === 'probing' }">
                   <div>
                     <strong>{{ agent.agent_name || agent.agent_id }}</strong>
                     <p>{{ agent.host_os || '-' }}</p>
                     <p v-if="agentRuntimeSummary(agent)">已装系统：{{ agentRuntimeSummary(agent) }}</p>
                     <p v-if="agentMemorySummary(agent)">{{ agentMemorySummary(agent) }}</p>
-                    <p :class="{ warn: agent.warning }">{{ agent.warning || agent.reason }}</p>
+                    <p :class="{ warn: agent.warning && agent.ok }">{{ agent.ok ? (agent.warning || agent.reason) : agent.reason }}</p>
                   </div>
-                  <button type="button" :disabled="!canDispatchTo(vm, agent) || isVmBusy(vm)" @click="dispatchTo(vm, agent.agent_id)">
+                  <button type="button" :disabled="!canDispatchTo(vm, agent)" @click="dispatchTo(vm, agent.agent_id)">
+                    <span v-if="agent.probe_state === 'probing'" class="probe-spinner" aria-hidden="true"></span>
                     {{ busyByVm[vm.id] === 'dispatch' ? '下发中…' : dispatchLabel(vm, agent) }}
                   </button>
                 </div>
                 <div v-if="!candidates.length" class="empty">
-                  未找到可托管的 Agent（检查 Agent 是否在线、是否为 macOS、是否装好 Xcode 与对应 iOS runtime）
+                  {{ candidateStatus.error || (busyByVm[vm.id] === 'probe' ? '正在获取在线 Agent…' : '当前没有在线 Agent，请先连接 Agent 后重新探查。') }}
                 </div>
               </div>
             </div>
@@ -708,6 +717,8 @@ defineExpose({ refresh })
 </template>
 
 <style scoped>
+.probe-spinner { display: inline-block; width: 11px; height: 11px; margin-right: 4px; border: 2px solid #cbd5e1; border-top-color: #2563eb; border-radius: 50%; vertical-align: -1px; animation: probe-spin .8s linear infinite; }
+@keyframes probe-spin { to { transform: rotate(360deg); } }
 .lifecycle-notice { margin: 10px 0 0; border-radius: 6px; background: #fffbeb; color: #92400e; padding: 9px 10px; font-size: 12px; line-height: 1.5; }
 .vm-operation-error { margin: 8px 0 0; color: #b91c1c; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
 .page { padding: 22px; display: flex; flex-direction: column; gap: 16px; }

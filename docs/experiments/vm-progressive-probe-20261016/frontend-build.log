@@ -1,0 +1,13 @@
+
+> ai-phone-web@0.8.0 build
+> vite build
+
+vite v8.0.8 building client environment for production...
+[2Ktransforming...✓ 61 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.46 kB │ gzip:  0.30 kB
+dist/assets/index-DXKPo3h7.css   89.50 kB │ gzip: 14.58 kB
+dist/assets/index-3tC5fpU0.js   309.63 kB │ gzip: 99.98 kB
+
+✓ built in 377ms

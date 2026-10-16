@@ -1,0 +1,34 @@
+{
+  "tests": [
+    "backend/tests/test_vm_probe_stream.py",
+    "backend/tests/test_vm_probe_stream_api.py",
+    "backend/tests/test_vm_probe_cache.py",
+    "backend/tests/test_vm_probe_disconnect_hook.py",
+    "backend/tests/test_vm_probe_reconnect_lifecycle.py",
+    "backend/tests/test_ios_sim_server_api.py",
+    "backend/tests/test_vm_lifecycle_contract.py",
+    "backend/tests/test_harmony_vm.py::test_harmony_capability_waiter_drops_disconnected_agent_port_evidence",
+    "backend/tests/test_harmony_vm.py::test_quarantined_port_is_not_released_by_capability_scan_absence",
+    "backend/tests/test_android_vm.py::test_android_vm_dispatch_sends_start_to_agent",
+    "backend/tests/test_android_vm.py::test_android_vm_start_send_failure_preserves_assignment",
+    "backend/tests/test_android_vm.py::test_android_vm_switch_agent_deletes_old_creates_new"
+  ],
+  "source_sha256": {
+    "backend/ai_phone/server/vm_probe.py": "2080c8fb2146993c41130f50198fcc47f44b022099ff21022dd7bd7e48e8d0f9",
+    "backend/ai_phone/server/ws/agent_ws.py": "5e2280f850d6af8304e8a426be34ebd3b407790bd3dc6c5a5bbb82d5357055e6",
+    "backend/ai_phone/server/android_vm/api.py": "186d0051a690b9dd9590e6225b7066157c038dabca993a2ee73589580554bfb9",
+    "backend/ai_phone/server/android_vm/service.py": "562a689824b0c761d020517b6f0b456107968f6b1349bbcd69502aebd31c291f",
+    "backend/ai_phone/server/ios_sim/api.py": "cccd78b8f13ea98be14b7b206be2045d50e8fa485dde5cc7cd1479346a739e5f",
+    "backend/ai_phone/server/ios_sim/service.py": "418e0dffdd680bb6ee25995f83f72d3522a53a09a55204a49fb0a988db4d38dd",
+    "backend/ai_phone/server/harmony_vm/api.py": "a86d9c8cf0e037e43aa4fc4adb6076e1baeed267beeb140fb8bca5a65aaaf10a",
+    "backend/ai_phone/server/harmony_vm/service.py": "52ce070970a3e50b39688d7edb7d2683d5c2f613d2008be6f2d606ca03f96566"
+  },
+  "source_unchanged": true,
+  "exit_code": 0,
+  "guard": {
+    "blocked_calls": [
+      "socket.bind"
+    ],
+    "cwd": "/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/vm-probe-tests-lt4o9d6h"
+  }
+}

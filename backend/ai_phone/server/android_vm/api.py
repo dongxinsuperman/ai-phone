@@ -20,6 +20,7 @@ from ..models import (
 from ..api._deps import DBSession, HubDep
 from ..api.submissions import RequireBearer
 from ..hub import Hub
+from ..vm_probe import probe_stream_response
 from ..vm_lifecycle import (
     operation_failure_detail,
     is_untouched_draft,
@@ -676,12 +677,20 @@ async def dispatch_candidates(
     vm_id: str = Path(..., min_length=1, max_length=64),
     session: AsyncSession = DBSession,
     hub: Hub = HubDep,
+    stream: bool = False,
 ) -> Dict[str, Any]:
     try:
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="android vm not found")
-    return await get_capability_waiter().probe(hub=hub, vm=vm)
+    waiter = get_capability_waiter()
+    events = waiter.probe_stream(hub=hub, vm=vm)
+    # Payload/snapshot are plain data now; do not pin a DB connection while
+    # slow Agents are being probed (including the legacy JSON collector).
+    await session.close()
+    if stream:
+        return probe_stream_response(events)
+    return await waiter.collect_probe(events)
 
 
 @router.post("/{vm_id}/dispatch")

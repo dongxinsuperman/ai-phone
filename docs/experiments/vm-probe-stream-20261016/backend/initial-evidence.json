@@ -1,0 +1,24 @@
+{
+  "tests": [
+    "backend/tests/test_vm_probe_stream.py",
+    "backend/tests/test_vm_probe_stream_api.py"
+  ],
+  "source_sha256": {
+    "backend/ai_phone/server/vm_probe.py": "2080c8fb2146993c41130f50198fcc47f44b022099ff21022dd7bd7e48e8d0f9",
+    "backend/ai_phone/server/ws/agent_ws.py": "ca7fffc46f625805efd191c8d9110d8961e09f7b92192fac4786d2e3ea9f038f",
+    "backend/ai_phone/server/android_vm/api.py": "186d0051a690b9dd9590e6225b7066157c038dabca993a2ee73589580554bfb9",
+    "backend/ai_phone/server/android_vm/service.py": "7bb9da24437ec5bf7245c838e160b36613e0a6a0f5e0a4410cf33649ee1ff679",
+    "backend/ai_phone/server/ios_sim/api.py": "cccd78b8f13ea98be14b7b206be2045d50e8fa485dde5cc7cd1479346a739e5f",
+    "backend/ai_phone/server/ios_sim/service.py": "965f2c733b1324161d45fb2c48c557b73b518f3d965acdd47e65ce05e9fa7501",
+    "backend/ai_phone/server/harmony_vm/api.py": "a9702036c9d1af343552a129ebad5de7399b2b19a5cdf307c68fc2f8f87a5beb",
+    "backend/ai_phone/server/harmony_vm/service.py": "15daa714b04055acfd5f021c7f49c996869d1fa96c3befd301bb2e5d291ce8eb"
+  },
+  "source_unchanged": true,
+  "exit_code": 0,
+  "guard": {
+    "blocked_calls": [
+      "socket.bind"
+    ],
+    "cwd": "/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/vm-probe-tests-o4spyrvv"
+  }
+}

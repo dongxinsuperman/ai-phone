@@ -1,0 +1,41 @@
+BLOCKED_BIND_IMPORT_STACK
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/urllib3/_base_connection.py", line 5, in <module>
+    from .util.connection import _TYPE_SOCKET_OPTIONS
+  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1126, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/urllib3/util/__init__.py", line 4, in <module>
+    from .connection import is_connection_dropped
+  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/urllib3/util/connection.py", line 137, in <module>
+    HAS_IPV6 = _has_ipv6("::1")
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/urllib3/util/connection.py", line 127, in _has_ipv6
+    sock.bind((host, 0))
+  File "<string>", line 24, in bind
+
+2026-10-16 10:01:45.387 | DEBUG    | ai_phone.agent.drivers.harmony:_neutralize_hmdriver_del_once:114 - hmdriver2.Driver.__del__ 已阉割（去除 _instance.clear + fport 副作用）
+tests/test_vm_probe_disconnect_hook.py::test_disconnect_notifies_all_probe_streams_before_db_and_keeps_replacement[False]
+tests/test_vm_probe_disconnect_hook.py::test_disconnect_notifies_all_probe_streams_before_db_and_keeps_replacement[True]
+
+=============================== warnings summary ===============================
+../../../../../../../Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/config/__init__.py:1434
+  /Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/config/__init__.py:1434: PytestConfigWarning: Unknown config option: timeout
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+../../../../../../../Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/config/__init__.py:1434
+  /Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/config/__init__.py:1434: PytestConfigWarning: Unknown config option: timeout_method
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+2 tests collected in 0.01s

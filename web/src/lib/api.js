@@ -1,3 +1,5 @@
+import { requestCandidateStream } from './candidateStream.js'
+
 // 轻量 REST 封装。所有请求走 vite 代理到 Server。
 // 错误处理统一抛 `{ status, detail }`，由调用方 try/catch。
 
@@ -251,6 +253,11 @@ export const internal = {
         `/api/internal/vm/instances/${encodeURIComponent(id)}/dispatch-candidates`,
         { headers: internalHeaders() },
       ),
+    dispatchCandidatesStream: (id, options = {}) =>
+      requestCandidateStream(
+        `/api/internal/vm/instances/${encodeURIComponent(id)}/dispatch-candidates?stream=true`,
+        { ...options, headers: internalHeaders() },
+      ),
     dispatch: (id, agentId) =>
       request('POST', `/api/internal/vm/instances/${encodeURIComponent(id)}/dispatch`, {
         body: { agent_id: agentId },
@@ -340,6 +347,11 @@ export const internal = {
         `/api/internal/harmony-vm/instances/${encodeURIComponent(id)}/dispatch-candidates`,
         { headers: internalHeaders() },
       ),
+    dispatchCandidatesStream: (id, options = {}) =>
+      requestCandidateStream(
+        `/api/internal/harmony-vm/instances/${encodeURIComponent(id)}/dispatch-candidates?stream=true`,
+        { ...options, headers: internalHeaders() },
+      ),
     dispatch: (id, agentId) =>
       request(
         'POST',
@@ -404,6 +416,11 @@ export const internal = {
         'POST',
         `/api/internal/ios-sim/instances/${encodeURIComponent(id)}/dispatch-candidates`,
         { headers: internalHeaders() },
+      ),
+    dispatchCandidatesStream: (id, options = {}) =>
+      requestCandidateStream(
+        `/api/internal/ios-sim/instances/${encodeURIComponent(id)}/dispatch-candidates?stream=true`,
+        { ...options, headers: internalHeaders() },
       ),
     dispatch: (id, agentId) =>
       request('POST', `/api/internal/ios-sim/instances/${encodeURIComponent(id)}/dispatch`, {

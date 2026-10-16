@@ -1,0 +1,22 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_disconnect_notifies_all_probe_streams_before_db_and_keeps_replacement[False] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_probe_disconnect_hook.py:54: in test_disconnect_notifies_all_probe_streams_before_db_and_keeps_replacement
+    disconnect = asyncio.create_task(module._on_disconnect(hub, "agent", set(), ws=old_socket))
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: _on_disconnect() missing 1 required positional argument: 'serials'
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 08:39:16.763 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=agent name=Test host_os=test
+_ test_disconnect_notifies_all_probe_streams_before_db_and_keeps_replacement[True] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_probe_disconnect_hook.py:54: in test_disconnect_notifies_all_probe_streams_before_db_and_keeps_replacement
+    disconnect = asyncio.create_task(module._on_disconnect(hub, "agent", set(), ws=old_socket))
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: _on_disconnect() missing 1 required positional argument: 'serials'
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 08:39:16.795 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=agent name=Test host_os=test
+2026-10-16 08:39:16.796 | WARNING  | ai_phone.server.hub:register_agent:159 - Agent agent 重复注册，旧连接将被替换
+2026-10-16 08:39:16.796 | INFO     | ai_phone.server.hub:register_agent:177 - Agent 上线 | id=agent name=New host_os=test
+=========================== short test summary info ============================
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_probe_disconnect_hook.py::test_disconnect_notifies_all_probe_streams_before_db_and_keeps_replacement[False]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_probe_disconnect_hook.py::test_disconnect_notifies_all_probe_streams_before_db_and_keeps_replacement[True]
+2 failed, 2 warnings in 0.06s

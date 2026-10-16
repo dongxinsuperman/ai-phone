@@ -1,0 +1,1219 @@
+{
+  "events": [
+    {
+      "event": "http",
+      "seconds": 114.87705,
+      "method": "GET",
+      "path": "/virtual-machines",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 114.90209,
+      "method": "GET",
+      "path": "/assets/index-AZ42zM_z.js",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 114.90299,
+      "method": "GET",
+      "path": "/assets/index-D88ri_D8.css",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 114.97464,
+      "method": "GET",
+      "path": "/api/healthz",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 114.97505,
+      "method": "GET",
+      "path": "/api/internal/vm/device-profiles",
+      "query": "offset=0&limit=60"
+    },
+    {
+      "event": "http",
+      "seconds": 114.97773,
+      "method": "GET",
+      "path": "/api/internal/vm/device-facets",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 114.97838,
+      "method": "GET",
+      "path": "/api/internal/vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 114.98459,
+      "method": "GET",
+      "path": "/api/internal/harmony-vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 114.98498,
+      "method": "GET",
+      "path": "/api/internal/harmony-vm/catalog",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 114.98501,
+      "method": "GET",
+      "path": "/api/internal/ios-sim/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 114.98503,
+      "method": "GET",
+      "path": "/api/internal/ios-sim/catalog",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 115.14206,
+      "method": "POST",
+      "path": "/api/internal/vm/instances/stream-android-pick/dispatch-candidates",
+      "query": "stream=true"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 115.14546,
+      "agent_id": "a-slow-send",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-pick",
+      "request_id": "2825f84f984445a0"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 115.14548,
+      "agent_id": "b-slow-reply",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-pick",
+      "request_id": "2825f84f984445a0"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 115.14549,
+      "agent_id": "c-fast",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-pick",
+      "request_id": "2825f84f984445a0"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 115.14549,
+      "agent_id": "d-send-failed",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-pick",
+      "request_id": "2825f84f984445a0"
+    },
+    {
+      "event": "fast_reply",
+      "seconds": 115.40192,
+      "request_id": "2825f84f984445a0",
+      "accepted": true,
+      "vm_id": "stream-android-pick"
+    },
+    {
+      "event": "http",
+      "seconds": 115.54384,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 115.63291,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 115.67344,
+      "method": "POST",
+      "path": "/api/internal/vm/instances/stream-android-pick/dispatch",
+      "query": ""
+    },
+    {
+      "event": "slow_send_cancelled",
+      "seconds": 115.67625,
+      "vm_id": "stream-android-pick",
+      "request_id": "2825f84f984445a0"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 115.69721,
+      "agent_id": "c-fast",
+      "kind": "vm_start",
+      "vm_id": "stream-android-pick",
+      "request_id": "e7ec68e960ae4e99"
+    },
+    {
+      "event": "lifecycle_transport_only",
+      "seconds": 115.69721,
+      "agent_id": "c-fast",
+      "kind": "vm_start",
+      "vm_id": "stream-android-pick"
+    },
+    {
+      "event": "http",
+      "seconds": 115.70748,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 115.71041,
+      "method": "GET",
+      "path": "/api/internal/vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 115.7133,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 115.75644,
+      "method": "POST",
+      "path": "/api/internal/vm/instances/stream-android-timeout/dispatch-candidates",
+      "query": "stream=true"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 115.76235,
+      "agent_id": "a-slow-send",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-timeout",
+      "request_id": "830a98f272ac45c5"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 115.76236,
+      "agent_id": "b-slow-reply",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-timeout",
+      "request_id": "830a98f272ac45c5"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 115.76237,
+      "agent_id": "c-fast",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-timeout",
+      "request_id": "830a98f272ac45c5"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 115.76238,
+      "agent_id": "d-send-failed",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-timeout",
+      "request_id": "830a98f272ac45c5"
+    },
+    {
+      "event": "fast_reply",
+      "seconds": 116.0135,
+      "request_id": "830a98f272ac45c5",
+      "accepted": true,
+      "vm_id": "stream-android-timeout"
+    },
+    {
+      "event": "http",
+      "seconds": 117.97871,
+      "method": "GET",
+      "path": "/api/internal/vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 117.98315,
+      "method": "GET",
+      "path": "/api/internal/harmony-vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 117.98379,
+      "method": "GET",
+      "path": "/api/internal/ios-sim/instances",
+      "query": ""
+    },
+    {
+      "event": "slow_send_cancelled",
+      "seconds": 118.76109,
+      "vm_id": "stream-android-timeout",
+      "request_id": "830a98f272ac45c5"
+    },
+    {
+      "event": "http",
+      "seconds": 119.09007,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 119.18186,
+      "method": "POST",
+      "path": "/api/internal/vm/instances/stream-android-close/dispatch-candidates",
+      "query": "stream=true"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 119.18614,
+      "agent_id": "a-slow-send",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-close",
+      "request_id": "d388649766b34926"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 119.18625,
+      "agent_id": "b-slow-reply",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-close",
+      "request_id": "d388649766b34926"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 119.18629,
+      "agent_id": "c-fast",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-close",
+      "request_id": "d388649766b34926"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 119.18631,
+      "agent_id": "d-send-failed",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-close",
+      "request_id": "d388649766b34926"
+    },
+    {
+      "event": "http",
+      "seconds": 119.22192,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "slow_send_cancelled",
+      "seconds": 119.22876,
+      "vm_id": "stream-android-close",
+      "request_id": "d388649766b34926"
+    },
+    {
+      "event": "http",
+      "seconds": 119.24457,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 119.93855,
+      "method": "GET",
+      "path": "/api/healthz",
+      "query": ""
+    },
+    {
+      "event": "late_reply",
+      "seconds": 120.0871,
+      "request_id": "d388649766b34926",
+      "accepted": false
+    },
+    {
+      "event": "http",
+      "seconds": 120.25235,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 120.25683,
+      "method": "POST",
+      "path": "/api/internal/vm/instances/stream-android-timeout/dispatch-candidates",
+      "query": ""
+    },
+    {
+      "event": "agent_send",
+      "seconds": 120.26394,
+      "agent_id": "a-slow-send",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-timeout",
+      "request_id": "2e207bdd882e460b"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 120.26395,
+      "agent_id": "b-slow-reply",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-timeout",
+      "request_id": "2e207bdd882e460b"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 120.26395,
+      "agent_id": "c-fast",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-timeout",
+      "request_id": "2e207bdd882e460b"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 120.26395,
+      "agent_id": "d-send-failed",
+      "kind": "vm_capability_probe",
+      "vm_id": "stream-android-timeout",
+      "request_id": "2e207bdd882e460b"
+    },
+    {
+      "event": "fast_reply",
+      "seconds": 120.51517,
+      "request_id": "2e207bdd882e460b",
+      "accepted": true,
+      "vm_id": "stream-android-timeout"
+    },
+    {
+      "event": "http",
+      "seconds": 120.97336,
+      "method": "GET",
+      "path": "/api/internal/vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 120.97419,
+      "method": "GET",
+      "path": "/api/internal/harmony-vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 120.97423,
+      "method": "GET",
+      "path": "/api/internal/ios-sim/instances",
+      "query": ""
+    },
+    {
+      "event": "slow_send_cancelled",
+      "seconds": 123.26487,
+      "vm_id": "stream-android-timeout",
+      "request_id": "2e207bdd882e460b"
+    },
+    {
+      "event": "http",
+      "seconds": 123.27377,
+      "method": "POST",
+      "path": "/api/internal/vm/instances/stream-android-timeout/dispatch-candidates",
+      "query": "stream=true"
+    },
+    {
+      "event": "http",
+      "seconds": 123.32803,
+      "method": "POST",
+      "path": "/api/internal/harmony-vm/instances/stream-harmony-pick/dispatch-candidates",
+      "query": "stream=true"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 123.33151,
+      "agent_id": "a-slow-send",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-pick",
+      "request_id": "433eb451c9f14639"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 123.33153,
+      "agent_id": "b-slow-reply",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-pick",
+      "request_id": "433eb451c9f14639"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 123.33155,
+      "agent_id": "c-fast",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-pick",
+      "request_id": "433eb451c9f14639"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 123.33156,
+      "agent_id": "d-send-failed",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-pick",
+      "request_id": "433eb451c9f14639"
+    },
+    {
+      "event": "fast_reply",
+      "seconds": 123.58269,
+      "request_id": "433eb451c9f14639",
+      "accepted": true,
+      "vm_id": "stream-harmony-pick"
+    },
+    {
+      "event": "http",
+      "seconds": 123.64564,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 123.69448,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 123.72014,
+      "method": "POST",
+      "path": "/api/internal/harmony-vm/instances/stream-harmony-pick/dispatch",
+      "query": ""
+    },
+    {
+      "event": "agent_send",
+      "seconds": 123.724,
+      "agent_id": "c-fast",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-pick",
+      "request_id": "2396e626041b4bfd"
+    },
+    {
+      "event": "slow_send_cancelled",
+      "seconds": 123.72433,
+      "vm_id": "stream-harmony-pick",
+      "request_id": "433eb451c9f14639"
+    },
+    {
+      "event": "fast_reply",
+      "seconds": 123.97484,
+      "request_id": "2396e626041b4bfd",
+      "accepted": true,
+      "vm_id": "stream-harmony-pick"
+    },
+    {
+      "event": "http",
+      "seconds": 123.97525,
+      "method": "GET",
+      "path": "/api/internal/vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 123.97646,
+      "method": "GET",
+      "path": "/api/internal/harmony-vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 123.97829,
+      "method": "GET",
+      "path": "/api/internal/ios-sim/instances",
+      "query": ""
+    },
+    {
+      "event": "agent_send",
+      "seconds": 123.99897,
+      "agent_id": "c-fast",
+      "kind": "harmony_vm_start",
+      "vm_id": "stream-harmony-pick",
+      "request_id": "c2afd622f6ec4d9b"
+    },
+    {
+      "event": "lifecycle_transport_only",
+      "seconds": 123.99898,
+      "agent_id": "c-fast",
+      "kind": "harmony_vm_start",
+      "vm_id": "stream-harmony-pick"
+    },
+    {
+      "event": "http",
+      "seconds": 124.00322,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 124.00483,
+      "method": "GET",
+      "path": "/api/internal/harmony-vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 124.00746,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 124.02757,
+      "method": "POST",
+      "path": "/api/internal/harmony-vm/instances/stream-harmony-timeout/dispatch-candidates",
+      "query": "stream=true"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 124.03037,
+      "agent_id": "a-slow-send",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-timeout",
+      "request_id": "1d53fee5d7e8496f"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 124.03039,
+      "agent_id": "b-slow-reply",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-timeout",
+      "request_id": "1d53fee5d7e8496f"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 124.03039,
+      "agent_id": "c-fast",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-timeout",
+      "request_id": "1d53fee5d7e8496f"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 124.0304,
+      "agent_id": "d-send-failed",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-timeout",
+      "request_id": "1d53fee5d7e8496f"
+    },
+    {
+      "event": "fast_reply",
+      "seconds": 124.28156,
+      "request_id": "1d53fee5d7e8496f",
+      "accepted": true,
+      "vm_id": "stream-harmony-timeout"
+    },
+    {
+      "event": "http",
+      "seconds": 124.9382,
+      "method": "GET",
+      "path": "/api/healthz",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 126.97322,
+      "method": "GET",
+      "path": "/api/internal/vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 126.9746,
+      "method": "GET",
+      "path": "/api/internal/harmony-vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 126.97467,
+      "method": "GET",
+      "path": "/api/internal/ios-sim/instances",
+      "query": ""
+    },
+    {
+      "event": "slow_send_cancelled",
+      "seconds": 127.03086,
+      "vm_id": "stream-harmony-timeout",
+      "request_id": "1d53fee5d7e8496f"
+    },
+    {
+      "event": "http",
+      "seconds": 127.36764,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 127.46876,
+      "method": "POST",
+      "path": "/api/internal/harmony-vm/instances/stream-harmony-close/dispatch-candidates",
+      "query": "stream=true"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 127.47152,
+      "agent_id": "a-slow-send",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-close",
+      "request_id": "089f7af331134e75"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 127.47152,
+      "agent_id": "b-slow-reply",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-close",
+      "request_id": "089f7af331134e75"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 127.47154,
+      "agent_id": "c-fast",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-close",
+      "request_id": "089f7af331134e75"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 127.47154,
+      "agent_id": "d-send-failed",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-close",
+      "request_id": "089f7af331134e75"
+    },
+    {
+      "event": "http",
+      "seconds": 127.51014,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "slow_send_cancelled",
+      "seconds": 127.51621,
+      "vm_id": "stream-harmony-close",
+      "request_id": "089f7af331134e75"
+    },
+    {
+      "event": "http",
+      "seconds": 127.53398,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "late_reply",
+      "seconds": 128.37177,
+      "request_id": "089f7af331134e75",
+      "accepted": false
+    },
+    {
+      "event": "http",
+      "seconds": 128.5401,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 128.54339,
+      "method": "POST",
+      "path": "/api/internal/harmony-vm/instances/stream-harmony-timeout/dispatch-candidates",
+      "query": ""
+    },
+    {
+      "event": "agent_send",
+      "seconds": 128.54552,
+      "agent_id": "a-slow-send",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-timeout",
+      "request_id": "011610c00ee947b9"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 128.54553,
+      "agent_id": "b-slow-reply",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-timeout",
+      "request_id": "011610c00ee947b9"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 128.54553,
+      "agent_id": "c-fast",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-timeout",
+      "request_id": "011610c00ee947b9"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 128.54554,
+      "agent_id": "d-send-failed",
+      "kind": "harmony_vm_capability_probe",
+      "vm_id": "stream-harmony-timeout",
+      "request_id": "011610c00ee947b9"
+    },
+    {
+      "event": "fast_reply",
+      "seconds": 128.79671,
+      "request_id": "011610c00ee947b9",
+      "accepted": true,
+      "vm_id": "stream-harmony-timeout"
+    },
+    {
+      "event": "http",
+      "seconds": 129.93948,
+      "method": "GET",
+      "path": "/api/healthz",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 129.9733,
+      "method": "GET",
+      "path": "/api/internal/vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 129.97523,
+      "method": "GET",
+      "path": "/api/internal/harmony-vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 129.97531,
+      "method": "GET",
+      "path": "/api/internal/ios-sim/instances",
+      "query": ""
+    },
+    {
+      "event": "slow_send_cancelled",
+      "seconds": 131.54651,
+      "vm_id": "stream-harmony-timeout",
+      "request_id": "011610c00ee947b9"
+    },
+    {
+      "event": "http",
+      "seconds": 131.55142,
+      "method": "POST",
+      "path": "/api/internal/harmony-vm/instances/stream-harmony-timeout/dispatch-candidates",
+      "query": "stream=true"
+    },
+    {
+      "event": "http",
+      "seconds": 131.60232,
+      "method": "POST",
+      "path": "/api/internal/ios-sim/instances/stream-ios-pick/dispatch-candidates",
+      "query": "stream=true"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 131.60595,
+      "agent_id": "a-slow-send",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-pick",
+      "request_id": "64e5e47ff5554f95"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 131.60596,
+      "agent_id": "b-slow-reply",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-pick",
+      "request_id": "64e5e47ff5554f95"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 131.60596,
+      "agent_id": "c-fast",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-pick",
+      "request_id": "64e5e47ff5554f95"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 131.60597,
+      "agent_id": "d-send-failed",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-pick",
+      "request_id": "64e5e47ff5554f95"
+    },
+    {
+      "event": "fast_reply",
+      "seconds": 131.85727,
+      "request_id": "64e5e47ff5554f95",
+      "accepted": true,
+      "vm_id": "stream-ios-pick"
+    },
+    {
+      "event": "http",
+      "seconds": 131.91946,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 131.96934,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 131.99499,
+      "method": "POST",
+      "path": "/api/internal/ios-sim/instances/stream-ios-pick/dispatch",
+      "query": ""
+    },
+    {
+      "event": "agent_send",
+      "seconds": 131.99832,
+      "agent_id": "c-fast",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-pick",
+      "request_id": "2143146cbe3144ed"
+    },
+    {
+      "event": "slow_send_cancelled",
+      "seconds": 131.99863,
+      "vm_id": "stream-ios-pick",
+      "request_id": "64e5e47ff5554f95"
+    },
+    {
+      "event": "fast_reply",
+      "seconds": 132.24947,
+      "request_id": "2143146cbe3144ed",
+      "accepted": true,
+      "vm_id": "stream-ios-pick"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 132.25287,
+      "agent_id": "c-fast",
+      "kind": "ios_sim_vm_start",
+      "vm_id": "stream-ios-pick",
+      "request_id": "d286d857532c4d8e"
+    },
+    {
+      "event": "lifecycle_transport_only",
+      "seconds": 132.25288,
+      "agent_id": "c-fast",
+      "kind": "ios_sim_vm_start",
+      "vm_id": "stream-ios-pick"
+    },
+    {
+      "event": "http",
+      "seconds": 132.26138,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 132.26283,
+      "method": "GET",
+      "path": "/api/internal/ios-sim/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 132.26476,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 132.28638,
+      "method": "POST",
+      "path": "/api/internal/ios-sim/instances/stream-ios-timeout/dispatch-candidates",
+      "query": "stream=true"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 132.28853,
+      "agent_id": "a-slow-send",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-timeout",
+      "request_id": "c4f37b5598e241a0"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 132.28853,
+      "agent_id": "b-slow-reply",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-timeout",
+      "request_id": "c4f37b5598e241a0"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 132.28853,
+      "agent_id": "c-fast",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-timeout",
+      "request_id": "c4f37b5598e241a0"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 132.28854,
+      "agent_id": "d-send-failed",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-timeout",
+      "request_id": "c4f37b5598e241a0"
+    },
+    {
+      "event": "fast_reply",
+      "seconds": 132.54092,
+      "request_id": "c4f37b5598e241a0",
+      "accepted": true,
+      "vm_id": "stream-ios-timeout"
+    },
+    {
+      "event": "http",
+      "seconds": 132.97397,
+      "method": "GET",
+      "path": "/api/internal/vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 132.97618,
+      "method": "GET",
+      "path": "/api/internal/harmony-vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 132.97625,
+      "method": "GET",
+      "path": "/api/internal/ios-sim/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 134.93905,
+      "method": "GET",
+      "path": "/api/healthz",
+      "query": ""
+    },
+    {
+      "event": "slow_send_cancelled",
+      "seconds": 135.28908,
+      "vm_id": "stream-ios-timeout",
+      "request_id": "c4f37b5598e241a0"
+    },
+    {
+      "event": "http",
+      "seconds": 135.61967,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 135.71113,
+      "method": "POST",
+      "path": "/api/internal/ios-sim/instances/stream-ios-close/dispatch-candidates",
+      "query": "stream=true"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 135.71524,
+      "agent_id": "a-slow-send",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-close",
+      "request_id": "ac95ab03f46444d5"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 135.71525,
+      "agent_id": "b-slow-reply",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-close",
+      "request_id": "ac95ab03f46444d5"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 135.71527,
+      "agent_id": "c-fast",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-close",
+      "request_id": "ac95ab03f46444d5"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 135.71528,
+      "agent_id": "d-send-failed",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-close",
+      "request_id": "ac95ab03f46444d5"
+    },
+    {
+      "event": "slow_send_cancelled",
+      "seconds": 135.78302,
+      "vm_id": "stream-ios-close",
+      "request_id": "ac95ab03f46444d5"
+    },
+    {
+      "event": "http",
+      "seconds": 135.78314,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 135.97233,
+      "method": "GET",
+      "path": "/api/internal/vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 135.97282,
+      "method": "GET",
+      "path": "/api/internal/harmony-vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 135.97285,
+      "method": "GET",
+      "path": "/api/internal/ios-sim/instances",
+      "query": ""
+    },
+    {
+      "event": "late_reply",
+      "seconds": 136.61668,
+      "request_id": "ac95ab03f46444d5",
+      "accepted": false
+    },
+    {
+      "event": "http",
+      "seconds": 136.79503,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 136.79937,
+      "method": "POST",
+      "path": "/api/internal/ios-sim/instances/stream-ios-timeout/dispatch-candidates",
+      "query": ""
+    },
+    {
+      "event": "agent_send",
+      "seconds": 136.80602,
+      "agent_id": "a-slow-send",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-timeout",
+      "request_id": "3d72f618117a452f"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 136.80602,
+      "agent_id": "b-slow-reply",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-timeout",
+      "request_id": "3d72f618117a452f"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 136.80603,
+      "agent_id": "c-fast",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-timeout",
+      "request_id": "3d72f618117a452f"
+    },
+    {
+      "event": "agent_send",
+      "seconds": 136.80603,
+      "agent_id": "d-send-failed",
+      "kind": "ios_sim_vm_capability_probe",
+      "vm_id": "stream-ios-timeout",
+      "request_id": "3d72f618117a452f"
+    },
+    {
+      "event": "fast_reply",
+      "seconds": 137.05675,
+      "request_id": "3d72f618117a452f",
+      "accepted": true,
+      "vm_id": "stream-ios-timeout"
+    },
+    {
+      "event": "http",
+      "seconds": 138.99022,
+      "method": "GET",
+      "path": "/api/internal/vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 138.99445,
+      "method": "GET",
+      "path": "/api/internal/harmony-vm/instances",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 138.99453,
+      "method": "GET",
+      "path": "/api/internal/ios-sim/instances",
+      "query": ""
+    },
+    {
+      "event": "slow_send_cancelled",
+      "seconds": 139.81146,
+      "vm_id": "stream-ios-timeout",
+      "request_id": "3d72f618117a452f"
+    },
+    {
+      "event": "http",
+      "seconds": 139.85508,
+      "method": "POST",
+      "path": "/api/internal/ios-sim/instances/stream-ios-timeout/dispatch-candidates",
+      "query": "stream=true"
+    },
+    {
+      "event": "http",
+      "seconds": 139.88596,
+      "method": "GET",
+      "path": "/fixture/state",
+      "query": ""
+    },
+    {
+      "event": "http",
+      "seconds": 208.48655,
+      "method": "POST",
+      "path": "/fixture/stop",
+      "query": ""
+    }
+  ],
+  "blocked": [],
+  "pending": {
+    "android": 0,
+    "ios": 0,
+    "harmony": 0
+  },
+  "runtime_removed": true,
+  "port": 51992
+}

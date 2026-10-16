@@ -1073,32 +1073,31 @@ async def _on_disconnect(
     # unregister_agent 只清反查表，conn.run_ids 仍保留断连瞬间这台 Agent 在飞的 Run，
     # 拿来交给宽限回收（精确到本连接，不会误伤别的 Agent）。
     in_flight_runs = set(conn.run_ids) if conn is not None else set()
+    # Publish transport loss before any DB await so capability streams do not
+    # wait behind device/VM offline persistence. The stale-socket guard above
+    # still protects a newer connection with the same Agent ID.
+    get_capability_waiter().discard_agent(agent_id)
+    get_harmony_capability_waiter().discard_agent(agent_id)
+    get_ios_sim_capability_waiter().discard_agent(agent_id)
     if conn is not None:
         hub.clear_device_extra(set(conn.serials))
     elif serials:
         hub.clear_device_extra(set(serials))
     await _offline_devices(agent_id, serials or (conn.serials if conn else set()))
-    # Harmony capability responses contain Agent-local HDC/fport/listener ports.
-    # They cease to be authoritative as soon as this exact Agent connection is
-    # gone; retaining them would permanently exclude ports after host changes.
-    get_harmony_capability_waiter().discard_agent(agent_id)
     try:
-        count = await mark_agent_vms_unavailable(agent_id)
+        count = await mark_agent_vms_unavailable(agent_id, hub=hub)
         if count:
             logger.info("Agent {} 断开，已标记 VM unavailable {} 台", agent_id, count)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Agent {} 断开时标记 VM unavailable 失败：{}", agent_id, exc)
     try:
-        count = await mark_agent_harmony_vms_offline(agent_id)
+        count = await mark_agent_harmony_vms_offline(agent_id, hub=hub)
         if count:
             logger.info("Agent {} 断开，已标记 Harmony VM agent_offline {} 台", agent_id, count)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Agent {} 断开时标记 Harmony VM agent_offline 失败：{}", agent_id, exc)
-    # iOS 虚拟机：结束正在等这台 Agent 的探查，避免调用方干等满超时。
-    # 不像鸿蒙那样是为了"释放被永久排除的端口"——我们不分配端口，纯粹为了不卡住探查。
-    get_ios_sim_capability_waiter().discard_agent(agent_id)
     try:
-        count = await mark_agent_ios_sim_vms_offline(agent_id)
+        count = await mark_agent_ios_sim_vms_offline(agent_id, hub=hub)
         if count:
             logger.info(
                 "Agent {} 断开，已标记 iOS 虚拟机 agent_offline {} 台", agent_id, count

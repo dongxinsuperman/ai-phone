@@ -15,6 +15,7 @@ from ai_phone.shared import protocol as P
 from ..api._deps import DBSession, HubDep
 from ..api.submissions import RequireBearer
 from ..hub import Hub
+from ..vm_probe import probe_stream_response
 from ..vm_lifecycle import (
     operation_failure_detail,
     is_untouched_draft,
@@ -42,6 +43,7 @@ from .schemas import (
 from .service import (
     ACTIVE_STATES,
     allocate_port_lease,
+    capability_excluded_ports,
     delete_owned_alias,
     ensure_alias_available,
     get_capability_waiter,
@@ -646,12 +648,20 @@ async def dispatch_candidates(
     vm_id: str = Path(..., min_length=1, max_length=64),
     session: AsyncSession = DBSession,
     hub: Hub = HubDep,
+    stream: bool = False,
 ) -> Dict[str, Any]:
     try:
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="harmony vm not found")
-    return await get_capability_waiter().probe(hub=hub, vm=vm)
+    waiter = get_capability_waiter()
+    events = waiter.probe_stream(hub=hub, vm=vm)
+    # Payload/snapshot are plain data now; do not pin a DB connection while
+    # slow Agents are being probed (including the legacy JSON collector).
+    await session.close()
+    if stream:
+        return probe_stream_response(events)
+    return await waiter.collect_probe(events)
 
 
 @router.post("/{vm_id}/dispatch")
@@ -790,7 +800,10 @@ async def _send_start(
             session=session,
             hub=hub,
         )
-    excluded = capability_waiter.excluded_ports_for(agent_id)
+    excluded = set(capability_waiter.excluded_ports_for(agent_id))
+    # A newer parallel probe may fail before collecting ports. Never discard
+    # occupied-port facts from this dispatch's own successful fresh response.
+    excluded.update(capability_excluded_ports(live_capability))
     try:
         lease = await allocate_port_lease(
             session, vm, agent_id=agent_id, excluded_ports=excluded
