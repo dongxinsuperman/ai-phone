@@ -1,0 +1,84 @@
+{
+  "base_commit": "82e48bc899fe9334fd683149d01c2c8aeeacc85b",
+  "tested_source_label": "82e48bc plus iOS observation, preflight proof freshness negative cases before correction",
+  "source_manifest": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/ios/preflight-proof-before-fix-manifest.json",
+  "source_root": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone",
+  "baseline_testcases": 936,
+  "baseline_skipped": 2,
+  "baseline_xml_sha256": "9f58fee6c276e796159de203d8666c03d0884fbdd5cd21a3a22ed0ac0d34dfca",
+  "selected_files": [],
+  "additional_test_files": {
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_instance_observation.py::test_preflight_failure_never_inherits_previous_creation_proof": "512cd44ff826d782cb62f2943f0a288b66498203b4eeba923f968f6ef4c9d181"
+  },
+  "baseline_file_overlap": [],
+  "explicit_config": {
+    "AI_PHONE_ENV": "isolated-main-flow-test",
+    "AI_PHONE_DB_URL": "sqlite+aiosqlite:////private/tmp/ai-phone-main-flow-impact-cpg47ytv/unconfigured-test.db",
+    "AI_PHONE_STORAGE_DIR": "/private/tmp/ai-phone-main-flow-impact-cpg47ytv/storage",
+    "AI_PHONE_AGENT_TOKEN": "main-flow-fixture-token",
+    "AI_PHONE_SUBMISSION_INTERNAL_TOKEN": "main-flow-fixture-token",
+    "AI_PHONE_SERVER_WS_URL": "ws://127.0.0.1:9/blocked",
+    "AI_PHONE_SERVER_HTTP_BASE": "http://127.0.0.1:9/blocked",
+    "AI_PHONE_PHONE_VLM_PROVIDER": "doubao",
+    "AI_PHONE_PHONE_VLM_BASE_URL": "http://127.0.0.1:9/blocked",
+    "AI_PHONE_PHONE_VLM_API_KEY": "fixture-only",
+    "AI_PHONE_PHONE_VLM_MODEL": "fixture-only",
+    "AI_PHONE_AUX_PROVIDER": "doubao",
+    "AI_PHONE_AUX_BASE_URL": "http://127.0.0.1:9/blocked",
+    "AI_PHONE_AUX_API_KEY": "fixture-only",
+    "AI_PHONE_AUX_MODEL": "fixture-only"
+  },
+  "runtime_dir": "/private/tmp/ai-phone-main-flow-impact-cpg47ytv",
+  "product_hashes_before": {
+    "backend/ai_phone/agent/ios_sim/manager.py": "c0f5c3fa5d9696f4f16dbf6846d6919ee564a61a71a246a3d99ccd51b6cd701b",
+    "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+    "backend/tests/test_ios_sim_manager.py": "5abe15d84dd0714c396d5bff0d6d36f0485db8743c3bcc4fe529f5d3f99a80b9",
+    "backend/tests/test_ios_sim_instance_observation.py": "512cd44ff826d782cb62f2943f0a288b66498203b4eeba923f968f6ef4c9d181"
+  },
+  "collected_nodeids": [
+    "tests/test_ios_sim_instance_observation.py::test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\\u8bf7\\u6c42 UDID]",
+    "tests/test_ios_sim_instance_observation.py::test_preflight_failure_never_inherits_previous_creation_proof[overrides1-\\u914d\\u7f6e\\u4e0d\\u4e00\\u81f4]"
+  ],
+  "excluded_nodeids": {
+    "tests/test_agent_config_distribution.py::test_env_defaults_contains_only_public_runtime_defaults": "Repository default-file content check is outside the runtime-flow scope; repository .env reads are forbidden here."
+  },
+  "blocked_external_calls": [
+    {
+      "event": "socket.bind",
+      "description": "('::1', 0)",
+      "test": "collection/import"
+    }
+  ],
+  "pytest_args": [
+    "-p",
+    "pytest_asyncio.plugin",
+    "-p",
+    "pytest_timeout",
+    "-o",
+    "asyncio_default_fixture_loop_scope=function",
+    "--rootdir",
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend",
+    "--basetemp",
+    "/private/tmp/ai-phone-main-flow-impact-cpg47ytv/pytest",
+    "--timeout=30",
+    "--timeout-method=thread",
+    "--maxfail=1",
+    "--durations=15",
+    "--junitxml",
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/ios/preflight-proof-before-fix-regression.xml",
+    "-q",
+    "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_instance_observation.py::test_preflight_failure_never_inherits_previous_creation_proof"
+  ],
+  "elapsed_seconds": 0.738,
+  "pytest_exit_code": 1,
+  "product_hashes_after": {
+    "backend/ai_phone/agent/ios_sim/manager.py": "c0f5c3fa5d9696f4f16dbf6846d6919ee564a61a71a246a3d99ccd51b6cd701b",
+    "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+    "backend/tests/test_ios_sim_manager.py": "5abe15d84dd0714c396d5bff0d6d36f0485db8743c3bcc4fe529f5d3f99a80b9",
+    "backend/tests/test_ios_sim_instance_observation.py": "512cd44ff826d782cb62f2943f0a288b66498203b4eeba923f968f6ef4c9d181"
+  },
+  "product_source_unchanged": true,
+  "runtime_removed": true,
+  "harness_default_base_commit": "74f209dc6556d4678291b0dce63a9817741b6bea",
+  "runtime_cleanup_note": "Expected failing regression temp directory removed after recording evidence."
+}

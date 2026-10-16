@@ -82,6 +82,17 @@ def stopped_inventory(platform, vm, *, modern=True):
         }}]}
         if modern:
             message["inventory_complete"] = True
+            message["instances"][0]["details"].update({
+                "instance_path": "/fixture/managed/instances",
+                "instance_observation": {
+                    "vm_id": vm.id, "state": "stopped", "resources_released": True,
+                    "reason": "fixture native process absent and transport released",
+                    "identity": {"instance_name": f"aiphone_harmony_{vm.id}",
+                                 "instance_path": "/fixture/managed/instances",
+                                 "lease_token": getattr(vm, "lease_token", "") or "",
+                                 "hdc_serial": getattr(vm, "hdc_serial", "") or ""},
+                },
+            })
         return message
     message = {"vm_ids": [vm.id], "running_vm_ids": [], "stopped_vm_ids": [vm.id]}
     if modern:

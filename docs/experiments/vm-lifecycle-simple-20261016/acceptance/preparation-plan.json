@@ -1,0 +1,86 @@
+{
+  "mode": "prepare-only",
+  "source_repo": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone",
+  "output": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance",
+  "platforms": {
+    "android": "vm",
+    "ios": "ios-sim",
+    "harmony": "harmony-vm"
+  },
+  "cases": [
+    {
+      "key": "stale_cleanup",
+      "label": "已停机 · 旧清理标记",
+      "inspected_state": "stopped"
+    },
+    {
+      "key": "start_failure",
+      "label": "启动失败 · 实际已停止",
+      "inspected_state": "stopped"
+    },
+    {
+      "key": "stop_failure",
+      "label": "停止失败 · 实际仍运行",
+      "inspected_state": "running"
+    },
+    {
+      "key": "offline",
+      "label": "所属电脑离线",
+      "inspected_state": "unknown"
+    },
+    {
+      "key": "unknown_stopped",
+      "label": "未知状态 · 核验后已停止",
+      "inspected_state": "stopped"
+    },
+    {
+      "key": "unknown_running",
+      "label": "未知状态 · 核验后仍运行",
+      "inspected_state": "running"
+    },
+    {
+      "key": "busy",
+      "label": "正在操作 · 禁止冲突",
+      "inspected_state": "unknown"
+    }
+  ],
+  "ids": {
+    "android": {
+      "stale_cleanup": "fa3f9ad33704",
+      "start_failure": "07571cd6fe76",
+      "stop_failure": "0d152bce4299",
+      "offline": "4a9269ca3ce5",
+      "unknown_stopped": "769b7f30c8e9",
+      "unknown_running": "1de23bde4563",
+      "busy": "6fcf2f38db80"
+    },
+    "ios": {
+      "stale_cleanup": "2e5cb833ed39",
+      "start_failure": "e2a6387b1439",
+      "stop_failure": "3dcc620e523f",
+      "offline": "003909a7490d",
+      "unknown_stopped": "1dd86e59e701",
+      "unknown_running": "1af0a78138ec",
+      "busy": "3ad23c276edd"
+    },
+    "harmony": {
+      "stale_cleanup": "c30569003346",
+      "start_failure": "a3466a68fd2c",
+      "stop_failure": "e23c9a231153",
+      "offline": "79d8e7a16971",
+      "unknown_stopped": "33b00bbb5b8a",
+      "unknown_running": "b22fa38109d1",
+      "busy": "fc48e0cc70ac"
+    }
+  },
+  "server": "Real FastAPI VM routes and real service.handle_vm_status, isolated SQLite, explicit FakeHub only",
+  "native": "None. Python audit denies subprocess, signals, external sockets and non-fixture .env files.",
+  "browser": "Existing Playwright 1.62.1, newly launched private headless process/context; no shared profile",
+  "frontend": "Build frozen Vue source with installed Vite into this run directory; never alter web/dist",
+  "freeze": "Root must freeze product and acceptance sources before --execute; this preparation does not execute acceptance",
+  "forbidden_ports": [
+    8000,
+    5180
+  ],
+  "playwright_module": "/Users/dongxin/.npm/_npx/705bc6b22212b352/node_modules/playwright"
+}

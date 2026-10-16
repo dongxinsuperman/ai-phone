@@ -67,6 +67,7 @@ class FakeLauncher:
 def env(monkeypatch, tmp_path):
     """一套可控的假宿主：simctl 命令全部拦下来，按 state 字典作答。"""
     from ai_phone.config import get_settings
+    import psutil
 
     # 端口预留落盘，必须隔离 storage：否则用例之间互相看到对方的预留，
     # 也会往仓库的 .data 里写垃圾
@@ -78,6 +79,8 @@ def env(monkeypatch, tmp_path):
     FakeLauncher.impostor_name = None
     wda_mod.reset_ports_for_tests()
     sim_disc.reset_managed_for_tests()
+    monkeypatch.setattr(psutil, "process_iter", lambda *_a, **_kw: iter(()))
+    monkeypatch.setattr(IosSimVmManager, "_local_port_free", staticmethod(lambda _port: True))
 
     state = {
         "instances": {},   # udid -> {name, state, runtime, device_type, is_available}
@@ -197,6 +200,7 @@ def test_start_reuses_existing_instance_by_name(env):
     """常驻语义：同一个 vm_id 第二次启动必须复用同一台实例，不新建。"""
     m = IosSimVmManager()
     m.start_sync(_msg())
+    m.stop_sync(_VM)
     m2 = IosSimVmManager()  # 模拟 Agent 重启（进程内状态清空）
     env["create_udid"] = "SHOULD-NOT-BE-USED"
     res = m2.start_sync(_msg())
@@ -208,6 +212,7 @@ def test_start_refuses_changed_config_without_deleting_data(env):
     """启动不能暗中把一台已有机器替换成空白机器。"""
     m = IosSimVmManager()
     m.start_sync(_msg())
+    m.stop_sync(_VM)
     m2 = IosSimVmManager()
     env["create_udid"] = "NEW-UDID"
     with pytest.raises(RuntimeError, match="配置不一致"):
@@ -707,7 +712,7 @@ def test_start_inventory_failure_never_creates_duplicate(env):
     m = IosSimVmManager()
     m.start_sync(_msg())
     env["list_fails"] = True
-    with pytest.raises(mgr_mod.SimctlListFailed):
+    with pytest.raises(mgr_mod.SimVmStartFailed, match="instance_list_failed"):
         IosSimVmManager().start_sync(_msg())
     assert [c[0] for c in env["calls"]].count("create") == 1
     assert env["instances"][_UDID]["state"] == "Booted"
@@ -731,7 +736,7 @@ def test_duplicate_names_block_start_and_delete(env):
     m = IosSimVmManager()
     m.start_sync(_msg())
     env["instances"]["DUPLICATE"] = dict(env["instances"][_UDID])
-    with pytest.raises(mgr_mod.InstanceIdentityError):
+    with pytest.raises(mgr_mod.SimVmStartFailed, match="instance_identity_mismatch"):
         IosSimVmManager().start_sync(_msg())
     result = m.delete_sync(_VM)
     assert result["ok"] is False
@@ -826,7 +831,7 @@ def test_start_failed_cleanup_keeps_launcher_for_retry(env, monkeypatch):
     assert rt.details["cleanup_pending"] is True
     assert rt.ready is False
     assert wda_mod.peek_ports(_UDID) is not None
-    with pytest.raises(RuntimeError, match="仍待清理"):
+    with pytest.raises(RuntimeError, match="仍在运行"):
         m.start_sync(_msg())
     assert len(FakeLauncher.instances) == 1
     monkeypatch.setattr(mgr_mod, "simctl_run", original)
@@ -1366,7 +1371,8 @@ async def test_executor_queue_consumes_start_budget_before_any_native_action(env
     assert [payload["state"] for payload in client.sent] == ["starting", "error"]
     assert "deadline exceeded" in client.sent[-1]["error"]
     assert client.sent[-1]["details"]["operation_not_started"] is True
-    assert client.sent[-1]["details"]["cleanup_confirmed"] is True
+    assert client.sent[-1]["details"]["cleanup_confirmed"] is False
+    assert client.sent[-1]["details"]["instance_observation"]["state"] == "missing"
     assert client.sent[-1]["details"]["created_in_attempt"] is False
     assert env["calls"] == [], "executor 排队超时后仍调用了 create/boot 或清理"
     assert FakeLauncher.instances == []

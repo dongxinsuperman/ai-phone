@@ -214,7 +214,9 @@ def test_start_mismatch_never_cleans_old_instance_and_reports_real_exit_fact(avd
     monkeypatch.setattr(avd.manager, "stop_sync", stop)
     monkeypatch.setattr(avd.manager, "delete_sync", delete)
     if not exit_confirmed:
-        monkeypatch.setattr(mod, "_find_avd_processes", lambda _: ([], False))
+        # 本次启动前已确认停止，镜像核验失败时的第二次观察才变得不完整。
+        inventory = iter([([], True), ([], False)])
+        monkeypatch.setattr(mod, "_find_avd_processes", lambda _: next(inventory, ([], False)))
     with pytest.raises(mod.VmStartFailure, match="实际镜像") as error:
         avd.manager.start_sync({"vm_id": "a", "api_level": 35, "abi": "arm64-v8a", "assigned_port": 5554,
                                 "require_existing_instance": True, "rollback_new_instance": True})
@@ -257,7 +259,7 @@ def test_restoring_effective_configuration_can_start_original_disk(avd, monkeypa
 @pytest.mark.parametrize("broken", ["image", "missing_index", "duplicate_index_path", "other_index_path"])
 def test_reclaimed_live_fast_path_cannot_skip_image_or_path_check(avd, monkeypatch, broken):
     configure_successful_start(avd, monkeypatch)
-    rt = mod.VmRuntime("a", "a", "emulator-5554", 5554, None, 0, avd_name=AVD,
+    rt = mod.VmRuntime("a", "a", "emulator-5554", 5554, SimpleNamespace(poll=lambda: None), 0, avd_name=AVD,
                        ready=True, observed_request_id="previous", operation_deadline=42)
     avd.manager._runtimes["a"] = rt
     if broken == "missing_index":
@@ -282,7 +284,7 @@ def test_reclaimed_live_fast_path_cannot_skip_image_or_path_check(avd, monkeypat
 
 def test_reclaimed_same_image_reuses_without_writing_or_sdk_query(avd, monkeypatch):
     configure_successful_start(avd, monkeypatch)
-    rt = mod.VmRuntime("a", "a", "emulator-5554", 5554, None, 0, avd_name=AVD, ready=True)
+    rt = mod.VmRuntime("a", "a", "emulator-5554", 5554, SimpleNamespace(poll=lambda: None), 0, avd_name=AVD, ready=True)
     avd.manager._runtimes["a"] = rt
     before = snapshot(avd)
     result = avd.manager.start_sync({"vm_id": "a", "api_level": 33, "abi": "arm64-v8a", "request_id": "new"})

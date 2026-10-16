@@ -1,0 +1,2 @@
+import original from "file:///Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/web/vite.config.js";
+export default { ...original, server: undefined, envDir: "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/runs/personal-simple-final-20261016-a3/empty-env", cacheDir: "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/runs/personal-simple-final-20261016-a3/vite-cache" };

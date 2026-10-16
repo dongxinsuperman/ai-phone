@@ -1,0 +1,282 @@
+{
+  "status": "failed",
+  "error": "Error: android/start_failure: explicit ordinary start accepted once",
+  "checks": [
+    {
+      "passed": true,
+      "label": "fixture ownership handshake"
+    },
+    {
+      "passed": true,
+      "label": "android/stale_cleanup: real GET route"
+    },
+    {
+      "passed": true,
+      "label": "fa3f9ad33704: real Server lifecycle shape"
+    },
+    {
+      "passed": true,
+      "label": "android/start_failure: real GET route"
+    },
+    {
+      "passed": true,
+      "label": "07571cd6fe76: real Server lifecycle shape"
+    },
+    {
+      "passed": true,
+      "label": "android/stop_failure: real GET route"
+    },
+    {
+      "passed": true,
+      "label": "0d152bce4299: real Server lifecycle shape"
+    },
+    {
+      "passed": true,
+      "label": "android/offline: real GET route"
+    },
+    {
+      "passed": true,
+      "label": "4a9269ca3ce5: real Server lifecycle shape"
+    },
+    {
+      "passed": true,
+      "label": "android/unknown_stopped: real GET route"
+    },
+    {
+      "passed": true,
+      "label": "769b7f30c8e9: real Server lifecycle shape"
+    },
+    {
+      "passed": true,
+      "label": "android/unknown_running: real GET route"
+    },
+    {
+      "passed": true,
+      "label": "1de23bde4563: real Server lifecycle shape"
+    },
+    {
+      "passed": true,
+      "label": "android/busy: real GET route"
+    },
+    {
+      "passed": true,
+      "label": "6fcf2f38db80: real Server lifecycle shape"
+    },
+    {
+      "passed": true,
+      "label": "android/stale_cleanup: all six Server action permissions match the case",
+      "detail": {
+        "start": true,
+        "stop": false,
+        "dispatch": true,
+        "delete": true,
+        "edit": true,
+        "copy": true
+      }
+    },
+    {
+      "passed": true,
+      "label": "android/start_failure: all six Server action permissions match the case",
+      "detail": {
+        "start": true,
+        "stop": false,
+        "dispatch": true,
+        "delete": true,
+        "edit": true,
+        "copy": true
+      }
+    },
+    {
+      "passed": true,
+      "label": "android/stop_failure: all six Server action permissions match the case",
+      "detail": {
+        "start": false,
+        "stop": true,
+        "dispatch": false,
+        "delete": false,
+        "edit": true,
+        "copy": true
+      }
+    },
+    {
+      "passed": true,
+      "label": "android/offline: all six Server action permissions match the case",
+      "detail": {
+        "start": false,
+        "stop": false,
+        "dispatch": true,
+        "delete": true,
+        "edit": true,
+        "copy": true
+      }
+    },
+    {
+      "passed": true,
+      "label": "android/unknown_stopped: all six Server action permissions match the case",
+      "detail": {
+        "start": true,
+        "stop": true,
+        "dispatch": true,
+        "delete": true,
+        "edit": true,
+        "copy": true
+      }
+    },
+    {
+      "passed": true,
+      "label": "android/unknown_running: all six Server action permissions match the case",
+      "detail": {
+        "start": true,
+        "stop": true,
+        "dispatch": true,
+        "delete": true,
+        "edit": true,
+        "copy": true
+      }
+    },
+    {
+      "passed": true,
+      "label": "android/busy: all six Server action permissions match the case",
+      "detail": {
+        "start": false,
+        "stop": false,
+        "dispatch": false,
+        "delete": false,
+        "edit": false,
+        "copy": false
+      }
+    },
+    {
+      "passed": true,
+      "label": "android: fresh stopped observation overrides old cleanupFalse"
+    },
+    {
+      "passed": true,
+      "label": "android: stale false flag and fresh released proof both reached real Server"
+    },
+    {
+      "passed": true,
+      "label": "android: failed start remains visibly stopped and normally startable"
+    },
+    {
+      "passed": true,
+      "label": "android: failed stop remains visibly running and normally stoppable"
+    },
+    {
+      "passed": true,
+      "label": "android: offline owner disables start/stop but retains retire/switch options"
+    },
+    {
+      "passed": true,
+      "label": "android/unknown_stopped: ordinary Start may inspect unknown state"
+    },
+    {
+      "passed": true,
+      "label": "android/unknown_stopped: visible 状态未确认"
+    },
+    {
+      "passed": true,
+      "label": "android/unknown_running: ordinary Start may inspect unknown state"
+    },
+    {
+      "passed": true,
+      "label": "android/unknown_running: visible 状态未确认"
+    },
+    {
+      "passed": true,
+      "label": "android: in-progress forbids every conflicting action"
+    },
+    {
+      "passed": true,
+      "label": "android/stale_cleanup: visible 已停止"
+    },
+    {
+      "passed": true,
+      "label": "android/start_failure: visible 已停止"
+    },
+    {
+      "passed": true,
+      "label": "android/stop_failure: visible 运行中"
+    },
+    {
+      "passed": true,
+      "label": "android/offline: visible 状态未确认"
+    },
+    {
+      "passed": true,
+      "label": "android/offline: 启动 is not offered"
+    },
+    {
+      "passed": true,
+      "label": "android/offline: 停止 is not offered"
+    },
+    {
+      "passed": true,
+      "label": "android: in-progress visible action is disabled"
+    },
+    {
+      "passed": true,
+      "label": "android: in-progress visible action is disabled"
+    },
+    {
+      "passed": true,
+      "label": "android/offline: Server rejects start"
+    },
+    {
+      "passed": true,
+      "label": "android/offline: Server rejects stop"
+    },
+    {
+      "passed": true,
+      "label": "android/offline: denied calls never send native commands"
+    },
+    {
+      "passed": true,
+      "label": "android/busy: Server rejects start"
+    },
+    {
+      "passed": true,
+      "label": "android/busy: Server rejects stop"
+    },
+    {
+      "passed": true,
+      "label": "android/busy: denied calls never send native commands"
+    },
+    {
+      "passed": true,
+      "label": "android/busy: Server rejects delete"
+    },
+    {
+      "passed": true,
+      "label": "android/busy: Server rejects patch"
+    },
+    {
+      "passed": true,
+      "label": "android/busy: Server rejects post/dispatch"
+    },
+    {
+      "passed": true,
+      "label": "android/start_failure: real GET route"
+    },
+    {
+      "passed": false,
+      "label": "android/start_failure: explicit ordinary start accepted once"
+    }
+  ],
+  "screenshots": [
+    "android-initial-states.png"
+  ],
+  "runtimeErrors": [],
+  "blockedUrls": [],
+  "duration_ms": 1012,
+  "playwright_version": "1.62.1",
+  "cleanup": {
+    "private_browser_pid": 33348,
+    "exit_code": 0,
+    "signal_code": null,
+    "process_exited": true,
+    "context_closed": true,
+    "scratch_removed": true,
+    "errors": []
+  }
+}

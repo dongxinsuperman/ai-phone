@@ -376,7 +376,10 @@ async def test_failed_start_has_one_bounded_cleanup_but_preserves_existing_avd(i
     (avd / "userdata.img").write_text("saved data")
     monkeypatch.setattr(manager, "probe", lambda _: {"ok": True})
     monkeypatch.setattr(manager, "_ensure_avd", lambda *_a, **_k: first_bind)
-    monkeypatch.setattr(mod.subprocess, "Popen", lambda *_a, **_k: proc)
+    popen = Mock(return_value=proc)
+    monkeypatch.setattr(mod.subprocess, "Popen", popen)
+    find_live = mod._find_avd_processes
+    monkeypatch.setattr(mod, "_find_avd_processes", lambda name: find_live(name) if popen.called else ([], True))
 
     def failed_boot(*_):
         clock.advance(2)  # The one-second start budget is exhausted.

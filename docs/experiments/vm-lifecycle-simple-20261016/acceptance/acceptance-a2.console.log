@@ -1,0 +1,16 @@
+{"status": "failed", "summary": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/runs/personal-simple-final-20261016-a2/acceptance-summary.json"}
+Traceback (most recent call last):
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/run_acceptance.py", line 124, in run_once
+    raise RuntimeError("HTTP/browser acceptance failed; no automatic rerun")
+RuntimeError: HTTP/browser acceptance failed; no automatic rerun
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/run_acceptance.py", line 213, in <module>
+    main()
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/run_acceptance.py", line 207, in main
+    run_once(args.manifest, args.run_id)
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/run_acceptance.py", line 191, in run_once
+    raise RuntimeError("One isolated acceptance run failed; preserve evidence, no automatic retry") from error
+RuntimeError: One isolated acceptance run failed; preserve evidence, no automatic retry

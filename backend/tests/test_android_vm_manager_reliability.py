@@ -55,6 +55,25 @@ class Client:
         return None
 
 
+def checked_operation_details(message, state, *, resources_released=False):
+    """保留原操作/清理契约断言，另核对本轮新增的只读观察结构。"""
+    details = dict(message["details"])
+    observation = details.pop("instance_observation")
+    assert set(observation) == {"vm_id", "state", "identity", "resources_released", "reason"}
+    assert observation["vm_id"] == message["vm_id"]
+    assert observation["state"] == state
+    assert observation["resources_released"] is resources_released
+    assert observation["identity"] == {
+        "avd_name": "" if state in {"missing", "unknown"} else f"aiphone_vm_{message['vm_id']}",
+    }
+    assert observation["reason"]
+    evidence = details.pop("exit_evidence", {})
+    if evidence.get("confirmed"):
+        assert evidence["process_inventory_complete"] is True
+        assert evidence["matching_process_ids"] == evidence["blocked_ports"] == []
+    return details
+
+
 class OwnedProcess:
     def __init__(self, *, refuse=False):
         self.alive = True
@@ -327,19 +346,25 @@ async def test_failed_ensure_does_not_turn_placeholder_into_created_instance(tmp
     monkeypatch.setattr(manager, "_emulator_avd_name", lambda *_: "")
     client = Client()
     await manager._start_and_report(client, {"vm_id": "a", "request_id": "start-1"})
-    assert client.sent[-1]["details"] == {"cleanup_confirmed": True, "instance_created": False}
+    assert checked_operation_details(client.sent[-1], "stopped", resources_released=True) == {"cleanup_confirmed": True, "instance_created": False}
     assert manager.stop_sync("a")["details"]["instance_created"] is False
 
 
-def failing_boot_setup(tmp_path, monkeypatch):
+def failing_boot_setup(tmp_path, monkeypatch, *, already_exists=False):
     manager = mod.AndroidVmManager(runtime_dir=tmp_path)
     fake_tools(monkeypatch)
     owned_avd = tmp_path / "avds" / "aiphone_vm_a.avd"
     other_avd = tmp_path / "avds" / "aiphone_vm_other.avd"
     other_avd.mkdir(parents=True)
     (other_avd / "userdata.img").write_text("other instance data")
+    if already_exists:
+        owned_avd.mkdir(parents=True)
+        (owned_avd / "config.ini").write_text("managed=true")
+        (owned_avd / "userdata.img").write_text("owned instance data")
 
     def ensure(*_args, **_kwargs):
+        if already_exists:
+            return False
         owned_avd.mkdir(parents=True, exist_ok=True)
         (owned_avd / "config.ini").write_text("managed=true")
         (owned_avd / "userdata.img").write_text("owned instance data")
@@ -365,7 +390,7 @@ async def test_first_binding_failure_deletes_only_owned_instance_once(tmp_path, 
     })
     assert [message["state"] for message in client.sent] == ["error"]
     assert client.sent[-1]["reason"] == "start_failed"
-    assert client.sent[-1]["details"] == {
+    assert checked_operation_details(client.sent[-1], "missing") == {
         "cleanup_confirmed": True, "instance_created": False, "created_in_attempt": True,
     }
     assert not owned_avd.exists()
@@ -378,13 +403,13 @@ async def test_first_binding_failure_deletes_only_owned_instance_once(tmp_path, 
 
 @pytest.mark.parametrize("rollback, require_existing", [(False, True), (False, False), (True, True)])
 async def test_restart_failure_never_deletes_saved_avd(tmp_path, monkeypatch, rollback, require_existing):
-    manager, owned_avd, other_avd, proc, run = failing_boot_setup(tmp_path, monkeypatch)
+    manager, owned_avd, other_avd, proc, run = failing_boot_setup(tmp_path, monkeypatch, already_exists=True)
     client = Client()
     await manager._start_and_report(client, {
         "vm_id": "a", "request_id": "restart", "rollback_new_instance": rollback,
         "require_existing_instance": require_existing,
     })
-    assert client.sent[-1]["details"] == {"cleanup_confirmed": False, "instance_created": True}
+    assert checked_operation_details(client.sent[-1], "running") == {"cleanup_confirmed": False, "instance_created": True}
     assert (owned_avd / "userdata.img").read_text() == "owned instance data"
     assert (other_avd / "userdata.img").read_text() == "other instance data"
     assert proc.terminated == 0
@@ -393,7 +418,7 @@ async def test_restart_failure_never_deletes_saved_avd(tmp_path, monkeypatch, ro
 
 
 async def test_existing_instance_start_failure_cannot_skip_failed_sync(tmp_path, monkeypatch):
-    manager, owned_avd, _other_avd, proc, run = failing_boot_setup(tmp_path, monkeypatch)
+    manager, owned_avd, _other_avd, proc, run = failing_boot_setup(tmp_path, monkeypatch, already_exists=True)
     monkeypatch.setattr(manager, "_emulator_avd_name", lambda *_: "aiphone_vm_a")
     sync = Mock(return_value=False)
     kill = Mock(side_effect=AssertionError("existing data must not be destroyed on failed sync"))
@@ -423,7 +448,7 @@ async def test_first_binding_rollback_failure_is_final_without_retry(tmp_path, m
     assert client.sent[-1]["state"] == "error"
     assert "test boot timeout" in client.sent[-1]["error"]
     assert "清理未完成" in client.sent[-1]["error"]
-    assert client.sent[-1]["details"] == {
+    assert checked_operation_details(client.sent[-1], "stopped") == {
         "cleanup_confirmed": False, "instance_created": True, "created_in_attempt": True,
     }
     assert owned_avd.exists()
@@ -437,7 +462,7 @@ async def test_first_binding_failed_stop_does_not_delete_live_avd(tmp_path, monk
     proc.refuse = True
     client = Client()
     await manager._start_and_report(client, {"vm_id": "a", "rollback_new_instance": True})
-    assert client.sent[-1]["details"] == {
+    assert checked_operation_details(client.sent[-1], "running") == {
         "cleanup_confirmed": False, "instance_created": True, "created_in_attempt": True,
     }
     assert owned_avd.exists()
@@ -453,7 +478,7 @@ async def test_first_binding_preflight_failure_needs_no_native_cleanup(tmp_path,
     monkeypatch.setattr(manager, "stop_sync", cleanup)
     client = Client()
     await manager._start_and_report(client, {"vm_id": "a", "rollback_new_instance": True})
-    assert client.sent[-1]["details"] == {
+    assert checked_operation_details(client.sent[-1], "unknown") == {
         "cleanup_confirmed": True, "instance_created": False, "created_in_attempt": False,
     }
     cleanup.assert_not_called()
@@ -469,7 +494,7 @@ async def test_first_binding_post_create_config_failure_deletes_created_avd_once
     monkeypatch.setattr(mod.subprocess, "run", run)
     client = Client()
     await manager._start_and_report(client, {"vm_id": "a", "rollback_new_instance": True})
-    assert client.sent[-1]["details"] == {
+    assert checked_operation_details(client.sent[-1], "unknown") == {
         "cleanup_confirmed": True, "instance_created": False, "created_in_attempt": True,
     }
     assert [call.args[0][1:3] for call in run.call_args_list] == [["list", "avd"], ["create", "avd"], ["delete", "avd"]]
@@ -493,7 +518,7 @@ async def test_first_binding_refuses_existing_avd_without_changing_or_stopping_i
     await manager._start_and_report(client, {"vm_id": "a", "rollback_new_instance": True})
     assert client.sent[-1]["state"] == "error"
     assert "已有同名 AVD" in client.sent[-1]["error"]
-    assert client.sent[-1]["details"] == {
+    assert checked_operation_details(client.sent[-1], "stopped") == {
         "cleanup_confirmed": False, "instance_created": True,
         "created_in_attempt": False, "instance_preexisting": True,
     }
@@ -510,7 +535,7 @@ async def test_first_binding_cannot_reuse_already_tracked_instance(tmp_path):
     manager._created_vm_ids.add("a")
     client = Client()
     await manager._start_and_report(client, {"vm_id": "a", "rollback_new_instance": True})
-    assert client.sent[-1]["details"] == {
+    assert checked_operation_details(client.sent[-1], "running") == {
         "cleanup_confirmed": False, "instance_created": True,
         "created_in_attempt": False, "instance_preexisting": True,
     }
@@ -587,7 +612,7 @@ async def test_executor_queue_time_cannot_restart_start_budget(tmp_path, monkeyp
     await manager.handle_start(client, message)
     assert [item["state"] for item in client.sent] == ["starting", "error"]
     assert "startup deadline exceeded" in client.sent[-1]["error"]
-    assert client.sent[-1]["details"] == {
+    assert checked_operation_details(client.sent[-1], "unknown") == {
         "cleanup_confirmed": True, "instance_created": False, "created_in_attempt": False,
     }
     assert message == original

@@ -382,19 +382,28 @@ def test_unknown_inventory_cannot_prove_server_instance_absent(tmp_path, conditi
 
 
 @pytest.mark.parametrize("saved,active,port_free,expected", [
-    (False, "", True, False),
+    (False, "", True, True),
     (True, "", True, True),
     (True, None, True, False),
     (True, "127.0.0.1:12341", True, False),
     (True, "", False, False),
 ])
-def test_lost_stop_ack_recovery_requires_positive_cleanup_evidence(
+def test_lost_stop_ack_recovery_uses_current_exact_cleanup_evidence(
     tmp_path, monkeypatch, saved, active, port_free, expected
 ):
     manager = HarmonyVmManager(runtime_dir=tmp_path)
-    known = {"ready": False, "cleanup_confirmed": saved, "hdc_serial": "127.0.0.1:12341"}
+    known = {
+        "ready": False, "cleanup_confirmed": saved, "hdc_serial": "127.0.0.1:12341", "hdc_port": 12341,
+        "instance_name": "aiphone_harmony_one", "instance_path": str(manager.instance_path),
+        "lease_token": "recorded-lease",
+    }
+    manager._known["one"] = known
+    config = manager.instance_path / known["instance_name"] / "config.ini"
+    config.parent.mkdir(parents=True)
+    config.write_text("existing-private-data")
     monkeypatch.setattr(manager, "_active_instance_serial", lambda *_a: active)
     monkeypatch.setattr(manager, "_port_is_free", lambda _port: port_free)
+    monkeypatch.setattr(lifecycle, "hdc_list_targets", lambda: [])
     assert manager._stopped_cleanup_confirmed("one", known) is expected
 
 
@@ -447,6 +456,9 @@ def failed_binding_environment(tmp_path, monkeypatch):
     monkeypatch.setattr(manager, "_cleanup_crash_service", lambda *_args: (True, []))
     monkeypatch.setattr(manager, "_wait_removed", lambda *_args: (state["stop_ok"], "removed" if state["stop_ok"] else "unconfirmed"))
     monkeypatch.setattr(lifecycle, "hdc_run", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(manager, "_active_instance_serial", lambda *_args: "")
+    monkeypatch.setattr(lifecycle, "hdc_list_targets", lambda: [])
+    monkeypatch.setattr(manager, "_port_is_free", lambda _port: True)
 
     def create(_tool, runtime, _msg):
         state["actions"].append("create")
@@ -535,12 +547,27 @@ async def test_failed_first_bind_cleanup_retains_exact_orphan_for_reconnect(
     async def send(payload):
         messages.append(payload)
     monkeypatch.setattr(HarmonyVmManager, "orphan_cleanup", property(lambda _self: True))
+    # The fixture's Popen.terminate exited the process in both cases. A failed
+    # transport removal may still retain resources; a failed definition delete
+    # leaves the private directory even after process/transport release.
+    monkeypatch.setattr(manager, "_active_instance_serial", lambda *_args: "")
+    monkeypatch.setattr(lifecycle, "hdc_list_targets", lambda: [] if state["stop_ok"] else [
+        SimpleNamespace(serial="127.0.0.1:12343", status="Connected"),
+    ])
+    monkeypatch.setattr(manager, "_port_is_free", lambda _port: state["stop_ok"])
+    before_reconcile = list(state["actions"])
+    config = manager.instance_path / "aiphone_harmony_firstbind" / "config.ini"
+    data_before = config.read_bytes()
     assert await manager.report_orphan_reconcile(SimpleNamespace(agent_id="isolated", send=send)) == 1
     row = messages[0]["instances"][0]
-    assert row["state"] == "error"
+    assert row["state"] == "stopped"
     assert row["lease_token"] == "bind-lease"
     assert row["hdc_serial"] == "127.0.0.1:12343"
-    assert row["details"]["cleanup_confirmed"] is False
+    assert row["details"]["cleanup_confirmed"] is state["stop_ok"]
+    assert row["details"]["instance_observation"]["resources_released"] is state["stop_ok"]
+    assert row["details"]["rollback_pending"] is True
+    assert state["actions"] == before_reconcile
+    assert config.read_bytes() == data_before
     previous_actions = list(state["actions"])
     with pytest.raises(RuntimeError, match="cleanup_required"):
         manager.start_sync(msg)
@@ -559,6 +586,7 @@ def test_bound_restart_failure_never_deletes_existing_userdata(failed_binding_en
         "created": True, "instance_path": str(manager.instance_path),
         "instance_name": "aiphone_harmony_firstbind",
         "last_config": lifecycle._persistent_message_config(msg),
+        "hdc_port": 12343, "hdc_serial": "127.0.0.1:12343", "lease_token": "old-bind-lease",
     }
     if legacy_registry:
         manager._known[msg["vm_id"]].pop("created")
@@ -641,6 +669,7 @@ def test_spent_probe_budget_never_creates_or_spawns_and_preserves_existing_data(
         manager._known[msg["vm_id"]] = {
             "created": True, "instance_name": "aiphone_harmony_firstbind",
             "instance_path": str(manager.instance_path),
+            "hdc_port": 12343, "hdc_serial": "127.0.0.1:12343", "lease_token": "old-bind-lease",
         }
         msg.update(require_existing_instance=True, rollback_new_instance=False)
     def slow_probe(_msg):
@@ -680,6 +709,7 @@ def test_late_driver_or_fold_result_cannot_succeed_or_delete_bound_data(
     manager._known[msg["vm_id"]] = {
         "created": True, "instance_name": "aiphone_harmony_firstbind",
         "instance_path": str(manager.instance_path), "last_config": lifecycle._persistent_message_config(msg),
+        "hdc_port": 12343, "hdc_serial": "127.0.0.1:12343", "lease_token": "old-bind-lease",
     }
     driver = SimpleNamespace(
         close=lambda: state["actions"].append("close-driver"),
@@ -788,9 +818,13 @@ async def test_real_worker_timeout_preserves_terminal_cleanup_evidence(
     # crossing its real executor boundary and lose attached attributes.
     await manager.handle_start(SimpleNamespace(send=send, refresh_devices=refresh), msg)
     assert messages[-1]["state"] == "error"
-    assert messages[-1]["details"] == {
+    details = messages[-1]["details"]
+    assert {key: details[key] for key in ("instance_created", "created_in_attempt", "cleanup_confirmed")} == {
         "instance_created": False, "created_in_attempt": False, "cleanup_confirmed": True,
     }
+    assert details["instance_observation"]["state"] == "unknown"
+    assert details["instance_observation"]["resources_released"] is False
+    assert set(details["instance_observation"]["identity"].values()) == {""}
     assert state["actions"] == []
 
 

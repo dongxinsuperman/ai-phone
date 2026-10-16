@@ -164,7 +164,9 @@ def test_existing_start_capacity_failure_keeps_data_without_stop_or_delete(exist
     monkeypatch.setattr(avd.manager, "stop_sync", stop)
     monkeypatch.setattr(avd.manager, "delete_sync", delete)
     if not exit_confirmed:
-        monkeypatch.setattr(mod, "_find_avd_processes", lambda _: ([], False))
+        # 前置Stopped核验后，容量拒绝时的只读退出证据可以变为未知。
+        inventory = iter([([], True), ([], False)])
+        monkeypatch.setattr(mod, "_find_avd_processes", lambda _: next(inventory, ([], False)))
     with pytest.raises(mod.VmStartFailure, match="数据容量") as error:
         avd.manager.start_sync({"vm_id": "a", "assigned_port": 5554, "require_existing_instance": True,
                                 "internal_storage_mb": 4096})

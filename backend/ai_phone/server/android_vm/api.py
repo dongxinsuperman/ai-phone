@@ -22,7 +22,8 @@ from ..api.submissions import RequireBearer
 from ..hub import Hub
 from ..vm_probe import probe_stream_response
 from ..vm_lifecycle import (
-    operation_failure_detail,
+    vm_view, require_action, machine_state, require_editable,
+    ensure_start_observation, operation_failure_detail,
     is_untouched_draft,
     require_retirement_allowed, send_operation_once,
     begin_operation, maintenance, require_idle, require_startable,
@@ -75,9 +76,9 @@ catalog_router = APIRouter(
 
 
 @router.get("")
-async def list_instances(session: AsyncSession = DBSession) -> List[Dict[str, Any]]:
+async def list_instances(session: AsyncSession = DBSession, hub: Hub = HubDep) -> List[Dict[str, Any]]:
     res = await session.execute(select(AndroidVmInstance).order_by(AndroidVmInstance.created_at.desc()))
-    return [row.to_dict() for row in res.scalars().all()]
+    return [vm_view(row, hub) for row in res.scalars().all()]
 
 
 def _profile_matches_request(prof: AndroidDeviceProfile, body: AndroidVmCreateReq) -> bool:
@@ -103,7 +104,7 @@ def _profile_matches_request(prof: AndroidDeviceProfile, body: AndroidVmCreateRe
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_instance(
     body: AndroidVmCreateReq,
-    session: AsyncSession = DBSession,
+    session: AsyncSession = DBSession, hub: Hub = HubDep,
 ) -> Dict[str, Any]:
     # 单一身份口径：别名是设备身份，name 永远镜像 alias（schema 的 name 仅作兼容字段，
     # 即便有人绕过前端传 name != alias 也会被强制对齐，杜绝双名）。
@@ -161,46 +162,39 @@ async def create_instance(
     session.add(vm)
     await session.commit()
     await session.refresh(vm)
-    return vm.to_dict()
+    return vm_view(vm, hub)
 
 
 @router.get("/{vm_id}")
 async def get_instance(
     vm_id: str = Path(..., min_length=1, max_length=64),
-    session: AsyncSession = DBSession,
+    session: AsyncSession = DBSession, hub: Hub = HubDep,
 ) -> Dict[str, Any]:
     try:
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="android vm not found")
-    return vm.to_dict()
+    return vm_view(vm, hub)
 
 
 @router.patch("/{vm_id}")
 async def patch_instance(
     body: AndroidVmPatchReq,
     vm_id: str = Path(..., min_length=1, max_length=64),
-    session: AsyncSession = DBSession,
+    session: AsyncSession = DBSession, hub: Hub = HubDep,
 ) -> Dict[str, Any]:
     await transaction_lock(session, f"android-vm:{vm_id}")
     try:
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="android vm not found")
-    require_idle(vm, allow_running=True)
+    require_action(vm, "edit", hub)
     patch = body.model_dump(exclude_unset=True)
     # 别名是设备身份，像真机一样随时可改（含运行态）。其余物理/运行参数仍要求非运行态。
     # name 不再单独可改：永远镜像 alias，这里直接丢弃外部传入的 name。
     patch.pop("name", None)
     alias_only = set(patch.keys()).issubset({"alias"})
-    if not alias_only and vm.state not in (
-        "draft",
-        "stopped",
-        "error",
-        "unavailable",
-        "agent_offline",
-    ):
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="running vm cannot be edited")
+    require_editable(vm, hub, alias_only=alias_only)
     if "abi" in patch and patch["abi"] is not None:
         patch["abi"] = _normalize_abi(str(patch["abi"]))
     for key in (
@@ -247,11 +241,11 @@ async def patch_instance(
         )
     apply_vm_patch(vm, patch)
     # 运行态改名：把新别名映射指到当前 emulator serial（旧映射已在上面按旧名删除）
-    if alias_changed and vm.adb_serial and vm.state in ACTIVE_STATES:
+    if alias_changed and vm.adb_serial and machine_state(vm) in {"starting", "running", "stopping"}:
         await sync_vm_alias(session, vm, vm.adb_serial)
     await session.commit()
     await session.refresh(vm)
-    return vm.to_dict()
+    return vm_view(vm, hub)
 
 
 # RAM 档位（key, 下界含, 上界不含 MB）。前后端共用这套定义，保证筛选与 facet 一致。
@@ -743,9 +737,10 @@ async def stop_instance(
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
         raise HTTPException(404, "android vm not found")
-    require_idle(vm, allow_running=True)
     if not vm.assigned_agent_id:
-        return {"sent": False, "instance": vm.to_dict()}
+        require_idle(vm, allow_running=True)
+        return {"sent": False, "instance": vm_view(vm, hub)}
+    require_action(vm, "stop", hub, idempotent_stop=True)
     require_owner_host(vm, hub)
     require_device_idle(hub, vm)
     request_id = begin_operation(vm, "stop", target_agent_id=vm.assigned_agent_id,
@@ -765,9 +760,9 @@ async def stop_instance(
         if current_operation.get("request_id") == request_id and current_operation.get("outcome") == "succeeded":
             sent = True
         else:
-            raise HTTPException(409, detail=operation_failure_detail(vm, "停止下发失败，本次操作已结束；尚未确认实例停止", request_id=request_id))
+            raise HTTPException(409, detail=operation_failure_detail(vm, "停止下发失败，本次操作已结束；尚未确认实例停止", hub=hub, request_id=request_id))
     await session.refresh(vm)
-    return {"sent": sent, "instance": vm.to_dict()}
+    return {"sent": sent, "instance": vm_view(vm, hub)}
 
 
 async def _send_start(
@@ -781,20 +776,17 @@ async def _send_start(
         raise HTTPException(404, "android vm not found")
     if expected_draft and not is_untouched_draft(vm):
         raise HTTPException(409, "新配置已被另一操作接管，本次换机不会重复启动")
-    require_idle(vm)
+    require_action(vm, "edit", hub)
     old_agent = str(vm.assigned_agent_id or "")
     if old_agent and old_agent != agent_id:
         if not allow_switch:
-            raise HTTPException(409, "实例所属 Agent 已变化，请刷新后重试启动；启动不会更换实例")
+            raise HTTPException(409, "所属 Agent 已变化，本次未启动；请刷新后操作")
         return await _switch_agent(vm=vm, new_agent_id=agent_id, session=session, hub=hub)
-    require_startable(vm)
-    old_agent = (vm.assigned_agent_id or "").strip()
-    if old_agent and old_agent != agent_id:
-        if not allow_switch:
-            raise HTTPException(409, "实例所属 Agent 已变化，请刷新后重试启动；启动不会更换实例")
-        return await _switch_agent(vm=vm, new_agent_id=agent_id, session=session, hub=hub)
+    require_startable(vm, hub)
     if not hub.has_agent(agent_id):
         raise HTTPException(409, "所属 Agent 离线，请等待其重新连接")
+    require_owner_host(vm, hub)
+    vm = await ensure_start_observation(session, vm, hub, get_capability_waiter())
     require_device_idle(hub, vm)
     try:
         assigned_port, exclude_ports = await assign_emulator_port(session, vm, hub=hub)
@@ -808,7 +800,7 @@ async def _send_start(
     payload = {
         "type": P.MSG_VM_START, **vm_payload(vm, request_id=request_id),
         "assigned_port": assigned_port, "exclude_ports": exclude_ports,
-        "require_existing_instance": bool(lifecycle_runtime(vm).get("instance_created") or vm.started_at),
+        "require_existing_instance": bool(vm.assigned_agent_id or lifecycle_runtime(vm).get("instance_created") or vm.started_at),
         "rollback_new_instance": first_bind,
         "operation_timeout_sec": lifecycle_runtime(vm)["operation"]["timeout_sec"],
     }
@@ -820,14 +812,14 @@ async def _send_start(
     arm_operation_timeout(vm, hub)
     sent = await send_operation_once(hub, agent_id, payload)
     if not sent:
-        await record_send_failure(session, vm, request_id, "启动下发失败，保留原绑定等待对账")
+        await record_send_failure(session, vm, request_id, "启动下发失败，本次操作已结束")
         current_operation = lifecycle_runtime(vm).get("operation") or {}
         if current_operation.get("request_id") == request_id and current_operation.get("outcome") == "succeeded":
             sent = True
         else:
-            raise HTTPException(409, detail=operation_failure_detail(vm, "启动下发失败，本次操作已结束；请查询当前实例与操作结果", request_id=request_id))
+            raise HTTPException(409, detail=operation_failure_detail(vm, "启动下发失败，本次操作已结束；请查询当前实例与操作结果", hub=hub, request_id=request_id))
     await session.refresh(vm)
-    return {"sent": sent, "instance": vm.to_dict()}
+    return {"sent": sent, "instance": vm_view(vm, hub)}
 
 
 async def _switch_agent(*, vm: AndroidVmInstance, new_agent_id: str, session: AsyncSession, hub: Hub) -> Dict[str, Any]:
@@ -852,7 +844,7 @@ async def _switch_agent(*, vm: AndroidVmInstance, new_agent_id: str, session: As
     try:
         result = await _send_start(vm_id=new_vm_id, agent_id=new_agent_id, session=session, hub=hub, expected_draft=True)
         sent = bool(result.get("sent"))
-        instance = result.get("instance") or new_vm.to_dict()
+        instance = result.get("instance") or vm_view(new_vm, hub)
     except HTTPException as exc:
         await transaction_lock(session, f"android-vm:{new_vm_id}")
         current = await session.get(AndroidVmInstance, new_vm_id, populate_existing=True)
@@ -872,8 +864,7 @@ async def _switch_agent(*, vm: AndroidVmInstance, new_agent_id: str, session: As
                            details={"cleanup_confirmed": True, "instance_created": False})
         raw_detail = exc.detail if isinstance(exc.detail, dict) else {}
         message = str(raw_detail.get("message") or exc.detail)
-        detail = operation_failure_detail(current, message,
-            request_id=str(raw_detail.get("request_id") or ""), switched=True,
+        detail = operation_failure_detail(current, message, hub=hub, request_id=str(raw_detail.get("request_id") or ""), switched=True,
             old_vm_id=old_vm_id, old_cleanup_sent=cleanup_sent)
         await session.commit()
         # All three legacy switch paths report a conflict when the target

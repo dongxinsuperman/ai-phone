@@ -34,7 +34,7 @@ from ..db import get_session_factory
 from ..hub import Hub
 from ..vm_probe import CapabilityProbeWaiter
 from ..vm_lifecycle import (
-    record_creation_provenance, proves_live_managed_instance, send_operation_once,
+    accept_observation_fact, record_status_facts, preserve_failure, invalidate_instance_observation, record_stopped_inventory, record_creation_provenance, proves_live_managed_instance, send_operation_once,
     expire_operation_if_due,
     is_abandoned_cleanup_receipt, record_abandoned_cleanup_receipt,
     accept_owner, accept_status, bind_owner, report_owner_conflict, cleanup_abandoned_first_bind,
@@ -227,6 +227,7 @@ async def reset_vm_states_on_startup(session: AsyncSession) -> int:
         if op.get("pending"):
             fail_attempt(vm, "server_restarted", "服务重启，本次未完成操作已结束；不会自动重试")
         elif vm.assigned_agent_id:
+            invalidate_instance_observation(vm)
             vm.state = "agent_offline"
     return len(rows)
 
@@ -253,6 +254,7 @@ async def mark_agent_vms_offline(agent_id: str, *, hub: Optional[Hub] = None) ->
             if op.get("pending") and op.get("target_agent_id") == agent_id:
                 fail_attempt(vm, "agent_disconnected", "Agent 断开，本次操作已结束；不会自动重试")
             elif vm.assigned_agent_id == agent_id:
+                invalidate_instance_observation(vm)
                 vm.state, vm.error_code, vm.error_message = "agent_offline", "agent_offline", f"agent offline: {agent_id}"
             else:
                 continue
@@ -291,7 +293,7 @@ async def handle_vm_status(agent_id: str, msg: Dict[str, Any], hub: Optional[Hub
             record_abandoned_cleanup_receipt(vm)
             await session.commit()
             return
-        if not accept_status(vm, msg):
+        if not accept_status(vm, msg) and not accept_observation_fact(vm, msg):
             expired = expire_operation_if_due(vm, hub) or expired
             cleaned = await cleanup_abandoned_first_bind(hub, vm, agent_id, details, msg)
             if expired or cleaned:
@@ -307,6 +309,7 @@ async def handle_vm_status(agent_id: str, msg: Dict[str, Any], hub: Optional[Hub
             state = "error"
         if state not in {"running", "stopped", "starting", "stopping", "error", "unavailable"}:
             return
+        record_status_facts(vm, {**msg, "state": state, "ok": ok})
         vm.state = state
         vm.error_code = "" if ok else reason
         vm.error_message = "" if ok else str(msg.get("error") or reason)
@@ -326,6 +329,7 @@ async def handle_vm_status(agent_id: str, msg: Dict[str, Any], hub: Optional[Hub
             vm.stopped_at = now_utc()
             await _try_bind_alias(session, vm, placeholder_serial(vm.id))
         update_runtime(vm, last_reason=reason, last_state=state, last_agent_id=agent_id,
+                       last_status={"state": state, "ok": ok, "reason": reason, "details": details},
                        details=details, updated_at=now_utc().isoformat())
         finish_operation(vm, {**msg, "state": state})
         maintenance(hub, vm, not (state == "running" and ok))
@@ -374,7 +378,8 @@ async def handle_vm_reconcile(agent_id: str, msg: Dict[str, Any], hub: Optional[
                 vm.udid = proof["udid"]
             if vm.id in reported:
                 update_runtime(vm, instance_created=True)
-                if msg.get("inventory_complete") is True and vm.id in stopped and vm.id not in unknown and vm.state not in {"starting", "stopping"} and not (vm.state == "running" and lifecycle_runtime(vm).get("operation")):
+                if msg.get("inventory_complete") is True and legacy and vm.id in stopped and vm.id not in unknown and vm.state not in {"starting", "stopping"} and not (vm.state == "running" and lifecycle_runtime(vm).get("operation")):
+                    record_stopped_inventory(vm, {"sim_name": proof["name"], "udid": proof["udid"]})
                     vm.state, vm.error_code, vm.error_message = "stopped", "", ""
                     vm.wda_port, vm.mjpeg_port = None, None
                     vm.stopped_at = vm.stopped_at or now_utc()
@@ -382,6 +387,8 @@ async def handle_vm_reconcile(agent_id: str, msg: Dict[str, Any], hub: Optional[
                     finish_operation(vm, {"state": "stopped"})
                     maintenance(hub, vm, True)
             elif msg.get("inventory_complete") is True and vm.id not in unknown and vm.state not in {"draft", "starting", "stopping"}:
+                preserve_failure(vm)
+                invalidate_instance_observation(vm, "原实例缺失，不会自动重建")
                 vm.state, vm.error_code = "error", "instance_missing"
                 vm.error_message = "Agent 未发现原实例；未自动重建"
         await session.commit()

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
+import re
 import zipfile
 
 import pytest
@@ -57,6 +58,7 @@ from ai_phone.server.harmony_vm.service import (
 from ai_phone.server.hub import Hub
 from ai_phone.server.app_install.service import list_packages
 from ai_phone.server.models import AppPackage, Device, DeviceAlias
+from ai_phone.server.vm_lifecycle import lifecycle_view
 from ai_phone.shared.harmony_identity import (
     harmony_udid_from_uuid,
     normalize_harmony_instance_uuid,
@@ -64,6 +66,19 @@ from ai_phone.shared.harmony_identity import (
 
 
 AUTH = {"Authorization": "Bearer dev"}
+
+
+def _stopped_instance_fact(vm_id, token, serial):
+    safe_id = re.sub(r"[^A-Za-z0-9_]+", "_", vm_id)[:32]
+    return {
+        "vm_id": vm_id, "state": "stopped", "resources_released": True,
+        "reason": "this_inventory_confirmed_native_stop",
+        "identity": {
+            "instance_name": f"aiphone_harmony_{safe_id}",
+            "instance_path": "/fixture/harmony/instances",
+            "lease_token": token, "hdc_serial": serial,
+        },
+    }
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -1004,7 +1019,12 @@ async def test_harmony_reconcile_restores_lease_free_stopped_vm_after_server_rel
                     "lease_token": "released-old-token",
                     "hdc_serial": "127.0.0.1:10002",
                     "state": "stopped",
-                    "details": {"orphan_reconcile": True},
+                    "details": {
+                        "orphan_reconcile": True,
+                        "instance_observation": _stopped_instance_fact(
+                            vm_id, "released-old-token", "127.0.0.1:10002"
+                        ),
+                    },
                 }
             ]
         },
@@ -1078,7 +1098,12 @@ async def test_harmony_stopped_reconcile_preserves_server_owner_and_active_lease
                     "state": "stopped",
                     "lease_token": lease_token,
                     "hdc_serial": f"127.0.0.1:{lease_port}",
-                    "details": {"orphan_reconcile": True},
+                    "details": {
+                        "orphan_reconcile": True, "cleanup_confirmed": False,
+                        "managed_instance_present": True,
+                        "instance_name": "aiphone_harmony_still_has_lease",
+                        "instance_path": "/fixture/harmony/instances",
+                    },
                 }
             ]
         },
@@ -1092,7 +1117,7 @@ async def test_harmony_stopped_reconcile_preserves_server_owner_and_active_lease
     assert rebound.state == "agent_offline"
     assert rebound.error_message == "waiting for owner"
     # A stopped inventory without cleanup evidence cannot release an active lease.
-    assert still_active.state == "agent_offline"
+    assert lifecycle_view(still_active, SimpleNamespace(has_agent=lambda _agent: True))["state"] is None
     assert still_active.lease_token == lease_token
     assert still_active.hdc_port == lease_port
     assert await session.get(HarmonyVmPortLease, lease_port) is not None
@@ -1165,7 +1190,12 @@ async def test_harmony_old_stopped_reconcile_cannot_release_a_new_running_lease(
             "state": "stopped",
             "lease_token": "previous-start-token",
             "hdc_serial": f"127.0.0.1:{port}",
-            "details": {"cleanup_confirmed": True, "orphan_reconcile": True},
+            "details": {
+                "cleanup_confirmed": True, "orphan_reconcile": True,
+                "instance_observation": _stopped_instance_fact(
+                    vm_id, "previous-start-token", f"127.0.0.1:{port}"
+                ),
+            },
         }]},
     )
 
@@ -1181,7 +1211,10 @@ async def test_harmony_old_stopped_reconcile_cannot_release_a_new_running_lease(
         {"inventory_complete": True, "instances": [{
             "vm_id": vm_id, "state": "stopped", "lease_token": token,
             "hdc_serial": f"127.0.0.1:{port}",
-            "details": {"cleanup_confirmed": True, "orphan_reconcile": True},
+            "details": {
+                "cleanup_confirmed": True, "orphan_reconcile": True,
+                "instance_observation": _stopped_instance_fact(vm_id, token, f"127.0.0.1:{port}"),
+            },
         }]},
     )
     session.expire_all()

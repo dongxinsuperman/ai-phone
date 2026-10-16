@@ -383,7 +383,7 @@ async def test_android_vm_start_preserves_missing_assigned_agent(client, app, se
     resp = await client.post(f"/api/internal/vm/instances/{vm_id}/start", headers=AUTH)
 
     assert resp.status_code == 409
-    assert "离线" in resp.json()["detail"]
+    assert "离线" in str(resp.json()["detail"])
     await session.refresh(vm)
     assert vm.assigned_agent_id == "agent-old"
     assert vm.state == "stopped"
@@ -402,6 +402,8 @@ async def test_android_vm_start_send_failure_preserves_assignment(client, app, s
     vm = await session.get(AndroidVmInstance, vm_id)
     vm.assigned_agent_id = "agent-1"
     vm.state = "stopped"
+    vm.runtime = {"last_status": {"state": "stopped", "ok": True,
+                  "details": {"cleanup_confirmed": True}}}
     await session.commit()
 
     resp = await client.post(f"/api/internal/vm/instances/{vm_id}/start", headers=AUTH)
@@ -416,7 +418,7 @@ async def test_android_vm_start_send_failure_preserves_assignment(client, app, s
     assert vm.state == "error"
     assert vm.runtime["operation"]["pending"] is False
     assert vm.adb_serial == "emulator-5554"
-    assert "保留原绑定" in vm.error_message
+    assert "本次操作已结束" in vm.error_message
 
 
 async def test_android_vm_dispatch_rejects_offline_agent_without_switching(client, app, session):
@@ -472,7 +474,7 @@ async def test_android_vm_dispatch_send_failure_preserves_assignment(client, app
     assert vm.state == "error"
     assert vm.runtime["operation"]["pending"] is False
     assert vm.adb_serial == "emulator-5554"
-    assert "保留原绑定" in vm.error_message
+    assert "本次操作已结束" in vm.error_message
 
 
 async def test_android_vm_alias_is_renamable_with_uniqueness(client):
@@ -766,6 +768,8 @@ async def test_android_vm_reconcile_corrects_stale_running(session):
             "vm_ids": [stale.id, live.id],
             "running_vm_ids": [live.id],
             "stopped_vm_ids": [stale.id],
+            "instance_proofs": {stale.id: {"avd_name": f"aiphone_vm_{stale.id}"},
+                                live.id: {"avd_name": f"aiphone_vm_{live.id}"}},
         },
         hub,
         session=session,

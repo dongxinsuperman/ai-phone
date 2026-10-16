@@ -1,0 +1,21 @@
+Traceback (most recent call last):
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/browser_fixture.py", line 409, in <module>
+    main()
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/browser_fixture.py", line 405, in main
+    asyncio.run(serve(args.run_dir, args.manifest))
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/browser_fixture.py", line 78, in serve
+    from ai_phone.server.android_vm import api as android_api, service as android_svc
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/android_vm/api.py", line 20, in <module>
+    from ..api._deps import DBSession, HubDep
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/api/__init__.py", line 16, in <module>
+    from ..android_vm.api import catalog_router as android_vm_catalog_router
+ImportError: cannot import name 'catalog_router' from partially initialized module 'ai_phone.server.android_vm.api' (most likely due to a circular import) (/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/android_vm/api.py)

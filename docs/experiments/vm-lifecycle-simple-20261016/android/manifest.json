@@ -1,0 +1,81 @@
+{
+  "baseline": "82e48bc",
+  "scope": "Android manager and isolated Agent tests only; no native/SDK/device/service/company operations or commits",
+  "files": {
+    "backend/ai_phone/agent/android_vm/manager.py": "7c9b52f074cc16869fc2bb48283b042130fbeac8a4974c7f268a244e1b613c8c",
+    "backend/tests/test_android_vm_instance_observation.py": "f1d153343161990a8675b9e06c31994c0f1b7e6642a6b379cde21d02eed7525e",
+    "backend/tests/test_android_vm_manager_reliability.py": "36248cf8c81f583e9e75333fee5f92fa488f3ce00d3ef3829bebe33a91bbb775",
+    "backend/tests/test_android_vm_existing_image.py": "3c0bc937ddd02e39a33ce4c72d3725e70937ca6698b516a317fcf4c5843cf0f5",
+    "backend/tests/test_android_vm_storage_size.py": "6f3ee9b688f3d27fc079bbf2a69aafc85ea8630f0d7a7f2fa5525d290390f79b",
+    "backend/tests/test_android_vm_stop_budget.py": "a50e588453e906109cbc7869a400e36f32034eac6a365a708ec89e0cabbfa0b2"
+  },
+  "verification": {
+    "passed": 347,
+    "skipped": 0,
+    "test_files": [
+      "test_android_vm_instance_observation.py",
+      "test_android_vm_manager_reliability.py",
+      "test_android_vm_stop_budget.py",
+      "test_android_vm_storage_size.py",
+      "test_android_vm_existing_image.py",
+      "test_agent_ws_client.py"
+    ],
+    "new_observation_cases": 39,
+    "ruff": "passed",
+    "diff_check": "passed"
+  },
+  "first_regression": {
+    "passed": 252,
+    "failed": 17,
+    "notes": "14 exact-details assertions needed the new observation/exit fields; old not-ready wording retained; two current exit diagnostics were initially discarded and are now returned from the same fresh read-only sample. Original log retained."
+  },
+  "wire": {
+    "path": "details.instance_observation",
+    "keys": [
+      "vm_id",
+      "state",
+      "identity",
+      "resources_released",
+      "reason"
+    ],
+    "states": [
+      "running",
+      "stopped",
+      "missing",
+      "unknown"
+    ],
+    "unknown_or_missing_identity": {
+      "avd_name": ""
+    },
+    "observation_is_operation_success": false
+  },
+  "stop_success_observation": "Derived from the same locked process/port exit evidence; no additional directory scan.",
+  "native_definition_unverified": "Stopped is retained only with a trusted local identity and a fresh complete process-exit observation; missing still requires complete native definition absence.",
+  "cross_layer_regression": {
+    "passed": 391,
+    "failed": 3,
+    "source": "cross-layer-regression.log",
+    "owner": "Server owner; no Server tests changed by Android owner",
+    "failed_cases": [
+      "test_android_vm_start_preserves_missing_assigned_agent",
+      "test_android_vm_start_send_failure_preserves_assignment",
+      "test_android_vm_reconcile_corrects_stale_running"
+    ]
+  },
+  "review_correction": "Inspect every existing runtime, including cached ready=True; only current stopped/missing facts clear metadata. Positive running/unknown facts do not clear runtime or implicitly stop it.",
+  "review_corrections": [
+    "All existing runtimes, including cached ready=True, are read-only inspected before reuse or restart.",
+    "A bound require_existing_instance start without any cached runtime must also confirm stopped before reservation/config-write/Popen. Positive running, unknown or missing stops this attempt before the cleanup try block."
+  ],
+  "fixture_calibration": "Existing-AVD restart fixtures contain their original disk before start; fake native PID becomes visible only after fake Popen; unknown post-failure inventory occurs after successful initial stopped check. Original disk, image, signal and budget assertions retained.",
+  "independent_review": {
+    "method": "Read-only source review; no additional native/test execution by reviewer",
+    "manager_sha256": "7c9b52f074cc16869fc2bb48283b042130fbeac8a4974c7f268a244e1b613c8c",
+    "status": "No remaining Android main-flow or data-safety blocker",
+    "closed": [
+      "cached ready=True stale runtime",
+      "runtime=None bound start while the exact old AVD is alive on another port"
+    ],
+    "server_integration_note": "Server must not require resources_released=True as a blanket precondition for a stopped VM with no local port observation; referred to Server owner."
+  }
+}

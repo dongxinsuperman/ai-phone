@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="0.100" timestamp="2026-10-16T11:29:29.980055+08:00" hostname="dongxindeMacBook-Pro.local"><testcase classname="" name="tests.test_vm_lifecycle_view_start" time="0.000"><error message="collection failure">ImportError while importing test module '/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_view_start.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_view_start.py:14: in &lt;module&gt;
+    from test_vm_lifecycle_view_api import (
+E   ModuleNotFoundError: No module named 'test_vm_lifecycle_view_api'</error></testcase></testsuite></testsuites>

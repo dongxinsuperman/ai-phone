@@ -1,0 +1,234 @@
+........................................................................ [ 28%]
+......F....sFFs....................F.........FFF......F................. [ 56%]
+...........................................F.FF.FF.F...........F..F..... [ 85%]
+......................................                                   [100%]
+=================================== FAILURES ===================================
+__ test_stopped_legacy_instance_adopts_verified_restarted_host_once[harmony] ___
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py:242: in test_stopped_legacy_instance_adopts_verified_restarted_host_once
+    assert vm.assigned_agent_id == "restarted" and vm.state == "stopped"
+E   AssertionError: assert ('old' == 'restarted'
+E     
+E     - restarted
+E     + old)
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:30:16.514 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-e7c8bd828c2a409580350ce92a72b7f8?mode=memory&cache=shared&uri=true
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 11:30:16.542 | WARNING  | ai_phone.server.vm_lifecycle:report_owner_conflict:663 - VM ownership conflict; no adoption or cleanup | vm_id=084d6d828be2 owner=old owner_host= reporter=restarted reporter_host=host-one
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:30:16.578 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_________ test_probe_does_not_hold_vm_lock_needed_by_agent_status[ios] _________
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py:298: in test_probe_does_not_hold_vm_lock_needed_by_agent_status
+    result = await platform.api._send_start(vm.id, "old", session, hub, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/ios_sim/api.py:423: in _send_start
+    vm = await ensure_start_observation(session, vm, hub, get_capability_waiter())
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/vm_lifecycle.py:408: in ensure_start_observation
+    await reject_start_preflight(session, current, hub, observation_notice(observation),
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/vm_lifecycle.py:360: in reject_start_preflight
+    raise HTTPException(409, operation_failure_detail(vm, message, request_id=request_id, hub=hub, reason=reason))
+E   fastapi.exceptions.HTTPException: 409: {'message': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'sent': False, 'vm_id': 'ed82173e0ac0', 'request_id': '', 'instance': {'id': 'ed82173e0ac0', 'name': 'contract-vm', 'alias': 'contract-vm', 'device_type': '', 'device_type_name': '', 'runtime': '', 'runtime_name': '', 'os_version': '', 'config_json': {}, 'state': 'stopped', 'assigned_agent_id': 'old', 'udid': 'SIM-UDID-1', 'wda_port': None, 'mjpeg_port': None, 'runtime_state': {'owner_host_id': 'host-one', 'instance_created': True, 'instance_observation': {'vm_id': 'ed82173e0ac0', 'state': 'unknown', 'identity': {}, 'resources_released': False, 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}, 'last_status': {'state': 'unknown', 'ok': True, 'reason': 'inspected', 'details': {'instance_observation': {'vm_id': 'ed82173e0ac0', 'state': 'unknown', 'identity': {}, 'resources_released': False, 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}}}, 'last_failure': {'message': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'action': 'start', 'request_id': '', 'at': '2026-10-16T03:30:16.735000+00:00', 'native_command_sent': False}}, 'error_code': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'error_message': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'created_at': '2026-10-16T03:30:16.730177', 'updated_at': '2026-10-16T03:30:16.735130+00:00', 'started_at': None, 'stopped_at': None, 'lifecycle': {'state': None, 'agent_online': True, 'actions': {'start': True, 'stop': True, 'dispatch': True, 'delete': True, 'edit': True, 'copy': True}, 'notice': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'error': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}}, 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:30:16.702 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-469af321c5f4453899adfbc3ac3d9812?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:30:16.757 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_______ test_probe_does_not_hold_vm_lock_needed_by_agent_status[harmony] _______
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py:298: in test_probe_does_not_hold_vm_lock_needed_by_agent_status
+    result = await platform.api._send_start(vm.id, "old", session, hub, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/harmony_vm/api.py:785: in _send_start
+    vm = await ensure_start_observation(session, vm, hub, capability_waiter)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/vm_lifecycle.py:408: in ensure_start_observation
+    await reject_start_preflight(session, current, hub, observation_notice(observation),
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/vm_lifecycle.py:360: in reject_start_preflight
+    raise HTTPException(409, operation_failure_detail(vm, message, request_id=request_id, hub=hub, reason=reason))
+E   fastapi.exceptions.HTTPException: 409: {'message': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'sent': False, 'vm_id': '5ff762005c8c', 'request_id': '', 'instance': {'id': '5ff762005c8c', 'name': 'contract-vm', 'alias': 'contract-vm', 'device_type': 'Phone', 'os_version': '', 'api_version': '', 'abi': 'auto', 'image_id': '', 'screen_profile': '', 'screen_width': 1080, 'screen_height': 2340, 'density': 420, 'screen_size_in': '', 'memory_gb': 4, 'storage_gb': 8, 'boot_mode': 'cold', 'config_json': {}, 'state': 'stopped', 'assigned_agent_id': 'old', 'hdc_port': None, 'hdc_serial': None, 'cleanup_pending': False, 'runtime': {'owner_host_id': 'host-one', 'instance_created': True, 'instance_observation': {'vm_id': '5ff762005c8c', 'state': 'unknown', 'identity': {}, 'resources_released': False, 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}, 'last_status': {'state': 'unknown', 'ok': True, 'reason': 'inspected', 'details': {'instance_observation': {'vm_id': '5ff762005c8c', 'state': 'unknown', 'identity': {}, 'resources_released': False, 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}}}, 'last_failure': {'message': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'action': 'start', 'request_id': '', 'at': '2026-10-16T03:30:16.789633+00:00', 'native_command_sent': False}}, 'error_code': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'error_message': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'created_at': '2026-10-16T03:30:16.785498', 'updated_at': '2026-10-16T03:30:16.789766+00:00', 'started_at': None, 'stopped_at': None, 'lifecycle': {'state': None, 'agent_online': True, 'actions': {'start': True, 'stop': True, 'dispatch': True, 'delete': True, 'edit': True, 'copy': True}, 'notice': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'error': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}}, 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:30:16.758 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-946c459e42334f5f93f2ec7c167b3ed1?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:30:16.812 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+___ test_failed_first_attempt_rolls_back_binding_and_never_resumes[harmony] ____
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py:542: in test_failed_first_attempt_rolls_back_binding_and_never_resumes
+    assert getattr(vm, platform.serial) is None
+E   AssertionError: assert '127.0.0.1:10000' is None
+E    +  where '127.0.0.1:10000' = getattr(<ai_phone.server.harmony_vm.models.HarmonyVmInstance object at 0x10a67acd0>, 'hdc_serial')
+E    +    where 'hdc_serial' = namespace(name='harmony', api=<module 'ai_phone.server.harmony_vm.api' from '/Users/dongxin/.codex/worktrees/vm-lifecy...ss 'ai_phone.server.harmony_vm.models.HarmonyVmInstance'>, serial='hdc_serial', value=None, delete='harmony_vm_delete').serial
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:30:17.524 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-c5f9352f3fe14fe090ac52251fb76ee1?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:30:17.569 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+__ test_bound_restart_failure_preserves_confirmed_identity_and_data[android] ___
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py:618: in test_bound_restart_failure_preserves_confirmed_identity_and_data
+    await platform.api._send_start(vm_id=vm.id, agent_id="old", session=session, hub=hub)
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/android_vm/api.py:794: in _send_start
+    vm = await ensure_start_observation(session, vm, hub, get_capability_waiter())
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/vm_lifecycle.py:408: in ensure_start_observation
+    await reject_start_preflight(session, current, hub, observation_notice(observation),
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/vm_lifecycle.py:360: in reject_start_preflight
+    raise HTTPException(409, operation_failure_detail(vm, message, request_id=request_id, hub=hub, reason=reason))
+E   fastapi.exceptions.HTTPException: 409: {'message': '探查超时：Agent 未响应（可重试）', 'sent': False, 'vm_id': 'cd93cb0de148', 'request_id': '4c64fafe463d411f', 'instance': {'id': 'cd93cb0de148', 'name': 'contract-vm', 'alias': 'contract-vm', 'profile_ref_type': 'custom', 'profile_ref_id': '', 'profile_id': '', 'profile_name': '', 'config_version': 1, 'config_json': {}, 'capability_marks': {}, 'api_level': 33, 'abi': 'arm64', 'system_type': 'google_apis', 'system_image': '', 'screen_width': 1080, 'screen_height': 2400, 'density': 420, 'orientation': 'portrait', 'state': 'stopped', 'assigned_agent_id': 'old', 'adb_serial': 'emulator-5554', 'error_message': '探查超时：Agent 未响应（可重试）', 'runtime': {'owner_host_id': 'host-one', 'instance_created': True, 'instance_observation': {'vm_id': 'cd93cb0de148', 'state': 'unknown', 'identity': {}, 'resources_released': False, 'reason': '探查超时：Agent 未响应（可重试）'}, 'last_status': {'state': 'unknown', 'ok': True, 'reason': 'inspected', 'details': {'instance_observation': {'vm_id': 'cd93cb0de148', 'state': 'unknown', 'identity': {}, 'resources_released': False, 'reason': '探查超时：Agent 未响应（可重试）'}}}, 'last_failure': {'message': '探查超时：Agent 未响应（可重试）', 'reason': '探查超时：Agent 未响应（可重试）', 'action': 'start', 'request_id': '4c64fafe463d411f', 'at': '2026-10-16T03:30:28.179625+00:00', 'native_command_sent': False}}, 'created_at': '2026-10-16T03:30:18.162435', 'updated_at': '2026-10-16T03:30:28.181348+00:00', 'started_at': None, 'stopped_at': None, 'lifecycle': {'state': None, 'agent_online': True, 'actions': {'start': True, 'stop': True, 'dispatch': True, 'delete': True, 'edit': True, 'copy': True}, 'notice': '探查超时：Agent 未响应（可重试）', 'error': '探查超时：Agent 未响应（可重试）'}}, 'reason': '探查超时：Agent 未响应（可重试）'}
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:30:18.135 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-1ea7d910896745aca702645d83f5180c?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:30:28.279 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+____ test_bound_restart_failure_preserves_confirmed_identity_and_data[ios] _____
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py:620: in test_bound_restart_failure_preserves_confirmed_identity_and_data
+    await platform.api._send_start(vm.id, "old", session, hub)
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/ios_sim/api.py:423: in _send_start
+    vm = await ensure_start_observation(session, vm, hub, get_capability_waiter())
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/vm_lifecycle.py:408: in ensure_start_observation
+    await reject_start_preflight(session, current, hub, observation_notice(observation),
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/vm_lifecycle.py:360: in reject_start_preflight
+    raise HTTPException(409, operation_failure_detail(vm, message, request_id=request_id, hub=hub, reason=reason))
+E   fastapi.exceptions.HTTPException: 409: {'message': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'sent': False, 'vm_id': '85d2f86ce2b4', 'request_id': '', 'instance': {'id': '85d2f86ce2b4', 'name': 'contract-vm', 'alias': 'contract-vm', 'device_type': '', 'device_type_name': '', 'runtime': '', 'runtime_name': '', 'os_version': '', 'config_json': {}, 'state': 'stopped', 'assigned_agent_id': 'old', 'udid': 'SIM-UDID-1', 'wda_port': None, 'mjpeg_port': None, 'runtime_state': {'owner_host_id': 'host-one', 'instance_created': True, 'instance_observation': {'vm_id': '85d2f86ce2b4', 'state': 'unknown', 'identity': {}, 'resources_released': False, 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}, 'last_status': {'state': 'unknown', 'ok': True, 'reason': 'inspected', 'details': {'instance_observation': {'vm_id': '85d2f86ce2b4', 'state': 'unknown', 'identity': {}, 'resources_released': False, 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}}}, 'last_failure': {'message': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'action': 'start', 'request_id': '', 'at': '2026-10-16T03:30:28.312416+00:00', 'native_command_sent': False}}, 'error_code': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'error_message': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'created_at': '2026-10-16T03:30:28.309582', 'updated_at': '2026-10-16T03:30:28.312554+00:00', 'started_at': None, 'stopped_at': None, 'lifecycle': {'state': None, 'agent_online': True, 'actions': {'start': True, 'stop': True, 'dispatch': True, 'delete': True, 'edit': True, 'copy': True}, 'notice': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'error': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}}, 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:30:28.280 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-b96533eda3c04deba64af7606385d2ac?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:30:28.334 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+__ test_bound_restart_failure_preserves_confirmed_identity_and_data[harmony] ___
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py:620: in test_bound_restart_failure_preserves_confirmed_identity_and_data
+    await platform.api._send_start(vm.id, "old", session, hub)
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/harmony_vm/api.py:785: in _send_start
+    vm = await ensure_start_observation(session, vm, hub, capability_waiter)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/vm_lifecycle.py:408: in ensure_start_observation
+    await reject_start_preflight(session, current, hub, observation_notice(observation),
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/vm_lifecycle.py:360: in reject_start_preflight
+    raise HTTPException(409, operation_failure_detail(vm, message, request_id=request_id, hub=hub, reason=reason))
+E   fastapi.exceptions.HTTPException: 409: {'message': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'sent': False, 'vm_id': '1c8f7187a103', 'request_id': '', 'instance': {'id': '1c8f7187a103', 'name': 'contract-vm', 'alias': 'contract-vm', 'device_type': 'Phone', 'os_version': '', 'api_version': '', 'abi': 'auto', 'image_id': '', 'screen_profile': '', 'screen_width': 1080, 'screen_height': 2340, 'density': 420, 'screen_size_in': '', 'memory_gb': 4, 'storage_gb': 8, 'boot_mode': 'cold', 'config_json': {}, 'state': 'stopped', 'assigned_agent_id': 'old', 'hdc_port': None, 'hdc_serial': None, 'cleanup_pending': False, 'runtime': {'owner_host_id': 'host-one', 'instance_created': True, 'instance_observation': {'vm_id': '1c8f7187a103', 'state': 'unknown', 'identity': {}, 'resources_released': False, 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}, 'last_status': {'state': 'unknown', 'ok': True, 'reason': 'inspected', 'details': {'instance_observation': {'vm_id': '1c8f7187a103', 'state': 'unknown', 'identity': {}, 'resources_released': False, 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}}}, 'last_failure': {'message': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'action': 'start', 'request_id': '', 'at': '2026-10-16T03:30:28.366393+00:00', 'native_command_sent': False}}, 'error_code': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'error_message': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'created_at': '2026-10-16T03:30:28.363504', 'updated_at': '2026-10-16T03:30:28.366521+00:00', 'started_at': None, 'stopped_at': None, 'lifecycle': {'state': None, 'agent_online': True, 'actions': {'start': True, 'stop': True, 'dispatch': True, 'delete': True, 'edit': True, 'copy': True}, 'notice': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'", 'error': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}}, 'reason': "无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:30:28.335 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-d4865c14e8b24275b8bd91fa579836a1?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:30:28.389 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_______ test_timeout_does_not_reuse_cleanup_proof_from_previous_attempt ________
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py:762: in test_timeout_does_not_reuse_cleanup_proof_from_previous_attempt
+    require_startable(vm)
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/vm_lifecycle.py:327: in require_startable
+    raise HTTPException(409, operation_failure_detail(vm, view["notice"] or "原实例状态尚未核实，不能新建替代实例", hub=hub))
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/vm_lifecycle.py:957: in operation_failure_detail
+    "instance": vm_view(vm, hub), **extra}
+                ^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/server/vm_lifecycle.py:286: in vm_view
+    return {**vm.to_dict(), "lifecycle": lifecycle_view(vm, hub)}
+              ^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute 'to_dict'
+_ test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence[android-start] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_compat_audit.py:123: in test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence
+    assert detail["instance"]["id"] == vm.id and detail["instance"]["state"] == "error"
+E   AssertionError: assert ('baba994a3133' == 'baba994a3133'
+E     
+E       baba994a3133 and 'stopped' == 'error'
+E     
+E     - error
+E     + stopped)
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:30:32.088 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-e72f3403c8f94abca2ecea85fe80b4b5?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:30:32.155 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence[android-dispatch] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_compat_audit.py:123: in test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence
+    assert detail["instance"]["id"] == vm.id and detail["instance"]["state"] == "error"
+E   AssertionError: assert ('6002beca75aa' == '6002beca75aa'
+E     
+E       6002beca75aa and 'draft' == 'error'
+E     
+E     - error
+E     + draft)
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:30:32.224 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-92f1599bb9ac410f973675382b2f3c26?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:30:32.353 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence[ios-start] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_compat_audit.py:119: in test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence
+    assert response.status_code == (502 if platform.name == "ios" else 409), response.text
+E   AssertionError: {"detail":{"message":"无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'","sent":false,"vm_id":"24fcfbaeedae","request_id":"","instance":{"id":"24fcfbaeedae","name":"contract-vm","alias":"contract-vm","device_type":"","device_type_name":"","runtime":"","runtime_name":"","os_version":"","config_json":{},"state":"stopped","assigned_agent_id":"old","udid":"SIM-UDID-1","wda_port":null,"mjpeg_port":null,"runtime_state":{"owner_host_id":"host-one","instance_created":true,"instance_observation":{"vm_id":"24fcfbaeedae","state":"unknown","identity":{},"resources_released":false,"reason":"无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"},"last_status":{"state":"unknown","ok":true,"reason":"inspected","details":{"instance_observation":{"vm_id":"24fcfbaeedae","state":"unknown","identity":{},"resources_released":false,"reason":"无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}}},"last_failure":{"message":"无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'","reason":"无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'","action":"start","request_id":"","at":"2026-10-16T03:30:32.417515+00:00","native_command_sent":false}},"error_code":"无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'","error_message":"无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'","created_at":"2026-10-16T03:30:32.411497","updated_at":"2026-10-16T03:30:32.417668+00:00","started_at":null,"stopped_at":null,"lifecycle":{"state":null,"agent_online":true,"actions":{"start":true,"stop":true,"dispatch":true,"delete":true,"edit":true,"copy":true},"notice":"无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'","error":"无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}},"reason":"无法读取原实例状态：'types.SimpleNamespace' object has no attribute 'inspect_agent'"}}
+E   assert 409 == 502
+E    +  where 409 = <Response [409 Conflict]>.status_code
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:30:32.354 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-ad2d7170d6144d54ad9eda833a9ae064?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:30:32.421 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence[ios-dispatch] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_compat_audit.py:119: in test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence
+    assert response.status_code == (502 if platform.name == "ios" else 409), response.text
+E   AssertionError: {"detail":{"message":"当前机器状态尚未核实；普通启动会先只读核验原实例","sent":false,"vm_id":"b9772453d2ff","request_id":"","instance":{"id":"b9772453d2ff","name":"contract-vm","alias":"contract-vm","device_type":"","device_type_name":"","runtime":"","runtime_name":"","os_version":"","config_json":{},"state":"draft","assigned_agent_id":null,"udid":"SIM-UDID-1","wda_port":null,"mjpeg_port":null,"runtime_state":{"owner_host_id":"host-one","instance_created":true},"error_code":"","error_message":"","created_at":"2026-10-16T03:30:32.550426","updated_at":"2026-10-16T03:30:32.550912","started_at":null,"stopped_at":null,"lifecycle":{"state":null,"agent_online":false,"actions":{"start":false,"stop":false,"dispatch":false,"delete":true,"edit":true,"copy":true},"notice":"当前机器状态尚未核实；普通启动会先只读核验原实例","error":""}}}}
+E   assert 409 == 502
+E    +  where 409 = <Response [409 Conflict]>.status_code
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:30:32.492 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-5b01bb0748544b918818fb2d39702c9e?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:30:32.559 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence[harmony-start] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_compat_audit.py:123: in test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence
+    assert detail["instance"]["id"] == vm.id and detail["instance"]["state"] == "error"
+E   AssertionError: assert ('4002218a7d92' == '4002218a7d92'
+E     
+E       4002218a7d92 and 'stopped' == 'error'
+E     
+E     - error
+E     + stopped)
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:30:32.561 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-a545257cac9c4aecb26bd3c53329c30b?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:30:32.627 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence[harmony-dispatch] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_compat_audit.py:123: in test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence
+    assert detail["instance"]["id"] == vm.id and detail["instance"]["state"] == "error"
+E   AssertionError: assert ('49d1bcdcadfb' == '49d1bcdcadfb'
+E     
+E       49d1bcdcadfb and 'draft' == 'error'
+E     
+E     - error
+E     + draft)
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:30:32.690 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-bcdc3d5cb4e74ed7bb797e7dde52dd3c?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:30:32.801 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_preserved_installation_identity_reclaims_stopped_vm_without_delete[harmony] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_independent_review.py:123: in test_preserved_installation_identity_reclaims_stopped_vm_without_delete
+    assert vm.state == "stopped"
+E   AssertionError: assert 'error' == 'stopped'
+E     
+E     - stopped
+E     + error
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:30:33.256 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-af38b7a85202453bb707e0ceecfd05af?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:30:33.288 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+___________ test_new_agent_proofs_can_adopt_legacy_row_once[harmony] ___________
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_independent_review.py:134: in test_new_agent_proofs_can_adopt_legacy_row_once
+    assert vm.assigned_agent_id == "personal-new-session"
+E   AssertionError: assert 'personal-old-session' == 'personal-new-session'
+E     
+E     - personal-new-session
+E     ?          ^^^
+E     + personal-old-session
+E     ?          ^^^
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:30:33.352 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-29845fbe63f44c928a615ea5d4baf915?mode=memory&cache=shared&uri=true
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 11:30:33.380 | WARNING  | ai_phone.server.vm_lifecycle:report_owner_conflict:663 - VM ownership conflict; no adoption or cleanup | vm_id=73e1fb2f3f3a owner=personal-old-session owner_host= reporter=personal-new-session reporter_host=15ad67b5459c4b9ba03b08e89d9ab65a
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:30:33.384 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+=========================== short test summary info ============================
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py::test_stopped_legacy_instance_adopts_verified_restarted_host_once[harmony]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py::test_probe_does_not_hold_vm_lock_needed_by_agent_status[ios]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py::test_probe_does_not_hold_vm_lock_needed_by_agent_status[harmony]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py::test_failed_first_attempt_rolls_back_binding_and_never_resumes[harmony]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py::test_bound_restart_failure_preserves_confirmed_identity_and_data[android]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py::test_bound_restart_failure_preserves_confirmed_identity_and_data[ios]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py::test_bound_restart_failure_preserves_confirmed_identity_and_data[harmony]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_lifecycle_contract.py::test_timeout_does_not_reuse_cleanup_proof_from_previous_attempt
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_compat_audit.py::test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence[android-start]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_compat_audit.py::test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence[android-dispatch]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_compat_audit.py::test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence[ios-start]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_compat_audit.py::test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence[ios-dispatch]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_compat_audit.py::test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence[harmony-start]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_compat_audit.py::test_real_http_send_failure_is_non_2xx_with_exact_operation_evidence[harmony-dispatch]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_independent_review.py::test_preserved_installation_identity_reclaims_stopped_vm_without_delete[harmony]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_independent_review.py::test_new_agent_proofs_can_adopt_legacy_row_once[harmony]
+16 failed, 236 passed, 2 skipped, 2 warnings in 20.17s

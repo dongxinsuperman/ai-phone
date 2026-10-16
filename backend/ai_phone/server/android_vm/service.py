@@ -18,7 +18,7 @@ from ..db import get_session_factory
 from ..hub import Hub
 from ..vm_probe import CapabilityProbeWaiter
 from ..vm_lifecycle import (
-    record_creation_provenance, proves_live_managed_instance, send_operation_once,
+    accept_observation_fact, record_status_facts, preserve_failure, invalidate_instance_observation, record_stopped_inventory, record_creation_provenance, proves_live_managed_instance, send_operation_once,
     expire_operation_if_due,
     is_abandoned_cleanup_receipt, record_abandoned_cleanup_receipt,
     accept_owner, accept_status, bind_owner, report_owner_conflict, cleanup_abandoned_first_bind,
@@ -232,6 +232,7 @@ async def _mark_agent_vms_unavailable(session: AsyncSession, agent_id: str, *, h
         if op.get("pending") and op.get("target_agent_id") == agent_id:
             fail_attempt(vm, "agent_disconnected", "Agent 断开，本次操作已结束；不会自动重试")
         elif vm.assigned_agent_id == agent_id:
+            invalidate_instance_observation(vm)
             vm.state, vm.error_message = "agent_offline", f"agent offline: {agent_id}"
         else:
             continue
@@ -249,6 +250,7 @@ async def reset_vm_states_on_startup(session: AsyncSession) -> int:
         if op.get("pending"):
             fail_attempt(vm, "server_restarted", "服务重启，本次未完成操作已结束；不会自动重试")
         elif vm.assigned_agent_id:
+            invalidate_instance_observation(vm)
             vm.state = "agent_offline"
     return len(rows)
 
@@ -336,13 +338,16 @@ async def _handle_vm_reconcile(
             continue  # cleanup addresses the copy, never rewrites the ledger
         if vm.id in reported:
             update_runtime(vm, instance_created=True)
-            if inventory_complete and vm.id in stopped and vm.id not in unknown and vm.state not in {"starting", "stopping"} and not (vm.state == "running" and lifecycle_runtime(vm).get("operation")):
+            if inventory_complete and proof.get("avd_name") == f"aiphone_vm_{vm.id}" and vm.id in stopped and vm.id not in unknown and vm.state not in {"starting", "stopping"} and not (vm.state == "running" and lifecycle_runtime(vm).get("operation")):
+                record_stopped_inventory(vm, {"avd_name": proof["avd_name"]})
                 vm.state = "stopped"
                 vm.error_message = ""
                 vm.stopped_at = vm.stopped_at or now_utc()
                 finish_operation(vm, {"state": "stopped"})
                 maintenance(hub, vm, True)
         elif inventory_complete and vm.id not in unknown and vm.state not in {"draft", "starting", "stopping"}:
+            preserve_failure(vm)
+            invalidate_instance_observation(vm, "原实例缺失，不会自动重建")
             vm.state = "error"
             vm.error_message = "instance_missing: Agent 未发现原实例；未自动重建"
     await session.commit()
@@ -383,7 +388,7 @@ async def _handle_vm_status(
         record_abandoned_cleanup_receipt(vm)
         await session.commit()
         return
-    if not accept_status(vm, msg):
+    if not accept_status(vm, msg) and not accept_observation_fact(vm, msg):
         expired = expire_operation_if_due(vm, hub) or expired
         cleaned = await cleanup_abandoned_first_bind(hub, vm, agent_id, details, msg)
         if expired or cleaned:
@@ -395,6 +400,7 @@ async def _handle_vm_status(
         # The Agent may not silently select a different globally reserved port.
         state, ok, error = "error", False, f"adb_serial_mismatch: expected {vm.adb_serial}, got {adb_serial}"
         adb_serial = ""
+    record_status_facts(vm, {**msg, "state": state, "ok": ok, "error": error})
     if state == "running" and ok:
         bind_owner(vm, agent_id, hub)
     if (state == "running" and ok) or details.get("instance_created") is True:

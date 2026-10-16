@@ -1,0 +1,22 @@
+........................................................................ [ 32%]
+........................................................................ [ 64%]
+........................................................................ [ 96%]
+.........                                                                [100%]
+============================= slowest 15 durations =============================
+1.01s call     tests/test_ios_simulator_wda.py::test_wait_ready_times_out_with_actionable_message
+1.01s call     tests/test_ios_simulator_wda.py::test_wait_ready_rejects_another_devices_wda
+0.51s call     tests/test_ios_simulator_wda.py::test_wait_ready_waits_out_transient_mismatch
+0.07s call     tests/test_ios_sim_manager.py::test_executor_queue_consumes_start_budget_before_any_native_action[1000000000000]
+0.07s call     tests/test_ios_sim_manager.py::test_executor_queue_consumes_start_budget_before_any_native_action[nan]
+0.07s call     tests/test_ios_sim_manager.py::test_executor_queue_consumes_start_budget_before_any_native_action[None]
+0.04s call     tests/test_ios_sim_manager.py::test_expired_queue_report_does_not_inherit_old_creation_proof
+0.03s call     tests/test_ios_simulator_wda.py::test_ghost_reservations_are_pruned_before_giving_up
+0.03s call     tests/test_ios_sim_instance_observation.py::test_failure_ack_preserves_failure_and_running_observation
+0.03s call     tests/test_ios_sim_manager.py::test_bootstatus_failure_shuts_down_without_deleting_data
+0.02s call     tests/test_ios_simulator_wda.py::test_port_exhaustion_raises_instead_of_random_fallback
+0.02s call     tests/test_ios_sim_instance_observation.py::test_inspection_executor_queue_consumes_its_local_budget
+0.02s call     tests/test_ios_sim_manager.py::test_start_creates_boots_and_registers
+0.02s call     tests/test_ios_simulator_wda.py::test_prune_keeps_reservations_when_simctl_fails
+0.01s call     tests/test_ios_sim_manager.py::test_start_is_idempotent_within_process
+225 passed in 3.87s
+{"pytest_exit_code": 0, "collected": 225, "blocked_external_calls": 1, "product_source_unchanged": true}

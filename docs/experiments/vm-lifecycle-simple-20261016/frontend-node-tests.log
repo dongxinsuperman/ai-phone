@@ -1,0 +1,550 @@
+TAP version 13
+# Subtest: androidVms: streaming uses the existing POST/auth while old JSON API stays unchanged
+ok 1 - androidVms: streaming uses the existing POST/auth while old JSON API stays unchanged
+  ---
+  duration_ms: 20.482541
+  ...
+# Subtest: harmonyVms: streaming uses the existing POST/auth while old JSON API stays unchanged
+ok 2 - harmonyVms: streaming uses the existing POST/auth while old JSON API stays unchanged
+  ---
+  duration_ms: 0.7495
+  ...
+# Subtest: iosSimVms: streaming uses the existing POST/auth while old JSON API stays unchanged
+ok 3 - iosSimVms: streaming uses the existing POST/auth while old JSON API stays unchanged
+  ---
+  duration_ms: 0.716125
+  ...
+# Subtest: stream decoder preserves UTF-8 split across bytes, CRLF, blank lines and a final non-newline record
+ok 4 - stream decoder preserves UTF-8 split across bytes, CRLF, blank lines and a final non-newline record
+  ---
+  duration_ms: 5.707958
+  ...
+# Subtest: decoder handles multiple lines per chunk and ignores another request ID including its done
+ok 5 - decoder handles multiple lines per chunk and ignores another request ID including its done
+  ---
+  duration_ms: 0.453667
+  ...
+# Subtest: HTTP 409 keeps original status/detail error contract
+ok 6 - HTTP 409 keeps original status/detail error contract
+  ---
+  duration_ms: 0.438458
+  ...
+# Subtest: HTTP 502 keeps original status/detail error contract
+ok 7 - HTTP 502 keeps original status/detail error contract
+  ---
+  duration_ms: 0.235458
+  ...
+# Subtest: non-JSON HTTP error retains server text
+ok 8 - non-JSON HTTP error retains server text
+  ---
+  duration_ms: 0.259041
+  ...
+# Subtest: malformed JSON after a valid snapshot fails once with status/detail and preserves emitted snapshot
+ok 9 - malformed JSON after a valid snapshot fails once with status/detail and preserves emitted snapshot
+  ---
+  duration_ms: 0.63175
+  ...
+# Subtest: EOF without done is an interruption even if one candidate already succeeded
+ok 10 - EOF without done is an interruption even if one candidate already succeeded
+  ---
+  duration_ms: 0.675125
+  ...
+# Subtest: abort cancels a pending reader promptly without another fetch
+ok 11 - abort cancels a pending reader promptly without another fetch
+  ---
+  duration_ms: 0.65775
+  ...
+# Subtest: already-aborted signal cancels the acquired stream and never delivers rows
+ok 12 - already-aborted signal cancels the acquired stream and never delivers rows
+  ---
+  duration_ms: 0.78625
+  ...
+# Subtest: abort inside an event callback suppresses remaining lines in the same chunk
+ok 13 - abort inside an event callback suppresses remaining lines in the same chunk
+  ---
+  duration_ms: 0.430167
+  ...
+# Subtest: authoritative draft has one shared label regardless of the legacy state
+ok 14 - authoritative draft has one shared label regardless of the legacy state
+  ---
+  duration_ms: 1.032792
+  ...
+# Subtest: authoritative stopped has one shared label regardless of the legacy state
+ok 15 - authoritative stopped has one shared label regardless of the legacy state
+  ---
+  duration_ms: 0.113083
+  ...
+# Subtest: authoritative starting has one shared label regardless of the legacy state
+ok 16 - authoritative starting has one shared label regardless of the legacy state
+  ---
+  duration_ms: 0.121708
+  ...
+# Subtest: authoritative running has one shared label regardless of the legacy state
+ok 17 - authoritative running has one shared label regardless of the legacy state
+  ---
+  duration_ms: 0.042875
+  ...
+# Subtest: authoritative stopping has one shared label regardless of the legacy state
+ok 18 - authoritative stopping has one shared label regardless of the legacy state
+  ---
+  duration_ms: 0.041541
+  ...
+# Subtest: authoritative null is distinct from a missing lifecycle and keeps retirement exceptions
+ok 19 - authoritative null is distinct from a missing lifecycle and keeps retirement exceptions
+  ---
+  duration_ms: 0.083417
+  ...
+# Subtest: unknown online actions are supplied by Server, not inferred by UI
+ok 20 - unknown online actions are supplied by Server, not inferred by UI
+  ---
+  duration_ms: 0.137667
+  ...
+# Subtest: missing or malformed lifecycle is visibly unconfirmed and fails closed: undefined
+ok 21 - missing or malformed lifecycle is visibly unconfirmed and fails closed: undefined
+  ---
+  duration_ms: 0.279417
+  ...
+# Subtest: missing or malformed lifecycle is visibly unconfirmed and fails closed: null
+ok 22 - missing or malformed lifecycle is visibly unconfirmed and fails closed: null
+  ---
+  duration_ms: 0.147
+  ...
+# Subtest: missing or malformed lifecycle is visibly unconfirmed and fails closed: {}
+ok 23 - missing or malformed lifecycle is visibly unconfirmed and fails closed: {}
+  ---
+  duration_ms: 0.128833
+  ...
+# Subtest: missing or malformed lifecycle is visibly unconfirmed and fails closed: {"state":"error","agent_online":true,"actions":{"start":true,"stop":false,"dispatch":true,"delete":true,"edit":true,"copy":true},"notice":"","error":""}
+ok 24 - missing or malformed lifecycle is visibly unconfirmed and fails closed: {"state":"error","agent_online":true,"actions":{"start":true,"stop":false,"dispatch":true,"delete":true,"edit":true,"copy":true},"notice":"","error":""}
+  ---
+  duration_ms: 0.051334
+  ...
+# Subtest: missing or malformed lifecycle is visibly unconfirmed and fails closed: {"state":"stopped","agent_online":true,"actions":{"start":true},"notice":"","error":""}
+ok 25 - missing or malformed lifecycle is visibly unconfirmed and fails closed: {"state":"stopped","agent_online":true,"actions":{"start":true},"notice":"","error":""}
+  ---
+  duration_ms: 0.046833
+  ...
+# Subtest: missing or malformed lifecycle is visibly unconfirmed and fails closed: {"state":"stopped","agent_online":true,"actions":{"start":{"enabled":true},"stop":false,"dispatch":true,"delete":true,"edit":true,"copy":true},"notice":"","error":""}
+ok 26 - missing or malformed lifecycle is visibly unconfirmed and fails closed: {"state":"stopped","agent_online":true,"actions":{"start":{"enabled":true},"stop":false,"dispatch":true,"delete":true,"edit":true,"copy":true},"notice":"","error":""}
+  ---
+  duration_ms: 0.103958
+  ...
+# Subtest: running/stopped are factual states even while the last failure remains visible
+ok 27 - running/stopped are factual states even while the last failure remains visible
+  ---
+  duration_ms: 0.350416
+  ...
+# Subtest: only presentation visibility depends on state; action eligibility remains the Server flag
+ok 28 - only presentation visibility depends on state; action eligibility remains the Server flag
+  ---
+  duration_ms: 0.161709
+  ...
+# Subtest: binding progress uses authoritative starting while identity fields stay unchanged
+ok 29 - binding progress uses authoritative starting while identity fields stay unchanged
+  ---
+  duration_ms: 0.252667
+  ...
+# Subtest: android: lifecycle transitions block conflicting actions
+ok 30 - android: lifecycle transitions block conflicting actions
+  ---
+  duration_ms: 2.348583
+  ...
+# Subtest: android: Server facts alone determine ordinary actions and failure stays visible
+ok 31 - android: Server facts alone determine ordinary actions and failure stays visible
+  ---
+  duration_ms: 0.811292
+  ...
+# Subtest: android: deleting an offline VM removes its row immediately
+ok 32 - android: deleting an offline VM removes its row immediately
+  ---
+  duration_ms: 0.997375
+  ...
+# Subtest: android: switch retires the old ID and starts one new empty configuration
+ok 33 - android: switch retires the old ID and starts one new empty configuration
+  ---
+  duration_ms: 0.644833
+  ...
+# Subtest: android: failed switch HTTP response replaces the retired ID before the quiet readback
+ok 34 - android: failed switch HTTP response replaces the retired ID before the quiet readback
+  ---
+  duration_ms: 0.631709
+  ...
+# Subtest: android: first-bind send error keeps its returned state when readback also fails
+ok 35 - android: first-bind send error keeps its returned state when readback also fails
+  ---
+  duration_ms: 1.20175
+  ...
+# Subtest: android: plain conflict without an instance cannot retire the current card
+ok 36 - android: plain conflict without an instance cannot retire the current card
+  ---
+  duration_ms: 0.776875
+  ...
+# Subtest: android: first-bind progress is not success and a failed bind remains unbound
+ok 37 - android: first-bind progress is not success and a failed bind remains unbound
+  ---
+  duration_ms: 0.753834
+  ...
+# Subtest: android: background refresh preserves an operation failure
+ok 38 - android: background refresh preserves an operation failure
+  ---
+  duration_ms: 0.769292
+  ...
+# Subtest: android: a slow probe cannot overwrite another VM or clear its busy state
+ok 39 - android: a slow probe cannot overwrite another VM or clear its busy state
+  ---
+  duration_ms: 2.269916
+  ...
+# Subtest: android: closing a candidate panel invalidates its response
+ok 40 - android: closing a candidate panel invalidates its response
+  ---
+  duration_ms: 1.369167
+  ...
+# Subtest: android: late list response cannot roll back a newer lifecycle state
+ok 41 - android: late list response cannot roll back a newer lifecycle state
+  ---
+  duration_ms: 0.637208
+  ...
+# Subtest: android: slow list polling does not pile up requests or starve updates
+ok 42 - android: slow list polling does not pile up requests or starve updates
+  ---
+  duration_ms: 0.915042
+  ...
+# Subtest: android: actions are locked per VM while another VM remains usable
+ok 43 - android: actions are locked per VM while another VM remains usable
+  ---
+  duration_ms: 1.109084
+  ...
+# Subtest: android: fast streamed candidate can dispatch while the slow row remains pending
+ok 44 - android: fast streamed candidate can dispatch while the slow row remains pending
+  ---
+  duration_ms: 0.970792
+  ...
+# Subtest: android: A-B-A probes abort predecessors and late callbacks cannot replace the new round
+ok 45 - android: A-B-A probes abort predecessors and late callbacks cannot replace the new round
+  ---
+  duration_ms: 0.765625
+  ...
+# Subtest: android: close and unmount abort the stream and release only its probe lock
+ok 46 - android: close and unmount abort the stream and release only its probe lock
+  ---
+  duration_ms: 1.015958
+  ...
+# Subtest: android: timeout and offline results stay terminal and row order never moves
+ok 47 - android: timeout and offline results stay terminal and row order never moves
+  ---
+  duration_ms: 1.815208
+  ...
+# Subtest: android: interrupted stream preserves completed rows and fails only unfinished rows
+ok 48 - android: interrupted stream preserves completed rows and fails only unfinished rows
+  ---
+  duration_ms: 0.694583
+  ...
+# Subtest: android: empty done is not an error but EOF without done is incomplete
+ok 49 - android: empty done is not an error but EOF without done is incomplete
+  ---
+  duration_ms: 0.833583
+  ...
+# Subtest: android: missing lifecycle blocks existing-instance actions without guessing from raw stopped
+ok 50 - android: missing lifecycle blocks existing-instance actions without guessing from raw stopped
+  ---
+  duration_ms: 1.541375
+  ...
+# Subtest: android: a new configuration can still be created while an old row lacks lifecycle
+ok 51 - android: a new configuration can still be created while an old row lacks lifecycle
+  ---
+  duration_ms: 1.239083
+  ...
+# Subtest: android: confirmed facts override contradictory raw state, cleanup and port fields
+ok 52 - android: confirmed facts override contradictory raw state, cleanup and port fields
+  ---
+  duration_ms: 1.219959
+  ...
+# Subtest: android: start HTTP failure applies authoritative instance before quiet readback
+ok 53 - android: start HTTP failure applies authoritative instance before quiet readback
+  ---
+  duration_ms: 1.077166
+  ...
+# Subtest: android: stop HTTP failure applies authoritative instance before quiet readback
+ok 54 - android: stop HTTP failure applies authoritative instance before quiet readback
+  ---
+  duration_ms: 0.563084
+  ...
+# Subtest: harmony: lifecycle transitions block conflicting actions
+ok 55 - harmony: lifecycle transitions block conflicting actions
+  ---
+  duration_ms: 1.639417
+  ...
+# Subtest: harmony: Server facts alone determine ordinary actions and failure stays visible
+ok 56 - harmony: Server facts alone determine ordinary actions and failure stays visible
+  ---
+  duration_ms: 0.444
+  ...
+# Subtest: harmony: deleting an offline VM removes its row immediately
+ok 57 - harmony: deleting an offline VM removes its row immediately
+  ---
+  duration_ms: 0.606334
+  ...
+# Subtest: harmony: switch retires the old ID and starts one new empty configuration
+ok 58 - harmony: switch retires the old ID and starts one new empty configuration
+  ---
+  duration_ms: 0.938125
+  ...
+# Subtest: harmony: failed switch HTTP response replaces the retired ID before the quiet readback
+ok 59 - harmony: failed switch HTTP response replaces the retired ID before the quiet readback
+  ---
+  duration_ms: 0.512792
+  ...
+# Subtest: harmony: first-bind send error keeps its returned state when readback also fails
+ok 60 - harmony: first-bind send error keeps its returned state when readback also fails
+  ---
+  duration_ms: 0.790334
+  ...
+# Subtest: harmony: plain conflict without an instance cannot retire the current card
+ok 61 - harmony: plain conflict without an instance cannot retire the current card
+  ---
+  duration_ms: 0.950958
+  ...
+# Subtest: harmony: first-bind progress is not success and a failed bind remains unbound
+ok 62 - harmony: first-bind progress is not success and a failed bind remains unbound
+  ---
+  duration_ms: 1.159208
+  ...
+# Subtest: harmony: background refresh preserves an operation failure
+ok 63 - harmony: background refresh preserves an operation failure
+  ---
+  duration_ms: 0.441792
+  ...
+# Subtest: harmony: a slow probe cannot overwrite another VM or clear its busy state
+ok 64 - harmony: a slow probe cannot overwrite another VM or clear its busy state
+  ---
+  duration_ms: 0.518666
+  ...
+# Subtest: harmony: closing a candidate panel invalidates its response
+ok 65 - harmony: closing a candidate panel invalidates its response
+  ---
+  duration_ms: 0.376834
+  ...
+# Subtest: harmony: late list response cannot roll back a newer lifecycle state
+ok 66 - harmony: late list response cannot roll back a newer lifecycle state
+  ---
+  duration_ms: 0.34025
+  ...
+# Subtest: harmony: slow list polling does not pile up requests or starve updates
+ok 67 - harmony: slow list polling does not pile up requests or starve updates
+  ---
+  duration_ms: 0.357334
+  ...
+# Subtest: harmony: actions are locked per VM while another VM remains usable
+ok 68 - harmony: actions are locked per VM while another VM remains usable
+  ---
+  duration_ms: 0.944833
+  ...
+# Subtest: harmony: fast streamed candidate can dispatch while the slow row remains pending
+ok 69 - harmony: fast streamed candidate can dispatch while the slow row remains pending
+  ---
+  duration_ms: 1.51875
+  ...
+# Subtest: harmony: A-B-A probes abort predecessors and late callbacks cannot replace the new round
+ok 70 - harmony: A-B-A probes abort predecessors and late callbacks cannot replace the new round
+  ---
+  duration_ms: 0.688708
+  ...
+# Subtest: harmony: close and unmount abort the stream and release only its probe lock
+ok 71 - harmony: close and unmount abort the stream and release only its probe lock
+  ---
+  duration_ms: 0.539292
+  ...
+# Subtest: harmony: timeout and offline results stay terminal and row order never moves
+ok 72 - harmony: timeout and offline results stay terminal and row order never moves
+  ---
+  duration_ms: 0.463417
+  ...
+# Subtest: harmony: interrupted stream preserves completed rows and fails only unfinished rows
+ok 73 - harmony: interrupted stream preserves completed rows and fails only unfinished rows
+  ---
+  duration_ms: 0.577292
+  ...
+# Subtest: harmony: empty done is not an error but EOF without done is incomplete
+ok 74 - harmony: empty done is not an error but EOF without done is incomplete
+  ---
+  duration_ms: 0.56675
+  ...
+# Subtest: harmony: missing lifecycle blocks existing-instance actions without guessing from raw stopped
+ok 75 - harmony: missing lifecycle blocks existing-instance actions without guessing from raw stopped
+  ---
+  duration_ms: 0.4465
+  ...
+# Subtest: harmony: a new configuration can still be created while an old row lacks lifecycle
+ok 76 - harmony: a new configuration can still be created while an old row lacks lifecycle
+  ---
+  duration_ms: 0.648667
+  ...
+# Subtest: harmony: confirmed facts override contradictory raw state, cleanup and port fields
+ok 77 - harmony: confirmed facts override contradictory raw state, cleanup and port fields
+  ---
+  duration_ms: 0.447083
+  ...
+# Subtest: harmony: start HTTP failure applies authoritative instance before quiet readback
+ok 78 - harmony: start HTTP failure applies authoritative instance before quiet readback
+  ---
+  duration_ms: 0.3975
+  ...
+# Subtest: harmony: stop HTTP failure applies authoritative instance before quiet readback
+ok 79 - harmony: stop HTTP failure applies authoritative instance before quiet readback
+  ---
+  duration_ms: 0.5855
+  ...
+# Subtest: ios: lifecycle transitions block conflicting actions
+ok 80 - ios: lifecycle transitions block conflicting actions
+  ---
+  duration_ms: 1.09575
+  ...
+# Subtest: ios: Server facts alone determine ordinary actions and failure stays visible
+ok 81 - ios: Server facts alone determine ordinary actions and failure stays visible
+  ---
+  duration_ms: 0.846291
+  ...
+# Subtest: ios: deleting an offline VM removes its row immediately
+ok 82 - ios: deleting an offline VM removes its row immediately
+  ---
+  duration_ms: 1.116084
+  ...
+# Subtest: ios: switch retires the old ID and starts one new empty configuration
+ok 83 - ios: switch retires the old ID and starts one new empty configuration
+  ---
+  duration_ms: 0.502959
+  ...
+# Subtest: ios: failed switch HTTP response replaces the retired ID before the quiet readback
+ok 84 - ios: failed switch HTTP response replaces the retired ID before the quiet readback
+  ---
+  duration_ms: 0.401792
+  ...
+# Subtest: ios: first-bind send error keeps its returned state when readback also fails
+ok 85 - ios: first-bind send error keeps its returned state when readback also fails
+  ---
+  duration_ms: 1.155833
+  ...
+# Subtest: ios: plain conflict without an instance cannot retire the current card
+ok 86 - ios: plain conflict without an instance cannot retire the current card
+  ---
+  duration_ms: 0.416542
+  ...
+# Subtest: ios: first-bind progress is not success and a failed bind remains unbound
+ok 87 - ios: first-bind progress is not success and a failed bind remains unbound
+  ---
+  duration_ms: 0.405708
+  ...
+# Subtest: ios: background refresh preserves an operation failure
+ok 88 - ios: background refresh preserves an operation failure
+  ---
+  duration_ms: 0.398667
+  ...
+# Subtest: ios: a slow probe cannot overwrite another VM or clear its busy state
+ok 89 - ios: a slow probe cannot overwrite another VM or clear its busy state
+  ---
+  duration_ms: 0.573625
+  ...
+# Subtest: ios: closing a candidate panel invalidates its response
+ok 90 - ios: closing a candidate panel invalidates its response
+  ---
+  duration_ms: 0.360291
+  ...
+# Subtest: ios: late list response cannot roll back a newer lifecycle state
+ok 91 - ios: late list response cannot roll back a newer lifecycle state
+  ---
+  duration_ms: 0.466958
+  ...
+# Subtest: ios: slow list polling does not pile up requests or starve updates
+ok 92 - ios: slow list polling does not pile up requests or starve updates
+  ---
+  duration_ms: 0.834625
+  ...
+# Subtest: ios: actions are locked per VM while another VM remains usable
+ok 93 - ios: actions are locked per VM while another VM remains usable
+  ---
+  duration_ms: 0.526458
+  ...
+# Subtest: ios: fast streamed candidate can dispatch while the slow row remains pending
+ok 94 - ios: fast streamed candidate can dispatch while the slow row remains pending
+  ---
+  duration_ms: 0.65625
+  ...
+# Subtest: ios: A-B-A probes abort predecessors and late callbacks cannot replace the new round
+ok 95 - ios: A-B-A probes abort predecessors and late callbacks cannot replace the new round
+  ---
+  duration_ms: 0.524834
+  ...
+# Subtest: ios: close and unmount abort the stream and release only its probe lock
+ok 96 - ios: close and unmount abort the stream and release only its probe lock
+  ---
+  duration_ms: 1.011041
+  ...
+# Subtest: ios: timeout and offline results stay terminal and row order never moves
+ok 97 - ios: timeout and offline results stay terminal and row order never moves
+  ---
+  duration_ms: 1.2985
+  ...
+# Subtest: ios: interrupted stream preserves completed rows and fails only unfinished rows
+ok 98 - ios: interrupted stream preserves completed rows and fails only unfinished rows
+  ---
+  duration_ms: 1.079958
+  ...
+# Subtest: ios: empty done is not an error but EOF without done is incomplete
+ok 99 - ios: empty done is not an error but EOF without done is incomplete
+  ---
+  duration_ms: 1.718625
+  ...
+# Subtest: ios: missing lifecycle blocks existing-instance actions without guessing from raw stopped
+ok 100 - ios: missing lifecycle blocks existing-instance actions without guessing from raw stopped
+  ---
+  duration_ms: 0.705208
+  ...
+# Subtest: ios: a new configuration can still be created while an old row lacks lifecycle
+ok 101 - ios: a new configuration can still be created while an old row lacks lifecycle
+  ---
+  duration_ms: 0.635583
+  ...
+# Subtest: ios: confirmed facts override contradictory raw state, cleanup and port fields
+ok 102 - ios: confirmed facts override contradictory raw state, cleanup and port fields
+  ---
+  duration_ms: 1.081542
+  ...
+# Subtest: ios: start HTTP failure applies authoritative instance before quiet readback
+ok 103 - ios: start HTTP failure applies authoritative instance before quiet readback
+  ---
+  duration_ms: 2.464291
+  ...
+# Subtest: ios: stop HTTP failure applies authoritative instance before quiet readback
+ok 104 - ios: stop HTTP failure applies authoritative instance before quiet readback
+  ---
+  duration_ms: 5.770958
+  ...
+# Subtest: android: autoDispatchSingle waits for done with 1 available candidates
+ok 105 - android: autoDispatchSingle waits for done with 1 available candidates
+  ---
+  duration_ms: 1.292833
+  ...
+# Subtest: android: autoDispatchSingle waits for done with 2 available candidates
+ok 106 - android: autoDispatchSingle waits for done with 2 available candidates
+  ---
+  duration_ms: 0.595333
+  ...
+# Subtest: android: cancelling a manual switch confirmation keeps probing but suppresses auto dispatch
+ok 107 - android: cancelling a manual switch confirmation keeps probing but suppresses auto dispatch
+  ---
+  duration_ms: 0.636166
+  ...
+# Subtest: android: a lifecycle change after done still cancels deferred auto dispatch
+ok 108 - android: a lifecycle change after done still cancels deferred auto dispatch
+  ---
+  duration_ms: 0.501709
+  ...
+1..108
+# tests 108
+# suites 0
+# pass 108
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 157.4065

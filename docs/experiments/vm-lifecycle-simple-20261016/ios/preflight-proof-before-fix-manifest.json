@@ -1,0 +1,10 @@
+{
+  "base_commit": "82e48bc899fe9334fd683149d01c2c8aeeacc85b",
+  "tested_source_label": "82e48bc plus iOS observation, preflight proof freshness negative cases before correction",
+  "source_sha256": {
+    "backend/ai_phone/agent/ios_sim/manager.py": "c0f5c3fa5d9696f4f16dbf6846d6919ee564a61a71a246a3d99ccd51b6cd701b",
+    "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+    "backend/tests/test_ios_sim_manager.py": "5abe15d84dd0714c396d5bff0d6d36f0485db8743c3bcc4fe529f5d3f99a80b9",
+    "backend/tests/test_ios_sim_instance_observation.py": "512cd44ff826d782cb62f2943f0a288b66498203b4eeba923f968f6ef4c9d181"
+  }
+}

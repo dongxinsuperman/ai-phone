@@ -1,0 +1,7 @@
+__pycache__/
+runs/*/web-dist/
+runs/*/runtime/
+runs/*/browser-tmp-*/
+runs/*/vite-cache/
+runs/*/empty-env/
+runs/*/fixture-runtime.json

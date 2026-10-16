@@ -12,7 +12,7 @@ import time
 import uuid
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from typing import Any, Dict, List, Optional
 
@@ -63,6 +63,8 @@ class VmStartFailure(RuntimeError):
         self.cleanup_error = str(getattr(cause, "cleanup_error", ""))
         self.created_in_attempt = getattr(cause, "created_in_attempt", None)
         self.instance_preexisting = bool(getattr(cause, "instance_preexisting", False))
+        self.instance_observation = getattr(cause, "instance_observation", None)
+        self.exit_evidence = dict(getattr(cause, "exit_evidence", {}) or {})
 
 
 class _ExistingAvdConfigError(RuntimeError):
@@ -153,6 +155,12 @@ class AndroidVmManager:
         return out
 
     async def handle_capability_probe(self, client: AgentWSClient, msg: Dict[str, Any]) -> None:
+        if msg.get("inspect_instance") is True:
+            msg = {**msg, "_operation_deadline": None}
+            try:
+                msg["_operation_deadline"] = _start_deadline(msg)
+            except (ValueError, TypeError):
+                pass  # probe 返回 unknown，不把非法预算变成无回执异常。
         result = await asyncio.to_thread(
             self.probe,
             msg,
@@ -222,6 +230,14 @@ class AndroidVmManager:
         await self._refresh_devices_safe(client)
 
     def probe(self, requirement: Dict[str, Any]) -> Dict[str, Any]:
+        if requirement.get("inspect_instance") is True:
+            vm_id = str(requirement.get("vm_id") or "")
+            try:
+                observation = self.observe_instance(vm_id, deadline=_start_deadline(requirement))
+            except (ValueError, TypeError):
+                observation = _unknown_instance_observation(vm_id, "invalid_operation_budget")
+            return {"ok": observation["state"] != "unknown", "reason": observation["reason"],
+                    "details": {"instance_observation": observation}}
         return probe_android_vm_capability(
             requirement,
             current_instances=len(self._runtimes),
@@ -242,7 +258,11 @@ class AndroidVmManager:
             details = {
                 "cleanup_confirmed": bool(getattr(exc, "cleanup_confirmed", False)),
                 "instance_created": str(msg.get("vm_id") or "") in self._created_vm_ids,
+                "instance_observation": getattr(exc, "instance_observation", None) or
+                    _unknown_instance_observation(str(msg.get("vm_id") or ""), "operation_not_observed"),
             }
+            if getattr(exc, "exit_evidence", None):
+                details["exit_evidence"] = dict(exc.exit_evidence)
             if getattr(exc, "created_in_attempt", None) is not None:
                 details["created_in_attempt"] = bool(exc.created_in_attempt)
             if getattr(exc, "instance_preexisting", False):
@@ -285,7 +305,14 @@ class AndroidVmManager:
             operation_msg = {**msg, "_operation_deadline": deadline}
             with _startup_lock(self._vm_lock(vm_id), deadline):
                 had_instance = vm_id in self._runtimes or vm_id in self._created_vm_ids
-                return self._start_sync_locked(vm_id, operation_msg)
+                try:
+                    return self._start_sync_locked(vm_id, operation_msg)
+                except Exception as exc:
+                    if not getattr(exc, "instance_observation", None):
+                        exc.instance_observation, exc.exit_evidence = self._observe_instance_sample(
+                            vm_id, deadline=deadline,
+                        )
+                    raise
         except Exception as exc:
             first_bind = _msg_bool(msg, "rollback_new_instance", False) and not _msg_bool(
                 msg, "require_existing_instance", False
@@ -301,6 +328,8 @@ class AndroidVmManager:
             ):
                 # 首次排队/探查即失败，尚未创建资源，不为确认空账而执行原生命令。
                 exc.cleanup_confirmed = True
+            if not getattr(exc, "instance_observation", None):
+                exc.instance_observation = _unknown_instance_observation(vm_id, "operation_not_observed")
             raise VmStartFailure(exc) from exc
 
     def _start_sync_locked(self, vm_id: str, msg: Dict[str, Any]) -> Dict[str, Any]:
@@ -321,8 +350,24 @@ class AndroidVmManager:
                 error.created_in_attempt = False
                 error.instance_preexisting = True
                 raise error
-            if not existing.ready or existing.transport_unavailable:
-                raise RuntimeError("已有实例尚未就绪或清理未完成，请先确认状态")
+            observation = self.observe_instance(vm_id, deadline=operation_deadline)
+            if observation["state"] in {"stopped", "missing"}:
+                # 清掉的只是已经退出的旧运行登记；身份、持久数据和全局端口预留不变。
+                msg = {**msg, "require_existing_instance": True}
+                if msg.get("assigned_port") in (None, "") and existing.port:
+                    msg["assigned_port"] = existing.port
+                self._forget_runtime(existing)
+                existing = None
+                if observation["state"] == "missing":
+                    error = RuntimeError("原有实例缺失，未自动重建")
+                    error.instance_observation = observation
+                    error.created_in_attempt = False
+                    raise error
+            elif observation["state"] != "running" or not existing.ready or existing.transport_unavailable:
+                error = RuntimeError("已有实例尚未就绪：仍在运行或状态未确认，未执行重复启动")
+                error.instance_observation = observation
+                raise error
+        if existing is not None:
             tools, _missing = find_android_tools()
             if tools is None or self._emulator_avd_name(tools, existing.adb_serial) != (
                 existing.avd_name or _safe_avd_name(vm_id)
@@ -341,12 +386,23 @@ class AndroidVmManager:
             }}
 
         requirement = dict(msg)
+        requirement.pop("inspect_instance", None)
         capability = self.probe(requirement)
         if not capability.get("ok"):
             raise RuntimeError(str(capability.get("reason") or "vm capability unavailable"))
         tools, missing = find_android_tools()
         if tools is None:
             raise RuntimeError(f"missing android tools: {', '.join(missing)}")
+
+        if _msg_bool(msg, "require_existing_instance", False):
+            # Server 的先前观察与本次命令之间仍有窗口；本机没缓存也不能盲起同一 AVD。
+            observation = self.observe_instance(vm_id, deadline=operation_deadline)
+            if observation["state"] != "stopped":
+                error = RuntimeError("原有实例缺失，未自动重建" if observation["state"] == "missing" else
+                                     "已有实例仍在运行或状态未确认，未执行重复启动")
+                error.instance_observation = observation
+                error.created_in_attempt = False
+                raise error
 
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
         width = _msg_int(msg, "screen_width", 1080)
@@ -506,7 +562,8 @@ class AndroidVmManager:
         except Exception as exc:
             if isinstance(exc, _ExistingAvdConfigError) and runtime.process is None:
                 # 本次尚未启动：仅撤占位，旧盘和可能仍活着的旧进程都不能被收尾逻辑修改。
-                exc.cleanup_confirmed = self._runtime_exit_confirmed(runtime)
+                exc.instance_observation = self.observe_instance(vm_id, deadline=operation_deadline)
+                exc.cleanup_confirmed = bool(exc.instance_observation["resources_released"])
                 self._forget_runtime(runtime)
                 raise
             # 首次绑定失败回收本次实例；已有绑定的重启失败只能停机，不能删除用户数据。
@@ -535,6 +592,9 @@ class AndroidVmManager:
                 logger.error("Android VM 启动失败后清理未完成 vm_id={}: {}", vm_id, cleanup)
                 exc.cleanup_error = str(cleanup.get("error") or cleanup.get("reason") or "cleanup failed")
             exc.cleanup_confirmed = bool(cleanup.get("ok"))
+            exc.exit_evidence = dict((cleanup.get("details") or {}).get("exit_evidence") or {})
+            if (cleanup.get("details") or {}).get("instance_observation"):
+                exc.instance_observation = dict(cleanup["details"]["instance_observation"])
             raise
 
     def stop_sync(
@@ -545,7 +605,15 @@ class AndroidVmManager:
         deadline = time.monotonic() + _CLEANUP_TIMEOUT_SEC if deadline is None else deadline
         try:
             with _startup_lock(self._vm_lock(vm_id), deadline):
-                return self._stop_sync_locked(vm_id, adb_serial, request_id, deadline)
+                result = self._stop_sync_locked(vm_id, adb_serial, request_id, deadline)
+                if not result.get("ok"):
+                    observation, evidence = self._observe_instance_sample(
+                        vm_id, deadline=deadline,
+                    )
+                    result.setdefault("details", {}).update(
+                        instance_observation=observation, exit_evidence=evidence,
+                    )
+                return result
         except TimeoutError as exc:
             return self._cleanup_failure(vm_id, adb_serial, exc)
 
@@ -561,7 +629,10 @@ class AndroidVmManager:
             "details": {"avd_name": _safe_avd_name(vm_id), "port": runtime.port if runtime else _emulator_port(serial),
                         "cleanup_pending": True, "cleanup_confirmed": False,
                         "instance_created": vm_id in self._created_vm_ids,
-                        "exit_evidence": (runtime.exit_evidence or {}) if runtime else {}},
+                        "exit_evidence": {},
+                        "instance_observation": _unknown_instance_observation(
+                            vm_id, "operation_timeout" if isinstance(exc, TimeoutError) else "operation_not_observed",
+                        )},
         }
 
     def _stop_sync_locked(
@@ -674,6 +745,9 @@ class AndroidVmManager:
                                 "exit_evidence": runtime.exit_evidence or {}},
                 }
             time.sleep(min(0.1, _startup_timeout(deadline, 0.1)))
+        # 本次持锁退出核验已经完成；不要在摘登记后重查目录，反而丢掉物理停止证明。
+        observation = {"vm_id": vm_id, "state": "stopped", "identity": {"avd_name": avd_name},
+                       "resources_released": True, "reason": "exit_confirmed"}
         self._forget_runtime(runtime)
         return {
             "ok": True, "reason": "stopped" if was_tracked or matches or graceful else "not_running",
@@ -681,8 +755,74 @@ class AndroidVmManager:
             "details": {"avd_name": avd_name, "port": runtime.port, "cleanup_confirmed": True,
                         "instance_created": vm_id in self._created_vm_ids,
                         **({"sync_completed": sync_completed} if sync_completed is not None else {}),
-                        "exit_evidence": runtime.exit_evidence or {}},
+                        "exit_evidence": runtime.exit_evidence or {}, "instance_observation": observation},
         }
+
+    def observe_instance(self, vm_id: str, *, deadline: Optional[float] = None) -> Dict[str, Any]:
+        """一次只读本机观察；不等待生命周期锁，不修复、不启动或关闭任何实例。"""
+        observation, _evidence = self._observe_instance_sample(vm_id, deadline=deadline)
+        return observation
+
+    def _observe_instance_sample(
+        self, vm_id: str, *, deadline: Optional[float] = None,
+    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        vm_id = str(vm_id or "").strip()
+
+        def unknown(reason: str) -> Dict[str, Any]:
+            return _unknown_instance_observation(vm_id, reason)
+        if not vm_id:
+            return unknown("vm_id_required"), {}
+        if deadline is not None and time.monotonic() >= deadline:
+            return unknown("operation_timeout"), {}
+        lock = self._vm_lock(vm_id)
+        if not lock.acquire(blocking=False):
+            return unknown("lifecycle_busy"), {}
+        evidence: Dict[str, Any] = {}
+        runtime = None
+        sample = None
+        try:
+            _startup_timeout(deadline, 1)
+            avd_name = _safe_avd_name(vm_id)
+            runtime = self._runtimes.get(vm_id)
+            if runtime is not None and runtime.avd_name and runtime.avd_name != avd_name:
+                return unknown("runtime_identity_mismatch"), {}
+            sample = replace(runtime) if runtime else VmRuntime(vm_id, vm_id, "", 0, None, 0, avd_name=avd_name)
+            released = self._runtime_exit_confirmed(sample)
+            _startup_timeout(deadline, 1)
+            evidence = sample.exit_evidence or {}
+            reason = str(evidence.get("reason") or "process_state_unknown")
+            if reason in {"owned_process_running", "matching_process_running"}:
+                return {"vm_id": vm_id, "state": "running", "identity": {"avd_name": avd_name},
+                        "resources_released": False, "reason": reason}, evidence
+            if not evidence.get("process_inventory_complete") or evidence.get("matching_process_ids"):
+                return unknown(reason), evidence
+            present = _local_avd_present(avd_name, deadline=deadline)
+            _startup_timeout(deadline, 1)
+            return {
+                "vm_id": vm_id, "state": "stopped" if present else "missing",
+                "identity": {"avd_name": avd_name if present else ""},
+                "resources_released": bool(released and sample.port),
+                "reason": (reason if sample.port else "ports_not_observed") if present else "native_avd_missing",
+            }, evidence
+        except TimeoutError:
+            return unknown("operation_timeout"), {}
+        except (OSError, ValueError, RuntimeError) as exc:
+            logger.debug("Android VM 本机状态未确认 vm_id={}: {}", vm_id, exc)
+            if deadline is not None and time.monotonic() >= deadline:
+                return unknown("operation_timeout"), {}
+            if (sample is not None
+                    and (vm_id in self._created_vm_ids or
+                         (runtime is not None and (runtime.process is not None or runtime.ready)))
+                    and evidence.get("process_inventory_complete")
+                    and not evidence.get("matching_process_ids")):
+                return {
+                    "vm_id": vm_id, "state": "stopped", "identity": {"avd_name": avd_name},
+                    "resources_released": bool(evidence.get("confirmed") and sample.port),
+                    "reason": "native_definition_unverified",
+                }, evidence
+            return unknown("native_inventory_unavailable"), evidence
+        finally:
+            lock.release()
 
     def _runtime_exit_confirmed(self, runtime: VmRuntime) -> bool:
         evidence: Dict[str, Any] = {"confirmed": False, "owned_process_exit_code": None}
@@ -1554,6 +1694,46 @@ def _avd_names(output: str) -> set[str]:
         line.strip().split(":", 1)[1].strip()
         for line in output.splitlines() if line.strip().startswith("Name:")
     }
+
+
+def _unknown_instance_observation(vm_id: str, reason: str) -> Dict[str, Any]:
+    return {"vm_id": vm_id, "state": "unknown", "identity": {"avd_name": ""},
+            "resources_released": False, "reason": reason}
+
+
+def _local_avd_present(avd_name: str, *, deadline: Optional[float]) -> bool:
+    """完整枚举原生目录/索引；未知路径或读失败不能当作原实例不存在。"""
+    avd_home = os.environ.get("ANDROID_AVD_HOME")
+    if avd_home:
+        root = Path(avd_home)
+    else:
+        if any(os.environ.get(key) for key in ("ANDROID_USER_HOME", "ANDROID_EMULATOR_HOME", "ANDROID_SDK_HOME")):
+            raise ValueError("未确认当前非默认 Android AVD 根目录")
+        root = Path.home() / ".android" / "avd"
+    if not root.is_absolute():
+        raise ValueError("AVD 根目录不是绝对路径")
+    found = {}
+    with os.scandir(root) as entries:
+        for entry in entries:
+            _startup_timeout(deadline, 1)
+            if entry.name in {f"{avd_name}.avd", f"{avd_name}.ini"}:
+                found[entry.name] = entry
+    _startup_timeout(deadline, 1)
+    index = found.get(f"{avd_name}.ini")
+    if index is not None:
+        if not index.is_file():
+            raise ValueError("AVD 索引不是普通文件")
+        paths = [value.strip() for line in Path(index.path).read_text(encoding="utf-8-sig").splitlines()
+                 for key, sep, value in [line.partition("=")] if sep and key.strip() == "path"]
+        if len(paths) != 1 or not paths[0] or not _native_sdk_path(paths[0]).is_dir():
+            raise ValueError("AVD 索引目录无法确认")
+        return True
+    directory = found.get(f"{avd_name}.avd")
+    if directory is not None:
+        if not directory.is_dir():
+            raise ValueError("AVD 数据目录无法确认")
+        return True
+    return False
 
 
 def _sdk_image_path(value: str, sdk_root: str = "") -> PurePath:

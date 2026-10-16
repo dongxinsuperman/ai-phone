@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.133" timestamp="2026-10-16T11:24:58.021868+08:00" hostname="dongxindeMacBook-Pro.local"><testcase classname="tests.test_ios_sim_instance_observation" name="test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]" time="0.030"><failure message="assert True is False">env = {'calls': [], 'create_udid': '11111111-2222-3333-4444-555555555555', 'instances': {'11111111-2222-3333-4444-5555555555...', 'is_available': True, 'name': 'aiphone_sim_abc123', 'runtime': 'com.apple.CoreSimulator.SimRuntime.iOS-26-0', ...}}}
+overrides = {'udid': 'WRONG-UDID'}, error = '请求 UDID'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("overrides,error", [
+        ({"udid": "WRONG-UDID"}, "请求 UDID"),
+        ({"device_type": fixture._DT + "-Other"}, "配置不一致"),
+    ])
+    async def test_preflight_failure_never_inherits_previous_creation_proof(env, overrides, error):
+        manager = Manager()
+        manager.start_sync(msg())
+        runtime = manager._runtimes[VM]
+        assert runtime.details["created_in_attempt"] is True
+        launcher = runtime.launcher
+        started = launcher.started
+        client = Client()
+        env["calls"].clear()
+    
+        await manager.handle_start(client, msg(rollback_new_instance=True, **overrides))
+    
+        result = client.sent[-1]
+        assert result["ok"] is False and result["state"] == "error"
+        assert error in result["error"]
+&gt;       assert result["details"]["created_in_attempt"] is False
+E       assert True is False
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_instance_observation.py:429: AssertionError</failure></testcase></testsuite></testsuites>

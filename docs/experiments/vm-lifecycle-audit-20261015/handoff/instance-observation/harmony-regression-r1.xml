@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="5" skipped="0" tests="104" time="3.151" timestamp="2026-10-16T11:03:32.288122+08:00" hostname="dongxindeMacBook-Pro.local"><testcase classname="tests.test_harmony_vm" name="test_harmony_api_is_explicitly_unavailable_when_ddl_failed" time="0.076" /><testcase classname="tests.test_harmony_vm" name="test_harmony_shared_uuid_setting_returns_reportable_udid" time="0.063" /><testcase classname="tests.test_harmony_vm" name="test_harmony_host_paths_are_not_configuration_fields" time="0.028" /><testcase classname="tests.test_harmony_vm" name="test_harmony_runtime_settings_are_the_only_four_downlinked_fields" time="0.027" /><testcase classname="tests.test_harmony_vm" name="test_harmony_agreement_acceptance_is_local_and_default_off" time="0.028" /><testcase classname="tests.test_harmony_vm" name="test_harmony_emulator_spawn_without_acceptance_keeps_original_stdio" time="0.029" /><testcase classname="tests.test_harmony_vm" name="test_harmony_emulator_spawn_accepts_once_and_tracks_real_process" time="0.027" /><testcase classname="tests.test_harmony_vm" name="test_harmony_emulator_spawn_keeps_process_when_stdin_pipe_breaks[write]" time="0.028" /><testcase classname="tests.test_harmony_vm" name="test_harmony_emulator_spawn_keeps_process_when_stdin_pipe_breaks[flush]" time="0.027" /><testcase classname="tests.test_harmony_vm" name="test_harmony_emulator_spawn_keeps_process_when_stdin_pipe_breaks[close]" time="0.027" /><testcase classname="tests.test_harmony_vm" name="test_harmony_shared_uuid_is_written_to_every_instance" time="0.028" /><testcase classname="tests.test_harmony_vm" name="test_harmony_shared_uuid_restore_only_resets_matching_instances" time="0.027" /><testcase classname="tests.test_harmony_vm" name="test_find_harmony_tools_rejects_same_named_android_emulator" time="0.026" /><testcase classname="tests.test_harmony_vm" name="test_harmony_downloaded_images_are_scanned_locally_without_cli" time="0.028" /><testcase classname="tests.test_harmony_vm" name="test_harmony_manager_does_not_create_or_own_image_root" time="0.028" /><testcase classname="tests.test_harmony_vm" name="test_bundled_harmony_catalog_is_complete_and_preserves_official_metadata" time="0.033" /><testcase classname="tests.test_harmony_vm" name="test_bundled_harmony_catalog_uses_probed_create_compatibility" time="0.029" /><testcase classname="tests.test_harmony_vm" name="test_empty_server_db_is_initialized_from_bundled_catalog" time="0.033" /><testcase classname="tests.test_harmony_vm" name="test_harmony_catalog_is_server_owned_replace_snapshot" time="0.062" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_create_locks_screen_to_official_catalog" time="0.064" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_create_has_no_custom_screen_backdoor" time="0.087" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_patch_cannot_bypass_catalog" time="0.065" /><testcase classname="tests.test_harmony_vm" name="test_missing_create_compat_makes_harmony_catalog_fail_loudly" time="0.028" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_fold_state_only_on_foldable" time="0.061" /><testcase classname="tests.test_harmony_vm" name="test_harmony_fold_ready_uses_live_window_size_not_dms_history" time="0.030" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_create_is_independent_and_reserves_alias" time="0.063" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_create_rejects_image_outside_server_catalog" time="0.057" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_create_rejects_model_image_pair_outside_matrix" time="0.058" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_alias_can_be_cleared_like_android" time="0.063" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_force_release_cannot_replace_host_cleanup[False]" time="0.097" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_force_release_cannot_replace_host_cleanup[True]" time="0.064" /><testcase classname="tests.test_harmony_vm" name="test_harmony_reconcile_restores_lease_free_stopped_vm_after_server_reload" time="0.033" /><testcase classname="tests.test_harmony_vm" name="test_harmony_stopped_reconcile_preserves_server_owner_and_active_lease" time="0.033" /><testcase classname="tests.test_harmony_vm" name="test_harmony_running_reclaim_cannot_replace_an_online_owner" time="0.033" /><testcase classname="tests.test_harmony_vm" name="test_harmony_old_stopped_reconcile_cannot_release_a_new_running_lease" time="0.037" /><testcase classname="tests.test_harmony_vm" name="test_harmony_stop_without_owner_cannot_release_an_existing_lease" time="0.060" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_offline_delete_removes_ledger_and_cleans_reconnected_orphan" time="0.075" /><testcase classname="tests.test_harmony_vm" name="test_quarantined_port_is_not_released_by_capability_scan_absence" time="0.071" /><testcase classname="tests.test_harmony_vm" name="test_unknown_delete_ack_does_not_trigger_delete_loop" time="0.029" /><testcase classname="tests.test_harmony_vm" name="test_missing_harmony_vm_table_filters_only_managed_vm" time="0.044" /><testcase classname="tests.test_harmony_vm" name="test_missing_harmony_package_meta_table_keeps_package_listing" time="0.028" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_port_lease_is_server_owned_and_reusable" time="0.032" /><testcase classname="tests.test_harmony_vm" name="test_managed_harmony_serial_only_accepts_lease_owner" time="0.037" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_device_tag_matches_generic_device_contract" time="0.029" /><testcase classname="tests.test_harmony_vm" name="test_harmony_reconcile_does_not_adopt_stopped_vm_when_port_is_reused" time="0.029" /><testcase classname="tests.test_harmony_vm" name="test_harmony_fold_target_is_scoped_to_current_vm_lease" time="0.026" /><testcase classname="tests.test_harmony_vm" name="test_harmony_reconcile_restores_folded_target_before_ready" time="0.030" /><testcase classname="tests.test_harmony_vm" name="test_harmony_orphan_reconcile_reports_only_existing_managed_instances" time="0.105"><failure message="assert 2 == 1">tmp_path = PosixPath('/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-handoff-combined-tb8asf9f/pytest/test_harmony_orphan_reconcile_0')
+
+    async def test_harmony_orphan_reconcile_reports_only_existing_managed_instances(
+        tmp_path,
+    ):
+        manager = HarmonyVmManager(runtime_dir=tmp_path)
+        instance_root = tmp_path / "instances"
+        present_config = (
+            instance_root / "aiphone_harmony_present" / "config.ini"
+        )
+        present_config.parent.mkdir(parents=True)
+        present_config.write_text("uuid=test\n", encoding="utf-8")
+        manager._known = {  # noqa: SLF001
+            "present": {
+                "vm_id": "present",
+                "instance_name": "aiphone_harmony_present",
+                "instance_path": str(instance_root),
+                "ready": False,
+            },
+            "missing": {
+                "vm_id": "missing",
+                "instance_name": "aiphone_harmony_missing",
+                "instance_path": str(instance_root),
+                "ready": False,
+            },
+        }
+    
+        class RecordingClient:
+            agent_id = "agent-restarted"
+    
+            def __init__(self):
+                self.messages = []
+    
+            async def send(self, message):
+                self.messages.append(message)
+    
+        client = RecordingClient()
+        reported = await manager.report_orphan_reconcile(client)
+&gt;       assert reported == 1
+E       assert 2 == 1
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm.py:1740: AssertionError</failure></testcase><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_stop_not_running_is_idempotent" time="0.030" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_acceleration_is_evidence_based" time="0.028" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_start_uses_server_assigned_hdc_port[Phone-config_json0-None]" time="0.029" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_start_uses_server_assigned_hdc_port[Foldable-config_json1-1080]" time="0.030" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_waits_for_system_boot_after_hdc_connected" time="0.028" /><testcase classname="tests.test_harmony_vm" name="test_harmony_vm_retries_driver_handshake_until_ready" time="0.029" /><testcase classname="tests.test_harmony_vm" name="test_harmony_mirror_binds_each_device_to_its_exact_driver_fport" time="0.030" /><testcase classname="tests.test_harmony_vm" name="test_managed_harmony_mirror_repairs_stale_registry_before_start" time="0.027" /><testcase classname="tests.test_harmony_vm" name="test_harmony_mirror_rejects_driver_of_another_device" time="0.033" /><testcase classname="tests.test_harmony_vm" name="test_harmony_foldable_custom_screen_passes_unfolded_and_folded_groups" time="0.031" /><testcase classname="tests.test_harmony_vm" name="test_harmony_official_default_screen_omits_screen_cli_args" time="0.029" /><testcase classname="tests.test_harmony_vm" name="test_harmony_capability_dry_run_uses_server_display_mode" time="0.027" /><testcase classname="tests.test_harmony_vm" name="test_harmony_capability_waiter_drops_disconnected_agent_port_evidence" time="0.028" /><testcase classname="tests.test_harmony_vm" name="test_hmdriver2_fport_patch_uses_disjoint_first_port" time="0.029" /><testcase classname="tests.test_harmony_vm" name="test_hap_abi_parser_distinguishes_native_targets" time="0.029" /><testcase classname="tests.test_harmony_vm" name="test_hap_abi_parser_does_not_hide_unknown_or_invalid_packages" time="0.030" /><testcase classname="tests.test_harmony_vm" name="test_managed_harmony_vm_rejects_mismatched_hap_before_dispatch" time="0.062" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_parallel_registry_publication_preserves_every_vm" time="0.055" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_failed_registry_publication_keeps_previous_complete_file" time="0.003" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_scan_loss_retains_runtime_and_lease_then_reports_recovery" time="0.003" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_stale_scan_cannot_report_a_replaced_runtime" time="0.003" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_transport_missing_runtime_cannot_claim_successful_start" time="0.019"><failure message="AssertionError: Regex pattern did not match.&#10;  Expected regex: 'transport_unavailable'&#10;  Actual message: 'harmony_vm_cleanup_required:hdc_query_failed'">tmp_path = PosixPath('/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-handoff-combined-tb8asf9f/pytest/test_transport_missing_runtime0')
+
+    def test_transport_missing_runtime_cannot_claim_successful_start(tmp_path):
+        manager = HarmonyVmManager(runtime_dir=tmp_path)
+        runtime = _runtime(tmp_path)
+        runtime.missing_ticks = 2
+        manager._runtimes[runtime.vm_id] = runtime
+        with pytest.raises(RuntimeError, match="transport_unavailable"):
+&gt;           manager.start_sync({"vm_id": runtime.vm_id, "assigned_port": runtime.hdc_port, "lease_token": runtime.lease_token})
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_agent_hardening.py:142: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/harmony_vm/manager.py:616: in start_sync
+    return self._start_sync_locked(vm_id, msg)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x111dc3f50&gt;
+vm_id = 'transport-vm'
+msg = {'_operation_deadline': None, 'assigned_port': 12341, 'lease_token': 'lease-transport', 'vm_id': 'transport-vm'}
+
+    def _start_sync_locked(
+        self, vm_id: str, msg: Dict[str, Any]
+    ) -&gt; Dict[str, Any]:
+        deadline = msg.get("_operation_deadline")
+        lease_token = str(msg.get("lease_token") or "").strip()
+        port = _int_value(msg.get("assigned_port"), 0)
+        if not lease_token:
+            raise ValueError("lease_token is required")
+        if not HDC_PORT_MIN &lt;= port &lt;= HDC_PORT_MAX:
+            raise ValueError(
+                f"assigned_port must be in {HDC_PORT_MIN}..{HDC_PORT_MAX}"
+            )
+        serial = f"127.0.0.1:{port}"
+        existing = self._runtimes.get(vm_id)
+        known = self._known.get(vm_id) or {}
+        if known.get("rollback_pending"):
+            raise RuntimeError("harmony_vm_cleanup_required")
+        stale_runtime = existing is not None and (
+            existing.lease_token != lease_token or not existing.ready or existing.missing_ticks &gt;= 2
+        )
+        if known.get("cleanup_pending") or stale_runtime:
+            with _startup_lock(self._start_lock, deadline):
+                observation = self.observe_instance(vm_id, deadline)
+                first_bind = msg.get("rollback_new_instance") is True
+                if first_bind or observation["state"] != "stopped" or not observation["resources_released"]:
+                    failure = RuntimeError(f"harmony_vm_cleanup_required:{observation['reason']}")
+                    failure.cleanup_details = {  # type: ignore[attr-defined]
+                        "cleanup_confirmed": False, "created_in_attempt": False,
+                        "instance_created": (
+                            Path(str(known.get("instance_path") or self.instance_path))
+                            / _safe_instance_name(vm_id) / "config.ini"
+                        ).is_file(),
+                        "instance_observation": observation,
+                    }
+&gt;                   raise failure
+E                   RuntimeError: harmony_vm_cleanup_required:hdc_query_failed
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/harmony_vm/manager.py:675: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-handoff-combined-tb8asf9f/pytest/test_transport_missing_runtime0')
+
+    def test_transport_missing_runtime_cannot_claim_successful_start(tmp_path):
+        manager = HarmonyVmManager(runtime_dir=tmp_path)
+        runtime = _runtime(tmp_path)
+        runtime.missing_ticks = 2
+        manager._runtimes[runtime.vm_id] = runtime
+&gt;       with pytest.raises(RuntimeError, match="transport_unavailable"):
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'transport_unavailable'
+E         Actual message: 'harmony_vm_cleanup_required:hdc_query_failed'
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_agent_hardening.py:141: AssertionError</failure></testcase><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_start_handler_finishes_only_after_terminal_report" time="0.002" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_restart_never_silently_recreates_private_data[missing-instance_missing]" time="0.002" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_restart_never_silently_recreates_private_data[changed-config_changed]" time="0.003" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_image_version_normalization_preserves_api_and_beta[HarmonyOS 6.0.31-23-HarmonyOS 6.0.31(23)]" time="0.000" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_image_version_normalization_preserves_api_and_beta[HarmonyOS 6.0.31 (23)-23-HarmonyOS 6.0.31(23)]" time="0.001" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_image_version_normalization_preserves_api_and_beta[6.0.1(21) beta 1-21-HarmonyOS 6.0.1(21) Beta1]" time="0.001" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_image_version_normalization_preserves_api_and_beta[HarmonyOS 6.0.31(23)-20-]" time="0.001" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_image_listing_keeps_distinct_architectures_and_normalizes_spelling" time="0.001" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_shared_phone_image_covers_display_families_without_online_catalog[arm-arm64]" time="0.001" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_shared_phone_image_covers_display_families_without_online_catalog[x86_64-x86_64]" time="0.001" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_static_cache_reuses_creation_but_always_reads_live_ports_and_memory" time="0.003" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_static_cache_invalidates_environment_changes[tool]" time="0.003" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_static_cache_invalidates_environment_changes[metadata]" time="0.003" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_static_cache_invalidates_environment_changes[removed_image]" time="0.003" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_static_cache_invalidates_environment_changes[expiry]" time="0.003" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_architecture_mismatch_does_not_pass_installed_image_check" time="0.001" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_failed_create_is_not_cached" time="0.003" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_dry_run_has_bounded_commands_and_rejects_cleanup_failure" time="0.001" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_live_port_probe_failure_cannot_return_cached_success" time="0.003" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_fport_probe_skips_offline_targets_and_bounds_commands" time="0.000" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_orphan_inventory_marks_pending_and_unverified_vms_unknown" time="0.018"><failure message="assert 1 == 0">tmp_path = PosixPath('/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-handoff-combined-tb8asf9f/pytest/test_orphan_inventory_marks_pe0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x111ba3950&gt;
+
+    async def test_orphan_inventory_marks_pending_and_unverified_vms_unknown(tmp_path, monkeypatch):
+        manager = HarmonyVmManager(runtime_dir=tmp_path)
+        monkeypatch.setattr(HarmonyVmManager, "orphan_cleanup", property(lambda _self: True))
+        manager._known = {
+            "pending": {"cleanup_pending": True},
+            "unverified": {"ready": True},
+            "missing": {"created": True, "instance_name": "aiphone_harmony_missing", "instance_path": str(manager.instance_path)},
+        }
+        messages = []
+        async def send(msg):
+            messages.append(msg)
+&gt;       assert await manager.report_orphan_reconcile(SimpleNamespace(agent_id="fixture", send=send)) == 0
+E       assert 1 == 0
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_agent_hardening.py:368: AssertionError</failure></testcase><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_unknown_inventory_cannot_prove_server_instance_absent[untracked]" time="0.002" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_unknown_inventory_cannot_prove_server_instance_absent[corrupt_registry]" time="0.002" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_lost_stop_ack_recovery_requires_positive_cleanup_evidence[False--True-False]" time="0.002" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_lost_stop_ack_recovery_requires_positive_cleanup_evidence[True--True-True]" time="0.002"><failure message="AssertionError: assert False is True&#10; +  where False = _stopped_cleanup_confirmed('one', {'cleanup_confirmed': True, 'hdc_serial': '127.0.0.1:12341', 'ready': False})&#10; +    where _stopped_cleanup_confirmed = &lt;ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x1120936d0&gt;._stopped_cleanup_confirmed">tmp_path = PosixPath('/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/aiphone-handoff-combined-tb8asf9f/pytest/test_lost_stop_ack_recovery_re1')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x11245ed10&gt;
+saved = True, active = '', port_free = True, expected = True
+
+    @pytest.mark.parametrize("saved,active,port_free,expected", [
+        (False, "", True, False),
+        (True, "", True, True),
+        (True, None, True, False),
+        (True, "127.0.0.1:12341", True, False),
+        (True, "", False, False),
+    ])
+    def test_lost_stop_ack_recovery_requires_positive_cleanup_evidence(
+        tmp_path, monkeypatch, saved, active, port_free, expected
+    ):
+        manager = HarmonyVmManager(runtime_dir=tmp_path)
+        known = {"ready": False, "cleanup_confirmed": saved, "hdc_serial": "127.0.0.1:12341"}
+        monkeypatch.setattr(manager, "_active_instance_serial", lambda *_a: active)
+        monkeypatch.setattr(manager, "_port_is_free", lambda _port: port_free)
+&gt;       assert manager._stopped_cleanup_confirmed("one", known) is expected
+E       AssertionError: assert False is True
+E        +  where False = _stopped_cleanup_confirmed('one', {'cleanup_confirmed': True, 'hdc_serial': '127.0.0.1:12341', 'ready': False})
+E        +    where _stopped_cleanup_confirmed = &lt;ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x1120936d0&gt;._stopped_cleanup_confirmed
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_agent_hardening.py:398: AssertionError</failure></testcase><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_lost_stop_ack_recovery_requires_positive_cleanup_evidence[True-None-True-False]" time="0.002" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_lost_stop_ack_recovery_requires_positive_cleanup_evidence[True-127.0.0.1:12341-True-False]" time="0.002" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_lost_stop_ack_recovery_requires_positive_cleanup_evidence[True--False-False]" time="0.002" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_unreadable_registry_cannot_be_overwritten_by_start_or_delete" time="0.002" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_owned_process_still_running_prevents_false_stop_confirmation" time="0.002" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_first_bind_failure_rolls_back_only_its_new_definition_once[success]" time="0.004" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_first_bind_failure_rolls_back_only_its_new_definition_once[before_definition]" time="0.018" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_first_bind_failure_rolls_back_only_its_new_definition_once[partial_definition]" time="0.017" /><testcase classname="tests.test_harmony_vm_agent_hardening" name="test_failed_first_bind_cleanup_retains_exact_orphan_for_reconnect[stop]" time="0.019"><failure message="AssertionError: assert 'stopped' == 'error'&#10;  &#10;  - error&#10;  + stopped">failed_binding_environment = (&lt;ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x111f48690&gt;, {'api_version': '23', 'assigned_port': 12...lease', ...}, {'actions': ['create', 'spawn', 'stop'], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': False})
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x111f4a4d0&gt;
+failure = 'stop'
+
+    @pytest.mark.parametrize("failure", ["stop", "delete"])
+    async def test_failed_first_bind_cleanup_retains_exact_orphan_for_reconnect(
+        failed_binding_environment, monkeypatch, failure
+    ):
+        manager, msg, state = failed_binding_environment
+        state[f"{failure}_ok"] = False
+        with pytest.raises(RuntimeError, match="boot failed") as caught:
+            manager.start_sync(msg)
+        details = caught.value.cleanup_details
+        assert details["rollback_completed"] is False
+        assert details["cleanup_confirmed"] is False
+        assert details["instance_created"] is True
+        assert manager._known[msg["vm_id"]]["rollback_pending"] is True
+        assert state["actions"].count("stop") == 1
+        assert state["actions"].count("delete") == (0 if failure == "stop" else 1)
+        messages = []
+        async def send(payload):
+            messages.append(payload)
+        monkeypatch.setattr(HarmonyVmManager, "orphan_cleanup", property(lambda _self: True))
+        assert await manager.report_orphan_reconcile(SimpleNamespace(agent_id="isolated", send=send)) == 1
+        row = messages[0]["instances"][0]
+&gt;       assert row["state"] == "error"
+E       AssertionError: assert 'stopped' == 'error'
+E         
+E         - error
+E         + stopped
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_agent_hardening.py:540: AssertionError</failure></testcase></testsuite></testsuites>

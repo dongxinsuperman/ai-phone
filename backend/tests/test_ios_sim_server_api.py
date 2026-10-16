@@ -273,7 +273,9 @@ async def test_non_alias_patch_rejected_while_running(client, session):
         f"{_BASE}/instances/{vm['id']}", json={"config_json": {"x": 1}}, headers=AUTH
     )
     assert r.status_code == 409
-    assert "先停止" in r.json()["detail"]
+    assert "先停止" in r.json()["detail"]["message"]
+    assert r.json()["detail"]["sent"] is False
+    assert r.json()["detail"]["instance"]["id"] == vm["id"]
 
 
 @pytest.mark.asyncio
@@ -492,7 +494,8 @@ async def test_dispatch_to_active_instance_is_rejected(client, hub):
         json={"agent_id": "agent-2"}, headers=AUTH,
     )
     assert r.status_code == 409
-    assert "等待本次结果" in r.json()["detail"]
+    assert "等待本次结果" in r.json()["detail"]["message"]
+    assert r.json()["detail"]["instance"]["lifecycle"]["state"] == "starting"
     assert hub.sent == [], "启动中不得重新探查、清理或下发"
 
 
@@ -754,19 +757,26 @@ async def test_switch_start_send_failure_keeps_only_new_unbound_error(client, hu
 
 
 @pytest.mark.asyncio
-async def test_dispatch_to_same_agent_keeps_vm_id(client, hub, session):
+async def test_dispatch_to_same_agent_keeps_vm_id(client, hub):
     """下发到原来那台 Agent 不算换——不该平白换掉 vm_id。"""
-    from ai_phone.server.ios_sim.models import IosSimVmInstance
+    from ai_phone.server.ios_sim.service import handle_vm_status
 
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
     await _dispatch(client, hub, vm["id"], "agent-1")
     await _report_running(hub, vm["id"])
-    row = await session.get(IosSimVmInstance, vm["id"])
-    row.state = "stopped"
-    await session.commit()
+    stopped = await client.post(f"{_BASE}/instances/{vm['id']}/stop", headers=AUTH)
+    assert stopped.status_code == 200, stopped.text
+    stop_command = hub.of_type(P.MSG_IOS_SIM_VM_STOP)[-1]
+    await handle_vm_status(
+        "agent-1",
+        {"vm_id": vm["id"], "request_id": stop_command["request_id"], "state": "stopped",
+         "ok": True, "reason": "stopped", "udid": "UDID-ORIGINAL",
+         "details": {"cleanup_confirmed": True, "instance_created": True}},
+        hub,
+    )
 
     r = await _dispatch(client, hub, vm["id"], "agent-1")
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
     assert r.json()["instance"]["id"] == vm["id"]
     assert r.json()["instance"]["assigned_agent_id"] == "agent-1"
     assert r.json()["instance"]["udid"] == "UDID-ORIGINAL"
@@ -801,21 +811,33 @@ async def test_start_sends_payload_without_ports(client, hub, session):
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
     row = await session.get(IosSimVmInstance, vm["id"])
     row.assigned_agent_id = "agent-1"
+    row.udid = "UDID-PORT-FIXTURE"
+    row.state = "stopped"
+    # 旧版本成功 Stop 的匹配证据，不能只改 raw state 就声称已停止。
+    row.runtime_state = {
+        "instance_created": True,
+        "operation": {"action": "stop", "request_id": "confirmed-old-stop",
+                      "pending": False, "outcome": "succeeded"},
+        "last_status": {"state": "stopped", "ok": True,
+                        "details": {"cleanup_confirmed": True, "instance_created": True}},
+    }
     await session.commit()
 
     r = await client.post(f"{_BASE}/instances/{vm['id']}/start", headers=AUTH)
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
     starts = hub.of_type(P.MSG_IOS_SIM_VM_START)
     assert starts
     payload = starts[-1]
     assert payload["device_type"] == _DT_17PRO
     assert payload["runtime"] == _RT26
+    assert payload["udid"] == "UDID-PORT-FIXTURE"
+    assert payload["require_existing_instance"] is True
     for forbidden in ("assigned_port", "wda_port", "mjpeg_port", "lease_token"):
         assert forbidden not in payload
 
 
 @pytest.mark.asyncio
-async def test_stop_offline_agent_fails_attempt_without_losing_owner(client, hub, session):
+async def test_stop_offline_agent_rejects_before_send_without_losing_owner(client, hub, session):
     from ai_phone.server.ios_sim.models import IosSimVmInstance
 
     vm = (await client.post(f"{_BASE}/instances", json=_body(), headers=AUTH)).json()
@@ -825,17 +847,20 @@ async def test_stop_offline_agent_fails_attempt_without_losing_owner(client, hub
     await session.commit()
 
     r = await client.post(f"{_BASE}/instances/{vm['id']}/stop", headers=AUTH)
-    assert r.status_code == 502
+    assert r.status_code == 409
     detail = r.json()["detail"]
     assert detail["sent"] is False
     assert detail["vm_id"] == vm["id"]
     assert detail["message"]
     got = detail["instance"]
-    assert got["state"] == "error"
+    assert got["state"] == "running", "预检拒绝不能谎报已停止或创建一次不存在的原生操作"
     assert got["assigned_agent_id"] == "agent-gone"
-    assert got["runtime_state"]["operation"]["pending"] is False
-    assert got["runtime_state"]["operation"]["outcome"] == "failed"
-    assert detail["request_id"] == got["runtime_state"]["operation"]["request_id"]
+    assert got["lifecycle"]["agent_online"] is False
+    assert got["lifecycle"]["state"] is None
+    assert got["lifecycle"]["actions"]["stop"] is False
+    assert not got["runtime_state"].get("operation")
+    assert detail["request_id"] == ""
+    assert hub.sent == []
 
 
 @pytest.mark.asyncio
@@ -1169,17 +1194,22 @@ async def test_reconcile_marks_stopped(client, hub, session):
     row = await session.get(IosSimVmInstance, vm["id"])
     row.assigned_agent_id = "agent-1"
     row.state = "running"
+    row.udid = "UDID-STOPPED"
     row.wda_port = 8300
     await session.commit()
 
     await handle_vm_reconcile(
         "agent-1",
         {"vm_ids": [vm["id"]], "running_vm_ids": [], "stopped_vm_ids": [vm["id"]],
-         "inventory_complete": True},
+         "inventory_complete": True,
+         "instance_proofs": {vm["id"]: {"udid": "UDID-STOPPED",
+             "name": f"aiphone_sim_{vm['id']}", "state": "Shutdown"}}},
         hub,
     )
     got = (await client.get(f"{_BASE}/instances/{vm['id']}", headers=AUTH)).json()
     assert got["state"] == "stopped"
+    assert got["lifecycle"]["state"] == "stopped"
+    assert got["udid"] == "UDID-STOPPED"
     assert got["wda_port"] is None
 
 

@@ -1,0 +1,34 @@
+{
+  "tests": [
+    "backend/tests/test_android_vm.py",
+    "backend/tests/test_ios_sim_probe.py",
+    "backend/tests/test_vm_lifecycle_contract.py",
+    "backend/tests/test_vm_delete_exceptions.py",
+    "backend/tests/test_vm_send_bounds.py",
+    "backend/tests/test_vm_switch_concurrency.py",
+    "backend/tests/test_vm_upgrade_compat_audit.py",
+    "backend/tests/test_vm_upgrade_independent_review.py",
+    "backend/tests/test_vm_probe_stream.py",
+    "backend/tests/test_vm_probe_reconnect_lifecycle.py",
+    "backend/tests/test_vm_probe_fresh_ports.py"
+  ],
+  "source_sha256": {
+    "backend/ai_phone/server/vm_lifecycle.py": "dba1447f0b4d88b7d6e584daabcad9558564096ae80aafc135c5856dbe7c68a3",
+    "backend/ai_phone/server/vm_probe.py": "c26d01f7ab02dd34cbb79f96f9273184a3a62945468df8d77527f7f7baba87d2",
+    "backend/ai_phone/server/ws/agent_ws.py": "5e2280f850d6af8304e8a426be34ebd3b407790bd3dc6c5a5bbb82d5357055e6",
+    "backend/ai_phone/server/android_vm/api.py": "9c670177a6792340e5528d1d07768fa8493c405e6514269238f2a98983c49c06",
+    "backend/ai_phone/server/android_vm/service.py": "4c3ece2ef0372b4a68d65ba45eef045092980b6c9fb9a0840fb4ee53a5d76e97",
+    "backend/ai_phone/server/ios_sim/api.py": "d3a8fe2793bc6af436c1d2a9b4d630631d6531bd6cad2db8fdd2f47d1a53f290",
+    "backend/ai_phone/server/ios_sim/service.py": "59d4796fee682792ff1c1484394ca501a6a70ca0d6f7e4b7bd2e9fe3b0611575",
+    "backend/ai_phone/server/harmony_vm/api.py": "c240413dced3c216b118c86d05e9026914c79aa2b4f75dcf729694bda20470fa",
+    "backend/ai_phone/server/harmony_vm/service.py": "ec9aa00c52826ec4cd0193305a9b7ac93b5fcc2cd835c07c3c846a870d5021ce"
+  },
+  "source_unchanged": true,
+  "exit_code": 4,
+  "guard": {
+    "blocked_calls": [
+      "socket.bind"
+    ],
+    "cwd": "/private/var/folders/gw/czqhpl_j2bj9wt67zdckws2m0000gn/T/vm-probe-tests-fvrd_6ax"
+  }
+}

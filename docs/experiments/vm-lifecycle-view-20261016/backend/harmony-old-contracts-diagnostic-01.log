@@ -1,0 +1,136 @@
+...............................FF.F..................................... [ 73%]
+..F........FF.FFF....FF...                                               [100%]
+=================================== FAILURES ===================================
+__ test_harmony_reconcile_restores_lease_free_stopped_vm_after_server_reload ___
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm.py:1015: in test_harmony_reconcile_restores_lease_free_stopped_vm_after_server_reload
+    assert restored.state == "stopped"
+E   AssertionError: assert 'error' == 'stopped'
+E     
+E     - stopped
+E     + error
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:28:12.475 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-ef5ffaff41db4f0ea2c554d6a2a10af9?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:28:12.579 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+____ test_harmony_stopped_reconcile_preserves_server_owner_and_active_lease ____
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm.py:1095: in test_harmony_stopped_reconcile_preserves_server_owner_and_active_lease
+    assert still_active.state == "agent_offline"
+E   AssertionError: assert 'error' == 'agent_offline'
+E     
+E     - agent_offline
+E     + error
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:28:12.580 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-ddffd76d495d4fcfb78585725481f445?mode=memory&cache=shared&uri=true
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 11:28:12.610 | WARNING  | ai_phone.server.vm_lifecycle:report_owner_conflict:661 - VM ownership conflict; no adoption or cleanup | vm_id=owned-by-new-agent owner=agent-new owner_host= reporter=agent-old reporter_host=
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:28:12.625 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+____ test_harmony_old_stopped_reconcile_cannot_release_a_new_running_lease _____
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm.py:1174: in test_harmony_old_stopped_reconcile_cannot_release_a_new_running_lease
+    assert preserved.state == "running"
+E   AssertionError: assert 'error' == 'running'
+E     
+E     - running
+E     + error
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:28:12.658 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-02899769feda4e7bb22fe7ab21291ad6?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:28:12.701 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+___ test_failed_first_binding_cannot_be_revived_by_late_status_or_inventory ____
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_recovery.py:271: in test_failed_first_binding_cannot_be_revived_by_late_status_or_inventory
+    assert await session.get(HarmonyVmPortLease, start["assigned_port"]) is None
+E   assert <ai_phone.server.harmony_vm.models.HarmonyVmPortLease object at 0x114f48610> is None
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:28:14.166 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-4f7f20c380b8410783c7490f86f667dd?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:28:14.237 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py:86: in test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence
+    assert vm.state == "agent_offline"
+E   AssertionError: assert 'stopped' == 'agent_offline'
+E     
+E     - agent_offline
+E     + stopped
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:28:14.459 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-cbeddaddd19549a1baf477af8686464c?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:28:14.550 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py:86: in test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence
+    assert vm.state == "agent_offline"
+E   AssertionError: assert 'stopped' == 'agent_offline'
+E     
+E     - agent_offline
+E     + stopped
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:28:14.551 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-b284d771b38c4266b305813c413a792c?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:28:14.604 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+__ test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof[name] ___
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py:158: in test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof
+    assert vm.assigned_agent_id == "old" and vm.state == "agent_offline"
+E   AssertionError: assert ('restarted' == 'old'
+E     
+E     - old
+E     + restarted)
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:28:14.656 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-4b6bcbfa139446ebaf1056e3f6937f0a?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:28:14.708 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+__ test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof[path] ___
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py:158: in test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof
+    assert vm.assigned_agent_id == "old" and vm.state == "agent_offline"
+E   AssertionError: assert ('restarted' == 'old'
+E     
+E     - old
+E     + restarted)
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:28:14.709 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-0e562d9b61084136b413815e832289c8?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:28:14.763 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof[managed] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py:158: in test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof
+    assert vm.assigned_agent_id == "old" and vm.state == "agent_offline"
+E   AssertionError: assert ('restarted' == 'old'
+E     
+E     - old
+E     + restarted)
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:28:14.764 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-5f383d5ba4144ebfa9e3a3414ce9ec65?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:28:14.820 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof[lease_row] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py:158: in test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof
+    assert vm.assigned_agent_id == "old" and vm.state == "agent_offline"
+E   AssertionError: assert ('restarted' == 'old'
+E     
+E     - old
+E     + restarted)
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:28:15.022 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-8338121e64174521bdc338e8f5a9a23b?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:28:15.075 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof[foreign_lease] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py:158: in test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof
+    assert vm.assigned_agent_id == "old" and vm.state == "agent_offline"
+E   AssertionError: assert ('restarted' == 'old'
+E     
+E     - old
+E     + restarted)
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:28:15.076 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-2fb1adb1266b47fcba04cee07f8aac47?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:28:15.132 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+=========================== short test summary info ============================
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm.py::test_harmony_reconcile_restores_lease_free_stopped_vm_after_server_reload
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm.py::test_harmony_stopped_reconcile_preserves_server_owner_and_active_lease
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm.py::test_harmony_old_stopped_reconcile_cannot_release_a_new_running_lease
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_recovery.py::test_failed_first_binding_cannot_be_revived_by_late_status_or_inventory
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py::test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py::test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py::test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof[name]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py::test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof[path]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py::test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof[managed]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py::test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof[lease_row]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py::test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof[foreign_lease]
+11 failed, 87 passed, 2 warnings in 4.30s

@@ -1,0 +1,14 @@
+........................................................................ [ 73%]
+..F.......................                                               [100%]
+=================================== FAILURES ===================================
+___ test_failed_first_binding_cannot_be_revived_by_late_status_or_inventory ____
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_recovery.py:284: in test_failed_first_binding_cannot_be_revived_by_late_status_or_inventory
+    assert await session.get(HarmonyVmPortLease, start["assigned_port"]) is None
+E   assert <ai_phone.server.harmony_vm.models.HarmonyVmPortLease object at 0x11518f550> is None
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:32:15.788 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-7032993b42f5449ea2f9f3e2225cb1a7?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:32:15.884 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+=========================== short test summary info ============================
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_vm_recovery.py::test_failed_first_binding_cannot_be_revived_by_late_status_or_inventory
+1 failed, 97 passed, 2 warnings in 4.06s

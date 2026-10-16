@@ -1,0 +1,154 @@
+{
+  "status": "passed",
+  "scope": "isolated real ASGI routes plus FakeHub; no network listener/native/browser",
+  "checks": [
+    {
+      "platform": "android",
+      "action": "start",
+      "request_id": "86c084d6cd214110",
+      "outcome": "succeeded",
+      "server_lifecycle": {
+        "state": "running",
+        "agent_online": true,
+        "actions": {
+          "start": false,
+          "stop": true,
+          "dispatch": false,
+          "delete": false,
+          "edit": true,
+          "copy": true
+        },
+        "notice": "",
+        "error": ""
+      },
+      "passed": true
+    },
+    {
+      "platform": "android",
+      "action": "stop",
+      "request_id": "4d3de30844c548d5",
+      "outcome": "succeeded",
+      "server_lifecycle": {
+        "state": "stopped",
+        "agent_online": true,
+        "actions": {
+          "start": true,
+          "stop": false,
+          "dispatch": true,
+          "delete": true,
+          "edit": true,
+          "copy": true
+        },
+        "notice": "",
+        "error": ""
+      },
+      "passed": true
+    },
+    {
+      "platform": "ios",
+      "action": "start",
+      "request_id": "0d1edf2feb9b4650",
+      "outcome": "succeeded",
+      "server_lifecycle": {
+        "state": "running",
+        "agent_online": true,
+        "actions": {
+          "start": false,
+          "stop": true,
+          "dispatch": false,
+          "delete": false,
+          "edit": true,
+          "copy": true
+        },
+        "notice": "",
+        "error": ""
+      },
+      "passed": true
+    },
+    {
+      "platform": "ios",
+      "action": "stop",
+      "request_id": "3d3fbd33ab0b4e05",
+      "outcome": "succeeded",
+      "server_lifecycle": {
+        "state": "stopped",
+        "agent_online": true,
+        "actions": {
+          "start": true,
+          "stop": false,
+          "dispatch": true,
+          "delete": true,
+          "edit": true,
+          "copy": true
+        },
+        "notice": "",
+        "error": ""
+      },
+      "passed": true
+    },
+    {
+      "platform": "harmony",
+      "action": "start",
+      "request_id": "a7b6b6b8ae084add",
+      "outcome": "succeeded",
+      "server_lifecycle": {
+        "state": "running",
+        "agent_online": true,
+        "actions": {
+          "start": false,
+          "stop": true,
+          "dispatch": false,
+          "delete": false,
+          "edit": true,
+          "copy": true
+        },
+        "notice": "",
+        "error": ""
+      },
+      "passed": true
+    },
+    {
+      "platform": "harmony",
+      "action": "stop",
+      "request_id": "b660ad2353764a1d",
+      "outcome": "succeeded",
+      "server_lifecycle": {
+        "state": "stopped",
+        "agent_online": true,
+        "actions": {
+          "start": true,
+          "stop": false,
+          "dispatch": true,
+          "delete": true,
+          "edit": true,
+          "copy": true
+        },
+        "notice": "",
+        "error": ""
+      },
+      "passed": true
+    }
+  ],
+  "native_or_agent_started": false,
+  "action_count": 6,
+  "message_counts": {
+    "android": {
+      "start": 1,
+      "stop": 1,
+      "delete": 0,
+      "inspect": 1
+    },
+    "ios": {
+      "start": 1,
+      "stop": 1,
+      "delete": 0,
+      "inspect": 1
+    },
+    "harmony": {
+      "start": 1,
+      "stop": 1,
+      "delete": 0,
+      "inspect": 1
+    }
+  }
+}

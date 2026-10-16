@@ -33,10 +33,12 @@ from ..api.submissions import RequireBearer
 from ..hub import Hub
 from ..vm_probe import probe_stream_response
 from ..vm_lifecycle import (
+    vm_view, require_action, require_editable,
+    ensure_start_observation, start_preflight_snapshot, reject_start_preflight,
     operation_failure_detail,
     is_untouched_draft,
     require_retirement_allowed, send_operation_once,
-    begin_operation, maintenance, require_idle, require_startable,
+    begin_operation, maintenance, require_startable,
     require_device_idle, require_owner_host, runtime as lifecycle_runtime,
     transaction_lock, record_send_failure, delete_device_record, forget_device_route,
     cleanup_command, send_cleanup_once, cancel_operation_timeout, arm_operation_timeout,
@@ -46,7 +48,6 @@ from . import catalog as cat
 from .models import IosSimCatalogSnapshot, IosSimVmInstance
 from .schemas import IosSimVmCreateReq, IosSimVmDispatchReq, IosSimVmPatchReq
 from .service import (
-    ACTIVE_STATES,
     delete_owned_alias,
     ensure_alias_available,
     get_capability_waiter,
@@ -158,18 +159,18 @@ async def health() -> Dict[str, Any]:
 
 
 @router.get("")
-async def list_instances(session: AsyncSession = DBSession) -> List[Dict[str, Any]]:
+async def list_instances(session: AsyncSession = DBSession, hub: Hub = HubDep) -> List[Dict[str, Any]]:
     rows = (
         await session.execute(
             select(IosSimVmInstance).order_by(IosSimVmInstance.created_at.desc())
         )
     ).scalars().all()
-    return [row.to_dict() for row in rows]
+    return [vm_view(row, hub) for row in rows]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_instance(
-    body: IosSimVmCreateReq, session: AsyncSession = DBSession
+    body: IosSimVmCreateReq, session: AsyncSession = DBSession, hub: Hub = HubDep
 ) -> Dict[str, Any]:
     alias = body.alias.strip()
     try:
@@ -196,37 +197,33 @@ async def create_instance(
         "已创建 iOS 虚拟机配置 vm_id={} alias={} 机型={} 系统={}",
         vm.id, vm.alias, vm.device_type_name, vm.runtime_name,
     )
-    return vm.to_dict()
+    return vm_view(vm, hub)
 
 
 @router.get("/{vm_id}")
-async def get_instance(vm_id: str, session: AsyncSession = DBSession) -> Dict[str, Any]:
+async def get_instance(vm_id: str, session: AsyncSession = DBSession, hub: Hub = HubDep) -> Dict[str, Any]:
     try:
         vm = await get_vm_or_404(session, vm_id)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="实例不存在") from exc
-    return vm.to_dict()
+    return vm_view(vm, hub)
 
 
 @router.patch("/{vm_id}")
 async def patch_instance(
-    vm_id: str, body: IosSimVmPatchReq, session: AsyncSession = DBSession
+    vm_id: str, body: IosSimVmPatchReq, session: AsyncSession = DBSession, hub: Hub = HubDep
 ) -> Dict[str, Any]:
     await transaction_lock(session, f"ios-vm:{vm_id}")
     try:
         vm = await get_vm_or_404(session, vm_id)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="实例不存在") from exc
-    require_idle(vm, allow_running=True)
+    require_action(vm, "edit", hub)
     patch = body.model_dump(exclude_unset=True)
     # 别名只是调度与展示身份，运行中可安全更新；机型、系统和其他配置仍要求先停止。
     # 与 Android / 鸿蒙虚拟机保持一致，避免设备明明空闲却无法改名。
     alias_only = set(patch).issubset({"alias"})
-    if vm.state in ACTIVE_STATES and not alias_only:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail=f"实例处于 {vm.state} 状态，请先停止再修改配置",
-        )
+    require_editable(vm, hub, alias_only=alias_only)
 
     # 机型与系统版本由官方目录锁定，不能改。与鸿蒙 CATALOG_LOCKED_FIELDS 一致：
     # 允许在这里改等于绕过整套兼容校验（机型 × 版本区间），能改出一台起不来的配置，
@@ -277,7 +274,7 @@ async def patch_instance(
 
     await session.commit()
     await session.refresh(vm)
-    return vm.to_dict()
+    return vm_view(vm, hub)
 
 
 @router.delete("/{vm_id}")
@@ -309,7 +306,7 @@ async def _retire_configuration(session: AsyncSession, vm: IosSimVmInstance, hub
 
 @router.post("/{vm_id}/copy", status_code=status.HTTP_201_CREATED)
 async def copy_instance(
-    vm_id: str, body: IosSimVmCreateReq, session: AsyncSession = DBSession
+    vm_id: str, body: IosSimVmCreateReq, session: AsyncSession = DBSession, hub: Hub = HubDep
 ) -> Dict[str, Any]:
     """按现有实例的配置新建一台（对齐三端卡片的「复制配置」）。
 
@@ -319,6 +316,7 @@ async def copy_instance(
         source = await get_vm_or_404(session, vm_id)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="源实例不存在") from exc
+    require_action(source, "copy", hub)
     alias = body.alias.strip()
     try:
         await ensure_alias_available(session, alias)
@@ -341,7 +339,7 @@ async def copy_instance(
     await session.commit()
     await session.refresh(vm)
     logger.info("已复制 iOS 虚拟机配置 {} → {}", vm_id, vm.id)
-    return vm.to_dict()
+    return vm_view(vm, hub)
 
 
 # ---------------------------------------------------------------------------
@@ -386,20 +384,24 @@ async def _send_start(vm_id: str, agent_id: str, session: AsyncSession, hub: Hub
         raise HTTPException(404, "实例不存在")
     if expected_draft and not is_untouched_draft(vm):
         raise HTTPException(409, "新配置已被另一操作接管，本次换机不会重复启动")
-    require_idle(vm)
+    require_action(vm, "edit", hub)
     old_agent = str(vm.assigned_agent_id or "")
     if old_agent and old_agent != agent_id:
         if not allow_switch:
-            raise HTTPException(409, "实例所属 Agent 已变化，请刷新后重试启动；启动不会更换实例")
+            raise HTTPException(409, "所属 Agent 已变化，本次未启动；请刷新后操作")
         return await _switch_agent(vm=vm, new_agent_id=agent_id, session=session, hub=hub)
-    require_startable(vm)
+    require_startable(vm, hub)
     if not hub.has_agent(agent_id):
         raise HTTPException(409, "所属 Agent 离线，请等待连接")
-    probed_payload = vm_payload(vm)
+    expected_preflight = start_preflight_snapshot(vm)
     if probe:
         fresh = await get_capability_waiter().probe_agent(hub=hub, vm=vm, agent_id=agent_id)
         if not fresh.get("ok"):
-            raise HTTPException(409, f"该 Agent 当前无法承接：{fresh.get('reason') or '不可用'}")
+            await transaction_lock(session, f"ios-vm:{vm_id}")
+            vm = await get_vm_or_404(session, vm_id)
+            if start_preflight_snapshot(vm) != expected_preflight:
+                raise HTTPException(409, operation_failure_detail(vm, "探查期间实例已变化，本次未启动", hub=hub))
+            await reject_start_preflight(session, vm, hub, f"该 Agent 当前无法承接：{fresh.get('reason') or '不可用'}", reason="agent_capability_unavailable")
     # Capability replies use the Agent's same receive loop as lifecycle status.
     # Never hold the VM transaction lock while waiting for that reply.
     await transaction_lock(session, f"ios-vm:{vm_id}")
@@ -409,22 +411,23 @@ async def _send_start(vm_id: str, agent_id: str, session: AsyncSession, hub: Hub
         raise HTTPException(404, "实例已删除")
     if expected_draft and not is_untouched_draft(vm):
         raise HTTPException(409, "新配置已被另一操作接管，本次换机不会重复启动")
-    require_startable(vm)
-    if vm_payload(vm) != probed_payload:
-        raise HTTPException(409, "探查期间配置已修改，请重新探查")
+    require_startable(vm, hub)
+    if start_preflight_snapshot(vm) != expected_preflight:
+        raise HTTPException(409, operation_failure_detail(vm, "探查期间配置、归属或操作已变化，本次未启动", hub=hub))
     old_agent = (vm.assigned_agent_id or "").strip()
     if old_agent and old_agent != agent_id:
         if not allow_switch:
-            raise HTTPException(409, "实例所属 Agent 已变化，请刷新后重试启动；启动不会更换实例")
+            raise HTTPException(409, "所属 Agent 已变化，本次未启动；请刷新后操作")
         return await _switch_agent(vm=vm, new_agent_id=agent_id, session=session, hub=hub)
     require_owner_host(vm, hub)
+    vm = await ensure_start_observation(session, vm, hub, get_capability_waiter())
     require_device_idle(hub, vm)
     first_bind = not bool(vm.assigned_agent_id)
     request_id = begin_operation(vm, "start", target_agent_id=agent_id,
         target_host_id=agent_host_id(hub, agent_id), first_bind=first_bind)
     vm.state, vm.error_code, vm.error_message = "starting", "", ""
     payload = {"type": P.MSG_IOS_SIM_VM_START, **vm_payload(vm, request_id=request_id),
-               "udid": vm.udid or "", "require_existing_instance": bool(vm.udid or lifecycle_runtime(vm).get("instance_created")),
+               "udid": vm.udid or "", "require_existing_instance": bool(vm.assigned_agent_id or vm.udid or lifecycle_runtime(vm).get("instance_created")),
         "rollback_new_instance": first_bind,
         "operation_timeout_sec": lifecycle_runtime(vm)["operation"]["timeout_sec"],
     }
@@ -433,14 +436,14 @@ async def _send_start(vm_id: str, agent_id: str, session: AsyncSession, hub: Hub
     arm_operation_timeout(vm, hub)
     sent = await send_operation_once(hub, agent_id, payload)
     if not sent:
-        await record_send_failure(session, vm, request_id, "下发失败，保留原绑定等待对账")
+        await record_send_failure(session, vm, request_id, "下发失败，本次操作已结束")
         current_operation = lifecycle_runtime(vm).get("operation") or {}
         if current_operation.get("request_id") == request_id and current_operation.get("outcome") == "succeeded":
             sent = True
         else:
-            raise HTTPException(502, detail=operation_failure_detail(vm, "启动下发失败，本次操作已结束；请查询当前实例与操作结果", request_id=request_id))
+            raise HTTPException(502, detail=operation_failure_detail(vm, "启动下发失败，本次操作已结束；请查询当前实例与操作结果", hub=hub, request_id=request_id))
     await session.refresh(vm)
-    return {"sent": sent, "instance": vm.to_dict()}
+    return {"sent": sent, "instance": vm_view(vm, hub)}
 
 
 async def _switch_agent(*, vm: IosSimVmInstance, new_agent_id: str, session: AsyncSession, hub: Hub) -> Dict[str, Any]:
@@ -466,7 +469,7 @@ async def _switch_agent(*, vm: IosSimVmInstance, new_agent_id: str, session: Asy
     try:
         result = await _send_start(new_vm_id, new_agent_id, session, hub, expected_draft=True)
         sent = bool(result.get("sent"))
-        instance = result.get("instance") or new_vm.to_dict()
+        instance = result.get("instance") or vm_view(new_vm, hub)
     except HTTPException as exc:
         await transaction_lock(session, f"ios-vm:{new_vm_id}")
         current = await session.get(IosSimVmInstance, new_vm_id, populate_existing=True)
@@ -486,8 +489,7 @@ async def _switch_agent(*, vm: IosSimVmInstance, new_agent_id: str, session: Asy
                            details={"cleanup_confirmed": True, "instance_created": False})
         raw_detail = exc.detail if isinstance(exc.detail, dict) else {}
         message = str(raw_detail.get("message") or exc.detail)
-        detail = operation_failure_detail(current, message,
-            request_id=str(raw_detail.get("request_id") or ""), switched=True,
+        detail = operation_failure_detail(current, message, hub=hub, request_id=str(raw_detail.get("request_id") or ""), switched=True,
             old_vm_id=old_vm_id, old_cleanup_sent=cleanup_sent)
         await session.commit()
         # All three legacy switch paths report a conflict when the target
@@ -515,7 +517,7 @@ async def stop(vm_id: str, session: AsyncSession = DBSession, hub: Hub = HubDep)
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
         raise HTTPException(404, "实例不存在")
-    require_idle(vm, allow_running=True)
+    require_action(vm, "stop", hub, idempotent_stop=True)
     agent_id = str(vm.assigned_agent_id or "")
     if not agent_id:
         raise HTTPException(409, "实例尚未绑定 Agent")
@@ -535,6 +537,6 @@ async def stop(vm_id: str, session: AsyncSession = DBSession, hub: Hub = HubDep)
         if current_operation.get("request_id") == request_id and current_operation.get("outcome") == "succeeded":
             sent = True
         else:
-            raise HTTPException(502, detail=operation_failure_detail(vm, "停止下发失败，本次操作已结束；尚未确认实例停止", request_id=request_id))
+            raise HTTPException(502, detail=operation_failure_detail(vm, "停止下发失败，本次操作已结束；尚未确认实例停止", hub=hub, request_id=request_id))
     await session.refresh(vm)
-    return {"sent": sent, "instance": vm.to_dict()}
+    return {"sent": sent, "instance": vm_view(vm, hub)}

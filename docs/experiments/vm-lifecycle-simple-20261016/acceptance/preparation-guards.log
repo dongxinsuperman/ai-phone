@@ -1,0 +1,19 @@
+test_default_env_and_nonlocal_dns_are_blocked (test_fixture_guards.ActualAuditTests.test_default_env_and_nonlocal_dns_are_blocked) ... ok
+test_fixture_never_builds_a_lifecycle_response_literal_or_imports_native_manager (test_fixture_guards.ActualAuditTests.test_fixture_never_builds_a_lifecycle_response_literal_or_imports_native_manager) ... ok
+test_main_services_external_sockets_and_unix_sockets_are_blocked (test_fixture_guards.ActualAuditTests.test_main_services_external_sockets_and_unix_sockets_are_blocked) ... ok
+test_native_subprocess_and_signals_are_blocked_without_execution (test_fixture_guards.ActualAuditTests.test_native_subprocess_and_signals_are_blocked_without_execution) ... ok
+test_only_loopback_bind_and_own_fixture_connection_are_allowed (test_fixture_guards.ActualAuditTests.test_only_loopback_bind_and_own_fixture_connection_are_allowed) ... ok
+test_actual_fake_harmony_reader_preserves_old_native_identity_after_lease_release (test_fixture_guards.PureFixtureTests.test_actual_fake_harmony_reader_preserves_old_native_identity_after_lease_release) ... ok
+test_freeze_rejects_missing_or_changed_sources (test_fixture_guards.PureFixtureTests.test_freeze_rejects_missing_or_changed_sources) ... ok
+test_native_identities_are_actual_fixture_identity_not_display_alias (test_fixture_guards.PureFixtureTests.test_native_identities_are_actual_fixture_identity_not_display_alias) ... ok
+test_observations_separate_state_and_resource_release (test_fixture_guards.PureFixtureTests.test_observations_separate_state_and_resource_release) ... ok
+test_only_owned_fresh_run_scope_allowed (test_fixture_guards.PureFixtureTests.test_only_owned_fresh_run_scope_allowed) ... ok
+test_preparation_import_and_plan_have_no_product_or_runtime (test_fixture_guards.PureFixtureTests.test_preparation_import_and_plan_have_no_product_or_runtime) ... ok
+test_symlink_run_rejected (test_fixture_guards.PureFixtureTests.test_symlink_run_rejected) ... ok
+test_twenty_one_distinct_twelve_hex_ids (test_fixture_guards.PureFixtureTests.test_twenty_one_distinct_twelve_hex_ids) ... ok
+test_unsafe_or_unknown_identifiers_fail (test_fixture_guards.PureFixtureTests.test_unsafe_or_unknown_identifiers_fail) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 0.019s
+
+OK

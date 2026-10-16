@@ -21,6 +21,7 @@ class _ProbeState:
     hub: Any
     deadline: float
     sequence: int
+    cache_result: bool = True
     terminal: dict[str, str] = field(default_factory=dict)
     responses: dict[str, dict] = field(default_factory=dict)
     updates: asyncio.Queue = field(default_factory=asyncio.Queue)
@@ -90,6 +91,22 @@ class CapabilityProbeWaiter:
         agent = next((a for a in hub.snapshot().get("agents") or [] if a.get("agent_id") == agent_id),
                      {"agent_id": agent_id})
         state, payload = self._prepare(hub, vm, [agent], timeout_sec)
+        return await self._single_result(state, payload, agent_id)
+
+    async def inspect_agent(self, *, hub, vm, agent_id: str, timeout_sec: float = 10.0) -> dict:
+        """One read-only native observation over the existing capability message."""
+        agent = next((a for a in hub.snapshot().get("agents") or [] if a.get("agent_id") == agent_id),
+                     {"agent_id": agent_id})
+        state, payload = self._prepare(hub, vm, [agent], min(10.0, timeout_sec))
+        state.cache_result = False  # an observation is not SDK/port capability evidence
+        payload.update(inspect_instance=True, operation_timeout_sec=5.0)
+        for attribute in ("adb_serial", "udid", "hdc_serial", "lease_token"):
+            if hasattr(vm, attribute):
+                payload[attribute] = getattr(vm, attribute) or ""
+        result = await self._single_result(state, payload, agent_id)
+        return {**result, "request_id": state.request_id}
+
+    async def _single_result(self, state, payload, agent_id):
         async with aclosing(self._events(state, payload)) as events:
             async for _event in events:
                 pass
@@ -139,7 +156,7 @@ class CapabilityProbeWaiter:
             self._finish(state, agent_id, "timeout")
             return False
         accepted = self._finish(state, agent_id, "available" if msg.get("ok") else "unavailable", msg)
-        if accepted and self._cache_latest and state.sequence >= self._latest_sequence.get(agent_id, -1):
+        if accepted and state.cache_result and self._cache_latest and state.sequence >= self._latest_sequence.get(agent_id, -1):
             self._latest[agent_id] = dict(msg)
             self._latest_sequence[agent_id] = state.sequence
         return accepted

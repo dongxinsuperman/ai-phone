@@ -1,0 +1,35 @@
+/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+........................................................................ [ 18%]
+........................................................................ [ 36%]
+........................................................................ [ 54%]
+.......................................................................F [ 73%]
+F............F.......................................................... [ 91%]
+..................................                                       [100%]
+=================================== FAILURES ===================================
+____________ test_android_vm_start_preserves_missing_assigned_agent ____________
+backend/tests/test_android_vm.py:386: in test_android_vm_start_preserves_missing_assigned_agent
+    assert "离线" in resp.json()["detail"]
+E   AssertionError: assert '离线' in {'instance': {'abi': 'auto', 'adb_serial': None, 'alias': 'vm-a', 'api_level': 35, ...}, 'message': '所属 Agent 离线，当前机器状态无法确认', 'request_id': '', 'sent': False, ...}
+___________ test_android_vm_start_send_failure_preserves_assignment ____________
+backend/tests/test_android_vm.py:416: in test_android_vm_start_send_failure_preserves_assignment
+    assert vm.state == "error"
+E   AssertionError: assert 'stopped' == 'error'
+E     
+E     - error
+E     + stopped
+_______________ test_android_vm_reconcile_corrects_stale_running _______________
+backend/tests/test_android_vm.py:776: in test_android_vm_reconcile_corrects_stale_running
+    assert stale.state == "stopped" and stale.adb_serial == "emulator-5554"  # 假 running 被纠正
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert ('running' == 'stopped'
+E     
+E     - stopped
+E     + running)
+=========================== short test summary info ============================
+FAILED backend/tests/test_android_vm.py::test_android_vm_start_preserves_missing_assigned_agent
+FAILED backend/tests/test_android_vm.py::test_android_vm_start_send_failure_preserves_assignment
+FAILED backend/tests/test_android_vm.py::test_android_vm_reconcile_corrects_stale_running
+3 failed, 391 passed in 2.67s

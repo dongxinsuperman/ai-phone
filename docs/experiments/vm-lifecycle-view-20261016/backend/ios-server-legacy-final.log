@@ -1,0 +1,83 @@
+..............F.....F.....F..FF...............F......................... [ 67%]
+...................................                                      [100%]
+=================================== FAILURES ===================================
+_________________ test_non_alias_patch_rejected_while_running __________________
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_server_api.py:276: in test_non_alias_patch_rejected_while_running
+    assert "先停止" in r.json()["detail"]
+E   AssertionError: assert '先停止' in {'instance': {'alias': 'sim-01', 'assigned_agent_id': None, 'config_json': {}, 'created_at': '2026-10-16T03:32:33.957630', ...}, 'message': '运行中只能修改别名，请先停止后修改配置', 'request_id': '', 'sent': False, ...}
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:32:33.869 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-a74cdd40dd0841b39fac64b324adaff4?mode=memory&cache=shared&uri=true
+2026-10-16 11:32:33.952 | INFO     | ai_phone.server.ios_sim.catalog:ensure_catalog_row:142 - iOS 虚拟机官方机型目录已导入：79 个机型（Xcode 26.0.1）
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 11:32:33.959 | INFO     | ai_phone.server.ios_sim.api:create_instance:196 - 已创建 iOS 虚拟机配置 vm_id=d24e53493033 alias=sim-01 机型=iPhone 17 Pro 系统=iOS 26.0
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:32:33.998 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_________________ test_dispatch_to_active_instance_is_rejected _________________
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_server_api.py:495: in test_dispatch_to_active_instance_is_rejected
+    assert "等待本次结果" in r.json()["detail"]
+E   AssertionError: assert '等待本次结果' in {'instance': {'alias': 'sim-01', 'assigned_agent_id': None, 'config_json': {}, 'created_at': '2026-10-16T03:32:34.498462', ...}, 'message': '实例正在操作中，请等待本次结果', 'request_id': '35463d3b2fd747bf', 'sent': False, ...}
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:32:34.440 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-e776e3ba350f474582cb4d8367d9bcce?mode=memory&cache=shared&uri=true
+2026-10-16 11:32:34.493 | INFO     | ai_phone.server.ios_sim.catalog:ensure_catalog_row:142 - iOS 虚拟机官方机型目录已导入：79 个机型（Xcode 26.0.1）
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 11:32:34.500 | INFO     | ai_phone.server.ios_sim.api:create_instance:196 - 已创建 iOS 虚拟机配置 vm_id=543014e3b281 alias=sim-01 机型=iPhone 17 Pro 系统=iOS 26.0
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:32:34.525 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+___________________ test_dispatch_to_same_agent_keeps_vm_id ____________________
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_server_api.py:769: in test_dispatch_to_same_agent_keeps_vm_id
+    assert r.status_code == 200
+E   assert 409 == 200
+E    +  where 409 = <Response [409 Conflict]>.status_code
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:32:34.981 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-c7d32cf6651a49aa8899cdbca5ca7414?mode=memory&cache=shared&uri=true
+2026-10-16 11:32:35.033 | INFO     | ai_phone.server.ios_sim.catalog:ensure_catalog_row:142 - iOS 虚拟机官方机型目录已导入：79 个机型（Xcode 26.0.1）
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 11:32:35.042 | INFO     | ai_phone.server.ios_sim.api:create_instance:196 - 已创建 iOS 虚拟机配置 vm_id=527711fd3c9f alias=sim-01 机型=iPhone 17 Pro 系统=iOS 26.0
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:32:45.105 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+____________________ test_start_sends_payload_without_ports ____________________
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_server_api.py:807: in test_start_sends_payload_without_ports
+    assert r.status_code == 200
+E   assert 409 == 200
+E    +  where 409 = <Response [409 Conflict]>.status_code
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:32:45.266 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-fbab1df6a8174afc929bc2563cb801ef?mode=memory&cache=shared&uri=true
+2026-10-16 11:32:45.318 | INFO     | ai_phone.server.ios_sim.catalog:ensure_catalog_row:142 - iOS 虚拟机官方机型目录已导入：79 个机型（Xcode 26.0.1）
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 11:32:45.325 | INFO     | ai_phone.server.ios_sim.api:create_instance:196 - 已创建 iOS 虚拟机配置 vm_id=b30044fd8bbe alias=sim-01 机型=iPhone 17 Pro 系统=iOS 26.0
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:32:55.400 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+__________ test_stop_offline_agent_fails_attempt_without_losing_owner __________
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_server_api.py:828: in test_stop_offline_agent_fails_attempt_without_losing_owner
+    assert r.status_code == 502
+E   assert 409 == 502
+E    +  where 409 = <Response [409 Conflict]>.status_code
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:32:55.401 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-9dd78efa97ee4bc1b17d4cc72ab8287b?mode=memory&cache=shared&uri=true
+2026-10-16 11:32:55.463 | INFO     | ai_phone.server.ios_sim.catalog:ensure_catalog_row:142 - iOS 虚拟机官方机型目录已导入：79 个机型（Xcode 26.0.1）
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 11:32:55.471 | INFO     | ai_phone.server.ios_sim.api:create_instance:196 - 已创建 iOS 虚拟机配置 vm_id=c5f23b865a6f alias=sim-01 机型=iPhone 17 Pro 系统=iOS 26.0
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:32:55.486 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_________________________ test_reconcile_marks_stopped _________________________
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_server_api.py:1182: in test_reconcile_marks_stopped
+    assert got["state"] == "stopped"
+E   AssertionError: assert 'running' == 'stopped'
+E     
+E     - stopped
+E     + running
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:32:56.668 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-ddeaa8f0c0b249d79cec9944ab58e2b9?mode=memory&cache=shared&uri=true
+2026-10-16 11:32:56.723 | INFO     | ai_phone.server.ios_sim.catalog:ensure_catalog_row:142 - iOS 虚拟机官方机型目录已导入：79 个机型（Xcode 26.0.1）
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 11:32:56.730 | INFO     | ai_phone.server.ios_sim.api:create_instance:196 - 已创建 iOS 虚拟机配置 vm_id=3aee29fa9dce alias=sim-01 机型=iPhone 17 Pro 系统=iOS 26.0
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:32:56.744 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+=========================== short test summary info ============================
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_server_api.py::test_non_alias_patch_rejected_while_running
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_server_api.py::test_dispatch_to_active_instance_is_rejected
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_server_api.py::test_dispatch_to_same_agent_keeps_vm_id
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_server_api.py::test_start_sends_payload_without_ports
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_server_api.py::test_stop_offline_agent_fails_attempt_without_losing_owner
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_server_api.py::test_reconcile_marks_stopped
+6 failed, 101 passed, 2 warnings in 25.68s

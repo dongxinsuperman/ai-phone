@@ -1,0 +1,17 @@
+Inherited guard SHA256: 215fa9de852b259f27213a7e8462ad48e08a5e5088ea225d1d21d7210cbe072a
+........................................................................ [ 55%]
+..........................................................               [100%]
+============================= slowest 12 durations =============================
+0.05s call     tests/test_harmony_vm_agent_hardening.py::test_parallel_registry_publication_preserves_every_vm
+0.02s setup    tests/test_harmony_vm_instance_observation.py::test_unrelated_program_without_argv_does_not_add_a_permission_requirement
+0.02s call     tests/test_harmony_vm_agent_hardening.py::test_orphan_inventory_marks_pending_and_unverified_vms_unknown
+0.02s call     tests/test_harmony_vm_agent_hardening.py::test_required_existing_instance_is_never_created_from_missing_registry
+0.02s call     tests/test_harmony_vm_agent_hardening.py::test_late_creation_result_cannot_spawn_after_deadline
+0.02s call     tests/test_harmony_vm_agent_hardening.py::test_first_bind_failure_rolls_back_only_its_new_definition_once[before_definition]
+0.01s call     tests/test_harmony_vm_agent_hardening.py::test_first_bind_failure_rolls_back_only_its_new_definition_once[partial_definition]
+0.01s call     tests/test_harmony_vm_agent_hardening.py::test_actual_agent_terminal_provenance_controls_server_abandoned_cleanup[new]
+0.01s call     tests/test_harmony_vm_instance_observation.py::test_failure_reports_current_facts_instead_of_old_saved_exit_evidence[start]
+
+(3 durations < 0.005s hidden.  Use -vv to show these durations.)
+130 passed in 0.64s
+{"final_exit_code": 0, "source_unchanged": true, "duration_seconds": 1.306}

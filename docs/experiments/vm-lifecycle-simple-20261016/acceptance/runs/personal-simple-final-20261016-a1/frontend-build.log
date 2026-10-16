@@ -1,0 +1,9 @@
+vite v8.0.8 building client environment for production...
+[2Ktransforming...✓ 62 modules transformed.
+rendering chunks...
+computing gzip size...
+../docs/experiments/vm-lifecycle-simple-20261016/acceptance/runs/personal-simple-final-20261016-a1/web-dist/index.html                   0.46 kB │ gzip:  0.30 kB
+../docs/experiments/vm-lifecycle-simple-20261016/acceptance/runs/personal-simple-final-20261016-a1/web-dist/assets/index-B0yON5c8.css   89.50 kB │ gzip: 14.58 kB
+../docs/experiments/vm-lifecycle-simple-20261016/acceptance/runs/personal-simple-final-20261016-a1/web-dist/assets/index-CWQeoItH.js   306.46 kB │ gzip: 99.59 kB
+
+✓ built in 274ms

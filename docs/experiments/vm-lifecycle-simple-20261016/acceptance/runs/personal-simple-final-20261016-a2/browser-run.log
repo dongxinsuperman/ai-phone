@@ -1,0 +1,9 @@
+{"status":"failed","cleanup":{"private_browser_pid":33348,"exit_code":0,"signal_code":null,"process_exited":true,"context_closed":true,"scratch_removed":true,"errors":[]}}
+Error: android/start_failure: explicit ordinary start accepted once
+    at check (eval at main (/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/run_browser.cjs:57:24), <anonymous>:8:20)
+    at eval (eval at main (/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/run_browser.cjs:57:24), <anonymous>:149:7)
+    at runNextTicks (node:internal/process/task_queues:60:5)
+    at process.processImmediate (node:internal/timers:454:9)
+    at process.callbackTrampoline (node:internal/async_hooks:130:17)
+    at async bounded (/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/run_browser.cjs:28:14)
+    at async main (/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/run_browser.cjs:58:14)

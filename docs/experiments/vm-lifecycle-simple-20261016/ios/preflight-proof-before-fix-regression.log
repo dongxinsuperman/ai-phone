@@ -1,0 +1,328 @@
+F
+=================================== FAILURES ===================================
+_ test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID] _
+
+env = {'calls': [], 'create_udid': '11111111-2222-3333-4444-555555555555', 'instances': {'11111111-2222-3333-4444-5555555555...', 'is_available': True, 'name': 'aiphone_sim_abc123', 'runtime': 'com.apple.CoreSimulator.SimRuntime.iOS-26-0', ...}}}
+overrides = {'udid': 'WRONG-UDID'}, error = '请求 UDID'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("overrides,error", [
+        ({"udid": "WRONG-UDID"}, "请求 UDID"),
+        ({"device_type": fixture._DT + "-Other"}, "配置不一致"),
+    ])
+    async def test_preflight_failure_never_inherits_previous_creation_proof(env, overrides, error):
+        manager = Manager()
+        manager.start_sync(msg())
+        runtime = manager._runtimes[VM]
+        assert runtime.details["created_in_attempt"] is True
+        launcher = runtime.launcher
+        started = launcher.started
+        client = Client()
+        env["calls"].clear()
+    
+        await manager.handle_start(client, msg(rollback_new_instance=True, **overrides))
+    
+        result = client.sent[-1]
+        assert result["ok"] is False and result["state"] == "error"
+        assert error in result["error"]
+>       assert result["details"]["created_in_attempt"] is False
+E       assert True is False
+
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_instance_observation.py:429: AssertionError
+----------------------------- Captured stderr call -----------------------------
+2026-10-16 11:24:58.094 | INFO     | ai_phone.agent.ios_sim.manager:_ensure_instance:833 - 已创建受管虚拟机 name=aiphone_sim_abc123 udid=11111111-2222-3333-4444-555555555555
+2026-10-16 11:24:58.112 | INFO     | ai_phone.agent.ios_sim.manager:_start_sync_locked:728 - iOS 虚拟机已就绪 vm_id=abc123 udid=11111111-2222-3333-4444-555555555555 name=aiphone_sim_abc123 wda=8342 
+2026-10-16 11:24:58.112 | ERROR    | ai_phone.agent.ios_sim.manager:_start_and_report:345 - iOS 虚拟机启动失败 vm_id=abc123: 请求 UDID 与本机准确实例不符，未执行启动
+Traceback (most recent call last):
+
+  File "<stdin>", line 7, in <module>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-audit-20261015/handoff/run_main_flow_isolated.py", line 172, in run
+    exit_code = int(pytest.main(args, plugins=[EvidencePlugin()]))
+                    │      │    │              └ <class 'run_main_flow_isolated.run.<locals>.EvidencePlugin'>
+                    │      │    └ ['-p', 'pytest_asyncio.plugin', '-p', 'pytest_timeout', '-o', 'asyncio_default_fixture_loop_scope=function', '--rootdir', '/U...
+                    │      └ <function main at 0x103b95d00>
+                    └ <module 'pytest' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pytest/__init__.py'>
+
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/config/__init__.py", line 199, in main
+    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)
+         │                │      │    │                          └ <_pytest.config.Config object at 0x104212dd0>
+         │                │      │    └ <HookCaller 'pytest_cmdline_main'>
+         │                │      └ <_pytest.config.compat.PathAwareHookProxy object at 0x1042180d0>
+         │                └ <_pytest.config.Config object at 0x104212dd0>
+         └ <enum 'ExitCode'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'config': <_pytest.config.Config object at 0x104212dd0>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_cmdline_main'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_cmdline_main'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_cmdline_main'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'config': <_pytest.config.Config object at 0x104212dd0>}
+           │    │               │          └ [<HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyt...
+           │    │               └ 'pytest_cmdline_main'
+           │    └ <function _multicall at 0x102c856c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102ababd0>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<_pytest.config.Config object at 0x104212dd0>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyth...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 365, in pytest_cmdline_main
+    return wrap_session(config, _main)
+           │            │       └ <function _main at 0x103c504a0>
+           │            └ <_pytest.config.Config object at 0x104212dd0>
+           └ <function wrap_session at 0x103c50360>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 318, in wrap_session
+    session.exitstatus = doit(config, session) or 0
+    │       │            │    │       └ <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=2>
+    │       │            │    └ <_pytest.config.Config object at 0x104212dd0>
+    │       │            └ <function _main at 0x103c504a0>
+    │       └ <ExitCode.OK: 0>
+    └ <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=2>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 372, in _main
+    config.hook.pytest_runtestloop(session=session)
+    │      │    │                          └ <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=2>
+    │      │    └ <HookCaller 'pytest_runtestloop'>
+    │      └ <_pytest.config.compat.PathAwareHookProxy object at 0x1042180d0>
+    └ <_pytest.config.Config object at 0x104212dd0>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'session': <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=2>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_runtestloop'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_runtestloop'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_runtestloop'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'session': <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=2>}
+           │    │               │          └ [<HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyt...
+           │    │               └ 'pytest_runtestloop'
+           │    └ <function _multicall at 0x102c856c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102ababd0>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=2>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='main', plugin=<module '_pytest.main' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/pyth...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/main.py", line 396, in pytest_runtestloop
+    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+    │    │                                        │              └ <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides1-\u914d\u7f6e\u4e0d\u4e00\u81f4]>
+    │    │                                        └ <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>
+    │    └ <member 'config' of 'Node' objects>
+    └ <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'item': <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>, 'nextitem':...
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_runtest_protocol'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_runtest_protocol'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_runtest_protocol'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'item': <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>, 'nextitem':...
+           │    │               │          └ [<HookImpl plugin_name='runner', plugin=<module '_pytest.runner' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib...
+           │    │               └ 'pytest_runtest_protocol'
+           │    └ <function _multicall at 0x102c856c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102ababd0>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>, <Coroutine test_pre...
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='runner', plugin=<module '_pytest.runner' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 118, in pytest_runtest_protocol
+    runtestprotocol(item, nextitem=nextitem)
+    │               │              └ <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides1-\u914d\u7f6e\u4e0d\u4e00\u81f4]>
+    │               └ <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>
+    └ <function runtestprotocol at 0x103c4f560>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 137, in runtestprotocol
+    reports.append(call_and_report(item, "call", log))
+    │       │      │               │             └ True
+    │       │      │               └ <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>
+    │       │      └ <function call_and_report at 0x103c4f9c0>
+    │       └ <method 'append' of 'list' objects>
+    └ [<TestReport 'tests/test_ios_sim_instance_observation.py::test_preflight_failure_never_inherits_previous_creation_proof[overr...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 244, in call_and_report
+    call = CallInfo.from_call(
+           │        └ <classmethod(<function CallInfo.from_call at 0x103c4fd80>)>
+           └ <class '_pytest.runner.CallInfo'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 353, in from_call
+    result: TResult | None = func()
+            │                └ <function call_and_report.<locals>.<lambda> at 0x11173d120>
+            └ +TResult
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 245, in <lambda>
+    lambda: runtest_hook(item=item, **kwds),
+            │                 │       └ {}
+            │                 └ <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>
+            └ <HookCaller 'pytest_runtest_call'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ False
+           │    │         │    │     │    │                  └ {'item': <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_runtest_call'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_runtest_call'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_runtest_call'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ False
+           │    │               │          │        └ {'item': <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>}
+           │    │               │          └ [<HookImpl plugin_name='threadexception', plugin=<module '_pytest.threadexception' from '/Users/dongxin/代码文件/sonic合集/ai-phone...
+           │    │               └ 'pytest_runtest_call'
+           │    └ <function _multicall at 0x102c856c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102ababd0>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='runner', plugin=<module '_pytest.runner' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/runner.py", line 179, in pytest_runtest_call
+    item.runtest()
+    │    └ <function PytestAsyncioFunction.runtest at 0x10589e980>
+    └ <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py", line 469, in runtest
+    super().runtest()
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/python.py", line 1720, in runtest
+    self.ihook.pytest_pyfunc_call(pyfuncitem=self)
+    │    │                                   └ <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>
+    │    └ <property object at 0x103baee30>
+    └ <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+           │    │         │    │     │    │                  │       └ True
+           │    │         │    │     │    │                  └ {'pyfuncitem': <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>}
+           │    │         │    │     │    └ <member '_hookimpls' of 'HookCaller' objects>
+           │    │         │    │     └ <HookCaller 'pytest_pyfunc_call'>
+           │    │         │    └ <member 'name' of 'HookCaller' objects>
+           │    │         └ <HookCaller 'pytest_pyfunc_call'>
+           │    └ <member '_hookexec' of 'HookCaller' objects>
+           └ <HookCaller 'pytest_pyfunc_call'>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+           │    │               │          │        │       └ True
+           │    │               │          │        └ {'pyfuncitem': <Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>}
+           │    │               │          └ [<HookImpl plugin_name='python', plugin=<module '_pytest.python' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib...
+           │    │               └ 'pytest_pyfunc_call'
+           │    └ <function _multicall at 0x102c856c0>
+           └ <_pytest.config.PytestPluginManager object at 0x102ababd0>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+          │         │         └ [<Coroutine test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]>]
+          │         └ <member 'function' of 'HookImpl' objects>
+          └ <HookImpl plugin_name='python', plugin=<module '_pytest.python' from '/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/...
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/_pytest/python.py", line 166, in pytest_pyfunc_call
+    result = testfunction(**testargs)
+             │              └ {'env': {'instances': {'11111111-2222-3333-4444-555555555555': {'name': 'aiphone_sim_abc123', 'state': 'Booted', 'runtime': '...
+             └ <function test_preflight_failure_never_inherits_previous_creation_proof at 0x11173cb80>
+  File "/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py", line 716, in inner
+    runner.run(coro, context=context)
+    │      │   │             └ <_contextvars.Context object at 0x112008740>
+    │      │   └ <coroutine object test_preflight_failure_never_inherits_previous_creation_proof at 0x1107b40c0>
+    │      └ <function Runner.run at 0x1043f02c0>
+    └ <asyncio.runners.Runner object at 0x1120093d0>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           │    │     │                  └ <Task pending name='Task-1' coro=<test_preflight_failure_never_inherits_previous_creation_proof() running at /Users/dongxin/....
+           │    │     └ <function BaseEventLoop.run_until_complete at 0x1043e5ee0>
+           │    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+           └ <asyncio.runners.Runner object at 0x1120093d0>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 641, in run_until_complete
+    self.run_forever()
+    │    └ <function BaseEventLoop.run_forever at 0x1043e5e40>
+    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 608, in run_forever
+    self._run_once()
+    │    └ <function BaseEventLoop._run_once at 0x1043e7c40>
+    └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 1936, in _run_once
+    handle._run()
+    │      └ <function Handle._run at 0x1043949a0>
+    └ <Handle Task.task_wakeup(<Future finis...确实例不符，未执行启动')>)>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/events.py", line 84, in _run
+    self._context.run(self._callback, *self._args)
+    │    │            │    │           │    └ <member '_args' of 'Handle' objects>
+    │    │            │    │           └ <Handle Task.task_wakeup(<Future finis...确实例不符，未执行启动')>)>
+    │    │            │    └ <member '_callback' of 'Handle' objects>
+    │    │            └ <Handle Task.task_wakeup(<Future finis...确实例不符，未执行启动')>)>
+    │    └ <member '_context' of 'Handle' objects>
+    └ <Handle Task.task_wakeup(<Future finis...确实例不符，未执行启动')>)>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_instance_observation.py", line 424, in test_preflight_failure_never_inherits_previous_creation_proof
+    await manager.handle_start(client, msg(rollback_new_instance=True, **overrides))
+          │       │            │       │                                 └ {'udid': 'WRONG-UDID'}
+          │       │            │       └ <function _msg at 0x111796700>
+          │       │            └ <ios_observation_fixture.RecordingClient object at 0x112098a10>
+          │       └ <function IosSimVmManager.handle_start at 0x111794360>
+          └ <ai_phone.agent.ios_sim.manager.IosSimVmManager object at 0x11200a690>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/ios_sim/manager.py", line 289, in handle_start
+    await self._start_and_report(client, msg)
+          │    │                 │       └ {'vm_id': 'abc123', 'alias': '测试机', 'device_type': 'com.apple.CoreSimulator.SimDeviceType.iPhone-16e', 'runtime': '26.0', 'ro...
+          │    │                 └ <ios_observation_fixture.RecordingClient object at 0x112098a10>
+          │    └ <function IosSimVmManager._start_and_report at 0x111794540>
+          └ <ai_phone.agent.ios_sim.manager.IosSimVmManager object at 0x11200a690>
+
+> File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/ios_sim/manager.py", line 343, in _start_and_report
+    result = await asyncio.to_thread(self.start_sync, operation_msg)
+                   │       │         │    │           └ {'vm_id': 'abc123', 'alias': '测试机', 'device_type': 'com.apple.CoreSimulator.SimDeviceType.iPhone-16e', 'runtime': '26.0', 'ro...
+                   │       │         │    └ <function IosSimVmManager.start_sync at 0x111794900>
+                   │       │         └ <ai_phone.agent.ios_sim.manager.IosSimVmManager object at 0x11200a690>
+                   │       └ <function to_thread at 0x10580d440>
+                   └ <module 'asyncio' from '/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asy...
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+                 │    │                     └ functools.partial(<built-in method run of _contextvars.Context object at 0x11200a700>, <bound method IosSimVmManager.start_sy...
+                 │    └ <function BaseEventLoop.run_in_executor at 0x1043e67a0>
+                 └ <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             │        │            └ None
+             │        └ None
+             └ None
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/ios_sim/manager.py", line 559, in start_sync
+    return self._start_sync_locked(vm_id, msg, attempt, deadline)
+           │    │                  │      │    │        └ None
+           │    │                  │      │    └ {'rollback_allowed': False}
+           │    │                  │      └ {'vm_id': 'abc123', 'alias': '测试机', 'device_type': 'com.apple.CoreSimulator.SimDeviceType.iPhone-16e', 'runtime': '26.0', 'ro...
+           │    │                  └ 'abc123'
+           │    └ <function IosSimVmManager._start_sync_locked at 0x1117949a0>
+           └ <ai_phone.agent.ios_sim.manager.IosSimVmManager object at 0x11200a690>
+
+  File "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/ai_phone/agent/ios_sim/manager.py", line 598, in _start_sync_locked
+    raise InstanceIdentityError("请求 UDID 与本机准确实例不符，未执行启动")
+          └ <class 'ai_phone.agent.ios_sim.manager.InstanceIdentityError'>
+
+ai_phone.agent.ios_sim.manager.InstanceIdentityError: 请求 UDID 与本机准确实例不符，未执行启动
+============================= slowest 15 durations =============================
+0.03s call     tests/test_ios_sim_instance_observation.py::test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]
+
+(2 durations < 0.005s hidden.  Use -vv to show these durations.)
+=========================== short test summary info ============================
+FAILED ../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_ios_sim_instance_observation.py::test_preflight_failure_never_inherits_previous_creation_proof[overrides0-\u8bf7\u6c42 UDID]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.13s
+{"pytest_exit_code": 1, "collected": 2, "blocked_external_calls": 1, "product_source_unchanged": true}

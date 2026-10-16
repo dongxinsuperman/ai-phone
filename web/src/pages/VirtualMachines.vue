@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { internal } from '../lib/api.js'
 import { candidateAvailable, createVmCandidateProbe } from '../lib/vmCandidateProbe.js'
+import { canStart, canStop, canProbe, canDelete, canCopy, showStart, showStop, lifecycleState, lifecycleNotice, operationError, stateLabel, stateClass, agentLabel } from '../lib/vmLifecycle.js'
 
 const instances = ref([])
 const deviceProfiles = ref([])
@@ -722,7 +723,7 @@ async function createVm(options = {}) {
 
 // 复制 = 纯复制：弹窗只收一个新别名，其余参数原机照搬、不允许改。
 function copyConfig(vm) {
-  if (isVmBusy(vm) || isTransitioning(vm)) return
+  if (isVmBusy(vm) || !canCopy(vm)) return
   copyDlg.vm = vm
   copyDlg.alias = ''
   copyDlg.error = ''
@@ -740,8 +741,8 @@ async function confirmCopy() {
   const src = copyDlg.vm
   if (!src) return
   const current = instances.value.find((item) => item.id === src.id)
-  if (!current || isVmBusy(current) || isTransitioning(current)) {
-    copyDlg.error = '源设备正在处理或已删除，请等待完成后重试'
+  if (!current || isVmBusy(current) || !canCopy(current)) {
+    copyDlg.error = '当前实例暂不能复制，请刷新后再操作'
     return
   }
   const alias = (copyDlg.alias || '').trim()
@@ -850,6 +851,7 @@ async function startVm(vm) {
     await refresh({ quiet: true })
   } catch (e) {
     err.value = prettyErr(e)
+    if (e?.detail?.instance?.id) applyOperationResult(vm, e.detail)
     await refresh({ quiet: true })
   } finally {
     delete busyByVm[vm.id]
@@ -867,6 +869,8 @@ async function stopVm(vm) {
     await refresh({ quiet: true })
   } catch (e) {
     err.value = prettyErr(e)
+    if (e?.detail?.instance?.id) applyOperationResult(vm, e.detail)
+    await refresh({ quiet: true })
   } finally {
     delete busyByVm[vm.id]
   }
@@ -893,37 +897,8 @@ async function removeVm(vm) {
   }
 }
 
-function statusDetails(vm) {
-  return vm.runtime?.last_status?.details || {}
-}
-function isTransitioning(vm) {
-  return ['dispatching', 'starting', 'stopping', 'probing', 'creating', 'connecting_hdc', 'checking_driver'].includes(vm.state)
-}
 function isVmBusy(vm) {
   return Boolean(busyByVm[vm.id])
-}
-function hasUnconfirmedRuntime(vm) {
-  if (!vm.assigned_agent_id) return false
-  const details = statusDetails(vm)
-  if (details.cleanup_confirmed === true) return false
-  if (details.cleanup_pending === true || details.cleanup_confirmed === false) return true
-  return Boolean(vm.assigned_agent_id)
-    && ['running', 'error', 'unavailable', 'agent_offline'].includes(vm.state)
-}
-function canProbe(vm) {
-  return !isTransitioning(vm) && vm.state !== 'running'
-}
-function canStart(vm) {
-  return Boolean(vm.assigned_agent_id) && !isTransitioning(vm)
-    && ['draft', 'stopped', 'error', 'unavailable', 'agent_offline'].includes(vm.state)
-    && !hasUnconfirmedRuntime(vm)
-}
-function canStop(vm) {
-  return Boolean(vm.assigned_agent_id) && !isTransitioning(vm)
-    && (vm.state === 'running' || hasUnconfirmedRuntime(vm))
-}
-function canDelete(vm) {
-  return !isTransitioning(vm) && vm.state !== 'running'
 }
 function canDispatchTo(vm, agent) {
   const busy = busyByVm[vm.id]
@@ -935,28 +910,10 @@ function dispatchLabel(vm, agent) {
   if (agent.probe_state === 'timeout') return '超时'
   if (agent.probe_state === 'offline') return '离线'
   if (!candidateAvailable(agent)) return '不可用'
-  if (!canDispatchTo(vm, agent)) return '需先停止'
   return vm.assigned_agent_id && agent.agent_id !== vm.assigned_agent_id
     ? '换到这台'
     : '下发'
 }
-function agentLabel(vm) {
-  if (vm.assigned_agent_id) return vm.assigned_agent_id
-  const target = vm.runtime?.operation?.target_agent_id
-  return isTransitioning(vm) && target ? `绑定中：${target}` : '未分配'
-}
-function operationError(vm) {
-  if (vm.state === 'agent_offline') return ''
-  return vm.error_message || ''
-}
-function lifecycleNotice(vm) {
-  if (vm.state === 'agent_offline') return '所属 Agent 已离线，实例状态暂时无法确认。'
-  if (!isTransitioning(vm) && vm.state !== 'running' && hasUnconfirmedRuntime(vm)) {
-    return '尚未确认实例停止；再次启动前，请先完成停止。'
-  }
-  return ''
-}
-
 function vmRam(vm) {
   const ram = Number(vm.config_json?.performance?.ram_mb || 0)
   return ram ? `${ram}MB` : '-'
@@ -1094,31 +1051,6 @@ function hasTag(profile, tag) {
 
 function diffNote(profile) {
   return profile?.raw?.diff_note || profile?.config_template?.identity?.diff_note || ''
-}
-
-function stateLabel(state) {
-  return {
-    draft: '未下发',
-    dispatching: '下发中',
-    starting: '启动中',
-    probing: '探查中',
-    creating: '启动中',
-    connecting_hdc: '启动中',
-    checking_driver: '启动中',
-    running: '运行中',
-    stopping: '停止中',
-    stopped: '已停止',
-    unavailable: '不可用',
-    agent_offline: '待恢复',
-    error: '异常',
-  }[state] || state || '-'
-}
-
-function stateClass(state) {
-  if (state === 'running') return 'ok'
-  if (['starting', 'dispatching', 'stopping', 'agent_offline', 'probing', 'creating', 'connecting_hdc', 'checking_driver'].includes(state)) return 'busy'
-  if (['unavailable', 'error'].includes(state)) return 'bad'
-  return 'idle'
 }
 
 function prettyErr(e) {
@@ -1548,7 +1480,7 @@ defineExpose({ refresh })
           <div v-for="vm in instances" :key="vm.id" class="vm-card">
             <div class="vm-card-head">
               <strong class="vm-name" :title="`vm_id: ${vm.id}`">{{ vm.alias || vm.name || '未命名' }}</strong>
-              <i class="state" :class="stateClass(vm.state)">{{ stateLabel(vm.state) }}</i>
+              <i class="state" :class="stateClass(vm)">{{ stateLabel(vm) }}</i>
             </div>
             <div class="vm-meta">
               <div><span>机型</span><b :title="vmProfileName(vm)">{{ vmProfileName(vm) }}</b></div>
@@ -1563,18 +1495,18 @@ defineExpose({ refresh })
               <button v-if="canProbe(vm)" type="button" :disabled="isVmBusy(vm)" @click="probe(vm)">
                 {{ busyByVm[vm.id] === 'probe' ? '探查中…' : (vm.assigned_agent_id ? '换 Agent（探查）' : '探查') }}
               </button>
-              <button v-if="canStart(vm)" type="button" :disabled="isVmBusy(vm)" @click="startVm(vm)">
-                {{ busyByVm[vm.id] === 'start' ? '启动中…' : '启动' }}
+              <button v-if="showStart(vm)" type="button" :disabled="!canStart(vm) || isVmBusy(vm)" @click="startVm(vm)">
+                {{ busyByVm[vm.id] === 'start' || lifecycleState(vm) === 'starting' ? '启动中…' : '启动' }}
               </button>
-              <button v-if="canStop(vm)" type="button" :disabled="isVmBusy(vm)" @click="stopVm(vm)">
-                {{ busyByVm[vm.id] === 'stop' ? '停止中…' : (vm.state === 'running' ? '停止' : '重试停止') }}
+              <button v-if="showStop(vm)" type="button" :disabled="!canStop(vm) || isVmBusy(vm)" @click="stopVm(vm)">
+                {{ busyByVm[vm.id] === 'stop' || lifecycleState(vm) === 'stopping' ? '停止中…' : '停止' }}
               </button>
-              <button type="button" :disabled="isVmBusy(vm) || isTransitioning(vm)" @click="copyConfig(vm)">复制配置</button>
+              <button type="button" :disabled="isVmBusy(vm) || !canCopy(vm)" @click="copyConfig(vm)">复制配置</button>
               <button v-if="canDelete(vm)" type="button" class="danger" :disabled="isVmBusy(vm)" @click="removeVm(vm)">{{ busyByVm[vm.id] === 'delete' ? '删除中…' : '删除' }}</button>
             </div>
 
             <p v-if="lifecycleNotice(vm)" class="lifecycle-notice">{{ lifecycleNotice(vm) }}</p>
-            <p v-if="operationError(vm)" class="vm-operation-error">{{ operationError(vm) }}</p>
+            <p v-if="operationError(vm)" class="vm-operation-error">上次操作未成功：{{ operationError(vm) }}</p>
 
             <div v-if="candidateVmId === vm.id && canProbe(vm)" :ref="(el) => setCandidatesRef(vm.id, el)" class="vm-candidates">
               <div class="candidates-head">

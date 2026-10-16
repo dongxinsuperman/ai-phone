@@ -1,0 +1,31 @@
+........................................................................ [ 13%]
+........................................................................ [ 27%]
+........................................................................ [ 40%]
+....s..s................................................................ [ 54%]
+........................................................................ [ 67%]
+........................................................................ [ 81%]
+........................................................................ [ 94%]
+.............FF.............                                             [100%]
+=================================== FAILURES ===================================
+_ test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py:111: in test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence
+    assert view["notice"], "尚未释放资源必须仍可见"
+E   AssertionError: 尚未释放资源必须仍可见
+E   assert ''
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:34:46.951 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-eaf64fda0aff4daa88b5e06e20e062b4?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:34:47.019 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+_ test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py:111: in test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence
+    assert view["notice"], "尚未释放资源必须仍可见"
+E   AssertionError: 尚未释放资源必须仍可见
+E   assert ''
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:34:47.020 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-cf669d8e7091450b9e24859a41077419?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:34:47.063 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+=========================== short test summary info ============================
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py::test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[None]
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_harmony_legacy_lease_upgrade.py::test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_checks_absence[host-one]
+2 failed, 528 passed, 2 skipped, 2 warnings in 18.57s

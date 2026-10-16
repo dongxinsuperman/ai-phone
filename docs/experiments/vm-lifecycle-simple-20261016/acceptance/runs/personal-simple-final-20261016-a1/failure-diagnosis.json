@@ -1,0 +1,18 @@
+{
+  "at": "2026-10-16T03:38:09.244899+00:00",
+  "failure_class": "fixture_bootstrap_import_order",
+  "root_cause": "domain router imported before ai_phone.server.api package bootstrap, unlike the previously verified fixture",
+  "fixture_process": {
+    "pid": 32900,
+    "exists": false
+  },
+  "http_bound": false,
+  "browser_started": false,
+  "native_vm_or_agent_started": false,
+  "runtime_removed": true,
+  "raw_summary_unchanged": true,
+  "audit_evidence_written": false,
+  "blocked_calls": null,
+  "product_source_changed": false,
+  "next_attempt_requires_separate_run": true
+}

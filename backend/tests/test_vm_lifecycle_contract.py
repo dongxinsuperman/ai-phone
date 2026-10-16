@@ -85,7 +85,14 @@ async def make_vm(session, platform, state="stopped", owner="old"):
     vm = platform.model(**fields)
     session.add(vm)
     await session.flush()
-    update_runtime(vm, owner_host_id="host-one", instance_created=True)
+    update_runtime(vm, owner_host_id="host-one", instance_created=bool(owner))
+    if state == "stopped":
+        # These cases start from an already confirmed stop; unknown native
+        # facts are exercised separately through the read-only inspect API.
+        update_runtime(vm, last_status={"state": "stopped", "ok": True,
+                       "details": {"cleanup_confirmed": True}})
+    if not owner:
+        setattr(vm, platform.serial, None)
     await session.commit()
     return vm
 
@@ -219,7 +226,9 @@ async def test_stopped_legacy_instance_adopts_verified_restarted_host_once(sessi
                     "state": "stopped",
                     "details": {
                         "instance_name": f"aiphone_harmony_{vm.id}",
+                        "instance_path": "/fixture/managed/instances",
                         "managed_instance_present": True,
+                        "cleanup_confirmed": True,
                     },
                 }
             ],
@@ -740,8 +749,9 @@ async def test_late_first_start_after_timeout_is_cleaned_once_without_binding_or
 def test_timeout_does_not_reuse_cleanup_proof_from_previous_attempt():
     from ai_phone.server.vm_lifecycle import fail_attempt, require_startable
 
-    vm = SimpleNamespace(
+    vm = AndroidVmInstance(
         id="no-live-task",
+        name="timeout-contract", alias="timeout-contract",
         state="starting",
         assigned_agent_id=None,
         error_message="",

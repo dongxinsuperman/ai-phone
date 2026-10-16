@@ -1,0 +1,20 @@
+........................................................................ [ 28%]
+...........s..s......................................................... [ 56%]
+........................................................................ [ 85%]
+.......F..............................                                   [100%]
+=================================== FAILURES ===================================
+_ test_restoring_ledger_without_new_native_ids_authorizes_orphan_delete[harmony] _
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_independent_review.py:224: in test_restoring_ledger_without_new_native_ids_authorizes_orphan_delete
+    await platform.svc.handle_vm_reconcile("personal-new-session", stopped_inventory(platform, vm), hub)
+                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_independent_review.py:92: in stopped_inventory
+    "lease_token": vm.lease_token or "", "hdc_serial": vm.hdc_serial or ""},
+                   ^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute 'lease_token'
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:31:33.444 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-be1f698c8d7d497cafaa5507fa94e4ff?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:31:33.501 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+=========================== short test summary info ============================
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_upgrade_independent_review.py::test_restoring_ledger_without_new_native_ids_authorizes_orphan_delete[harmony]
+1 failed, 251 passed, 2 skipped, 2 warnings in 9.59s

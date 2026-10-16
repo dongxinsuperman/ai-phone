@@ -1,0 +1,10 @@
+{
+  "base_commit": "82e48bc899fe9334fd683149d01c2c8aeeacc85b",
+  "tested_source_label": "82e48bc plus iOS read-only instance observation and ordinary start/stop facts",
+  "source_sha256": {
+    "backend/ai_phone/agent/ios_sim/manager.py": "62d987e78425f1f9953638c3d2c34b12db396c2d1f7329aa71c3d191cdd39653",
+    "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+    "backend/tests/test_ios_sim_manager.py": "5abe15d84dd0714c396d5bff0d6d36f0485db8743c3bcc4fe529f5d3f99a80b9",
+    "backend/tests/test_ios_sim_instance_observation.py": "b3e258fdb4b552c1c98987a6bd5c4d4ade0b8dd80b66c90a3a48ad6880f71e41"
+  }
+}

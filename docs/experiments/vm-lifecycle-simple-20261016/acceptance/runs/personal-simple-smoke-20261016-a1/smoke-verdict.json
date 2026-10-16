@@ -1,0 +1,8 @@
+{
+  "status": "operation_checks_passed_cleanup_passed_source_check_incomplete",
+  "at": "2026-10-16T03:44:09.272091+00:00",
+  "actions": 6,
+  "reason": "Standalone smoke CLI passed a relative manifest path; fixture chdir made final re-open fail. Browser runner already passes absolute paths. Resolve once at fixture entry before any chdir.",
+  "raw_evidence_preserved": true,
+  "product_source_changed": false
+}

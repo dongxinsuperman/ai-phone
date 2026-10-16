@@ -17,6 +17,8 @@ from ..api.submissions import RequireBearer
 from ..hub import Hub
 from ..vm_probe import probe_stream_response
 from ..vm_lifecycle import (
+    vm_view, require_action, require_editable,
+    ensure_start_observation, start_preflight_snapshot, reject_start_preflight,
     operation_failure_detail,
     is_untouched_draft,
     require_retirement_allowed, send_operation_once,
@@ -41,7 +43,6 @@ from .schemas import (
     HarmonyVmSettingReq,
 )
 from .service import (
-    ACTIVE_STATES,
     allocate_port_lease,
     capability_excluded_ports,
     delete_owned_alias,
@@ -78,7 +79,7 @@ catalog_router = APIRouter(
 
 REDISPATCH_REQUIRED = "assigned agent offline; please probe and dispatch again"
 LEASE_CLEANUP_REQUIRED = (
-    "旧鸿蒙虚拟机尚未确认停止；请先重试停止，或核实旧宿主机实例已关闭后确认释放占用"
+    "原实例资源尚未核实，本次操作未执行"
 )
 
 # 创建时按官方目录校验并写死的字段，之后一律不可改。
@@ -339,19 +340,19 @@ async def import_catalog(
 
 
 @router.get("")
-async def list_instances(session: AsyncSession = DBSession) -> List[Dict[str, Any]]:
+async def list_instances(session: AsyncSession = DBSession, hub: Hub = HubDep) -> List[Dict[str, Any]]:
     rows = (
         await session.execute(
             select(HarmonyVmInstance).order_by(HarmonyVmInstance.created_at.desc())
         )
     ).scalars().all()
-    return [row.to_dict() for row in rows]
+    return [vm_view(row, hub) for row in rows]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_instance(
     body: HarmonyVmCreateReq,
-    session: AsyncSession = DBSession,
+    session: AsyncSession = DBSession, hub: Hub = HubDep,
 ) -> Dict[str, Any]:
     alias = _alias(body.alias, body.name)
     if not alias:
@@ -514,16 +515,16 @@ async def create_instance(
     await reserve_placeholder_alias(session, vm)
     await session.commit()
     await session.refresh(vm)
-    return vm.to_dict()
+    return vm_view(vm, hub)
 
 
 @router.get("/{vm_id}")
 async def get_instance(
     vm_id: str = Path(..., min_length=1, max_length=64),
-    session: AsyncSession = DBSession,
+    session: AsyncSession = DBSession, hub: Hub = HubDep,
 ) -> Dict[str, Any]:
     try:
-        return (await get_vm_or_404(session, vm_id)).to_dict()
+        return vm_view(await get_vm_or_404(session, vm_id), hub)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="harmony vm not found")
 
@@ -532,19 +533,18 @@ async def get_instance(
 async def patch_instance(
     body: HarmonyVmPatchReq,
     vm_id: str = Path(..., min_length=1, max_length=64),
-    session: AsyncSession = DBSession,
+    session: AsyncSession = DBSession, hub: Hub = HubDep,
 ) -> Dict[str, Any]:
     await transaction_lock(session, f"harmony-vm:{vm_id}")
     try:
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="harmony vm not found")
-    require_idle(vm, allow_running=True)
+    require_action(vm, "edit", hub)
     patch = body.model_dump(exclude_unset=True)
     patch.pop("name", None)
     alias_only = set(patch).issubset({"alias"})
-    if not alias_only and vm.state in ACTIVE_STATES:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="active vm configuration is immutable")
+    require_editable(vm, hub, alias_only=alias_only)
     if "alias" in patch:
         alias = str(patch.pop("alias") or "").strip()[:128]
         if alias != vm.alias:
@@ -593,7 +593,7 @@ async def patch_instance(
             setattr(vm, key, patch[key])
     await session.commit()
     await session.refresh(vm)
-    return vm.to_dict()
+    return vm_view(vm, hub)
 
 
 @router.delete("/{vm_id}")
@@ -640,7 +640,7 @@ async def force_release_instance_lease(
     require_idle(vm)
     if vm.assigned_agent_id or vm.lease_token or vm.hdc_port is not None or vm.hdc_serial:
         raise HTTPException(409, "请先停止或删除实例，等待宿主确认清理；人工确认不能替代清理结果")
-    return {"released": True, "instance": vm.to_dict()}
+    return {"released": True, "instance": vm_view(vm, hub)}
 
 
 @router.post("/{vm_id}/dispatch-candidates")
@@ -702,11 +702,12 @@ async def stop_instance(
         vm = await get_vm_or_404(session, vm_id)
     except LookupError:
         raise HTTPException(404, "harmony vm not found")
-    require_idle(vm, allow_running=True)
     if not vm.assigned_agent_id:
+        require_idle(vm, allow_running=True)
         if vm.lease_token or vm.hdc_port is not None or vm.hdc_serial:
             raise HTTPException(409, LEASE_CLEANUP_REQUIRED)
-        return {"sent": False, "instance": vm.to_dict()}
+        return {"sent": False, "instance": vm_view(vm, hub)}
+    require_action(vm, "stop", hub, idempotent_stop=True)
     require_owner_host(vm, hub)
     require_device_idle(hub, vm)
     request_id = begin_operation(vm, "stop", target_agent_id=vm.assigned_agent_id,
@@ -725,9 +726,9 @@ async def stop_instance(
         if current_operation.get("request_id") == request_id and current_operation.get("outcome") == "succeeded":
             sent = True
         else:
-            raise HTTPException(409, detail=operation_failure_detail(vm, "停止下发失败，本次操作已结束；尚未确认实例停止", request_id=request_id))
+            raise HTTPException(409, detail=operation_failure_detail(vm, "停止下发失败，本次操作已结束；尚未确认实例停止", hub=hub, request_id=request_id))
     await session.refresh(vm)
-    return {"sent": sent, "instance": vm.to_dict()}
+    return {"sent": sent, "instance": vm_view(vm, hub)}
 
 
 async def _send_start(
@@ -744,16 +745,16 @@ async def _send_start(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="harmony vm not found")
     if expected_draft and not is_untouched_draft(vm):
         raise HTTPException(409, "新配置已被另一操作接管，本次换机不会重复启动")
-    require_idle(vm)
+    require_action(vm, "edit", hub)
     old_agent = str(vm.assigned_agent_id or "")
     if old_agent and old_agent != agent_id:
         if not allow_switch:
-            raise HTTPException(409, "实例所属 Agent 已变化，请刷新后重试启动；启动不会更换实例")
+            raise HTTPException(409, "所属 Agent 已变化，本次未启动；请刷新后操作")
         return await _switch_agent(vm=vm, new_agent_id=agent_id, session=session, hub=hub)
-    require_startable(vm)
+    require_startable(vm, hub)
     if not hub.has_agent(agent_id):
         raise HTTPException(409, "所属 Agent 离线，请等待连接")
-    probed_payload = vm_payload(vm)
+    expected_preflight = start_preflight_snapshot(vm)
     capability_waiter = get_capability_waiter()
     live_capability = await capability_waiter.probe_agent(
         hub=hub,
@@ -761,21 +762,13 @@ async def _send_start(
         agent_id=agent_id,
     )
     if not bool(live_capability.get("ok")):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail={
-                "reason": "harmony_agent_capability_unavailable",
-                "message": str(
-                    live_capability.get("reason")
-                    or "Agent 鸿蒙虚拟机能力不可用"
-                ),
-                "details": (
-                    live_capability.get("details")
-                    if isinstance(live_capability.get("details"), dict)
-                    else {}
-                ),
-            },
-        )
+        await transaction_lock(session, f"harmony-vm:{vm_id}")
+        vm = await get_vm_or_404(session, vm_id)
+        if start_preflight_snapshot(vm) != expected_preflight:
+            raise HTTPException(409, operation_failure_detail(vm, "探查期间实例已变化，本次未启动", hub=hub))
+        await reject_start_preflight(session, vm, hub,
+            str(live_capability.get("reason") or "Agent 鸿蒙虚拟机能力不可用"),
+            reason="harmony_agent_capability_unavailable")
     # Do not block status/reconcile on this VM while waiting for the same
     # Agent to answer the capability probe.
     await transaction_lock(session, f"harmony-vm:{vm_id}")
@@ -785,15 +778,17 @@ async def _send_start(
         raise HTTPException(404, "实例已删除")
     if expected_draft and not is_untouched_draft(vm):
         raise HTTPException(409, "新配置已被另一操作接管，本次换机不会重复启动")
-    require_startable(vm)
-    if vm_payload(vm) != probed_payload:
-        raise HTTPException(409, "探查期间配置已修改，请重新探查")
+    require_startable(vm, hub)
+    if start_preflight_snapshot(vm) != expected_preflight:
+        raise HTTPException(409, operation_failure_detail(vm, "探查期间配置、归属或操作已变化，本次未启动", hub=hub))
+    require_owner_host(vm, hub)
+    vm = await ensure_start_observation(session, vm, hub, capability_waiter)
     if vm.lease_token or vm.hdc_port is not None or vm.hdc_serial:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=LEASE_CLEANUP_REQUIRED)
+        await reject_start_preflight(session, vm, hub, "原实例资源尚未释放，本次启动未执行", reason="lease_unreleased")
     old_agent = (vm.assigned_agent_id or "").strip()
     if old_agent and old_agent != agent_id:
         if not allow_switch:
-            raise HTTPException(409, "实例所属 Agent 已变化，请刷新后重试启动；启动不会更换实例")
+            raise HTTPException(409, "所属 Agent 已变化，本次未启动；请刷新后操作")
         return await _switch_agent(
             vm=vm,
             new_agent_id=agent_id,
@@ -818,7 +813,7 @@ async def _send_start(
     payload = {
         "type": P.MSG_HARMONY_VM_START,
         **vm_payload(vm, request_id=request_id),
-        "require_existing_instance": bool(lifecycle_runtime(vm).get("instance_created") or vm.started_at),
+        "require_existing_instance": bool(vm.assigned_agent_id or lifecycle_runtime(vm).get("instance_created") or vm.started_at),
         "rollback_new_instance": first_bind,
         "operation_timeout_sec": lifecycle_runtime(vm)["operation"]["timeout_sec"],
         "assigned_port": lease.port,
@@ -841,13 +836,13 @@ async def _send_start(
 
     sent = await send_operation_once(hub, agent_id, payload)
     if not sent:
-        await record_send_failure(session, vm, request_id, "启动下发失败，保留绑定与端口等待对账")
+        await record_send_failure(session, vm, request_id, "启动下发失败，本次操作已结束，原资源归属保留")
         current_operation = lifecycle_runtime(vm).get("operation") or {}
         if current_operation.get("request_id") == request_id and current_operation.get("outcome") == "succeeded":
             sent = True
         else:
-            raise HTTPException(409, detail=operation_failure_detail(vm, "启动下发失败，本次操作已结束；请查询当前实例与操作结果", request_id=request_id))
-    return {"sent": True, "instance": vm.to_dict()}
+            raise HTTPException(409, detail=operation_failure_detail(vm, "启动下发失败，本次操作已结束；请查询当前实例与操作结果", hub=hub, request_id=request_id))
+    return {"sent": True, "instance": vm_view(vm, hub)}
 
 
 async def _switch_agent(*, vm: HarmonyVmInstance, new_agent_id: str, session: AsyncSession, hub: Hub) -> Dict[str, Any]:
@@ -873,7 +868,7 @@ async def _switch_agent(*, vm: HarmonyVmInstance, new_agent_id: str, session: As
     try:
         result = await _send_start(new_vm_id, new_agent_id, session, hub, expected_draft=True)
         sent = bool(result.get("sent"))
-        instance = result.get("instance") or new_vm.to_dict()
+        instance = result.get("instance") or vm_view(new_vm, hub)
     except HTTPException as exc:
         await transaction_lock(session, f"harmony-vm:{new_vm_id}")
         current = await session.get(HarmonyVmInstance, new_vm_id, populate_existing=True)
@@ -893,8 +888,7 @@ async def _switch_agent(*, vm: HarmonyVmInstance, new_agent_id: str, session: As
                            details={"cleanup_confirmed": True, "instance_created": False})
         raw_detail = exc.detail if isinstance(exc.detail, dict) else {}
         message = str(raw_detail.get("message") or exc.detail)
-        detail = operation_failure_detail(current, message,
-            request_id=str(raw_detail.get("request_id") or ""), switched=True,
+        detail = operation_failure_detail(current, message, hub=hub, request_id=str(raw_detail.get("request_id") or ""), switched=True,
             old_vm_id=old_vm_id, old_cleanup_sent=cleanup_sent)
         await session.commit()
         # All three legacy switch paths report a conflict when the target

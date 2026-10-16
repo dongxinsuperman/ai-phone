@@ -1,0 +1,26 @@
+......F.F......................................                          [100%]
+=================================== FAILURES ===================================
+___________ test_android_vm_start_send_failure_preserves_assignment ____________
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_android_vm.py:416: in test_android_vm_start_send_failure_preserves_assignment
+    assert vm.state == "error"
+E   AssertionError: assert 'stopped' == 'error'
+E     
+E     - error
+E     + stopped
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:29:30.539 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-04bf8e77e0334266b8cd8c2580e09160?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:29:30.638 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+__________ test_android_vm_dispatch_send_failure_preserves_assignment __________
+/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_android_vm.py:475: in test_android_vm_dispatch_send_failure_preserves_assignment
+    assert "保留原绑定" in vm.error_message
+E   AssertionError: assert '保留原绑定' in '启动下发失败，本次操作已结束'
+E    +  where '启动下发失败，本次操作已结束' = <ai_phone.server.models.AndroidVmInstance object at 0x108de72d0>.error_message
+---------------------------- Captured stderr setup -----------------------------
+2026-10-16 11:29:30.728 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:///file:memdb-3708f356b8ae407e83f7b8034431a6dd?mode=memory&cache=shared&uri=true
+--------------------------- Captured stderr teardown ---------------------------
+2026-10-16 11:29:30.800 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放
+=========================== short test summary info ============================
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_android_vm.py::test_android_vm_start_send_failure_preserves_assignment
+FAILED ../../../../../../../Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_android_vm.py::test_android_vm_dispatch_send_failure_preserves_assignment
+2 failed, 45 passed, 2 warnings in 1.72s

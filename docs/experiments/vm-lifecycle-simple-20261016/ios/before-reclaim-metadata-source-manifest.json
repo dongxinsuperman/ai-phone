@@ -1,0 +1,10 @@
+{
+  "base_commit": "82e48bc899fe9334fd683149d01c2c8aeeacc85b",
+  "tested_source_label": "82e48bc plus iOS instance observation; validation failures also carry current native fact",
+  "source_sha256": {
+    "backend/ai_phone/agent/ios_sim/manager.py": "1175bfa5f713d31a4271a2eeb648b463f157395fd5edbb05dbf48f2fb988f051",
+    "backend/ai_phone/agent/drivers/ios_simulator_wda.py": "e464a7449198ba932b0919c1dcb1c59586be1fa489a3cf10d6df877e4dd81968",
+    "backend/tests/test_ios_sim_manager.py": "5abe15d84dd0714c396d5bff0d6d36f0485db8743c3bcc4fe529f5d3f99a80b9",
+    "backend/tests/test_ios_sim_instance_observation.py": "4e2e58809fd9f4404210eb1f878d2f84a2258782a2362aff4e009d32b3051815"
+  }
+}

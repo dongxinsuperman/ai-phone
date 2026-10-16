@@ -23,6 +23,7 @@ import asyncio
 import json
 import math
 import re
+import socket
 import threading
 import time
 from dataclasses import dataclass, field
@@ -33,6 +34,7 @@ from loguru import logger
 
 from ai_phone.agent.drivers.base import DeviceInfo
 from ai_phone.agent.drivers.ios_simulator import mark_managed, unmark_managed
+from ai_phone.agent.drivers import ios_simulator_wda as wda_state
 from ai_phone.agent.drivers.ios_simulator_wda import (
     IosSimulatorWdaLauncher,
     allocate_ports,
@@ -50,6 +52,7 @@ from .capability import find_ios_sim_tools, probe_ios_sim_capability
 # 受管虚拟机的名字前缀。与 Android 的 ``aiphone_vm_`` 同构：名字是持久身份锚点，
 # Agent 重启后靠它把仍在运行的实例认领回来。
 _MANAGED_NAME_PREFIX = "aiphone_sim_"
+_OBSERVATION_TIMEOUT_SEC = 5.0
 
 
 def _start_deadline(msg: Dict[str, Any]) -> Optional[float]:
@@ -257,7 +260,20 @@ class IosSimVmManager:
     # 异步 WS handler（签名与 Android 一致）
     # ------------------------------------------------------------------
     async def handle_capability_probe(self, client: AgentWSClient, msg: Dict[str, Any]) -> None:
-        result = await asyncio.to_thread(self.probe, msg)
+        if msg.get("inspect_instance"):
+            # A deadline is local to this Agent. Never reuse a network supplied
+            # monotonic value; include executor waiting in the inspection budget.
+            requirement = {k: v for k, v in msg.items() if k not in {"_operation_deadline", "_monotonic"}}
+            try:
+                budget = float(requirement.get("operation_timeout_sec", _OBSERVATION_TIMEOUT_SEC))
+                if not math.isfinite(budget) or budget <= 0:
+                    raise ValueError("invalid observation budget")
+                deadline = time.monotonic() + min(budget, _OBSERVATION_TIMEOUT_SEC)
+            except (TypeError, ValueError, OverflowError):
+                deadline = time.monotonic()
+            result = await asyncio.to_thread(self.probe, requirement, inspection_deadline=deadline)
+        else:
+            result = await asyncio.to_thread(self.probe, msg)
         await client.send(
             {
                 "type": P.MSG_IOS_SIM_VM_CAPABILITY,
@@ -328,12 +344,35 @@ class IosSimVmManager:
         except Exception as exc:  # noqa: BLE001
             logger.exception("iOS 虚拟机启动失败 vm_id={}: {}", msg.get("vm_id"), exc)
             runtime = self._runtimes.get(str(msg.get("vm_id") or ""))
+            failure_details = dict(getattr(exc, "details", {}))
+            observation = failure_details.get("instance_observation")
+            if not (
+                isinstance(observation, dict)
+                and observation.get("vm_id") == str(msg.get("vm_id") or "")
+                and observation.get("state") in {"running", "stopped", "missing", "unknown"}
+                and isinstance(observation.get("identity"), dict)
+                and isinstance(observation.get("resources_released"), bool)
+            ):
+                try:
+                    observation = await asyncio.to_thread(self.observe_instance, str(msg.get("vm_id") or ""))
+                except Exception as inspect_error:  # noqa: BLE001
+                    observation = {
+                        "vm_id": str(msg.get("vm_id") or ""), "state": "unknown",
+                        "identity": {"sim_name": "", "udid": ""}, "resources_released": False,
+                        "reason": f"instance_observation_failed:{inspect_error}",
+                    }
+            details = {**(dict(runtime.details) if runtime else {}), **failure_details,
+                       "instance_observation": observation,
+                       # Creation proof belongs to this operation, never the cached runtime.
+                       "created_in_attempt": failure_details.get("created_in_attempt") is True}
+            if (observation["state"] in {"running", "unknown"}
+                    or (observation["state"] == "stopped" and not observation["resources_released"])):
+                details["cleanup_confirmed"] = False
             await client.send(
                 self._status_payload(
                     msg, state="error", ok=False, reason="start_failed", error=str(exc),
                     udid=runtime.udid if runtime else str(getattr(exc, "udid", "")),
-                    details={**(dict(runtime.details) if runtime else {}),
-                             **dict(getattr(exc, "details", {}))},
+                    details=details,
                 )
             )
             await self._refresh_devices_safe(client)
@@ -359,12 +398,153 @@ class IosSimVmManager:
     # ------------------------------------------------------------------
     # 探查
     # ------------------------------------------------------------------
-    def probe(self, requirement: Dict[str, Any]) -> Dict[str, Any]:
+    def probe(
+        self, requirement: Dict[str, Any], *, inspection_deadline: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        if requirement.get("inspect_instance"):
+            if inspection_deadline is None:
+                try:
+                    budget = float(requirement.get("operation_timeout_sec", _OBSERVATION_TIMEOUT_SEC))
+                    if not math.isfinite(budget) or budget <= 0:
+                        raise ValueError("invalid observation budget")
+                    inspection_deadline = time.monotonic() + min(budget, _OBSERVATION_TIMEOUT_SEC)
+                except (TypeError, ValueError, OverflowError):
+                    inspection_deadline = time.monotonic()
+            observation = self.observe_instance(str(requirement.get("vm_id") or ""), inspection_deadline)
+            return {"ok": observation["state"] != "unknown", "reason": observation["reason"],
+                    "warning": "", "details": {"instance_observation": observation}}
         return probe_ios_sim_capability(
             requirement,
             current_instances=len(self._runtimes),
             max_instances=self.max_instances,
         )
+
+    def observe_instance(self, vm_id: str, deadline: Optional[float] = None) -> Dict[str, Any]:
+        """One bounded, read-only native observation; it never repairs an instance."""
+        vm_id = str(vm_id or "").strip()
+        observation: Dict[str, Any] = {
+            "vm_id": vm_id, "state": "unknown", "identity": {"sim_name": "", "udid": ""},
+            "resources_released": False, "reason": "instance_unknown",
+        }
+        try:
+            observation["identity"]["sim_name"] = managed_sim_name(vm_id)
+        except ValueError:
+            observation["reason"] = "invalid_vm_id"
+            return observation
+        deadline = deadline if deadline is not None else time.monotonic() + _OBSERVATION_TIMEOUT_SEC
+        lock = self._vm_lock(vm_id)
+        if not lock.acquire(blocking=False):
+            observation["reason"] = "operation_in_progress"
+            return observation
+        try:
+            timeout = _startup_timeout(deadline, _OBSERVATION_TIMEOUT_SEC)
+            instances = self._list_all_instances_strict(timeout=timeout)
+            _startup_timeout(deadline, _OBSERVATION_TIMEOUT_SEC)
+            runtime = self._runtimes.get(vm_id)
+            target = self._owned_target(vm_id, instances, runtime.udid if runtime else "")
+            if runtime and target and runtime.udid != target:
+                raise InstanceIdentityError("local runtime UDID differs from the native instance")
+            if not target:
+                observation.update(state="missing", reason="instance_missing")
+                # A local runtime is prior ownership evidence. A request UDID
+                # is intentionally never accepted as evidence by this method.
+                if runtime and runtime.udid:
+                    observation["identity"]["udid"] = runtime.udid
+                    released, reason = self._instance_resources_released(runtime.udid, runtime, deadline)
+                    observation["resources_released"] = released
+                    if not released:
+                        observation["reason"] = reason
+                _startup_timeout(deadline, _OBSERVATION_TIMEOUT_SEC)
+                return observation
+            observation["identity"]["udid"] = target
+            state = str(instances[target].get("state") or "").lower()
+            if state == "booted":
+                observation.update(state="running", reason="instance_running")
+            elif state == "shutdown":
+                released, reason = self._instance_resources_released(target, runtime, deadline)
+                observation.update(state="stopped", resources_released=released,
+                                   reason="instance_stopped" if released else reason)
+            else:
+                observation["reason"] = f"instance_state_unconfirmed:{state or 'unknown'}"
+            _startup_timeout(deadline, _OBSERVATION_TIMEOUT_SEC)
+        except TimeoutError:
+            observation.update(state="unknown", resources_released=False, reason="observation_timeout")
+        except SimctlListFailed as exc:
+            observation.update(state="unknown", resources_released=False, reason=f"instance_list_failed:{exc}")
+        except InstanceIdentityError as exc:
+            observation.update(state="unknown", resources_released=False, reason=f"instance_identity_mismatch:{exc}")
+            observation["identity"]["udid"] = ""
+        except Exception as exc:  # noqa: BLE001
+            observation.update(state="unknown", resources_released=False,
+                               reason=f"instance_observation_failed:{type(exc).__name__}:{exc}")
+        finally:
+            lock.release()
+        return observation
+
+    @staticmethod
+    def _local_port_free(port: int) -> bool:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                return False
+        return True
+
+    def _instance_resources_released(
+        self, udid: str, runtime: Optional[SimVmRuntime], deadline: float,
+    ) -> tuple[bool, str]:
+        """Read host WDA process/port facts; permanent reservations are retained."""
+        launcher = runtime.launcher if runtime else None
+        if launcher is not None and getattr(launcher, "udid", udid) != udid:
+            return False, "wda_owner_mismatch"
+        process = getattr(launcher, "_xcodebuild_proc", None)
+        if process is not None:
+            try:
+                if process.poll() is None:
+                    return False, "wda_process_running"
+            except Exception:  # noqa: BLE001
+                return False, "wda_process_unknown"
+        # A dead HTTP endpoint cannot prove that a detached xcodebuild exited.
+        import psutil  # noqa: PLC0415
+        try:
+            for proc in psutil.process_iter(["name", "cmdline"]):
+                _startup_timeout(deadline, _OBSERVATION_TIMEOUT_SEC)
+                info = proc.info
+                if str(info.get("name") or "").lower() != "xcodebuild":
+                    continue
+                args = info.get("cmdline")
+                if not args:
+                    return False, "wda_process_unknown"
+                for index, arg in enumerate(args[:-1]):
+                    if arg == "-destination" and f"id={udid}" in str(args[index + 1]).split(","):
+                        return False, "wda_process_running"
+        except TimeoutError:
+            raise
+        except Exception:  # noqa: BLE001
+            return False, "wda_process_unknown"
+        ports: set[int] = set()
+        if runtime:
+            ports.update(p for p in (runtime.wda_port, runtime.mjpeg_port) if p)
+        path = Path(get_settings().storage_dir).expanduser().resolve() / "ios_sim_ports.json"
+        try:
+            reservations = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        except (OSError, ValueError):
+            return False, "wda_reservation_unknown"
+        if not isinstance(reservations, dict):
+            return False, "wda_reservation_unknown"
+        if reservations:
+            if udid in reservations:
+                wda = reservations[udid]
+                if (not isinstance(wda, int) or isinstance(wda, bool)
+                        or not wda_state._SIM_WDA_PORT_BASE <= wda <= wda_state._SIM_WDA_PORT_LIMIT):
+                    return False, "wda_reservation_unknown"
+                ports.update((wda, wda_state._SIM_MJPEG_PORT_BASE + wda - wda_state._SIM_WDA_PORT_BASE))
+        for port in ports:
+            _startup_timeout(deadline, _OBSERVATION_TIMEOUT_SEC)
+            if not self._local_port_free(port):
+                return False, "wda_port_in_use"
+        _startup_timeout(deadline, _OBSERVATION_TIMEOUT_SEC)
+        return True, "resources_released"
 
     # ------------------------------------------------------------------
     # 启动
@@ -380,14 +560,28 @@ class IosSimVmManager:
             try:
                 return self._start_sync_locked(vm_id, msg, attempt, deadline)
             except Exception as exc:
+                failure: Exception = exc
                 if not attempt.get("instance_selected") and not attempt.get("create_attempted"):
+                    setattr(exc, "details", {**dict(getattr(exc, "details", {})), "created_in_attempt": False})
                     if isinstance(exc, TimeoutError) and not attempt.get("operation_started"):
-                        raise SimVmStartFailed(str(exc), "", {
+                        failure = SimVmStartFailed(str(exc), "", {
                             "operation_not_started": True, "created_in_attempt": False,
-                            "instance_deleted": False, "cleanup_confirmed": True,
-                        }) from exc
+                            "instance_deleted": False,
+                        })
+                else:
+                    failure = self._finish_failed_start(vm_id, attempt, exc)
+                observation = self.observe_instance(vm_id)
+                details = {**dict(getattr(failure, "details", {})), "instance_observation": observation}
+                if details.get("operation_not_started"):
+                    details["cleanup_confirmed"] = bool(
+                        observation["state"] in {"stopped", "missing"} and observation["resources_released"]
+                    )
+                setattr(failure, "details", details)
+                if not getattr(failure, "udid", ""):
+                    setattr(failure, "udid", observation["identity"]["udid"])
+                if failure is exc:
                     raise
-                raise self._finish_failed_start(vm_id, attempt, exc) from exc
+                raise failure from exc
 
     def _start_sync_locked(
         self, vm_id: str, msg: Dict[str, Any], attempt: Optional[Dict[str, Any]] = None,
@@ -401,11 +595,59 @@ class IosSimVmManager:
             msg.get("rollback_new_instance") and not msg.get("require_existing_instance")
             and not msg.get("udid") and not (existing and existing.ready)
         )
-        if existing is not None and existing.details.get("cleanup_pending"):
-            attempt["operation_started"] = True
-            stopped = self._stop_sync_locked(vm_id, existing.udid)
-            if not stopped.get("ok"):
-                raise RuntimeError(f"上次操作仍待清理，拒绝再次启动：{stopped.get('error')}")
+        observation = self.observe_instance(vm_id, deadline)
+        observed_udid = observation["identity"]["udid"]
+        if msg.get("udid") and observed_udid and str(msg["udid"]) != observed_udid:
+            raise InstanceIdentityError("请求 UDID 与本机准确实例不符，未执行启动")
+        if observation["state"] == "unknown":
+            raise SimVmStartFailed(f"无法确认原实例状态，未执行启动：{observation['reason']}", "", {
+                "operation_not_started": True, "created_in_attempt": False,
+                "instance_observation": observation,
+            })
+        if observation["state"] == "running":
+            if (existing is not None and existing.udid == observed_udid and existing.launcher is not None
+                    and getattr(existing.launcher, "udid", "") == observed_udid
+                    and existing.launcher.is_alive(expect_sim_name=managed_sim_name(vm_id))):
+                if msg.get("device_type") and str(msg["device_type"]) != existing.device_type:
+                    raise RuntimeError("已有虚拟机的配置不一致，未执行启动或重建")
+                _startup_timeout(deadline, 1.0)
+                existing.ready = True
+                existing.missing_ticks = 0
+                existing.start_request_id = str(msg.get("request_id") or "")
+                mark_managed(observed_udid)
+                _register_wda_endpoint(observed_udid, existing.wda_port, existing.mjpeg_port)
+                details = {k: v for k, v in existing.details.items()
+                           if k not in {"cleanup_pending", "cleanup_error", "discovery_uncertain"}}
+                details.update(
+                    reused=True, created_in_attempt=False, instance_observation=observation,
+                    sim_name=existing.sim_name, device_type=existing.device_type, runtime=existing.runtime_id,
+                    wda_port=existing.wda_port, mjpeg_port=existing.mjpeg_port,
+                )
+                existing.details = dict(details)
+                return {"udid": observed_udid, "details": details}
+            raise SimVmStartFailed("实例仍在运行但自动化未就绪；未执行关机或重新启动", observed_udid, {
+                "operation_not_started": True, "created_in_attempt": False, "instance_created": True,
+                "instance_observation": observation,
+            })
+        if observation["state"] == "stopped":
+            process = getattr(existing.launcher, "_xcodebuild_proc", None) if existing else None
+            if not observation["resources_released"] and process is not None:
+                # Only a launcher already owned by this exact Shutdown guest
+                # may be closed here. No shutdown, global kill or WDA restart.
+                if getattr(existing.launcher, "udid", "") != observed_udid:
+                    raise InstanceIdentityError("旧 WDA 资源不属于已停止的原实例")
+                existing.launcher.stop()
+                observation = self.observe_instance(vm_id, deadline)
+            if observation["state"] != "stopped" or not observation["resources_released"]:
+                raise SimVmStartFailed(f"原实例已停止但 WDA 资源尚未确认释放：{observation['reason']}", observed_udid, {
+                    "operation_not_started": True, "created_in_attempt": False, "instance_created": True,
+                    "instance_observation": observation,
+                })
+            if existing is not None:
+                self._forget(vm_id, observed_udid)
+                existing = None
+        elif existing is not None or msg.get("udid") or msg.get("require_existing_instance"):
+            raise RuntimeError("原虚拟机实例已缺失，未自动创建空白替代实例")
 
         capability = self.probe(dict(msg))
         _startup_timeout(deadline, 30.0)
@@ -432,8 +674,8 @@ class IosSimVmManager:
                 sim_name=sim_name,
                 device_type=device_type,
                 runtime_id=resolved_runtime,
-                expected_udid=str(msg.get("udid") or (existing.udid if existing else "")),
-                require_existing=bool(msg.get("require_existing_instance") or existing),
+                expected_udid=str(msg.get("udid") or observed_udid),
+                require_existing=bool(msg.get("require_existing_instance") or observed_udid),
                 attempt=attempt,
                 deadline=deadline,
             )
@@ -480,9 +722,11 @@ class IosSimVmManager:
             "runtime": resolved_runtime,
             "wda_port": ports.wda,
             "mjpeg_port": ports.mjpeg,
-            "reused": existing is runtime,
+            "reused": not bool(attempt.get("created_in_attempt")),
             "created_in_attempt": bool(attempt.get("created_in_attempt")),
+            "instance_observation": self.observe_instance(vm_id, deadline),
         }
+        _startup_timeout(deadline, 1.0)
         runtime.details = dict(details)
         logger.info(
             "iOS 虚拟机已就绪 vm_id={} udid={} name={} wda={} ",
@@ -629,6 +873,7 @@ class IosSimVmManager:
             for entries in payload["devices"].values():
                 if not isinstance(entries, list) or any(
                     not isinstance(entry, dict) or not entry.get("udid") or not entry.get("name")
+                    or not entry.get("state")
                     for entry in entries
                 ):
                     raise ValueError("simctl list devices 返回的实例记录不完整")
@@ -679,7 +924,10 @@ class IosSimVmManager:
             return {"ok": False, "reason": "bad_request", "error": "vm_id required", "udid": ""}
         with self._vm_lock(vm_id):
             self._vm_generations[vm_id] = self._vm_generations.get(vm_id, 0) + 1
-            return self._stop_sync_locked(vm_id, udid)
+            result = self._stop_sync_locked(vm_id, udid)
+            result["details"] = {**dict(result.get("details") or {}),
+                                 "instance_observation": self.observe_instance(vm_id)}
+            return result
 
     @staticmethod
     def _owned_target(vm_id: str, instances: Dict[str, Dict[str, Any]], udid: str = "") -> str:

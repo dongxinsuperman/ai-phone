@@ -1,0 +1,895 @@
+/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+........................................................................ [ 55%]
+.................FFFFF...F.FF.............................               [100%]
+=================================== FAILURES ===================================
+___ test_bound_restart_failure_never_deletes_existing_userdata[False-False] ____
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x1127d6e10>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+rollback_flag = False, legacy_registry = False
+
+    @pytest.mark.parametrize("rollback_flag", [False, True])
+    @pytest.mark.parametrize("legacy_registry", [False, True])
+    def test_bound_restart_failure_never_deletes_existing_userdata(failed_binding_environment, rollback_flag, legacy_registry):
+        manager, msg, state = failed_binding_environment
+        msg.update(rollback_new_instance=rollback_flag, require_existing_instance=True)
+        config = manager.instance_path / "aiphone_harmony_firstbind" / "config.ini"
+        config.parent.mkdir(parents=True)
+        config.write_text("old-user-data=retain\n")
+        manager._known[msg["vm_id"]] = {
+            "created": True, "instance_path": str(manager.instance_path),
+            "instance_name": "aiphone_harmony_firstbind",
+            "last_config": lifecycle._persistent_message_config(msg),
+        }
+        if legacy_registry:
+            manager._known[msg["vm_id"]].pop("created")
+        with pytest.raises(RuntimeError, match="boot failed") as caught:
+>           manager.start_sync(msg)
+
+backend/tests/test_harmony_vm_agent_hardening.py:590: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/ai_phone/agent/harmony_vm/manager.py:624: in start_sync
+    return self._start_sync_locked(vm_id, msg)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x1127d6e10>
+vm_id = 'firstbind'
+msg = {'_operation_deadline': None, 'api_version': '23', 'assigned_port': 12343, 'device_type': 'Phone', ...}
+
+    def _start_sync_locked(
+        self, vm_id: str, msg: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        deadline = msg.get("_operation_deadline")
+        lease_token = str(msg.get("lease_token") or "").strip()
+        port = _int_value(msg.get("assigned_port"), 0)
+        if not lease_token:
+            raise ValueError("lease_token is required")
+        if not HDC_PORT_MIN <= port <= HDC_PORT_MAX:
+            raise ValueError(
+                f"assigned_port must be in {HDC_PORT_MIN}..{HDC_PORT_MAX}"
+            )
+        serial = f"127.0.0.1:{port}"
+        existing = self._runtimes.get(vm_id)
+        known = self._known.get(vm_id) or {}
+        if known.get("rollback_pending"):
+            raise RuntimeError("harmony_vm_cleanup_required")
+        stale_runtime = existing is not None and (
+            existing.lease_token != lease_token or not existing.ready or existing.missing_ticks >= 2
+        )
+        if msg.get("require_existing_instance") or known.get("cleanup_pending") or stale_runtime:
+            with _startup_lock(self._start_lock, deadline):
+                observation = self.observe_instance(vm_id, deadline)
+                first_bind = msg.get("rollback_new_instance") is True and not msg.get("require_existing_instance")
+                if first_bind or observation["state"] != "stopped" or not observation["resources_released"]:
+                    reason = (
+                        "harmony_vm_transport_unavailable" if existing is not None and observation["state"] == "running"
+                        else "harmony_vm_instance_missing" if observation["state"] == "missing"
+                        else "harmony_vm_cleanup_required"
+                    )
+                    failure = RuntimeError(f"{reason}:{observation['reason']}")
+                    failure.cleanup_details = {  # type: ignore[attr-defined]
+                        "cleanup_confirmed": False, "created_in_attempt": False,
+                        "instance_created": (
+                            Path(str(known.get("instance_path") or self.instance_path))
+                            / _safe_instance_name(vm_id) / "config.ini"
+                        ).is_file(),
+                        "instance_observation": observation,
+                    }
+>                   raise failure
+E                   RuntimeError: harmony_vm_cleanup_required:transport_identity_unverified
+
+backend/ai_phone/agent/harmony_vm/manager.py:688: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x1127d6e10>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+rollback_flag = False, legacy_registry = False
+
+    @pytest.mark.parametrize("rollback_flag", [False, True])
+    @pytest.mark.parametrize("legacy_registry", [False, True])
+    def test_bound_restart_failure_never_deletes_existing_userdata(failed_binding_environment, rollback_flag, legacy_registry):
+        manager, msg, state = failed_binding_environment
+        msg.update(rollback_new_instance=rollback_flag, require_existing_instance=True)
+        config = manager.instance_path / "aiphone_harmony_firstbind" / "config.ini"
+        config.parent.mkdir(parents=True)
+        config.write_text("old-user-data=retain\n")
+        manager._known[msg["vm_id"]] = {
+            "created": True, "instance_path": str(manager.instance_path),
+            "instance_name": "aiphone_harmony_firstbind",
+            "last_config": lifecycle._persistent_message_config(msg),
+        }
+        if legacy_registry:
+            manager._known[msg["vm_id"]].pop("created")
+>       with pytest.raises(RuntimeError, match="boot failed") as caught:
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'boot failed'
+E         Actual message: 'harmony_vm_cleanup_required:transport_identity_unverified'
+
+backend/tests/test_harmony_vm_agent_hardening.py:589: AssertionError
+____ test_bound_restart_failure_never_deletes_existing_userdata[False-True] ____
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x111f65390>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+rollback_flag = True, legacy_registry = False
+
+    @pytest.mark.parametrize("rollback_flag", [False, True])
+    @pytest.mark.parametrize("legacy_registry", [False, True])
+    def test_bound_restart_failure_never_deletes_existing_userdata(failed_binding_environment, rollback_flag, legacy_registry):
+        manager, msg, state = failed_binding_environment
+        msg.update(rollback_new_instance=rollback_flag, require_existing_instance=True)
+        config = manager.instance_path / "aiphone_harmony_firstbind" / "config.ini"
+        config.parent.mkdir(parents=True)
+        config.write_text("old-user-data=retain\n")
+        manager._known[msg["vm_id"]] = {
+            "created": True, "instance_path": str(manager.instance_path),
+            "instance_name": "aiphone_harmony_firstbind",
+            "last_config": lifecycle._persistent_message_config(msg),
+        }
+        if legacy_registry:
+            manager._known[msg["vm_id"]].pop("created")
+        with pytest.raises(RuntimeError, match="boot failed") as caught:
+>           manager.start_sync(msg)
+
+backend/tests/test_harmony_vm_agent_hardening.py:590: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/ai_phone/agent/harmony_vm/manager.py:624: in start_sync
+    return self._start_sync_locked(vm_id, msg)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x111f65390>
+vm_id = 'firstbind'
+msg = {'_operation_deadline': None, 'api_version': '23', 'assigned_port': 12343, 'device_type': 'Phone', ...}
+
+    def _start_sync_locked(
+        self, vm_id: str, msg: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        deadline = msg.get("_operation_deadline")
+        lease_token = str(msg.get("lease_token") or "").strip()
+        port = _int_value(msg.get("assigned_port"), 0)
+        if not lease_token:
+            raise ValueError("lease_token is required")
+        if not HDC_PORT_MIN <= port <= HDC_PORT_MAX:
+            raise ValueError(
+                f"assigned_port must be in {HDC_PORT_MIN}..{HDC_PORT_MAX}"
+            )
+        serial = f"127.0.0.1:{port}"
+        existing = self._runtimes.get(vm_id)
+        known = self._known.get(vm_id) or {}
+        if known.get("rollback_pending"):
+            raise RuntimeError("harmony_vm_cleanup_required")
+        stale_runtime = existing is not None and (
+            existing.lease_token != lease_token or not existing.ready or existing.missing_ticks >= 2
+        )
+        if msg.get("require_existing_instance") or known.get("cleanup_pending") or stale_runtime:
+            with _startup_lock(self._start_lock, deadline):
+                observation = self.observe_instance(vm_id, deadline)
+                first_bind = msg.get("rollback_new_instance") is True and not msg.get("require_existing_instance")
+                if first_bind or observation["state"] != "stopped" or not observation["resources_released"]:
+                    reason = (
+                        "harmony_vm_transport_unavailable" if existing is not None and observation["state"] == "running"
+                        else "harmony_vm_instance_missing" if observation["state"] == "missing"
+                        else "harmony_vm_cleanup_required"
+                    )
+                    failure = RuntimeError(f"{reason}:{observation['reason']}")
+                    failure.cleanup_details = {  # type: ignore[attr-defined]
+                        "cleanup_confirmed": False, "created_in_attempt": False,
+                        "instance_created": (
+                            Path(str(known.get("instance_path") or self.instance_path))
+                            / _safe_instance_name(vm_id) / "config.ini"
+                        ).is_file(),
+                        "instance_observation": observation,
+                    }
+>                   raise failure
+E                   RuntimeError: harmony_vm_cleanup_required:transport_identity_unverified
+
+backend/ai_phone/agent/harmony_vm/manager.py:688: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x111f65390>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+rollback_flag = True, legacy_registry = False
+
+    @pytest.mark.parametrize("rollback_flag", [False, True])
+    @pytest.mark.parametrize("legacy_registry", [False, True])
+    def test_bound_restart_failure_never_deletes_existing_userdata(failed_binding_environment, rollback_flag, legacy_registry):
+        manager, msg, state = failed_binding_environment
+        msg.update(rollback_new_instance=rollback_flag, require_existing_instance=True)
+        config = manager.instance_path / "aiphone_harmony_firstbind" / "config.ini"
+        config.parent.mkdir(parents=True)
+        config.write_text("old-user-data=retain\n")
+        manager._known[msg["vm_id"]] = {
+            "created": True, "instance_path": str(manager.instance_path),
+            "instance_name": "aiphone_harmony_firstbind",
+            "last_config": lifecycle._persistent_message_config(msg),
+        }
+        if legacy_registry:
+            manager._known[msg["vm_id"]].pop("created")
+>       with pytest.raises(RuntimeError, match="boot failed") as caught:
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'boot failed'
+E         Actual message: 'harmony_vm_cleanup_required:transport_identity_unverified'
+
+backend/tests/test_harmony_vm_agent_hardening.py:589: AssertionError
+____ test_bound_restart_failure_never_deletes_existing_userdata[True-False] ____
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x113170690>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+rollback_flag = False, legacy_registry = True
+
+    @pytest.mark.parametrize("rollback_flag", [False, True])
+    @pytest.mark.parametrize("legacy_registry", [False, True])
+    def test_bound_restart_failure_never_deletes_existing_userdata(failed_binding_environment, rollback_flag, legacy_registry):
+        manager, msg, state = failed_binding_environment
+        msg.update(rollback_new_instance=rollback_flag, require_existing_instance=True)
+        config = manager.instance_path / "aiphone_harmony_firstbind" / "config.ini"
+        config.parent.mkdir(parents=True)
+        config.write_text("old-user-data=retain\n")
+        manager._known[msg["vm_id"]] = {
+            "created": True, "instance_path": str(manager.instance_path),
+            "instance_name": "aiphone_harmony_firstbind",
+            "last_config": lifecycle._persistent_message_config(msg),
+        }
+        if legacy_registry:
+            manager._known[msg["vm_id"]].pop("created")
+        with pytest.raises(RuntimeError, match="boot failed") as caught:
+>           manager.start_sync(msg)
+
+backend/tests/test_harmony_vm_agent_hardening.py:590: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/ai_phone/agent/harmony_vm/manager.py:624: in start_sync
+    return self._start_sync_locked(vm_id, msg)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x113170690>
+vm_id = 'firstbind'
+msg = {'_operation_deadline': None, 'api_version': '23', 'assigned_port': 12343, 'device_type': 'Phone', ...}
+
+    def _start_sync_locked(
+        self, vm_id: str, msg: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        deadline = msg.get("_operation_deadline")
+        lease_token = str(msg.get("lease_token") or "").strip()
+        port = _int_value(msg.get("assigned_port"), 0)
+        if not lease_token:
+            raise ValueError("lease_token is required")
+        if not HDC_PORT_MIN <= port <= HDC_PORT_MAX:
+            raise ValueError(
+                f"assigned_port must be in {HDC_PORT_MIN}..{HDC_PORT_MAX}"
+            )
+        serial = f"127.0.0.1:{port}"
+        existing = self._runtimes.get(vm_id)
+        known = self._known.get(vm_id) or {}
+        if known.get("rollback_pending"):
+            raise RuntimeError("harmony_vm_cleanup_required")
+        stale_runtime = existing is not None and (
+            existing.lease_token != lease_token or not existing.ready or existing.missing_ticks >= 2
+        )
+        if msg.get("require_existing_instance") or known.get("cleanup_pending") or stale_runtime:
+            with _startup_lock(self._start_lock, deadline):
+                observation = self.observe_instance(vm_id, deadline)
+                first_bind = msg.get("rollback_new_instance") is True and not msg.get("require_existing_instance")
+                if first_bind or observation["state"] != "stopped" or not observation["resources_released"]:
+                    reason = (
+                        "harmony_vm_transport_unavailable" if existing is not None and observation["state"] == "running"
+                        else "harmony_vm_instance_missing" if observation["state"] == "missing"
+                        else "harmony_vm_cleanup_required"
+                    )
+                    failure = RuntimeError(f"{reason}:{observation['reason']}")
+                    failure.cleanup_details = {  # type: ignore[attr-defined]
+                        "cleanup_confirmed": False, "created_in_attempt": False,
+                        "instance_created": (
+                            Path(str(known.get("instance_path") or self.instance_path))
+                            / _safe_instance_name(vm_id) / "config.ini"
+                        ).is_file(),
+                        "instance_observation": observation,
+                    }
+>                   raise failure
+E                   RuntimeError: harmony_vm_cleanup_required:transport_identity_unverified
+
+backend/ai_phone/agent/harmony_vm/manager.py:688: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x113170690>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+rollback_flag = False, legacy_registry = True
+
+    @pytest.mark.parametrize("rollback_flag", [False, True])
+    @pytest.mark.parametrize("legacy_registry", [False, True])
+    def test_bound_restart_failure_never_deletes_existing_userdata(failed_binding_environment, rollback_flag, legacy_registry):
+        manager, msg, state = failed_binding_environment
+        msg.update(rollback_new_instance=rollback_flag, require_existing_instance=True)
+        config = manager.instance_path / "aiphone_harmony_firstbind" / "config.ini"
+        config.parent.mkdir(parents=True)
+        config.write_text("old-user-data=retain\n")
+        manager._known[msg["vm_id"]] = {
+            "created": True, "instance_path": str(manager.instance_path),
+            "instance_name": "aiphone_harmony_firstbind",
+            "last_config": lifecycle._persistent_message_config(msg),
+        }
+        if legacy_registry:
+            manager._known[msg["vm_id"]].pop("created")
+>       with pytest.raises(RuntimeError, match="boot failed") as caught:
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'boot failed'
+E         Actual message: 'harmony_vm_cleanup_required:transport_identity_unverified'
+
+backend/tests/test_harmony_vm_agent_hardening.py:589: AssertionError
+____ test_bound_restart_failure_never_deletes_existing_userdata[True-True] _____
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x112231710>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+rollback_flag = True, legacy_registry = True
+
+    @pytest.mark.parametrize("rollback_flag", [False, True])
+    @pytest.mark.parametrize("legacy_registry", [False, True])
+    def test_bound_restart_failure_never_deletes_existing_userdata(failed_binding_environment, rollback_flag, legacy_registry):
+        manager, msg, state = failed_binding_environment
+        msg.update(rollback_new_instance=rollback_flag, require_existing_instance=True)
+        config = manager.instance_path / "aiphone_harmony_firstbind" / "config.ini"
+        config.parent.mkdir(parents=True)
+        config.write_text("old-user-data=retain\n")
+        manager._known[msg["vm_id"]] = {
+            "created": True, "instance_path": str(manager.instance_path),
+            "instance_name": "aiphone_harmony_firstbind",
+            "last_config": lifecycle._persistent_message_config(msg),
+        }
+        if legacy_registry:
+            manager._known[msg["vm_id"]].pop("created")
+        with pytest.raises(RuntimeError, match="boot failed") as caught:
+>           manager.start_sync(msg)
+
+backend/tests/test_harmony_vm_agent_hardening.py:590: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/ai_phone/agent/harmony_vm/manager.py:624: in start_sync
+    return self._start_sync_locked(vm_id, msg)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x112231710>
+vm_id = 'firstbind'
+msg = {'_operation_deadline': None, 'api_version': '23', 'assigned_port': 12343, 'device_type': 'Phone', ...}
+
+    def _start_sync_locked(
+        self, vm_id: str, msg: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        deadline = msg.get("_operation_deadline")
+        lease_token = str(msg.get("lease_token") or "").strip()
+        port = _int_value(msg.get("assigned_port"), 0)
+        if not lease_token:
+            raise ValueError("lease_token is required")
+        if not HDC_PORT_MIN <= port <= HDC_PORT_MAX:
+            raise ValueError(
+                f"assigned_port must be in {HDC_PORT_MIN}..{HDC_PORT_MAX}"
+            )
+        serial = f"127.0.0.1:{port}"
+        existing = self._runtimes.get(vm_id)
+        known = self._known.get(vm_id) or {}
+        if known.get("rollback_pending"):
+            raise RuntimeError("harmony_vm_cleanup_required")
+        stale_runtime = existing is not None and (
+            existing.lease_token != lease_token or not existing.ready or existing.missing_ticks >= 2
+        )
+        if msg.get("require_existing_instance") or known.get("cleanup_pending") or stale_runtime:
+            with _startup_lock(self._start_lock, deadline):
+                observation = self.observe_instance(vm_id, deadline)
+                first_bind = msg.get("rollback_new_instance") is True and not msg.get("require_existing_instance")
+                if first_bind or observation["state"] != "stopped" or not observation["resources_released"]:
+                    reason = (
+                        "harmony_vm_transport_unavailable" if existing is not None and observation["state"] == "running"
+                        else "harmony_vm_instance_missing" if observation["state"] == "missing"
+                        else "harmony_vm_cleanup_required"
+                    )
+                    failure = RuntimeError(f"{reason}:{observation['reason']}")
+                    failure.cleanup_details = {  # type: ignore[attr-defined]
+                        "cleanup_confirmed": False, "created_in_attempt": False,
+                        "instance_created": (
+                            Path(str(known.get("instance_path") or self.instance_path))
+                            / _safe_instance_name(vm_id) / "config.ini"
+                        ).is_file(),
+                        "instance_observation": observation,
+                    }
+>                   raise failure
+E                   RuntimeError: harmony_vm_cleanup_required:transport_identity_unverified
+
+backend/ai_phone/agent/harmony_vm/manager.py:688: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x112231710>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+rollback_flag = True, legacy_registry = True
+
+    @pytest.mark.parametrize("rollback_flag", [False, True])
+    @pytest.mark.parametrize("legacy_registry", [False, True])
+    def test_bound_restart_failure_never_deletes_existing_userdata(failed_binding_environment, rollback_flag, legacy_registry):
+        manager, msg, state = failed_binding_environment
+        msg.update(rollback_new_instance=rollback_flag, require_existing_instance=True)
+        config = manager.instance_path / "aiphone_harmony_firstbind" / "config.ini"
+        config.parent.mkdir(parents=True)
+        config.write_text("old-user-data=retain\n")
+        manager._known[msg["vm_id"]] = {
+            "created": True, "instance_path": str(manager.instance_path),
+            "instance_name": "aiphone_harmony_firstbind",
+            "last_config": lifecycle._persistent_message_config(msg),
+        }
+        if legacy_registry:
+            manager._known[msg["vm_id"]].pop("created")
+>       with pytest.raises(RuntimeError, match="boot failed") as caught:
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'boot failed'
+E         Actual message: 'harmony_vm_cleanup_required:transport_identity_unverified'
+
+backend/tests/test_harmony_vm_agent_hardening.py:589: AssertionError
+____ test_required_existing_instance_is_never_created_from_missing_registry ____
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x1127d6e50>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+
+    def test_required_existing_instance_is_never_created_from_missing_registry(failed_binding_environment):
+        manager, msg, state = failed_binding_environment
+        msg["require_existing_instance"] = True
+        with pytest.raises(RuntimeError, match="instance_owner_unverified") as caught:
+>           manager.start_sync(msg)
+
+backend/tests/test_harmony_vm_agent_hardening.py:607: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/ai_phone/agent/harmony_vm/manager.py:624: in start_sync
+    return self._start_sync_locked(vm_id, msg)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x1127d6e50>
+vm_id = 'firstbind'
+msg = {'_operation_deadline': None, 'api_version': '23', 'assigned_port': 12343, 'device_type': 'Phone', ...}
+
+    def _start_sync_locked(
+        self, vm_id: str, msg: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        deadline = msg.get("_operation_deadline")
+        lease_token = str(msg.get("lease_token") or "").strip()
+        port = _int_value(msg.get("assigned_port"), 0)
+        if not lease_token:
+            raise ValueError("lease_token is required")
+        if not HDC_PORT_MIN <= port <= HDC_PORT_MAX:
+            raise ValueError(
+                f"assigned_port must be in {HDC_PORT_MIN}..{HDC_PORT_MAX}"
+            )
+        serial = f"127.0.0.1:{port}"
+        existing = self._runtimes.get(vm_id)
+        known = self._known.get(vm_id) or {}
+        if known.get("rollback_pending"):
+            raise RuntimeError("harmony_vm_cleanup_required")
+        stale_runtime = existing is not None and (
+            existing.lease_token != lease_token or not existing.ready or existing.missing_ticks >= 2
+        )
+        if msg.get("require_existing_instance") or known.get("cleanup_pending") or stale_runtime:
+            with _startup_lock(self._start_lock, deadline):
+                observation = self.observe_instance(vm_id, deadline)
+                first_bind = msg.get("rollback_new_instance") is True and not msg.get("require_existing_instance")
+                if first_bind or observation["state"] != "stopped" or not observation["resources_released"]:
+                    reason = (
+                        "harmony_vm_transport_unavailable" if existing is not None and observation["state"] == "running"
+                        else "harmony_vm_instance_missing" if observation["state"] == "missing"
+                        else "harmony_vm_cleanup_required"
+                    )
+                    failure = RuntimeError(f"{reason}:{observation['reason']}")
+                    failure.cleanup_details = {  # type: ignore[attr-defined]
+                        "cleanup_confirmed": False, "created_in_attempt": False,
+                        "instance_created": (
+                            Path(str(known.get("instance_path") or self.instance_path))
+                            / _safe_instance_name(vm_id) / "config.ini"
+                        ).is_file(),
+                        "instance_observation": observation,
+                    }
+>                   raise failure
+E                   RuntimeError: harmony_vm_cleanup_required:instance_not_recorded
+
+backend/ai_phone/agent/harmony_vm/manager.py:688: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x1127d6e50>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+
+    def test_required_existing_instance_is_never_created_from_missing_registry(failed_binding_environment):
+        manager, msg, state = failed_binding_environment
+        msg["require_existing_instance"] = True
+>       with pytest.raises(RuntimeError, match="instance_owner_unverified") as caught:
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'instance_owner_unverified'
+E         Actual message: 'harmony_vm_cleanup_required:instance_not_recorded'
+
+backend/tests/test_harmony_vm_agent_hardening.py:606: AssertionError
+_ test_spent_probe_budget_never_creates_or_spawns_and_preserves_existing_data[True] _
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x113439550>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+startup_clock = {'now': 100.0}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x113439fd0>
+existing = True
+
+    @pytest.mark.parametrize("existing", [False, True])
+    def test_spent_probe_budget_never_creates_or_spawns_and_preserves_existing_data(
+        failed_binding_environment, startup_clock, monkeypatch, existing
+    ):
+        manager, msg, state = failed_binding_environment
+        msg["operation_timeout_sec"] = 0.1
+        config = manager.instance_path / "aiphone_harmony_firstbind" / "config.ini"
+        if existing:
+            config.parent.mkdir(parents=True)
+            config.write_text("keep-old-data")
+            manager._known[msg["vm_id"]] = {
+                "created": True, "instance_name": "aiphone_harmony_firstbind",
+                "instance_path": str(manager.instance_path),
+            }
+            msg.update(require_existing_instance=True, rollback_new_instance=False)
+        def slow_probe(_msg):
+            startup_clock["now"] += 0.2
+            return {"ok": True}
+        monkeypatch.setattr(manager, "probe", slow_probe)
+        with pytest.raises(RuntimeError, match="startup deadline exceeded"):
+>           manager.start_sync(msg)
+
+backend/tests/test_harmony_vm_agent_hardening.py:675: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/ai_phone/agent/harmony_vm/manager.py:624: in start_sync
+    return self._start_sync_locked(vm_id, msg)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x113439550>
+vm_id = 'firstbind'
+msg = {'_operation_deadline': 100.1, 'api_version': '23', 'assigned_port': 12343, 'device_type': 'Phone', ...}
+
+    def _start_sync_locked(
+        self, vm_id: str, msg: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        deadline = msg.get("_operation_deadline")
+        lease_token = str(msg.get("lease_token") or "").strip()
+        port = _int_value(msg.get("assigned_port"), 0)
+        if not lease_token:
+            raise ValueError("lease_token is required")
+        if not HDC_PORT_MIN <= port <= HDC_PORT_MAX:
+            raise ValueError(
+                f"assigned_port must be in {HDC_PORT_MIN}..{HDC_PORT_MAX}"
+            )
+        serial = f"127.0.0.1:{port}"
+        existing = self._runtimes.get(vm_id)
+        known = self._known.get(vm_id) or {}
+        if known.get("rollback_pending"):
+            raise RuntimeError("harmony_vm_cleanup_required")
+        stale_runtime = existing is not None and (
+            existing.lease_token != lease_token or not existing.ready or existing.missing_ticks >= 2
+        )
+        if msg.get("require_existing_instance") or known.get("cleanup_pending") or stale_runtime:
+            with _startup_lock(self._start_lock, deadline):
+                observation = self.observe_instance(vm_id, deadline)
+                first_bind = msg.get("rollback_new_instance") is True and not msg.get("require_existing_instance")
+                if first_bind or observation["state"] != "stopped" or not observation["resources_released"]:
+                    reason = (
+                        "harmony_vm_transport_unavailable" if existing is not None and observation["state"] == "running"
+                        else "harmony_vm_instance_missing" if observation["state"] == "missing"
+                        else "harmony_vm_cleanup_required"
+                    )
+                    failure = RuntimeError(f"{reason}:{observation['reason']}")
+                    failure.cleanup_details = {  # type: ignore[attr-defined]
+                        "cleanup_confirmed": False, "created_in_attempt": False,
+                        "instance_created": (
+                            Path(str(known.get("instance_path") or self.instance_path))
+                            / _safe_instance_name(vm_id) / "config.ini"
+                        ).is_file(),
+                        "instance_observation": observation,
+                    }
+>                   raise failure
+E                   RuntimeError: harmony_vm_cleanup_required:transport_identity_unverified
+
+backend/ai_phone/agent/harmony_vm/manager.py:688: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x113439550>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+startup_clock = {'now': 100.0}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x113439fd0>
+existing = True
+
+    @pytest.mark.parametrize("existing", [False, True])
+    def test_spent_probe_budget_never_creates_or_spawns_and_preserves_existing_data(
+        failed_binding_environment, startup_clock, monkeypatch, existing
+    ):
+        manager, msg, state = failed_binding_environment
+        msg["operation_timeout_sec"] = 0.1
+        config = manager.instance_path / "aiphone_harmony_firstbind" / "config.ini"
+        if existing:
+            config.parent.mkdir(parents=True)
+            config.write_text("keep-old-data")
+            manager._known[msg["vm_id"]] = {
+                "created": True, "instance_name": "aiphone_harmony_firstbind",
+                "instance_path": str(manager.instance_path),
+            }
+            msg.update(require_existing_instance=True, rollback_new_instance=False)
+        def slow_probe(_msg):
+            startup_clock["now"] += 0.2
+            return {"ok": True}
+        monkeypatch.setattr(manager, "probe", slow_probe)
+>       with pytest.raises(RuntimeError, match="startup deadline exceeded"):
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'startup deadline exceeded'
+E         Actual message: 'harmony_vm_cleanup_required:transport_identity_unverified'
+
+backend/tests/test_harmony_vm_agent_hardening.py:674: AssertionError
+_ test_late_driver_or_fold_result_cannot_succeed_or_delete_bound_data[driver] __
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x1122310d0>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+startup_clock = {'now': 100.0}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x112230850>
+slow_phase = 'driver'
+
+    @pytest.mark.parametrize("slow_phase", ["driver", "fold"])
+    def test_late_driver_or_fold_result_cannot_succeed_or_delete_bound_data(
+        failed_binding_environment, startup_clock, monkeypatch, slow_phase
+    ):
+        manager, msg, state = failed_binding_environment
+        msg.update(operation_timeout_sec=0.1, require_existing_instance=True, rollback_new_instance=False)
+        config = manager.instance_path / "aiphone_harmony_firstbind" / "config.ini"
+        config.parent.mkdir(parents=True)
+        config.write_text("keep-old-data")
+        manager._known[msg["vm_id"]] = {
+            "created": True, "instance_name": "aiphone_harmony_firstbind",
+            "instance_path": str(manager.instance_path), "last_config": lifecycle._persistent_message_config(msg),
+        }
+        driver = SimpleNamespace(
+            close=lambda: state["actions"].append("close-driver"),
+            get_raw_driver=lambda: SimpleNamespace(_client=SimpleNamespace(local_port=16557)),
+        )
+        def driver_ready(_runtime, *, deadline):
+            assert deadline == pytest.approx(100.1)
+            if slow_phase == "driver":
+                startup_clock["now"] += 0.2
+            return driver
+        def fold_ready(*_args):
+            state["actions"].append("fold")
+            startup_clock["now"] += 0.2
+        monkeypatch.setattr(manager, "_wait_hdc", lambda *_a, **_kw: None)
+        monkeypatch.setattr(manager, "_wait_driver", driver_ready)
+        monkeypatch.setattr(manager, "_apply_fold_state", fold_ready)
+        with pytest.raises(RuntimeError, match="startup deadline exceeded"):
+>           manager.start_sync(msg)
+
+backend/tests/test_harmony_vm_agent_hardening.py:724: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/ai_phone/agent/harmony_vm/manager.py:624: in start_sync
+    return self._start_sync_locked(vm_id, msg)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x1122310d0>
+vm_id = 'firstbind'
+msg = {'_operation_deadline': 100.1, 'api_version': '23', 'assigned_port': 12343, 'device_type': 'Phone', ...}
+
+    def _start_sync_locked(
+        self, vm_id: str, msg: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        deadline = msg.get("_operation_deadline")
+        lease_token = str(msg.get("lease_token") or "").strip()
+        port = _int_value(msg.get("assigned_port"), 0)
+        if not lease_token:
+            raise ValueError("lease_token is required")
+        if not HDC_PORT_MIN <= port <= HDC_PORT_MAX:
+            raise ValueError(
+                f"assigned_port must be in {HDC_PORT_MIN}..{HDC_PORT_MAX}"
+            )
+        serial = f"127.0.0.1:{port}"
+        existing = self._runtimes.get(vm_id)
+        known = self._known.get(vm_id) or {}
+        if known.get("rollback_pending"):
+            raise RuntimeError("harmony_vm_cleanup_required")
+        stale_runtime = existing is not None and (
+            existing.lease_token != lease_token or not existing.ready or existing.missing_ticks >= 2
+        )
+        if msg.get("require_existing_instance") or known.get("cleanup_pending") or stale_runtime:
+            with _startup_lock(self._start_lock, deadline):
+                observation = self.observe_instance(vm_id, deadline)
+                first_bind = msg.get("rollback_new_instance") is True and not msg.get("require_existing_instance")
+                if first_bind or observation["state"] != "stopped" or not observation["resources_released"]:
+                    reason = (
+                        "harmony_vm_transport_unavailable" if existing is not None and observation["state"] == "running"
+                        else "harmony_vm_instance_missing" if observation["state"] == "missing"
+                        else "harmony_vm_cleanup_required"
+                    )
+                    failure = RuntimeError(f"{reason}:{observation['reason']}")
+                    failure.cleanup_details = {  # type: ignore[attr-defined]
+                        "cleanup_confirmed": False, "created_in_attempt": False,
+                        "instance_created": (
+                            Path(str(known.get("instance_path") or self.instance_path))
+                            / _safe_instance_name(vm_id) / "config.ini"
+                        ).is_file(),
+                        "instance_observation": observation,
+                    }
+>                   raise failure
+E                   RuntimeError: harmony_vm_cleanup_required:transport_identity_unverified
+
+backend/ai_phone/agent/harmony_vm/manager.py:688: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x1122310d0>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+startup_clock = {'now': 100.0}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x112230850>
+slow_phase = 'driver'
+
+    @pytest.mark.parametrize("slow_phase", ["driver", "fold"])
+    def test_late_driver_or_fold_result_cannot_succeed_or_delete_bound_data(
+        failed_binding_environment, startup_clock, monkeypatch, slow_phase
+    ):
+        manager, msg, state = failed_binding_environment
+        msg.update(operation_timeout_sec=0.1, require_existing_instance=True, rollback_new_instance=False)
+        config = manager.instance_path / "aiphone_harmony_firstbind" / "config.ini"
+        config.parent.mkdir(parents=True)
+        config.write_text("keep-old-data")
+        manager._known[msg["vm_id"]] = {
+            "created": True, "instance_name": "aiphone_harmony_firstbind",
+            "instance_path": str(manager.instance_path), "last_config": lifecycle._persistent_message_config(msg),
+        }
+        driver = SimpleNamespace(
+            close=lambda: state["actions"].append("close-driver"),
+            get_raw_driver=lambda: SimpleNamespace(_client=SimpleNamespace(local_port=16557)),
+        )
+        def driver_ready(_runtime, *, deadline):
+            assert deadline == pytest.approx(100.1)
+            if slow_phase == "driver":
+                startup_clock["now"] += 0.2
+            return driver
+        def fold_ready(*_args):
+            state["actions"].append("fold")
+            startup_clock["now"] += 0.2
+        monkeypatch.setattr(manager, "_wait_hdc", lambda *_a, **_kw: None)
+        monkeypatch.setattr(manager, "_wait_driver", driver_ready)
+        monkeypatch.setattr(manager, "_apply_fold_state", fold_ready)
+>       with pytest.raises(RuntimeError, match="startup deadline exceeded"):
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'startup deadline exceeded'
+E         Actual message: 'harmony_vm_cleanup_required:transport_identity_unverified'
+
+backend/tests/test_harmony_vm_agent_hardening.py:723: AssertionError
+__ test_late_driver_or_fold_result_cannot_succeed_or_delete_bound_data[fold] ___
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x1127ab6d0>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+startup_clock = {'now': 100.0}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x112230090>
+slow_phase = 'fold'
+
+    @pytest.mark.parametrize("slow_phase", ["driver", "fold"])
+    def test_late_driver_or_fold_result_cannot_succeed_or_delete_bound_data(
+        failed_binding_environment, startup_clock, monkeypatch, slow_phase
+    ):
+        manager, msg, state = failed_binding_environment
+        msg.update(operation_timeout_sec=0.1, require_existing_instance=True, rollback_new_instance=False)
+        config = manager.instance_path / "aiphone_harmony_firstbind" / "config.ini"
+        config.parent.mkdir(parents=True)
+        config.write_text("keep-old-data")
+        manager._known[msg["vm_id"]] = {
+            "created": True, "instance_name": "aiphone_harmony_firstbind",
+            "instance_path": str(manager.instance_path), "last_config": lifecycle._persistent_message_config(msg),
+        }
+        driver = SimpleNamespace(
+            close=lambda: state["actions"].append("close-driver"),
+            get_raw_driver=lambda: SimpleNamespace(_client=SimpleNamespace(local_port=16557)),
+        )
+        def driver_ready(_runtime, *, deadline):
+            assert deadline == pytest.approx(100.1)
+            if slow_phase == "driver":
+                startup_clock["now"] += 0.2
+            return driver
+        def fold_ready(*_args):
+            state["actions"].append("fold")
+            startup_clock["now"] += 0.2
+        monkeypatch.setattr(manager, "_wait_hdc", lambda *_a, **_kw: None)
+        monkeypatch.setattr(manager, "_wait_driver", driver_ready)
+        monkeypatch.setattr(manager, "_apply_fold_state", fold_ready)
+        with pytest.raises(RuntimeError, match="startup deadline exceeded"):
+>           manager.start_sync(msg)
+
+backend/tests/test_harmony_vm_agent_hardening.py:724: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/ai_phone/agent/harmony_vm/manager.py:624: in start_sync
+    return self._start_sync_locked(vm_id, msg)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x1127ab6d0>
+vm_id = 'firstbind'
+msg = {'_operation_deadline': 100.1, 'api_version': '23', 'assigned_port': 12343, 'device_type': 'Phone', ...}
+
+    def _start_sync_locked(
+        self, vm_id: str, msg: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        deadline = msg.get("_operation_deadline")
+        lease_token = str(msg.get("lease_token") or "").strip()
+        port = _int_value(msg.get("assigned_port"), 0)
+        if not lease_token:
+            raise ValueError("lease_token is required")
+        if not HDC_PORT_MIN <= port <= HDC_PORT_MAX:
+            raise ValueError(
+                f"assigned_port must be in {HDC_PORT_MIN}..{HDC_PORT_MAX}"
+            )
+        serial = f"127.0.0.1:{port}"
+        existing = self._runtimes.get(vm_id)
+        known = self._known.get(vm_id) or {}
+        if known.get("rollback_pending"):
+            raise RuntimeError("harmony_vm_cleanup_required")
+        stale_runtime = existing is not None and (
+            existing.lease_token != lease_token or not existing.ready or existing.missing_ticks >= 2
+        )
+        if msg.get("require_existing_instance") or known.get("cleanup_pending") or stale_runtime:
+            with _startup_lock(self._start_lock, deadline):
+                observation = self.observe_instance(vm_id, deadline)
+                first_bind = msg.get("rollback_new_instance") is True and not msg.get("require_existing_instance")
+                if first_bind or observation["state"] != "stopped" or not observation["resources_released"]:
+                    reason = (
+                        "harmony_vm_transport_unavailable" if existing is not None and observation["state"] == "running"
+                        else "harmony_vm_instance_missing" if observation["state"] == "missing"
+                        else "harmony_vm_cleanup_required"
+                    )
+                    failure = RuntimeError(f"{reason}:{observation['reason']}")
+                    failure.cleanup_details = {  # type: ignore[attr-defined]
+                        "cleanup_confirmed": False, "created_in_attempt": False,
+                        "instance_created": (
+                            Path(str(known.get("instance_path") or self.instance_path))
+                            / _safe_instance_name(vm_id) / "config.ini"
+                        ).is_file(),
+                        "instance_observation": observation,
+                    }
+>                   raise failure
+E                   RuntimeError: harmony_vm_cleanup_required:transport_identity_unverified
+
+backend/ai_phone/agent/harmony_vm/manager.py:688: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+failed_binding_environment = (<ai_phone.agent.harmony_vm.manager.HarmonyVmManager object at 0x1127ab6d0>, {'api_version': '23', 'assigned_port': 12...ne', 'lease_token': 'bind-lease', ...}, {'actions': [], 'create_stage': 'success', 'delete_ok': True, 'stop_ok': True})
+startup_clock = {'now': 100.0}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x112230090>
+slow_phase = 'fold'
+
+    @pytest.mark.parametrize("slow_phase", ["driver", "fold"])
+    def test_late_driver_or_fold_result_cannot_succeed_or_delete_bound_data(
+        failed_binding_environment, startup_clock, monkeypatch, slow_phase
+    ):
+        manager, msg, state = failed_binding_environment
+        msg.update(operation_timeout_sec=0.1, require_existing_instance=True, rollback_new_instance=False)
+        config = manager.instance_path / "aiphone_harmony_firstbind" / "config.ini"
+        config.parent.mkdir(parents=True)
+        config.write_text("keep-old-data")
+        manager._known[msg["vm_id"]] = {
+            "created": True, "instance_name": "aiphone_harmony_firstbind",
+            "instance_path": str(manager.instance_path), "last_config": lifecycle._persistent_message_config(msg),
+        }
+        driver = SimpleNamespace(
+            close=lambda: state["actions"].append("close-driver"),
+            get_raw_driver=lambda: SimpleNamespace(_client=SimpleNamespace(local_port=16557)),
+        )
+        def driver_ready(_runtime, *, deadline):
+            assert deadline == pytest.approx(100.1)
+            if slow_phase == "driver":
+                startup_clock["now"] += 0.2
+            return driver
+        def fold_ready(*_args):
+            state["actions"].append("fold")
+            startup_clock["now"] += 0.2
+        monkeypatch.setattr(manager, "_wait_hdc", lambda *_a, **_kw: None)
+        monkeypatch.setattr(manager, "_wait_driver", driver_ready)
+        monkeypatch.setattr(manager, "_apply_fold_state", fold_ready)
+>       with pytest.raises(RuntimeError, match="startup deadline exceeded"):
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'startup deadline exceeded'
+E         Actual message: 'harmony_vm_cleanup_required:transport_identity_unverified'
+
+backend/tests/test_harmony_vm_agent_hardening.py:723: AssertionError
+=========================== short test summary info ============================
+FAILED backend/tests/test_harmony_vm_agent_hardening.py::test_bound_restart_failure_never_deletes_existing_userdata[False-False]
+FAILED backend/tests/test_harmony_vm_agent_hardening.py::test_bound_restart_failure_never_deletes_existing_userdata[False-True]
+FAILED backend/tests/test_harmony_vm_agent_hardening.py::test_bound_restart_failure_never_deletes_existing_userdata[True-False]
+FAILED backend/tests/test_harmony_vm_agent_hardening.py::test_bound_restart_failure_never_deletes_existing_userdata[True-True]
+FAILED backend/tests/test_harmony_vm_agent_hardening.py::test_required_existing_instance_is_never_created_from_missing_registry
+FAILED backend/tests/test_harmony_vm_agent_hardening.py::test_spent_probe_budget_never_creates_or_spawns_and_preserves_existing_data[True]
+FAILED backend/tests/test_harmony_vm_agent_hardening.py::test_late_driver_or_fold_result_cannot_succeed_or_delete_bound_data[driver]
+FAILED backend/tests/test_harmony_vm_agent_hardening.py::test_late_driver_or_fold_result_cannot_succeed_or_delete_bound_data[fold]
+8 failed, 122 passed in 1.07s

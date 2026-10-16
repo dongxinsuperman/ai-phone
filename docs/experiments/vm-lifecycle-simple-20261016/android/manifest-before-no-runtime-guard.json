@@ -1,0 +1,65 @@
+{
+  "baseline": "82e48bc",
+  "scope": "Android manager and isolated Agent tests only; no native/SDK/device/service/company operations or commits",
+  "files": {
+    "backend/ai_phone/agent/android_vm/manager.py": "97bf790228673eed1b4508b5b1520731487422a7cd2281e33226b8589df44150",
+    "backend/tests/test_android_vm_instance_observation.py": "8472cc69ad1bdea76fedc372b0891a623bca299cce5c3b0039847d5d1e0e30a0",
+    "backend/tests/test_android_vm_manager_reliability.py": "6a0617872615a9c59e852787c17d87ff6a2fe4e2fee60ec330244b2fd47c371a",
+    "backend/tests/test_android_vm_existing_image.py": "3ee0b3520f611d8346dffff506aea5f6c46f56067cf1872a1651c1c1dfef660d"
+  },
+  "verification": {
+    "passed": 343,
+    "skipped": 0,
+    "test_files": [
+      "test_android_vm_instance_observation.py",
+      "test_android_vm_manager_reliability.py",
+      "test_android_vm_stop_budget.py",
+      "test_android_vm_storage_size.py",
+      "test_android_vm_existing_image.py",
+      "test_agent_ws_client.py"
+    ],
+    "new_observation_cases": 35,
+    "ruff": "passed",
+    "diff_check": "passed"
+  },
+  "first_regression": {
+    "passed": 252,
+    "failed": 17,
+    "notes": "14 exact-details assertions needed the new observation/exit fields; old not-ready wording retained; two current exit diagnostics were initially discarded and are now returned from the same fresh read-only sample. Original log retained."
+  },
+  "wire": {
+    "path": "details.instance_observation",
+    "keys": [
+      "vm_id",
+      "state",
+      "identity",
+      "resources_released",
+      "reason"
+    ],
+    "states": [
+      "running",
+      "stopped",
+      "missing",
+      "unknown"
+    ],
+    "unknown_or_missing_identity": {
+      "avd_name": ""
+    },
+    "observation_is_operation_success": false
+  },
+  "stop_success_observation": "Derived from the same locked process/port exit evidence; no additional directory scan.",
+  "native_definition_unverified": "Stopped is retained only with a trusted local identity and a fresh complete process-exit observation; missing still requires complete native definition absence.",
+  "cross_layer_regression": {
+    "passed": 385,
+    "failed": 4,
+    "source": "cross-layer-regression.log",
+    "owner": "Server owner; no Server tests changed by Android owner",
+    "failed_cases": [
+      "test_android_vm_start_preserves_missing_assigned_agent",
+      "test_android_vm_alias_only_patch_allowed_while_running",
+      "test_android_vm_non_alias_patch_blocked_while_running",
+      "test_android_vm_reconcile_corrects_stale_running"
+    ]
+  },
+  "review_correction": "Inspect every existing runtime, including cached ready=True; only current stopped/missing facts clear metadata. Positive running/unknown facts do not clear runtime or implicitly stop it."
+}

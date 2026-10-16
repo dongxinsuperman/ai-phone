@@ -1,0 +1,241 @@
+/Users/dongxin/代码文件/sonic合集/ai-phone/backend/.venv/lib/python3.11/site-packages/pytest_asyncio/plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+...........................................FFFFF.FFFFFFF...FF..F........ [ 26%]
+..................FF.................................................... [ 53%]
+........................................................................ [ 80%]
+.....................................................                    [100%]
+=================================== FAILURES ===================================
+______ test_failed_ensure_does_not_turn_placeholder_into_created_instance ______
+backend/tests/test_android_vm_manager_reliability.py:330: in test_failed_ensure_does_not_turn_placeholder_into_created_instance
+    assert client.sent[-1]["details"] == {"cleanup_confirmed": True, "instance_created": False}
+E   AssertionError: assert {'cleanup_con...nknown', ...}} == {'cleanup_con...eated': False}
+E     
+E     Omitting 2 identical items, use -vv to show
+E     Left contains 2 more items:
+E     {'exit_evidence': {'blocked_ports': [],
+E                        'confirmed': True,
+E                        'matching_process_ids': [],
+E                        'owned_process_exit_code': None,...
+E     
+E     ...Full output truncated (8 lines hidden), use '-vv' to show
+_________ test_first_binding_failure_deletes_only_owned_instance_once __________
+backend/tests/test_android_vm_manager_reliability.py:368: in test_first_binding_failure_deletes_only_owned_instance_once
+    assert client.sent[-1]["details"] == {
+E   AssertionError: assert {'cleanup_con...issing', ...}} == {'cleanup_con...eated': False}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'instance_observation': {'identity': {'avd_name': ''},
+E                               'reason': 'native_avd_missing',
+E                               'resources_released': False,
+E                               'state': 'missing',
+E                               'vm_id': 'a'}}
+E     Use -v to get more diff
+___________ test_restart_failure_never_deletes_saved_avd[False-True] ___________
+backend/tests/test_android_vm_manager_reliability.py:387: in test_restart_failure_never_deletes_saved_avd
+    assert client.sent[-1]["details"] == {"cleanup_confirmed": False, "instance_created": True}
+E   AssertionError: assert {'cleanup_con...unning', ...}} == {'cleanup_con...reated': True}
+E     
+E     Omitting 2 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'instance_observation': {'identity': {'avd_name': 'aiphone_vm_a'},
+E                               'reason': 'owned_process_running',
+E                               'resources_released': False,
+E                               'state': 'running',
+E                               'vm_id': 'a'}}
+E     Use -v to get more diff
+__________ test_restart_failure_never_deletes_saved_avd[False-False] ___________
+backend/tests/test_android_vm_manager_reliability.py:387: in test_restart_failure_never_deletes_saved_avd
+    assert client.sent[-1]["details"] == {"cleanup_confirmed": False, "instance_created": True}
+E   AssertionError: assert {'cleanup_con...unning', ...}} == {'cleanup_con...reated': True}
+E     
+E     Omitting 2 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'instance_observation': {'identity': {'avd_name': 'aiphone_vm_a'},
+E                               'reason': 'owned_process_running',
+E                               'resources_released': False,
+E                               'state': 'running',
+E                               'vm_id': 'a'}}
+E     Use -v to get more diff
+___________ test_restart_failure_never_deletes_saved_avd[True-True] ____________
+backend/tests/test_android_vm_manager_reliability.py:387: in test_restart_failure_never_deletes_saved_avd
+    assert client.sent[-1]["details"] == {"cleanup_confirmed": False, "instance_created": True}
+E   AssertionError: assert {'cleanup_con...unning', ...}} == {'cleanup_con...reated': True}
+E     
+E     Omitting 2 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'instance_observation': {'identity': {'avd_name': 'aiphone_vm_a'},
+E                               'reason': 'owned_process_running',
+E                               'resources_released': False,
+E                               'state': 'running',
+E                               'vm_id': 'a'}}
+E     Use -v to get more diff
+_____ test_first_binding_rollback_failure_is_final_without_retry[nonzero] ______
+backend/tests/test_android_vm_manager_reliability.py:426: in test_first_binding_rollback_failure_is_final_without_retry
+    assert client.sent[-1]["details"] == {
+E   AssertionError: assert {'cleanup_con...topped', ...}} == {'cleanup_con...reated': True}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'instance_observation': {'identity': {'avd_name': 'aiphone_vm_a'},
+E                               'reason': 'ports_not_observed',
+E                               'resources_released': False,
+E                               'state': 'stopped',
+E                               'vm_id': 'a'}}
+E     Use -v to get more diff
+_____ test_first_binding_rollback_failure_is_final_without_retry[timeout] ______
+backend/tests/test_android_vm_manager_reliability.py:426: in test_first_binding_rollback_failure_is_final_without_retry
+    assert client.sent[-1]["details"] == {
+E   AssertionError: assert {'cleanup_con...topped', ...}} == {'cleanup_con...reated': True}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'instance_observation': {'identity': {'avd_name': 'aiphone_vm_a'},
+E                               'reason': 'ports_not_observed',
+E                               'resources_released': False,
+E                               'state': 'stopped',
+E                               'vm_id': 'a'}}
+E     Use -v to get more diff
+___________ test_first_binding_failed_stop_does_not_delete_live_avd ____________
+backend/tests/test_android_vm_manager_reliability.py:440: in test_first_binding_failed_stop_does_not_delete_live_avd
+    assert client.sent[-1]["details"] == {
+E   AssertionError: assert {'cleanup_con...d': True, ...} == {'cleanup_con...reated': True}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 2 more items:
+E     {'exit_evidence': {'confirmed': False,
+E                        'owned_process_exit_code': None,
+E                        'reason': 'owned_process_running'},
+E      'instance_observation': {'identity': {'avd_name': 'aiphone_vm_a'},...
+E     
+E     ...Full output truncated (5 lines hidden), use '-vv' to show
+_________ test_first_binding_preflight_failure_needs_no_native_cleanup _________
+backend/tests/test_android_vm_manager_reliability.py:456: in test_first_binding_preflight_failure_needs_no_native_cleanup
+    assert client.sent[-1]["details"] == {
+E   AssertionError: assert {'cleanup_con...nknown', ...}} == {'cleanup_con...eated': False}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'instance_observation': {'identity': {'avd_name': ''},
+E                               'reason': 'native_inventory_unavailable',
+E                               'resources_released': False,
+E                               'state': 'unknown',
+E                               'vm_id': 'a'}}
+E     Use -v to get more diff
+____ test_first_binding_post_create_config_failure_deletes_created_avd_once ____
+backend/tests/test_android_vm_manager_reliability.py:472: in test_first_binding_post_create_config_failure_deletes_created_avd_once
+    assert client.sent[-1]["details"] == {
+E   AssertionError: assert {'cleanup_con...nknown', ...}} == {'cleanup_con...eated': False}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'instance_observation': {'identity': {'avd_name': ''},
+E                               'reason': 'native_inventory_unavailable',
+E                               'resources_released': False,
+E                               'state': 'unknown',
+E                               'vm_id': 'a'}}
+E     Use -v to get more diff
+___ test_first_binding_refuses_existing_avd_without_changing_or_stopping_it ____
+backend/tests/test_android_vm_manager_reliability.py:496: in test_first_binding_refuses_existing_avd_without_changing_or_stopping_it
+    assert client.sent[-1]["details"] == {
+E   AssertionError: assert {'cleanup_con...d', ...}, ...} == {'cleanup_con...isting': True}
+E     
+E     Omitting 4 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'instance_observation': {'identity': {'avd_name': 'aiphone_vm_a'},
+E                               'reason': 'ports_not_observed',
+E                               'resources_released': False,
+E                               'state': 'stopped',
+E                               'vm_id': 'a'}}
+E     Use -v to get more diff
+___________ test_first_binding_cannot_reuse_already_tracked_instance ___________
+backend/tests/test_android_vm_manager_reliability.py:513: in test_first_binding_cannot_reuse_already_tracked_instance
+    assert client.sent[-1]["details"] == {
+E   AssertionError: assert {'cleanup_con...g', ...}, ...} == {'cleanup_con...isting': True}
+E     
+E     Omitting 4 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'instance_observation': {'identity': {'avd_name': 'aiphone_vm_a'},
+E                               'reason': 'owned_process_running',
+E                               'resources_released': False,
+E                               'state': 'running',
+E                               'vm_id': 'a'}}
+E     Use -v to get more diff
+__________ test_executor_queue_time_cannot_restart_start_budget[0.0] ___________
+backend/tests/test_android_vm_manager_reliability.py:590: in test_executor_queue_time_cannot_restart_start_budget
+    assert client.sent[-1]["details"] == {
+E   AssertionError: assert {'cleanup_con...nknown', ...}} == {'cleanup_con...eated': False}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'instance_observation': {'identity': {'avd_name': ''},
+E                               'reason': 'operation_not_observed',
+E                               'resources_released': False,
+E                               'state': 'unknown',
+E                               'vm_id': 'a'}}
+E     Use -v to get more diff
+______ test_executor_queue_time_cannot_restart_start_budget[1000000000.0] ______
+backend/tests/test_android_vm_manager_reliability.py:590: in test_executor_queue_time_cannot_restart_start_budget
+    assert client.sent[-1]["details"] == {
+E   AssertionError: assert {'cleanup_con...nknown', ...}} == {'cleanup_con...eated': False}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'instance_observation': {'identity': {'avd_name': ''},
+E                               'reason': 'operation_not_observed',
+E                               'resources_released': False,
+E                               'state': 'unknown',
+E                               'vm_id': 'a'}}
+E     Use -v to get more diff
+_______________ test_start_cannot_reuse_failed_start_placeholder _______________
+backend/ai_phone/agent/android_vm/manager.py:309: in start_sync
+    return self._start_sync_locked(vm_id, operation_msg)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/ai_phone/agent/android_vm/manager.py:356: in _start_sync_locked
+    raise error
+E   RuntimeError: 已有实例仍在运行或状态未确认，未执行重复启动
+
+The above exception was the direct cause of the following exception:
+backend/tests/test_android_vm_manager_reliability.py:631: in test_start_cannot_reuse_failed_start_placeholder
+    manager.start_sync({"vm_id": "a"})
+backend/ai_phone/agent/android_vm/manager.py:331: in start_sync
+    raise VmStartFailure(exc) from exc
+E   ai_phone.agent.android_vm.manager.VmStartFailure: 已有实例仍在运行或状态未确认，未执行重复启动
+
+During handling of the above exception, another exception occurred:
+backend/tests/test_android_vm_manager_reliability.py:630: in test_start_cannot_reuse_failed_start_placeholder
+    with pytest.raises(RuntimeError, match="尚未就绪"):
+E   AssertionError: Regex pattern did not match.
+E     Expected regex: '尚未就绪'
+E     Actual message: '已有实例仍在运行或状态未确认，未执行重复启动'
+___________ test_stop_evidence_identifies_process_inventory_blocker ____________
+backend/tests/test_android_vm_manager_reliability.py:891: in test_stop_evidence_identifies_process_inventory_blocker
+    assert result["details"]["exit_evidence"]["reason"] == "process_inventory_incomplete"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'reason'
+_________________ test_stop_evidence_identifies_blocked_ports __________________
+backend/tests/test_android_vm_manager_reliability.py:900: in test_stop_evidence_identifies_blocked_ports
+    assert evidence["reason"] == "port_unavailable"
+           ^^^^^^^^^^^^^^^^^^
+E   KeyError: 'reason'
+=========================== short test summary info ============================
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_failed_ensure_does_not_turn_placeholder_into_created_instance
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_first_binding_failure_deletes_only_owned_instance_once
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_restart_failure_never_deletes_saved_avd[False-True]
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_restart_failure_never_deletes_saved_avd[False-False]
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_restart_failure_never_deletes_saved_avd[True-True]
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_first_binding_rollback_failure_is_final_without_retry[nonzero]
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_first_binding_rollback_failure_is_final_without_retry[timeout]
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_first_binding_failed_stop_does_not_delete_live_avd
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_first_binding_preflight_failure_needs_no_native_cleanup
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_first_binding_post_create_config_failure_deletes_created_avd_once
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_first_binding_refuses_existing_avd_without_changing_or_stopping_it
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_first_binding_cannot_reuse_already_tracked_instance
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_executor_queue_time_cannot_restart_start_budget[0.0]
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_executor_queue_time_cannot_restart_start_budget[1000000000.0]
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_start_cannot_reuse_failed_start_placeholder
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_stop_evidence_identifies_process_inventory_blocker
+FAILED backend/tests/test_android_vm_manager_reliability.py::test_stop_evidence_identifies_blocked_ports
+17 failed, 252 passed in 1.11s

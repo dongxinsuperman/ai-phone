@@ -10,7 +10,7 @@ import pytest
 from ai_phone.agent.harmony_vm.manager import HarmonyVmManager
 from ai_phone.server.harmony_vm import api, service
 from ai_phone.server.harmony_vm.models import HarmonyVmInstance, HarmonyVmPortLease
-from ai_phone.server.vm_lifecycle import cancel_operation_timeout
+from ai_phone.server.vm_lifecycle import cancel_operation_timeout, lifecycle_view, record_failure
 from ai_phone.shared import protocol as P
 from tests.test_vm_lifecycle_contract import ContractHub
 
@@ -28,7 +28,9 @@ class RecordingClient:
         return None
 
 
-async def legacy_setup(session, tmp_path, *, owner_host_id=None):
+async def legacy_setup(session, tmp_path, monkeypatch, *, owner_host_id=None):
+    import ai_phone.agent.harmony_vm.manager as manager_module
+
     vm = HarmonyVmInstance(
         id="abc012def345", name="legacy", alias="legacy", state="agent_offline",
         assigned_agent_id="old", error_code="legacy_stop_unconfirmed", error_message="old stop was not confirmed",
@@ -36,6 +38,7 @@ async def legacy_setup(session, tmp_path, *, owner_host_id=None):
     )
     if owner_host_id:
         vm.runtime = {**vm.runtime, "owner_host_id": owner_host_id}
+    record_failure(vm, "old stop was not confirmed", reason="legacy_stop_unconfirmed", action="stop")
     session.add(vm)
     await session.flush()
     lease = await service.allocate_port_lease(session, vm, agent_id="old")
@@ -57,12 +60,31 @@ async def legacy_setup(session, tmp_path, *, owner_host_id=None):
     # Read the old on-disk format in a fresh manager instead of hand-writing
     # the reconcile message or seeding a new-format in-memory runtime.
     manager = HarmonyVmManager(runtime_dir=manager.runtime_dir)
+    inspected = []
+    monkeypatch.setattr(
+        manager, "_active_instance_serial",
+        lambda vm_id, _known: inspected.append(("process", vm_id)) or "",
+    )
+    monkeypatch.setattr(
+        manager_module, "hdc_list_targets", lambda: inspected.append(("hdc", vm.hdc_serial)) or []
+    )
+    monkeypatch.setattr(
+        manager, "_port_is_free", lambda port: inspected.append(("port", port)) or False
+    )
+    monkeypatch.setattr(manager_module, "managed_vm_owner", lambda _serial: None)
     client = RecordingClient()
     assert await manager.report_orphan_reconcile(client) == 1
     payload = client.sent[-1]
     assert payload["inventory_complete"] is True
     assert payload["instances"][0]["details"]["managed_instance_present"] is True
     assert payload["instances"][0]["details"]["cleanup_confirmed"] is False
+    observation = payload["instances"][0]["details"]["instance_observation"]
+    assert observation["state"] == "stopped" and observation["resources_released"] is False
+    assert observation["identity"] == {
+        "instance_name": name, "instance_path": str(manager.instance_path),
+        "lease_token": vm.lease_token, "hdc_serial": vm.hdc_serial,
+    }
+    assert inspected == [("process", vm.id), ("hdc", vm.hdc_serial), ("port", vm.hdc_port)]
     assert "cleanup_confirmed" not in manager._known[vm.id]
     return vm, manager, client, payload, directory
 
@@ -75,7 +97,7 @@ async def test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_chec
     import ai_phone.agent.harmony_vm.manager as manager_module
 
     vm, manager, client, payload, directory = await legacy_setup(
-        session, tmp_path, owner_host_id=owner_host_id,
+        session, tmp_path, monkeypatch, owner_host_id=owner_host_id,
     )
     identity = (vm.hdc_port, vm.hdc_serial, vm.lease_token)
     hub = ContractHub(online=("restarted",))
@@ -83,8 +105,10 @@ async def test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_chec
     await session.refresh(vm)
     assert vm.assigned_agent_id == "restarted"
     assert vm.runtime["owner_host_id"] == "host-one"
-    assert vm.state == "agent_offline"
-    assert vm.error_code == "legacy_stop_unconfirmed" and vm.error_message == "old stop was not confirmed"
+    assert vm.state == "stopped", "本次确切进程观察可以证明停机，但不能证明旧端口释放"
+    view = lifecycle_view(vm, hub)
+    assert view["state"] == "stopped" and view["error"] == "old stop was not confirmed"
+    assert view["actions"]["stop"] is False, "已停页面不新增恢复动作；既有失败仍持续可见"
     assert vm.runtime["last_status"]["details"]["cleanup_confirmed"] is False
     assert (vm.hdc_port, vm.hdc_serial, vm.lease_token) == identity
     lease = await session.get(HarmonyVmPortLease, identity[0], populate_existing=True)
@@ -126,25 +150,31 @@ async def test_legacy_unconfirmed_lease_reclaims_session_then_explicit_stop_chec
     "lease_row", "foreign_lease",
 ])
 async def test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof(
-    session, tmp_path, missing,
+    session, tmp_path, monkeypatch, missing,
 ):
     vm, _manager, _client, payload, _directory = await legacy_setup(
-        session, tmp_path, owner_host_id="original-host" if missing == "host_conflict" else None,
+        session, tmp_path, monkeypatch, owner_host_id="original-host" if missing == "host_conflict" else None,
     )
     identity = (vm.hdc_port, vm.hdc_serial, vm.lease_token)
     row = payload["instances"][0]
+    native_identity = row["details"]["instance_observation"]["identity"]
     if missing == "complete":
         payload["inventory_complete"] = False
     elif missing == "name":
         row["details"]["instance_name"] = "wrong-instance"
+        native_identity["instance_name"] = "wrong-instance"
     elif missing == "path":
         row["details"].pop("instance_path")
+        native_identity.pop("instance_path")
     elif missing == "managed":
         row["details"].pop("managed_instance_present")
+        row["details"].pop("instance_observation")
     elif missing == "token":
         row["lease_token"] = "wrong-token"
+        native_identity["lease_token"] = "wrong-token"
     elif missing == "serial":
         row["hdc_serial"] = "127.0.0.1:10008"
+        native_identity["hdc_serial"] = "127.0.0.1:10008"
     elif missing in {"lease_row", "foreign_lease"}:
         lease = await session.get(HarmonyVmPortLease, vm.hdc_port)
         if missing == "lease_row":
@@ -165,7 +195,7 @@ async def test_legacy_session_reclaim_rejects_incomplete_or_conflicting_proof(
 async def test_legacy_stop_without_absence_evidence_does_not_claim_cleanup(session, tmp_path, monkeypatch, unconfirmed):
     import ai_phone.agent.harmony_vm.manager as manager_module
 
-    vm, manager, _client, _payload, _directory = await legacy_setup(session, tmp_path)
+    vm, manager, _client, _payload, _directory = await legacy_setup(session, tmp_path, monkeypatch)
     inspected = []
     def inspect(vm_id, _known):
         inspected.append(vm_id)

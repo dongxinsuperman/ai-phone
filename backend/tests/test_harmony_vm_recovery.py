@@ -260,7 +260,20 @@ async def test_failed_first_binding_cannot_be_revived_by_late_status_or_inventor
     await handle_vm_status(
         "new-agent",
         {**report, "state": "error", "ok": False, "reason": "boot_failed",
-         "details": {"cleanup_confirmed": True}},
+         "details": {
+             "created_in_attempt": True, "instance_deleted": True,
+             "instance_created": False, "cleanup_confirmed": True, "rollback_new_instance": True,
+             "instance_observation": {
+                 "vm_id": vm_id, "state": "missing", "resources_released": True,
+                 "reason": "new_instance_rollback_confirmed",
+                 "identity": {
+                     "instance_name": f"aiphone_harmony_{vm_id}",
+                     "instance_path": "/fixture/harmony/instances",
+                     "lease_token": start["lease_token"],
+                     "hdc_serial": report["hdc_serial"],
+                 },
+             },
+         }},
         hub,
     )
     session.expire_all()

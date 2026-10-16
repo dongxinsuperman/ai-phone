@@ -1,0 +1,18 @@
+{
+  "at": "2026-10-16T03:41:32.853703+00:00",
+  "failure_class": "fixture_record_parameter_name_collision",
+  "offline_actual_function_reproduction": "record() got multiple values for argument 'kind'",
+  "checks_passed": 50,
+  "checks_failed": 1,
+  "processes": {
+    "33346": {
+      "exists": false
+    },
+    "33348": {
+      "exists": false
+    }
+  },
+  "raw_summary_unchanged": true,
+  "product_changed": false,
+  "automatic_rerun": false
+}

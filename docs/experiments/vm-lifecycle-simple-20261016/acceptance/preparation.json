@@ -1,0 +1,30 @@
+{
+  "status": "prepared-not-executed",
+  "at": "2026-10-16T03:26:41.833615+00:00",
+  "source_head_observed": "82e48bc899fe9334fd683149d01c2c8aeeacc85b",
+  "product_still_parallel_editing": true,
+  "source_files": {
+    "browser_acceptance.js": "834b77fcb595d3cc1470c538d8ee64a909e481875562fd847c673aa1067fd466",
+    "browser_fixture.py": "ffec66fbc5780be4b9b27d693f27ee1a87b4e49b29a61f571a5cb0b26559a95b",
+    "common.py": "6fcef8886fc41fa8f3202026a91d1ac7c3853a12edad63afbeb07ad56b0e428c",
+    "run_acceptance.py": "8f1560f6515c62d01e6fe4138d4b64e61b6d9069f4e9aa866e290845549ca400",
+    "run_browser.cjs": "871be82278f79883f734491550e665d11f6ff5f08496ed8c58f82cabeeaa4b60",
+    "test_fixture_guards.py": "302225c4ef06e4a33bdb2a9a4d7c49a12cc9278df2beed0609874d79273cb75e"
+  },
+  "static_guard_tests": 14,
+  "guards_passed": true,
+  "guard_log": "/Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/preparation-guards.log",
+  "python_ast": "passed",
+  "javascript_syntax": "passed (node --check, no browser launch)",
+  "playwright_installed": "1.62.1",
+  "routes_executed": false,
+  "browser_executed": false,
+  "vue_build_executed": false,
+  "source_frozen": false,
+  "runs_directory_exists": false,
+  "main_8000_5180_touched": false,
+  "real_agent_or_vm_started": false,
+  "company_access": false,
+  "pending_contract_review": "Harmony no-lease failed-start passive stopped observation acceptance flagged to server_lifecycle for final check",
+  "harmony_native_identity_retention_guard": "passed actual read_vm/observed AST replay"
+}

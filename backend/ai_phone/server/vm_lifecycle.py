@@ -7,10 +7,13 @@ in its existing runtime JSON; there is no retry or resume workflow.
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
+import re
 import uuid
 import weakref
 from datetime import datetime, timezone, timedelta
+from types import SimpleNamespace
 
 from fastapi import HTTPException
 from sqlalchemy import event, text
@@ -67,6 +70,237 @@ def update_runtime(vm, **values) -> None:
     setattr(vm, "runtime_state" if hasattr(vm, "runtime_state") else "runtime", {**runtime(vm), **values})
 
 
+def _mapping(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _last_details(vm) -> dict:
+    data = runtime(vm)
+    last = _mapping(data.get("last_status"))
+    return _mapping(last.get("details")) or _mapping(data.get("details"))
+
+
+def observation_identity_matches(vm, observation: dict) -> bool:
+    if observation.get("vm_id") != vm.id:
+        return False
+    identity = _mapping(observation.get("identity"))
+    if hasattr(vm, "udid"):
+        return bool(identity.get("sim_name") == f"aiphone_sim_{vm.id}"
+                    and identity.get("udid")
+                    and (not vm.udid or identity["udid"] == vm.udid))
+    if hasattr(vm, "hdc_serial"):
+        name = "aiphone_harmony_" + re.sub(r"[^A-Za-z0-9_]+", "_", vm.id)[:32]
+        return bool(identity.get("instance_name") == name and identity.get("instance_path")
+                    and (not vm.lease_token or identity.get("lease_token") == vm.lease_token)
+                    and (not vm.hdc_serial or identity.get("hdc_serial") == vm.hdc_serial))
+    name = "aiphone_vm_" + re.sub(r"[^A-Za-z0-9_]+", "_", vm.id)[:32]
+    return identity.get("avd_name") == name
+
+
+def instance_observation(vm) -> dict:
+    data = runtime(vm)
+    observation = _mapping(data.get("instance_observation")) or _mapping(_last_details(vm).get("instance_observation"))
+    if not observation:
+        return {}
+    if observation.get("vm_id") != vm.id:
+        return {"vm_id": vm.id, "state": "unknown", "resources_released": False,
+                "reason": "原生观察与当前配置不一致"}
+    state = observation.get("state")
+    if state not in {"running", "stopped", "missing", "unknown"}:
+        return {"vm_id": vm.id, "state": "unknown", "resources_released": False,
+                "reason": "原生观察未提供可确认的状态"}
+    if state in {"running", "stopped"} and not observation_identity_matches(vm, observation):
+        return {"vm_id": vm.id, "state": "unknown", "resources_released": False,
+                "reason": "原实例身份与记录不一致，尚未核实当前状态"}
+    return observation
+
+
+def observation_notice(observation: dict) -> str:
+    state, reason = observation.get("state"), str(observation.get("reason") or "")
+    if state == "running":
+        return "原实例仍在运行，未重复启动"
+    if state == "missing":
+        return "原实例配置缺失，未新建替代实例"
+    if any(code in reason for code in ("definition_unverified", "definition_missing", "config_unreadable", "config_missing")):
+        return "原实例配置文件缺失或不可读，本次启动未执行"
+    if any(code in reason for code in ("lock_busy", "operation_in_progress", "operation_busy", "instance_busy")):
+        return "当前本机操作尚未结束，本次启动未执行"
+    if any(code in reason for code in ("transport_port_unavailable", "port_in_use", "port_busy")):
+        return "实例已停止，但原端口仍被占用，本次启动未执行"
+    if state == "stopped" and observation.get("resources_released") is not True:
+        return reason if any("\u4e00" <= char <= "\u9fff" for char in reason) else "原实例已停止，资源释放尚未核实，本次启动未执行"
+    if reason and any("\u4e00" <= char <= "\u9fff" for char in reason):
+        return reason
+    return "当前原实例状态尚未核实" + (f"：{reason}" if reason else "")
+
+
+def record_failure(vm, message: str, *, reason: str = "", action: str = "", request_id: str = "", preflight: bool = False) -> None:
+    if not message:
+        return
+    op = _mapping(runtime(vm).get("operation"))
+    update_runtime(vm, last_failure={
+        "message": str(message)[:4000], "reason": reason,
+        "action": action or str(op.get("action") or ""),
+        "request_id": request_id or str(op.get("request_id") or ""),
+        "at": datetime.now(timezone.utc).isoformat(),
+        **({"native_command_sent": False} if preflight else {}),
+    })
+
+
+def preserve_failure(vm) -> None:
+    data = runtime(vm)
+    if data.get("last_failure"):
+        return
+    if getattr(vm, "error_message", "") and (
+        vm.state in {"error", "unavailable"} or _mapping(data.get("operation")).get("outcome") == "failed"
+    ):
+        record_failure(vm, vm.error_message, reason=str(getattr(vm, "error_code", "") or ""))
+
+
+def record_status_facts(vm, msg: dict) -> None:
+    """Accepted current evidence only; an old failure is not a native fact."""
+    preserve_failure(vm)
+    observation = _mapping(_mapping(msg.get("details")).get("instance_observation"))
+    update_runtime(vm, instance_observation=observation or None)
+    operation = _mapping(runtime(vm).get("operation"))
+    if msg.get("ok") is False and (
+        msg.get("request_id") or operation.get("pending")
+        or (not runtime(vm).get("last_failure") and msg.get("error"))
+    ):
+        record_failure(vm, str(msg.get("error") or msg.get("reason") or "操作未成功"),
+                       reason=str(msg.get("reason") or ""), request_id=str(msg.get("request_id") or ""))
+
+
+def invalidate_instance_observation(vm, reason: str = "连接中断，当前原实例状态尚未核实") -> None:
+    preserve_failure(vm)
+    observation = {"vm_id": vm.id, "state": "unknown", "identity": {},
+                   "resources_released": False, "reason": reason}
+    details = {"instance_observation": observation, "cleanup_confirmed": False}
+    update_runtime(vm, instance_observation=observation, details=details,
+                   last_status={"state": "unknown", "ok": False, "reason": "observation_required", "details": details})
+
+
+def record_stopped_inventory(vm, identity: dict) -> None:
+    """A complete, exact native inventory proves power state, not free ports."""
+    preserve_failure(vm)
+    observation = {"vm_id": vm.id, "state": "stopped", "identity": dict(identity),
+                   "resources_released": False, "reason": "本次完整原生库存确认实例已停止"}
+    details = {"instance_observation": observation, "inventory_complete": True}
+    update_runtime(vm, instance_observation=observation, details=details,
+                   last_status={"state": "stopped", "ok": True, "reason": "reclaimed", "details": details})
+
+
+def _resolve_machine_fact(vm):
+    data, raw = runtime(vm), str(vm.state or "draft")
+    op, last = _mapping(data.get("operation")), _mapping(data.get("last_status"))
+    details = _last_details(vm)
+    owner = str(vm.assigned_agent_id or "")
+    pending = bool(op.get("pending"))
+    transition = raw in {"starting", "stopping", "probing", "dispatching", "creating", "connecting_hdc", "checking_driver"}
+    busy = pending or (transition and not op)
+    observation = instance_observation(vm)
+    native_state = observation.get("state")
+    state, notice = None, ""
+    if busy:
+        state = "stopping" if op.get("action") == "stop" or raw == "stopping" else "starting"
+    elif (not owner and not data.get("instance_created") and not details.get("instance_created")
+          and (raw == "draft" or (not op and _mapping(data.get("last_failure")).get("native_command_sent") is False)
+               or (op.get("first_bind") and op.get("outcome") == "failed"
+               and details.get("instance_created") is False
+               and (details.get("instance_deleted") is True or details.get("cleanup_confirmed") is True)))):
+        state = "draft"
+    elif native_state in {"running", "stopped"}:
+        state = native_state
+    elif native_state in {"missing", "unknown"}:
+        notice = observation_notice(observation)
+    elif raw == "running" and last.get("ok") is not False:
+        state = "running"
+    elif (raw == "stopped" and (not op or op.get("action") == "stop")
+          and last.get("state") == "stopped" and last.get("ok") is True
+          and details.get("cleanup_confirmed") is not False
+          and (details.get("cleanup_confirmed") is True or details.get("inventory_complete") is True)):
+        state = "stopped"
+    return state, notice, busy, observation
+
+
+def machine_state(vm):
+    """Last proven machine phase, before connection loss masks current certainty."""
+    return _resolve_machine_fact(vm)[0]
+
+
+def require_editable(vm, hub, *, alias_only: bool) -> None:
+    require_action(vm, "edit", hub)
+    if not alias_only and machine_state(vm) == "running":
+        raise HTTPException(409, operation_failure_detail(vm, "运行中只能修改别名，请先停止后修改配置", hub=hub))
+
+
+def lifecycle_view(vm, hub=None) -> dict:
+    data, raw = runtime(vm), str(vm.state or "draft")
+    op, details = _mapping(data.get("operation")), _last_details(vm)
+    owner = str(vm.assigned_agent_id or "")
+    online = bool(owner and hub is not None and getattr(hub, "has_agent", lambda _id: False)(owner))
+    state, notice, busy, observation = _resolve_machine_fact(vm)
+    if owner and not online:
+        if not busy:
+            state = None
+        notice = "所属 Agent 离线，当前机器状态无法确认"
+    elif raw == "agent_offline" and not busy:
+        state, notice = None, "Agent 已连接，原实例状态尚未核实"
+    elif state is None and not notice:
+        notice = "当前机器状态尚未核实；普通启动会先只读核验原实例"
+    # A stopped inventory need not have inspected ports or this instance's
+    # services. It is a machine fact, not a failed user operation. Actual
+    # preflight/operation failures remain visible through last_failure.
+    host_matches = hub is None or owner_host_matches(vm, hub)
+    if owner and online and not host_matches:
+        state, notice = None, "所属宿主与记录不一致，不能操作其他宿主的实例"
+    protected_first_bind = bool(op.get("first_bind") and op.get("outcome") == "failed"
+                                and op.get("created_in_attempt") is False and details.get("instance_created"))
+    if protected_first_bind:
+        notice = "本次未创建该宿主实例，不能自动接管已有数据"
+    occupied = bool(owner and online and hub is not None and device_is_busy(hub, vm))
+    mutable = not busy
+    retire = mutable and state != "running" and not occupied
+    actions = {
+        "start": bool(mutable and owner and online and host_matches and not occupied
+                      and state in {None, "stopped"} and not protected_first_bind),
+        "stop": bool(mutable and owner and online and host_matches and not occupied
+                     and state in {None, "running"}),
+        "dispatch": bool(retire and not protected_first_bind and (owner or state == "draft")),
+        "delete": bool(retire),
+        "edit": bool(mutable),
+        "copy": bool(mutable),
+    }
+    if occupied:
+        notice = "设备正在执行任务、安装或观看，请结束后再操作"
+    failure = data.get("last_failure")
+    error = str(failure.get("message") or "") if isinstance(failure, dict) else str(failure or "")
+    if not error and (raw in {"error", "unavailable"} or op.get("outcome") == "failed"):
+        error = str(getattr(vm, "error_message", "") or "")
+    return {"state": state, "agent_online": online, "actions": actions, "notice": notice, "error": error}
+
+
+def vm_view(vm, hub=None) -> dict:
+    return {**vm.to_dict(), "lifecycle": lifecycle_view(vm, hub)}
+
+
+def require_action(vm, action: str, hub, *, idempotent_stop: bool = False) -> None:
+    view = lifecycle_view(vm, hub)
+    if view["actions"].get(action):
+        return
+    # The page need not offer Stop for a stopped guest, but existing API/CLI
+    # callers retain one explicit idempotent native Stop and its real receipt.
+    if (action == "stop" and idempotent_stop and view["state"] == "stopped"
+            and vm.assigned_agent_id and view["agent_online"] and owner_host_matches(vm, hub)):
+        require_device_idle(hub, vm)
+        return
+    message = view["notice"] or ("实例正在操作中，请等待本次结果" if view["state"] in {"starting", "stopping"}
+                                 else "当前机器状态不允许该操作")
+    if vm.assigned_agent_id and view["agent_online"] and device_is_busy(hub, vm):
+        message = "device_busy: " + message
+    raise HTTPException(409, operation_failure_detail(vm, message, hub=hub))
+
+
 def require_idle(vm, *, allow_running=False) -> None:
     blocked = {
         "starting",
@@ -79,27 +313,117 @@ def require_idle(vm, *, allow_running=False) -> None:
     }
     if not allow_running:
         blocked.add("running")
-    if vm.state in blocked:
+    if _mapping(runtime(vm).get("operation")).get("pending") or vm.state in blocked:
         raise HTTPException(409, "实例正在操作中，请等待本次结果")
 
 
-def require_startable(vm) -> None:
-    require_idle(vm)
+def require_startable(vm, hub=None) -> None:
+    view = lifecycle_view(vm, hub)
+    if vm.assigned_agent_id:
+        require_action(vm, "start", hub)
+    elif view["state"] != "draft" or not view["actions"]["dispatch"]:
+        raise HTTPException(409, operation_failure_detail(vm, view["notice"] or "原实例状态尚未核实，不能新建替代实例", hub=hub))
+
+
+def start_needs_inspection(vm, hub) -> bool:
+    if not vm.assigned_agent_id:
+        return False
+    view = lifecycle_view(vm, hub)
+    if vm.state in {"error", "unavailable", "agent_offline"} or view["state"] is None:
+        return True
+    if hasattr(vm, "lease_token") and (vm.lease_token or vm.hdc_port is not None or vm.hdc_serial):
+        return True
+    observation = instance_observation(vm)
+    return view["state"] == "stopped" and bool(observation) and observation.get("resources_released") is not True
+
+
+def start_preflight_snapshot(vm) -> dict:
+    """Only state used by this action; unrelated timestamps do not cause conflicts."""
     data = runtime(vm)
-    last = data.get("last_status") or {}
-    details = last.get("details") or data.get("details") or {}
-    op = data.get("operation") or {}
-    if (
-        op.get("first_bind")
-        and op.get("outcome") == "failed"
-        and op.get("created_in_attempt") is False
-        and details.get("instance_created")
-    ):
-        raise HTTPException(409, "本次未创建该宿主实例，不能自动接管已有数据；请使用新配置")
-    if vm.state not in {"draft", "stopped"} and not (
-        vm.state in {"error", "unavailable"} and details.get("cleanup_confirmed")
-    ):
-        raise HTTPException(409, "实例尚未确认停止，请先重试停止或等待对账")
+    config = vm.to_dict()
+    runtime_field = "runtime_state" if hasattr(vm, "runtime_state") else "runtime"
+    for field in (runtime_field, "error_message", "error_code", "created_at", "updated_at", "started_at", "stopped_at"):
+        config.pop(field, None)
+    return copy.deepcopy({"config": config, "operation": data.get("operation"),
+                          "owner_host_id": data.get("owner_host_id"),
+                          "lease_token": getattr(vm, "lease_token", None)})
+
+
+async def reject_start_preflight(session, vm, hub, message: str, *, reason: str = "instance_unverified", request_id: str = "") -> None:
+    record_failure(vm, message, reason=reason, action="start", request_id=request_id, preflight=True)
+    vm.error_message = message
+    if hasattr(vm, "error_code"):
+        vm.error_code = reason
+    await session.commit()
+    raise HTTPException(409, operation_failure_detail(vm, message, request_id=request_id, hub=hub, reason=reason))
+
+
+async def ensure_start_observation(session, vm, hub, waiter):
+    """Inspect unknown bound instances outside the VM lock, then fence its use."""
+    if not start_needs_inspection(vm, hub):
+        return vm
+    await transaction_lock(session, operation_lock_key(vm))
+    await session.refresh(vm)
+    require_startable(vm, hub)
+    require_owner_host(vm, hub)
+    if not start_needs_inspection(vm, hub):
+        return vm
+    expected = start_preflight_snapshot(vm)
+    vm_id, model, agent_id = vm.id, type(vm), str(vm.assigned_agent_id)
+    probe_vm = SimpleNamespace(**{column.key: copy.deepcopy(getattr(vm, column.key)) for column in vm.__table__.columns})
+    await session.commit()  # release both the read connection and per-VM lock
+    try:
+        response = await waiter.inspect_agent(hub=hub, vm=probe_vm, agent_id=agent_id, timeout_sec=10.0)
+    except Exception as exc:
+        response = {"ok": False, "reason": f"无法读取原实例状态：{exc}", "details": {}}
+    await transaction_lock(session, operation_lock_key(vm))
+    current = await session.get(model, vm_id, populate_existing=True)
+    if current is None:
+        raise HTTPException(404, "实例已删除")
+    if start_preflight_snapshot(current) != expected:
+        raise HTTPException(409, operation_failure_detail(current, "核验期间实例配置、归属或操作已变化，本次未启动", hub=hub))
+    if not hub.has_agent(agent_id) or not owner_host_matches(current, hub):
+        invalidate_instance_observation(current)
+        await reject_start_preflight(session, current, hub, "所属 Agent 连接已变化，本次启动未执行", reason="agent_unavailable")
+    observation = _mapping(_mapping(response.get("details")).get("instance_observation"))
+    if not observation or observation.get("vm_id") != current.id:
+        observation = {"vm_id": current.id, "state": "unknown", "identity": {}, "resources_released": False,
+                       "reason": str(response.get("reason") or "Agent 未返回可核实的原实例观察")}
+    preserve_failure(current)
+    update_runtime(current, instance_observation=observation,
+                   last_status={"state": observation.get("state"), "ok": True, "reason": "inspected",
+                                "details": {"instance_observation": observation}})
+    observation = instance_observation(current)
+    observed_state = observation.get("state")
+    if observed_state in {"running", "stopped"}:
+        current.state = observed_state
+        update_runtime(current, instance_created=True)
+    # Stopped is the common power-state prerequisite. Android rechecks its
+    # chosen port locally; iOS can clean only this instance's own WDA before
+    # booting the same UDID. Only Harmony's retained lease requires positive
+    # release proof before Server can allocate another lease.
+    if observed_state != "stopped":
+        await reject_start_preflight(session, current, hub, observation_notice(observation),
+            reason=str(observation.get("reason") or f"instance_{observed_state or 'unknown'}"),
+            request_id=str(response.get("request_id") or ""))
+    if hasattr(current, "lease_token") and (current.lease_token or current.hdc_port is not None or current.hdc_serial):
+        from .harmony_vm.models import HarmonyVmPortLease
+        from .harmony_vm.service import release_port_lease
+        lease = await session.get(HarmonyVmPortLease, current.hdc_port) if current.hdc_port is not None else None
+        identity = _mapping(observation.get("identity"))
+        if observation.get("resources_released") is not True:
+            await reject_start_preflight(session, current, hub, observation_notice(observation),
+                reason=str(observation.get("reason") or "lease_release_unverified"),
+                request_id=str(response.get("request_id") or ""))
+        if (lease is None or not current.lease_token or lease.vm_id != current.id
+                or lease.lease_token != current.lease_token
+                or identity.get("lease_token") != current.lease_token
+                or identity.get("hdc_serial") != current.hdc_serial
+                or not observation_identity_matches(current, observation)):
+            await reject_start_preflight(session, current, hub, "原实例的资源归属尚未对齐，本次启动未执行", reason="lease_identity_unverified")
+        await release_port_lease(session, current, reason="verified_stopped_observation")
+    maintenance(hub, current, True)
+    return current  # caller retains the lock through its one start reservation
 
 
 def host_id(hub, agent_id: str) -> str:
@@ -153,8 +477,15 @@ def begin_operation(
     request_id = request_id or uuid.uuid4().hex[:16]
     seconds = float(timeout_sec if timeout_sec is not None else operation_timeout_seconds(vm, action))
     started = datetime.now(timezone.utc)
+    vm.error_message = ""
+    if hasattr(vm, "error_code"):
+        vm.error_code = ""
     update_runtime(
         vm,
+        last_failure=None,
+        instance_observation=None,
+        last_status={},
+        details={},
         operation={
             "action": action,
             "request_id": request_id,
@@ -198,12 +529,34 @@ def accept_status(vm, msg: dict) -> bool:
     return True
 
 
+def accept_observation_fact(vm, msg: dict) -> bool:
+    """Fresh owner observations may update facts, never revive a failed attempt."""
+    op = _mapping(runtime(vm).get("operation"))
+    if not vm.assigned_agent_id or op.get("pending"):
+        return False
+    request_id, observed = str(msg.get("request_id") or ""), str(msg.get("observed_request_id") or "")
+    current = str(op.get("request_id") or "")
+    if (request_id and request_id != current) or (observed and current and observed != current):
+        return False
+    observation = _mapping(_mapping(msg.get("details")).get("instance_observation"))
+    if observation.get("vm_id") != vm.id:
+        return False
+    state = observation.get("state")
+    if state in {"running", "stopped"}:
+        return observation_identity_matches(vm, observation)
+    return state in {"unknown", "missing"}
+
+
 def finish_operation(vm, msg: dict) -> None:
     op = runtime(vm).get("operation") or {}
     if not op.get("pending"):
         return  # a health observation must not rewrite a completed attempt
     if msg.get("state") in {"running", "stopped", "error", "unavailable"}:
         failed = msg.get("state") in {"error", "unavailable"} or msg.get("ok") is False
+        if failed:
+            record_failure(vm, str(msg.get("error") or msg.get("reason")
+                                   or getattr(vm, "error_message", "") or "本次操作未成功"),
+                           reason=str(msg.get("reason") or getattr(vm, "error_code", "") or ""))
         update_runtime(
             vm,
             operation={
@@ -228,7 +581,7 @@ def maintenance(hub, vm, enabled: bool) -> None:
         fn(serial, vm.id if enabled else None)
 
 
-def require_device_idle(hub, vm) -> None:
+def device_is_busy(hub, vm) -> bool:
     from .lockstore import get_default_lock_store
 
     store = getattr(hub, "vm_lock_store", None) or get_default_lock_store()
@@ -238,7 +591,11 @@ def require_device_idle(hub, vm) -> None:
         else str(getattr(vm, "udid", None) or getattr(vm, "adb_serial", None) or "")
     )
     subscribers = getattr(hub, "subscriber_count", None)
-    if serial and (store.peek(serial) is not None or (subscribers and subscribers(serial))):
+    return bool(serial and (store.peek(serial) is not None or (subscribers and subscribers(serial))))
+
+
+def require_device_idle(hub, vm) -> None:
+    if device_is_busy(hub, vm):
         raise HTTPException(409, "device_busy: 设备正在执行任务、安装或观看，请结束后再操作")
 
 
@@ -352,14 +709,14 @@ def fail_attempt(vm, reason: str, message: str) -> None:
         vm.error_code = reason
     if op.get("first_bind"):
         vm.assigned_agent_id = None
-    data = runtime(vm)
-    details = {
-        **((data.get("last_status") or {}).get("details") or data.get("details") or {}),
-        "cleanup_confirmed": False,
-    }
+    # Failure/timeout supplies no fresh native proof. In particular it must
+    # not carry a prior operation's exit_evidence or observation forward.
+    details = {"cleanup_confirmed": False}
     update_runtime(
-        vm, last_status={"state": "error", "ok": False, "reason": reason, "details": details}, details=details
+        vm, last_status={"state": "error", "ok": False, "reason": reason, "details": details},
+        details=details, instance_observation=None,
     )
+    record_failure(vm, message, reason=reason)
     finish_operation(vm, {"state": "error", "ok": False})
     update_runtime(vm, operation={**(runtime(vm).get("operation") or {}), "failure_reason": reason})
 
@@ -549,7 +906,7 @@ async def send_operation_once(hub, target: str, payload: dict, *, timeout_sec: f
 
 
 def require_retirement_allowed(hub, vm) -> None:
-    require_idle(vm)
+    require_action(vm, "delete", hub)
     owner = str(vm.assigned_agent_id or "")
     if owner and hub.has_agent(owner) and owner_host_matches(vm, hub):
         require_device_idle(hub, vm)
@@ -590,9 +947,9 @@ def is_untouched_draft(vm) -> bool:
     return vm.state == "draft" and not vm.assigned_agent_id and not runtime(vm).get("operation")
 
 
-def operation_failure_detail(vm, message: str, *, request_id: str | None = None, **extra) -> dict:
+def operation_failure_detail(vm, message: str, *, request_id: str | None = None, hub=None, **extra) -> dict:
     """Keep actionable identity/evidence when an HTTP operation fails."""
     op = runtime(vm).get("operation") or {}
     return {"message": message, "sent": False, "vm_id": vm.id,
             "request_id": str(op.get("request_id") or "") if request_id is None else request_id,
-            "instance": vm.to_dict(), **extra}
+            "instance": vm_view(vm, hub), **extra}

@@ -1,0 +1,3 @@
+2026-10-16 11:44:30.378 | INFO     | ai_phone.server.db:init_engine:44 - 初始化数据库 engine: sqlite+aiosqlite:////Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/docs/experiments/vm-lifecycle-simple-20261016/acceptance/runs/personal-simple-final-20261016-a3/runtime/fixture.db
+PERSONAL_FIXTURE http://127.0.0.1:52241
+2026-10-16 11:45:26.269 | INFO     | ai_phone.server.db:dispose_engine:222 - 数据库 engine 已释放

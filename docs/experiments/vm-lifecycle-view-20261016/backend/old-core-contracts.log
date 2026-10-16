@@ -1,0 +1,5 @@
+2026-10-16 11:30:07.985 | DEBUG    | ai_phone.agent.drivers.harmony:_neutralize_hmdriver_del_once:114 - hmdriver2.Driver.__del__ 已阉割（去除 _instance.clear + fport 副作用）
+ERROR: file or directory not found: /Users/dongxin/.codex/worktrees/vm-lifecycle-hardening/ai-phone/backend/tests/test_vm_probe_fresh_ports.py
+
+
+2 warnings in 0.00s
