@@ -386,7 +386,8 @@ def test_explicit_start_does_not_adopt_old_first_bind_data(local_vm, protection)
 
 
 @pytest.mark.parametrize("cache_state", ["pending", "stale", "clean"])
-def test_explicit_bound_start_clears_expired_bookkeeping_and_reuses_exact_definition(local_vm, monkeypatch, cache_state):
+@pytest.mark.parametrize("no_window", [False, True])
+def test_explicit_bound_start_clears_expired_bookkeeping_and_reuses_exact_definition(local_vm, monkeypatch, cache_state, no_window):
     manager, known, config = local_vm
     known["cleanup_pending"] = cache_state == "pending"
     if cache_state == "stale":
@@ -394,7 +395,7 @@ def test_explicit_bound_start_clears_expired_bookkeeping_and_reuses_exact_defini
     register_managed_vm("observe-vm", known["hdc_serial"], known["lease_token"])
     before = config.read_bytes()
     spawned = []
-    monkeypatch.setattr(manager, "probe", lambda _msg: {"ok": True, "details": {"tools": {"emulator": "/fake/Emulator"}}})
+    monkeypatch.setattr(manager, "probe", lambda _msg: {"ok": True, "details": {"tools": {"emulator": "/fake/Emulator"}, "no_window_supported": no_window}})
     monkeypatch.setattr(manager, "_resolve_image_root", lambda _msg: "")
     monkeypatch.setattr(manager, "_port_conflict", lambda *_a: "")
     monkeypatch.setattr(mod, "_spawn_harmony_emulator", lambda args, *_a, **_k: spawned.append(args) or SimpleNamespace(poll=lambda: None))
@@ -404,6 +405,7 @@ def test_explicit_bound_start_clears_expired_bookkeeping_and_reuses_exact_defini
     result = manager.start_sync({"vm_id": "observe-vm", "lease_token": "new-lease", "assigned_port": 10008,
                                  "require_existing_instance": True, "rollback_new_instance": False})
     assert len(spawned) == 1 and spawned[0][1:3] == ["-start", known["instance_name"]]
+    assert ("-noWindow" in spawned[0]) is no_window
     assert result["details"]["instance_observation"]["state"] == "running"
     assert result["details"]["cleanup_confirmed"] is False
     assert result["details"]["created_in_attempt"] is False

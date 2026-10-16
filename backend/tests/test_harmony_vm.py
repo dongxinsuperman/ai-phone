@@ -221,6 +221,29 @@ def test_harmony_agreement_acceptance_is_local_and_default_off():
     assert "harmony_auto_accept_agreements" not in downlink_field_names()
 
 
+@pytest.mark.parametrize("rc,help_text,supported", [
+    (0, "-start -noWindow: Start without GUI", True),
+    (0, "-start -nowindow optional", True),
+    (0, "-start -hdcPort", False),
+    (0, "", None),
+    (1, "-start -noWindow", None),
+    (-1, "timeout", None),
+])
+def test_headless_requires_successful_official_cli_capability(monkeypatch, rc, help_text, supported):
+    from ai_phone.agent.harmony_vm import capability
+    calls = []
+    def run(args, **kwargs):
+        calls.append(args)
+        return rc, help_text
+    monkeypatch.setattr(capability, "_run", run)
+    if supported is None:
+        with pytest.raises(RuntimeError, match="harmony_vm_headless_probe_failed"):
+            capability.supports_no_window("/fake/Emulator")
+    else:
+        assert capability.supports_no_window("/fake/Emulator") is supported
+    assert calls == [["/fake/Emulator", "-help"]]
+
+
 def test_harmony_emulator_spawn_without_acceptance_keeps_original_stdio(
     monkeypatch,
 ):

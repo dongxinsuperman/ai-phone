@@ -161,6 +161,14 @@ def _emulator_help_supported(
     )
 
 
+def supports_no_window(emulator: str, *, deadline: Optional[float] = None) -> bool:
+    """Valid old help means GUI; failed or malformed help is an error."""
+    rc, raw = _run([emulator, "-help"], timeout=startup_timeout(deadline, 5.0))
+    if rc != 0 or not re.search(r"(?i)-(?:start|hvd)\b", raw):
+        raise RuntimeError(f"harmony_vm_headless_probe_failed: Emulator -help 探查失败 (rc={rc}): {raw[-500:]}")
+    return bool(re.search(r"(?i)(?<![\w-])-noWindow\b", raw))
+
+
 def find_harmony_tools(*, deadline: Optional[float] = None) -> Tuple[Optional[HarmonyVmTools], list[str]]:
     # Android SDK 也可能在 PATH 暴露同名 Emulator，因此必须先找 DevEco
     # 官方安装位置，并对命令面做校验，不能只看文件名。
@@ -983,6 +991,10 @@ def probe_harmony_vm_capability(
             "details": details,
         }
     details["tools"] = {"emulator": tools.emulator, "hdc": hdc_available()}
+    try:
+        details["no_window_supported"] = supports_no_window(tools.emulator, deadline=deadline)
+    except RuntimeError as exc:
+        return {"ok": False, "reason": str(exc), "details": details}
     if not hdc_available():
         return {"ok": False, "reason": "缺少 hdc", "details": details}
 

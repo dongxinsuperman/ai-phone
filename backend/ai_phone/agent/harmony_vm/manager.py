@@ -729,6 +729,7 @@ class HarmonyVmManager:
         startup_timeout(deadline, 1.0)
         if tools is None:
             raise RuntimeError(f"missing Harmony VM tools: {', '.join(missing)}")
+        no_window = probe_details.get("no_window_supported") is True
         # 空串表示"不传 -imageRoot，交给 DevEco 用它自己配置的镜像目录"。
         # 与 Android 同理：Android 不向 emulator 传 SDK 路径，由工具链自己解析。
         # 目录扫描只能作为定位辅助，扫不到不代表镜像不存在——官方的
@@ -883,6 +884,8 @@ class HarmonyVmManager:
                 ]
             )
             startup_timeout(deadline, 1.0)
+            if no_window:
+                args.append("-noWindow")
             runtime.process = _spawn_harmony_emulator(
                 args,
                 log_file,

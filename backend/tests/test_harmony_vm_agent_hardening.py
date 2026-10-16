@@ -233,6 +233,17 @@ def test_shared_phone_image_covers_display_families_without_online_catalog(tmp_p
     assert {row["abi"] for row in rows} == {resolved}
 
 
+def test_headless_probe_failure_never_creates_instance(tmp_path, monkeypatch):
+    _image, _tool, calls = _mock_static_environment(tmp_path, monkeypatch)
+    def failed(*_a, **_k):
+        raise RuntimeError("harmony_vm_headless_probe_failed: timeout")
+    monkeypatch.setattr(cap, "supports_no_window", failed)
+    result = _probe()
+    assert result["ok"] is False
+    assert "harmony_vm_headless_probe_failed" in result["reason"]
+    assert calls == []
+
+
 def _mock_static_environment(tmp_path, monkeypatch):
     image = _installed_image(tmp_path)
     tool = tmp_path / "Emulator"
@@ -240,6 +251,7 @@ def _mock_static_environment(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(cap, "host_abi", lambda: "arm64")
     monkeypatch.setattr(cap, "find_harmony_tools", lambda: (cap.HarmonyVmTools(str(tool)), []))
+    monkeypatch.setattr(cap, "supports_no_window", lambda *_a, **_k: False)
     monkeypatch.setattr(cap, "hdc_available", lambda: True)
     monkeypatch.setattr(cap, "install_harmony_fport_patch", lambda: (True, "patched"))
     monkeypatch.setattr(cap, "patch_state", lambda: {"installed": True})

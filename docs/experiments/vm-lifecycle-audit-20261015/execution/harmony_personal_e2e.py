@@ -98,7 +98,9 @@ def isolate_environment(root: Path, token: str) -> None:
         if key.startswith("AI_PHONE_") or key.lower() in {"http_proxy", "https_proxy", "all_proxy"}:
             os.environ.pop(key)
     os.chdir(root)
-    temporary = root / "tmp"
+    # Qt local sockets append a UUID under TMPDIR; macOS sun_path is limited.
+    # A long evidence-root TMPDIR makes Emulator 26 crash-service listen fail.
+    temporary = Path("/tmp") / ("aph-" + uuid.uuid4().hex[:10])
     temporary.mkdir()
     tempfile.tempdir = str(temporary)
     os.environ.update({
@@ -262,7 +264,7 @@ def ocr_visible_result(root: Path, png: bytes, marker: str) -> dict:
             "ok": marker_visible and count_visible}
 
 
-async def execute(root: Path) -> dict:
+async def execute(root: Path, *, no_window: bool = False, min_free_gib: float = 4.0) -> dict:
     protected_before = protected_fingerprint()
     sources_before = source_fingerprint()
     token = secrets.token_urlsafe(32)
@@ -322,8 +324,8 @@ async def execute(root: Path) -> dict:
             foreign.append({"pid": proc.pid, "name": name})
     if foreign:
         raise RuntimeError(f"refusing real E2E while another emulator runs: {foreign}")
-    if psutil.virtual_memory().available < 4 * 1024**3:
-        raise RuntimeError("personal Harmony E2E requires at least 4 GiB available; await root resource slot")
+    if psutil.virtual_memory().available < min_free_gib * 1024**3:
+        raise RuntimeError(f"personal Harmony E2E requires at least {min_free_gib} GiB available")
     assert EMULATOR.is_file() and HDC.is_file() and IMAGE_INFO.is_file() and FIXTURE.is_file()
     assert root.is_dir() and str(root).isascii()
     info = json.loads(IMAGE_INFO.read_text())
@@ -382,6 +384,16 @@ async def execute(root: Path) -> dict:
     server_task = asyncio.create_task(server.serve(sockets=[listener]))
     await eventually(lambda: asyncio.sleep(0, result=server.started), bool)
     manager = HarmonyVmManager(runtime_dir=root / "agent-runtime")
+    # Failed first-bind rollback removes the owned instance. Preserve vendor
+    # boot diagnostics before that cleanup, without changing lifecycle behavior.
+    original_cleanup = manager._cleanup_failed_start
+    def preserve_boot_logs(runtime, *args, **kwargs):
+        import shutil
+        source = Path(runtime.instance_path) / runtime.instance_name / "Log"
+        if source.is_dir():
+            shutil.copytree(source, root / ("native-logs-" + runtime.vm_id), dirs_exist_ok=True)
+        return original_cleanup(runtime, *args, **kwargs)
+    manager._cleanup_failed_start = preserve_boot_logs
     assert manager.instance_path == root / "agent-runtime" / "instances"
     assert manager._known == {}
 
@@ -745,6 +757,10 @@ async def execute(root: Path) -> dict:
             first = await state("running")
             runtime = manager._runtimes[vm_id]
             proof["first_identity"] = runtime.persistent_dict()
+            proof["no_window_requested"] = no_window
+            proof["emulator_command"] = psutil.Process(runtime.process.pid).cmdline()
+            if no_window:
+                assert "-noWindow" in proof["emulator_command"]
             native_ports.update({runtime.hdc_port, runtime.driver_fport_port})
             native_ports.discard(None)
             config_path = Path(runtime.instance_path) / runtime.instance_name / "config.ini"
@@ -868,6 +884,8 @@ async def execute(root: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true", help="root-authorized real personal VM lifecycle")
+    parser.add_argument("--no-window", action="store_true", help="require official headless CLI; never fall back to GUI")
+    parser.add_argument("--min-free-gib", type=float, default=4.0, help="minimum available host RAM; test VM uses 2 GiB")
     parser.add_argument("--run-root", type=Path, help="new ASCII /tmp/aiphone-personal-harmony-* directory")
     args = parser.parse_args()
     if not args.execute:
@@ -878,7 +896,9 @@ def main() -> None:
         parser.error("run root must be a new ASCII /tmp/aiphone-personal-harmony-* directory")
     root.mkdir(mode=0o700, parents=False, exist_ok=False)
     write_json(root / "plan.json", plan())
-    result = asyncio.run(execute(root))
+    if args.min_free_gib < 2.5:
+        parser.error("minimum free memory must be at least 2.5 GiB")
+    result = asyncio.run(execute(root, no_window=args.no_window, min_free_gib=args.min_free_gib))
     if not result["passed"]:
         raise SystemExit(1)
 
