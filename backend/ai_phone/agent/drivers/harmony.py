@@ -57,6 +57,9 @@ _HM_SCREENSHOT_SETTLE_SEC = 2.0
 
 # hmdriver2 是可选 extras，没装不应让本模块 import 失败；真正用到才抛。
 try:  # pragma: no cover
+    from .harmony_compat import install_hmdriver_compat
+
+    install_hmdriver_compat()
     from hmdriver2._client import HmClient  # type: ignore
     from hmdriver2.driver import Driver as HmDriver  # type: ignore
     from hmdriver2.proto import KeyCode as HmKeyCode  # type: ignore

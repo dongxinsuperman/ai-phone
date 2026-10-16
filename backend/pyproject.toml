@@ -82,6 +82,7 @@ where = ["."]
 include = ["ai_phone*"]
 
 [tool.setuptools.package-data]
+"ai_phone.agent.drivers" = ["harmony_assets/*"]
 "ai_phone.agent.trajectory_cache.jev_click.visual_vendor" = ["LICENSE", "NOTICE.md", "wda/*.patch", "wda/NOTICE"]
 "ai_phone.server.harmony_vm" = ["official_catalog.json", "create_compat.json"]
 
