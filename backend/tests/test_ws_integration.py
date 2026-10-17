@@ -353,7 +353,7 @@ async def test_agent_hello_wait_is_bounded(monkeypatch, case):
         closed = None
         async def receive_json(self):
             self.count += 1
-            if case == 'timeout':
+            if case == 'timeout' and self.count > 1:
                 await asyncio.sleep(10)
             if case == 'malformed':
                 return []
@@ -365,3 +365,19 @@ async def test_agent_hello_wait_is_bounded(monkeypatch, case):
     assert ws.closed['code'] == 1002
     assert ws.closed['reason'] == {'timeout':'hello timeout','flood':'too many messages before hello','malformed':'invalid hello message'}[case]
     assert ws.count <= 3
+
+
+@pytest.mark.asyncio
+async def test_slow_initial_hello_does_not_consume_legacy_prelude_budget(monkeypatch):
+    import asyncio
+    import importlib
+    mod = importlib.import_module('ai_phone.server.ws.agent_ws')
+    monkeypatch.setattr(mod, '_AGENT_HELLO_TIMEOUT_SEC', .01)
+    hello = {'type': 'hello', 'agent_id': 'slow-platform-discovery'}
+    class Socket:
+        async def receive_json(self):
+            await asyncio.sleep(.04)
+            return hello
+        async def close(self, **kw):
+            pytest.fail(f'initial discovery must not trigger prelude timeout: {kw}')
+    assert await mod._receive_agent_hello(Socket()) == hello

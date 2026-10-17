@@ -184,12 +184,12 @@ async def _receive_agent_hello(ws: WebSocket) -> dict | None:
     """Legacy Agents can publish status while their initial scan is pending.
 
     Discard that traffic until identity is established; never dispatch or replay
-    it against devices registered by another connection. Bound both time and
-    message count, without extending the deadline when status messages arrive.
+    it against devices registered by another connection. Preserve the original
+    wait for the first frame: platform discovery can delay hello. Bound time
+    and message count only once a legacy prelude begins.
     """
-    async def receive() -> dict | None:
+    async def receive(message: Any) -> dict | None:
         for skipped in range(_AGENT_PRE_HELLO_MESSAGE_LIMIT + 1):
-            message = await ws.receive_json()
             if not isinstance(message, dict):
                 await ws.close(code=1002, reason="invalid hello message")
                 return None
@@ -200,10 +200,12 @@ async def _receive_agent_hello(ws: WebSocket) -> dict | None:
             if skipped == _AGENT_PRE_HELLO_MESSAGE_LIMIT:
                 await ws.close(code=1002, reason="too many messages before hello")
                 return None
+            message = await ws.receive_json()
         return None
 
     try:
-        return await asyncio.wait_for(receive(), timeout=_AGENT_HELLO_TIMEOUT_SEC)
+        first = await ws.receive_json()
+        return await asyncio.wait_for(receive(first), timeout=_AGENT_HELLO_TIMEOUT_SEC)
     except asyncio.TimeoutError:
         await ws.close(code=1002, reason="hello timeout")
     except WebSocketDisconnect:
