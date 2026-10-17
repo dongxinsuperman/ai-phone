@@ -300,3 +300,68 @@ def test_device_update_propagates(ws_app):
                     break
                 time.sleep(0.05)
             assert dev["status"] == "offline"
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_agent_reconnect_accepts_legacy_prelude_without_touching_other_device(ws_app, legacy):
+    import time
+
+    def wait_offline(client, serial):
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            response = client.get(f'/api/devices/{serial}')
+            if response.status_code == 404 or response.json().get('status') == 'offline':
+                return
+            time.sleep(.02)
+        raise AssertionError(f'{serial} disconnect cleanup did not finish')
+
+    token = get_settings().agent_token
+    with TestClient(ws_app) as client:
+        with client.websocket_connect(f"/ws/agent?token={token}") as owner:
+            owner.send_json({"type": "hello", "agent_id": "owner", "devices": [
+                {"serial": "protected", "platform": "android", "status": "online"}]})
+            _wait_device_online(client, "protected")
+            for _ in range(2):
+                with client.websocket_connect(f"/ws/agent?token={token}") as agent:
+                    if legacy:
+                        agent.send_json({"type": "device_readiness", "serial": "protected", "ready": False})
+                        agent.send_json({"type": "device_update", "serial": "protected", "status": "offline"})
+                    agent.send_json({"type": "hello", "agent_id": "reconnecting", "devices": [
+                        {"serial": "reconnect-device", "platform": "android", "status": "online"}]})
+                    agent.send_json({"type": "ping", "ts": 123})
+                    assert _recv_until(agent, "pong")["ts"] == 123
+                    _wait_device_online(client, "reconnect-device")
+                    protected = client.get('/api/devices/protected').json()
+                    assert protected['agent_id'] == 'owner'
+                    assert protected['status'] == 'online'
+                    assert not protected.get('extra', {}).get('readiness')
+                    agent.close()
+                    wait_offline(client, 'reconnect-device')
+            owner.close()
+            wait_offline(client, 'protected')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('case', ['timeout', 'flood', 'malformed'])
+async def test_agent_hello_wait_is_bounded(monkeypatch, case):
+    import asyncio
+    import importlib
+    mod = importlib.import_module('ai_phone.server.ws.agent_ws')
+    monkeypatch.setattr(mod, '_AGENT_HELLO_TIMEOUT_SEC', .01)
+    monkeypatch.setattr(mod, '_AGENT_PRE_HELLO_MESSAGE_LIMIT', 2)
+    class Socket:
+        count = 0
+        closed = None
+        async def receive_json(self):
+            self.count += 1
+            if case == 'timeout':
+                await asyncio.sleep(10)
+            if case == 'malformed':
+                return []
+            return {'type': 'device_readiness'}
+        async def close(self, **kw):
+            self.closed = kw
+    ws = Socket()
+    assert await mod._receive_agent_hello(ws) is None
+    assert ws.closed['code'] == 1002
+    assert ws.closed['reason'] == {'timeout':'hello timeout','flood':'too many messages before hello','malformed':'invalid hello message'}[case]
+    assert ws.count <= 3

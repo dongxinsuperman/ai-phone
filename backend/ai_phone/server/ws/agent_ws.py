@@ -176,6 +176,43 @@ def _message_attempt(msg: Dict[str, Any]) -> int:
         return current_attempt()
 
 
+_AGENT_HELLO_TIMEOUT_SEC = 30.0
+_AGENT_PRE_HELLO_MESSAGE_LIMIT = 64
+
+
+async def _receive_agent_hello(ws: WebSocket) -> dict | None:
+    """Legacy Agents can publish status while their initial scan is pending.
+
+    Discard that traffic until identity is established; never dispatch or replay
+    it against devices registered by another connection. Bound both time and
+    message count, without extending the deadline when status messages arrive.
+    """
+    async def receive() -> dict | None:
+        for skipped in range(_AGENT_PRE_HELLO_MESSAGE_LIMIT + 1):
+            message = await ws.receive_json()
+            if not isinstance(message, dict):
+                await ws.close(code=1002, reason="invalid hello message")
+                return None
+            if message.get("type") == P.MSG_HELLO:
+                if skipped:
+                    logger.info("Agent hello 前丢弃 {} 条未注册消息", skipped)
+                return message
+            if skipped == _AGENT_PRE_HELLO_MESSAGE_LIMIT:
+                await ws.close(code=1002, reason="too many messages before hello")
+                return None
+        return None
+
+    try:
+        return await asyncio.wait_for(receive(), timeout=_AGENT_HELLO_TIMEOUT_SEC)
+    except asyncio.TimeoutError:
+        await ws.close(code=1002, reason="hello timeout")
+    except WebSocketDisconnect:
+        logger.debug("Agent 连接未发送 hello 就断了")
+    except ValueError:
+        await ws.close(code=1002, reason="invalid hello JSON")
+    return None
+
+
 @router.websocket("/ws/agent")
 async def agent_ws(
     ws: WebSocket,
@@ -190,15 +227,8 @@ async def agent_ws(
     hub = get_hub(ws)
     lock_store = get_lock_store(ws)
 
-    # 1) 收 hello
-    try:
-        first = await ws.receive_json()
-    except WebSocketDisconnect:
-        logger.debug("Agent 连接未发送 hello 就断了")
-        return
-
-    if first.get("type") != P.MSG_HELLO:
-        await ws.close(code=status.WS_1002_PROTOCOL_ERROR, reason="expect hello first")
+    first = await _receive_agent_hello(ws)
+    if first is None:
         return
 
     agent_id = str(first.get("agent_id") or "").strip()
