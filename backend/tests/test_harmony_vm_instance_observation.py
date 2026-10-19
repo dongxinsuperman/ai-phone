@@ -188,6 +188,38 @@ def test_other_owner_port_is_not_queried_or_unregistered(local_vm, monkeypatch):
     assert managed_vm_owner(known["hdc_serial"]) == ("other-vm", "other-lease")
 
 
+@pytest.mark.parametrize("reload_registry", [False, True])
+def test_confirmed_stopped_vm_can_restart_after_old_port_is_reassigned(local_vm, monkeypatch, reload_registry):
+    manager, known, config = local_vm
+    known.update(cleanup_confirmed=True, cleanup_pending=False, ready=False)
+    manager._save_registry()
+    if reload_registry:
+        manager = mod.HarmonyVmManager(runtime_dir=manager.runtime_dir)
+    register_managed_vm("other-vm", known["hdc_serial"], "other-lease")
+    before = config.read_bytes()
+    monkeypatch.setattr(mod, "hdc_list_targets", lambda: pytest.fail("must not query B's transport"))
+    monkeypatch.setattr(manager, "_port_is_free", lambda _port: pytest.fail("must not probe B's port"))
+    observation = manager.observe_instance("observe-vm")
+    assert observation["state"] == "stopped" and observation["resources_released"] is True
+    # Reaching the normal capability check proves the new lease is no longer
+    # rejected by A's historical address. No native mutation is allowed here.
+    monkeypatch.setattr(manager, "probe", lambda _msg: {"ok": False, "reason": "reached_new_start"})
+    with pytest.raises(RuntimeError, match="reached_new_start"):
+        manager.start_sync({"vm_id": "observe-vm", "lease_token": "new-lease", "assigned_port": 10008,
+                            "require_existing_instance": True, "rollback_new_instance": False})
+    assert managed_vm_owner(known["hdc_serial"]) == ("other-vm", "other-lease")
+    assert config.read_bytes() == before
+
+
+def test_pending_cleanup_cannot_use_old_stop_confirmation_to_ignore_other_owner(local_vm):
+    manager, known, _config = local_vm
+    known.update(cleanup_confirmed=True, cleanup_pending=True)
+    register_managed_vm("other-vm", known["hdc_serial"], "other-lease")
+    observation = manager.observe_instance("observe-vm")
+    assert observation["resources_released"] is False
+    assert observation["reason"] == "transport_owned_by_another_vm"
+
+
 @pytest.mark.parametrize("blocked", ["connected", "unknown_hdc", "hdc_error", "port", "fport"])
 def test_process_stopped_does_not_mean_its_resources_are_released(local_vm, monkeypatch, blocked):
     manager, known, _config = local_vm
@@ -385,7 +417,7 @@ def test_explicit_start_does_not_adopt_old_first_bind_data(local_vm, protection)
     assert known["cleanup_pending"] is True and config.read_bytes() == before
 
 
-@pytest.mark.parametrize("cache_state", ["pending", "stale", "clean"])
+@pytest.mark.parametrize("cache_state", ["pending", "stale", "clean", "reassigned"])
 @pytest.mark.parametrize("no_window", [False, True])
 def test_explicit_bound_start_clears_expired_bookkeeping_and_reuses_exact_definition(local_vm, monkeypatch, cache_state, no_window):
     manager, known, config = local_vm
@@ -393,6 +425,9 @@ def test_explicit_bound_start_clears_expired_bookkeeping_and_reuses_exact_defini
     if cache_state == "stale":
         manager._runtimes["observe-vm"] = manager._runtime_from_known("observe-vm", known, known["hdc_serial"])
     register_managed_vm("observe-vm", known["hdc_serial"], known["lease_token"])
+    if cache_state == "reassigned":
+        known["cleanup_confirmed"] = True
+        register_managed_vm("other-vm", known["hdc_serial"], "other-lease")
     before = config.read_bytes()
     spawned = []
     monkeypatch.setattr(manager, "probe", lambda _msg: {"ok": True, "details": {"tools": {"emulator": "/fake/Emulator"}, "no_window_supported": no_window}})
@@ -410,6 +445,9 @@ def test_explicit_bound_start_clears_expired_bookkeeping_and_reuses_exact_defini
     assert result["details"]["cleanup_confirmed"] is False
     assert result["details"]["created_in_attempt"] is False
     assert not manager._known["observe-vm"].get("cleanup_pending")
-    assert managed_vm_owner(known["hdc_serial"]) is None
+    assert managed_vm_owner(known["hdc_serial"]) == (
+        ("other-vm", "other-lease") if cache_state == "reassigned" else None
+    )
     assert managed_vm_owner("127.0.0.1:10008") == ("observe-vm", "new-lease")
+    assert spawned[0][spawned[0].index("-hdcPort") + 1] == "10008"
     assert config.read_bytes() == before

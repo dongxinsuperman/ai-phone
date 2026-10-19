@@ -290,6 +290,13 @@ class HarmonyVmManager:
                 return observation
             owner = managed_vm_owner(serial)
             if owner is not None and owner != (vm_id, token):
+                if known.get("cleanup_confirmed") is True and not known.get("cleanup_pending"):
+                    # This exact instance is currently absent and its previous
+                    # stop already retired the lease. The address is now B's;
+                    # its liveness must not prevent A receiving a fresh lease.
+                    # Never query, disconnect, or unregister B's transport.
+                    observation.update(resources_released=True, reason="stopped_lease_reassigned")
+                    return observation
                 observation["reason"] = "transport_owned_by_another_vm"
                 return observation
             startup_timeout(deadline, 1.0)
