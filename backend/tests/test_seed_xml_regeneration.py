@@ -3,17 +3,23 @@ import copy
 import pytest
 from ai_phone.config import Settings
 from ai_phone.agent.trajectory_cache import v3_replay as v3
-from ai_phone.shared.seed_xml_protocol import XML_CLICK_EXAMPLE, XML_DRAG_EXAMPLE
 from ai_phone.shared.seed_gui_actions import parse_actions
 from ai_phone.shared.prompt import OUTPUT_PROTOCOL
 from tests.test_vlm_runner import FakeDriver, ScriptedStep, ScriptedVLMClient, VLMRunner, _collect_events
 
 
-def test_shared_examples_are_executable():
+# Parser fixtures only; never injected into production prompts.
+XML_CLICK_EXAMPLE = '<seed:tool_call><function name="click"><parameter name="point" string="true"><point>500 800</point></parameter><parameter name="action_summary" string="true">点击页面底部的继续按钮</parameter></function></seed:tool_call>'
+XML_DRAG_EXAMPLE = '<seed:tool_call><function name="drag"><parameter name="start_point" string="true"><point>500 800</point></parameter><parameter name="end_point" string="true"><point>500 300</point></parameter><parameter name="action_summary" string="true">向上拖动当前区域</parameter></function></seed:tool_call>'
+
+def test_original_main_click_example_is_unchanged():
     assert parse_actions(XML_CLICK_EXAMPLE)[0].point == [500, 800]
     drag = parse_actions(XML_DRAG_EXAMPLE)[0]
     assert drag.start_point == [500, 800] and drag.end_point == [500, 300]
-    assert XML_CLICK_EXAMPLE in OUTPUT_PROTOCOL and XML_DRAG_EXAMPLE in OUTPUT_PROTOCOL
+    from ai_phone.agent.runner.long_rescue_prompts.doubao import OUTPUT_PROTOCOL as LONG_PROTOCOL
+    assert XML_CLICK_EXAMPLE in OUTPUT_PROTOCOL and XML_CLICK_EXAMPLE in LONG_PROTOCOL
+    assert "拖动格式示例" not in OUTPUT_PROTOCOL
+    assert "拖动格式示例" not in LONG_PROTOCOL
 
 
 @pytest.mark.asyncio
@@ -64,7 +70,7 @@ async def test_single_rescue_bounded_regeneration(responses, expected_error, exp
     assert (result.error or None) == expected_error
     assert len(calls) == expected_count
     assert all(c["images"] == [("current_replay", b"same-frame")] for c in calls)
-    assert all("原始目标" in c["prompt"] and XML_DRAG_EXAMPLE in c["prompt"] for c in calls)
+    assert all("原始目标" in c["prompt"] for c in calls)
 
 
 @pytest.mark.asyncio

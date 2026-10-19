@@ -18,7 +18,7 @@ agent 持续干活；被叫一次让它给 verdict / 给单个修复动作时，
 """
 from __future__ import annotations
 
-from ai_phone.shared.seed_xml_protocol import XML_EXAMPLES, XML_MAX_GENERATIONS, xml_correction_hint
+from ai_phone.shared.seed_xml_protocol import XML_MAX_GENERATIONS, xml_correction_hint
 
 import asyncio
 import base64
@@ -1092,9 +1092,11 @@ def build_recovery_prompt(
         output_protocol_block = (
             "输出格式必须与豆包主执行 VLM 一致，不要输出 Action: 行或 JSON：\n"
             "Thought: <中文描述当前画面分析与局部恢复计划>\n"
-            + XML_EXAMPLES +
+            "<seed:tool_call><function name=\"click\"><parameter name=\"point\" "
+            "string=\"true\"><point>500 600</point></parameter></function>"
+            "</seed:tool_call>\n\n"
             "以下 JSON Schema 是本恢复链允许的完整动作集合：\n"
-            f"{schemas_prompt_text(_RECOVERY_XML_ACTION_NAMES, include_action_summary=True)}\n\n"
+            f"{schemas_prompt_text(_RECOVERY_XML_ACTION_NAMES)}\n\n"
             "XML规则：所有必填参数必须显式放在 <parameter> 节点中；字符串使用"
             "string=\"true\"，整数和布尔值使用string=\"false\"；禁止把参数写成"
             "function标签属性；每次必须且只能输出一个function。\n"
