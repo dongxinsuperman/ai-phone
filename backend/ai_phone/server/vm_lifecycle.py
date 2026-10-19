@@ -80,6 +80,17 @@ def _last_details(vm) -> dict:
     return _mapping(last.get("details")) or _mapping(data.get("details"))
 
 
+def unused_reservation_matches(vm, observation: dict) -> bool:
+    """A current Agent physically verified this reservation was never adopted."""
+    proof = _mapping(observation.get("unused_reservation"))
+    return bool(hasattr(vm, "hdc_serial") and vm.lease_token and vm.hdc_serial
+                and observation.get("vm_id") == vm.id and observation.get("state") == "stopped"
+                and observation.get("resources_released") is True
+                and proof.get("resources_released") is True
+                and proof.get("lease_token") == vm.lease_token
+                and proof.get("hdc_serial") == vm.hdc_serial)
+
+
 def observation_identity_matches(vm, observation: dict) -> bool:
     if observation.get("vm_id") != vm.id:
         return False
@@ -91,8 +102,9 @@ def observation_identity_matches(vm, observation: dict) -> bool:
     if hasattr(vm, "hdc_serial"):
         name = "aiphone_harmony_" + re.sub(r"[^A-Za-z0-9_]+", "_", vm.id)[:32]
         return bool(identity.get("instance_name") == name and identity.get("instance_path")
-                    and (not vm.lease_token or identity.get("lease_token") == vm.lease_token)
-                    and (not vm.hdc_serial or identity.get("hdc_serial") == vm.hdc_serial))
+                    and (unused_reservation_matches(vm, observation) or (
+                        (not vm.lease_token or identity.get("lease_token") == vm.lease_token)
+                        and (not vm.hdc_serial or identity.get("hdc_serial") == vm.hdc_serial))))
     name = "aiphone_vm_" + re.sub(r"[^A-Za-z0-9_]+", "_", vm.id)[:32]
     return identity.get("avd_name") == name
 
@@ -417,8 +429,9 @@ async def ensure_start_observation(session, vm, hub, waiter):
                 request_id=str(response.get("request_id") or ""))
         if (lease is None or not current.lease_token or lease.vm_id != current.id
                 or lease.lease_token != current.lease_token
-                or identity.get("lease_token") != current.lease_token
-                or identity.get("hdc_serial") != current.hdc_serial
+                or (not unused_reservation_matches(current, observation) and (
+                    identity.get("lease_token") != current.lease_token
+                    or identity.get("hdc_serial") != current.hdc_serial))
                 or not observation_identity_matches(current, observation)):
             await reject_start_preflight(session, current, hub, "原实例的资源归属尚未对齐，本次启动未执行", reason="lease_identity_unverified")
         await release_port_lease(session, current, reason="verified_stopped_observation")

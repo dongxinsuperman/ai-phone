@@ -845,8 +845,12 @@ def test_harmony_fold_ready_uses_live_window_size_not_dms_history(
     # The command output contains an outer-screen width, but the live driver
     # still sees the inner display.  This must not mark the VM ready.
     runtime.driver = SimpleNamespace(window_size=lambda: (2224, 2496))
-    with pytest.raises(RuntimeError, match="harmony_fold_state_not_applied:folded"):
+    with pytest.raises(RuntimeError, match="harmony_fold_state_not_applied:folded") as caught:
         manager._apply_fold_state(runtime, msg)  # noqa: SLF001
+    diagnostics = caught.value.fold_diagnostics
+    assert diagnostics["hdc_serial"] == serial
+    assert diagnostics["command_output_tail"] == "width: 1080 height: 2504"
+    assert diagnostics["samples"] == [{"width": 2224, "height": 2496}] * 6
     assert commands == ["hidumper -s DisplayManagerService -a -m"]
 
     # A transient outer frame is not enough.  Two consecutive fresh reads
@@ -869,6 +873,15 @@ def test_harmony_fold_ready_uses_live_window_size_not_dms_history(
 
     runtime.driver = SimpleNamespace(window_size=fresh_size)
     manager._apply_fold_state(runtime, msg)  # noqa: SLF001
+
+    def rejected_command(_serial, _command, **kwargs):
+        assert kwargs["check"] is True
+        raise RuntimeError("fixture: native display command rejected")
+
+    monkeypatch.setattr(hdc_module, "hdc_shell", rejected_command)
+    with pytest.raises(RuntimeError, match="native display command rejected") as rejected:
+        manager._apply_fold_state(runtime, msg)
+    assert rejected.value.fold_diagnostics["samples"] == []
 
 
 async def test_harmony_vm_create_is_independent_and_reserves_alias(client, session):

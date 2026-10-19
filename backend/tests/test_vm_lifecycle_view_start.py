@@ -34,6 +34,76 @@ async def bound_unknown(context):
     return vm_id
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("proof", ["valid", "absent", "wrong_token", "wrong_vm", "occupied"])
+async def test_harmony_failed_reservation_recovers_through_real_agent_inspection(
+    view_context, monkeypatch, tmp_path, proof,
+):
+    context = view_context
+    if context.platform.name != "harmony":
+        pytest.skip("Harmony lease recovery only")
+    import psutil
+    from ai_phone.agent.harmony_vm import manager as agent_module
+    from ai_phone.agent.harmony_vm.registry import register_managed_vm, unregister_managed_vm, managed_vm_owner
+
+    vm_id = await bound_unknown(context)
+    manager = agent_module.HarmonyVmManager(runtime_dir=tmp_path)
+    known = {"instance_name": "aiphone_harmony_" + vm_id, "instance_path": str(manager.instance_path),
+             "hdc_serial": "127.0.0.1:10007", "hdc_port": 10007, "lease_token": "retired-lease",
+             "cleanup_confirmed": True, "cleanup_pending": False, "created": True, "ready": False}
+    manager._known[vm_id] = known
+    config = manager.instance_path / known["instance_name"] / "config.ini"
+    config.parent.mkdir(parents=True); config.write_text("preserved-user-data")
+    manager._save_registry()
+    register_managed_vm("unrelated-running-B", known["hdc_serial"], "B-lease")
+    monkeypatch.setattr(psutil, "process_iter", lambda _attrs: iter(()))
+    monkeypatch.setattr(agent_module, "hdc_list_targets", lambda: [])
+    monkeypatch.setattr(manager, "_port_is_free", lambda port: proof != "occupied")
+    install_inspection(context, monkeypatch)
+    waiter = context.platform.api.get_capability_waiter()
+
+    async def inspect(**kwargs):
+        vm = kwargs["vm"]
+        observation = manager.inspect_start_reservation(
+            {"vm_id": vm.id, "hdc_serial": vm.hdc_serial, "lease_token": vm.lease_token}, None)
+        if proof == "absent": observation.pop("unused_reservation", None)
+        if proof == "wrong_token": observation["unused_reservation"]["lease_token"] = "wrong-token"
+        if proof == "wrong_vm": observation["vm_id"] = "another-instance"
+        return {"ok": True, "request_id": "fresh-inspection", "details": {"instance_observation": observation}}
+
+    waiter.inspect_agent = inspect
+    try:
+        response = await context.client.post(f"{context.platform.base}/{vm_id}/start", headers=AUTH)
+        assert response.status_code == (200 if proof == "valid" else 409), response.text
+        assert managed_vm_owner(known["hdc_serial"]) == ("unrelated-running-B", "B-lease")
+        assert config.read_text() == "preserved-user-data"
+        if proof == "valid":
+            command = last_command(context, context.platform.start)
+            assert command["require_existing_instance"] is True
+            assert command["lease_token"] != "retired-lease"
+            async with db.get_session_factory()() as session:
+                vm = await session.get(context.platform.model, vm_id)
+                assert runtime(vm)["lease_history"][-1]["reason"] == "verified_stopped_observation"
+            # Exercise the forward path too: another failure before adopting
+            # the new reservation must not recreate today's quarantined lease.
+            monkeypatch.setattr(manager, "probe", lambda _msg: {"ok": False, "reason": "fixture-prelaunch-failure"})
+            async def send_status(message):
+                await context.platform.svc.handle_vm_status("agent-1", message, context.hub)
+            await manager._start_and_report(SimpleNamespace(send=send_status), command)
+            async with db.get_session_factory()() as session:
+                vm = await session.get(context.platform.model, vm_id)
+                assert vm.lease_token is None and vm.hdc_port is None
+                assert await session.get(HarmonyVmPortLease, command["assigned_port"]) is None
+            context.hub.sent.clear()
+            again = await context.client.post(f"{context.platform.base}/{vm_id}/start", headers=AUTH)
+            assert again.status_code == 200, again.text
+            assert last_command(context, context.platform.start)["lease_token"] != command["lease_token"]
+        else:
+            assert context.hub.sent == []
+    finally:
+        unregister_managed_vm("unrelated-running-B", "B-lease")
+
+
 def observation_for(vm, state="stopped", released=True):
     if hasattr(vm, "udid"):
         identity = {"sim_name": f"aiphone_sim_{vm.id}", "udid": vm.udid}

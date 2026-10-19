@@ -220,6 +220,32 @@ def test_pending_cleanup_cannot_use_old_stop_confirmation_to_ignore_other_owner(
     assert observation["reason"] == "transport_owned_by_another_vm"
 
 
+@pytest.mark.parametrize("blocked", ["none", "registered", "connected", "busy", "pending"])
+def test_unused_server_reservation_is_verified_separately_from_historical_identity(local_vm, monkeypatch, blocked):
+    manager, known, config = local_vm
+    known.update(cleanup_confirmed=True, cleanup_pending=blocked == "pending")
+    register_managed_vm("other-vm", known["hdc_serial"], "other-lease")
+    if blocked == "registered":
+        register_managed_vm("reserved-port-owner", "127.0.0.1:10008", "unrelated-lease")
+    monkeypatch.setattr(mod, "hdc_list_targets", lambda: [
+        SimpleNamespace(serial="127.0.0.1:10008", status="Connected" if blocked == "connected" else "Offline")
+    ])
+    monkeypatch.setattr(manager, "_port_is_free", lambda port: port != 10008 or blocked != "busy")
+    before = manager.registry_path.read_bytes(), config.read_bytes()
+    try:
+        observation = manager.inspect_start_reservation({"vm_id": "observe-vm", "lease_token": "new-lease",
+                                                        "hdc_serial": "127.0.0.1:10008"}, None)
+        assert observation["identity"]["hdc_serial"] == known["hdc_serial"]
+        assert ("unused_reservation" in observation) is (blocked == "none")
+        if blocked == "none":
+            assert observation["unused_reservation"] == {"lease_token": "new-lease",
+                "hdc_serial": "127.0.0.1:10008", "resources_released": True}
+        assert managed_vm_owner(known["hdc_serial"]) == ("other-vm", "other-lease")
+        assert (manager.registry_path.read_bytes(), config.read_bytes()) == before
+    finally:
+        unregister_managed_vm("reserved-port-owner", "unrelated-lease")
+
+
 @pytest.mark.parametrize("blocked", ["connected", "unknown_hdc", "hdc_error", "port", "fport"])
 def test_process_stopped_does_not_mean_its_resources_are_released(local_vm, monkeypatch, blocked):
     manager, known, _config = local_vm

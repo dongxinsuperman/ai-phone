@@ -360,12 +360,60 @@ class HarmonyVmManager:
             resources_released=resources_released and state in {"stopped", "missing"}, reason=reason,
         )
 
-    async def _failure_details(self, vm_id: str, details: Dict[str, Any]) -> Dict[str, Any]:
+    def inspect_start_reservation(self, msg: Dict[str, Any], deadline: Optional[float]) -> Dict[str, Any]:
+        """Observe the instance and a Server reservation the Agent never adopted.
+
+        Keep historical instance identity intact. A separate receipt certifies
+        only an unused reservation; echoing a requested lease is not evidence.
+        """
+        vm_id = str(msg.get("vm_id") or "")
+        lock = self._vm_lock(vm_id)
+        if not lock.acquire(blocking=False):
+            return self.observe_instance(vm_id, deadline)
+        try:
+            observation = self.observe_instance(vm_id, deadline)
+            known = self._known.get(vm_id) or {}
+            serial = str(msg.get("hdc_serial") or "")
+            if not serial and msg.get("assigned_port"):
+                serial = f"127.0.0.1:{_int_value(msg.get('assigned_port'), 0)}"
+            token = str(msg.get("lease_token") or "")
+            port = _serial_port(serial)
+            if (observation["state"] != "stopped" or not observation["resources_released"]
+                    or known.get("cleanup_confirmed") is not True or known.get("cleanup_pending")
+                    or not token or token == known.get("lease_token")
+                    or not port or not HDC_PORT_MIN <= port <= HDC_PORT_MAX
+                    or managed_vm_owner(serial) is not None):
+                return observation
+            startup_timeout(deadline, 1.0)
+            targets = hdc_list_targets()
+            startup_timeout(deadline, 1.0)
+            if any(t.serial == serial and t.status.strip().lower() != "offline" for t in targets):
+                return observation
+            if not self._port_is_free(port):
+                return observation
+            startup_timeout(deadline, 1.0)
+            if managed_vm_owner(serial) is None:
+                observation["unused_reservation"] = {"lease_token": token, "hdc_serial": serial,
+                                                     "resources_released": True}
+            return observation
+        finally:
+            lock.release()
+
+    async def _failure_details(
+        self, vm_id: str, details: Dict[str, Any], message: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         result = dict(details)
         if "instance_observation" not in result:
             result["instance_observation"] = await asyncio.to_thread(
                 self.observe_instance, vm_id, time.monotonic() + 5.0
             )
+        if message and result["instance_observation"].get("state") == "stopped":
+            try:
+                result["instance_observation"] = await asyncio.to_thread(
+                    self.inspect_start_reservation, message, time.monotonic() + 5.0
+                )
+            except Exception as exc:
+                logger.debug("Unused Harmony reservation could not be verified vm_id={}: {}", vm_id, exc)
         return result
 
     def decorate_devices(self, infos: List[DeviceInfo]) -> List[DeviceInfo]:
@@ -416,8 +464,8 @@ class HarmonyVmManager:
         if requirement.get("inspect_instance") is True:
             # Monotonic timestamps are local to this process, never trusted
             # from an incoming capability message.
-            observation = self.observe_instance(
-                str(requirement.get("vm_id") or ""),
+            observation = self.inspect_start_reservation(
+                requirement,
                 _inspection_deadline(requirement) if inspection_deadline is None else inspection_deadline,
             )
             return {
@@ -520,7 +568,7 @@ class HarmonyVmManager:
         except Exception as exc:  # noqa: BLE001
             logger.exception("Harmony VM 启动失败 vm_id={}: {}", msg.get("vm_id"), exc)
             cleanup = getattr(exc, "cleanup_details", {})
-            details = await self._failure_details(str(msg.get("vm_id") or ""), dict(cleanup or {}))
+            details = await self._failure_details(str(msg.get("vm_id") or ""), dict(cleanup or {}), msg)
             await client.send(
                 self._status_payload(
                     msg,
@@ -938,6 +986,8 @@ class HarmonyVmManager:
             cleanup = self._cleanup_failed_start(
                 runtime, rollback_new_definition=rollback_new_definition
             )
+            if getattr(exc, "fold_diagnostics", None):
+                cleanup["fold_diagnostics"] = exc.fold_diagnostics
             wrapped = RuntimeError(str(exc))
             wrapped.cleanup_details = cleanup  # type: ignore[attr-defined]
             raise wrapped from exc
@@ -1063,13 +1113,20 @@ class HarmonyVmManager:
         folded = state == "folded"
         # 展开态也要走这条路。冷启动确实是展开的，但"确实"不等于"已确认"——
         # 不回读就无法保证交付的形态与用户所选一致。
-        hdc_shell(
-            runtime.hdc_serial,
-            "hidumper -s DisplayManagerService -a "
-            + (FOLD_DUMP_ARG_FOLDED if folded else FOLD_DUMP_ARG_UNFOLDED),
-            timeout=startup_timeout(runtime.operation_deadline, 15.0),
-            check=False,
+        command = "hidumper -s DisplayManagerService -a " + (
+            FOLD_DUMP_ARG_FOLDED if folded else FOLD_DUMP_ARG_UNFOLDED
         )
+        diagnostics = {"vm_id": runtime.vm_id, "hdc_serial": runtime.hdc_serial,
+                       "requested_state": state, "folded_width": folded_width,
+                       "command": command, "samples": []}
+        try:
+            output = hdc_shell(runtime.hdc_serial, command,
+                               timeout=startup_timeout(runtime.operation_deadline, 15.0), check=True)
+            diagnostics["command_output_tail"] = str(output)[-4096:]
+        except Exception as exc:
+            diagnostics["command_error"] = str(exc)[:2000]
+            exc.fold_diagnostics = diagnostics
+            raise
         startup_timeout(runtime.operation_deadline, 1.0)
         # dump 输出和 DMS 的历史尺寸都不能证明当前活动屏幕的形态。
         # window_size 每次清掉 hmdriver2 的 display_size 缓存，连续两次回读
@@ -1085,6 +1142,7 @@ class HarmonyVmManager:
             except Exception as exc:  # noqa: BLE001
                 # 形态切换时 uitest 可短暂重连；留在有限确认窗口内重试。
                 confirmed = 0
+                diagnostics["samples"].append({"error": str(exc)[:500]})
                 logger.debug(
                     "harmony vm {} 折叠形态实时尺寸暂不可读：{}",
                     runtime.vm_id,
@@ -1092,6 +1150,7 @@ class HarmonyVmManager:
                 )
                 continue
             startup_timeout(runtime.operation_deadline, 1.0)
+            diagnostics["samples"].append({"width": reported[0], "height": reported[1]})
             if (
                 reported[0] > 0
                 and reported[1] > 0
@@ -1109,7 +1168,10 @@ class HarmonyVmManager:
                     reported[1],
                 )
                 return
-        raise RuntimeError(f"harmony_fold_state_not_applied:{state}")
+        logger.error("Harmony fold verification failed: {}", diagnostics)
+        failure = RuntimeError(f"harmony_fold_state_not_applied:{state}")
+        failure.fold_diagnostics = diagnostics
+        raise failure
 
     def _create_instance(
         self, emulator: str, runtime: HarmonyVmRuntime, msg: Dict[str, Any]
