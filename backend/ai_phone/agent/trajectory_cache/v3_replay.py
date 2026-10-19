@@ -5,6 +5,8 @@ V3 不信任首跑旧坐标。回放时只把缓存 action 当作语义脚本：
 """
 from __future__ import annotations
 
+from ai_phone.shared.seed_xml_protocol import XML_EXAMPLES, XML_MAX_GENERATIONS, xml_correction_hint
+
 import asyncio
 import base64
 import io
@@ -433,7 +435,7 @@ class V3PlanLocator:
         payload: Dict[str, Any] = {
             "model": model,
             "temperature": 0,
-            "top_p": 0,
+            "top_p": 1 if "deepseek" in model.lower() else 0,
             "messages": [
                 {
                     "role": "system",
@@ -757,27 +759,35 @@ class V3RescueVerifier:
             rescue_history=rescue_history,
             seed_xml=seed_xml,
         )
+        original_prompt = prompt
         started = time.monotonic()
         try:
-            text = await asyncio.wait_for(
-                _call_vlm_with_images(
-                    backend=backend,
-                    api_url=api_url,
-                    api_key=api_key,
-                    model=model,
-                    timeout_sec=timeout_sec,
-                    system=(
-                        "你是缓存回放的局部恢复模型。"
-                        "你正在执行救援任务，不是常规执行、坐标定位或重新规划整个 Case。"
-                        "职责是理解定位失败后如何恢复可继续回放的状态；结合整体目标、"
-                        "当前缓存动作、最新截图和已执行救援记录选择恢复方式。"
-                        + ("用主执行相同的 Seed GUI XML 输出本轮唯一动作。" if seed_xml else "只输出本轮恢复裁决 JSON。")
+            for generation in range(XML_MAX_GENERATIONS if seed_xml else 1):
+                text = await asyncio.wait_for(
+                    _call_vlm_with_images(
+                        backend=backend,
+                        api_url=api_url,
+                        api_key=api_key,
+                        model=model,
+                        timeout_sec=timeout_sec,
+                        system=(
+                            "你是缓存回放的局部恢复模型。"
+                            "你正在执行救援任务，不是常规执行、坐标定位或重新规划整个 Case。"
+                            "职责是理解定位失败后如何恢复可继续回放的状态；结合整体目标、"
+                            "当前缓存动作、最新截图和已执行救援记录选择恢复方式。"
+                            + ("用主执行相同的 Seed GUI XML 输出本轮唯一动作。" if seed_xml else "只输出本轮恢复裁决 JSON。")
+                        ),
+                        prompt=prompt,
+                        images=[("current_replay", current_bytes)],
                     ),
-                    prompt=prompt,
-                    images=[("current_replay", current_bytes)],
-                ),
-                timeout=timeout_sec,
-            )
+                    timeout=timeout_sec,
+                )
+                decision = (parse_v3_rescue_xml_response(text) if seed_xml else
+                            parse_v3_rescue_response(text, coord_space=self.coord_space))
+                if decision.error != "invalid_seed_xml":
+                    break
+                logger.warning("V3 rescue XML解析失败 {}/{}: {}", generation + 1, XML_MAX_GENERATIONS, text[:200])
+                prompt = original_prompt + "\n" + xml_correction_hint(text)
         except asyncio.TimeoutError:
             return V3RescueDecision(
                 verdict="GIVE_UP",
@@ -794,8 +804,6 @@ class V3RescueVerifier:
                 error=type(exc).__name__,
                 coord_space=self.coord_space,
             )
-        decision = (parse_v3_rescue_xml_response(text) if seed_xml else
-                    parse_v3_rescue_response(text, coord_space=self.coord_space))
         decision.elapsed_ms = int((time.monotonic() - started) * 1000)
         return decision
 
@@ -2097,11 +2105,9 @@ def build_v3_rescue_prompt(
 
     if seed_xml:
         prompt += (
-            "使用与主执行相同的 <seed:tool_call><function name=\"动作名\">"
-            "<parameter name=\"参数名\" string=\"true或false\">参数值</parameter>"
-            "</function></seed:tool_call>。每轮必须且只能返回一个合法 function。\n"
-            "参数遵循以下既有动作定义；坐标参数使用 <point>x y</point>，不要坐标 JSON。\n"
-            + schemas_prompt_text(_V3_RESCUE_XML_ACTIONS) + "\n"
+            XML_EXAMPLES
+            + "每轮必须且只能返回一个合法 function。参数遵循以下动作定义。\n"
+            + schemas_prompt_text(_V3_RESCUE_XML_ACTIONS, include_action_summary=True) + "\n"
             "需要关闭遮挡或局部修复时直接返回对应动作；等待时返回 wait。"
             "滑动或快进使用 drag 的 start_point/end_point，不新增动作类型。"
             "finished(content=原因) 仅表示当前缓存步骤已满足且能够继续下一步，"

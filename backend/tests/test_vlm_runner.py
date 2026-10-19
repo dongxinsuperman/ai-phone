@@ -454,6 +454,7 @@ async def test_unparseable_action_falls_back_to_assert_fail_not_finished():
     vlm = ScriptedVLMClient([
         ScriptedStep("第一次乱码动作", "completely garbage no parens"),
         ScriptedStep("第二次仍然乱码动作", "still garbage no parens"),
+        ScriptedStep("第三次仍然乱码动作", "still malformed XML"),
     ])
     _events, emit = _collect_events()
     runner = VLMRunner(

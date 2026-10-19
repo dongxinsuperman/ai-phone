@@ -31,8 +31,8 @@ class DoubaoChatWindowClient:
 
     The fixed Map is prepended to the oldest retained user on a deep copy; it
     never consumes a history slot or accumulates in the stored exchanges.
-    Failed HTTP attempts are not dialogue rounds. A successful but invalid XML
-    reply is retained for the runner's existing same-image correction round.
+    Failed HTTP attempts and invalid XML replies are not visual dialogue rounds.
+    The runner retries the same image with explicit syntax feedback.
     """
 
     DEFAULT_USER_PROMPT = "What's the next step that you will do to help with the task?"
@@ -173,9 +173,12 @@ class DoubaoChatWindowClient:
             elapsed_ms = int((time.monotonic() - started) * 1000)
             raw = self._response_text(data)
             self.counter.record("VLM决策", self.model, data.get("usage"))
-            self._history.append((current_user, raw))
             parsed = parse_actions(raw)
+            if parsed:
+                self._history.append((current_user, raw))
             if not parsed:
+                # Keep the runner's business hints when regenerating this same visual step.
+                self.pending_hints[:0] = pending_backup
                 parsed = [
                     A.ParsedAction(
                         action=A.ACTION_ASSERT_FAIL,

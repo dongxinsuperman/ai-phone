@@ -74,7 +74,7 @@ class DoubaoAssistant:
         payload: Dict[str, Any] = {
             "model": model,
             "temperature": 0,
-            "top_p": 0,
+            "top_p": 1 if "deepseek" in model.lower() else 0,
             "messages": messages,
             "thinking": {"type": thinking_type},
             "max_completion_tokens": DOUBAO_CHAT_MAX_COMPLETION_TOKENS,

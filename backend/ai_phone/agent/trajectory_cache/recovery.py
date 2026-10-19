@@ -18,6 +18,8 @@ agent 持续干活；被叫一次让它给 verdict / 给单个修复动作时，
 """
 from __future__ import annotations
 
+from ai_phone.shared.seed_xml_protocol import XML_EXAMPLES, XML_MAX_GENERATIONS, xml_correction_hint
+
 import asyncio
 import base64
 import re
@@ -314,25 +316,16 @@ class CacheReplayRecoveryVerifier:
             coord_space=coord_space,
             action_protocol=action_protocol,
         )
-        if (
-            action_protocol == ACTION_PROTOCOL_SEED_XML
-            and decision.error == "protocol_violation"
-        ):
-            retry_prompt = (
-                prompt
-                + "\n\n【协议纠正】上一轮没有产出合法 Seed GUI XML。"
-                "请基于同一组截图重新决策；保留 Thought，并且只输出一个"
-                "<seed:tool_call> XML块。所有参数必须放在 <parameter> 节点中。"
-            )
+        for _generation in range(1, XML_MAX_GENERATIONS):
+            if not (action_protocol == ACTION_PROTOCOL_SEED_XML and decision.error == "protocol_violation"):
+                break
+            correction = "\n" + xml_correction_hint(text)
+            retry_prompt = prompt + correction
             try:
                 text = await asyncio.wait_for(
-                self._chat_double_image(
+                    self._chat_double_image(
                         prompt=retry_prompt,
-                        followup_prompt=(
-                            followup_prompt
-                            + "\n【协议纠正】上一轮输出不合法。保留Thought，并且只输出"
-                            "一个seed:tool_call XML块；所有参数放在parameter节点中。"
-                        ),
+                        followup_prompt=followup_prompt + correction,
                         landmark_bytes=landmark_bytes,
                         current_bytes=current_bytes,
                     ),
@@ -448,7 +441,7 @@ class CacheReplayRecoveryVerifier:
         payload: Dict[str, Any] = {
             "model": model,
             "temperature": 0,
-            "top_p": 0,
+            "top_p": 1 if "deepseek" in model.lower() else 0,
             "messages": [
                 {
                     "role": "system",
@@ -1099,11 +1092,9 @@ def build_recovery_prompt(
         output_protocol_block = (
             "输出格式必须与豆包主执行 VLM 一致，不要输出 Action: 行或 JSON：\n"
             "Thought: <中文描述当前画面分析与局部恢复计划>\n"
-            "<seed:tool_call><function name=\"click\"><parameter name=\"point\" "
-            "string=\"true\"><point>500 600</point></parameter></function>"
-            "</seed:tool_call>\n\n"
+            + XML_EXAMPLES +
             "以下 JSON Schema 是本恢复链允许的完整动作集合：\n"
-            f"{schemas_prompt_text(_RECOVERY_XML_ACTION_NAMES)}\n\n"
+            f"{schemas_prompt_text(_RECOVERY_XML_ACTION_NAMES, include_action_summary=True)}\n\n"
             "XML规则：所有必填参数必须显式放在 <parameter> 节点中；字符串使用"
             "string=\"true\"，整数和布尔值使用string=\"false\"；禁止把参数写成"
             "function标签属性；每次必须且只能输出一个function。\n"

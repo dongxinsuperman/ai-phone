@@ -705,7 +705,7 @@ async def _chat_completions_images(
     payload: Dict[str, Any] = {
         "model": model,
         "temperature": 0,
-        "top_p": 0,
+        "top_p": 1 if "deepseek" in model.lower() else 0,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": content},

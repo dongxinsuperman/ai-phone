@@ -11,6 +11,7 @@ Goal 和完整子步骤清单仍位于 System。Function Map 正文仍由 Runner
 from __future__ import annotations
 
 from ai_phone.shared.seed_gui_actions import schemas_prompt_text
+from ai_phone.shared.seed_xml_protocol import XML_EXAMPLES
 from ai_phone.shared.action_summary import ACTION_SUMMARY_POLICY_ZH
 
 
@@ -23,7 +24,7 @@ IDENTITY_POLICY = """你是一个手机屏幕操作助手。每轮收到当前�
 OUTPUT_PROTOCOL = """
 ## 输出格式
 Thought: <中文描述当前画面分析与下一步计划>
-<seed:tool_call><function name="click"><parameter name="point" string="true"><point>500 800</point></parameter><parameter name="action_summary" string="true">点击页面底部的继续按钮</parameter></function></seed:tool_call>
+""" + XML_EXAMPLES + """
 
 ⚠️ Thought 的全部既有规则保持不变。动作必须写成一个 `seed:tool_call` XML 块；XML 外禁止追加动作说明或装饰文本。
 

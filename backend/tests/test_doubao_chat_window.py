@@ -159,14 +159,17 @@ async def test_invalid_xml_correction_retains_only_the_actual_model_rounds():
         return reply("Action: click(1, 2)") if len(requests) == 1 else reply(n=2)
 
     client._post_with_retry = post
+    client.add_hint("business-progress-must-survive")
     first = await client.decide(b"same-frame")
     assert first.parsed_actions[0].action == "assert_fail"
     assert "无法解析决策输出" in first.parsed_actions[0].content
     client.add_hint("same-image-protocol-correction")
     second = await client.decide(b"same-frame")
     assert second.parsed_actions[0].action == "press_home"
-    assert images(requests[1])[0] == images(requests[1])[1]
-    assert requests[1]["messages"][2] == {"role": "assistant", "content": "Action: click(1, 2)"}
+    assert "business-progress-must-survive" in json.dumps(requests[1])
+    assert len(images(requests[1])) == 1
+    assert len(client._history) == 1
+    assert "Action: click(1, 2)" not in json.dumps(requests[1])
     assert any(b.get("text") == "same-image-protocol-correction" for b in users(requests[1])[-1]["content"])
     assert client.counter.call_count == 2
 
@@ -323,3 +326,23 @@ def test_invalid_mode_is_not_silently_changed_to_session():
         settings(vlm_context_mode="typo")
     with pytest.raises(RuntimeError, match="只支持"):
         create_main_vlm("system", settings=settings().model_copy(update={"vlm_context_mode": "typo"}))
+
+
+@pytest.mark.asyncio
+async def test_two_invalid_generations_do_not_evict_four_valid_visual_rounds():
+    client = DoubaoChatWindowClient("case", settings=settings())
+    payloads = []
+    async def post(payload, headers, **kwargs):
+        payloads.append(copy.deepcopy(payload))
+        return reply("bad XML") if len(payloads) in (5, 6) else reply(n=len(payloads))
+    client._post_with_retry = post
+    for i in range(4):
+        await client.decide(f"old-{i}".encode())
+    history = copy.deepcopy(list(client._history))
+    for _ in range(2):
+        await client.decide(b"current")
+        assert list(client._history) == history
+    await client.decide(b"current")
+    assert images(payloads[4]) == images(payloads[5]) == images(payloads[6])
+    assert len(images(payloads[6])) == 5
+    assert client.counter.call_count == 7

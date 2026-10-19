@@ -20,6 +20,8 @@ Runner 与外界的唯一耦合是两个回调：
 """
 from __future__ import annotations
 
+from ai_phone.shared.seed_xml_protocol import XML_MAX_GENERATIONS, xml_correction_hint
+
 import asyncio
 import re
 import time
@@ -1145,7 +1147,8 @@ class VLMRunner:
             backend = (self._settings.vlm_backend or "").lower()
             if backend in ("claude_cu", "gpt_cu"):
                 self._last_vlm_screenshot_size = _decode_jpeg_size(screenshot_bytes)
-            parse_retry_used = False
+            parse_attempt = 0
+            max_generations = XML_MAX_GENERATIONS if backend == "doubao_responses" else 2
             while True:
                 try:
                     # driver.screenshot_jpeg 出来是 JPEG；显式告诉 VLMClient 用哪种 mime
@@ -1174,16 +1177,11 @@ class VLMRunner:
                     pa.thought = thought
 
                 parser_fallback = parsed_chain and _is_parser_fallback_action(parsed_chain[0])
-                if parser_fallback and not parse_retry_used:
-                    parse_retry_used = True
+                parse_attempt += 1
+                if parser_fallback and parse_attempt < max_generations:
                     bad = (parsed_chain[0].content or parsed_chain[0].raw or "")[:180]
                     if backend == "doubao_responses":
-                        self.vlm.add_hint(
-                            "⚠️ 上一轮输出无法被系统解析，本轮请基于同一张截图重新决策一次。"
-                            "保留规范 Thought，并严格输出一个 <seed:tool_call> XML动作块；"
-                            "function/parameter 必须符合 System Prompt 的 JSON Schema。"
-                            "不要输出 Action: 行、JSON、markdown代码块或尾部注释。"
-                        )
+                        self.vlm.add_hint(xml_correction_hint(decision.raw_content or bad))
                     else:
                         self.vlm.add_hint(
                             "⚠️ 上一轮输出无法被系统解析，本轮请基于同一张截图重新决策一次。"
@@ -1195,7 +1193,7 @@ class VLMRunner:
                     await self._log(
                         2,
                         "VLM 输出解析失败",
-                        f"已要求模型按 Seed GUI XML 重试一次 | {bad}",
+                        f"格式解析失败，重新生成 {parse_attempt + 1}/{max_generations} | {bad}",
                         step=step,
                     )
                     continue

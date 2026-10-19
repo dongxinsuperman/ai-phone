@@ -3331,7 +3331,7 @@ def test_build_recovery_prompt_seed_xml_has_no_action_line():
     )
     assert "<seed:tool_call>" in prompt
     assert '<function name="click">' in prompt
-    assert 'string="true"><point>500 600</point>' in prompt
+    assert 'string="true"><point>500 800</point>' in prompt
     assert "Action: <一个动作调用>" not in prompt
     assert "每次必须且只能输出一个function" in prompt
 
