@@ -5,7 +5,7 @@ V3 不信任首跑旧坐标。回放时只把缓存 action 当作语义脚本：
 """
 from __future__ import annotations
 
-from ai_phone.shared.seed_xml_protocol import XML_MAX_GENERATIONS, xml_correction_hint
+from ai_phone.shared.seed_xml_protocol import XML_EXAMPLES, XML_MAX_GENERATIONS, xml_correction_hint
 
 import asyncio
 import base64
@@ -2105,11 +2105,9 @@ def build_v3_rescue_prompt(
 
     if seed_xml:
         prompt += (
-            "使用与主执行相同的 <seed:tool_call><function name=\"动作名\">"
-            "<parameter name=\"参数名\" string=\"true或false\">参数值</parameter>"
-            "</function></seed:tool_call>。每轮必须且只能返回一个合法 function。\n"
-            "参数遵循以下既有动作定义；坐标参数使用 <point>x y</point>，不要坐标 JSON。\n"
-            + schemas_prompt_text(_V3_RESCUE_XML_ACTIONS) + "\n"
+            XML_EXAMPLES
+            + "每轮必须且只能返回一个合法 function。参数遵循以下动作定义。\n"
+            + schemas_prompt_text(_V3_RESCUE_XML_ACTIONS, include_action_summary=True) + "\n"
             "需要关闭遮挡或局部修复时直接返回对应动作；等待时返回 wait。"
             "滑动或快进使用 drag 的 start_point/end_point，不新增动作类型。"
             "finished(content=原因) 仅表示当前缓存步骤已满足且能够继续下一步，"
