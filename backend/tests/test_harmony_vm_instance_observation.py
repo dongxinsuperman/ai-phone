@@ -246,6 +246,30 @@ def test_unused_server_reservation_is_verified_separately_from_historical_identi
         unregister_managed_vm("reserved-port-owner", "unrelated-lease")
 
 
+@pytest.mark.parametrize("blocked", ["none", "old_port", "new_port", "new_owner", "new_connected"])
+def test_pending_history_does_not_replace_current_reservation_evidence(local_vm, monkeypatch, blocked):
+    manager, known, config = local_vm
+    known.update(cleanup_confirmed=False, cleanup_pending=True)
+    manager._save_registry()
+    original = deepcopy(known), manager.registry_path.read_bytes(), config.read_bytes()
+    if blocked == "new_owner":
+        register_managed_vm("reserved-owner", "127.0.0.1:10008", "other-lease")
+    monkeypatch.setattr(mod, "hdc_list_targets", lambda: [
+        SimpleNamespace(serial="127.0.0.1:10008", status="Connected")
+    ] if blocked == "new_connected" else [])
+    busy_port = {"old_port": 10007, "new_port": 10008}.get(blocked)
+    monkeypatch.setattr(manager, "_port_is_free", lambda port: port != busy_port)
+    try:
+        observation = manager.inspect_start_reservation({
+            "vm_id": "observe-vm", "lease_token": "new-lease", "hdc_serial": "127.0.0.1:10008",
+        }, None)
+        assert ("unused_reservation" in observation) is (blocked == "none")
+        assert observation["identity"]["lease_token"] == "old-local-lease"
+        assert (known, manager.registry_path.read_bytes(), config.read_bytes()) == original
+    finally:
+        unregister_managed_vm("reserved-owner", "other-lease")
+
+
 @pytest.mark.parametrize("blocked", ["connected", "unknown_hdc", "hdc_error", "port", "fport"])
 def test_process_stopped_does_not_mean_its_resources_are_released(local_vm, monkeypatch, blocked):
     manager, known, _config = local_vm

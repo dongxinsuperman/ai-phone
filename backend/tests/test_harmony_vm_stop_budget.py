@@ -82,7 +82,7 @@ def stop_env(tmp_path, monkeypatch):
     def hdc(*args, **kwargs):
         if args == ("fport", "ls"):
             event("fport_list", kwargs["timeout"])
-            return "tcp:16556 tcp:8012"
+            return f"{runtime.hdc_serial}    tcp:16556 tcp:8012    [Forward]"
         if args[:2] == ("fport", "rm"):
             assert kwargs["serial"] == runtime.hdc_serial
             event("fport_remove", kwargs["timeout"])

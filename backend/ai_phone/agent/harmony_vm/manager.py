@@ -57,6 +57,7 @@ _INSTANCE_PREFIX = "aiphone_harmony_"
 # 参数，这是实测可用的唯一通道：-m 折叠（外屏）、-f 展开（内屏）。
 FOLD_DUMP_ARG_FOLDED = "-m"
 FOLD_DUMP_ARG_UNFOLDED = "-f"
+FOLD_INITIALIZATION_SETTLE_SEC = 5.0
 FOLD_VERIFY_ATTEMPTS = 6
 FOLD_VERIFY_INTERVAL_SEC = 1.0
 
@@ -378,8 +379,11 @@ class HarmonyVmManager:
                 serial = f"127.0.0.1:{_int_value(msg.get('assigned_port'), 0)}"
             token = str(msg.get("lease_token") or "")
             port = _serial_port(serial)
+            # Current observation already verified the exact instance is stopped
+            # and its old transport is released. Historical cleanup flags must
+            # not strand a newer reservation never adopted here. This receipt
+            # leaves those flags intact and verifies the new transport below.
             if (observation["state"] != "stopped" or not observation["resources_released"]
-                    or known.get("cleanup_confirmed") is not True or known.get("cleanup_pending")
                     or not token or token == known.get("lease_token")
                     or not port or not HDC_PORT_MIN <= port <= HDC_PORT_MAX
                     or managed_vm_owner(serial) is not None):
@@ -1118,8 +1122,14 @@ class HarmonyVmManager:
         )
         diagnostics = {"vm_id": runtime.vm_id, "hdc_serial": runtime.hdc_serial,
                        "requested_state": state, "folded_width": folded_width,
-                       "command": command, "samples": []}
+                       "command": command, "samples": [],
+                       "initialization_settle_sec": FOLD_INITIALIZATION_SETTLE_SEC}
         try:
+            # boot.completed 后桌面仍可能初始化折叠形态，覆盖刚设置的显示模式。
+            # 先留出实测的初始化间隔，再发一次指令；等待计入原启动总预算。
+            time.sleep(startup_timeout(
+                runtime.operation_deadline, FOLD_INITIALIZATION_SETTLE_SEC
+            ))
             output = hdc_shell(runtime.hdc_serial, command,
                                timeout=startup_timeout(runtime.operation_deadline, 15.0), check=True)
             diagnostics["command_output_tail"] = str(output)[-4096:]
@@ -2426,19 +2436,33 @@ class HarmonyVmManager:
 
 
     def _remove_fport(self, runtime: HarmonyVmRuntime, *, deadline: Optional[float] = None) -> None:
+        from .fport import _ALLOC_LOCK
+
+        # Keep a listed port from being reallocated to another VM between
+        # ownership verification and HDC's global removal operation.
+        with _stop_lock(_ALLOC_LOCK, deadline):
+            self._remove_owned_fports(runtime, deadline=deadline)
+
+    def _remove_owned_fports(self, runtime: HarmonyVmRuntime, *, deadline: Optional[float] = None) -> None:
         _stop_timeout(deadline, 1.0)
+        owner = managed_vm_owner(runtime.hdc_serial)
+        if owner is not None and owner != (runtime.vm_id, runtime.lease_token):
+            return
         ports: set[int] = set()
-        if runtime.driver_fport_port:
-            ports.add(runtime.driver_fport_port)
         try:
             raw = hdc_run(
                 "fport", "ls", serial=runtime.hdc_serial, timeout=_stop_timeout(deadline, 3.0), check=False
             )
             _stop_timeout(deadline, 1.0)
-            ports.update(
-                int(local)
-                for local in re.findall(r"tcp:(\d+)\s+tcp:8012", raw or "")
-            )
+            # HDC lists ALL targets and removes by global local-port key;
+            # -t does not scope either operation. A cached port can also have
+            # been reassigned. Only the current listing proves its owner.
+            for line in (raw or "").splitlines():
+                fields = line.split()
+                if (len(fields) >= 3 and fields[0] == runtime.hdc_serial
+                        and re.fullmatch(r"tcp:\d+", fields[1])
+                        and fields[2] == "tcp:8012" and "[Reverse]" not in fields[3:]):
+                    ports.add(int(fields[1][4:]))
         except Exception:  # noqa: BLE001
             _stop_timeout(deadline, 1.0)
             pass

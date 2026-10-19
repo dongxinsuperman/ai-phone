@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -36,8 +37,9 @@ async def bound_unknown(context):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("proof", ["valid", "absent", "wrong_token", "wrong_vm", "occupied"])
+@pytest.mark.parametrize("cleanup_history", ["confirmed_reassigned", "unconfirmed", "missing", "pending"])
 async def test_harmony_failed_reservation_recovers_through_real_agent_inspection(
-    view_context, monkeypatch, tmp_path, proof,
+    view_context, monkeypatch, tmp_path, proof, cleanup_history,
 ):
     context = view_context
     if context.platform.name != "harmony":
@@ -51,11 +53,18 @@ async def test_harmony_failed_reservation_recovers_through_real_agent_inspection
     known = {"instance_name": "aiphone_harmony_" + vm_id, "instance_path": str(manager.instance_path),
              "hdc_serial": "127.0.0.1:10007", "hdc_port": 10007, "lease_token": "retired-lease",
              "cleanup_confirmed": True, "cleanup_pending": False, "created": True, "ready": False}
+    if cleanup_history == "unconfirmed":
+        known["cleanup_confirmed"] = False
+    elif cleanup_history == "missing":
+        known.pop("cleanup_confirmed")
+    elif cleanup_history == "pending":
+        known.update(cleanup_confirmed=False, cleanup_pending=True)
     manager._known[vm_id] = known
     config = manager.instance_path / known["instance_name"] / "config.ini"
     config.parent.mkdir(parents=True); config.write_text("preserved-user-data")
     manager._save_registry()
-    register_managed_vm("unrelated-running-B", known["hdc_serial"], "B-lease")
+    if cleanup_history == "confirmed_reassigned":
+        register_managed_vm("unrelated-running-B", known["hdc_serial"], "B-lease")
     monkeypatch.setattr(psutil, "process_iter", lambda _attrs: iter(()))
     monkeypatch.setattr(agent_module, "hdc_list_targets", lambda: [])
     monkeypatch.setattr(manager, "_port_is_free", lambda port: proof != "occupied")
@@ -75,7 +84,8 @@ async def test_harmony_failed_reservation_recovers_through_real_agent_inspection
     try:
         response = await context.client.post(f"{context.platform.base}/{vm_id}/start", headers=AUTH)
         assert response.status_code == (200 if proof == "valid" else 409), response.text
-        assert managed_vm_owner(known["hdc_serial"]) == ("unrelated-running-B", "B-lease")
+        expected_owner = ("unrelated-running-B", "B-lease") if cleanup_history == "confirmed_reassigned" else None
+        assert managed_vm_owner(known["hdc_serial"]) == expected_owner
         assert config.read_text() == "preserved-user-data"
         if proof == "valid":
             command = last_command(context, context.platform.start)
@@ -86,10 +96,11 @@ async def test_harmony_failed_reservation_recovers_through_real_agent_inspection
                 assert runtime(vm)["lease_history"][-1]["reason"] == "verified_stopped_observation"
             # Exercise the forward path too: another failure before adopting
             # the new reservation must not recreate today's quarantined lease.
-            monkeypatch.setattr(manager, "probe", lambda _msg: {"ok": False, "reason": "fixture-prelaunch-failure"})
+            monkeypatch.setattr(manager, "probe", lambda _msg: pytest.fail("expired start reached capability probe"))
             async def send_status(message):
                 await context.platform.svc.handle_vm_status("agent-1", message, context.hub)
-            await manager._start_and_report(SimpleNamespace(send=send_status), command)
+            expired = {**command, "_operation_deadline": time.monotonic() - 1.0}
+            await manager._start_and_report(SimpleNamespace(send=send_status), expired)
             async with db.get_session_factory()() as session:
                 vm = await session.get(context.platform.model, vm_id)
                 assert vm.lease_token is None and vm.hdc_port is None
