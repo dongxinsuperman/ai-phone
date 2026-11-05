@@ -252,6 +252,7 @@ function prettyErr(e) {
   <section class="page">
     <header class="head">
       <h2>设备总览</h2>
+      <RouterLink to="/device-library">设备库 · 按需启动 →</RouterLink>
       <div class="toolbar">
         <div class="filters">
           <button

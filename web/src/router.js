@@ -3,12 +3,14 @@ import Analytics from './pages/Analytics.vue'
 import AppDistribution from './pages/AppDistribution.vue'
 import DeviceConfig from './pages/DeviceConfig.vue'
 import DeviceGrid from './pages/DeviceGrid.vue'
+import DeviceLibrary from './pages/DeviceLibrary.vue'
 import DeviceWork from './pages/DeviceWork.vue'
 import Queue from './pages/Queue.vue'
 import VirtualMachinesHome from './pages/VirtualMachinesHome.vue'
 
 const routes = [
   { path: '/', name: 'devices', component: DeviceGrid },
+  { path: '/device-library', name: 'device-library', component: DeviceLibrary },
   { path: '/queue', name: 'queue', component: Queue },
   { path: '/app-distribution', name: 'app-distribution', component: AppDistribution },
   { path: '/virtual-machines', name: 'virtual-machines', component: VirtualMachinesHome },
