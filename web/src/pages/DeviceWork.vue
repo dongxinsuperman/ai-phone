@@ -1,6 +1,10 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import {
+  COLUMN_GUTTER, DEFAULT_MIRROR_RATIOS, WORKBENCH_LAYOUT_KEY,
+  mirrorColumnWidth, readMirrorRatios,
+} from '../lib/workbenchLayout.js'
 import LogPane from '../components/LogPane.vue'
 import { api } from '../lib/api.js'
 import { platformLabel } from '../lib/platform.js'
@@ -131,6 +135,15 @@ const mirrorError = computed(() => (
 
 const mirrorWrap = ref(null)
 const rightCol = ref(null)
+const layoutEl = ref(null)
+const layoutWidth = ref(0)
+const mirrorFocused = ref(false)
+const mirrorRatios = ref(readMirrorRatios({ getItem: key => window.localStorage.getItem(key) }))
+const layoutOrientation = computed(() => frameSize.value.w > frameSize.value.h ? 'landscape' : 'portrait')
+const mirrorWidth = computed(() => mirrorColumnWidth(layoutWidth.value, mirrorRatios.value[layoutOrientation.value]))
+const columnPercent = width => Math.round(width * 100 / Math.max(1, layoutWidth.value - COLUMN_GUTTER))
+let columnDrag = null
+let layoutObserver = null
 const RIGHT_SPLIT_KEY = 'ai-phone:device-work-right-split:v3'
 const RIGHT_PANEL_DEFAULT = { controls: 330 }
 const RIGHT_PANEL_MIN = { controls: 44, logs: 42 }
@@ -188,7 +201,58 @@ function resetRightPanelLayout() {
   persistRightControlsHeight()
 }
 
+function persistMirrorLayout() {
+  try {
+    window.localStorage.setItem(WORKBENCH_LAYOUT_KEY, JSON.stringify(mirrorRatios.value))
+  } catch (_) {
+    // Keep the current session layout when browser storage is disabled.
+  }
+}
+
+function resetMirrorLayout() {
+  mirrorRatios.value = { ...DEFAULT_MIRROR_RATIOS }
+  mirrorFocused.value = false
+  persistMirrorLayout()
+}
+
+function setMirrorWidth(width, orientation = layoutOrientation.value) {
+  const available = layoutWidth.value - COLUMN_GUTTER
+  if (available <= 0) return
+  const ratio = mirrorColumnWidth(layoutWidth.value, width / available) / available
+  mirrorRatios.value = { ...mirrorRatios.value, [orientation]: ratio }
+}
+
+function startColumnResize(ev) {
+  if (!ev.isPrimary || ev.button !== 0) return
+  ev.currentTarget.focus()
+  ev.currentTarget.setPointerCapture(ev.pointerId)
+  gesture.active = false
+  columnDrag = { id: ev.pointerId, x: ev.clientX, width: mirrorWidth.value, orientation: layoutOrientation.value }
+}
+
+function moveColumnResize(ev) {
+  if (columnDrag?.id !== ev.pointerId || columnDrag.orientation !== layoutOrientation.value) return
+  setMirrorWidth(columnDrag.width + ev.clientX - columnDrag.x, columnDrag.orientation)
+}
+
+function finishColumnResize(ev) {
+  if (columnDrag?.id !== ev.pointerId) return
+  columnDrag = null
+  persistMirrorLayout()
+}
+
+function resizeColumnByKey(ev) {
+  const step = ev.shiftKey ? 80 : 24
+  const widths = { ArrowLeft: mirrorWidth.value - step, ArrowRight: mirrorWidth.value + step,
+    Home: 0, End: layoutWidth.value }
+  if (!Object.hasOwn(widths, ev.key)) return
+  ev.preventDefault()
+  setMirrorWidth(widths[ev.key])
+  persistMirrorLayout()
+}
+
 function onViewportResize() {
+  layoutWidth.value = layoutEl.value?.clientWidth || 0
   rightControlsHeight.value = clampRightControlsHeight(rightControlsHeight.value)
 }
 
@@ -878,6 +942,10 @@ onMounted(async () => {
     imgEl.value.addEventListener('load', _onVideoSizeChange)
   }
   window.addEventListener('resize', onViewportResize)
+  if (layoutEl.value && typeof ResizeObserver !== 'undefined') {
+    layoutObserver = new ResizeObserver(onViewportResize)
+    layoutObserver.observe(layoutEl.value)
+  }
   onViewportResize()
   sub = openDeviceStream(serial.value, {
     onMessage,
@@ -904,6 +972,7 @@ onBeforeUnmount(() => {
     imgEl.value.removeEventListener('load', _onVideoSizeChange)
   }
   window.removeEventListener('resize', onViewportResize)
+  layoutObserver?.disconnect()
   stopRightPanelResize()
 })
 
@@ -948,11 +1017,19 @@ watch(
         <span v-if="device">状态 {{ device.effective_status || device.status }}</span>
         <span v-if="lock.readonly.value" class="ro">· 锁续期失败</span>
       </div>
+      <div class="mirror-layout-controls" aria-label="画面布局">
+        <button type="button" :aria-pressed="mirrorFocused" @click="mirrorFocused = !mirrorFocused">
+          {{ mirrorFocused ? '显示任务区' : '放大画面' }}
+        </button>
+        <button type="button" @click="resetMirrorLayout">恢复画面布局</button>
+      </div>
     </header>
 
     <div
+      ref="layoutEl"
       class="layout"
-      :class="{ resizing: rightResizeActive }"
+      :class="{ resizing: rightResizeActive, 'mirror-focused': mirrorFocused }"
+      :style="{ '--mirror-column': layoutWidth ? `${mirrorWidth}px` : '420px' }"
     >
       <section class="pane mirror-panel">
         <div class="mirror-wrap" ref="mirrorWrap">
@@ -1078,6 +1155,22 @@ watch(
           </div>
         </div>
       </section>
+
+      <div
+        class="column-splitter"
+        role="separator"
+        tabindex="0"
+        aria-orientation="vertical"
+        aria-label="调整画面和任务区宽度"
+        :aria-valuenow="columnPercent(mirrorWidth)"
+        :aria-valuemin="columnPercent(mirrorColumnWidth(layoutWidth, 0))"
+        :aria-valuemax="columnPercent(mirrorColumnWidth(layoutWidth, 1))"
+        @pointerdown="startColumnResize"
+        @pointermove="moveColumnResize"
+        @lostpointercapture="finishColumnResize"
+        @keydown="resizeColumnByKey"
+        @dblclick="resetMirrorLayout"
+      ><span></span></div>
 
       <section
         class="right"
@@ -1319,6 +1412,7 @@ watch(
   align-items: center;
   gap: 16px;
   margin-bottom: 14px;
+  flex-wrap: wrap;
 }
 .back {
   color: #1976d2;
@@ -1372,12 +1466,49 @@ h2 {
 
 .layout {
   display: grid;
-  grid-template-columns: auto minmax(320px, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, var(--mirror-column)) 14px minmax(0, 1fr);
   align-items: stretch;
   flex: 1 1 auto;
   min-height: 0;
   max-width: 100%;
+}
+.layout.mirror-focused {
+  grid-template-columns: minmax(0, 1fr);
+}
+.layout.mirror-focused .right,
+.layout.mirror-focused .column-splitter {
+  display: none;
+}
+.column-splitter {
+  display: grid;
+  place-items: center;
+  cursor: col-resize;
+  touch-action: none;
+  border-radius: 6px;
+}
+.column-splitter span {
+  width: 4px;
+  height: 56px;
+  border-radius: 4px;
+  background: #aebed1;
+}
+.column-splitter:hover, .column-splitter:focus-visible {
+  background: #e3edfa;
+}
+.mirror-layout-controls {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.mirror-layout-controls button {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.mirror-layout-controls button[aria-pressed='true'] {
+  background: #e8f1fe;
 }
 .layout.resizing,
 .layout.resizing * {
@@ -1455,8 +1586,10 @@ h2 {
 }
 @media (max-width: 1080px) {
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
   }
+  .column-splitter { display: none; }
   .right {
     height: auto;
     min-height: 520px;
@@ -1472,12 +1605,10 @@ h2 {
   border: 1px solid #2a2f38;
   overflow: hidden;
   background: #0d1117;
-  resize: horizontal;
-  width: 420px;
+  width: 100%;
   height: 100%;
-  min-width: 220px;
+  min-width: 0;
   min-height: 0;
-  max-width: 95vw;
 }
 .mirror-bar {
   display: flex;
@@ -1486,6 +1617,8 @@ h2 {
   padding: 6px 10px;
   background: #161b22;
   border-bottom: 1px solid #2a2f38;
+  flex-wrap: wrap;
+  flex-shrink: 0;
   color: #d7dbe3;
   font-size: 12px;
 }
