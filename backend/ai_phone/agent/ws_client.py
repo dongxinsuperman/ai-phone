@@ -286,7 +286,10 @@ class AgentWSClient:
                 "host_os": self.host_os,
                 **({"host_id": self.host_id} if self.host_id else {}),
                 "devices": devices,
-                "capabilities": [P.CAP_V3_PLATFORM_CACHE],
+                "capabilities": [
+                    P.CAP_V3_PLATFORM_CACHE,
+                    *([P.CAP_WORKBENCH_ORIENTATION] if P.MSG_WORKBENCH_ORIENTATION in self.handlers else []),
+                ],
             }
         )
         if sent and self._ws is ws:

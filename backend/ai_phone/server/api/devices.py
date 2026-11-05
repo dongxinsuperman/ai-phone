@@ -10,7 +10,8 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, List, Optional
+from secrets import compare_digest
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, status
 from loguru import logger
@@ -28,6 +29,7 @@ from ..app_uninstall import (
 from ..hub import Hub
 from ..lockstore import BadToken, DeviceLockStore, LockConflict, LockNotFound
 from ..models import Device, DeviceAlias
+from ..workbench_orientation import orientation_requests, supported as orientation_supported
 from ._deps import DBSession, HubDep, LockStoreDep
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
@@ -63,6 +65,11 @@ class InputReq(BaseModel):
     )
     params: Optional[Dict[str, Any]] = None
     lock_token: str = Field(..., description="调用方持有的设备锁 token")
+
+
+class OrientationReq(BaseModel):
+    lock_token: str = Field(min_length=1, max_length=256)
+    orientation: Literal["portrait", "landscape_left", "landscape_right"] | None = None
 
 
 class AppUninstallReq(BaseModel):
@@ -217,7 +224,10 @@ async def get_device(
     dev = await session.get(Device, serial)
     if dev is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="device not found")
-    return await _merge_lock_into(dev.to_dict(), store, hub)
+    result = await _merge_lock_into(dev.to_dict(), store, hub)
+    if orientation_supported(hub, serial, dev.platform):
+        result["workbench_orientation"] = True
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -432,6 +442,8 @@ async def send_input(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="lock_token 不匹配，你不是当前持有者",
         )
+    if serial in orientation_requests.pending:
+        raise HTTPException(409, "设备正在切换方向，请等待画面同步")
     ok = await _hub.send_to_serial(
         serial,
         {
@@ -447,3 +459,38 @@ async def send_input(
             detail="派发到 Agent 失败",
         )
     return {"dispatched": True}
+
+
+@router.post("/{serial}/orientation")
+async def set_workbench_orientation(
+    serial: str,
+    body: OrientationReq,
+    session: AsyncSession = DBSession,
+    store: DeviceLockStore = LockStoreDep,
+    hub: Hub = HubDep,
+) -> Dict[str, Any]:
+    """Return the actual device render, optionally after applying an absolute rotation."""
+    dev = await session.get(Device, serial)
+    if dev is None:
+        raise HTTPException(404, "device not found")
+    lock = store.peek(serial)
+    if lock is None or not compare_digest(lock.token.encode(), body.lock_token.encode()):
+        raise HTTPException(403, "请先获取当前设备的控制权")
+    if dev.status != "online":
+        raise HTTPException(409, "设备不在线")
+    if not orientation_supported(hub, serial, dev.platform):
+        raise HTTPException(422, "当前设备或 Agent 不支持工作台转屏")
+    try:
+        receipt = await orientation_requests.request(hub, serial, body.orientation)
+    except TimeoutError:
+        raise HTTPException(504, "转屏结果尚未确认，请重新同步画面") from None
+    except ConnectionError:
+        raise HTTPException(503, "设备 Agent 不可用或已变更") from None
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from None
+    lock = store.peek(serial)
+    if lock is None or not compare_digest(lock.token.encode(), body.lock_token.encode()):
+        raise HTTPException(403, "设备控制权已释放")
+    if not receipt.get("success"):
+        raise HTTPException(422, receipt.get("error") or "设备方向未确认")
+    return receipt["result"]

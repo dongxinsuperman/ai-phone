@@ -197,6 +197,63 @@ class HarmonyVmManager:
         self._vm_locks: Dict[str, threading.RLock] = {}
         self._last_reclaimed_ids: set[str] = set()
 
+    def rotate_device(self, driver: BaseDriver, target: int, expires_at: float) -> bool:
+        """Send official sensor events only to this process's current owned VM."""
+        owner = managed_vm_owner(driver.serial)
+        if owner is None:
+            return False
+        vm_id, lease = owner
+        with self._vm_lock(vm_id):
+            runtime = self._runtimes.get(vm_id)
+            if runtime is None or runtime.lease_token != lease or runtime.hdc_serial != driver.serial:
+                raise RuntimeError("managed_harmony_rotation_owner_changed")
+            tools, _ = find_harmony_tools()
+            if tools is None:
+                raise RuntimeError("Harmony Emulator CLI unavailable")
+            if driver.rotation() == target:
+                return True
+            # Phone images honor UiTest's explicit display rotation. Prefer
+            # that direct target; some Tablet images require sensor fallback.
+            driver._call_with_reconnect(
+                lambda: driver._raw._invoke("Driver.setDisplayRotation", args=[target])
+            )
+            direct_deadline = time.monotonic() + 2
+            while time.monotonic() < direct_deadline:
+                if driver.rotation() == target:
+                    return True
+                time.sleep(0.15)
+            # A new clean image starts with orientation lock enabled. Enable
+            # actual sensor rotation through the documented UiTest API; do not
+            # rely on debug-only hidumper switches or stale personal VM state.
+            driver._call_with_reconnect(
+                lambda: driver._raw._invoke("Driver.setDisplayRotationEnabled", args=[True])
+            )
+            for _ in range(4):
+                remaining = expires_at - time.time()
+                if remaining <= 0:
+                    raise RuntimeError("Harmony rotation request expired")
+                before = driver.rotation()
+                if before == target:
+                    return True
+                result = subprocess.run(
+                    [tools.emulator, "-instance", runtime.instance_name,
+                     "-instancePath", runtime.instance_path, "-rotation", "left"],
+                    capture_output=True, text=True, timeout=min(15, remaining),
+                )
+                if result.returncode or "Scenario simulation success" not in result.stdout:
+                    raise RuntimeError("Harmony sensor rotation failed; inspect current orientation")
+                deadline = time.monotonic() + 3
+                while driver.rotation() == before:
+                    if time.monotonic() > deadline:
+                        # The emulator's sensor angle may have advanced while
+                        # the app/OS locked the screen. One event can therefore
+                        # legitimately match the existing rendered angle.
+                        break
+                    time.sleep(0.15)
+                if driver.rotation() == target:
+                    return True
+            raise RuntimeError("Harmony sensor rotation did not reach requested angle")
+
     @property
     def max_instances(self) -> int:
         return int(get_settings().harmony_vm_max_instances)

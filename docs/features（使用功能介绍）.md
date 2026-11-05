@@ -45,6 +45,10 @@ iOS 会额外展示 WDA 状态。stable 模式下如果 WDA 未起，页面会�
 - iOS 应用列表链路：`pymobiledevice3 installation_proxy` 负责查询用户 App / 系统 App。当前实现分开查询 `User` 与 `System`，不再依赖 `Any` 一条路。
 - 如果“控制台能点，但 `open_app` 报列应用失败”，优先排查应用列表链路，不要误判为 WDA 整体不可用。
 
+### 3.2 工作台模拟器转屏
+
+更新 Server、Web 与设备所属 Agent 后，支持的 Android 模拟器、iOS Simulator 和受管鸿蒙模拟器工作台会显示「竖屏」「左横屏」「右横屏」。使用当前设备的控制权操作，任务运行时暂缓转屏。等原生方向与镜像确认后可继续输入。App 锁定方向或链路超时时，可点「重新同步画面」读取实际方向。旧 Agent 和实体设备继续使用原来的控制界面。
+
 ## 4. 批次投递
 
 外部系统通过 `/api/submissions` 投递自然语言 case：

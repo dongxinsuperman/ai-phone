@@ -8,6 +8,7 @@ import { openDeviceStream } from '../lib/ws.js'
 import { useDeviceLock } from '../lib/useDeviceLock.js'
 import { useMseMirror } from '../lib/useMseMirror.js'
 import { useJpegMirror } from '../lib/useJpegMirror.js'
+import { directionLabel, directions, matchingGeometry, waitForDecodedVideo } from '../lib/workbenchOrientation.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -90,6 +91,16 @@ function normalizeErrorSummary(summary) {
 const mirror = useMseMirror({ liveSyncSeconds: 0.4, debug: false })
 const jpegMirror = useJpegMirror({ debug: false })
 const mirrorMode = ref(null) // null | 'mse' | 'jpeg'
+let videoGeneration = null
+const orientation = ref(null)
+const orientationBusy = ref(false)
+const orientationError = ref('')
+const orientationUnsynced = ref(false)
+const orientationAbort = new AbortController()
+const manualInputBlocked = computed(() => lock.readonly.value || orientationBusy.value || orientationUnsynced.value)
+const orientationDisabled = computed(() => lock.readonly.value || !lock.token.value
+  || !wsConnected.value || !mirrorMode.value || orientationBusy.value || tapBusy.value
+  || busy.value || !!currentRunId.value)
 
 // 设备启动/链路状态（仅 iOS WDA 首次建立时有内容）：
 //   stage: initializing / compiling / need_unlock / preflight_deadlock / ready / error
@@ -283,13 +294,73 @@ async function refreshDevice() {
   try {
     const d = await api.getDevice(serial.value)
     device.value = d
-    if (d && d.screen_width && d.screen_height) {
+    if (d && d.screen_width && d.screen_height && !orientationBusy.value && !orientationUnsynced.value) {
       devicePixel.value = { w: d.screen_width, h: d.screen_height }
     }
   } catch (e) {
     if (e.status === 404) {
       router.replace('/')
     }
+  }
+}
+
+async function changeOrientation(target = null) {
+  if (orientationDisabled.value) return
+  const token = lock.token.value
+  orientationBusy.value = true
+  orientationUnsynced.value = true
+  orientationError.value = ''
+  orientation.value = null
+  gesture.active = false
+  kbCapture.value?.blur()
+  try {
+    const observation = await api.workbenchOrientation(serial.value, token, target, orientationAbort.signal)
+    if (!observation?.orientation || (target && observation.orientation !== target)
+      || !Number.isInteger(observation.width) || !Number.isInteger(observation.height)
+      || observation.width <= 0 || observation.height <= 0) {
+      throw new Error('设备未确认请求的方向')
+    }
+    if (mirrorMode.value === 'mse') {
+      await waitForDecodedVideo(videoEl.value, () => videoGeneration, observation, orientationAbort.signal)
+    } else {
+      const el = imgEl.value
+      if (!el || !observation.jpeg || !Number.isFinite(observation.captured_at)) {
+        throw new Error('设备未返回已确认的画面')
+      }
+      // Decode the exact native snapshot before enabling input. The mirror
+      // drops queued frames older than this screenshot's capture time.
+      await new Promise((resolve, reject) => {
+        let src
+        const finish = error => {
+          clearTimeout(timer)
+          el.removeEventListener('load', loaded, true)
+          el.removeEventListener('error', failed, true)
+          orientationAbort.signal.removeEventListener('abort', failed)
+          if (error) reject(error)
+          else resolve()
+        }
+        const loaded = () => {
+          if (el.src === src && matchingGeometry(el.naturalWidth, el.naturalHeight, observation)) finish()
+        }
+        const failed = () => finish(new Error('设备画面尚未同步，请重新同步画面'))
+        const timer = setTimeout(failed, 8000)
+        el.addEventListener('load', loaded, true)
+        el.addEventListener('error', failed, true)
+        orientationAbort.signal.addEventListener('abort', failed, { once: true })
+        src = jpegMirror.presentSnapshot(observation.jpeg, observation.captured_at)
+        if (!src || orientationAbort.signal.aborted) failed()
+      })
+    }
+    if (!wsConnected.value || token !== lock.token.value || lock.readonly.value) {
+      throw new Error('设备连接或控制权已变更，请重新同步画面')
+    }
+    orientation.value = observation.orientation
+    devicePixel.value = { w: observation.width, h: observation.height }
+    orientationUnsynced.value = false
+  } catch (error) {
+    if (!orientationAbort.signal.aborted) orientationError.value = error.message || '设备方向未确认'
+  } finally {
+    orientationBusy.value = false
   }
 }
 
@@ -333,6 +404,7 @@ function _focusKb() {
 }
 
 async function _sendType(text) {
+  if (manualInputBlocked.value) return
   if (!text) return
   // 手动输入不进日志面板：日志只用于追踪 Run 的 step / log；失败仅 console
   try {
@@ -347,6 +419,7 @@ async function _sendType(text) {
 }
 
 async function _sendKeycode(code, label) {
+  if (manualInputBlocked.value) return
   try {
     await api.sendInput(serial.value, {
       kind: 'keycode',
@@ -361,7 +434,7 @@ async function _sendKeycode(code, label) {
 // 屏幕底部"虚拟导航条"：BACK / HOME / RECENTS。
 // 走和键盘转发一样的 sendInput，不进日志面板。
 async function _sendNavKind(kind, label) {
-  if (lock.readonly.value) return
+  if (manualInputBlocked.value) return
   try {
     await api.sendInput(serial.value, {
       kind,
@@ -377,7 +450,7 @@ function navHome()    { _sendNavKind('press_home', 'home') }
 function navRecents() { _sendKeycode(187, 'recents') }   // KEYCODE_APP_SWITCH
 
 function onKbKeyDown(ev) {
-  if (lock.readonly.value) return
+  if (manualInputBlocked.value) return
   // IME 组词中放行（Backspace 在拼音里要删字母而不是发回退到设备）
   if (ev.isComposing || composing.value) return
   // 修饰键组合（Cmd/Ctrl/Alt + key）一律不发到手机，留给浏览器
@@ -393,7 +466,7 @@ function onKbKeyDown(ev) {
 }
 
 function onKbInput(ev) {
-  if (lock.readonly.value) return
+  if (manualInputBlocked.value) return
   if (ev.isComposing || composing.value) return
   const data = ev.data
   // 清空本地缓冲，下一次输入才不会拼起来
@@ -476,7 +549,7 @@ function _mapToDevice(ev, el, { clamp = false } = {}) {
 }
 
 function onMirrorPointerDown(ev) {
-  if (lock.readonly.value) return
+  if (manualInputBlocked.value) return
   const el = mirrorEl.value
   const { w: nw, h: nh } = _mediaSize(el)
   if (!el || !nw || !nh) return
@@ -508,7 +581,7 @@ function onMirrorPointerMove(ev) {
 }
 
 async function onMirrorPointerUp(ev) {
-  if (!gesture.active) return
+  if (!gesture.active || manualInputBlocked.value) return
   gesture.active = false
   const el = mirrorEl.value
   if (!el) return
@@ -620,14 +693,19 @@ function onMessage(msg) {
         timestamp: msg.ts || Date.now() / 1000,
       })
       break
-    case 'video_init':
+    case 'video_init': {
       if (mirrorMode.value == null) mirrorMode.value = 'mse'
       // fmp4 init segment（ftyp + moov）—— 重建 SourceBuffer
       // eslint-disable-next-line no-console
       console.log('[ws] video_init', { mime: msg.mime, w: msg.width, h: msg.height, b64len: msg.data?.length })
+      const nextGeneration = msg.orientation_generation || null
+      if (nextGeneration !== videoGeneration) mirror.reset()
+      videoGeneration = nextGeneration
       mirror.handleInit(msg)
       break
+    }
     case 'video_segment':
+      if ((msg.orientation_generation || null) !== videoGeneration) break
       if (mirrorMode.value == null) mirrorMode.value = 'mse'
       // fmp4 media segment（moof + mdat）—— append 到 SourceBuffer
       _segCount++
@@ -767,6 +845,7 @@ async function appendFunctionMapFiles(event) {
 }
 
 async function startRun() {
+  if (manualInputBlocked.value) return
   submitError.value = null
   if (!goal.value.trim()) {
     submitError.value = '请输入 goal'
@@ -894,6 +973,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  orientationAbort.abort()
   if (sub) sub.close()
   if (deviceTimer) clearInterval(deviceTimer)
   if (videoEl.value) {
@@ -984,7 +1064,7 @@ watch(
               playsinline
               disablepictureinpicture
               draggable="false"
-              :class="{ clickable: !lock.readonly.value }"
+              :class="{ clickable: !manualInputBlocked }"
               @pointerdown="onMirrorPointerDown"
               @pointermove="onMirrorPointerMove"
               @pointerup="onMirrorPointerUp"
@@ -998,7 +1078,7 @@ watch(
               v-show="mirrorMode === 'jpeg' && mirrorReady"
               draggable="false"
               alt=""
-              :class="{ clickable: !lock.readonly.value }"
+              :class="{ clickable: !manualInputBlocked }"
               @pointerdown="onMirrorPointerDown"
               @pointermove="onMirrorPointerMove"
               @pointerup="onMirrorPointerUp"
@@ -1050,7 +1130,7 @@ watch(
           <div class="navbar">
             <button
               class="nav-btn"
-              :disabled="lock.readonly.value"
+              :disabled="manualInputBlocked"
               title="返回 (Esc)"
               @click="navBack"
             >
@@ -1059,7 +1139,7 @@ watch(
             </button>
             <button
               class="nav-btn"
-              :disabled="lock.readonly.value"
+              :disabled="manualInputBlocked"
               title="主屏幕"
               @click="navHome"
             >
@@ -1068,13 +1148,26 @@ watch(
             </button>
             <button
               class="nav-btn"
-              :disabled="lock.readonly.value"
+              :disabled="manualInputBlocked"
               title="最近任务"
               @click="navRecents"
             >
               <span class="ic ic-recents" aria-hidden="true"></span>
               <span class="lbl">最近</span>
             </button>
+          </div>
+          <div v-if="device?.workbench_orientation || orientationUnsynced" class="orientation-controls">
+            <div role="group" aria-label="设备方向">
+              <button
+                v-for="item in directions" :key="item.value" type="button"
+                :aria-pressed="orientation === item.value" :disabled="orientationDisabled || orientationUnsynced"
+                @click="changeOrientation(item.value)"
+              >{{ item.label }}</button>
+            </div>
+            <span role="status">{{ orientationBusy ? '正在同步画面，暂停输入…' : `方向：${directionLabel(orientation)}` }}</span>
+            <button v-if="orientationUnsynced && !orientationBusy" type="button" :disabled="orientationDisabled"
+              @click="changeOrientation()">重新同步画面</button>
+            <span v-if="orientationError" role="alert">{{ orientationError }}</span>
           </div>
         </div>
       </section>
@@ -1184,7 +1277,7 @@ watch(
               <span v-if="functionMapContextTooLong" class="limit-warn">已超出上限，请精简后再执行</span>
             </div>
             <div class="btn-row">
-              <button class="primary" :disabled="busy || !!currentRunId || lock.readonly.value || functionMapContextTooLong" @click="startRun">
+              <button class="primary" :disabled="busy || !!currentRunId || manualInputBlocked || functionMapContextTooLong" @click="startRun">
                 {{ currentRunId ? '运行中…' : '开始 Run' }}
               </button>
               <button class="danger" :disabled="busy || !currentRunId" @click="stopRun">停止</button>
@@ -1665,6 +1758,29 @@ h2 {
   border: 2px solid currentColor;
   border-radius: 1.5px;
 }
+.orientation-controls {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #161b22;
+  color: #d7dbe3;
+  font-size: 12px;
+}
+.orientation-controls [role='group'] { display: flex; gap: 4px; }
+.orientation-controls button {
+  border: 1px solid #55647a;
+  border-radius: 4px;
+  padding: 4px 6px;
+  background: #223048;
+  color: inherit;
+}
+.orientation-controls button[aria-pressed='true'] { background: #1565c0; }
+.orientation-controls button:disabled { opacity: 0.6; }
+.orientation-controls [role='alert'] { color: #fca5a5; }
+
 .goal-panel {
   box-sizing: border-box;
   height: 100%;
