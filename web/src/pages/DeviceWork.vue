@@ -8,7 +8,10 @@ import { openDeviceStream } from '../lib/ws.js'
 import { useDeviceLock } from '../lib/useDeviceLock.js'
 import { useMseMirror } from '../lib/useMseMirror.js'
 import { useJpegMirror } from '../lib/useJpegMirror.js'
-import { directionLabel, directions, matchingGeometry, waitForDecodedVideo } from '../lib/workbenchOrientation.js'
+import {
+  acceptsVideoInit, directionLabel, directions, matchingGeometry,
+  sameVideoStream, videoStreamIdentity, waitForDecodedVideo,
+} from '../lib/workbenchOrientation.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -91,7 +94,7 @@ function normalizeErrorSummary(summary) {
 const mirror = useMseMirror({ liveSyncSeconds: 0.4, debug: false })
 const jpegMirror = useJpegMirror({ debug: false })
 const mirrorMode = ref(null) // null | 'mse' | 'jpeg'
-let videoGeneration = null
+let videoStream = null
 const orientation = ref(null)
 const orientationBusy = ref(false)
 const orientationError = ref('')
@@ -321,7 +324,7 @@ async function changeOrientation(target = null) {
       throw new Error('设备未确认请求的方向')
     }
     if (mirrorMode.value === 'mse') {
-      await waitForDecodedVideo(videoEl.value, () => videoGeneration, observation, orientationAbort.signal)
+      await waitForDecodedVideo(videoEl.value, () => videoStream?.generation, observation, orientationAbort.signal)
     } else {
       const el = imgEl.value
       if (!el || !observation.jpeg || !Number.isFinite(observation.captured_at)) {
@@ -694,18 +697,19 @@ function onMessage(msg) {
       })
       break
     case 'video_init': {
+      const nextStream = videoStreamIdentity(msg)
+      if (!acceptsVideoInit(videoStream, nextStream)) break
+      if (videoStream && !sameVideoStream(videoStream, nextStream)) mirror.reset()
+      videoStream = nextStream
       if (mirrorMode.value == null) mirrorMode.value = 'mse'
       // fmp4 init segment（ftyp + moov）—— 重建 SourceBuffer
       // eslint-disable-next-line no-console
       console.log('[ws] video_init', { mime: msg.mime, w: msg.width, h: msg.height, b64len: msg.data?.length })
-      const nextGeneration = msg.orientation_generation || null
-      if (nextGeneration !== videoGeneration) mirror.reset()
-      videoGeneration = nextGeneration
       mirror.handleInit(msg)
       break
     }
     case 'video_segment':
-      if ((msg.orientation_generation || null) !== videoGeneration) break
+      if (!sameVideoStream(videoStream, videoStreamIdentity(msg))) break
       if (mirrorMode.value == null) mirrorMode.value = 'mse'
       // fmp4 media segment（moof + mdat）—— append 到 SourceBuffer
       _segCount++

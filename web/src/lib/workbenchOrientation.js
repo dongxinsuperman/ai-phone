@@ -14,6 +14,29 @@ export function matchingGeometry(w, h, size) {
     && Math.abs((w / h) / (size.width / size.height) - 1) < 0.015
 }
 
+export function videoStreamIdentity(message) {
+  const seq = message.mirror_stream_seq
+  return {
+    agent: message.mirror_agent_id || null,
+    sequence: Number.isSafeInteger(seq) && seq > 0 ? seq : null,
+    generation: message.orientation_generation || null,
+  }
+}
+
+export function sameVideoStream(a, b) {
+  return !!a && a.agent === b.agent && a.sequence === b.sequence && a.generation === b.generation
+}
+
+export function acceptsVideoInit(current, next) {
+  if (!current || current.sequence === null) return true
+  if (current.agent !== next.agent) {
+    // The server associates frames with the current device owner. A real
+    // owner change may reset the counter or switch to a legacy Agent.
+    return next.agent !== null
+  }
+  return next.sequence > current.sequence || sameVideoStream(current, next)
+}
+
 export function decodedGeneration(video, current, observation) {
   return !!observation.generation && current === observation.generation
     && video?.readyState >= 2 && !!video.src && video.currentSrc === video.src

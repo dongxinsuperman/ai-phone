@@ -20,6 +20,7 @@ import socket
 import threading
 import time
 import traceback
+from itertools import count
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 # 少数历史/子进程路径仍可能从 os.environ 读配置。pydantic Settings 自己解析
@@ -2145,6 +2146,9 @@ async def _dispatch_input_via_scrcpy(
         await asyncio.to_thread(_do_swipe, x1, y1, x2, y2, dur)
 
 
+_mirror_stream_sequences = count(1)
+
+
 class _MirrorSession:
     """单设备 scrcpy → fmp4 → MSE 视频流会话。
 
@@ -2186,6 +2190,7 @@ class _MirrorSession:
         self._ws = ws_client
         self._loop = loop
         self._orientation_generation = orientation_generation
+        self._stream_seq = next(_mirror_stream_sequences)
         self._scrcpy: Optional[ScrcpyClient] = None
         self._stopped = False
         self._segment_count = 0
@@ -2216,6 +2221,7 @@ class _MirrorSession:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("scrcpy 初始化失败 serial={}: {}", self.serial, exc)
+            self.stop()
             return
 
         self._fmp4 = FMp4Streamer(
@@ -2236,7 +2242,7 @@ class _MirrorSession:
             self._scrcpy.start(threaded=True, daemon_threaded=True)
         except Exception as exc:  # noqa: BLE001
             logger.exception("scrcpy 启动失败 serial={}: {}", self.serial, exc)
-            self._scrcpy = None
+            self.stop()
             return
 
     def stop(self) -> None:
@@ -2432,8 +2438,19 @@ class _MirrorSession:
 
     def _dispatch(self, payload: Dict[str, Any]) -> None:
         """把要发送的 WS 消息从 ffmpeg 读线程调度回 asyncio 主循环。"""
+        async def send_if_active():
+            # The callback can already be queued when stop retires this stream.
+            if self._stopped:
+                return
+            if self.serial.startswith("emulator-"):
+                await self._ws.send({
+                    **payload, "mirror_stream_seq": self._stream_seq, "mirror_agent_id": self._ws.agent_id,
+                })
+            else:
+                await self._ws.send(payload)
+
         try:
-            asyncio.run_coroutine_threadsafe(self._ws.send(payload), self._loop)
+            asyncio.run_coroutine_threadsafe(send_if_active(), self._loop)
         except Exception as exc:  # noqa: BLE001
             logger.debug("调度 mirror payload 失败 serial={}: {}", self.serial, exc)
 
@@ -3040,6 +3057,13 @@ class _MirrorSupervisor:
         self._ws = ws_client
         self._sessions: Dict[str, Any] = {}  # _MirrorSession | _IosMirrorSession
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._lanes: Dict[str, threading.Lock] = {}
+        self._lanes_guard = threading.Lock()
+        self._closed = False
+
+    def _lane(self, serial: str):
+        with self._lanes_guard:
+            return self._lanes.setdefault(serial, threading.Lock())
 
     def ensure_loop(self) -> asyncio.AbstractEventLoop:
         """在 event loop 线程上调一次，绑定主循环；之后 ``_get_loop`` 在任何
@@ -3059,6 +3083,20 @@ class _MirrorSupervisor:
     def start(self, serial: str, *, orientation_generation: str | None = None) -> None:
         if not serial:
             return
+        with self._lane(serial):
+            if not self._closed:
+                self._start_locked(serial, orientation_generation=orientation_generation)
+
+    def restart(self, serial: str, *, orientation_generation: str) -> bool:
+        """Replace the existing mirror as one operation, without reopening a closed view."""
+        with self._lane(serial):
+            if self._closed or serial not in self._sessions:
+                return False
+            self._stop_locked(serial)
+            self._start_locked(serial, orientation_generation=orientation_generation)
+            return serial in self._sessions
+
+    def _start_locked(self, serial: str, *, orientation_generation: str | None) -> None:
         existing = self._sessions.get(serial)
         if existing is not None and not getattr(existing, "_stopped", False):
             platform = _serial_platform.get(serial, "android")
@@ -3114,15 +3152,23 @@ class _MirrorSupervisor:
         logger.info("mirror 会话已建立 serial={} platform={}", serial, platform)
 
     def stop(self, serial: str) -> None:
-        session = self._sessions.pop(serial, None)
+        with self._lane(serial):
+            self._stop_locked(serial)
+
+    def _stop_locked(self, serial: str) -> None:
+        session = self._sessions.get(serial)
         if session is not None:
             session.stop()
+            del self._sessions[serial]
             logger.info("mirror 会话已关闭 serial={}", serial)
 
     def stop_all(self) -> None:
-        for serial, session in list(self._sessions.items()):
-            session.stop()
-        self._sessions.clear()
+        with self._lanes_guard:
+            self._closed = True
+            # A worker may still be starting and not yet present in _sessions.
+            serials = tuple(self._lanes)
+        for serial in serials:
+            self.stop(serial)
 
     def get_session(self, serial: str):  # noqa: ANN201
         """供手动 input fast-path 拿 ``session.control`` 用。
@@ -3279,12 +3325,10 @@ def run(
                 harmony_rotate=_harmony_vm_manager.rotate_device if _harmony_vm_manager else None,
             )
             if platform == "android":
-                if mirror_sup.get_session(serial) is None:
-                    raise RuntimeError("实时画面已断开，请重新同步")
                 # A left/right turn can keep the dimensions unchanged. Tag a
                 # new stream so buffered frames from the old one cannot pass.
-                mirror_sup.stop(serial)
-                mirror_sup.start(serial, orientation_generation=request_id)
+                if not mirror_sup.restart(serial, orientation_generation=request_id):
+                    raise RuntimeError("实时画面未能重建，请重新同步")
                 result["generation"] = request_id
             return result
 

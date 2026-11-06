@@ -522,7 +522,10 @@ async def _dispatch(
         # MSE 视频流：fmp4 init / media segment，纯转发，不落库不解析
         # （体量与频率比 MSG_FRAME 还小，单帧约 ~10KB，base64 后 ~13KB）
         if serial:
-            sent = await hub.broadcast_to_serial(serial, msg)
+            # Scope Android stream sequence numbers to the connected Agent.
+            # An older Agent can also take over and send unsequenced frames.
+            payload = {**msg, "mirror_agent_id": agent_id} if serial.startswith("emulator-") else msg
+            sent = await hub.broadcast_to_serial(serial, payload)
             # init 一定打日志（频率低）；segment 只在没有订阅者时打，避免刷屏
             if t == P.MSG_VIDEO_INIT:
                 logger.info(

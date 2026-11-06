@@ -204,6 +204,33 @@ def test_browser_receives_agent_log(ws_app):
                 assert got["title"] == "hello"
 
 
+def test_android_mirror_frames_use_the_connected_agent_identity(ws_app):
+    token = get_settings().agent_token
+    serial = "emulator-5554"
+    with TestClient(ws_app) as client:
+        with client.websocket_connect(f"/ws/agent?token={token}") as agent:
+            agent.send_json({
+                "type": "hello", "agent_id": "android-owner",
+                "devices": [{"serial": serial, "platform": "android", "status": "online"}],
+            })
+            _wait_device_online(client, serial)
+            with client.websocket_connect(f"/ws/browser/{serial}") as browser:
+                agent.send_json({
+                    "type": "video_init", "serial": serial, "data": "init",
+                    "mirror_agent_id": "stale-id", "mirror_stream_seq": 2,
+                })
+                got = browser.receive_json()
+                assert got["type"] == "video_init"
+                assert got["mirror_agent_id"] == "android-owner"
+                assert got["mirror_stream_seq"] == 2
+
+                agent.send_json({"type": "video_segment", "serial": serial, "data": "legacy"})
+                got = browser.receive_json()
+                assert got["type"] == "video_segment"
+                assert got["mirror_agent_id"] == "android-owner"
+                assert "mirror_stream_seq" not in got
+
+
 def test_start_run_dispatched_to_agent(ws_app):
     token = get_settings().agent_token
     with TestClient(ws_app) as client:
