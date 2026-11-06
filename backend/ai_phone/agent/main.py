@@ -20,6 +20,7 @@ import socket
 import threading
 import time
 import traceback
+from itertools import count
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 # 少数历史/子进程路径仍可能从 os.environ 读配置。pydantic Settings 自己解析
@@ -2145,6 +2146,9 @@ async def _dispatch_input_via_scrcpy(
         await asyncio.to_thread(_do_swipe, x1, y1, x2, y2, dur)
 
 
+_mirror_stream_sequences = count(1)
+
+
 class _MirrorSession:
     """单设备 scrcpy → fmp4 → MSE 视频流会话。
 
@@ -2179,10 +2183,14 @@ class _MirrorSession:
         serial: str,
         ws_client: "AgentWSClient",
         loop: asyncio.AbstractEventLoop,
+        *,
+        orientation_generation: str | None = None,
     ) -> None:
         self.serial = serial
         self._ws = ws_client
         self._loop = loop
+        self._orientation_generation = orientation_generation
+        self._stream_seq = next(_mirror_stream_sequences)
         self._scrcpy: Optional[ScrcpyClient] = None
         self._stopped = False
         self._segment_count = 0
@@ -2213,6 +2221,7 @@ class _MirrorSession:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("scrcpy 初始化失败 serial={}: {}", self.serial, exc)
+            self.stop()
             return
 
         self._fmp4 = FMp4Streamer(
@@ -2233,7 +2242,7 @@ class _MirrorSession:
             self._scrcpy.start(threaded=True, daemon_threaded=True)
         except Exception as exc:  # noqa: BLE001
             logger.exception("scrcpy 启动失败 serial={}: {}", self.serial, exc)
-            self._scrcpy = None
+            self.stop()
             return
 
     def stop(self) -> None:
@@ -2371,6 +2380,8 @@ class _MirrorSession:
             "height": h,
             "ts": time.time(),
         }
+        if self._orientation_generation:
+            payload["orientation_generation"] = self._orientation_generation
         self._last_init_payload = payload
         logger.info(
             "MSE init segment 就绪 serial={} mime={} size={}x{} bytes={}",
@@ -2412,6 +2423,8 @@ class _MirrorSession:
             "data": base64.b64encode(seg).decode("ascii"),
             "ts": time.time(),
         }
+        if self._orientation_generation:
+            payload["orientation_generation"] = self._orientation_generation
         self._dispatch(payload)
         # 每 30 段（≈3s @ 10fps 或 ≈1s @ 30fps）打一条节流日志，方便诊断"画面
         # 不动"时是 ffmpeg 没出货 还是 链路下游断了
@@ -2425,8 +2438,19 @@ class _MirrorSession:
 
     def _dispatch(self, payload: Dict[str, Any]) -> None:
         """把要发送的 WS 消息从 ffmpeg 读线程调度回 asyncio 主循环。"""
+        async def send_if_active():
+            # The callback can already be queued when stop retires this stream.
+            if self._stopped:
+                return
+            if self.serial.startswith("emulator-"):
+                await self._ws.send({
+                    **payload, "mirror_stream_seq": self._stream_seq, "mirror_agent_id": self._ws.agent_id,
+                })
+            else:
+                await self._ws.send(payload)
+
         try:
-            asyncio.run_coroutine_threadsafe(self._ws.send(payload), self._loop)
+            asyncio.run_coroutine_threadsafe(send_if_active(), self._loop)
         except Exception as exc:  # noqa: BLE001
             logger.debug("调度 mirror payload 失败 serial={}: {}", self.serial, exc)
 
@@ -3033,6 +3057,13 @@ class _MirrorSupervisor:
         self._ws = ws_client
         self._sessions: Dict[str, Any] = {}  # _MirrorSession | _IosMirrorSession
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._lanes: Dict[str, threading.Lock] = {}
+        self._lanes_guard = threading.Lock()
+        self._closed = False
+
+    def _lane(self, serial: str):
+        with self._lanes_guard:
+            return self._lanes.setdefault(serial, threading.Lock())
 
     def ensure_loop(self) -> asyncio.AbstractEventLoop:
         """在 event loop 线程上调一次，绑定主循环；之后 ``_get_loop`` 在任何
@@ -3049,9 +3080,23 @@ class _MirrorSupervisor:
             self._loop = asyncio.get_running_loop()
         return self._loop
 
-    def start(self, serial: str) -> None:
+    def start(self, serial: str, *, orientation_generation: str | None = None) -> None:
         if not serial:
             return
+        with self._lane(serial):
+            if not self._closed:
+                self._start_locked(serial, orientation_generation=orientation_generation)
+
+    def restart(self, serial: str, *, orientation_generation: str) -> bool:
+        """Replace the existing mirror as one operation, without reopening a closed view."""
+        with self._lane(serial):
+            if self._closed or serial not in self._sessions:
+                return False
+            self._stop_locked(serial)
+            self._start_locked(serial, orientation_generation=orientation_generation)
+            return serial in self._sessions
+
+    def _start_locked(self, serial: str, *, orientation_generation: str | None) -> None:
         existing = self._sessions.get(serial)
         if existing is not None and not getattr(existing, "_stopped", False):
             platform = _serial_platform.get(serial, "android")
@@ -3093,7 +3138,8 @@ class _MirrorSupervisor:
         elif platform == "harmony":
             session = _HarmonyMirrorSession(serial, self._ws, self._get_loop())
         else:
-            session = _MirrorSession(serial, self._ws, self._get_loop())
+            session = _MirrorSession(serial, self._ws, self._get_loop(),
+                                     orientation_generation=orientation_generation)
         session.start()
         # 启动失败的 session 直接丢弃，下次 start 会重试，不在 _sessions 里留坏会话
         if getattr(session, "_stopped", False):
@@ -3106,15 +3152,23 @@ class _MirrorSupervisor:
         logger.info("mirror 会话已建立 serial={} platform={}", serial, platform)
 
     def stop(self, serial: str) -> None:
-        session = self._sessions.pop(serial, None)
+        with self._lane(serial):
+            self._stop_locked(serial)
+
+    def _stop_locked(self, serial: str) -> None:
+        session = self._sessions.get(serial)
         if session is not None:
             session.stop()
+            del self._sessions[serial]
             logger.info("mirror 会话已关闭 serial={}", serial)
 
     def stop_all(self) -> None:
-        for serial, session in list(self._sessions.items()):
-            session.stop()
-        self._sessions.clear()
+        with self._lanes_guard:
+            self._closed = True
+            # A worker may still be starting and not yet present in _sessions.
+            serials = tuple(self._lanes)
+        for serial in serials:
+            self.stop(serial)
 
     def get_session(self, serial: str):  # noqa: ANN201
         """供手动 input fast-path 拿 ``session.control`` 用。
@@ -3242,13 +3296,64 @@ def run(
     reporter = ReliableReporter(client.send)
     supervisor.reporter = reporter
 
+    from .native_operation import NativeOperation
+    from .workbench_orientation import observe_orientation
+
+    orientation_jobs: dict[str, asyncio.Task] = {}
+
+    async def _orientation_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
+        serial = str(msg.get("serial") or "")
+        request_id = str(msg.get("request_id") or "")
+        platform = _serial_platform.get(serial)
+        response = {"type": P.MSG_WORKBENCH_ORIENTATION_RESULT, "serial": serial, "request_id": request_id}
+        if not serial or not request_id or serial in orientation_jobs or supervisor.is_busy(serial):
+            await c.send({**response, "success": False, "error": "设备正在执行任务或切换方向"})
+            return
+        mirror_sup.ensure_loop()
+
+        def invoke():
+            expires_at = float(msg.get("expires_at") or 0)
+            if time.time() >= expires_at:
+                raise RuntimeError("转屏请求已过期")
+            if not (platform == "ios_sim"
+                    or platform == "android" and serial.startswith("emulator-")
+                    or platform == "harmony" and serial.startswith("harmony-vm:")):
+                raise RuntimeError("当前设备不支持工作台转屏")
+            driver = _get_or_open_driver(serial)
+            result = observe_orientation(
+                driver, platform, msg.get("orientation"), expires_at=expires_at,
+                harmony_rotate=_harmony_vm_manager.rotate_device if _harmony_vm_manager else None,
+            )
+            if platform == "android":
+                # A left/right turn can keep the dimensions unchanged. Tag a
+                # new stream so buffered frames from the old one cannot pass.
+                if not mirror_sup.restart(serial, orientation_generation=request_id):
+                    raise RuntimeError("实时画面未能重建，请重新同步")
+                result["generation"] = request_id
+            return result
+
+        async def work():
+            try:
+                operation = NativeOperation(serial, device_activity, invoke)
+                result = await operation.run()
+                await c.send({**response, "success": True, "result": result})
+            except Exception as exc:  # noqa: BLE001 - driver exceptions differ across platforms
+                logger.warning("工作台转屏失败 serial={} error={}", serial, type(exc).__name__)
+                error = str(exc) if type(exc) is RuntimeError else "设备未确认方向，请重新同步画面"
+                await c.send({**response, "success": False, "error": error[:240]})
+            finally:
+                orientation_jobs.pop(serial, None)
+
+        orientation_jobs[serial] = asyncio.create_task(work())
+
     async def _start_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         serial = str(msg.get("device_serial") or "")
         with device_activity.hold(serial) as acquired:
-            if not acquired:
+            if not acquired or serial in orientation_jobs:
                 await reporter.enqueue({"type": P.MSG_RUN_DONE, "run_id": msg.get("run_id"),
                     "serial": serial, "attempt": msg.get("attempt", 1), "result": "error",
-                    "message": "device_under_maintenance", "steps": 0, "elapsed_ms": 0, "token_stats": {}})
+                    "message": "device_orientation_in_progress" if serial in orientation_jobs
+                               else "device_under_maintenance", "steps": 0, "elapsed_ms": 0, "token_stats": {}})
                 return
             await _handle_start_run(c, supervisor, msg)
 
@@ -3256,8 +3361,9 @@ def run(
         await _handle_stop_run(c, supervisor, msg)
 
     async def _input_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
-        with device_activity.hold(str(msg.get("serial") or "")) as acquired:
-            if acquired:
+        serial = str(msg.get("serial") or "")
+        with device_activity.hold(serial) as acquired:
+            if acquired and serial not in orientation_jobs:
                 await _handle_input(c, msg, mirror_sup)
 
     async def _lifecycle(c, msg, manager, action, platform):
@@ -3370,6 +3476,7 @@ def run(
 
     client.on(P.MSG_START_RUN, _start_handler)
     client.on(P.MSG_STOP_RUN, _stop_handler)
+    client.on(P.MSG_WORKBENCH_ORIENTATION, _orientation_handler)
     client.on(P.MSG_INPUT, _input_handler)
     client.on(P.MSG_VM_CAPABILITY_PROBE, _vm_capability_probe_handler)
     client.on(P.MSG_VM_START, _vm_start_handler)

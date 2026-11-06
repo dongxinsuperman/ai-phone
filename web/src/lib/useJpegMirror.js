@@ -46,6 +46,7 @@ export function useJpegMirror(options = {}) {
   let loading = false
   let pendingMsg = null
   let loadToken = 0
+  let minFrameTime = 0
 
   function _log(...args) {
     if (options.debug) {
@@ -111,11 +112,20 @@ export function useJpegMirror(options = {}) {
   }
 
   function handleJpeg(msg) {
+    if (minFrameTime && !(msg?.ts > minFrameTime)) return
     if (loading) {
       pendingMsg = msg
       return
     }
     _renderJpeg(msg)
+  }
+
+  function presentSnapshot(data, capturedAt) {
+    loadToken++
+    loading = false
+    pendingMsg = null
+    minFrameTime = capturedAt
+    return _renderJpeg({ data })
   }
 
   function _renderJpeg(msg) {
@@ -148,9 +158,11 @@ export function useJpegMirror(options = {}) {
     prevUrl = url
     el.src = url
     _revokeLater(oldUrl)
+    return url
   }
 
   function reset() {
+    minFrameTime = 0
     loadToken++
     loading = false
     pendingMsg = null
@@ -177,6 +189,7 @@ export function useJpegMirror(options = {}) {
     error,
     frameSize,
     handleJpeg,
+    presentSnapshot,
     reset,
   }
 }

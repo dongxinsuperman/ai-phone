@@ -30,10 +30,11 @@ export function setInternalToken(token) {
   }
 }
 
-async function request(method, path, { body, headers } = {}) {
+async function request(method, path, { body, headers, signal } = {}) {
   const init = {
     method,
     headers: { ...(headers || {}) },
+    ...(signal ? { signal } : {}),
   }
   if (body !== undefined) {
     if (typeof FormData !== 'undefined' && body instanceof FormData) {
@@ -114,6 +115,12 @@ export const api = {
   sendInput: (serial, payload) =>
     request('POST', `/api/devices/${encodeURIComponent(serial)}/input`, {
       body: payload,
+    }),
+
+  workbenchOrientation: (serial, lockToken, orientation, signal) =>
+    request('POST', `/api/devices/${encodeURIComponent(serial)}/orientation`, {
+      body: { lock_token: lockToken, orientation },
+      signal,
     }),
 
   // 应用分发

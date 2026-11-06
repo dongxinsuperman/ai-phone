@@ -292,6 +292,19 @@ class WdaClient:
         payload = self._request("GET", f"/session/{sid}/orientation")
         return str(payload.get("value") or "")
 
+    @_auto_recover_session
+    def rotation_quadrant(self) -> int:
+        sid = self._ensure_session()
+        value = self._request("GET", f"/session/{sid}/rotation").get("value") or {}
+        if value.get("x") == 0 and value.get("y") == 0 and value.get("z") in {0, 90, 180, 270}:
+            return {0: 0, 270: 1, 180: 2, 90: 3}[value["z"]]
+        raise WdaError("WDA did not confirm the interface angle")
+
+    @_auto_recover_session
+    def set_orientation(self, orientation: str) -> None:
+        sid = self._ensure_session()
+        self._request("POST", f"/session/{sid}/orientation", {"orientation": orientation})
+
     # ------------------------------------------------------------------
     # 触控（坐标全部按 point 传，不是物理像素）
     # ------------------------------------------------------------------
