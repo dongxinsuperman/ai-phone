@@ -115,6 +115,8 @@ export const api = {
     request('POST', `/api/devices/${encodeURIComponent(serial)}/input`, {
       body: payload,
     }),
+  androidDisplay: (serial, payload) =>
+    request('POST', `/api/devices/${encodeURIComponent(serial)}/android-display`, { body: payload }),
 
   // 应用分发
   listAppPackages: () => request('GET', '/api/app-install/packages'),

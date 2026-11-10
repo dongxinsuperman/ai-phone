@@ -40,6 +40,7 @@ _DEFAULT_AGENT_WS_PATH = "/ws/agent"
 # capability probe; slow discovery must not prevent stop_run / pong processing.
 _VM_MESSAGES = {
     P.MSG_VM_CAPABILITY_PROBE: ("android", P.MSG_VM_CAPABILITY),
+    P.MSG_VM_DISPLAY: ("android", P.MSG_VM_DISPLAY_RESULT),
     P.MSG_HARMONY_VM_CAPABILITY_PROBE: ("harmony", P.MSG_HARMONY_VM_CAPABILITY),
     P.MSG_IOS_SIM_VM_CAPABILITY_PROBE: ("ios_sim", P.MSG_IOS_SIM_VM_CAPABILITY),
     **{t: ("android", P.MSG_VM_STATUS) for t in (P.MSG_VM_START, P.MSG_VM_STOP, P.MSG_VM_DELETE)},
@@ -286,7 +287,7 @@ class AgentWSClient:
                 "host_os": self.host_os,
                 **({"host_id": self.host_id} if self.host_id else {}),
                 "devices": devices,
-                "capabilities": [P.CAP_V3_PLATFORM_CACHE, P.CAP_ANDROID_VM_FOLDABLE],
+                "capabilities": [P.CAP_V3_PLATFORM_CACHE, P.CAP_ANDROID_VM_FOLDABLE, P.CAP_ANDROID_VM_DISPLAY],
             }
         )
         if sent and self._ws is ws:
@@ -414,6 +415,7 @@ class AgentWSClient:
             "request_id": msg.get("request_id") or "",
             "vm_id": msg.get("vm_id") or "",
             "lease_token": msg.get("lease_token") or "",
+            **({"serial": msg.get("serial") or ""} if msg["type"] == P.MSG_VM_DISPLAY else {}),
             "ok": False,
             "reason": reason,
             "error": error,

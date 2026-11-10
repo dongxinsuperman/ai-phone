@@ -35,6 +35,7 @@ from ..android_vm.service import (
     handle_vm_reconcile,
     handle_vm_status,
     mark_agent_vms_unavailable,
+    resolve_vm_display,
 )
 from ..harmony_vm.service import (
     filter_managed_devices_for_agent,
@@ -373,6 +374,10 @@ async def _dispatch(
 
     if t == P.MSG_VM_STATUS:
         await handle_vm_status(agent_id, msg, hub)
+        return
+
+    if t == P.MSG_VM_DISPLAY_RESULT:
+        resolve_vm_display(hub, agent_id, msg)
         return
 
     if t == P.MSG_VM_RECONCILE:

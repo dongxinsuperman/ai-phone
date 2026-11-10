@@ -6,6 +6,9 @@ from typing import Any, Dict, Literal, Optional
 from pydantic import BaseModel, Field
 
 
+AndroidDisplayOrientation = Literal["portrait", "portrait_reverse", "landscape", "landscape_left", "landscape_right"]
+
+
 class AndroidVmCreateReq(BaseModel):
     name: str = Field("", max_length=128)  # 兼容字段：恒等于 alias，可空（身份锚点是 vm_id）
     alias: str = Field("", max_length=128)
@@ -23,7 +26,7 @@ class AndroidVmCreateReq(BaseModel):
     screen_width: int = Field(1080, ge=320, le=7680)
     screen_height: int = Field(2400, ge=320, le=7680)
     density: int = Field(420, ge=120, le=800)
-    orientation: str = Field("portrait", pattern="^(portrait|landscape)$")
+    orientation: AndroidDisplayOrientation = "portrait"
     fold_state: Optional[Literal["folded", "unfolded"]] = None
 
 
@@ -44,7 +47,7 @@ class AndroidVmPatchReq(BaseModel):
     screen_width: Optional[int] = Field(None, ge=320, le=7680)
     screen_height: Optional[int] = Field(None, ge=320, le=7680)
     density: Optional[int] = Field(None, ge=120, le=800)
-    orientation: Optional[str] = Field(None, pattern="^(portrait|landscape)$")
+    orientation: Optional[AndroidDisplayOrientation] = None
 
 
 class AndroidVmDispatchReq(BaseModel):

@@ -8,10 +8,13 @@ from ai_phone.server.android_vm.service import (
     handle_vm_reconcile,
     handle_vm_status,
     mark_agent_vms_unavailable,
+    resolve_vm_display,
     vm_payload,
 )
+from ai_phone.server.db import get_session_factory
 from ai_phone.server.hub import Hub
 from ai_phone.server.models import AndroidVmInstance, DeviceAlias
+from ai_phone.server.vm_lifecycle import transaction_lock
 from ai_phone.shared import protocol as P
 
 
@@ -105,13 +108,69 @@ async def test_android_vm_create_and_list(client):
     assert [item["id"] for item in listed.json()] == [body["id"]]
 
 
-async def test_android_vm_create_opts_in_to_landscape_start(client):
+@pytest.mark.parametrize("orientation", ["landscape", "landscape_right"])
+async def test_android_vm_create_saves_startup_pose(client, orientation):
     response = await client.post(
         "/api/internal/vm/instances", headers=AUTH,
-        json={"alias": "landscape", "orientation": "landscape"},
+        json={"alias": "landscape", "orientation": orientation},
     )
     assert response.status_code == 201, response.text
-    assert response.json()["config_json"]["display"]["apply_initial_orientation"] is True
+    assert response.json()["config_json"]["display"]["orientation"] == orientation
+
+
+async def test_android_vm_workbench_saves_only_confirmed_display(client, app, session):
+    vm = AndroidVmInstance(
+        name="fold", api_level=37, abi="arm64", state="running", adb_serial="emulator-5554", assigned_agent_id="owner",
+        config_json={"fold": {"avd_device": "pixel_9_pro_fold", "initial_state": "folded"}},
+    )
+    session.add(vm)
+    await session.commit()
+    hub = Hub()
+    app.state.hub = hub
+    receipt = {"orientation": "landscape_right", "fold_state": "unfolded", "width": 2076, "height": 2152}
+
+    class DisplayAgent(_FakeWs):
+        async def send_json(self, payload):
+            if payload["type"] == P.MSG_VM_DISPLAY:
+                # The WS receiver may finish reconnect reconciliation before reading the display reply.
+                async with get_session_factory()() as reconnect:
+                    await transaction_lock(reconnect, f"android-vm:{vm.id}")
+                    await reconnect.rollback()
+                response = {**payload, "ok": True, "display": receipt}
+                resolve_vm_display(hub, "another-agent", {**response, "display": {}})
+                resolve_vm_display(hub, "owner", response)
+
+    await hub.register_agent("owner", "mac", "Darwin", DisplayAgent())
+    hub.set_agent_capabilities("owner", [P.CAP_ANDROID_VM_DISPLAY])
+    await hub.set_devices("owner", {vm.adb_serial})
+    hub.set_device_extra(vm.adb_serial, {
+        "vm_instance_id": vm.id, "android_vm_display": {"avd_pose": True, "can_fold": True},
+    })
+    lock = await app.state.lock_store.acquire(vm.adb_serial, holder="workbench", holder_type="manual")
+    url = f"/api/devices/{vm.adb_serial}/android-display"
+    request = {"vm_id": vm.id, "lock_token": lock.token, "orientation": "landscape_right", "fold_state": "unfolded"}
+
+    rejected = await client.post(url, json={**request, "lock_token": "not-the-owner"})
+    assert rejected.status_code == 403
+    mismatch = await client.post(url, json={**request, "orientation": "landscape_left"})
+    assert mismatch.status_code == 409
+    await session.refresh(vm)
+    assert vm_payload(vm)["fold_state"] == "folded"
+
+    result = await client.post(url, json=request)
+    assert result.status_code == 200, result.text
+    assert result.json() == {**receipt, "stream_id": ""}
+    await session.refresh(vm)
+    payload = vm_payload(vm)
+    assert (payload["orientation"], payload["fold_state"]) == ("landscape_right", "unfolded")
+
+    relative = {key: request[key] for key in ("vm_id", "lock_token")}
+    receipt["orientation"] = "portrait_reverse"
+    result = await client.post(url, json={**relative, "rotation": "right"})
+    assert result.status_code == 200, result.text
+    assert result.json()["orientation"] == "portrait_reverse"
+    await session.refresh(vm)
+    assert vm_payload(vm)["orientation"] == "portrait_reverse"
 
 
 async def test_android_vm_coverage_profiles_are_internal_strategy(client):
@@ -307,7 +366,6 @@ async def test_android_vm_fold_matches_catalog_identity_and_preserves_startup_se
     config = vm["config_json"]
     assert vm["profile_ref_type"] == "real_device"
     assert config["fold"] == {"avd_device": "pixel_9_pro_fold", "initial_state": "folded"}
-    assert config["display"]["apply_initial_orientation"] is True
     assert config["display"]["orientation"] == "landscape"
     patched = await client.patch(
         f"/api/internal/vm/instances/{vm['id']}", headers=AUTH,
@@ -315,7 +373,7 @@ async def test_android_vm_fold_matches_catalog_identity_and_preserves_startup_se
     )
     assert patched.status_code == 200, patched.text
     assert patched.json()["config_json"]["fold"] == config["fold"]
-    assert patched.json()["config_json"]["display"]["apply_initial_orientation"] is True
+    assert patched.json()["config_json"]["display"]["orientation"] == "landscape"
 
     hub = Hub()
     app.state.hub = hub
@@ -330,56 +388,96 @@ async def test_android_vm_fold_matches_catalog_identity_and_preserves_startup_se
     )
     assert dispatch.status_code == 409
     assert "Agent 需要更新" in dispatch.json()["detail"]
+    hub.set_agent_capabilities("old-agent", [P.CAP_ANDROID_VM_FOLDABLE, "android_vm_display"])
+    dispatch = await client.post(
+        f"/api/internal/vm/instances/{vm['id']}/dispatch", headers=AUTH, json={"agent_id": "old-agent"},
+    )
+    assert dispatch.status_code == 409
+    assert "AVD 机身姿态" in dispatch.json()["detail"]
     await session.refresh(instance)
     assert instance.assigned_agent_id == "original-agent"
 
 
-def test_android_vm_fold_start_waits_for_the_active_screen(tmp_path, monkeypatch):
-    from subprocess import CompletedProcess
-
-    from ai_phone.agent.android_vm.capability import AndroidVmTools
+def test_android_vm_fold_waits_for_the_active_screen():
+    import time
+    from ai_phone.agent.android_vm.manager import _wait_avd_display
 
     sizes = iter(["2076x2152", "2076x2152", "1080x2424", "1080x2424"])
 
-    def adb(args, **kwargs):
-        if args[3:] == ["emu", "fold"]:
-            output = "OK"
-        elif args[3:] == ["shell", "dumpsys", "device_state"]:
-            output = "mCommittedState=Optional[DeviceState{identifier=0, name='CLOSED'}]"
-        else:
-            assert args[3:] == ["shell", "dumpsys", "window", "displays"]
-            size = next(sizes)
-            output = f"  Display: mDisplayId=0 (organized)\n    init={size} 390dpi cur={size}"
-        return CompletedProcess(args, 0, stdout=output, stderr="")
+    def adb(*args):
+        if args == ("shell", "dumpsys", "device_state"):
+            return "mCommittedState=Optional[DeviceState{identifier=0, name='CLOSED'}]"
+        assert args == ("shell", "dumpsys", "window", "displays")
+        size = next(sizes)
+        return f"  Display: mDisplayId=0 (organized)\n    init={size} 390dpi cur={size}\n    mRotation=0"
 
-    monkeypatch.setattr("ai_phone.agent.android_vm.manager.subprocess.run", adb)
-    vm = AndroidVmManager(runtime_dir=tmp_path)
-    display = vm._apply_startup_display(
-        AndroidVmTools("adb", "emulator", "avdmanager"), "emulator-5554",
-        "portrait", "folded", None, fold_size=(1080, 2424),
-    )
-    assert display == {"orientation": "portrait", "fold_state": "folded", "width": 1080, "height": 2424}
+    assert _wait_avd_display(adb, "folded", (1080, 2424), time.monotonic() + 3) == ((1080, 2424), 0, 1080, 2424)
 
 
-def test_android_vm_square_display_confirms_rotation_with_scaling_disabled(tmp_path, monkeypatch):
+def test_android_vm_square_display_confirms_rotation_with_scaling_disabled():
+    from ai_phone.agent.android_vm.manager import _read_display_geometry
+
+    def adb(*args):
+        assert args == ("shell", "dumpsys", "window", "displays")
+        return (
+            "  Display: mDisplayId=0\n    init=1080x1080 420dpi noscale\n"
+            " cur=1080x1080\n    DisplayFrames w=1080 h=1080 r=1\n"
+        )
+
+    assert _read_display_geometry(adb) == ((1080, 1080), 1, 1080, 1080)
+
+
+@pytest.mark.parametrize(("current", "turn", "target", "orientation"), [
+    (0, "left", 1, "landscape_left"),
+    (0, "right", 3, "landscape_right"),
+    (1, "left", 2, "portrait_reverse"),
+    (3, "left", 0, "portrait"),
+])
+def test_android_vm_workbench_rotates_avd_once_even_when_android_keeps_portrait(
+    tmp_path, monkeypatch, current, turn, target, orientation,
+):
     from subprocess import CompletedProcess
 
     from ai_phone.agent.android_vm.capability import AndroidVmTools
 
+    monkeypatch.setenv("ANDROID_AVD_HOME", str(tmp_path))
+    config = tmp_path / "aiphone_vm_a.avd" / "config.ini"
+    config.parent.mkdir()
+    config.write_text("hw.initialOrientation=portrait\n")
+    tools = AndroidVmTools("adb", "emulator", "avdmanager")
+    monkeypatch.setattr("ai_phone.agent.android_vm.manager.find_android_tools", lambda: (tools, []))
+    quadrant = current
+    rotations = []
+    acceleration = ("0:9.81:0", "9.81:0:0", "0:-9.81:0", "-9.81:0:0")
+
+    def set_rotation(endpoint, angle, timeout):
+        nonlocal quadrant
+        assert endpoint == (8554, "test-token") and timeout > 0
+        rotations.append(angle)
+        quadrant = angle
+
     def adb(args, **kwargs):
-        assert args[3:] == ["shell", "dumpsys", "window", "displays"]
-        output = (
-            "  Display: mDisplayId=0\n    init=1080x1080 420dpi noscale\n"
-            " cur=1080x1080\n    DisplayFrames w=1080 h=1080 r=1\n"
-        )
+        command = args[3:]
+        if command == ["emu", "avd", "name"]:
+            output = "aiphone_vm_a\nOK\n"
+        elif command == ["emu", "sensor", "get", "acceleration"]:
+            output = f"acceleration = {acceleration[quadrant]}\nOK\n"
+        else:
+            assert command == ["shell", "dumpsys", "window", "displays"]
+            output = "  Display: mDisplayId=0\n    init=1080x2424 390dpi cur=1080x2424\n    mRotation=0"
         return CompletedProcess(args, 0, stdout=output, stderr="")
 
     monkeypatch.setattr("ai_phone.agent.android_vm.manager.subprocess.run", adb)
+    monkeypatch.setattr("ai_phone.agent.android_vm.manager.rotation_endpoint", lambda *_: (8554, "test-token"))
+    monkeypatch.setattr("ai_phone.agent.android_vm.manager.set_rotation", set_rotation)
     vm = AndroidVmManager(runtime_dir=tmp_path)
-    display = vm._apply_startup_display(
-        AndroidVmTools("adb", "emulator", "avdmanager"), "emulator-5554", "landscape", "", None,
-    )
-    assert display == {"orientation": "landscape", "fold_state": "", "width": 1080, "height": 1080}
+    vm._runtimes["a"] = VmRuntime("a", "test", "emulator-5554", 5554, None, 0, avd_name="aiphone_vm_a", ready=True)
+    result = vm.display_sync({"vm_id": "a", "serial": "emulator-5554", "rotation": turn})
+    assert rotations == [target]
+    assert result == {
+        "orientation": orientation, "body_rotation": target, "fold_state": "", "width": 1080, "height": 2424,
+    }
+    assert config.read_text() == f"hw.initialOrientation={orientation.split('_')[0]}\n"
 
 
 async def test_android_vm_dispatch_sends_start_to_agent(client, app):
@@ -1659,14 +1757,18 @@ def test_android_vm_fold_template_applies_dpi_with_template_dimensions(tmp_path,
     config.write_text(
         "hw.lcd.width=2076\nhw.lcd.height=2152\nhw.lcd.density=390\n"
         "hw.displayRegion.0.1.width=1080\nhw.displayRegion.0.1.height=2424\n"
+        "hw.sensor.hinge.count=1\nhw.sensor.hinge.ranges=0-180\nhw.sensor.hinge.defaults=180\n"
     )
     manager._write_avd_screen_config(
         type("Tools", (), {"sdk_root": ""})(), avd_name="aiphone_vm_test",
         width=1920, height=2400, density=420, keep_profile_display=True,
+        orientation="landscape_right", fold_state="folded",
     )
     settings = dict(line.split("=", 1) for line in config.read_text().splitlines())
     assert (settings["hw.lcd.width"], settings["hw.lcd.height"], settings["hw.lcd.density"]) == ("2076", "2152", "420")
     assert (settings["hw.displayRegion.0.1.width"], settings["hw.displayRegion.0.1.height"]) == ("1080", "2424")
+    assert settings["hw.initialOrientation"] == "landscape"
+    assert settings["hw.sensor.hinge.defaults"] == "0"
 
 
 def test_android_vm_manager_start_translates_advanced_config_to_emulator_args(

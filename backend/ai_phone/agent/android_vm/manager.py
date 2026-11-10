@@ -7,14 +7,16 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import psutil
 from loguru import logger
@@ -26,6 +28,7 @@ from ai_phone.config import get_settings
 from ai_phone.server.android_vm.catalog import FOLDABLE_PROFILES
 from ai_phone.shared import protocol as P
 
+from .avd_rotation import rotation_endpoint, set_rotation
 from .capability import (
     AndroidVmTools,
     default_system_image,
@@ -77,6 +80,10 @@ class _ExistingAvdConfigError(RuntimeError):
 
 class _ExistingAvdImageError(_ExistingAvdConfigError):
     """已有 AVD 的原生镜像身份无法确认。"""
+
+
+class _DisplayStateError(RuntimeError):
+    """AVD 机身姿态或当前显示区域未能确认。"""
 
 
 class AndroidVmManager:
@@ -154,6 +161,12 @@ class AndroidVmManager:
                     "vm_name": rt.name,
                     "vm_transport_unavailable": rt.transport_unavailable,
                 })
+                if rt.ready and not rt.transport_unavailable:
+                    extra["android_vm_display"] = {
+                        "avd_pose": True,
+                        "can_fold": rt.has_cover_display,
+                        "can_rotate": rotation_endpoint(rt.avd_name or _safe_avd_name(rt.vm_id), info.serial) is not None,
+                    }
                 info.extra = extra
             elif info.serial.startswith("emulator-"):
                 continue
@@ -477,6 +490,7 @@ class AndroidVmManager:
                 sdcard_mb=sdcard_mb,
                 hardware=hardware,
                 avd_device=avd_device,
+                fold_state=fold_state,
                 require_existing=bool(msg.get("require_existing_instance")),
                 create_only=rollback_new,
             )
@@ -485,6 +499,7 @@ class AndroidVmManager:
                 tools.emulator,
                 "-avd", avd_name,
                 "-port", str(port),
+                "-grpc", "0", "-grpc-use-token",
                 "-prop", f"debug.aiphone.vmid={vm_id}",
                 "-prop", f"debug.aiphone.alias={str(msg.get('alias') or msg.get('name') or vm_id)}",
             ]
@@ -539,6 +554,18 @@ class AndroidVmManager:
             _startup_timeout(operation_deadline, 1)
             proc = subprocess.Popen(args, stdout=log_file, stderr=subprocess.STDOUT)
             runtime.process = proc
+            startup_display = {}
+            if orientation in ("portrait_reverse", "landscape_left", "landscape_right"):
+                # config.ini only accepts portrait/landscape. Set the exact
+                # angle through the AVD controller while the guest is starting.
+                try:
+                    size = _fold_display_size(tools, avd_name, fold_state) if avd_device else (width, height)
+                    self._set_initial_avd_rotation(
+                        tools, adb_serial, avd_name, _rotation_for_orientation(size, orientation), operation_deadline,
+                    )
+                except (_DisplayStateError, TimeoutError) as exc:
+                    startup_display = {"warning": "AVD 未能确认启动机身方向"}
+                    logger.warning("Android VM {} 未能设置启动机身方向: {}", vm_id, exc)
             self._wait_boot_completed(tools, adb_serial)
             if self._emulator_avd_name(tools, adb_serial) != avd_name:
                 raise RuntimeError("启动后设备身份不匹配，拒绝配置或上报其他实例")
@@ -548,12 +575,6 @@ class AndroidVmManager:
             _startup_timeout(operation_deadline, 1)
             if self._emulator_avd_name(tools, adb_serial) != avd_name:
                 raise RuntimeError("开机预置后无法确认实例身份")
-            startup_display = {}
-            if avd_device or (orientation == "landscape" and _msg_bool(msg, "apply_initial_orientation", False)):
-                fold_size = _fold_display_size(tools, avd_name, fold_state) if avd_device else None
-                startup_display = self._apply_startup_display(
-                    tools, adb_serial, orientation, fold_state, operation_deadline, fold_size=fold_size,
-                )
             # 预置全部做完、临返回前才标 ready——此后才纳入运行期"消失"巡检。
             # 放在这里（而非 _wait_boot_completed 之后）：避免 provision 期间的 framework 重启抖动
             # 被巡检盯上（虽有 missing_ticks 防抖，但放到全部就绪后语义更严谨、零误判窗口）。
@@ -1247,6 +1268,7 @@ class AndroidVmManager:
         sdcard_mb: int,
         hardware: Dict[str, Any],
         avd_device: str = "",
+        fold_state: str = "",
         require_existing: bool = False,
         create_only: bool = False,
     ) -> bool:
@@ -1285,6 +1307,7 @@ class AndroidVmManager:
                 hardware=hardware,
                 preserve_data_size=True,
                 keep_profile_display=bool(avd_device),
+                fold_state=fold_state,
             )
             return False
         if require_existing:
@@ -1316,6 +1339,7 @@ class AndroidVmManager:
                 orientation=orientation, ram_mb=ram_mb, vm_heap_mb=vm_heap_mb,
                 internal_storage_mb=internal_storage_mb, sdcard_mb=sdcard_mb, hardware=hardware,
                 keep_profile_display=bool(avd_device),
+                fold_state=fold_state,
             )
         except Exception as exc:  # noqa: BLE001
             exc.created_here = True
@@ -1338,6 +1362,7 @@ class AndroidVmManager:
         hardware: Optional[Dict[str, Any]] = None,
         preserve_data_size: bool = False,
         keep_profile_display: bool = False,
+        fold_state: str = "",
     ) -> None:
         config_path = _avd_config_path(tools, avd_name)
         if config_path is None:
@@ -1345,10 +1370,7 @@ class AndroidVmManager:
                 raise _ExistingAvdConfigError("无法读取已有虚拟机的数据容量，未修改或启动")
             logger.warning("未找到 AVD config，跳过屏幕尺寸写入 avd={}", avd_name)
             return
-        updates = {
-            "hw.initialOrientation": _orientation(orientation, width, height),
-            "hw.lcd.density": str(density),
-        }
+        updates = {"hw.lcd.density": str(density)}
         if not keep_profile_display:
             updates.update({
                 "hw.lcd.width": str(width),
@@ -1395,14 +1417,8 @@ class AndroidVmManager:
                 if requested_size <= current_size:
                     # SDK 可能在首次启动时上调容量；保留原值和表示，不把旧请求写回更小的值。
                     updates.pop("disk.dataPartition.size")
-        if all(existing.get(key) == value for key, value in updates.items()):
-            return
-        existing.update(updates)
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(
-            "\n".join(f"{key}={value}" for key, value in sorted(existing.items())) + "\n",
-            encoding="utf-8",
-        )
+        updates.update(_avd_display_defaults(existing, _orientation(orientation, width, height), fold_state))
+        _write_avd_config_updates(config_path, existing, updates)
 
     def _emulator_avd_name(self, tools: AndroidVmTools, serial: str, deadline: Optional[float] = None) -> str:
         if not _emulator_port(serial):
@@ -1571,77 +1587,94 @@ class AndroidVmManager:
         except Exception as exc:  # noqa: BLE001
             logger.warning("VM {} 开机预置失败（忽略，不阻断启动）：{}", adb_serial, exc)
 
-    def _apply_startup_display(
-        self, tools: AndroidVmTools, serial: str, orientation: str, fold_state: str,
-        operation_deadline: Optional[float],
-        *, fold_size: Optional[tuple[int, int]] = None,
-    ) -> Dict[str, Any]:
-        deadline = time.monotonic() + _startup_timeout(operation_deadline, 20)
+    def display_sync(self, msg: Dict[str, Any]) -> Dict[str, Any]:
+        """Change the AVD's pose and observe Android's resulting display."""
+        vm_id = str(msg["vm_id"])
+        serial = str(msg["serial"])
+        orientation, fold_state, turn = msg.get("orientation"), msg.get("fold_state"), msg.get("rotation")
+        if (orientation not in (None, *_DISPLAY_ORIENTATIONS) or fold_state not in (None, "folded", "unfolded")
+                or turn not in (None, "left", "right") or (orientation is not None and turn is not None)):
+            raise ValueError("无效的 Android 屏幕设置")
+        deadline = time.monotonic() + _startup_timeout(_start_deadline(msg), 20)
+        with _startup_lock(self._vm_lock(vm_id), deadline):
+            runtime = self._runtimes.get(vm_id)
+            if runtime is None or runtime.adb_serial != serial or not runtime.ready or runtime.transport_unavailable:
+                raise RuntimeError("Android 虚拟机尚未就绪或实例已变化")
+            tools, _missing = find_android_tools()
+            avd_name = runtime.avd_name or _safe_avd_name(vm_id)
+            if tools is None or self._emulator_avd_name(tools, serial, deadline=deadline) != avd_name:
+                raise RuntimeError("无法确认当前 Android 虚拟机身份")
+            if fold_state is not None and not runtime.has_cover_display:
+                raise ValueError("当前 Android 虚拟机不支持折叠")
 
-        def adb(*args: str, change: bool = False) -> str:
-            proc = subprocess.run(
-                [tools.adb, "-s", serial, *args], capture_output=True, text=True,
-                check=False, timeout=_startup_timeout(deadline, 5),
+            adb = partial(_display_adb, tools, serial, deadline)
+            current_fold = _read_fold_state(adb) if runtime.has_cover_display else ""
+            if current_fold is None:
+                raise _DisplayStateError("Android 尚未确认当前内外屏")
+            geometry = _read_display_geometry(adb)
+            if geometry is None:
+                raise _DisplayStateError("Android 尚未确认当前画面尺寸")
+            natural_size, _, width, height = geometry
+            if current_fold and natural_size != _fold_display_size(tools, avd_name, current_fold):
+                raise _DisplayStateError("Android 正在切换内外屏，请稍后重试")
+            rotation = _read_avd_rotation(adb)
+            if orientation is None and fold_state is None and turn is None:
+                pose = _orientation_for_rotation(natural_size, rotation) if rotation is not None else None
+                return {
+                    "orientation": pose, "body_rotation": rotation, "fold_state": current_fold,
+                    "width": width, "height": height,
+                }
+
+            target_fold = fold_state or current_fold
+            target_size = _fold_display_size(tools, avd_name, target_fold) if target_fold else natural_size
+            config = _avd_config_path(tools, avd_name)
+            if config is None:
+                raise _DisplayStateError("找不到当前虚拟机的 AVD 配置")
+            fields = dict(line.split("=", 1) for line in config.read_text(encoding="utf-8").splitlines() if "=" in line)
+            target_rotation = None
+            if orientation is not None or turn is not None:
+                if rotation is None:
+                    raise _DisplayStateError("AVD 未能读取机身方向")
+                target_rotation = (
+                    _rotation_for_orientation(target_size, orientation)
+                    if orientation is not None else (rotation + (1 if turn == "left" else -1)) % 4
+                )
+                if target_rotation != rotation:
+                    endpoint = rotation_endpoint(avd_name, serial)
+                    if endpoint is None:
+                        raise _DisplayStateError("重启此虚拟机后可使用 AVD 机身旋转")
+                    _rotate_avd(adb, endpoint, target_rotation, deadline)
+            if target_fold != current_fold:
+                adb("emu", "fold" if target_fold == "folded" else "unfold", change=True)
+            _, _, width, height = _wait_avd_display(adb, target_fold, target_size, deadline)
+            rotation = _read_avd_rotation(adb)
+            if target_rotation is not None and rotation != target_rotation:
+                raise _DisplayStateError("AVD 未能确认目标机身方向")
+            pose = _orientation_for_rotation(target_size, rotation) if rotation is not None else None
+            _write_avd_config_updates(
+                config, fields, _avd_display_defaults(fields, pose or fields.get("hw.initialOrientation", "portrait"), target_fold),
             )
-            output = proc.stdout or ""
-            if change and (proc.returncode or "KO:" in output):
-                raise RuntimeError(f"Android 启动屏幕设置失败：{(proc.stderr or output).strip()[:240]}")
-            return output if proc.returncode == 0 else ""
+            return {
+                "orientation": pose, "body_rotation": rotation, "fold_state": target_fold,
+                "width": width, "height": height,
+            }
 
-        expected_state = ""
-        if fold_state:
-            expected_state = "CLOSED" if fold_state == "folded" else "OPENED"
-            adb("emu", "fold" if fold_state == "folded" else "unfold", change=True)
-
-        requested_rotation = None
-        last_size = None
+    def _set_initial_avd_rotation(
+        self, tools: AndroidVmTools, serial: str, avd_name: str, target: int, operation_deadline: Optional[float],
+    ) -> None:
+        deadline = time.monotonic() + _startup_timeout(operation_deadline, 8)
+        adb = partial(_display_adb, tools, serial, deadline)
         while time.monotonic() < deadline:
-            if expected_state:
-                state = adb("shell", "dumpsys", "device_state")
-                if not re.search(rf"(?m)^\s*mCommittedState=.*\b{expected_state}\b", state):
-                    last_size = None
-                    time.sleep(0.25)
-                    continue
-            displays = adb("shell", "dumpsys", "window", "displays")
-            display = re.search(
-                r"(?m)^\s*Display: mDisplayId=0\b[^\n]*\n"
-                r"\s*init=(\d+)x(\d+)[^\n]*(?:\n[ \t]+)?\bcur=(\d+)x(\d+)",
-                displays,
-            )
-            if display:
-                natural_width, natural_height, width, height = map(int, display.groups())
-                # The posture event can precede the window manager's display switch.
-                if fold_size and (natural_width, natural_height) != fold_size:
-                    last_size = None
-                    time.sleep(0.25)
-                    continue
-                landscape = orientation == "landscape"
-                actual_landscape = width > height
-                if width == height:
-                    display_details = re.split(
-                        r"(?m)^\s*Display: mDisplayId=", displays[display.end():], maxsplit=1,
-                    )[0]
-                    rotation_dump = re.search(
-                        r"\b(?:mDisplayRotation=ROTATION_|DisplayFrames w=\d+ h=\d+ r=)(\d+)\b", display_details,
-                    )
-                    if not rotation_dump:
-                        rotation_dump = re.search(
-                            r"\bSurfaceOrientation:\s*([0-3])", adb("shell", "dumpsys", "input"),
-                        )
-                    actual_landscape = int(rotation_dump.group(1)) in {1, 3, 90, 270} if rotation_dump else None
-                if actual_landscape == landscape:
-                    if last_size == (width, height):
-                        return {"orientation": orientation, "fold_state": fold_state, "width": width, "height": height}
-                    last_size = (width, height)
-                else:
-                    last_size = None
-                    rotation = int((natural_width > natural_height) != landscape)
-                    if requested_rotation != rotation:
-                        adb("shell", "settings", "put", "system", "accelerometer_rotation", "0", change=True)
-                        adb("shell", "settings", "put", "system", "user_rotation", str(rotation), change=True)
-                        requested_rotation = rotation
-            time.sleep(0.25)
-        raise RuntimeError(f"Android 未确认启动屏幕状态：{orientation} {fold_state}".strip())
+            if self._emulator_avd_name(tools, serial, deadline=deadline) == avd_name:
+                rotation = _read_avd_rotation(adb)
+                if rotation == target:
+                    return
+                endpoint = rotation_endpoint(avd_name, serial)
+                if rotation is not None and endpoint is not None:
+                    _rotate_avd(adb, endpoint, target, deadline)
+                    return
+            time.sleep(0.2)
+        raise _DisplayStateError("启动时无法读取 AVD 机身方向")
 
     def _wait_settings_ready(self, tools: AndroidVmTools, adb_serial: str, timeout_sec: int = 30) -> bool:
         """等 settings 服务真正可用（framework 重启后 sys.boot_completed=1 仍可能早于它）。
@@ -1933,6 +1966,126 @@ def _verify_existing_avd_image(
         raise _ExistingAvdImageError(f"无法核实已有虚拟机的镜像，未修改或启动：{exc}") from exc
 
 
+def _display_adb(tools: AndroidVmTools, serial: str, deadline: float, *args: str, change: bool = False) -> str:
+    try:
+        proc = subprocess.run(
+            [tools.adb, "-s", serial, *args], capture_output=True, text=True,
+            check=False, timeout=_startup_timeout(deadline, 5),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise _DisplayStateError("等待 AVD 姿态或 Android 画面超时") from exc
+    output = proc.stdout or ""
+    if change and (proc.returncode or "KO:" in output):
+        raise _DisplayStateError(f"AVD 控制台命令失败：{(proc.stderr or output).strip()[:240]}")
+    return output if proc.returncode == 0 else ""
+
+
+def _read_avd_rotation(adb: Callable[..., str]) -> Optional[int]:
+    raw = adb("emu", "sensor", "get", "acceleration")
+    match = re.search(r"(?m)^\s*acceleration\s*=\s*([^:\s]+):([^:\s]+):([^:\s]+)\s*$", raw)
+    if not match:
+        return None
+    try:
+        x, y, z = map(float, match.groups())
+    except ValueError:
+        return None
+    if not all(math.isfinite(axis) for axis in (x, y, z)) or max(abs(x), abs(y)) < 5:
+        return None
+    if abs(x) > abs(y):
+        return 1 if x > 0 else 3
+    return 0 if y > 0 else 2
+
+
+def _rotate_avd(adb: Callable[..., str], endpoint: tuple[int, str], target: int, deadline: float) -> None:
+    try:
+        set_rotation(endpoint, target, _startup_timeout(deadline, 5))
+    except RuntimeError as exc:
+        raise _DisplayStateError(str(exc)) from exc
+    while time.monotonic() < deadline:
+        if _read_avd_rotation(adb) == target:
+            return
+        time.sleep(0.1)
+    raise _DisplayStateError("AVD 未能确认旋转后的机身方向")
+
+
+def _read_fold_state(adb: Callable[..., str]) -> Optional[str]:
+    output = adb("shell", "dumpsys", "device_state")
+    state = re.search(r"(?m)^\s*mCommittedState=.*\b(CLOSED|OPENED)\b", output)
+    if state:
+        return "folded" if state[1] == "CLOSED" else "unfolded"
+    return None
+
+
+def _wait_avd_display(
+    adb: Callable[..., str], fold_state: str, size: tuple[int, int], deadline: float,
+) -> tuple[tuple[int, int], int, int, int]:
+    previous = None
+    while time.monotonic() < deadline:
+        if not fold_state or _read_fold_state(adb) == fold_state:
+            geometry = _read_display_geometry(adb)
+            if geometry and geometry[0] == size:
+                if geometry == previous:
+                    return geometry
+                previous = geometry
+            else:
+                previous = None
+        else:
+            previous = None
+        time.sleep(0.25)
+    raise _DisplayStateError("Android 尚未确认当前画面尺寸")
+
+
+def _read_display_geometry(adb: Callable[..., str]) -> Optional[tuple[tuple[int, int], int, int, int]]:
+    displays = adb("shell", "dumpsys", "window", "displays")
+    display = re.search(
+        r"(?m)^\s*Display: mDisplayId=0\b[^\n]*\n"
+        r"\s*init=(\d+)x(\d+)[^\n]*(?:\n[ \t]+)?\bcur=(\d+)x(\d+)",
+        displays,
+    )
+    if not display:
+        return None
+    natural_width, natural_height, width, height = map(int, display.groups())
+    details = re.split(r"(?m)^\s*Display: mDisplayId=", displays[display.end():], maxsplit=1)[0]
+    rotation = re.search(r"(?m)^\s*(?:DisplayFrames w=\d+ h=\d+ r=|mRotation=)([0-3])\b", details)
+    if not rotation:
+        rotation = re.search(r"\bSurfaceOrientation:\s*([0-3])", adb("shell", "dumpsys", "input"))
+    if not rotation:
+        return None
+    natural_size = (natural_width, natural_height)
+    actual = int(rotation[1])
+    landscape = _orientation_for_rotation(natural_size, actual).startswith("landscape")
+    if width != height and (width > height) != landscape:
+        return None
+    return natural_size, actual, width, height
+
+
+def _avd_display_defaults(fields: dict, orientation: str, fold_state: str) -> dict:
+    defaults = {"hw.initialOrientation": orientation.split("_", 1)[0]}
+    if fold_state:
+        hinge = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*",
+                             fields.get("hw.sensor.hinge.ranges", ""))
+        if not hinge or fields.get("hw.sensor.hinge.count") != "1":
+            raise _DisplayStateError("当前折叠模板无法保存 AVD 铰链角度")
+        defaults["hw.sensor.hinge.defaults"] = hinge[1 if fold_state == "folded" else 2]
+    return defaults
+
+
+def _write_avd_config_updates(path: Path, fields: dict, updates: dict) -> None:
+    if all(fields.get(key) == value for key, value in updates.items()):
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields.update(updates)
+    fd, temp_path = tempfile.mkstemp(dir=path.parent, prefix=".config-", suffix=".ini")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.writelines(f"{key}={value}\n" for key, value in sorted(fields.items()))
+        if path.exists():
+            shutil.copymode(path, temp_path)
+        os.replace(temp_path, path)
+    finally:
+        Path(temp_path).unlink(missing_ok=True)
+
+
 def _avd_has_cover_display(tools: AndroidVmTools, avd_name: str) -> bool:
     """Recover the template written by avdmanager create -d."""
     config = _avd_config_path(tools, avd_name)
@@ -2150,11 +2303,29 @@ def _fold_display_config(display: Dict[str, int]) -> Dict[str, str]:
     }
 
 
+_DISPLAY_ORIENTATIONS = ("portrait", "portrait_reverse", "landscape", "landscape_left", "landscape_right")
+_ROTATION_FROM_PORTRAIT = {"portrait": 0, "landscape_left": 1, "portrait_reverse": 2, "landscape_right": 3}
+
+
 def _orientation(value: str, width: int, height: int) -> str:
     raw = (value or "").strip().lower()
-    if raw in {"portrait", "landscape"}:
+    if raw in _DISPLAY_ORIENTATIONS:
         return raw
     return "portrait" if height >= width else "landscape"
+
+
+def _rotation_for_orientation(natural_size: tuple[int, int], orientation: str) -> int:
+    natural_landscape = natural_size[0] > natural_size[1]
+    if orientation == "landscape":
+        return int(not natural_landscape)  # Preserve the default angle for older VM configurations.
+    return (_ROTATION_FROM_PORTRAIT[orientation] + int(natural_landscape)) % 4
+
+
+def _orientation_for_rotation(natural_size: tuple[int, int], rotation: int) -> str:
+    natural_landscape = natural_size[0] > natural_size[1]
+    return ("portrait", "landscape_left", "portrait_reverse", "landscape_right")[
+        (rotation - int(natural_landscape)) % 4
+    ]
 
 
 def _emulator_port(serial: str) -> int:

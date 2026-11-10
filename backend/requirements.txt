@@ -20,6 +20,7 @@ Pillow>=12.2,<13
 loguru>=0.7
 
 adbutils>=2.6
+grpcio>=1.62,<2
 
 av>=10,<13
 numpy>=1.24,<2

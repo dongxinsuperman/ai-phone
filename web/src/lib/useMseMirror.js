@@ -141,18 +141,22 @@ export function useMseMirror(options = {}) {
       return
     }
     pendingMime = mime
-    mediaSource = new MediaSource()
-    const url = URL.createObjectURL(mediaSource)
+    const source = new MediaSource()
+    mediaSource = source
+    const url = URL.createObjectURL(source)
     if (videoEl.value) {
       videoEl.value.src = url
     }
-    mediaSource.addEventListener('sourceopen', () => {
+    source.addEventListener('sourceopen', () => {
+      if (mediaSource !== source) return
       _log('sourceopen', mime)
       try {
-        sourceBuffer = mediaSource.addSourceBuffer(mime)
+        sourceBuffer = source.addSourceBuffer(mime)
         // 直播模式：让 MediaSource 不去算 duration（避免 currentTime 卡 0）
         sourceBuffer.mode = 'segments'
-        sourceBuffer.addEventListener('updateend', _onUpdateEnd)
+        sourceBuffer.addEventListener('updateend', () => {
+          if (mediaSource === source) _onUpdateEnd()
+        })
         sourceBuffer.addEventListener('error', (e) => {
           _setError(`SourceBuffer error：${e?.message || ''}`)
         })

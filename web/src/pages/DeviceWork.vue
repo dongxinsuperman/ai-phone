@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   COLUMN_GUTTER, DEFAULT_MIRROR_RATIOS, WORKBENCH_LAYOUT_KEY,
-  mirrorColumnWidth, readMirrorRatios,
+  mirrorColumnWidth, mirrorFramePoint, readMirrorRatios,
 } from '../lib/workbenchLayout.js'
 import LogPane from '../components/LogPane.vue'
 import { api } from '../lib/api.js'
@@ -139,7 +139,10 @@ const layoutEl = ref(null)
 const layoutWidth = ref(0)
 const mirrorFocused = ref(false)
 const mirrorRatios = ref(readMirrorRatios({ getItem: key => window.localStorage.getItem(key) }))
-const layoutOrientation = computed(() => frameSize.value.w > frameSize.value.h ? 'landscape' : 'portrait')
+const layoutOrientation = computed(() => {
+  const { w, h } = frameSize.value
+  return (viewSideways.value ? h > w : w > h) ? 'landscape' : 'portrait'
+})
 const mirrorWidth = computed(() => mirrorColumnWidth(layoutWidth.value, mirrorRatios.value[layoutOrientation.value]))
 const columnPercent = width => Math.round(width * 100 / Math.max(1, layoutWidth.value - COLUMN_GUTTER))
 let columnDrag = null
@@ -285,10 +288,40 @@ function stopRightPanelResize() {
 }
 // 当前视频帧实际尺寸（scrcpy 缩放后的，比如 576×1280），用来判断方向
 const frameSize = ref({ w: 0, h: 0 })
+const androidMirror = ref(null)
+const androidFrameReady = ref(false)
+const androidDisplay = ref(null)
+const viewRotation = computed(() => {
+  const body = androidDisplay.value?.body_rotation
+  const frame = androidMirror.value
+  const display = frame?.natural_orientation ? 0 : frame?.display_rotation
+  return [0, 1, 2, 3].includes(body) && [0, 1, 2, 3].includes(display) ? (body - display + 4) % 4 : 0
+})
+const viewSideways = computed(() => viewRotation.value % 2 === 1)
+const avdPoseLabels = {
+  portrait: '竖放',
+  portrait_reverse: '倒置竖放',
+  landscape: '横放',
+  landscape_left: '左横放',
+  landscape_right: '右横放',
+}
+const displayBusy = ref(false)
+const displayError = ref('')
+const expectedMirror = ref(null)
+const mirrorWaitExpired = ref(false)
+const androidDisplayCapability = computed(() => (
+  device.value?.platform === 'android' && device.value?.extra?.android_vm_display?.avd_pose
+    ? device.value.extra.android_vm_display : null
+))
+const androidVmId = computed(() => (
+  androidDisplayCapability.value ? device.value.extra.vm_instance_id : null
+))
 // 顶部展示的分辨率：设备物理像素，根据当前画面方向决定要不要 W/H 互换
 // 如：物理 1080×2400 + 横屏画面 → 显示 2400×1080；竖屏 → 1080×2400
 const displaySize = computed(() => {
-  const dp = devicePixel.value
+  const dp = androidDisplay.value
+    ? { w: androidDisplay.value.width, h: androidDisplay.value.height }
+    : devicePixel.value
   if (!dp.w || !dp.h) return { w: 0, h: 0 }
   const fs = frameSize.value
   if (fs.w && fs.h) {
@@ -299,6 +332,10 @@ const displaySize = computed(() => {
     }
   }
   return { w: dp.w, h: dp.h }
+})
+const mirrorViewSize = computed(() => {
+  const { w, h } = displaySize.value
+  return viewSideways.value ? { w: h, h: w } : { w, h }
 })
 // 上一次稳定的"是否横屏"，null 表示还没收到任何视频元数据
 let lastIsLandscape = null
@@ -343,6 +380,66 @@ const lock = useDeviceLock(serial.value, {
   },
 })
 
+const androidMirrorReady = computed(() => {
+  const frame = androidMirror.value
+  const expected = expectedMirror.value
+  return !!frame && mirrorReady.value && androidFrameReady.value
+    && frame.width === frameSize.value.w && frame.height === frameSize.value.h
+    && (!expected || (expected.id ? frame.stream_id === expected.id : frame.stream_id !== expected.previous))
+})
+const canSendInput = computed(() => !lock.readonly.value && (
+  !(androidVmId.value || androidMirror.value) || (androidMirrorReady.value && !displayBusy.value)
+))
+const canChangeDisplay = computed(() => canSendInput.value && wsConnected.value
+  && !!androidDisplay.value && !currentRunId.value && !tapBusy.value)
+
+let displayReadVersion = 0
+async function readAndroidDisplay() {
+  if (!androidVmId.value || !lock.token.value || displayBusy.value) return
+  const version = ++displayReadVersion
+  try {
+    const state = await api.androidDisplay(serial.value, { vm_id: androidVmId.value, lock_token: lock.token.value })
+    if (version === displayReadVersion) androidDisplay.value = state
+  } catch (e) {
+    if (version === displayReadVersion && !displayError.value) {
+      displayError.value = e.detail?.message || e.detail || '读取 AVD 机身姿态失败'
+    }
+  }
+}
+
+async function changeAndroidDisplay(change) {
+  if (!canChangeDisplay.value) return
+  displayReadVersion++
+  displayBusy.value = true
+  displayError.value = ''
+  gesture.active = false
+  const previous = androidMirror.value.stream_id
+  expectedMirror.value = { previous }
+  try {
+    const state = await api.androidDisplay(serial.value, {
+      vm_id: androidVmId.value, lock_token: lock.token.value, ...change,
+    })
+    androidDisplay.value = state
+    expectedMirror.value = { previous, id: wsConnected.value ? state.stream_id : '' }
+  } catch (e) {
+    displayError.value = e.detail?.message || e.detail || '切换 AVD 机身姿态失败'
+    expectedMirror.value = e.detail?.stream_id || e.status === 504 ? { previous, id: e.detail?.stream_id } : null
+  } finally {
+    displayBusy.value = false
+  }
+}
+
+watch([androidVmId, lock.token], readAndroidDisplay)
+watch([androidMirrorReady, displayBusy], ([ready, changing]) => {
+  if (ready && !changing) expectedMirror.value = null
+})
+watch([expectedMirror, displayBusy], ([expected, changing], _old, onCleanup) => {
+  mirrorWaitExpired.value = false
+  if (!expected || changing) return
+  const timer = setTimeout(() => { mirrorWaitExpired.value = !androidMirrorReady.value }, 12000)
+  onCleanup(() => clearTimeout(timer))
+})
+
 async function refreshDevice() {
   try {
     const d = await api.getDevice(serial.value)
@@ -364,7 +461,7 @@ const SWIPE_PX_THRESHOLD = 24
 const LONG_PRESS_MS = 450
 
 // 按下起点，抬起时一并计算 swipe
-const gesture = { active: false, x0: 0, y0: 0, t0: 0, imgX0: 0, imgY0: 0 }
+const gesture = { active: false, x0: 0, y0: 0, t0: 0, rect: null, frame: null, rotation: 0 }
 
 // PC 键盘转发：把 mirror 当成手机的"软键盘焦点"，敲键转成 type / keycode 派发
 // - 字符（含 IME 中文）→ kind: 'type'（走 ADBKeyBoard 广播）
@@ -397,7 +494,7 @@ function _focusKb() {
 }
 
 async function _sendType(text) {
-  if (!text) return
+  if (!text || !canSendInput.value) return
   // 手动输入不进日志面板：日志只用于追踪 Run 的 step / log；失败仅 console
   try {
     await api.sendInput(serial.value, {
@@ -411,6 +508,7 @@ async function _sendType(text) {
 }
 
 async function _sendKeycode(code, label) {
+  if (!canSendInput.value) return
   try {
     await api.sendInput(serial.value, {
       kind: 'keycode',
@@ -425,7 +523,7 @@ async function _sendKeycode(code, label) {
 // 屏幕底部"虚拟导航条"：BACK / HOME / RECENTS。
 // 走和键盘转发一样的 sendInput，不进日志面板。
 async function _sendNavKind(kind, label) {
-  if (lock.readonly.value) return
+  if (!canSendInput.value) return
   try {
     await api.sendInput(serial.value, {
       kind,
@@ -488,59 +586,22 @@ function _mediaSize(el) {
   return { w: 0, h: 0 }
 }
 
-function _mapToDevice(ev, el, { clamp = false } = {}) {
-  // <video> 元素盒子永远填满容器（width:100%; height:100%），但 object-fit:contain
-  // 让位图居中按比例缩放，左右或上下会有黑边。直接用 rect 当画面会把黑边
-  // 也算成"屏幕边缘"（导致越界 clamp 到 0/W-1，点黑边也会触发 tap），所以
-  // 这里要先算出"真正画面"在 box 内的子矩形 (offX, offY, vw, vh)，再做映射。
-  //
-  // - clamp=false（默认，pointerdown 用）：落在黑边返回 null，调用方放弃手势
-  // - clamp=true（pointerup / 拖出画面用）：始终把坐标夹到画面有效范围内，
-  //   保证一次 swipe 的尾点能落到边缘像素
-  const rect = el.getBoundingClientRect()
+function _mapToDevice(ev, el, { clamp = false, rect = el.getBoundingClientRect() } = {}) {
   const { w: nw, h: nh } = _mediaSize(el)
-  if (!nw || !nh || rect.width <= 0 || rect.height <= 0) return null
-
-  const aspectImg = nw / nh
-  const aspectBox = rect.width / rect.height
-  let vw, vh, offX, offY
-  if (aspectImg > aspectBox) {
-    vw = rect.width
-    vh = rect.width / aspectImg
-    offX = 0
-    offY = (rect.height - vh) / 2
-  } else {
-    vw = rect.height * aspectImg
-    vh = rect.height
-    offX = (rect.width - vw) / 2
-    offY = 0
-  }
-
-  const localX = ev.clientX - rect.left - offX
-  const localY = ev.clientY - rect.top - offY
-  if (!clamp) {
-    if (localX < -1 || localY < -1 || localX > vw + 1 || localY > vh + 1) {
-      return null
-    }
-  }
-  const px = Math.min(1, Math.max(0, localX / vw))
-  const py = Math.min(1, Math.max(0, localY / vh))
-  // 用 displaySize（已根据当前画面方向把 devicePixel 的 W/H 互换过）而不是
-  // 原始 devicePixel：旋转后 agent 的 driver.window_size() 会返回横屏的
-  // (2400, 1080)，如果这里仍按 devicePixel 的 (1080, 2400) 发坐标，agent 那边
-  // 算 sx_scale = fw/dw 时分子分母轴向对不上，fy 直接超出 frame 高度被钳到
-  // 底边，于是点哪都打到屏幕左下角 ——"横屏手动操作完全无反应"就是这个症。
+  const point = mirrorFramePoint(rect, { w: nw, h: nh }, ev.clientX, ev.clientY, viewRotation.value, clamp)
+  if (!point) return null
+  // Managed AVD inputs carry scrcpy's encoded dimensions and coordinates before the browser rotation.
   const ds = displaySize.value
-  const w = ds.w || devicePixel.value.w || nw
-  const h = ds.h || devicePixel.value.h || nh
+  const w = androidMirror.value ? nw : (ds.w || devicePixel.value.w || nw)
+  const h = androidMirror.value ? nh : (ds.h || devicePixel.value.h || nh)
   return {
-    x: Math.max(0, Math.min(w - 1, Math.round(px * w))),
-    y: Math.max(0, Math.min(h - 1, Math.round(py * h))),
+    x: Math.max(0, Math.min(w - 1, Math.round(point.x * w))),
+    y: Math.max(0, Math.min(h - 1, Math.round(point.y * h))),
   }
 }
 
 function onMirrorPointerDown(ev) {
-  if (lock.readonly.value) return
+  if (!canSendInput.value) return
   const el = mirrorEl.value
   const { w: nw, h: nh } = _mediaSize(el)
   if (!el || !nw || !nh) return
@@ -548,7 +609,8 @@ function onMirrorPointerDown(ev) {
   ev.preventDefault()
   // 只认左键 / 触控 / 笔
   if (ev.pointerType === 'mouse' && ev.button !== 0) return
-  const p = _mapToDevice(ev, el)
+  const rect = el.getBoundingClientRect()
+  const p = _mapToDevice(ev, el, { rect })
   // 落在 contain 黑边外 → 不抓事件、不开手势，但仍然让键盘焦点跟过来
   if (!p) {
     _focusKb()
@@ -556,11 +618,12 @@ function onMirrorPointerDown(ev) {
   }
   try { el.setPointerCapture(ev.pointerId) } catch (_) { /* ignore */ }
   gesture.active = true
+  gesture.frame = androidMirror.value
+  gesture.rotation = viewRotation.value
+  gesture.rect = rect
   gesture.x0 = p.x
   gesture.y0 = p.y
   gesture.t0 = performance.now()
-  gesture.imgX0 = ev.clientX
-  gesture.imgY0 = ev.clientY
   // 顺手把键盘焦点拿到隐藏 textarea，这样紧接着敲字就直接打到手机
   _focusKb()
 }
@@ -578,13 +641,21 @@ async function onMirrorPointerUp(ev) {
   if (!el) return
   try { el.releasePointerCapture(ev.pointerId) } catch (_) { /* ignore */ }
   ev.preventDefault()
+  if (!canSendInput.value || gesture.frame !== androidMirror.value || gesture.rotation !== viewRotation.value) return
 
   // 抬手可能在黑边里 / 拖出 mirror → 用 clamp 模式，把 end 夹到画面边缘
-  const end = _mapToDevice(ev, el, { clamp: true }) || { x: gesture.x0, y: gesture.y0 }
+  // 键盘捕获提示可能改变画面容器高度，整次手势使用按下时的画面位置。
+  const end = _mapToDevice(ev, el, { clamp: true, rect: gesture.frame ? gesture.rect : undefined })
+    || { x: gesture.x0, y: gesture.y0 }
   const dx = end.x - gesture.x0
   const dy = end.y - gesture.y0
-  const dist = Math.hypot(dx, dy)
+  const frame = gesture.frame
+  const dist = frame ? Math.hypot(
+    dx * (displaySize.value.w || frame.width) / frame.width,
+    dy * (displaySize.value.h || frame.height) / frame.height,
+  ) : Math.hypot(dx, dy)
   const dur = Math.max(60, Math.round(performance.now() - gesture.t0))
+  const inputContext = { lock_token: lock.token.value, ...(frame ? { frame } : {}) }
 
   if (tapBusy.value) return
   tapBusy.value = true
@@ -602,7 +673,7 @@ async function onMirrorPointerUp(ev) {
           x2: end.x, y2: end.y,
           duration_ms: Math.min(dur, 800),
         },
-        lock_token: lock.token.value,
+        ...inputContext,
       })
     } else if (dur >= LONG_PRESS_MS) {
       await api.sendInput(serial.value, {
@@ -613,13 +684,13 @@ async function onMirrorPointerUp(ev) {
           // 设备侧需要至少 ~500ms 才会判定为长按；同时给个上限避免按住几秒卡住
           duration_ms: Math.max(500, Math.min(dur, 3000)),
         },
-        lock_token: lock.token.value,
+        ...inputContext,
       })
     } else {
       await api.sendInput(serial.value, {
         kind: 'tap',
         params: { x: gesture.x0, y: gesture.y0 },
-        lock_token: lock.token.value,
+        ...inputContext,
       })
     }
   } catch (e) {
@@ -686,6 +757,21 @@ function onMessage(msg) {
       break
     case 'video_init':
       if (mirrorMode.value == null) mirrorMode.value = 'mse'
+      if (msg.stream_id && (msg.stream_id !== androidMirror.value?.stream_id
+          || msg.width !== androidMirror.value?.width || msg.height !== androidMirror.value?.height
+          || msg.display_rotation !== androidMirror.value?.display_rotation)) {
+        const newStream = msg.stream_id !== androidMirror.value?.stream_id
+        androidFrameReady.value = false
+        frameSize.value = { w: 0, h: 0 }
+        gesture.active = false
+        androidMirror.value = {
+          stream_id: msg.stream_id, width: msg.width, height: msg.height,
+          natural_orientation: msg.natural_orientation === true,
+          display_rotation: msg.display_rotation,
+        }
+        mirror.reset()
+        if (newStream && !displayBusy.value) readAndroidDisplay()
+      }
       // fmp4 init segment（ftyp + moov）—— 重建 SourceBuffer
       // eslint-disable-next-line no-console
       console.log('[ws] video_init', { mime: msg.mime, w: msg.width, h: msg.height, b64len: msg.data?.length })
@@ -693,6 +779,7 @@ function onMessage(msg) {
       break
     case 'video_segment':
       if (mirrorMode.value == null) mirrorMode.value = 'mse'
+      if (msg.stream_id && msg.stream_id !== androidMirror.value?.stream_id) break
       // fmp4 media segment（moof + mdat）—— append 到 SourceBuffer
       _segCount++
       if (_segCount === 1 || _segCount % 60 === 0) {
@@ -831,6 +918,7 @@ async function appendFunctionMapFiles(event) {
 }
 
 async function startRun() {
+  if (displayBusy.value) return
   submitError.value = null
   if (!goal.value.trim()) {
     submitError.value = '请输入 goal'
@@ -955,6 +1043,12 @@ onMounted(async () => {
     },
     onClose: () => {
       wsConnected.value = false
+      if (androidMirror.value) {
+        androidFrameReady.value = false
+        if (expectedMirror.value) expectedMirror.value = { previous: expectedMirror.value.previous }
+        androidMirror.value = null
+        mirror.reset()
+      }
       pushLog({ level: 2, title: 'WS 连接', content: 'disconnected, 自动重连中', timestamp: Date.now() / 1000 })
     },
   })
@@ -1035,8 +1129,8 @@ watch(
         <div class="mirror-wrap" ref="mirrorWrap">
           <div class="mirror-bar">
             <span class="mirror-title">实时画面</span>
-            <span class="mirror-size" v-if="displaySize.w">
-              {{ displaySize.w }}×{{ displaySize.h }}
+            <span class="mirror-size" v-if="mirrorViewSize.w">
+              {{ mirrorViewSize.w }}×{{ mirrorViewSize.h }}
             </span>
             <span class="mirror-hint" v-if="!lock.readonly.value && currentRunId">
               VLM 运行中 · 手动 tap / 键盘 可插入
@@ -1049,7 +1143,30 @@ watch(
             </span>
             <span v-if="kbFocused && !lock.readonly.value" class="kb-tag">⌨ 键盘已捕获</span>
           </div>
-          <div class="mirror" :class="{ 'kb-on': kbFocused }">
+          <div v-if="androidVmId" class="android-screen-controls" aria-label="AVD 机身姿态">
+            <span>机身<span v-if="androidDisplay?.orientation"> · {{ avdPoseLabels[androidDisplay.orientation] }}</span></span>
+            <template v-if="androidDisplayCapability.can_rotate">
+              <button type="button" :disabled="!canChangeDisplay || !androidDisplay?.orientation"
+                @click="changeAndroidDisplay({ rotation: 'left' })">↶ 左转 90°</button>
+              <button type="button" :disabled="!canChangeDisplay || !androidDisplay?.orientation"
+                @click="changeAndroidDisplay({ rotation: 'right' })">↷ 右转 90°</button>
+            </template>
+            <span v-else>重启虚拟机后可旋转</span>
+            <template v-if="androidDisplayCapability.can_fold">
+              <button type="button" :disabled="!canChangeDisplay" :aria-pressed="androidDisplay?.fold_state === 'unfolded'"
+                @click="changeAndroidDisplay({ fold_state: 'unfolded' })">展开</button>
+              <button type="button" :disabled="!canChangeDisplay" :aria-pressed="androidDisplay?.fold_state === 'folded'"
+                @click="changeAndroidDisplay({ fold_state: 'folded' })">折叠</button>
+            </template>
+            <span v-if="mirrorWaitExpired" role="alert">画面更新超时，请刷新工作台</span>
+            <span v-else-if="displayBusy || (expectedMirror && !androidMirrorReady)" role="status">正在切换画面…</span>
+            <span v-if="displayError" role="alert">{{ displayError }}</span>
+          </div>
+          <div
+            class="mirror"
+            :class="{ 'kb-on': kbFocused, 'avd-rotated': viewRotation, 'avd-sideways': viewSideways }"
+            :style="viewRotation ? { '--avd-angle': `${-viewRotation * 90}deg` } : null"
+          >
             <!-- MSE 视频：muted + autoplay + playsinline 让 Chrome/Safari 都能直接自动播放 -->
             <!-- ref="videoEl" 与 useMseMirror 内部的 videoEl 是同一个 ref（别名），
                  模板把 DOM 写进来，composable 那边就能看到。mirrorMode='mse' 才显示 -->
@@ -1061,7 +1178,8 @@ watch(
               playsinline
               disablepictureinpicture
               draggable="false"
-              :class="{ clickable: !lock.readonly.value }"
+              :class="{ clickable: canSendInput }"
+              @loadeddata="_onVideoSizeChange(); androidFrameReady = true"
               @pointerdown="onMirrorPointerDown"
               @pointermove="onMirrorPointerMove"
               @pointerup="onMirrorPointerUp"
@@ -1127,7 +1245,7 @@ watch(
           <div class="navbar">
             <button
               class="nav-btn"
-              :disabled="lock.readonly.value"
+              :disabled="!canSendInput"
               title="返回 (Esc)"
               @click="navBack"
             >
@@ -1136,7 +1254,7 @@ watch(
             </button>
             <button
               class="nav-btn"
-              :disabled="lock.readonly.value"
+              :disabled="!canSendInput"
               title="主屏幕"
               @click="navHome"
             >
@@ -1145,7 +1263,7 @@ watch(
             </button>
             <button
               class="nav-btn"
-              :disabled="lock.readonly.value"
+              :disabled="!canSendInput"
               title="最近任务"
               @click="navRecents"
             >
@@ -1277,7 +1395,7 @@ watch(
               <span v-if="functionMapContextTooLong" class="limit-warn">已超出上限，请精简后再执行</span>
             </div>
             <div class="btn-row">
-              <button class="primary" :disabled="busy || !!currentRunId || lock.readonly.value || functionMapContextTooLong" @click="startRun">
+              <button class="primary" :disabled="busy || displayBusy || !!currentRunId || lock.readonly.value || functionMapContextTooLong" @click="startRun">
                 {{ currentRunId ? '运行中…' : '开始 Run' }}
               </button>
               <button class="danger" :disabled="busy || !currentRunId" @click="stopRun">停止</button>
@@ -1622,6 +1740,36 @@ h2 {
   color: #d7dbe3;
   font-size: 12px;
 }
+.android-screen-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #161b22;
+  color: #d7dbe3;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.android-screen-controls button {
+  border: 1px solid #444c56;
+  border-radius: 5px;
+  background: #21262d;
+  color: inherit;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.android-screen-controls button[aria-pressed='true'] {
+  border-color: #58a6ff;
+  background: #1a3654;
+}
+.android-screen-controls button:disabled {
+  opacity: .6;
+  cursor: default;
+}
+.android-screen-controls [role='alert'] {
+  color: #ffaba8;
+}
 .mirror-title {
   font-weight: 600;
   color: #e4e7ec;
@@ -1662,6 +1810,19 @@ h2 {
 .mirror video.clickable,
 .mirror img.clickable {
   cursor: crosshair;
+}
+.mirror.avd-rotated {
+  container-type: size;
+}
+.mirror.avd-rotated video {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(var(--avd-angle));
+}
+.mirror.avd-sideways video {
+  width: 100cqh;
+  height: 100cqw;
 }
 .mirror.kb-on {
   /* 键盘焦点在 mirror 上时给个细蓝边，告诉用户"敲字会进手机" */

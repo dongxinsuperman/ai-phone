@@ -126,8 +126,6 @@ async def create_instance(
     await _ensure_alias_available(session, alias=alias)
     config_json = _normalize_vm_config(body)
     config_json["display"]["orientation"] = body.orientation
-    if body.orientation == "landscape" or body.fold_state is not None:
-        config_json["display"]["apply_initial_orientation"] = True
     # 声明为真机（real_device）必须指向一条 verified 设备档案，否则降级为 custom，
     # 防止前端（含空库默认表单）绕过「真实设备库」口径凭空造一台“真机”。
     profile_ref_type = body.profile_ref_type.strip() or "custom"
@@ -262,10 +260,15 @@ async def patch_instance(
             },
         )
         old_config = vm.config_json or {}
-        if _nested(old_config, "display", "apply_initial_orientation", False):
-            patch["config_json"]["display"]["apply_initial_orientation"] = True
         if old_config.get("fold"):
             patch["config_json"]["fold"] = old_config["fold"]
+    if patch.get("orientation") is not None and patch["orientation"] != vm.orientation:
+        config = dict(patch.get("config_json") or vm.config_json or {})
+        config["display"] = {
+            **(config.get("display") or {}),
+            "orientation": patch["orientation"],
+        }
+        patch["config_json"] = config
     if (vm.config_json or {}).get("fold") and any(
         key in patch and patch[key] != getattr(vm, key)
         for key in ("profile_ref_type", "profile_ref_id", "api_level", "system_type", "system_image", "abi")
@@ -830,6 +833,10 @@ async def _send_start(
         if not hub.has_agent(agent_id):
             detail = "所属 Agent 离线，请等待其重新连接"
         raise HTTPException(409, detail)
+    if ((vm.config_json or {}).get("fold") or vm.orientation in ("portrait_reverse", "landscape_left", "landscape_right")) and (
+        hub.has_agent(agent_id) and not hub.agent_supports(agent_id, P.CAP_ANDROID_VM_DISPLAY)
+    ):
+        raise HTTPException(409, "请更新 Agent 后使用 AVD 机身姿态启动")
     old_agent = str(vm.assigned_agent_id or "")
     if old_agent and old_agent != agent_id:
         if not allow_switch:

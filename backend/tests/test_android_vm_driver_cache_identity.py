@@ -13,6 +13,7 @@ from ai_phone.agent import drivers as drivers_package
 from ai_phone.agent.android_vm.manager import AndroidVmManager, VmRuntime
 from ai_phone.agent.drivers import android as android_module
 from ai_phone.agent.drivers.base import DeviceInfo
+from ai_phone.agent.scrcpy_client.const import ACTION_DOWN, ACTION_UP
 
 
 SERIAL = "emulator-5554"
@@ -66,6 +67,22 @@ def test_reused_serial_does_not_inherit_fold_capture(cache_environment, monkeypa
     manager._runtimes["slab"] = VmRuntime("slab", "slab", SERIAL, 5554, None, 0)
     agent_main._record_serial_platform(snapshot("slab"))
     assert agent_main._get_or_open_driver(SERIAL)._has_cover_display is False
+
+
+async def test_android_workbench_tap_is_bound_to_the_displayed_mirror():
+    control = Mock()
+    session = SimpleNamespace(
+        serial=SERIAL, stream_id="cover", resolution=(568, 1280), control=control, get_device_size=Mock(),
+    )
+    tap = {"x": 550, "y": 1230}
+    frame = {"stream_id": "inner", "width": 568, "height": 1280}
+    await agent_main._dispatch_input_via_scrcpy(None, session, "tap", tap, frame=frame)
+    control.touch_at.assert_not_called()
+
+    await agent_main._dispatch_input_via_scrcpy(None, session, "tap", tap, frame={**frame, "stream_id": "cover"})
+    assert [item.kwargs["action"] for item in control.touch_at.call_args_list] == [ACTION_DOWN, ACTION_UP]
+    assert all(item.args == (550, 1230, 568, 1280) for item in control.touch_at.call_args_list)
+    session.get_device_size.assert_not_called()
 
 
 @pytest.mark.parametrize("scan_gap", [False, True])

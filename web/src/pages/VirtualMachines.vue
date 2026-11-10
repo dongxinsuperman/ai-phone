@@ -95,7 +95,9 @@ const abiOptions = [
 
 const orientationOptions = [
   { id: 'portrait', label: '竖屏' },
-  { id: 'landscape', label: '横屏' },
+  { id: 'landscape_left', label: '左横屏' },
+  { id: 'landscape_right', label: '右横屏' },
+  { id: 'portrait_reverse', label: '倒置竖屏' },
 ]
 
 const gpuOptions = [
@@ -591,6 +593,9 @@ function applyConfigTemplate(config) {
   form.screen_height = Number(config.display?.screen_height || 2400)
   form.density = Number(config.display?.density || 420)
   form.orientation = config.display?.orientation || 'portrait'
+  if (form.orientation === 'landscape') {
+    form.orientation = form.screen_width > form.screen_height ? 'landscape_right' : 'landscape_left'
+  }
   form.screen_size_in = config.display?.screen_size_in || ''
   form.cutout = config.display?.cutout || ''
   form.shape_note = config.display?.shape_note || ''
@@ -1286,7 +1291,7 @@ defineExpose({ refresh })
 
         <div class="grid2">
           <label>
-            <span>启动方向</span>
+            <span>启动机身方向</span>
             <select v-model="form.orientation">
               <option v-for="item in orientationOptions" :key="item.id" :value="item.id">{{ item.label }}</option>
             </select>
@@ -1516,9 +1521,9 @@ defineExpose({ refresh })
               <div><span>系统</span><b>{{ androidVersionShortLabel(vm.api_level) }} · {{ systemTypeShortLabel(vm.system_type) }} · {{ abiShortLabel(vm.abi) }}</b></div>
               <div><span>屏幕</span><b>{{ vm.screen_width }}×{{ vm.screen_height }} · {{ vm.density }}dpi</b></div>
               <div>
-                <span>启动屏幕</span>
+                <span>启动姿态</span>
                 <b>
-                  {{ vm.orientation === 'landscape' ? '横屏' : '竖屏' }}
+                  {{ orientationOptions.find(item => item.id === vm.orientation)?.label || '横屏' }}
                   <template v-if="vm.config_json?.fold"> · {{ vm.config_json.fold.initial_state === 'folded' ? '外屏' : '内屏' }}</template>
                 </b>
               </div>

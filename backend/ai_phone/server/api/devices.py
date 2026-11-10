@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional, get_args
 
 from fastapi import APIRouter, HTTPException, status
 from loguru import logger
@@ -20,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.shared import protocol as P
 
+from ..android_vm.schemas import AndroidDisplayOrientation
+from ..android_vm.service import request_vm_display, save_vm_display, vm_display_lock
 from ..app_uninstall import (
     AppUninstallDispatchError,
     AppUninstallTimeoutError,
@@ -27,7 +29,8 @@ from ..app_uninstall import (
 )
 from ..hub import Hub
 from ..lockstore import BadToken, DeviceLockStore, LockConflict, LockNotFound
-from ..models import Device, DeviceAlias
+from ..models import AndroidVmInstance, Device, DeviceAlias
+from ..vm_lifecycle import require_idle, require_owner_host, runtime as vm_runtime, send_operation_once, transaction_lock
 from ._deps import DBSession, HubDep, LockStoreDep
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
@@ -56,6 +59,12 @@ class LockForceReleaseReq(BaseModel):
     force: bool = False
 
 
+class InputFrame(BaseModel):
+    stream_id: str = Field(..., min_length=1, max_length=64)
+    width: int = Field(..., gt=0)
+    height: int = Field(..., gt=0)
+
+
 class InputReq(BaseModel):
     kind: str = Field(
         ...,
@@ -63,6 +72,15 @@ class InputReq(BaseModel):
     )
     params: Optional[Dict[str, Any]] = None
     lock_token: str = Field(..., description="调用方持有的设备锁 token")
+    frame: Optional[InputFrame] = None
+
+
+class AndroidDisplayReq(BaseModel):
+    vm_id: str = Field(..., min_length=1, max_length=32)
+    lock_token: str
+    orientation: Optional[AndroidDisplayOrientation] = None
+    rotation: Optional[Literal["left", "right"]] = None
+    fold_state: Optional[Literal["folded", "unfolded"]] = None
 
 
 class AppUninstallReq(BaseModel):
@@ -403,6 +421,89 @@ async def release_lock(
 # ---------------------------------------------------------------------------
 # 手动输入（浏览器持 manual 锁时派发给 Agent）
 # ---------------------------------------------------------------------------
+def _require_device_lock(store: DeviceLockStore, serial: str, token: str) -> None:
+    lock = store.peek(serial)
+    if lock is None:
+        raise HTTPException(409, "设备未被占用，请先 acquire 锁")
+    if lock.token != token:
+        raise HTTPException(403, "lock_token 不匹配，你不是当前持有者")
+
+
+def _android_display_target(hub: Hub, vm: Optional[AndroidVmInstance], serial: str) -> tuple[str, bool]:
+    extra = hub.get_device_extra(serial)
+    capability = extra.get("android_vm_display")
+    agent_id = hub.agent_id_for_serial(serial)
+    if (vm is None or vm.adb_serial != serial or vm.state != "running" or not agent_id
+            or vm.assigned_agent_id != agent_id or extra.get("vm_instance_id") != vm.id
+            or not isinstance(capability, dict) or not hub.agent_supports(agent_id, P.CAP_ANDROID_VM_DISPLAY)):
+        raise HTTPException(409, "当前设备不支持 Android 虚拟机屏幕控制")
+    require_owner_host(vm, hub)
+    require_idle(vm, allow_running=True)
+    return agent_id, bool(capability.get("can_fold") and (vm.config_json or {}).get("fold"))
+
+
+@router.post("/{serial}/android-display")
+async def android_display(
+    serial: str,
+    body: AndroidDisplayReq,
+    session: AsyncSession = DBSession,
+    store: DeviceLockStore = LockStoreDep,
+    hub: Hub = HubDep,
+) -> dict:
+    if body.orientation is not None and body.rotation is not None:
+        raise HTTPException(422, "指定方向和左右转只能选一项")
+    async with vm_display_lock(body.vm_id):
+        _require_device_lock(store, serial, body.lock_token)
+        vm = await session.get(AndroidVmInstance, body.vm_id)
+        agent_id, can_fold = _android_display_target(hub, vm, serial)
+        if body.fold_state and not can_fold:
+            raise HTTPException(409, "当前 Android 虚拟机不支持折叠")
+        operation_id = (vm_runtime(vm).get("operation") or {}).get("request_id")
+        # Agent reconnect reconciliation must be able to finish before its screen reply.
+        await session.rollback()
+        changing = any(value is not None for value in (body.orientation, body.fold_state, body.rotation))
+        result = await request_vm_display(
+            hub, agent_id=agent_id, vm_id=body.vm_id, serial=serial,
+            orientation=body.orientation, fold_state=body.fold_state, rotation=body.rotation,
+        )
+        display = result.get("display") if result.get("ok") else None
+        confirmed = (
+            isinstance(display, dict)
+            and "orientation" in display
+            and display.get("orientation") in (None, *get_args(AndroidDisplayOrientation))
+            and (body.rotation is None or display["orientation"] is not None)
+            and display.get("fold_state") in ({"folded", "unfolded"} if can_fold else {""})
+            and (body.orientation is None or display["orientation"] == body.orientation
+                 or (body.orientation == "landscape" and display["orientation"] in ("landscape_left", "landscape_right")))
+            and (body.fold_state is None or display["fold_state"] == body.fold_state)
+            and all(isinstance(display.get(axis), int) and display[axis] > 0 for axis in ("width", "height"))
+        )
+        if changing and confirmed:
+            await transaction_lock(session, f"android-vm:{body.vm_id}")
+            vm = await session.get(AndroidVmInstance, body.vm_id, populate_existing=True)
+            if (_android_display_target(hub, vm, serial) != (agent_id, can_fold)
+                    or (vm_runtime(vm).get("operation") or {}).get("request_id") != operation_id):
+                raise HTTPException(409, "Android 虚拟机已重新启动，请刷新后重试")
+            save_vm_display(vm, display)
+            await session.commit()
+        stream_id = ""
+        if (changing and (confirmed or result.get("reason") == "display_failed")
+                and hub.agent_id_for_serial(serial) == agent_id and hub.subscriber_count(serial)):
+            next_stream_id = result["request_id"]
+            sent = await send_operation_once(hub, agent_id, {
+                "type": P.MSG_START_MIRROR, "serial": serial, "vm_id": body.vm_id,
+                "refresh_stream_id": next_stream_id,
+            })
+            if sent:
+                stream_id = next_stream_id
+        if not confirmed:
+            raise HTTPException(409, {
+                "message": result.get("error") or "AVD 未确认目标机身姿态",
+                "stream_id": stream_id,
+            })
+        return {**display, "stream_id": stream_id}
+
+
 @router.post("/{serial}/input")
 async def send_input(
     serial: str,
@@ -421,17 +522,7 @@ async def send_input(
         )
     # 新锁模型：谁持有有效 token 谁就能派发输入，不区分 manual/auto 角色。
     # VLM Run 沿用发起方的 token，同一 token 下自动和手动可以交织。
-    lock = store.peek(serial)
-    if lock is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="设备未被占用，请先 acquire 锁",
-        )
-    if lock.token != body.lock_token:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="lock_token 不匹配，你不是当前持有者",
-        )
+    _require_device_lock(store, serial, body.lock_token)
     ok = await _hub.send_to_serial(
         serial,
         {
@@ -439,6 +530,7 @@ async def send_input(
             "serial": serial,
             "kind": body.kind,
             "params": body.params or {},
+            **({"frame": body.frame.model_dump()} if body.frame is not None else {}),
         },
     )
     if not ok:

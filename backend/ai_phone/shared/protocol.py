@@ -62,6 +62,7 @@ MSG_APP_UNINSTALL_RESULT = "app_uninstall_result"
 # Android VM：Agent 回传能力探查结果与生命周期状态。
 MSG_VM_CAPABILITY = "vm_capability"
 MSG_VM_STATUS = "vm_status"
+MSG_VM_DISPLAY_RESULT = "vm_display_result"
 # Harmony VM uses a separate protocol namespace.  Do not reuse Android payloads:
 # HDC serial/lease identity and lifecycle acknowledgement rules are different.
 MSG_HARMONY_VM_CAPABILITY = "harmony_vm_capability"
@@ -99,6 +100,7 @@ MSG_VM_CAPABILITY_PROBE = "vm_capability_probe"
 # 旧 Agent 不认这两个字段会忽略（退回本机自选），向后兼容。
 MSG_VM_START = "vm_start"
 MSG_VM_STOP = "vm_stop"
+MSG_VM_DISPLAY = "vm_display"
 # 删除虚拟机配置 / 换绑到新 Agent 时，通知旧 Agent 清理远端 AVD（avdmanager delete）。
 # Agent 侧需先确保 emulator 已停再删；Agent 离线时该指令丢失，留待后续兜底清理。
 MSG_VM_DELETE = "vm_delete"
@@ -145,6 +147,7 @@ MSG_DRIVER_COMMAND = "driver_command"
 Platform = Literal["android", "ios", "harmony", "ios_sim"]
 CAP_V3_PLATFORM_CACHE = "v3_platform_cache"
 CAP_ANDROID_VM_FOLDABLE = "android_vm_foldable"
+CAP_ANDROID_VM_DISPLAY = "android_avd_rotation"
 DeviceStatus = Literal["idle", "busy", "offline"]
 
 
@@ -275,7 +278,6 @@ class VmStartMsg(TypedDict, total=False):
     screen_height: int
     density: int
     orientation: str
-    apply_initial_orientation: bool
     avd_device: str
     fold_state: str
     ram_mb: int
@@ -387,6 +389,9 @@ class VideoInitMsg(TypedDict, total=False):
     mime: str  # 完整 MIME，如 'video/mp4; codecs="avc1.42E01E"'
     width: int
     height: int
+    stream_id: str
+    natural_orientation: bool
+    display_rotation: Optional[int]  # Android display rotation of the encoded frame.
     ts: float
 
 

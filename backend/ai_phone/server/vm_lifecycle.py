@@ -285,6 +285,8 @@ def lifecycle_view(vm, hub=None) -> dict:
     }
     if occupied:
         notice = "设备正在执行任务、安装或观看，请结束后再操作"
+    if state == "running" and not notice:
+        notice = str(_mapping(details.get("startup_display")).get("warning") or "")
     failure = data.get("last_failure")
     error = str(failure.get("message") or "") if isinstance(failure, dict) else str(failure or "")
     if not error and (raw in {"error", "unavailable"} or op.get("outcome") == "failed"):

@@ -151,6 +151,9 @@ class Client:
             "power_off_on_close=false",
             "clipboard_autosync=false",
         ]
+        if self.lock_screen_orientation != LOCK_SCREEN_ORIENTATION_UNLOCKED:
+            # This option controls the captured video, not Android's display policy.
+            commands.append(f"lock_video_orientation={self.lock_screen_orientation}")
         self.__server_stream = self.device.shell(commands, stream=True)
         # 等 server 起来；它会先打日志到 stdout
         try:

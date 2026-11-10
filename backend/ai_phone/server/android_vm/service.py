@@ -5,10 +5,13 @@ runner, scheduler, and device APIs.
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+from weakref import WeakValueDictionary
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +35,57 @@ from .catalog import catalog_profile_key
 TERMINAL_STATES = {"draft", "stopped", "unavailable", "error"}
 # 过渡/在跑态：reconcile 认领时不把这些降级为 stopped（running 由 vm_status 维护）。
 _ACTIVE_STATES = {"starting", "running", "stopping"}
+_display_requests: dict[str, tuple[Hub, str, str, str, asyncio.Future]] = {}
+_display_locks: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
+
+
+def vm_display_lock(vm_id: str) -> asyncio.Lock:
+    return _display_locks.setdefault(vm_id, asyncio.Lock())
+
+
+async def request_vm_display(
+    hub: Hub, *, agent_id: str, vm_id: str, serial: str,
+    orientation: str | None, fold_state: str | None, rotation: str | None,
+) -> dict:
+    request_id = uuid.uuid4().hex
+    result = asyncio.get_running_loop().create_future()
+    _display_requests[request_id] = (hub, agent_id, vm_id, serial, result)
+    try:
+        sent = await send_operation_once(hub, agent_id, {
+            "type": P.MSG_VM_DISPLAY, "request_id": request_id, "vm_id": vm_id, "serial": serial,
+            "orientation": orientation, "fold_state": fold_state, "rotation": rotation, "operation_timeout_sec": 16,
+        })
+        if not sent:
+            raise HTTPException(503, "无法向所属 Agent 发送屏幕请求")
+        try:
+            return await asyncio.wait_for(result, timeout=19)
+        except TimeoutError as exc:
+            raise HTTPException(504, "等待 Android 屏幕确认超时") from exc
+    finally:
+        _display_requests.pop(request_id, None)
+
+
+def resolve_vm_display(hub: Hub, agent_id: str, msg: dict) -> None:
+    pending = _display_requests.get(str(msg.get("request_id") or ""))
+    if pending is None:
+        return
+    expected_hub, expected_agent, vm_id, serial, result = pending
+    if (hub is expected_hub and agent_id == expected_agent and msg.get("vm_id") == vm_id
+            and msg.get("serial") == serial and not result.done()):
+        result.set_result(msg)
+
+
+def save_vm_display(vm: AndroidVmInstance, display: dict) -> None:
+    config = dict(vm.config_json or {})
+    if display["orientation"] is not None:
+        vm.orientation = display["orientation"]
+    pose = dict(config.get("display") or {})
+    pose.pop("apply_initial_orientation", None)
+    pose.pop("restore_orientation", None)
+    config["display"] = {**pose, "orientation": vm.orientation}
+    if config.get("fold"):
+        config["fold"] = {**config["fold"], "initial_state": display["fold_state"]}
+    vm.config_json = config
 
 
 async def append_catalog_profiles(session: AsyncSession, rows: list[Dict[str, Any]]) -> int:
@@ -158,7 +212,6 @@ def vm_payload(vm: AndroidVmInstance, *, request_id: Optional[str] = None) -> Di
 def _agent_config_fields(config: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "screen_size_in": _cfg(config, "display", "screen_size_in", default=""),
-        "apply_initial_orientation": bool(_cfg(config, "display", "apply_initial_orientation", default=False)),
         "avd_device": _cfg(config, "fold", "avd_device", default=""),
         "fold_state": _cfg(config, "fold", "initial_state", default=""),
         "fold_display": _cfg(config, "fold", "display", default=None),

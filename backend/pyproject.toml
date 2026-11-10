@@ -32,6 +32,7 @@ dependencies = [
     "ui-tars==0.5.1",                # Doubao Seed GUI XML动作官方解析器
     # Android driver
     "adbutils>=2.6",
+    "grpcio>=1.62,<2",                # Android Emulator 原生机身旋转
     # 实时镜像：scrcpy 解码（vendored client + scrcpy-server.jar v2.4）
     "av>=10,<13",                     # PyAV，wheels 覆盖 3.9 / macOS arm64
     "numpy>=1.24,<2",                 # av 帧 → ndarray，再 Pillow 转 JPEG

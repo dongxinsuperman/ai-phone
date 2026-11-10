@@ -19,6 +19,7 @@ import platform
 import socket
 import threading
 import time
+import uuid
 import traceback
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -1893,6 +1894,7 @@ async def _handle_input(
     serial = str(msg.get("serial") or "").strip()
     kind = str(msg.get("kind") or "").strip()
     params: Dict[str, Any] = msg.get("params") or {}
+    frame = msg.get("frame")
     if not serial or not kind:
         logger.warning("input 参数不全 | serial={} kind={}", serial, kind)
         return
@@ -1912,6 +1914,8 @@ async def _handle_input(
         and session.is_alive
         and session.control is not None
     )
+    if frame is not None and not use_scrcpy:
+        return  # Frame coordinates cannot be sent directly to the Android input driver.
     logger.info(
         "input | serial={} kind={} params={} route={} (mirror={} alive={} ctrl={})",
         serial,
@@ -1935,7 +1939,7 @@ async def _handle_input(
 
         if use_scrcpy:
             # scrcpy fast-path：直接走控制 socket，几乎零延迟
-            await _dispatch_input_via_scrcpy(driver, session, kind, params)
+            await _dispatch_input_via_scrcpy(driver, session, kind, params, frame=frame)
             return
 
         # adb fallback
@@ -2077,6 +2081,7 @@ async def _dispatch_input_via_scrcpy(
     session: "_MirrorSession",
     kind: str,
     params: Dict[str, Any],
+    *, frame: Optional[Dict[str, Any]] = None,
 ) -> None:
     """tap / swipe / long_press 经 scrcpy 控制信道下发。
 
@@ -2091,14 +2096,19 @@ async def _dispatch_input_via_scrcpy(
     """
     from .scrcpy_client.const import ACTION_DOWN, ACTION_UP
 
-    dw, dh = session.get_device_size(driver)
-    if not dw or not dh:
-        raise RuntimeError("device size unknown, fallback to adb")
     fres = session.resolution
+    if frame is not None and (
+        not session.stream_id or frame.get("stream_id") != session.stream_id
+        or (frame.get("width"), frame.get("height")) != fres
+    ):
+        return  # A pointer event from the previous screen must never reach the new screen.
     if not fres or not fres[0] or not fres[1]:
         # 帧还没出来，回退 adb；不抛异常以免把外层 try 走漏
         raise RuntimeError("scrcpy frame resolution unknown, fallback to adb")
     fw, fh = fres
+    dw, dh = fres if frame is not None else session.get_device_size(driver)
+    if not dw or not dh:
+        raise RuntimeError("device size unknown, fallback to adb")
     sx_scale = fw / dw
     sy_scale = fh / dh
     ctrl = session.control
@@ -2182,8 +2192,11 @@ class _MirrorSession:
         serial: str,
         ws_client: "AgentWSClient",
         loop: asyncio.AbstractEventLoop,
+        *, stream_id: str = "",
     ) -> None:
         self.serial = serial
+        self.stream_id = stream_id
+        self._display_rotation: Optional[int] = None
         self._ws = ws_client
         self._loop = loop
         self._scrcpy: Optional[ScrcpyClient] = None
@@ -2216,6 +2229,7 @@ class _MirrorSession:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("scrcpy 初始化失败 serial={}: {}", self.serial, exc)
+            self._stopped = True
             return
 
         self._fmp4 = FMp4Streamer(
@@ -2236,7 +2250,7 @@ class _MirrorSession:
             self._scrcpy.start(threaded=True, daemon_threaded=True)
         except Exception as exc:  # noqa: BLE001
             logger.exception("scrcpy 启动失败 serial={}: {}", self.serial, exc)
-            self._scrcpy = None
+            self.stop()
             return
 
     def stop(self) -> None:
@@ -2317,6 +2331,19 @@ class _MirrorSession:
                 pass
             self._fmp4 = None
 
+    def _read_display_rotation(self) -> Optional[int]:
+        if not self.stream_id or self._scrcpy is None:
+            return None
+        from .android_vm.manager import _read_display_geometry
+
+        device = self._scrcpy.device
+        try:
+            geometry = _read_display_geometry(lambda _shell, *args: device.shell(list(args), timeout=2.0))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("读取 AVD 镜像方向失败 serial={}: {}", self.serial, exc)
+            return None
+        return geometry[1] if geometry is not None else None
+
     def _on_raw_bytes(self, raw: bytes) -> None:
         """scrcpy 解码线程拿到 socket 数据 → 喂给 ffmpeg fmp4。"""
         if self._stopped or self._fmp4 is None:
@@ -2328,7 +2355,9 @@ class _MirrorSession:
         sps = _extract_sps_nal(raw)
         if sps is not None:
             prev = getattr(self, "_last_sps_bytes", None)
-            if prev is not None and sps != prev:
+            rotation = self._read_display_rotation()
+            # scrcpy also emits an SPS after a 180° turn, with the same frame dimensions.
+            if prev is not None and (sps != prev or rotation != self._display_rotation):
                 logger.info(
                     "scrcpy 检测到新 SPS（设备旋转/分辨率变更），重启 ffmpeg serial={}",
                     self.serial,
@@ -2340,6 +2369,7 @@ class _MirrorSession:
                 # 重要：device_size 也要让下一次 input 重新读，否则手动 tap 会按
                 # 旋转前的 (w, h) 缩放，整个手势打到屏幕另一半
                 self.invalidate_device_size()
+            self._display_rotation = rotation
             self._last_sps_bytes = sps
         self._fmp4.feed(raw)
         # 首次喂数据 / 每 100KB 累计：
@@ -2374,6 +2404,11 @@ class _MirrorSession:
             "height": h,
             "ts": time.time(),
         }
+        if self.stream_id:
+            # DisplayManager may letterbox locked-orientation video while scrcpy still
+            # rotates input for it. Use the unlocked frame and rotate the view in the browser.
+            payload["stream_id"] = self.stream_id
+            payload["display_rotation"] = self._display_rotation
         self._last_init_payload = payload
         logger.info(
             "MSE init segment 就绪 serial={} mime={} size={}x{} bytes={}",
@@ -2414,6 +2449,7 @@ class _MirrorSession:
             "serial": self.serial,
             "data": base64.b64encode(seg).decode("ascii"),
             "ts": time.time(),
+            **({"stream_id": self.stream_id} if self.stream_id else {}),
         }
         self._dispatch(payload)
         # 每 30 段（≈3s @ 10fps 或 ≈1s @ 30fps）打一条节流日志，方便诊断"画面
@@ -3052,10 +3088,13 @@ class _MirrorSupervisor:
             self._loop = asyncio.get_running_loop()
         return self._loop
 
-    def start(self, serial: str) -> None:
+    def start(self, serial: str, *, refresh_stream_id: str = "") -> None:
         if not serial:
             return
         existing = self._sessions.get(serial)
+        if refresh_stream_id and existing is not None:
+            self.stop(serial)
+            existing = None
         if existing is not None and not getattr(existing, "_stopped", False):
             platform = _serial_platform.get(serial, "android")
             # 死会话替换：streamer 连续失败退出后 is_alive=False，但 _stopped 仍是
@@ -3096,7 +3135,8 @@ class _MirrorSupervisor:
         elif platform == "harmony":
             session = _HarmonyMirrorSession(serial, self._ws, self._get_loop())
         else:
-            session = _MirrorSession(serial, self._ws, self._get_loop())
+            stream_id = (refresh_stream_id or uuid.uuid4().hex) if _serial_vm_ids.get(serial) else ""
+            session = _MirrorSession(serial, self._ws, self._get_loop(), stream_id=stream_id)
         session.start()
         # 启动失败的 session 直接丢弃，下次 start 会重试，不在 _sessions 里留坏会话
         if getattr(session, "_stopped", False):
@@ -3143,7 +3183,14 @@ async def _handle_start_mirror(
     # 就绪（可能 1-3 分钟，甚至 preflight 死锁 + 2 次 respawn 共 ~5 分钟）。
     # 必须放线程池，否则主 event loop 被阻塞 → rescan/heartbeat/其他设备的
     # start_mirror/input 全卡住 → 前端看起来"Android 设备也消失了"。
-    await asyncio.to_thread(supervisor.start, serial)
+    refresh_stream_id = str(msg.get("refresh_stream_id") or "")
+    if refresh_stream_id:
+        if (_serial_platform.get(serial) != "android" or _serial_vm_ids.get(serial) != msg.get("vm_id")
+                or supervisor.get_session(serial) is None):
+            return
+        await asyncio.to_thread(supervisor.start, serial, refresh_stream_id=refresh_stream_id)
+    else:
+        await asyncio.to_thread(supervisor.start, serial)
 
 
 async def _handle_stop_mirror(
@@ -3293,6 +3340,27 @@ def run(
         assert _android_vm_manager is not None
         await _lifecycle(c, msg, _android_vm_manager, "start", "android")
 
+    async def _vm_display_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
+        assert _android_vm_manager is not None
+        serial = str(msg.get("serial") or "")
+        changing = any(msg.get(key) is not None for key in ("orientation", "fold_state", "rotation"))
+        response = {
+            "type": P.MSG_VM_DISPLAY_RESULT, "request_id": msg.get("request_id"),
+            "serial": serial, "vm_id": msg.get("vm_id"),
+        }
+        with device_activity.hold(serial, maintenance=changing) as acquired:
+            if not acquired:
+                response.update(ok=False, reason="device_busy", error="请先结束设备上的任务再切换屏幕")
+            else:
+                try:
+                    display = await asyncio.to_thread(_android_vm_manager.display_sync, msg)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Android 屏幕操作失败 serial={}: {}", serial, exc)
+                    response.update(ok=False, reason="display_failed", error=str(exc))
+                else:
+                    response.update(ok=True, display=display)
+        await c.send(response)
+
     async def _vm_stop_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
         assert _android_vm_manager is not None
         await _lifecycle(c, msg, _android_vm_manager, "stop", "android")
@@ -3376,6 +3444,7 @@ def run(
     client.on(P.MSG_INPUT, _input_handler)
     client.on(P.MSG_VM_CAPABILITY_PROBE, _vm_capability_probe_handler)
     client.on(P.MSG_VM_START, _vm_start_handler)
+    client.on(P.MSG_VM_DISPLAY, _vm_display_handler)
     client.on(P.MSG_VM_STOP, _vm_stop_handler)
     client.on(P.MSG_VM_DELETE, _vm_delete_handler)
     client.on(P.MSG_HARMONY_VM_CAPABILITY_PROBE, _harmony_vm_capability_probe_handler)

@@ -279,23 +279,42 @@ def test_assigned_port_is_not_silently_replaced(tmp_path, monkeypatch):
     assert manager._choose_port() == 5556
 
 
-@pytest.mark.parametrize("orientation", ["portrait", "landscape"])
-def test_start_skips_legacy_orientation_flag_for_straight_portrait(tmp_path, monkeypatch, orientation):
+@pytest.mark.parametrize(("orientation", "angle", "pose_timeout"), [
+    ("portrait", None, False),
+    ("portrait_reverse", 2, False),
+    ("landscape", None, False),
+    ("landscape_left", 1, False),
+    ("landscape_right", 3, False),
+    ("landscape_right", 3, True),
+])
+def test_android_start_sets_exact_avd_pose_before_guest_boot(
+    tmp_path, monkeypatch, orientation, angle, pose_timeout,
+):
     manager = mod.AndroidVmManager(runtime_dir=tmp_path)
     fake_tools(monkeypatch)
     monkeypatch.setattr(manager, "probe", lambda _: {"ok": True})
     monkeypatch.setattr(manager, "_ensure_avd", lambda *_a, **_kw: True)
-    monkeypatch.setattr(manager, "_wait_boot_completed", lambda *_: None)
-    monkeypatch.setattr(manager, "_emulator_avd_name", lambda *_: "aiphone_vm_a")
+    phases = []
+    monkeypatch.setattr(manager, "_wait_boot_completed", lambda *_: phases.append("boot"))
+    monkeypatch.setattr(manager, "_emulator_avd_name", lambda *_a, **_kw: "aiphone_vm_a")
     monkeypatch.setattr(manager, "_provision_device", lambda *_: None)
     monkeypatch.setattr(mod.subprocess, "Popen", lambda *_a, **_kw: OwnedProcess())
-    apply_display = Mock(return_value={"orientation": orientation})
-    monkeypatch.setattr(manager, "_apply_startup_display", apply_display)
+    def set_pose(_tools, serial, avd_name, rotation, _deadline):
+        phases.append((serial, avd_name, rotation))
+        if pose_timeout:
+            raise mod._DisplayStateError("启动时无法读取 AVD 机身方向")
 
-    result = manager._start_sync_locked("a", {"orientation": orientation, "apply_initial_orientation": True})
-    manager._runtimes["a"].log_file.close()
+    monkeypatch.setattr(manager, "_set_initial_avd_rotation", set_pose)
+    result = manager._start_sync_locked("a", {"orientation": orientation})
+    runtime = manager._runtimes["a"]
+    runtime.log_file.close()
+    assert runtime.ready and runtime.process.poll() is None
     assert result["details"]["orientation"] == orientation
-    assert apply_display.call_count == int(orientation == "landscape")
+    assert phases == ([(result["adb_serial"], "aiphone_vm_a", angle), "boot"] if angle is not None else ["boot"])
+    if pose_timeout:
+        assert result["details"]["startup_display"]["warning"] == "AVD 未能确认启动机身方向"
+    else:
+        assert "startup_display" not in result["details"]
 
 
 async def test_start_identity_mismatch_is_retained_without_provisioning_other_vm(tmp_path, monkeypatch):
