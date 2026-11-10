@@ -10,6 +10,7 @@ import pytest
 
 from ai_phone.agent import main as agent_main
 from ai_phone.agent import drivers as drivers_package
+from ai_phone.agent.android_vm.manager import AndroidVmManager, VmRuntime
 from ai_phone.agent.drivers import android as android_module
 from ai_phone.agent.drivers.base import DeviceInfo
 
@@ -38,7 +39,10 @@ def cache_environment(monkeypatch):
             serial=serial, vm_id=agent_main._serial_vm_ids.get(serial, ""),
             epoch=agent_main._serial_lifecycle_epochs.get(serial, 0),
         )
-        driver = android_module.AndroidDriver(device, setup_power=kwargs.get("setup_power", True))
+        driver = android_module.AndroidDriver(
+            device, setup_power=kwargs.get("setup_power", True),
+            has_cover_display=kwargs.get("has_cover_display", False),
+        )
         opened.append(driver)
         return driver
 
@@ -49,6 +53,19 @@ def cache_environment(monkeypatch):
 
 def snapshot(vm_id: str, serial: str = SERIAL):
     return [DeviceInfo(serial=serial, platform="android", extra={"vm_instance_id": vm_id} if vm_id else {})]
+
+
+def test_reused_serial_does_not_inherit_fold_capture(cache_environment, monkeypatch, tmp_path):
+    manager = AndroidVmManager(runtime_dir=tmp_path)
+    monkeypatch.setattr(agent_main, "_android_vm_manager", manager)
+    manager._runtimes["fold"] = VmRuntime("fold", "fold", SERIAL, 5554, None, 0, has_cover_display=True)
+    agent_main._record_serial_platform(snapshot("fold"))
+    assert agent_main._get_or_open_driver(SERIAL)._has_cover_display is True
+
+    manager._runtimes.pop("fold")
+    manager._runtimes["slab"] = VmRuntime("slab", "slab", SERIAL, 5554, None, 0)
+    agent_main._record_serial_platform(snapshot("slab"))
+    assert agent_main._get_or_open_driver(SERIAL)._has_cover_display is False
 
 
 @pytest.mark.parametrize("scan_gap", [False, True])

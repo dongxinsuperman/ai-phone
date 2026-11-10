@@ -8,9 +8,21 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
+
+
+# The keys are Play Console brand/device pairs, independent of the marketing name.
+FOLDABLE_AVD_API_LEVEL = 37
+with Path(__file__).with_name("foldable_profiles.json").open(encoding="utf-8") as file:
+    FOLDABLE_PROFILES = {
+        (row["brand"].strip().lower(), device.strip().lower()): row["foldable"]
+        for row in json.load(file)
+        for device in row["devices"]
+    }
 
 
 def builtin_coverage_profiles() -> list[Dict[str, Any]]:
@@ -904,6 +916,13 @@ def _variant_score(row: Dict[str, Any]) -> tuple[int, int]:
     return (max(sdks, default=0), int(row.get("ram_mb") or 0))
 
 
+def catalog_profile_key(brand: str, name: str, device: str, model_code: str) -> tuple[str, str]:
+    return (
+        normalize_brand(brand).lower(),
+        (name.strip() or device.strip() or model_code.strip()).lower(),
+    )
+
+
 def clean_and_dedupe_profiles(
     rows: Iterable[Dict[str, Any]],
     *,
@@ -936,10 +955,9 @@ def clean_and_dedupe_profiles(
         meta["resolution_bucket"] = bucket
         row["raw"] = meta
         cap_profile_fields(row)
-        name = (row.get("marketing_name") or "").strip().lower()
-        if not name:
-            name = (row.get("device") or row.get("model_code") or "").strip().lower()
-        key = (row["brand"].lower(), name)
+        key = catalog_profile_key(
+            row["brand"], row.get("marketing_name") or "", row.get("device") or "", row.get("model_code") or "",
+        )
         prev = best.get(key)
         if prev is None:
             best[key] = row

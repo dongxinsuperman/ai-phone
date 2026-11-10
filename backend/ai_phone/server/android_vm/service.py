@@ -25,12 +25,33 @@ from ..vm_lifecycle import (
     finish_operation, maintenance, runtime as lifecycle_runtime,
     transaction_lock, update_runtime, host_id as agent_host_id, fail_attempt,
 )
-from ..models import AndroidVmInstance, DeviceAlias
+from ..models import AndroidDeviceProfile, AndroidVmInstance, DeviceAlias
+from .catalog import catalog_profile_key
 
 
 TERMINAL_STATES = {"draft", "stopped", "unavailable", "error"}
 # 过渡/在跑态：reconcile 认领时不把这些降级为 stopped（running 由 vm_status 维护）。
 _ACTIVE_STATES = {"starting", "running", "stopping"}
+
+
+async def append_catalog_profiles(session: AsyncSession, rows: list[Dict[str, Any]]) -> int:
+    """Append cleaned Play Console profiles, preserving existing verified profiles."""
+    await transaction_lock(session, "android-device-catalog-import")
+    profile = AndroidDeviceProfile
+    result = await session.execute(
+        select(profile.brand, profile.marketing_name, profile.device, profile.model_code)
+        .where(profile.verification_status == "verified")
+    )
+    existing = {catalog_profile_key(*row) for row in result}
+    added = 0
+    for row in rows:
+        key = catalog_profile_key(row["brand"], row["marketing_name"], row["device"], row["model_code"])
+        if key in existing:
+            continue
+        session.add(AndroidDeviceProfile(**row))
+        existing.add(key)
+        added += 1
+    return added
 
 
 def now_utc() -> datetime:
@@ -137,6 +158,10 @@ def vm_payload(vm: AndroidVmInstance, *, request_id: Optional[str] = None) -> Di
 def _agent_config_fields(config: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "screen_size_in": _cfg(config, "display", "screen_size_in", default=""),
+        "apply_initial_orientation": bool(_cfg(config, "display", "apply_initial_orientation", default=False)),
+        "avd_device": _cfg(config, "fold", "avd_device", default=""),
+        "fold_state": _cfg(config, "fold", "initial_state", default=""),
+        "fold_display": _cfg(config, "fold", "display", default=None),
         "ram_mb": _cfg(config, "performance", "ram_mb", default=None),
         "cpu_cores": _cfg(config, "performance", "cpu_cores", default=None),
         "vm_heap_mb": _cfg(config, "performance", "vm_heap_mb", default=None),
@@ -528,6 +553,16 @@ class VmCapabilityWaiter(CapabilityProbeWaiter):
         super().__init__(P.MSG_VM_CAPABILITY_PROBE, vm_payload,
             sort_rows=True, send_failure_reason="下发通道异常，Agent 未收到探查",
             timeout_reason="探查超时：Agent 未响应（可重试）")
+
+    async def _send(self, state, agent_id, payload):
+        if (payload.get("avd_device") and not payload.get("inspect_instance")
+                and state.hub.has_agent(agent_id)
+                and not state.hub.agent_supports(agent_id, P.CAP_ANDROID_VM_FOLDABLE)):
+            self._finish(state, agent_id, "unavailable", {
+                "reason": "该 Agent 需要更新后才能启动 Android 折叠虚拟机",
+            })
+            return
+        await super()._send(state, agent_id, payload)
 
 
 _capability_waiter = VmCapabilityWaiter()

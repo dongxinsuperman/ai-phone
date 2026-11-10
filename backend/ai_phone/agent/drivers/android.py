@@ -10,7 +10,7 @@
 - activate_app：解析 ``MAIN + LAUNCHER`` 入口后用 ``am start`` 启动
 - terminate_app：``am force-stop``
 - list_packages：``pm list packages -3`` 取第三方
-- screenshot：adbutils ``screenshot()`` 返回 PIL.Image → PNG / JPEG
+- screenshot：抓取当前屏幕 → PNG / JPEG
 """
 from __future__ import annotations
 
@@ -44,6 +44,10 @@ _ADB_KB_APK_PATH = (
 
 # 设备可能返回多余空行，提前编一个匹配 ``package:xxx`` 的表达式
 _PKG_PREFIX_RE = re.compile(r"^package:(.+)$")
+_PRIMARY_LOCAL_DISPLAY_RE = re.compile(
+    r'^\s*Display id 0: [^\r\n]*\breal (\d+) x (\d+)[^\r\n]*\buniqueId "local:(\d+)"',
+    re.MULTILINE,
+)
 
 
 # 息屏策略幂等集合：serial 粒度。插上第一次（rescan / open_driver 哪个先都行）
@@ -56,9 +60,10 @@ _STAY_AWAKE_DONE: set = set()
 class AndroidDriver(BaseDriver):
     platform = "android"
 
-    def __init__(self, device: AdbDevice, *, setup_power: bool = True):
+    def __init__(self, device: AdbDevice, *, setup_power: bool = True, has_cover_display: bool = False):
         self._device = device
         self.serial = device.serial
+        self._has_cover_display = has_cover_display
         # ADBKeyBoard 就绪状态缓存：成功一次后就一直 True，省掉后续每条 type
         # 都再 shell 一圈校验；**失败不再缓存**——过去缓存 False 导致 driver
         # 生命周期内永远不重试，用户手动修复（同意 USB 安装 / 勾选输入法 / 重
@@ -261,8 +266,24 @@ class AndroidDriver(BaseDriver):
     # 截图
     # ------------------------------------------------------------------
     def _raw_screenshot(self) -> Image.Image:
-        # adbutils.screenshot 内部走 minicap→framebuffer→screencap 的兜底
-        img = self._device.screenshot()
+        if self._has_cover_display:
+            # Android writes a warning into the screenshot stream when the physical display is omitted.
+            # Logical display 0 follows the active inner or cover display as the device folds.
+            deadline = time.monotonic() + 2.5
+            while True:
+                active = _PRIMARY_LOCAL_DISPLAY_RE.search(self._device.shell("cmd display get-displays"))
+                if active is None:
+                    raise RuntimeError("找不到折叠模拟器的当前显示屏")
+                data = self._device.shell(["screencap", "-p", "-d", active[3]], encoding=None)
+                img = Image.open(io.BytesIO(data))
+                # SurfaceFlinger may still return the old frame just after the display has switched.
+                if img.size == (int(active[1]), int(active[2])):
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("折叠模拟器的截图尺寸与当前屏幕不一致")
+                time.sleep(0.15)
+        else:
+            img = self._device.screenshot()
         if img.mode != "RGB":
             img = img.convert("RGB")
         return img
@@ -811,9 +832,12 @@ def list_android_devices(include_offline: bool = False) -> List[DeviceInfo]:
     return infos
 
 
-def open_android_driver(serial: str, *, setup_power: Optional[bool] = None) -> AndroidDriver:
+def open_android_driver(
+    serial: str, *, setup_power: Optional[bool] = None, has_cover_display: bool = False,
+) -> AndroidDriver:
     """按 serial 打开驱动；默认沿用设置，受管 VM 可把保活延后到身份核验之后。"""
     return AndroidDriver(
         adb.device(serial=serial),
         setup_power=bool(get_settings().android_setup_stay_awake) if setup_power is None else setup_power,
+        has_cover_display=has_cover_display,
     )

@@ -60,7 +60,9 @@ def android_image_abi(abi: str) -> str:
 
 def default_system_image(api_level: int, abi: str, system_type: str = "google_apis") -> str:
     image_type = system_type if system_type in {"google_apis", "default"} else "google_apis"
-    return f"system-images;android-{int(api_level)};{image_type};{android_image_abi(abi)}"
+    api = int(api_level)
+    platform_id = "37.0" if api == 37 else str(api)
+    return f"system-images;android-{platform_id};{image_type};{android_image_abi(abi)}"
 
 
 def find_android_tools() -> tuple[Optional[AndroidVmTools], list[str]]:
@@ -153,6 +155,18 @@ def probe_android_vm_capability(
             else "缺少 sdkmanager，无法确认 system image 是否就绪"
         )
         return {"ok": False, "reason": reason, "details": details}
+    avd_device = str(requirement.get("avd_device") or "")
+    if avd_device:
+        try:
+            devices = subprocess.run(
+                [tools.avdmanager, "list", "device", "-c"],
+                capture_output=True, text=True, check=True, timeout=10,
+            ).stdout.splitlines()
+        except (OSError, subprocess.SubprocessError):
+            return {"ok": False, "reason": "无法读取 Agent 的 Android 硬件模板", "details": details}
+        if avd_device not in {line.strip() for line in devices}:
+            return {"ok": False, "reason": f"Agent 缺少折叠硬件模板 {avd_device}", "details": details}
+        details["avd_device"] = avd_device
     # 数量 / 内存都「不拦截」——只做软提示。原因：macOS 的 available 偏保守
     # （compressed / cached 内存可回收却不计入），硬挡会误杀其实能起的机器。
     # 内存偏低时仅在 reason/warning 里提醒，是否下发由用户决定（不弹二级确认）。

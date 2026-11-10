@@ -294,6 +294,28 @@ def test_screenshot_png_returns_png_bytes():
     assert data[:8] == b"\x89PNG\r\n\x1a\n"
 
 
+def test_unmanaged_emulator_screenshot_skips_fold_display_probe():
+    fake = MagicMock(serial="emulator-5554")
+    fake.screenshot.return_value = Image.new("RGB", (100, 200))
+    driver = AndroidDriver(fake, setup_power=False)
+
+    assert driver._raw_screenshot().size == (100, 200)
+    fake.screenshot.assert_called_once_with()
+    fake.shell.assert_not_called()
+
+
+def test_managed_fold_screenshot_uses_active_physical_display():
+    fake = MagicMock(serial="emulator-5554")
+    png = io.BytesIO()
+    Image.new("RGB", (120, 240)).save(png, "PNG")
+    fake.shell.side_effect = ['Display id 0: DisplayInfo{"Cover", real 120 x 240, uniqueId "local:123"}', png.getvalue()]
+    driver = AndroidDriver(fake, setup_power=False, has_cover_display=True)
+
+    assert driver._raw_screenshot().size == (120, 240)
+    fake.shell.assert_called_with(["screencap", "-p", "-d", "123"], encoding=None)
+    fake.screenshot.assert_not_called()
+
+
 def test_screenshot_jpeg_returns_jpeg_and_respects_max_side():
     driver, _ = _make_driver()
     data = driver.screenshot_jpeg(quality=25, max_side=50)

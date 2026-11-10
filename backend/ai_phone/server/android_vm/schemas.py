@@ -1,7 +1,7 @@
 """Pydantic schemas for Android VM management."""
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -24,6 +24,7 @@ class AndroidVmCreateReq(BaseModel):
     screen_height: int = Field(2400, ge=320, le=7680)
     density: int = Field(420, ge=120, le=800)
     orientation: str = Field("portrait", pattern="^(portrait|landscape)$")
+    fold_state: Optional[Literal["folded", "unfolded"]] = None
 
 
 class AndroidVmPatchReq(BaseModel):

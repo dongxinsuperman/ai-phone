@@ -31,6 +31,7 @@ from ai_phone.server.android_vm.catalog import (
     parse_google_supported_devices_csv,
     parse_play_device_catalog_csv,
 )
+from ai_phone.server.android_vm.service import append_catalog_profiles
 from ai_phone.server.db import get_session_factory, init_db, init_engine
 from ai_phone.server.models import AndroidDeviceProfile
 
@@ -67,6 +68,11 @@ async def main() -> None:
     imported = 0
     updated = 0
     async with factory() as session:
+        if args.source == "play-console":
+            imported = await append_catalog_profiles(session, rows)
+            await session.commit()
+            print(_summary(rows) | {"imported": imported, "skipped_existing": len(rows) - imported, "updated": 0})
+            return
         for data in rows:
             existing = await _find_existing_profile(session, data)
             if existing is None:

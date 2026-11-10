@@ -279,6 +279,25 @@ def test_assigned_port_is_not_silently_replaced(tmp_path, monkeypatch):
     assert manager._choose_port() == 5556
 
 
+@pytest.mark.parametrize("orientation", ["portrait", "landscape"])
+def test_start_skips_legacy_orientation_flag_for_straight_portrait(tmp_path, monkeypatch, orientation):
+    manager = mod.AndroidVmManager(runtime_dir=tmp_path)
+    fake_tools(monkeypatch)
+    monkeypatch.setattr(manager, "probe", lambda _: {"ok": True})
+    monkeypatch.setattr(manager, "_ensure_avd", lambda *_a, **_kw: True)
+    monkeypatch.setattr(manager, "_wait_boot_completed", lambda *_: None)
+    monkeypatch.setattr(manager, "_emulator_avd_name", lambda *_: "aiphone_vm_a")
+    monkeypatch.setattr(manager, "_provision_device", lambda *_: None)
+    monkeypatch.setattr(mod.subprocess, "Popen", lambda *_a, **_kw: OwnedProcess())
+    apply_display = Mock(return_value={"orientation": orientation})
+    monkeypatch.setattr(manager, "_apply_startup_display", apply_display)
+
+    result = manager._start_sync_locked("a", {"orientation": orientation, "apply_initial_orientation": True})
+    manager._runtimes["a"].log_file.close()
+    assert result["details"]["orientation"] == orientation
+    assert apply_display.call_count == int(orientation == "landscape")
+
+
 async def test_start_identity_mismatch_is_retained_without_provisioning_other_vm(tmp_path, monkeypatch):
     manager = mod.AndroidVmManager(runtime_dir=tmp_path)
     fake_tools(monkeypatch)

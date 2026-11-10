@@ -1,0 +1,70 @@
+[
+  {
+    "model": "Pixel Fold",
+    "brand": "google",
+    "devices": ["felix"],
+    "foldable": { "avd_device": "pixel_fold" }
+  },
+  {
+    "model": "Pixel 9 Pro Fold",
+    "brand": "google",
+    "devices": ["comet"],
+    "foldable": { "avd_device": "pixel_9_pro_fold" }
+  },
+  {
+    "model": "Pixel 10 Pro Fold",
+    "brand": "google",
+    "devices": ["rango"],
+    "foldable": { "avd_device": "pixel_10_pro_fold" }
+  },
+  {
+    "model": "OPPO Find N5 / Find N5 卫星通信版",
+    "brand": "oppo",
+    "devices": ["op5e89l1", "op5dc1l1"],
+    "source_url": "https://www.oppo.com/cn/smartphones/series-find-n/find-n5-satellite/specs/",
+    "foldable": {
+      "avd_device": "pixel_9_pro_fold",
+      "display": { "inner_width": 2248, "inner_height": 2480, "outer_width": 1140, "outer_height": 2616 }
+    }
+  },
+  {
+    "model": "HONOR Magic V5",
+    "brand": "honor",
+    "devices": ["hnmbhx"],
+    "source_url": "https://developer.honor.com/cn/docs/adaptation_guide/guides/foldable_device_specifications",
+    "foldable": {
+      "avd_device": "pixel_9_pro_fold",
+      "display": { "inner_width": 2172, "inner_height": 2352, "outer_width": 1060, "outer_height": 2376 }
+    }
+  },
+  {
+    "model": "vivo X Fold5",
+    "brand": "vivo",
+    "devices": ["pd2436", "v2429"],
+    "source_url": "https://www.vivo.com.cn/vivo/param/xfold5",
+    "foldable": {
+      "avd_device": "pixel_9_pro_fold",
+      "display": { "inner_width": 2200, "inner_height": 2480, "outer_width": 1172, "outer_height": 2748 }
+    }
+  },
+  {
+    "model": "Xiaomi MIX Fold 3",
+    "brand": "xiaomi",
+    "devices": ["babylon"],
+    "source_url": "https://www.mi.com/global/product/xiaomi-mix-fold-3/specs/",
+    "foldable": {
+      "avd_device": "pixel_9_pro_fold",
+      "display": { "inner_width": 1916, "inner_height": 2160, "outer_width": 1080, "outer_height": 2520 }
+    }
+  },
+  {
+    "model": "Samsung Galaxy Z Fold7",
+    "brand": "samsung",
+    "devices": ["q7q", "sc-56f", "scg34"],
+    "source_url": "https://news.samsung.com/global/samsung-galaxy-z-fold7-raising-the-bar-for-smartphones",
+    "foldable": {
+      "avd_device": "pixel_9_pro_fold",
+      "display": { "inner_width": 1968, "inner_height": 2184, "outer_width": 1080, "outer_height": 2520 }
+    }
+  }
+]

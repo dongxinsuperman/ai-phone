@@ -286,7 +286,7 @@ class AgentWSClient:
                 "host_os": self.host_os,
                 **({"host_id": self.host_id} if self.host_id else {}),
                 "devices": devices,
-                "capabilities": [P.CAP_V3_PLATFORM_CACHE],
+                "capabilities": [P.CAP_V3_PLATFORM_CACHE, P.CAP_ANDROID_VM_FOLDABLE],
             }
         )
         if sent and self._ws is ws:

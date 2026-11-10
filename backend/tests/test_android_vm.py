@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import pytest
+
 from ai_phone.agent.android_vm.manager import AndroidVmManager, VmRuntime
 from ai_phone.agent.drivers.base import DeviceInfo
 from ai_phone.server.android_vm.service import (
     handle_vm_reconcile,
     handle_vm_status,
     mark_agent_vms_unavailable,
+    vm_payload,
 )
 from ai_phone.server.hub import Hub
 from ai_phone.server.models import AndroidVmInstance, DeviceAlias
@@ -94,11 +97,21 @@ async def test_android_vm_create_and_list(client):
     assert body["screen_height"] == 2670
     assert body["density"] == 460
     assert body["orientation"] == "portrait"
+    assert not body["config_json"]["display"].get("apply_initial_orientation")
     assert body["state"] == "draft"
 
     listed = await client.get("/api/internal/vm/instances", headers=AUTH)
     assert listed.status_code == 200
     assert [item["id"] for item in listed.json()] == [body["id"]]
+
+
+async def test_android_vm_create_opts_in_to_landscape_start(client):
+    response = await client.post(
+        "/api/internal/vm/instances", headers=AUTH,
+        json={"alias": "landscape", "orientation": "landscape"},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["config_json"]["display"]["apply_initial_orientation"] is True
 
 
 async def test_android_vm_coverage_profiles_are_internal_strategy(client):
@@ -176,9 +189,10 @@ async def test_android_vm_imports_official_device_catalog_before_search(client):
     )
     assert imported.status_code == 200, imported.text
     assert imported.json() == {
-        "mode": "replace",
+        "mode": "append",
         "raw_total": 1,
         "imported": 1,
+        "skipped_existing": 0,
         "removed_old": 0,
         "dropped_by_clean": 0,
     }
@@ -197,24 +211,175 @@ async def test_android_vm_imports_official_device_catalog_before_search(client):
     assert imported_item["abis"] == ["arm64-v8a"]
     assert imported_item["sdk_versions"] == ["34", "35"]
 
-    updated = await client.post(
+    new_csv = "\n".join([
+        csv_text.splitlines()[0],
+        "Google,Google,husky,GC3VE,Pixel 8 Pro,12 GB,1344x2992,480 dpi,arm64-v8a,34;35,3.2,PHONE,Tensor G3,Mali-G715",
+    ])
+    appended = await client.post(
         "/api/internal/vm/device-profiles/import-play-catalog",
         headers=AUTH,
-        json={"csv_text": csv_text, "source_url": "https://play.google.com/console"},
+        json={"csv_text": new_csv},
     )
-    assert updated.status_code == 200
-    # 覆盖式导入：重导会先删官方层旧数据(removed_old=1)再灌入(imported=1)，不再有 upsert/updated 语义
-    assert updated.json() == {
-        "mode": "replace",
-        "raw_total": 1,
-        "imported": 1,
-        "removed_old": 1,
+    assert appended.status_code == 200, appended.text
+    assert appended.json()["imported"] == 1
+    reimported = await client.post(
+        "/api/internal/vm/device-profiles/import-play-catalog",
+        headers=AUTH,
+        json={"csv_text": new_csv + "\n" + csv_text.splitlines()[1].replace("shiba", "shiba-variant").replace("8 GB", "12 GB")},
+    )
+    assert reimported.status_code == 200, reimported.text
+    assert reimported.json() == {
+        "mode": "append",
+        "raw_total": 2,
+        "imported": 0,
+        "skipped_existing": 2,
+        "removed_old": 0,
         "dropped_by_clean": 0,
     }
-    # 重导后官方层仍只有 1 条（覆盖，不重复累积）
     after = await client.get("/api/internal/vm/device-profiles?q=Pixel", headers=AUTH)
-    official = [it for it in after.json()["items"] if it["source_type"] == "google_play_device_catalog"]
-    assert len(official) == 1
+    official = {it["marketing_name"]: it for it in after.json()["items"]}
+    assert set(official) == {"Pixel 8", "Pixel 8 Pro"}
+    assert official["Pixel 8"] == imported_item
+
+
+async def test_android_vm_fold_matches_catalog_identity_and_preserves_startup_settings(client, app, session):
+    csv_text = (
+        "Brand,Device,Manufacturer,Model Name,Form Factor,Screen Sizes,Android SDK Versions\n"
+        "google,comet,Google,Pixel 9 Pro Fold,Tablet,2076x2152,36\n"
+        "samsung,q7q,Samsung,Galaxy Z Fold7,Tablet,1968x2184,36\n"
+        "OPPO,OP5E89L1,OPPO,Find N5,Tablet,2248x2480,36\n"
+        "vivo,PD2256,vivo,X Flip,Phone,1080x2520,36;37\n"
+    )
+    imported = await client.post(
+        "/api/internal/vm/device-profiles/import-play-catalog", headers=AUTH,
+        json={"csv_text": csv_text},
+    )
+    assert imported.status_code == 200, imported.text
+    listed = await client.get("/api/internal/vm/device-profiles?foldable=true&sdk=37", headers=AUTH)
+    matches = {item["device"]: item for item in listed.json()["items"]}
+    assert set(matches) == {"comet", "q7q", "OP5E89L1"}
+    assert listed.json()["page"]["total"] == 3
+    facets = await client.get("/api/internal/vm/device-facets?foldable=true&brand=OPPO", headers=AUTH)
+    assert facets.json()["matched_total"] == facets.json()["foldable_count"] == 1
+    assert {item["id"].lower() for item in facets.json()["brand"]} == {"google", "samsung", "oppo"}
+    pixel = matches["comet"]
+    assert pixel["foldable_api_level"] == 37
+    assert pixel["sdk_versions"] == ["36"]
+    payload = {
+        "name": "fold-test",
+        "profile_ref_type": "real_device",
+        "profile_ref_id": pixel["id"],
+        "api_level": 37,
+        "screen_width": 2076,
+        "screen_height": 2152,
+        "orientation": "landscape",
+        "fold_state": "folded",
+    }
+    rejected = await client.post(
+        "/api/internal/vm/instances", headers=AUTH, json={**payload, "profile_ref_id": "unknown"},
+    )
+    assert rejected.status_code == 422
+    unmatched = await client.get("/api/internal/vm/device-profiles?q=PD2256", headers=AUTH)
+    [flip] = unmatched.json()["items"]
+    assert "foldable_api_level" not in flip
+    rejected = await client.post(
+        "/api/internal/vm/instances", headers=AUTH, json={
+            **payload, "profile_ref_id": flip["id"], "screen_width": 1080, "screen_height": 2520,
+        },
+    )
+    assert rejected.status_code == 422
+
+    created_oppo = await client.post(
+        "/api/internal/vm/instances", headers=AUTH, json={
+            **payload, "name": "fold-oppo", "profile_ref_id": matches["OP5E89L1"]["id"],
+            "screen_width": 2248, "screen_height": 2480,
+        },
+    )
+    assert created_oppo.status_code == 201, created_oppo.text
+    oppo = await session.get(AndroidVmInstance, created_oppo.json()["id"])
+    assert vm_payload(oppo)["fold_display"] == {
+        "inner_width": 2248, "inner_height": 2480, "outer_width": 1140, "outer_height": 2616,
+    }
+
+    created = await client.post("/api/internal/vm/instances", headers=AUTH, json=payload)
+    assert created.status_code == 201, created.text
+    vm = created.json()
+    config = vm["config_json"]
+    assert vm["profile_ref_type"] == "real_device"
+    assert config["fold"] == {"avd_device": "pixel_9_pro_fold", "initial_state": "folded"}
+    assert config["display"]["apply_initial_orientation"] is True
+    assert config["display"]["orientation"] == "landscape"
+    patched = await client.patch(
+        f"/api/internal/vm/instances/{vm['id']}", headers=AUTH,
+        json={"config_json": {"performance": {"ram_mb": 5120}}},
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["config_json"]["fold"] == config["fold"]
+    assert patched.json()["config_json"]["display"]["apply_initial_orientation"] is True
+
+    hub = Hub()
+    app.state.hub = hub
+    await hub.register_agent("old-agent", "mac-old", "Darwin", _FakeWs())
+    instance = await session.get(AndroidVmInstance, vm["id"])
+    instance.assigned_agent_id = "original-agent"
+    instance.state = "stopped"
+    await session.commit()
+    dispatch = await client.post(
+        f"/api/internal/vm/instances/{vm['id']}/dispatch", headers=AUTH,
+        json={"agent_id": "old-agent"},
+    )
+    assert dispatch.status_code == 409
+    assert "Agent 需要更新" in dispatch.json()["detail"]
+    await session.refresh(instance)
+    assert instance.assigned_agent_id == "original-agent"
+
+
+def test_android_vm_fold_start_waits_for_the_active_screen(tmp_path, monkeypatch):
+    from subprocess import CompletedProcess
+
+    from ai_phone.agent.android_vm.capability import AndroidVmTools
+
+    sizes = iter(["2076x2152", "2076x2152", "1080x2424", "1080x2424"])
+
+    def adb(args, **kwargs):
+        if args[3:] == ["emu", "fold"]:
+            output = "OK"
+        elif args[3:] == ["shell", "dumpsys", "device_state"]:
+            output = "mCommittedState=Optional[DeviceState{identifier=0, name='CLOSED'}]"
+        else:
+            assert args[3:] == ["shell", "dumpsys", "window", "displays"]
+            size = next(sizes)
+            output = f"  Display: mDisplayId=0 (organized)\n    init={size} 390dpi cur={size}"
+        return CompletedProcess(args, 0, stdout=output, stderr="")
+
+    monkeypatch.setattr("ai_phone.agent.android_vm.manager.subprocess.run", adb)
+    vm = AndroidVmManager(runtime_dir=tmp_path)
+    display = vm._apply_startup_display(
+        AndroidVmTools("adb", "emulator", "avdmanager"), "emulator-5554",
+        "portrait", "folded", None, fold_size=(1080, 2424),
+    )
+    assert display == {"orientation": "portrait", "fold_state": "folded", "width": 1080, "height": 2424}
+
+
+def test_android_vm_square_display_confirms_rotation_with_scaling_disabled(tmp_path, monkeypatch):
+    from subprocess import CompletedProcess
+
+    from ai_phone.agent.android_vm.capability import AndroidVmTools
+
+    def adb(args, **kwargs):
+        assert args[3:] == ["shell", "dumpsys", "window", "displays"]
+        output = (
+            "  Display: mDisplayId=0\n    init=1080x1080 420dpi noscale\n"
+            " cur=1080x1080\n    DisplayFrames w=1080 h=1080 r=1\n"
+        )
+        return CompletedProcess(args, 0, stdout=output, stderr="")
+
+    monkeypatch.setattr("ai_phone.agent.android_vm.manager.subprocess.run", adb)
+    vm = AndroidVmManager(runtime_dir=tmp_path)
+    display = vm._apply_startup_display(
+        AndroidVmTools("adb", "emulator", "avdmanager"), "emulator-5554", "landscape", "", None,
+    )
+    assert display == {"orientation": "landscape", "fold_state": "", "width": 1080, "height": 1080}
 
 
 async def test_android_vm_dispatch_sends_start_to_agent(client, app):
@@ -1335,9 +1500,18 @@ def test_android_vm_manager_stop_all_clears_runtimes(tmp_path, monkeypatch):
     assert manager._runtimes == {}
 
 
-def test_android_vm_manager_reclaims_only_vmid_emulators(tmp_path, monkeypatch):
+@pytest.mark.parametrize(("avd_device", "external_displays", "foldable"), [
+    ("pixel_9_pro_fold", "", True),
+    ("pixel_7", "1,1080,2424,390,0", False),
+])
+def test_android_vm_manager_reclaims_only_vmid_emulators(tmp_path, monkeypatch, avd_device, external_displays, foldable):
     manager = AndroidVmManager(runtime_dir=tmp_path, max_instances=2)
     tools = type("Tools", (), {"adb": "/fake/adb"})()
+    monkeypatch.setenv("ANDROID_AVD_HOME", str(tmp_path))
+    config = tmp_path / "aiphone_vm_vm_1.avd" / "config.ini"
+    config.parent.mkdir()
+    config.write_text(f"hw.device.name={avd_device}\n", encoding="utf-8")
+    guest_properties = []
 
     def _fake_find_tools():
         return tools, []
@@ -1353,12 +1527,15 @@ def test_android_vm_manager_reclaims_only_vmid_emulators(tmp_path, monkeypatch):
             return _Proc("List of devices attached\nemulator-5554\tdevice\nemulator-5556\tdevice\n")
         if args[:4] == ["/fake/adb", "-s", "emulator-5554", "shell"]:
             prop = args[-1]
+            guest_properties.append(prop)
             if prop == "debug.aiphone.vmid":
                 return _Proc("vm-1\n")
             if prop == "debug.aiphone.alias":
                 return _Proc("支付回归机-01\n")
             if prop == "sys.boot_completed":
                 return _Proc("1\n")
+            if prop == "ro.boot.qemu.external.displays":
+                return _Proc(external_displays)
         if args[:4] == ["/fake/adb", "-s", "emulator-5556", "shell"]:
             return _Proc("\n")
         if args[:4] == ["/fake/adb", "-s", "emulator-5554", "emu"]:
@@ -1379,6 +1556,9 @@ def test_android_vm_manager_reclaims_only_vmid_emulators(tmp_path, monkeypatch):
     assert list(manager._runtimes) == ["vm_1"]
     assert [info.serial for info in infos] == ["emulator-5554"]
     assert infos[0].extra["vm_instance_id"] == "vm_1"
+    assert manager.has_cover_display("vm_1", "emulator-5554") is foldable
+    assert not manager.has_cover_display("vm_1", "emulator-5556")
+    assert "ro.boot.qemu.external.displays" not in guest_properties
 
 
 def test_android_vm_reclaim_preserves_existing_process_handle(tmp_path, monkeypatch):
@@ -1469,6 +1649,24 @@ def test_android_vm_manager_writes_screen_config(tmp_path, monkeypatch):
     assert "hw.camera.front=webcam0" in config
     assert "hw.gps=no" in config
     assert "hw.dPad=yes" in config
+
+
+def test_android_vm_fold_template_applies_dpi_with_template_dimensions(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANDROID_AVD_HOME", str(tmp_path))
+    manager = AndroidVmManager(runtime_dir=tmp_path)
+    config = tmp_path / "aiphone_vm_test.avd" / "config.ini"
+    config.parent.mkdir()
+    config.write_text(
+        "hw.lcd.width=2076\nhw.lcd.height=2152\nhw.lcd.density=390\n"
+        "hw.displayRegion.0.1.width=1080\nhw.displayRegion.0.1.height=2424\n"
+    )
+    manager._write_avd_screen_config(
+        type("Tools", (), {"sdk_root": ""})(), avd_name="aiphone_vm_test",
+        width=1920, height=2400, density=420, keep_profile_display=True,
+    )
+    settings = dict(line.split("=", 1) for line in config.read_text().splitlines())
+    assert (settings["hw.lcd.width"], settings["hw.lcd.height"], settings["hw.lcd.density"]) == ("2076", "2152", "420")
+    assert (settings["hw.displayRegion.0.1.width"], settings["hw.displayRegion.0.1.height"]) == ("1080", "2424")
 
 
 def test_android_vm_manager_start_translates_advanced_config_to_emulator_args(

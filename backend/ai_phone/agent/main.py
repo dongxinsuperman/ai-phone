@@ -346,7 +346,10 @@ def _get_or_open_android_driver(serial: str, on_status: Optional[Any]) -> BaseDr
     # 原生构造/初始化不能持扫描锁；完成后在同一把短锁内核对身份并发布缓存。
     try:
         # 构造不读取/写回共享 serial 保活位；旧构造的晚标记不能替代本 VM 的初始化。
-        driver = _open_driver_by_platform(serial, "android", setup_power=False)
+        has_cover_display = bool(
+            identity and _android_vm_manager is not None and _android_vm_manager.has_cover_display(identity[0], serial)
+        )
+        driver = _open_driver_by_platform(serial, "android", setup_power=False, has_cover_display=has_cover_display)
         with _android_vm_cache_lock:
             _check_android_cache_identity(serial, identity)
             current = _driver_cache.get(serial)

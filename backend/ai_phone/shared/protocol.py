@@ -144,6 +144,7 @@ MSG_DRIVER_COMMAND = "driver_command"
 # 详见 docs-internal/ios-simulator-plan（iOS虚拟机独立接入方案）.md §3.1、§6.1。
 Platform = Literal["android", "ios", "harmony", "ios_sim"]
 CAP_V3_PLATFORM_CACHE = "v3_platform_cache"
+CAP_ANDROID_VM_FOLDABLE = "android_vm_foldable"
 DeviceStatus = Literal["idle", "busy", "offline"]
 
 
@@ -240,6 +241,8 @@ class VmCapabilityProbeMsg(TypedDict, total=False):
     screen_height: int
     density: int
     orientation: str
+    avd_device: str
+    fold_state: str
 
 
 class VmCapabilityMsg(TypedDict, total=False):
@@ -272,6 +275,9 @@ class VmStartMsg(TypedDict, total=False):
     screen_height: int
     density: int
     orientation: str
+    apply_initial_orientation: bool
+    avd_device: str
+    fold_state: str
     ram_mb: int
     cpu_cores: int
     vm_heap_mb: int

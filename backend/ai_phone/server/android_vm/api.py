@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException, Path, status
-from sqlalchemy import and_, case, delete, func, or_, select
+from sqlalchemy import and_, case, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.shared import protocol as P
@@ -33,6 +33,8 @@ from ..vm_lifecycle import (
     host_id as agent_host_id, update_runtime,
 )
 from .catalog import (
+    FOLDABLE_AVD_API_LEVEL,
+    FOLDABLE_PROFILES,
     builtin_coverage_profiles,
     cap_profile_fields,
     clean_and_dedupe_profiles,
@@ -41,8 +43,6 @@ from .catalog import (
     resolution_bucket,
 )
 
-# 官方目录层 source_type：导入时全量覆盖这一层；其它 source_type（人工/精选）保留。
-PLAY_CATALOG_SOURCE = "google_play_device_catalog"
 from .schemas import (
     AndroidDeviceProfileImportReq,
     AndroidVmCreateReq,
@@ -50,6 +50,7 @@ from .schemas import (
     AndroidVmPatchReq,
 )
 from .service import (
+    append_catalog_profiles,
     apply_vm_patch,
     assign_emulator_port,
     delete_vm_alias,
@@ -81,6 +82,10 @@ async def list_instances(session: AsyncSession = DBSession, hub: Hub = HubDep) -
     return [vm_view(row, hub) for row in res.scalars().all()]
 
 
+def _foldable_profile(prof: AndroidDeviceProfile) -> Dict[str, Any] | None:
+    return FOLDABLE_PROFILES.get(((prof.brand or "").lower(), (prof.device or "").lower()))
+
+
 def _profile_matches_request(prof: AndroidDeviceProfile, body: AndroidVmCreateReq) -> bool:
     """real_device 一致性：请求的画像参数必须与档案吻合，否则视为被篡改。
 
@@ -96,6 +101,8 @@ def _profile_matches_request(prof: AndroidDeviceProfile, body: AndroidVmCreateRe
         m = re.search(r"\d+", str(item))
         if m:
             apis.add(int(m.group()))
+    if _foldable_profile(prof):
+        apis.add(FOLDABLE_AVD_API_LEVEL)
     if apis and int(body.api_level) not in apis:
         return False
     return True
@@ -118,6 +125,9 @@ async def create_instance(
     name = alias
     await _ensure_alias_available(session, alias=alias)
     config_json = _normalize_vm_config(body)
+    config_json["display"]["orientation"] = body.orientation
+    if body.orientation == "landscape" or body.fold_state is not None:
+        config_json["display"]["apply_initial_orientation"] = True
     # 声明为真机（real_device）必须指向一条 verified 设备档案，否则降级为 custom，
     # 防止前端（含空库默认表单）绕过「真实设备库」口径凭空造一台“真机”。
     profile_ref_type = body.profile_ref_type.strip() or "custom"
@@ -125,11 +135,14 @@ async def create_instance(
     profile_id = body.profile_id.strip()
     profile_name = body.profile_name.strip()
     capability_marks = body.capability_marks
+    fold_profile = None
     if profile_ref_type == "real_device":
         prof = await session.get(AndroidDeviceProfile, profile_ref_id) if profile_ref_id else None
         ok = prof is not None and (prof.verification_status or "") == "verified"
         if ok:
             ok = _profile_matches_request(prof, body)
+        if ok:
+            fold_profile = _foldable_profile(prof)
         if not ok:
             # 不合法（无档案 / 未验证 / 画像参数与档案不符）→ 降级为自定义，
             # 连真机身份字段一并清空，避免“显示像真机、身份却是 custom 或被改过参数”。
@@ -139,6 +152,15 @@ async def create_instance(
             profile_name = ""
             capability_marks = {}
             config_json["identity"] = {}
+    if body.fold_state is not None:
+        image = body.system_image.strip()
+        image_prefix = f"system-images;android-{FOLDABLE_AVD_API_LEVEL}.0;google_apis;"
+        if (not fold_profile or body.api_level != FOLDABLE_AVD_API_LEVEL or body.system_type != "google_apis"
+                or (image and image not in {image_prefix + "arm64-v8a", image_prefix + "x86_64"})):
+            raise HTTPException(422, "所选机型与系统镜像不支持折叠启动")
+        config_json["fold"] = {"avd_device": fold_profile["avd_device"], "initial_state": body.fold_state}
+        if "display" in fold_profile:
+            config_json["fold"]["display"] = fold_profile["display"]
     vm = AndroidVmInstance(
         name=name,
         alias=alias,
@@ -239,6 +261,16 @@ async def patch_instance(
                 "orientation": patch.get("orientation", vm.orientation),
             },
         )
+        old_config = vm.config_json or {}
+        if _nested(old_config, "display", "apply_initial_orientation", False):
+            patch["config_json"]["display"]["apply_initial_orientation"] = True
+        if old_config.get("fold"):
+            patch["config_json"]["fold"] = old_config["fold"]
+    if (vm.config_json or {}).get("fold") and any(
+        key in patch and patch[key] != getattr(vm, key)
+        for key in ("profile_ref_type", "profile_ref_id", "api_level", "system_type", "system_image", "abi")
+    ):
+        raise HTTPException(422, "折叠虚拟机的机型与系统镜像由创建时确定")
     apply_vm_patch(vm, patch)
     # 运行态改名：把新别名映射指到当前 emulator serial（旧映射已在上面按旧名删除）
     if alias_changed and vm.adb_serial and machine_state(vm) in {"starting", "running", "stopping"}:
@@ -273,6 +305,18 @@ def _csv_values(raw: str) -> List[str]:
 # Android Emulator 最低支持 API 21（Android 5）。只有含 ≥21 版本的机型才能真正创建；
 # 低于 21 的老机型展示了也会创建失败（422），所以列表/facet/计数统一过滤掉。
 _BUILDABLE_SDKS = tuple(range(21, 61))
+
+
+def _foldable_profile_clause():
+    identity = tuple_(func.lower(AndroidDeviceProfile.brand), func.lower(AndroidDeviceProfile.device))
+    return identity.in_(list(FOLDABLE_PROFILES))
+
+
+def _profile_sdk_clause(api):
+    reported = AndroidDeviceProfile.sdk_index.like(f"%;{api};%")
+    if str(api) != str(FOLDABLE_AVD_API_LEVEL):
+        return reported
+    return or_(reported, _foldable_profile_clause())
 
 
 def _buildable_clause():
@@ -315,6 +359,7 @@ def _profile_filter_clauses(
     sdk: str = "",
     resolution: str = "",
     ram: str = "",
+    foldable: bool = False,
     exclude: str = "",
 ) -> list:
     """根据多维筛选参数生成 where 子句列表（只查已验证数据）。
@@ -326,6 +371,8 @@ def _profile_filter_clauses(
         AndroidDeviceProfile.verification_status == "verified",
         _buildable_clause(),  # 只保留可在 Emulator 创建（≥API21）的机型
     ]
+    if foldable and exclude != "foldable":
+        clauses.append(_foldable_profile_clause())
     if exclude != "q":
         for token in (q or "").split():
             tok = token.strip()
@@ -358,7 +405,7 @@ def _profile_filter_clauses(
         sdks = _csv_values(sdk)
         if sdks:
             clauses.append(
-                or_(*[AndroidDeviceProfile.sdk_index.like(f"%;{s};%") for s in sdks])
+                or_(*[_profile_sdk_clause(s) for s in sdks])
             )
     if exclude != "ram":
         ram_clause = _ram_clause(_csv_values(ram))
@@ -375,6 +422,7 @@ async def list_device_profiles(
     sdk: str = "",
     resolution: str = "",
     ram: str = "",
+    foldable: bool = False,
     offset: int = 0,
     limit: int = 60,
     session: AsyncSession = DBSession,
@@ -385,7 +433,7 @@ async def list_device_profiles(
     # 全部服务端筛选 + 分页：只查已验证（CSV 导入）数据，不兜底假数据。
     clauses = _profile_filter_clauses(
         q=q, form_factor=form_factor, brand=brand, sdk=sdk,
-        resolution=resolution, ram=ram,
+        resolution=resolution, ram=ram, foldable=foldable,
     )
     base = select(AndroidDeviceProfile).where(*clauses)
     matched_total = int(
@@ -419,7 +467,12 @@ async def list_device_profiles(
     ])
     page_stmt = base.order_by(*order_cols).offset(page_offset).limit(page_size)
     res = await session.execute(page_stmt)
-    rows = [row.to_dict() for row in res.scalars().all()]
+    rows = []
+    for profile in res.scalars().all():
+        row = profile.to_dict()
+        if _foldable_profile(profile):
+            row["foldable_api_level"] = FOLDABLE_AVD_API_LEVEL
+        rows.append(row)
     dispatchable_template_total = stats["db_verified_total"]
     return {
         "items": rows,
@@ -450,7 +503,7 @@ async def list_device_profiles(
             "empty_means_no_match_or_not_imported": True,
             "candidate_pending_is_hidden": True,
             "no_artificial_catalog_limit": True,
-            "facets": ["form_factor(默认手机+平板)", "brand", "sdk", "resolution"],
+            "facets": ["form_factor(默认手机+平板)", "brand", "sdk", "resolution", "foldable"],
             "dropped_dimensions": ["popularity(install_base 无数据)", "screen_cutout(目录无字段)"],
         },
     }
@@ -461,11 +514,7 @@ async def import_play_device_catalog(
     body: AndroidDeviceProfileImportReq,
     session: AsyncSession = DBSession,
 ) -> Dict[str, Any]:
-    """前台导入官方目录 CSV（无密码）：解析 → 预清洗 → 覆盖式替换官方层。
-
-    覆盖语义：只删除 source_type == 官方目录 的「官方层」，再灌入清洗后的新数据；
-    其它 source_type（人工精选 / 手工补充层）不受影响。
-    """
+    """清洗目录 CSV 并追加新机型，保留已有档案及其 ID。"""
     collected_at = _parse_optional_datetime(body.collected_at)
     raw_rows = parse_play_device_catalog_csv(
         body.csv_text,
@@ -473,20 +522,14 @@ async def import_play_device_catalog(
         collected_at=collected_at,
     )
     rows = clean_and_dedupe_profiles(raw_rows)
-    # 覆盖式：清掉官方层旧数据（人工补充层 source_type 不同，不动）
-    deleted = await session.execute(
-        delete(AndroidDeviceProfile).where(
-            AndroidDeviceProfile.source_type == PLAY_CATALOG_SOURCE
-        )
-    )
-    for data in rows:
-        session.add(AndroidDeviceProfile(**data))
+    imported = await append_catalog_profiles(session, rows)
     await session.commit()
     return {
-        "mode": "replace",
+        "mode": "append",
         "raw_total": len(raw_rows),
-        "imported": len(rows),
-        "removed_old": int(deleted.rowcount or 0),
+        "imported": imported,
+        "skipped_existing": len(rows) - imported,
+        "removed_old": 0,
         "dropped_by_clean": len(raw_rows) - len(rows),
     }
 
@@ -558,6 +601,7 @@ async def list_device_facets(
     sdk: str = "",
     resolution: str = "",
     ram: str = "",
+    foldable: bool = False,
     session: AsyncSession = DBSession,
 ) -> Dict[str, Any]:
     """多维联动 facet：返回各维度可选值及其计数。
@@ -567,7 +611,7 @@ async def list_device_facets(
     """
     filters = dict(
         q=q, form_factor=form_factor, brand=brand,
-        sdk=sdk, resolution=resolution, ram=ram,
+        sdk=sdk, resolution=resolution, ram=ram, foldable=foldable,
     )
 
     async def grouped(col, exclude: str) -> Dict[Any, int]:
@@ -589,8 +633,8 @@ async def list_device_facets(
     # SDK：按候选 api 逐个统计（sdk_index 形如 ;31;33;）。
     sdk_base = _profile_filter_clauses(**filters, exclude="sdk")
     sdk_items = []
-    for api in range(36, 20, -1):
-        cnt = await scalar_count(sdk_base + [AndroidDeviceProfile.sdk_index.like(f"%;{api};%")])
+    for api in range(37, 20, -1):
+        cnt = await scalar_count(sdk_base + [_profile_sdk_clause(api)])
         if cnt:
             sdk_items.append({"id": api, "count": cnt})
 
@@ -603,6 +647,9 @@ async def list_device_facets(
         ram_items.append({"id": key, "count": cnt})
 
     matched_total = await scalar_count(_profile_filter_clauses(**filters))
+    foldable_count = await scalar_count(
+        _profile_filter_clauses(**filters, exclude="foldable") + [_foldable_profile_clause()]
+    )
 
     return {
         "form_factor": [
@@ -618,6 +665,7 @@ async def list_device_facets(
         "sdk": sdk_items,
         "resolution": [{"id": k, "count": v} for k, v in reso_map.items() if k],
         "ram": ram_items,
+        "foldable_count": foldable_count,
         "matched_total": matched_total,
     }
 
@@ -777,6 +825,11 @@ async def _send_start(
     if expected_draft and not is_untouched_draft(vm):
         raise HTTPException(409, "新配置已被另一操作接管，本次换机不会重复启动")
     require_action(vm, "edit", hub)
+    if (vm.config_json or {}).get("fold") and not hub.agent_supports(agent_id, P.CAP_ANDROID_VM_FOLDABLE):
+        detail = "该 Agent 需要更新后才能启动 Android 折叠虚拟机"
+        if not hub.has_agent(agent_id):
+            detail = "所属 Agent 离线，请等待其重新连接"
+        raise HTTPException(409, detail)
     old_agent = str(vm.assigned_agent_id or "")
     if old_agent and old_agent != agent_id:
         if not allow_switch:

@@ -17,6 +17,7 @@ const candidateVmId = ref('')
 const candidateStatus = reactive({ error: '' })
 const candidateEls = new Map()
 const selectedFormFactor = ref('all')
+const foldableOnly = ref(false)
 const selectedBrands = ref([])
 const selectedApis = ref([])
 const selectedResolutions = ref([])
@@ -62,6 +63,7 @@ let facetSeq = 0
 const PAGE_SIZE = 60
 
 const androidVersions = [
+  { api: 37, label: 'Android 17 / API 37', short: 'Android 17' },
   { api: 36, label: 'Android 16 / API 36（新系统兼容）', short: 'Android 16' },
   { api: 35, label: 'Android 15 / API 35（当前主线）', short: 'Android 15' },
   { api: 34, label: 'Android 14 / API 34（存量主流）', short: 'Android 14' },
@@ -92,8 +94,8 @@ const abiOptions = [
 ]
 
 const orientationOptions = [
-  { id: 'portrait', label: '竖屏（手机默认方向）' },
-  { id: 'landscape', label: '横屏（游戏/横屏应用）' },
+  { id: 'portrait', label: '竖屏' },
+  { id: 'landscape', label: '横屏' },
 ]
 
 const gpuOptions = [
@@ -184,6 +186,10 @@ const selectedDevice = computed(() => (
 const isRealDeviceLocked = computed(() => (
   form.source_mode !== 'custom' && !!form.profile_ref_id
 ))
+const canConfigureFold = computed(() => (
+  isRealDeviceLocked.value && form.system_type === 'google_apis'
+  && form.api_level === selectedDevice.value?.foldable_api_level
+))
 
 // 服务端已按 verified + 筛选 + 分页返回，前端直接渲染当前页。
 const selectableDeviceProfiles = computed(() => deviceProfiles.value)
@@ -232,6 +238,9 @@ const activeFilterChips = computed(() => {
     const t = formFactorTabs.find((x) => x.id === selectedFormFactor.value)
     chips.push({ key: 'ff', label: `类型：${t?.label || selectedFormFactor.value}`, clear: () => selectFormFactor('all') })
   }
+  if (foldableOnly.value) {
+    chips.push({ key: 'foldable', label: '折叠屏', clear: toggleFoldable })
+  }
   for (const b of selectedBrands.value) {
     chips.push({ key: `brand:${b}`, label: b, clear: () => toggleBrand(b) })
   }
@@ -249,6 +258,7 @@ const activeFilterChips = computed(() => {
 
 const hasActiveFilters = computed(() => (
   selectedFormFactor.value !== 'all'
+  || foldableOnly.value
   || selectedBrands.value.length > 0
   || selectedApis.value.length > 0
   || selectedResolutions.value.length > 0
@@ -275,11 +285,9 @@ const catalogStatusLabel = computed(() => {
   return '按机型、系统、分辨率筛选同一份模板库'
 })
 
-const systemImagePreview = computed(() => {
-  if (form.abi === 'auto') return '下发时由 Agent 自动选择 arm64-v8a / x86_64'
-  const imageAbi = form.abi === 'arm64' ? 'arm64-v8a' : 'x86_64'
-  return `system-images;android-${Number(form.api_level)};${form.system_type};${imageAbi}`
-})
+const systemImagePreview = computed(() => (
+  systemImageForForm() || '下发时由 Agent 自动选择 arm64-v8a / x86_64'
+))
 
 function defaultForm() {
   return {
@@ -300,6 +308,7 @@ function defaultForm() {
     screen_height: 2400,
     density: 420,
     orientation: 'portrait',
+    fold_state: 'unfolded',
     screen_size_in: '',
     cutout: '',
     shape_note: '',
@@ -354,6 +363,7 @@ function currentFilterParams() {
   const q = searchText.value.trim()
   if (q) params.q = q
   if (selectedFormFactor.value !== 'all') params.form_factor = selectedFormFactor.value
+  if (foldableOnly.value) params.foldable = true
   if (selectedBrands.value.length) params.brand = selectedBrands.value.join(',')
   if (selectedApis.value.length) params.sdk = selectedApis.value.join(',')
   if (selectedResolutions.value.length) params.resolution = selectedResolutions.value.join(',')
@@ -424,6 +434,11 @@ function selectFormFactor(id) {
   applyFilters()
 }
 
+function toggleFoldable() {
+  foldableOnly.value = !foldableOnly.value
+  applyFilters()
+}
+
 function toggleBrand(id) {
   toggleInArray(selectedBrands.value, id)
   applyFilters()
@@ -446,6 +461,7 @@ function toggleRam(id) {
 
 function clearFilters() {
   selectedFormFactor.value = 'all'
+  foldableOnly.value = false
   selectedBrands.value = []
   selectedApis.value = []
   selectedResolutions.value = []
@@ -459,7 +475,7 @@ async function importCatalog(event) {
   const file = event.target?.files?.[0]
   if (event.target) event.target.value = ''  // 允许重复选择同一文件
   if (!file) return
-  if (!confirm(`将用「${file.name}」覆盖官方设备库（不影响人工补充层），确认导入？`)) return
+  if (!confirm(`从「${file.name}」追加设备库中尚未收录的机型，确认导入？`)) return
   importing.value = true
   importMsg.value = ''
   err.value = ''
@@ -469,7 +485,7 @@ async function importCatalog(event) {
       csv_text: text,
       source_url: 'google_play_console_catalog',
     })
-    importMsg.value = `导入完成：入库 ${res.imported ?? 0} 台，覆盖旧 ${res.removed_old ?? 0} 台，清洗丢弃 ${res.dropped_by_clean ?? 0} 台`
+    importMsg.value = `导入完成：新增 ${res.imported ?? 0} 条，跳过已收录 ${res.skipped_existing ?? 0} 条`
     clearFilters()
   } catch (e) {
     err.value = prettyErr(e)
@@ -497,6 +513,7 @@ function applyDevice(profile = selectedDevice.value) {
   if (form.source_mode !== 'catalog') {
     form.source_mode = 'catalog'
   }
+  if (form.selected_device_id !== profile.id) form.fold_state = 'unfolded'
   form.selected_device_id = profile.id
   form.profile_ref_type = 'real_device'
   form.profile_ref_id = profile.id
@@ -519,10 +536,10 @@ function applyDevice(profile = selectedDevice.value) {
     // 设备物理画像类：跟随选中真机型。
     // 系统版本：用户筛了系统且该机型支持，则优先用筛选命中的版本（取命中里最高），
     // 否则用机型支持的最高版本；避免“筛 Android 15 却创建出 16”。
-    const profileApis = (profile.sdk_versions || [])
+    const profileApis = [...(profile.sdk_versions || []), profile.foldable_api_level]
       .map((n) => Number(String(n).match(/\d+/)?.[0] || 0))
       .filter(Boolean)
-    let targetSdk = latestSdk(profile.sdk_versions)
+    let targetSdk = Math.max(0, ...profileApis)
     const matchedApis = selectedApis.value.map(Number).filter((a) => profileApis.includes(a))
     if (matchedApis.length) targetSdk = Math.max(...matchedApis)
     form.api_level = targetSdk || form.api_level
@@ -707,6 +724,7 @@ async function createVm(options = {}) {
       screen_height: Number(form.screen_height),
       density: Number(form.density),
       orientation: form.orientation,
+      fold_state: canConfigureFold.value ? form.fold_state : undefined,
     })
     form.name = ''
     form.alias = ''
@@ -772,6 +790,7 @@ async function confirmCopy() {
       screen_height: Number(src.screen_height),
       density: Number(src.density),
       orientation: src.orientation,
+      fold_state: src.config_json?.fold?.initial_state,
     })
     closeCopyDialog()
     await refresh({ quiet: true })
@@ -928,12 +947,9 @@ function vmGpuLabel(vm) {
 function systemImageForForm() {
   if (form.abi === 'auto') return ''
   const imageAbi = form.abi === 'arm64' ? 'arm64-v8a' : 'x86_64'
-  return `system-images;android-${Number(form.api_level)};${form.system_type};${imageAbi}`
-}
-
-function latestSdk(values) {
-  const nums = (values || []).map((item) => Number(String(item).match(/\d+/)?.[0] || 0)).filter(Boolean)
-  return nums.length ? Math.max(...nums) : 0
+  const api = Number(form.api_level)
+  const platformId = api === 37 ? '37.0' : api
+  return `system-images;android-${platformId};${form.system_type};${imageAbi}`
 }
 
 function firstNumber(values) {
@@ -1009,10 +1025,9 @@ function deviceSubtitle(profile) {
 }
 
 function sdkRangeLabel(profile) {
-  const apis = (profile.sdk_versions || [])
+  const apis = [...new Set([...(profile.sdk_versions || []), profile.foldable_api_level]
     .map((item) => Number(String(item).match(/\d+/)?.[0] || 0))
-    .filter(Boolean)
-    .sort((a, b) => a - b)
+    .filter(Boolean))].sort((a, b) => a - b)
   if (!apis.length) return '系统版本待补'
   if (apis.length === 1) return androidVersionShortLabel(apis[0])
   return `${androidVersionShortLabel(apis[0])}-${androidVersionShortLabel(apis[apis.length - 1])}`
@@ -1020,6 +1035,7 @@ function sdkRangeLabel(profile) {
 
 function deviceBadges(profile) {
   const badges = []
+  if (profile.foldable_api_level) badges.push('折叠屏')
   if ((profile.market_region || '').toUpperCase() === 'CN') badges.push('国内')
   if (profile.screen_shape) badges.push(screenShapeLabel(profile.screen_shape))
   if (profile.popularity_score >= 80) badges.push('常用')
@@ -1101,7 +1117,7 @@ defineExpose({ refresh })
               <input type="file" accept=".csv,text/csv" :disabled="importing" hidden @change="importCatalog" />
             </label>
             <span v-if="importMsg" class="import-msg">{{ importMsg }}</span>
-            <span v-else class="import-hint">上传官方目录 CSV，覆盖式刷新设备库</span>
+            <span v-else class="import-hint">上传设备目录 CSV，只追加未收录的机型</span>
           </div>
         </div>
 
@@ -1130,6 +1146,9 @@ defineExpose({ refresh })
                 @click="selectFormFactor(tab.id)"
               >
                 {{ tab.label }}<i v-if="tab.id !== 'all' && ffCounts[tab.id] != null">{{ ffCounts[tab.id] }}</i>
+              </button>
+              <button type="button" :class="{ active: foldableOnly }" :aria-pressed="foldableOnly" @click="toggleFoldable">
+                折叠屏<i v-if="facets.foldable_count != null">{{ facets.foldable_count }}</i>
               </button>
             </div>
           </div>
@@ -1265,6 +1284,22 @@ defineExpose({ refresh })
           <input v-model="form.alias" placeholder="例如：小米14-支付回归" />
         </label>
 
+        <div class="grid2">
+          <label>
+            <span>启动方向</span>
+            <select v-model="form.orientation">
+              <option v-for="item in orientationOptions" :key="item.id" :value="item.id">{{ item.label }}</option>
+            </select>
+          </label>
+          <label v-if="canConfigureFold">
+            <span>初始折叠状态</span>
+            <select v-model="form.fold_state">
+              <option value="unfolded">展开（内屏）</option>
+              <option value="folded">折叠（外屏）</option>
+            </select>
+          </label>
+        </div>
+
         <div class="summary-strip">
           <span>{{ androidVersionShortLabel(form.api_level) }}</span>
           <span>{{ form.screen_width }}×{{ form.screen_height }}</span>
@@ -1359,12 +1394,6 @@ defineExpose({ refresh })
               <label><span>Density（UI 缩放密度）</span><input v-model.number="form.density" type="number" min="120" max="800" @input="markCustom" /></label>
               <label><span>屏幕尺寸（英寸，设备库参考）</span><input v-model="form.screen_size_in" placeholder="例如 6.36" @input="markCustom" /></label>
             </div>
-            <label>
-              <span>初始方向（启动时屏幕方向）</span>
-              <select v-model="form.orientation" @change="markCustom">
-                <option v-for="item in orientationOptions" :key="item.id" :value="item.id">{{ item.label }}</option>
-              </select>
-            </label>
           </section>
 
           <section class="advanced-group">
@@ -1486,6 +1515,13 @@ defineExpose({ refresh })
               <div><span>机型</span><b :title="vmProfileName(vm)">{{ vmProfileName(vm) }}</b></div>
               <div><span>系统</span><b>{{ androidVersionShortLabel(vm.api_level) }} · {{ systemTypeShortLabel(vm.system_type) }} · {{ abiShortLabel(vm.abi) }}</b></div>
               <div><span>屏幕</span><b>{{ vm.screen_width }}×{{ vm.screen_height }} · {{ vm.density }}dpi</b></div>
+              <div>
+                <span>启动屏幕</span>
+                <b>
+                  {{ vm.orientation === 'landscape' ? '横屏' : '竖屏' }}
+                  <template v-if="vm.config_json?.fold"> · {{ vm.config_json.fold.initial_state === 'folded' ? '外屏' : '内屏' }}</template>
+                </b>
+              </div>
               <div><span>内存</span><b>{{ vmRam(vm) }}</b></div>
               <div><span>GPU</span><b>{{ vmGpuLabel(vm) }}</b></div>
               <div><span>Agent</span><b :title="agentLabel(vm)">{{ agentLabel(vm) }}</b></div>
