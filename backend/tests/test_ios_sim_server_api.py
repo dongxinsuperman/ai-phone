@@ -142,8 +142,26 @@ async def test_create_resolves_readable_names(client):
     assert body["state"] == "draft"
     assert body["device_type_name"] == "iPhone 17 Pro"
     assert body["runtime_name"] == "iOS 26.0"
-    assert body["os_version"] == "26.0"
+    assert body["os_version"] == "26.0.1"
     assert body["udid"] is None      # 还没造出实体
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fold_state", ["folded", "unfolded"])
+async def test_create_duo_persists_selected_startup_fold(client, fold_state):
+    from ai_phone.shared.ios_sim import IPHONE_DUO_DEVICE_TYPE
+
+    r = await client.post(
+        f"{_BASE}/instances",
+        json={
+            **_body(device_type=IPHONE_DUO_DEVICE_TYPE,
+                    runtime="com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4"),
+            "initial_fold_state": fold_state,
+        },
+        headers=AUTH,
+    )
+    assert r.status_code == 201
+    assert r.json()["config_json"]["initial_fold_state"] == fold_state
 
 
 @pytest.mark.asyncio

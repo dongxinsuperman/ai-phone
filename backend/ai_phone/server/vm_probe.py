@@ -21,6 +21,7 @@ class _ProbeState:
     hub: Any
     deadline: float
     sequence: int
+    payload: dict
     cache_result: bool = True
     terminal: dict[str, str] = field(default_factory=dict)
     responses: dict[str, dict] = field(default_factory=dict)
@@ -33,6 +34,7 @@ class CapabilityProbeWaiter:
         self, message_type: str, payload: Callable, *, sort_rows: bool = True,
         send_failure_reason: str = "下发失败", timeout_reason: str = "探查超时",
         failure_warning: bool = False, cache_latest: bool = False,
+        validate_response: Callable[[dict, dict], dict] | None = None,
     ) -> None:
         self._message_type, self._payload = message_type, payload
         self._sort_rows = sort_rows
@@ -41,6 +43,7 @@ class CapabilityProbeWaiter:
             "timeout": timeout_reason, "offline": "Agent 已断开",
         }
         self._failure_warning, self._cache_latest = failure_warning, cache_latest
+        self._validate_response = validate_response
         self._pending: dict[str, _ProbeState] = {}
         self._latest: dict[str, dict] = {}
         self._latest_sequence: dict[str, int] = {}
@@ -58,7 +61,7 @@ class CapabilityProbeWaiter:
         request_id = uuid.uuid4().hex[:16]
         payload = {"type": self._message_type, **self._payload(vm, request_id=request_id)}
         state = _ProbeState(request_id, unique, hub,
-                            asyncio.get_running_loop().time() + max(0.0, timeout_sec), self._sequence)
+                            asyncio.get_running_loop().time() + max(0.0, timeout_sec), self._sequence, payload)
         return state, payload
 
     def probe_stream(self, *, hub, vm, timeout_sec: float = 60.0) -> AsyncIterator[dict]:
@@ -155,6 +158,8 @@ class CapabilityProbeWaiter:
         if asyncio.get_running_loop().time() >= state.deadline:
             self._finish(state, agent_id, "timeout")
             return False
+        if self._validate_response is not None:
+            msg = self._validate_response(state.payload, msg)
         accepted = self._finish(state, agent_id, "available" if msg.get("ok") else "unavailable", msg)
         if accepted and state.cache_result and self._cache_latest and state.sequence >= self._latest_sequence.get(agent_id, -1):
             self._latest[agent_id] = dict(msg)

@@ -140,6 +140,30 @@ def test_click_divides_pixels_back_to_points():
     assert wda.calls == [("tap", 402.0, 874.0)]
 
 
+def test_duo_upright_capture_and_touch_share_coordinates(monkeypatch):
+    from io import BytesIO
+    from types import SimpleNamespace
+
+    from PIL import Image
+
+    from ai_phone.agent.ios_sim.duo_posture import DuoDisplay
+
+    d, wda = _driver()
+    panel = DuoDisplay(3, 4, 6, "inner-uuid", "rot180", False)
+    image = Image.new("RGB", (4, 6))
+    image.putpixel((2, 4), (0, 132, 86))
+    png = BytesIO()
+    image.save(png, format="PNG")
+    monkeypatch.setattr(wda, "screenshot", png.getvalue)
+    assert d.screenshot_png() == png.getvalue()
+
+    endpoint = SimpleNamespace(duo=SimpleNamespace(display=lambda _deadline: panel))
+    monkeypatch.setattr(drv_mod, "get_sim_endpoint", lambda _serial: endpoint)
+    with Image.open(BytesIO(d.screenshot_png())) as upright:
+        assert upright.getpixel((1, 1)) == (0, 132, 86)
+    assert panel.native_point(1, 1) == pytest.approx((0.75, 5 / 6))
+
+
 def test_swipe_converts_both_ends_and_duration():
     d, wda = _driver(scale=3.0)
     d.swipe(300, 600, 300, 150, duration_ms=400)

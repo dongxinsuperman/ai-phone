@@ -402,7 +402,19 @@ class IosSimCapabilityWaiter(CapabilityProbeWaiter):
     def __init__(self) -> None:
         super().__init__(P.MSG_IOS_SIM_VM_CAPABILITY_PROBE, vm_payload,
             sort_rows=False, timeout_reason="探查超时，Agent 未回应",
-            failure_warning=True, cache_latest=True)
+            failure_warning=True, cache_latest=True, validate_response=self._validate_fold_response)
+
+    @staticmethod
+    def _validate_fold_response(request: dict, response: dict) -> dict:
+        details = response.get("details")
+        if (
+            not request.get("inspect_instance")
+            and (request.get("config_json") or {}).get("initial_fold_state")
+            and response.get("ok")
+            and (not isinstance(details, dict) or details.get("supports_startup_fold") is not True)
+        ):
+            return {**response, "ok": False, "reason": "该 Agent 尚不支持 iPhone Duo 启动折叠", "warning": ""}
+        return response
 
 
 _waiter: Optional[IosSimCapabilityWaiter] = None

@@ -973,7 +973,10 @@ class HarmonyVmManager:
             config = msg.get("config_json") or {}
             if runtime.created_in_attempt is True and msg.get("device_type") in ROTATION_LOCK_DEVICE_TYPES:
                 startup_timeout(deadline, 1.0)
-                runtime.driver.set_rotation_locked(False)  # type: ignore[attr-defined]
+                try:
+                    runtime.driver.set_rotation_locked(False)  # type: ignore[attr-defined]
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Harmony VM {} 保留系统默认旋转设置: {}", vm_id, exc)
             startup_display = {}
             if "initial_rotation" in config:
                 try:

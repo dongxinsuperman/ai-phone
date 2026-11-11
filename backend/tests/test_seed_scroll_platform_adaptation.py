@@ -32,16 +32,22 @@ def test_wda_scroll_duration_is_on_move_not_press(duration):
 @pytest.mark.parametrize("driver_cls", [IosDriver, IosSimulatorDriver])
 @pytest.mark.parametrize("duration", [100, 1000])
 def test_ios_scroll_scales_coordinates_but_preserves_movement_ms(driver_cls, duration):
-    driver = SimpleNamespace(_wda=Mock(), _px_to_pt=lambda x, y: (x/3, y/3))
-    driver_cls.swipe_for_scroll(driver, 300, 1800, 300, 1200, duration)
+    driver = driver_cls.__new__(driver_cls)
+    driver.serial = "fixture-non-duo"
+    driver._wda = Mock()
+    driver._px_to_pt = lambda x, y: (x / 3, y / 3)
+    driver.swipe_for_scroll(300, 1800, 300, 1200, duration)
     driver._wda.timed_swipe.assert_called_once_with(100.0, 600.0, 100.0, 400.0, duration_ms=duration)
     driver._wda.swipe.assert_not_called()
 
 
 @pytest.mark.parametrize("driver_cls", [IosDriver, IosSimulatorDriver])
 def test_ios_legacy_swipe_keeps_existing_endpoint(driver_cls):
-    driver = SimpleNamespace(_wda=Mock(), _px_to_pt=lambda x, y: (x/3, y/3))
-    driver_cls.swipe(driver, 300, 1800, 300, 1200, 400)
+    driver = driver_cls.__new__(driver_cls)
+    driver.serial = "fixture-non-duo"
+    driver._wda = Mock()
+    driver._px_to_pt = lambda x, y: (x / 3, y / 3)
+    driver.swipe(300, 1800, 300, 1200, 400)
     driver._wda.swipe.assert_called_once_with(100.0, 600.0, 100.0, 400.0, duration_s=.4)
     driver._wda.timed_swipe.assert_not_called()
 

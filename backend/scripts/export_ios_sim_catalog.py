@@ -56,6 +56,11 @@ _RUNTIME_INDEX_URL = (
 # 预发布版本不进目录：设备农场要的是可复现的稳定环境，beta / RC 的构建号随时
 # 会被苹果替换掉。需要跑 beta 的场景请在对应 Agent 上手工装 runtime。
 _PRERELEASE = re.compile(r"\b(beta|release candidate|rc)\b", re.IGNORECASE)
+_DUO_DEVICE_TYPE = "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo"
+# Apple’s index has no runtime identifier. These dedicated builds were identified
+# by their exact identifier and supportedDeviceTypes in simctl's runtime list.
+_DUO_RUNTIME_SUFFIXES = {"24A94425": "27-1", "24B91016s": "27-2-iPhone19-4"}
+_RUNTIME_PREFIX = "com.apple.CoreSimulator.SimRuntime.iOS-"
 
 
 def _run_json(args: List[str]) -> Dict[str, Any]:
@@ -105,6 +110,10 @@ def collect_device_types() -> List[Dict[str, Any]]:
                 ),
             }
         )
+        if identifier == _DUO_DEVICE_TYPE:
+            out[-1]["runtime_identifiers"] = [
+                _RUNTIME_PREFIX + suffix for suffix in _DUO_RUNTIME_SUFFIXES.values()
+            ]
     out.sort(key=lambda d: (d["product_family"], d["name"]))
     return out
 
@@ -112,14 +121,13 @@ def collect_device_types() -> List[Dict[str, Any]]:
 def collect_official_runtimes(timeout: float = 60.0) -> List[Dict[str, Any]]:
     """从苹果官方索引取全部已发布的 iOS 模拟器运行时。
 
-    **按 major.minor 归并**：runtime identifier 只到次版本
-    （``...SimRuntime.iOS-26-0``），26.0 与 26.0.1 是同一个 runtime，装上后
-    ``simctl`` 显示为 ``iOS 26.0 (26.0.1)``。归并时保留最高的补丁号做展示。
+    通用 runtime 按次版本标识归并，保留最新补丁号。Duo 专用构建单独保留标识，
+    同一系统版本下也不能和通用 runtime 互换。
     """
     with urllib.request.urlopen(_RUNTIME_INDEX_URL, timeout=timeout) as resp:
         index = plistlib.loads(resp.read())
 
-    merged: Dict[Tuple[int, int], Dict[str, Any]] = {}
+    merged: Dict[str, Dict[str, Any]] = {}
     for item in index.get("downloadables") or []:
         if item.get("platform") != "com.apple.platform.iphoneos":
             continue
@@ -128,20 +136,29 @@ def collect_official_runtimes(timeout: float = 60.0) -> List[Dict[str, Any]]:
         name = str(item.get("name") or "")
         if _PRERELEASE.search(name):
             continue
-        version = str((item.get("simulatorVersion") or {}).get("version") or "")
+        simulator = item.get("simulatorVersion") or {}
+        version = str(simulator.get("version") or "")
         key = _version_key(version)
         if key[0] <= 0:
             continue
         major, minor = key[0], key[1]
+        build = str(simulator.get("buildUpdate") or "")
+        duo_suffix = _DUO_RUNTIME_SUFFIXES.get(build)
+        identifier = _RUNTIME_PREFIX + (duo_suffix or f"{major}-{minor}")
         candidate = {
-            "identifier": f"com.apple.CoreSimulator.SimRuntime.iOS-{major}-{minor}",
-            "name": f"iOS {major}.{minor}",
+            "identifier": identifier,
+            "name": f"iOS {major}.{minor}" + (" · iPhone Duo" if duo_suffix else ""),
             "version": version,
-            "build": str((item.get("simulatorVersion") or {}).get("buildUpdate") or ""),
+            "build": build,
+            "architectures": sorted(item.get("architectures") or []),
         }
-        existing = merged.get((major, minor))
+        if duo_suffix:
+            candidate["only_device_type"] = _DUO_DEVICE_TYPE
+        existing = merged.get(identifier)
         if existing is None or _version_key(version) > _version_key(existing["version"]):
-            merged[(major, minor)] = candidate
+            merged[identifier] = candidate
+        elif existing["build"] == build:
+            existing["architectures"] = sorted(set(existing["architectures"] + candidate["architectures"]))
 
     runtimes = list(merged.values())
     runtimes.sort(key=lambda r: _version_key(r["version"]))

@@ -292,6 +292,18 @@ class WdaClient:
         payload = self._request("GET", f"/session/{sid}/orientation")
         return str(payload.get("value") or "")
 
+    def simulator_orientation(self) -> int:
+        """Read XCUIDevice's pose, independent of the foreground app."""
+        return int(self._request("GET", "/wda/deviceOrientation")["value"])
+
+    def set_simulator_orientation(self, value: int) -> None:
+        self._request("POST", "/wda/deviceOrientation", {"orientation": value})
+
+    def set_simulator_display(self, display_id: int) -> None:
+        value = self._request("POST", "/wda/simulatorDisplay", {"displayId": display_id})["value"]
+        if value != display_id:
+            raise WdaError(f"Simulator WDA did not select display {display_id}")
+
     # ------------------------------------------------------------------
     # 触控（坐标全部按 point 传，不是物理像素）
     # ------------------------------------------------------------------

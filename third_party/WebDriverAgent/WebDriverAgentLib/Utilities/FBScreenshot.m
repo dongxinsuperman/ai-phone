@@ -19,11 +19,13 @@
 #import "FBXCTestDaemonsProxy.h"
 #import "XCTestManager_ManagerInterface-Protocol.h"
 #import "XCUIScreen.h"
+#include <stdatomic.h>
 
 static const NSTimeInterval SCREENSHOT_TIMEOUT = 20.;
 static const CGFloat SCREENSHOT_SCALE = 1.0;  // Screenshot API should keep the original screen scale
 static const CGFloat HIGH_QUALITY = 0.8;
 static const CGFloat LOW_QUALITY = 0.25;
+static atomic_llong FBSimulatorCaptureID;
 
 NSString *formatTimeInterval(NSTimeInterval interval) {
   NSUInteger milliseconds = (NSUInteger)(interval * 1000);
@@ -31,6 +33,30 @@ NSString *formatTimeInterval(NSTimeInterval interval) {
 }
 
 @implementation FBScreenshot
+
++ (long long)captureScreenID
+{
+  long long displayID = [self simulatorCaptureScreenID];
+  return displayID > 0 ? displayID : XCUIScreen.mainScreen.displayID;
+}
+
++ (long long)simulatorCaptureScreenID
+{
+#if TARGET_OS_SIMULATOR
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    atomic_store(&FBSimulatorCaptureID,
+                 [NSProcessInfo.processInfo.environment[@"AIPHONE_SIMULATOR_DISPLAY_ID"] longLongValue]);
+  });
+#endif
+  return atomic_load(&FBSimulatorCaptureID);
+}
+
++ (void)setSimulatorCaptureScreenID:(long long)displayID
+{
+  [self simulatorCaptureScreenID];
+  atomic_store(&FBSimulatorCaptureID, displayID);
+}
 
 + (CGFloat)compressionQualityWithQuality:(NSUInteger)quality
 {
@@ -60,8 +86,7 @@ NSString *formatTimeInterval(NSTimeInterval interval) {
 + (NSData *)takeInOriginalResolutionWithQuality:(NSUInteger)quality
                                           error:(NSError **)error
 {
-  XCUIScreen *mainScreen = XCUIScreen.mainScreen;
-  return [self.class takeWithScreenID:mainScreen.displayID
+  return [self.class takeWithScreenID:[self.class captureScreenID]
                                 scale:SCREENSHOT_SCALE
                    compressionQuality:[self.class compressionQualityWithQuality:quality]
                             sourceUTI:[self.class imageUtiWithQuality:quality]

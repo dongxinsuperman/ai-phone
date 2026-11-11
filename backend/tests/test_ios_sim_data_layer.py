@@ -68,15 +68,16 @@ def test_official_runtimes_have_wide_major_span():
     assert len(majors) >= 8, f"大版本跨度太窄：{sorted(majors)}"
 
 
-def test_runtime_identifier_is_major_minor_only():
-    """runtime identifier 只到次版本——26.0 与 26.0.1 是同一个 runtime。"""
-    for rt in cat.load_bundled_catalog().get("official_runtimes") or []:
-        tail = rt["identifier"].rsplit(".", 1)[-1]
-        assert tail.startswith("iOS-"), rt["identifier"]
-        parts = tail.split("-")
-        assert len(parts) == 3, f"identifier 应形如 iOS-26-0：{rt['identifier']}"
+def test_runtime_identifier_uses_major_minor_and_an_explicit_device_suffix():
+    catalog = cat.load_bundled_catalog()
+    for rt in catalog.get("official_runtimes") or []:
+        identifier = rt["identifier"]
         major, minor = rt["version"].split(".")[:2]
-        assert parts[1] == major and parts[2] == minor, rt
+        prefix = f"com.apple.CoreSimulator.SimRuntime.iOS-{major}-{minor}"
+        if identifier != prefix:
+            assert identifier.startswith(prefix + "-")
+            device = cat.find_device_type(rt["only_device_type"], catalog)
+            assert device and identifier in device["runtime_identifiers"]
 
 
 def test_runtime_identifiers_are_unique():

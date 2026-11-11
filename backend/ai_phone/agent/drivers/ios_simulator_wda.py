@@ -52,6 +52,8 @@ from typing import Dict, Optional, Tuple
 
 from loguru import logger
 
+from ai_phone.shared.ios_sim import IPHONE_DUO_DEVICE_TYPE
+
 from ...config import get_settings
 from .simctl import SimctlError, list_simulators, simctl_run
 
@@ -363,6 +365,7 @@ def reset_ports_for_tests() -> None:
 # WDA 产物构建（全实例共享一份）
 # ---------------------------------------------------------------------------
 _RUNNER_APP_NAME = "WebDriverAgentRunner-Runner.app"
+_RUNNER_TEST_EXECUTABLE = Path("PlugIns/WebDriverAgentRunner.xctest/WebDriverAgentRunner")
 _build_lock = threading.Lock()
 
 
@@ -486,7 +489,16 @@ def build_wda_for_simulator(
 
     with _bounded_build_lock(deadline):
         _startup_timeout(deadline, timeout)
-        if app.is_dir() and not force:
+        source_paths = (
+            proj / "WebDriverAgentLib/Commands/FBOrientationCommands.m",
+            proj / "WebDriverAgentLib/Utilities/FBScreenshot.m",
+            proj / "WebDriverAgentLib/Utilities/FBMjpegServer.m",
+        )
+        source_mtime = max((path.stat().st_mtime for path in source_paths if path.is_file()), default=0)
+        runner = app / _RUNNER_TEST_EXECUTABLE
+        if app.is_dir() and not force and (
+            not source_mtime or (runner.is_file() and runner.stat().st_mtime >= source_mtime)
+        ):
             logger.debug("复用已有的虚拟机版 WDA 产物：{}", app)
             return app
 
@@ -585,6 +597,55 @@ def _kill_all_xcodebuild() -> None:
 atexit.register(_kill_all_xcodebuild)
 
 
+def _xcodebuild_test_args(udid: str, out_dir: Path, *, duo: bool) -> list[str]:
+    args = [
+        "test-without-building",
+        "-xctestrun",
+        str(out_dir / "Build" / "Products" / f"aiphone-{udid}.xctestrun"),
+        "-destination",
+        f"platform=iOS Simulator,id={udid}",
+        # Keep the simulator's test results out of the physical-device DerivedData.
+        "-derivedDataPath",
+        str(out_dir),
+    ]
+    if duo:
+        args.extend(("-parallel-testing-enabled", "NO"))
+    return args
+
+
+def stop_detached_duo_xcodebuild(
+    udid: str, *, build_dir: Optional[Path] = None, deadline: Optional[float] = None,
+) -> bool:
+    """Close this Agent's exact Duo runner when its original parent is gone."""
+    import psutil
+
+    out_dir = _abs_build_dir(build_dir) if build_dir else default_build_dir()
+    expected = _xcodebuild_test_args(udid, out_dir, duo=True)
+    matches = []
+    for proc in psutil.process_iter(["name", "cmdline", "ppid", "uids"]):
+        _startup_timeout(deadline, 1.0)
+        info = proc.info
+        if (info["name"] == "xcodebuild" and info["ppid"] == 1
+                and getattr(info["uids"], "effective", None) == os.geteuid()
+                and (info["cmdline"] or [])[1:] == expected):
+            matches.append(proc)
+    if not matches:
+        return False
+    if len(matches) != 1:
+        raise SimulatorWdaError(f"无法唯一确认脱离 Agent 的 Duo WDA 进程 udid={udid}")
+    proc = matches[0]
+    try:
+        _startup_timeout(deadline, 1.0)
+        proc.terminate()
+        proc.wait(timeout=_startup_timeout(deadline, 10.0))
+    except psutil.NoSuchProcess:
+        pass
+    except psutil.Error as exc:
+        raise SimulatorWdaError(f"停止脱离 Agent 的 Duo WDA 失败 udid={udid}：{exc}") from exc
+    logger.info("udid={} 已停止脱离 Agent 的 Duo WDA pid={}", udid, proc.pid)
+    return True
+
+
 def _probe_wda_device_name(port: int, timeout_s: float = 2.0) -> Optional[str]:
     """读 ``/wda/device/info`` 的 ``name``，即虚拟机实例名（``aiphone_sim_<vmid>``）。
 
@@ -665,8 +726,8 @@ class IosSimulatorWdaLauncher:
     **两条启动路，按机型自动选**（方案 §1.8.0）：
 
     ```text
-    iPhone  simctl install + simctl launch     无常驻进程，WDA 由 launchd_sim 托管
-    iPad    xcodebuild test-without-building   与 iOS 真机同族，需常驻子进程守着
+    普通 iPhone       simctl install + simctl launch
+    iPad / iPhone Duo xcodebuild test-without-building
     ```
 
     iPad 之所以不能走轻量路，是 ``simctl launch`` 独立自举时 XCTest 会先做完整的
@@ -674,7 +735,8 @@ class IosSimulatorWdaLauncher:
     HTTP 服务永远起不来。换 ``xcodebuild`` 后时序不同（先跑测试、后处理切后台），
     实测 3 秒就绪。根因与实验记录见方案 §1.8.0。
 
-    当前实现用 atexit 在 Agent 正常退出时主动回收 iPad 的 xcodebuild，因此需要
+    Duo Runtime 需要 XCTest 提供 runner 依赖，由 Xcode 启动。
+    当前实现用 atexit 在 Agent 正常退出时主动回收 xcodebuild，因此需要
     重新确认 WDA 就绪；这不代表 guest 已关机，也不是所有退出方式下的系统保证。
     """
 
@@ -689,6 +751,7 @@ class IosSimulatorWdaLauncher:
         ports: Optional[SimulatorPorts] = None,
         expect_sim_name: str = "",
         device_type: str = "",
+        simulator_display_id: Optional[int] = None,
     ) -> None:
         """
         Args:
@@ -705,6 +768,7 @@ class IosSimulatorWdaLauncher:
         self._build_dir = build_dir
         self._expect_sim_name = (expect_sim_name or "").strip()
         self._device_type = (device_type or "").strip()
+        self._simulator_display_id = simulator_display_id
         self._startup_deadline: Optional[float] = None
         self.ports = ports or allocate_ports(udid)
         self._runner_bundle_id: Optional[str] = None
@@ -719,6 +783,9 @@ class IosSimulatorWdaLauncher:
     @property
     def runner_bundle_id(self) -> Optional[str]:
         return self._runner_bundle_id
+
+    def configure_simulator_display(self, display_id: int) -> None:
+        self._simulator_display_id = display_id
 
     def is_alive(self, *, expect_sim_name: str = "") -> bool:
         """端口上是否有一个**属于本设备**的、ready 的 WDA。
@@ -825,7 +892,7 @@ class IosSimulatorWdaLauncher:
             )
             return
 
-        use_xcodebuild = (
+        use_xcodebuild = self._device_type == IPHONE_DUO_DEVICE_TYPE or (
             ".ipad-" in self._device_type.lower() if self._device_type else is_ipad(self.udid)
         )
         _startup_timeout(self._startup_deadline, timeout)
@@ -875,6 +942,9 @@ class IosSimulatorWdaLauncher:
             _forget_xcodebuild(self.udid)
             return
 
+        if self._device_type == IPHONE_DUO_DEVICE_TYPE and self._expect_sim_name.startswith("aiphone_sim_"):
+            if stop_detached_duo_xcodebuild(self.udid, build_dir=self._build_dir, deadline=deadline):
+                return
         bundle_id = self._runner_bundle_id
         if not bundle_id:
             return
@@ -894,23 +964,10 @@ class IosSimulatorWdaLauncher:
         out_dir = _abs_build_dir(self._build_dir) if self._build_dir else default_build_dir()
         xctestrun = self._prepare_xctestrun(out_dir)
 
-        cmd = [
-            xcodebuild,
-            "test-without-building",
-            "-xctestrun",
-            str(xctestrun),
-            "-destination",
-            f"platform=iOS Simulator,id={self.udid}",
-            # 结果包与日志写进虚拟机自己的目录。**不加这行会写进
-            # ~/Library/Developer/Xcode/DerivedData**——那是 iOS 真机 xcodebuild
-            # 用的同一个根目录，而且每个 xctestrun 路径会各建一个新 hash 目录，
-            # 一台实例一个、只增不减。实测半天就堆出 9 个目录、几百 MB。
-            "-derivedDataPath",
-            str(out_dir),
-        ]
+        cmd = [xcodebuild, *_xcodebuild_test_args(self.udid, out_dir, duo=self._device_type == IPHONE_DUO_DEVICE_TYPE)]
         _prune_test_results(out_dir)
         _startup_timeout(self._startup_deadline, timeout)
-        logger.info("udid={} iPad 走 xcodebuild 启动 WDA：{}", self.udid, " ".join(cmd))
+        logger.info("udid={} 通过 XCTest 启动虚拟机 WDA：{}", self.udid, " ".join(cmd))
         try:
             proc = subprocess.Popen(  # noqa: S603
                 cmd,
@@ -941,11 +998,12 @@ class IosSimulatorWdaLauncher:
            变量传给被测进程，``SIMCTL_CHILD_*`` 那套也只对 ``simctl launch`` 有效。
         """
         products = out_dir / "Build" / "Products"
-        candidates = sorted(products.glob("*.xctestrun"))
-        base = next((p for p in candidates if not p.name.startswith("aiphone-")), None)
+        candidates = (p for p in products.glob("*.xctestrun") if not p.name.startswith("aiphone-"))
+        # 升级 Xcode 后旧 SDK 的模板仍在 DerivedData，使用本次构建生成的模板。
+        base = max(candidates, key=lambda path: path.stat().st_mtime_ns, default=None)
         if base is None:
             raise SimulatorWdaError(
-                f"找不到 xctestrun（{products}）。iPad 路径依赖 build-for-testing 的产物"
+                f"找不到 xctestrun（{products}）。XCTest 启动依赖 build-for-testing 的产物"
             )
 
         try:
@@ -959,6 +1017,8 @@ class IosSimulatorWdaLauncher:
             env = dict(cfg.get("EnvironmentVariables") or {})
             env["USE_PORT"] = str(self.ports.wda)
             env["MJPEG_SERVER_PORT"] = str(self.ports.mjpeg)
+            if self._simulator_display_id is not None:
+                env["AIPHONE_SIMULATOR_DISPLAY_ID"] = str(self._simulator_display_id)
             cfg["EnvironmentVariables"] = env
 
         target = base.with_name(f"aiphone-{self.udid}.xctestrun")
@@ -983,16 +1043,16 @@ class IosSimulatorWdaLauncher:
     def _install_is_current(self, app: Path) -> bool:
         """已装的那份是不是当前产物。
 
-        比 mtime：产物重编后 ``.app`` 的时间戳会更新，装进去的那份不会，据此判断
-        需不需要重装。**取不到时间戳一律判 False**——多装一次只是慢几秒，装漏了
+        比 XCTest 可执行文件的 mtime。增量构建可能只更新二进制，外层 ``.app`` 目录
+        的时间戳可以保持原样。**取不到时间戳一律判 False**——多装一次只是慢几秒，装漏了
         会让虚拟机跑在旧 WDA 上，那种问题极难从现象倒推。
         """
         installed = self._installed_app_path()
         if installed is None or not installed.is_dir():
             return False
         try:
-            built_at = app.stat().st_mtime
-            installed_at = installed.stat().st_mtime
+            built_at = (app / _RUNNER_TEST_EXECUTABLE).stat().st_mtime
+            installed_at = (installed / _RUNNER_TEST_EXECUTABLE).stat().st_mtime
         except OSError:
             return False
         return installed_at >= built_at

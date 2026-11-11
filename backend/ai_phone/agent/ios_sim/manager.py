@@ -45,8 +45,10 @@ from ai_phone.agent.drivers.simctl import SimctlError, simctl_run
 from ai_phone.agent.ws_client import AgentWSClient
 from ai_phone.config import get_settings
 from ai_phone.shared import protocol as P
+from ai_phone.shared.ios_sim import IPHONE_DUO_DEVICE_TYPE
 
 from .capability import find_ios_sim_tools, probe_ios_sim_capability
+from .duo_posture import DUO_ORIENTATIONS, DuoControls, DuoDisplay
 
 
 # 受管虚拟机的名字前缀。与 Android 的 ``aiphone_vm_`` 同构：名字是持久身份锚点，
@@ -54,6 +56,7 @@ from .capability import find_ios_sim_tools, probe_ios_sim_capability
 _MANAGED_NAME_PREFIX = "aiphone_sim_"
 _OBSERVATION_TIMEOUT_SEC = 5.0
 _STOP_TIMEOUT_SEC = 120.0
+_DEVICE_ORIENTATIONS = {"portrait": 1, "landscape_left": 3, "landscape_right": 4}
 
 
 def _stop_timeout(deadline: Optional[float], maximum: float) -> float:
@@ -102,7 +105,9 @@ def _startup_timeout(deadline: Optional[float], maximum: float) -> float:
     return min(maximum, remaining)
 
 
-def _register_wda_endpoint(udid: str, wda_port: int, mjpeg_port: int) -> None:
+def _register_wda_endpoint(
+    udid: str, wda_port: int, mjpeg_port: int, duo: Optional[DuoControls] = None,
+) -> None:
     """把已就绪的 WDA 登记进端点表，供 readiness 探针与镜像使用。
 
     **必须在这里登记，不能只靠 ``open_ios_simulator_driver``**：本类是自己起
@@ -126,6 +131,7 @@ def _register_wda_endpoint(udid: str, wda_port: int, mjpeg_port: int) -> None:
                 wda_port=int(wda_port),
                 mjpeg_port=int(mjpeg_port),
                 client=WdaClient(base_url=f"http://127.0.0.1:{int(wda_port)}"),
+                duo=duo,
             ),
         )
     except Exception as exc:  # noqa: BLE001
@@ -196,6 +202,7 @@ class SimVmRuntime:
     wda_port: int = 0
     mjpeg_port: int = 0
     launcher: Optional[IosSimulatorWdaLauncher] = None
+    duo: Optional[DuoControls] = None
     # ready 只表示已确认 boot + WDA；缺席两轮仅触发严格状态核实，不等于消失。
     ready: bool = False
     missing_ticks: int = 0
@@ -264,6 +271,9 @@ class IosSimVmManager:
             rt = udid_to_runtime.get(info.serial)
             if rt is None:
                 continue
+            display = rt.details.get("active_display")
+            if display:
+                info.screen_width, info.screen_height = display["width"], display["height"]
             extra = dict(info.extra or {})
             extra.update(
                 {
@@ -512,7 +522,10 @@ class IosSimVmManager:
     def _local_port_free(port: int) -> bool:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
             try:
+                # A closed WDA connection may still be in TIME_WAIT.
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 probe.bind(("127.0.0.1", port))
+                probe.listen(1)
             except OSError:
                 return False
         return True
@@ -642,7 +655,7 @@ class IosSimVmManager:
                 existing.missing_ticks = 0
                 existing.start_request_id = str(msg.get("request_id") or "")
                 mark_managed(observed_udid)
-                _register_wda_endpoint(observed_udid, existing.wda_port, existing.mjpeg_port)
+                _register_wda_endpoint(observed_udid, existing.wda_port, existing.mjpeg_port, existing.duo)
                 details = {k: v for k, v in existing.details.items()
                            if k not in {"cleanup_pending", "cleanup_error", "discovery_uncertain"}}
                 details.update(
@@ -663,7 +676,12 @@ class IosSimVmManager:
                 # may be closed here. No shutdown, global kill or WDA restart.
                 if getattr(existing.launcher, "udid", "") != observed_udid:
                     raise InstanceIdentityError("旧 WDA 资源不属于已停止的原实例")
-                existing.launcher.stop()
+                existing.launcher.stop(**({"deadline": deadline} if deadline is not None else {}))
+                observation = self.observe_instance(vm_id, deadline)
+            elif (observation["reason"] == "wda_process_running"
+                    and msg.get("udid") == observed_udid
+                    and msg.get("device_type") == IPHONE_DUO_DEVICE_TYPE
+                    and wda_state.stop_detached_duo_xcodebuild(observed_udid, deadline=deadline)):
                 observation = self.observe_instance(vm_id, deadline)
             if observation["state"] != "stopped" or not observation["resources_released"]:
                 raise SimVmStartFailed(f"原实例已停止但 WDA 资源尚未确认释放：{observation['reason']}", observed_udid, {
@@ -723,10 +741,24 @@ class IosSimVmManager:
             runtime.wda_port, runtime.mjpeg_port = ports.wda, ports.mjpeg
 
         self._boot(udid, deadline=deadline)
+        config = msg.get("config_json") or {}
+        initial_fold_state = config.get("initial_fold_state")
+        initial_orientation = config.get("initial_orientation")
+        display = None
+        if device_type == IPHONE_DUO_DEVICE_TYPE:
+            duo_deadline = time.monotonic() + _startup_timeout(deadline, 20.0)
+            runtime.duo = DuoControls(udid, capability["details"]["tools"]["xcrun"])
+            if initial_fold_state:
+                runtime.duo.set_fold(initial_fold_state, duo_deadline)
+            if initial_orientation:
+                runtime.duo.set_orientation(initial_orientation, duo_deadline)
+            display = runtime.duo.display(duo_deadline)
+            runtime.duo.capture_id = display.id
         _startup_timeout(deadline, float(get_settings().wda_startup_timeout_s))
         # 已核实的持久实例名直接用于 WDA 身份校验，不让查询失败削弱校验。
         launcher = runtime.launcher or IosSimulatorWdaLauncher(
-            udid, expect_sim_name=sim_name, device_type=device_type
+            udid, expect_sim_name=sim_name, device_type=device_type,
+            simulator_display_id=display.id if display else None,
         )
         # start 抛错也必须持有 launcher，才能回收已拉起的 iPad xcodebuild。
         runtime.launcher = launcher
@@ -737,11 +769,9 @@ class IosSimVmManager:
                 wait_ready_s=_startup_timeout(deadline, float(get_settings().wda_startup_timeout_s)),
                 deadline=deadline,
             )
+        if initial_orientation and runtime.duo is None:
+            self._simulator_pose(runtime, initial_orientation, deadline)
         _startup_timeout(deadline, 1.0)
-        runtime.ready = True
-        runtime.missing_ticks = 0
-        mark_managed(udid)
-        _register_wda_endpoint(udid, ports.wda, ports.mjpeg)
 
         details = {
             "sim_name": sim_name,
@@ -753,13 +783,100 @@ class IosSimVmManager:
             "created_in_attempt": bool(attempt.get("created_in_attempt")),
             "instance_observation": self.observe_instance(vm_id, deadline),
         }
+        if display is not None:
+            details.update(
+                initial_fold_state=initial_fold_state,
+                active_display={"id": display.id, "width": display.width, "height": display.height},
+            )
         _startup_timeout(deadline, 1.0)
         runtime.details = dict(details)
+        runtime.ready = True
+        runtime.missing_ticks = 0
+        mark_managed(udid)
+        _register_wda_endpoint(udid, ports.wda, ports.mjpeg, runtime.duo)
         logger.info(
             "iOS 虚拟机已就绪 vm_id={} udid={} name={} wda={} ",
             vm_id, udid, sim_name, ports.wda,
         )
         return {"udid": udid, "details": details}
+
+    @staticmethod
+    def _simulator_pose(
+        runtime: SimVmRuntime, orientation: Optional[str] = None, deadline: Optional[float] = None,
+    ) -> int:
+        from ai_phone.agent.drivers.wda_client import WdaClient
+
+        target = _DEVICE_ORIENTATIONS[orientation] if orientation is not None else None
+        with WdaClient(
+            base_url=f"http://127.0.0.1:{runtime.wda_port}",
+            timeout=_startup_timeout(deadline, 5.0),
+        ) as wda:
+            actual = wda.simulator_orientation()
+            if target is None or actual == target:
+                return actual
+            wda.set_simulator_orientation(target)
+            until = time.monotonic() + _startup_timeout(deadline, 4.0)
+            while time.monotonic() < until:
+                actual = wda.simulator_orientation()
+                if actual == target:
+                    return actual
+                time.sleep(0.2)
+        raise RuntimeError("Simulator 没有确认所选机身方向")
+
+    def display_sync(self, msg: Dict[str, Any]) -> Dict[str, Any]:
+        vm_id = str(msg["vm_id"])
+        deadline = _start_deadline(msg)
+        with self._vm_lock(vm_id):
+            runtime = self._runtimes.get(vm_id)
+            if (runtime is None or not runtime.ready or runtime.udid != msg["serial"]
+                    or runtime.launcher is None
+                    or not runtime.launcher.is_alive(expect_sim_name=managed_sim_name(vm_id))):
+                raise RuntimeError("当前 iOS 模拟器实例未就绪")
+            if runtime.duo is not None:
+                return self._duo_display(runtime, msg, time.monotonic() + _startup_timeout(deadline, 12.0))
+            if msg.get("rotation") or msg.get("fold_state"):
+                raise RuntimeError("当前 iOS 模拟器不支持此原生姿态操作")
+            value = self._simulator_pose(runtime, msg.get("orientation"), deadline)
+            return {
+                "can_rotate": True,
+                "orientation": next((name for name, code in _DEVICE_ORIENTATIONS.items() if code == value), None),
+            }
+
+    @staticmethod
+    def _sync_duo_capture(runtime: SimVmRuntime, display: DuoDisplay, deadline: float) -> None:
+        from ai_phone.agent.drivers.wda_client import WdaClient
+
+        assert runtime.duo is not None and runtime.launcher is not None
+        if runtime.duo.capture_id != display.id:
+            with WdaClient(base_url=runtime.launcher.wda_url, timeout=_startup_timeout(deadline, 5.0)) as wda:
+                wda.set_simulator_display(display.id)
+            runtime.launcher.configure_simulator_display(display.id)
+            runtime.duo.capture_id = display.id
+        runtime.details["active_display"] = {"id": display.id, "width": display.width, "height": display.height}
+
+    def _duo_display(self, runtime: SimVmRuntime, msg: Dict[str, Any], deadline: float) -> Dict[str, Any]:
+        assert runtime.duo is not None
+        duo = runtime.duo
+        body = duo.body_rotation(deadline)
+        target = msg.get("orientation")
+        turn = msg.get("rotation")
+        if turn:
+            target = DUO_ORIENTATIONS[(body + (1 if turn == "left" else -1)) % 4]
+        if target:
+            body = duo.set_orientation(target, deadline)
+        fold = msg.get("fold_state")
+        display = duo.set_fold(fold, deadline) if fold else duo.display(deadline)
+        if fold:
+            body = duo.body_rotation(deadline)
+        self._sync_duo_capture(runtime, display, deadline)
+        angle = duo.angle(deadline)
+        fold_state = "folded" if angle <= 0.5 else "unfolded" if angle >= 179.5 else "partially_open"
+        return {
+            "can_rotate": True, "can_fold": True, "orientation": DUO_ORIENTATIONS[body],
+            "body_rotation": body, "body_natural_landscape": False,
+            "fold_state": fold_state, "hinge_angle": angle,
+            "width": display.width, "height": display.height, "display_rotation": display.rotation,
+        }
 
     def _finish_failed_start(
         self, vm_id: str, attempt: Dict[str, Any], error: Exception,
@@ -1132,7 +1249,14 @@ class IosSimVmManager:
             except Exception as exc:  # noqa: BLE001
                 logger.debug("重启前停 WDA 失败（继续）udid={}：{}", udid, exc)
             try:
+                display = runtime.duo.display(time.monotonic() + 5.0) if runtime.duo else None
+                if display is not None:
+                    launcher.configure_simulator_display(display.id)
                 launcher.start()
+                if display is not None:
+                    runtime.duo.capture_id = display.id
+                    runtime.details["active_display"] = {"id": display.id, "width": display.width,
+                                                         "height": display.height}
             except Exception as exc:  # noqa: BLE001
                 runtime.ready = False
                 logger.warning("重启 WDA 失败 udid={}：{}", udid, exc)
@@ -1300,7 +1424,7 @@ class IosSimVmManager:
                         rt.details.update({"wda_alive": rt.ready, "guest_state": "Booted"})
                         if rt.ready:
                             mark_managed(udid)
-                            _register_wda_endpoint(udid, rt.wda_port, rt.mjpeg_port)
+                            _register_wda_endpoint(udid, rt.wda_port, rt.mjpeg_port, rt.duo)
                         else:
                             unmark_managed(udid)
                             _unregister_wda_endpoint(udid)
@@ -1323,11 +1447,21 @@ class IosSimVmManager:
                     details={"reclaimed": True, "sim_name": adopted_name,
                              "wda_port": ports.wda, "wda_alive": wda_alive, "guest_state": "Booted"},
                 )
+                if rt.device_type == IPHONE_DUO_DEVICE_TYPE:
+                    rt.duo = DuoControls(udid, tools.xcrun)
+                    if wda_alive:
+                        try:
+                            deadline = time.monotonic() + 5.0
+                            self._sync_duo_capture(rt, rt.duo.display(deadline), deadline)
+                        except Exception as exc:  # noqa: BLE001
+                            wda_alive = rt.ready = False
+                            rt.details["wda_alive"] = False
+                            logger.warning("认领 iPhone Duo 时无法同步活动屏 udid={}：{}", udid, exc)
                 seen.add(vm_id)
                 self._runtimes[vm_id] = rt
                 if wda_alive:
                     mark_managed(udid)
-                    _register_wda_endpoint(udid, ports.wda, ports.mjpeg)
+                    _register_wda_endpoint(udid, ports.wda, ports.mjpeg, rt.duo)
                 else:
                     unmark_managed(udid)
                     logger.info("受管虚拟机 {} 仍在运行但 WDA 未就绪", rt.sim_name)

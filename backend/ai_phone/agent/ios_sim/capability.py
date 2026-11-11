@@ -40,6 +40,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 
 from ai_phone.config import get_settings
+from ai_phone.shared.ios_sim import IPHONE_DUO_DEVICE_TYPE
 # 内存探测直接复用 Android 那份，与鸿蒙的做法一致（harmony_vm/capability.py 也是
 # 显式 import android_vm 的同名函数）——同一件事没必要写三遍。
 from ai_phone.agent.android_vm.capability import available_memory_mb
@@ -418,6 +419,19 @@ def probe_ios_sim_capability(
                 "warning": "",
                 "details": details,
             }
+
+    initial_fold_state = (requirement.get("config_json") or {}).get("initial_fold_state")
+    if initial_fold_state is not None:
+        if (
+            initial_fold_state not in ("folded", "unfolded")
+            or requested_device_type != IPHONE_DUO_DEVICE_TYPE
+            or matched is None
+        ):
+            return {
+                "ok": False, "reason": "只有匹配专用镜像的 iPhone Duo 支持启动折叠",
+                "warning": "", "details": details,
+            }
+        details["supports_startup_fold"] = True
 
     # —— 软提示：内存与磁盘（只提醒，不拦截）——
     warnings: List[str] = []

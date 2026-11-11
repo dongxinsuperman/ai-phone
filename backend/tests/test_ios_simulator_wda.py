@@ -451,6 +451,7 @@ def test_simctl_failure_does_not_guess_iphone_path(monkeypatch):
 
 @pytest.mark.parametrize("device_type,expected", [
     ("com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4-8GB", ["xcodebuild"]),
+    ("com.apple.CoreSimulator.SimDeviceType.iPhone-Duo", ["xcodebuild"]),
     ("com.apple.CoreSimulator.SimDeviceType.iPhone-16e", ["install", "launch", "wait"]),
 ])
 def test_known_device_type_preserves_wda_path_without_new_scan(monkeypatch, tmp_path, device_type, expected):
@@ -637,6 +638,48 @@ def test_stop_terminates_xcodebuild_when_owned():
     launcher.stop()
     assert proc.terminated is True
     assert "U2" not in mod._XCODEBUILD_PROCS
+
+
+def test_reclaimed_duo_stops_only_its_detached_xcodebuild(monkeypatch, tmp_path):
+    import os
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    import psutil
+
+    out_dir = tmp_path.resolve()
+    args = [
+        "xcodebuild", "test-without-building", "-xctestrun",
+        str(out_dir / "Build" / "Products" / "aiphone-DUO.xctestrun"),
+        "-destination", "platform=iOS Simulator,id=DUO",
+        "-derivedDataPath", str(out_dir), "-parallel-testing-enabled", "NO",
+    ]
+
+    def process(pid, *, parent=1, uid=os.geteuid(), cmdline=args):
+        return SimpleNamespace(
+            pid=pid,
+            info={"name": "xcodebuild", "cmdline": cmdline, "ppid": parent,
+                  "uids": SimpleNamespace(effective=uid)},
+            terminate=Mock(), wait=Mock(),
+        )
+
+    runner = process(20)
+    live_agent = process(21, parent=19)
+    other_user = process(22, uid=os.geteuid() + 1)
+    custom_args = list(args)
+    custom_args[3] = str(out_dir / "my-test.xctestrun")
+    manual_runner = process(23, cmdline=custom_args)
+    monkeypatch.setattr(psutil, "process_iter", lambda _: iter((live_agent, other_user, manual_runner, runner)))
+    launcher = wda_mod.IosSimulatorWdaLauncher(
+        "DUO", expect_sim_name="aiphone_sim_fixture", build_dir=out_dir,
+        device_type=wda_mod.IPHONE_DUO_DEVICE_TYPE,
+    )
+    launcher.stop()
+
+    runner.terminate.assert_called_once_with()
+    runner.wait.assert_called_once_with(timeout=10.0)
+    for unrelated in (live_agent, other_user, manual_runner):
+        unrelated.terminate.assert_not_called()
 
 
 def test_failed_xcodebuild_stop_keeps_process_handle():
@@ -881,15 +924,19 @@ def test_stop_is_noop_before_start():
 def _install_probe(monkeypatch, tmp_path, *, installed_mtime=None):
     """造一份产物 + 可选的「已装副本」，返回记录 simctl 调用的 list。"""
     built = tmp_path / "built" / "Runner.app"
-    built.mkdir(parents=True)
+    built_runner = built / wda_mod._RUNNER_TEST_EXECUTABLE
+    built_runner.parent.mkdir(parents=True)
+    built_runner.touch()
     calls: list[tuple] = []
 
     installed = tmp_path / "installed" / "Runner.app"
     if installed_mtime is not None:
-        installed.mkdir(parents=True)
+        installed_runner = installed / wda_mod._RUNNER_TEST_EXECUTABLE
+        installed_runner.parent.mkdir(parents=True)
+        installed_runner.touch()
         import os
 
-        os.utime(installed, (installed_mtime, installed_mtime))
+        os.utime(installed_runner, (installed_mtime, installed_mtime))
 
     def fake_simctl(*args, **kwargs):
         calls.append(args)

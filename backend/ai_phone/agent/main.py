@@ -3361,6 +3361,7 @@ def run(
         manager = {
             "android": _android_vm_manager,
             "harmony": _harmony_vm_manager,
+            "ios_sim": _ios_sim_manager,
         }.get(platform)
         changing = any(msg.get(key) is not None for key in ("orientation", "fold_state", "rotation", "rotation_locked"))
         response = {
@@ -3379,8 +3380,9 @@ def run(
                     logger.warning("{} 屏幕操作失败 serial={}: {}", platform, serial, exc)
                     response.update(ok=False, reason="display_failed", error=str(exc))
                 else:
-                    if changing and platform == "harmony":
-                        display["frame_after"] = time.time()
+                    if changing and platform != "android":
+                        # Simulator MJPEG can still contain UIKit's intermediate rotation frame.
+                        display["frame_after"] = time.time() + (0.5 if platform == "ios_sim" else 0.0)
                         mirror = mirror_sup.get_session(serial)
                         if isinstance(mirror, _HarmonyMirrorSession):
                             try:

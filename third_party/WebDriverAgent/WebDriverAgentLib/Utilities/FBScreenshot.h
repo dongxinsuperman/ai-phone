@@ -13,6 +13,10 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface FBScreenshot : NSObject
 
++ (long long)captureScreenID;
++ (long long)simulatorCaptureScreenID;
++ (void)setSimulatorCaptureScreenID:(long long)displayID;
+
 /**
  Retrieves non-scaled screenshot of the whole screen
 

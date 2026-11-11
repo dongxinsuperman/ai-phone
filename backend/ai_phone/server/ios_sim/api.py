@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.shared import protocol as P
+from ai_phone.shared.ios_sim import IPHONE_DUO_DEVICE_TYPE
 
 from ..api._deps import DBSession, HubDep
 from ..api.submissions import RequireBearer
@@ -105,12 +106,18 @@ async def _resolve_names(
             status.HTTP_400_BAD_REQUEST,
             detail=f"官方目录里没有该机型：{device_type}",
         )
-    # runtime identifier 形如 ...SimRuntime.iOS-26-0 → 版本串 26.0
+    # Use the exact runtime ID first. Duo and the general 27.2 runtime share a version.
+    official = next(
+        (item for item in (payload or cat.load_bundled_catalog()).get("official_runtimes", [])
+         if item.get("identifier") == runtime),
+        None,
+    )
     tail = runtime.rsplit(".", 1)[-1]
     parts = tail.split("-")
-    version = ".".join(parts[1:]) if len(parts) >= 2 else ""
-    runtime_name = f"{parts[0]} {version}" if version else tail
-    if version and not cat.supports_version(dt, version):
+    version = str(official["version"]) if official else ".".join(parts[1:])
+    runtime_name = str(official["name"]) if official else (f"{parts[0]} {version}" if version else tail)
+    runtime_entry = official or {"identifier": runtime, "version": version}
+    if (version or dt.get("runtime_identifiers")) and not cat.supports_runtime(dt, runtime_entry):
         # 苹果用 65535.255.255 表示「没有上限」，不是空值——直接拼进提示会变成
         # 一串没人看得懂的数字。
         max_str = str(dt.get("max_runtime_version_string") or "")
@@ -178,12 +185,20 @@ async def create_instance(
     except ValueError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     names = await _resolve_names(session, body.device_type, body.runtime)
+    if body.initial_fold_state is not None and body.device_type != IPHONE_DUO_DEVICE_TYPE:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="只有 iPhone Duo 支持启动折叠")
+    config = dict(body.config_json)
+    for key in ("initial_orientation", "initial_fold_state"):
+        config.pop(key, None)
+        value = getattr(body, key)
+        if value is not None:
+            config[key] = value
     vm = IosSimVmInstance(
         name=(body.name or alias).strip(),
         alias=alias,
         device_type=body.device_type,
         runtime=body.runtime,
-        config_json=body.config_json or {},
+        config_json=config,
         state="draft",
         **names,
     )
@@ -270,7 +285,12 @@ async def patch_instance(
     if body.name is not None:
         vm.name = body.name.strip() or vm.alias
     if body.config_json is not None:
-        vm.config_json = body.config_json
+        config = dict(body.config_json)
+        for key in ("initial_orientation", "initial_fold_state"):
+            config.pop(key, None)
+            if (vm.config_json or {}).get(key):
+                config[key] = vm.config_json[key]
+        vm.config_json = config
 
     await session.commit()
     await session.refresh(vm)
@@ -394,7 +414,7 @@ async def _send_start(vm_id: str, agent_id: str, session: AsyncSession, hub: Hub
     if not hub.has_agent(agent_id):
         raise HTTPException(409, "所属 Agent 离线，请等待连接")
     expected_preflight = start_preflight_snapshot(vm)
-    if probe:
+    if probe or (vm.config_json or {}).get("initial_fold_state"):
         fresh = await get_capability_waiter().probe_agent(hub=hub, vm=vm, agent_id=agent_id)
         if not fresh.get("ok"):
             await transaction_lock(session, f"ios-vm:{vm_id}")

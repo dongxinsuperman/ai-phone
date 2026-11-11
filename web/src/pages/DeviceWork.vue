@@ -313,9 +313,12 @@ const nativeVmPlatform = computed(() => {
   const { platform, extra } = device.value || {}
   if (!extra?.vm_instance_id || !extra.is_virtual) return null
   if (platform === 'harmony' && extra.vm_platform === 'harmony') return 'harmony'
+  if (platform === 'ios_sim' && extra.vm_platform === 'ios') return 'ios_sim'
   return null
 })
 const nativeVmId = computed(() => nativeVmPlatform.value ? device.value.extra.vm_instance_id : null)
+const duoVm = computed(() => nativeVmPlatform.value === 'ios_sim'
+  && device.value?.extra?.sim_device_type === 'com.apple.CoreSimulator.SimDeviceType.iPhone-Duo')
 const nativeDisplay = ref(null)
 const nativeDisplayBusy = ref(false)
 const nativeDisplayError = ref('')
@@ -336,7 +339,8 @@ watch(waitingForNativeFrame, (waiting, _previous, onCleanup) => {
   const timer = setTimeout(() => { nativeFrameWaitExpired.value = true }, 12000)
   onCleanup(() => clearTimeout(timer))
 })
-const harmonyBodyPose = computed(() => {
+const simulatorPoses = { portrait: '竖放', landscape_left: '左横放', landscape_right: '右横放' }
+const nativeBodyPose = computed(() => {
   const pose = nativeDisplay.value
   if (![0, 1, 2, 3].includes(pose?.body_rotation)) return ''
   const labels = pose.body_natural_landscape
@@ -414,7 +418,7 @@ const androidMirrorReady = computed(() => {
 })
 const canSendInput = computed(() => !lock.readonly.value && !nativeDisplayBusy.value && !waitingForNativeFrame.value && (
   !(androidVmId.value || androidMirror.value) || (androidMirrorReady.value && !displayBusy.value)
-))
+) && (!duoVm.value || (mirrorReady.value && !!nativeDisplay.value?.width && !!duoFrameRotation.value)))
 const canChangeDisplay = computed(() => canSendInput.value && wsConnected.value
   && !!androidDisplay.value && !currentRunId.value && !tapBusy.value)
 const canChangeNativeDisplay = computed(() => canSendInput.value && wsConnected.value
@@ -426,6 +430,38 @@ function requestNativeDisplay(change = {}) {
   })
 }
 
+const duoFrameRotation = ref(null)
+const duoFrameAspect = computed(() => {
+  const { w, h } = frameSize.value
+  return duoVm.value && mirrorReady.value && w && h ? (w > h ? 'landscape' : 'portrait') : ''
+})
+watch([duoFrameAspect, nativeDisplayBusy, waitingForNativeFrame, lock.token, wsConnected],
+  ([aspect, changing, waiting, token, connected], _previous, onCleanup) => {
+    duoFrameRotation.value = null
+    if (!aspect || changing || waiting || !token || !connected) return
+    // The app can change the active panel's interface orientation without moving the body.
+    let cancelled = false
+    let timer
+    onCleanup(() => { cancelled = true; clearTimeout(timer) })
+    async function confirm(attempt) {
+      try {
+        const pose = await requestNativeDisplay()
+        if (cancelled) return
+        const rotation = pose.display_rotation
+        const landscape = rotation === 'rot90' || rotation === 'rot270'
+        if (rotation && landscape === (aspect === 'landscape')) {
+          nativeDisplay.value = pose
+          duoFrameRotation.value = rotation
+          return
+        }
+      } catch {
+        if (cancelled) return
+      }
+      if (attempt < 5) timer = setTimeout(() => confirm(attempt + 1), 200)
+    }
+    timer = setTimeout(() => confirm(0), 160)
+  })
+
 watch([nativeVmId, lock.token], async ([id, token], _previous, onCleanup) => {
   let active = true
   onCleanup(() => { active = false })
@@ -436,7 +472,7 @@ watch([nativeVmId, lock.token], async ([id, token], _previous, onCleanup) => {
     const pose = await requestNativeDisplay()
     if (active) nativeDisplay.value = pose
   } catch {
-    // Older agents can still open the workbench without pose controls.
+    // Older agents and WDA builds can still open the workbench without pose controls.
   }
 })
 
@@ -1107,6 +1143,10 @@ onMounted(async () => {
     },
     onClose: () => {
       wsConnected.value = false
+      if (duoVm.value) {
+        jpegMirror.reset()
+        frameSize.value = { w: 0, h: 0 }
+      }
       if (androidMirror.value) {
         androidFrameReady.value = false
         if (expectedMirror.value) expectedMirror.value = { previous: expectedMirror.value.previous }
@@ -1228,12 +1268,17 @@ watch(
           </div>
           <div v-if="nativeDisplay?.can_rotate || nativeDisplay?.can_fold || nativeDisplay?.can_set_rotation_lock"
             class="android-screen-controls" aria-label="模拟器屏幕控制" @mousedown.prevent>
-            <template v-if="nativeDisplay.can_rotate">
-              <span aria-live="polite">机身 · {{ harmonyBodyPose || '方向暂不可读' }}</span>
+            <template v-if="nativeDisplay.can_rotate && (nativeVmPlatform === 'harmony' || duoVm)">
+              <span aria-live="polite">机身 · {{ nativeBodyPose || '方向暂不可读' }}</span>
               <button type="button" :disabled="!canChangeNativeDisplay"
                 @click="changeNativeDisplay({ rotation: 'left' })">左转 90°</button>
               <button type="button" :disabled="!canChangeNativeDisplay"
                 @click="changeNativeDisplay({ rotation: 'right' })">右转 90°</button>
+            </template>
+            <template v-else-if="nativeDisplay.can_rotate">
+              <button v-for="(label, orientation) in simulatorPoses" :key="orientation"
+                type="button" :disabled="!canChangeNativeDisplay" :aria-pressed="nativeDisplay.orientation === orientation"
+                @click="changeNativeDisplay({ orientation })">{{ label }}</button>
             </template>
             <template v-if="nativeDisplay.can_fold">
               <button type="button" :disabled="!canChangeNativeDisplay" :aria-pressed="nativeDisplay.fold_state === 'unfolded'"
@@ -1241,7 +1286,7 @@ watch(
               <button type="button" :disabled="!canChangeNativeDisplay" :aria-pressed="nativeDisplay.fold_state === 'folded'"
                 @click="changeNativeDisplay({ fold_state: 'folded' })">折叠</button>
             </template>
-            <template v-if="nativeDisplay.can_set_rotation_lock">
+            <template v-if="nativeVmPlatform === 'harmony' && nativeDisplay.can_set_rotation_lock">
               <button type="button" :disabled="!canChangeNativeDisplay"
                 @click="changeNativeDisplay({ rotation_locked: false })">自动旋转</button>
               <button type="button" :disabled="!canChangeNativeDisplay"
@@ -1275,17 +1320,18 @@ watch(
                  每帧独立 JPEG，<img> 绘制。设备旋转 / 分辨率变化天然自适应 -->
             <img
               ref="imgEl"
-              v-show="mirrorMode === 'jpeg' && mirrorReady"
+              v-show="mirrorMode === 'jpeg' && mirrorReady && (!duoVm || duoFrameRotation)"
               draggable="false"
               alt=""
               :class="{ clickable: canSendInput }"
+              :style="duoFrameRotation === 'rot180' ? { transform: 'rotate(180deg)' } : null"
               @pointerdown="onMirrorPointerDown"
               @pointermove="onMirrorPointerMove"
               @pointerup="onMirrorPointerUp"
               @pointercancel="onMirrorPointerCancel"
               @dragstart="onMirrorDragStart"
             />
-            <div v-if="!mirrorReady" class="placeholder">
+            <div v-if="!mirrorReady || (duoVm && !duoFrameRotation)" class="placeholder">
               <!-- 优先展示 device_status（iOS WDA 启动进度）：比"等待视频流"更精确 -->
               <template v-if="deviceStatus">
                 <div class="status-title">{{ deviceStatus.title }}</div>
@@ -1295,9 +1341,9 @@ watch(
                 </small>
               </template>
               <template v-else>
-                <div>{{ mirrorError ? '画面加载失败' : '等待视频流…' }}</div>
+                <div>{{ mirrorError ? '画面加载失败' : duoVm && mirrorReady ? '正在等待新画面…' : '等待视频流…' }}</div>
                 <small v-if="mirrorError">{{ mirrorError }}</small>
-                <small v-else>scrcpy 启动需要 1~2 秒，请稍候</small>
+                <small v-else-if="!duoVm">scrcpy 启动需要 1~2 秒，请稍候</small>
               </template>
             </div>
             <!-- mirror ready 之后如果仍有 need_unlock / error 等状态，挂在顶部横条 -->

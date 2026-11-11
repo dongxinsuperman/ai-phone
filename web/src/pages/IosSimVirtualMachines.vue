@@ -39,9 +39,13 @@ const candidateProbe = createVmCandidateProbe({
 })
 
 const form = reactive(defaultForm())
+const startupDirections = { portrait: '竖放', landscape_left: '左横放', landscape_right: '右横放' }
+const savedDirectionLabels = { ...startupDirections, portrait_upside_down: '倒置竖放' }
+const startupFolds = { folded: '折叠（外屏）', unfolded: '展开（内屏）' }
+const duoDeviceType = 'com.apple.CoreSimulator.SimDeviceType.iPhone-Duo'
 
 function defaultForm() {
-  return { alias: '', family: 'iPhone', device_type: '', runtime: '' }
+  return { alias: '', family: 'iPhone', device_type: '', runtime: '', initial_orientation: '', initial_fold_state: '' }
 }
 
 // 苹果用 65535.255.255 表示「没有上限」，不是空值。直接显示会变成一串数字。
@@ -79,11 +83,15 @@ const runtimesForSelectedModel = computed(() => {
   const dt = selectedDeviceType.value
   if (!dt) return []
   return catalog.official_runtimes.filter((rt) =>
-    versionInRange(rt.version || '', dt),
+    versionInRange(rt.version || '', dt)
+    && (!rt.only_device_type || rt.only_device_type === dt.identifier)
+    && (!dt.runtime_identifiers || dt.runtime_identifiers.includes(rt.identifier)),
   )
 })
 
 const catalogReady = computed(() => Boolean(form.device_type && form.runtime))
+const canChooseStartupFold = computed(() => form.device_type === duoDeviceType
+  && runtimesForSelectedModel.value.some((rt) => rt.identifier === form.runtime && rt.only_device_type === duoDeviceType))
 
 function encodeVersion(version) {
   const parts = String(version || '').trim().split('.')
@@ -139,6 +147,7 @@ function selectFamily(family) {
 }
 
 function applyDeviceType(dt) {
+  if (dt?.identifier !== form.device_type) form.initial_fold_state = ''
   form.device_type = dt?.identifier || ''
   // 换机型后原来选的版本可能已经超出新机型的支持区间，落回第一个可用项。
   if (!runtimesForSelectedModel.value.some((rt) => rt.identifier === form.runtime)) {
@@ -209,6 +218,8 @@ async function createVm() {
       alias: form.alias.trim(),
       device_type: form.device_type,
       runtime: form.runtime,
+      initial_orientation: form.initial_orientation || null,
+      initial_fold_state: canChooseStartupFold.value ? form.initial_fold_state || null : null,
     })
     resetForm()
     await loadInstances({ quiet: true })
@@ -513,7 +524,7 @@ defineExpose({ refresh })
             <select v-model="form.runtime" :disabled="!selectedDeviceType">
               <option value="">请选择系统版本</option>
               <option v-for="rt in runtimesForSelectedModel" :key="rt.identifier" :value="rt.identifier">
-                {{ rt.name }}（{{ rt.version }}）
+                {{ rt.name }}（{{ rt.version }}）{{ rt.architectures?.length === 1 ? ' · ' + rt.architectures[0] : '' }}
               </option>
             </select>
             <small>
@@ -525,6 +536,23 @@ defineExpose({ refresh })
             目录里没有落在该机型支持区间（{{ supportRangeLabel(selectedDeviceType) }}）内的系统版本，
             请换一个机型。
           </div>
+
+          <label>
+            <span>启动方向</span>
+            <select v-model="form.initial_orientation">
+              <option value="">Simulator 默认</option>
+              <option v-for="(label, value) in startupDirections" :key="value" :value="value">{{ label }}</option>
+            </select>
+            <small>设置 Simulator 的机身方向，应用界面遵循自身支持的方向。</small>
+          </label>
+
+          <label v-if="canChooseStartupFold">
+            <span>启动折叠</span>
+            <select v-model="form.initial_fold_state">
+              <option value="">Simulator 默认</option>
+              <option v-for="(label, value) in startupFolds" :key="value" :value="value">{{ label }}</option>
+            </select>
+          </label>
 
           <label>
             <span>设备别名（必填、全平台唯一）</span>
@@ -557,6 +585,10 @@ defineExpose({ refresh })
             <div class="meta">
               <div><span>机型</span><b :title="vm.device_type">{{ vm.device_type_name || '-' }}</b></div>
               <div><span>系统</span><b>{{ vm.runtime_name || '-' }}</b></div>
+              <div><span>启动方向</span><b>{{ savedDirectionLabels[vm.config_json?.initial_orientation] || 'Simulator 默认' }}</b></div>
+              <div v-if="startupFolds[vm.config_json?.initial_fold_state]">
+                <span>启动折叠</span><b>{{ startupFolds[vm.config_json.initial_fold_state] }}</b>
+              </div>
               <div><span>Agent</span><b :title="agentLabel(vm)">{{ agentLabel(vm) }}</b></div>
               <div v-if="vm.udid"><span>UDID</span><b :title="vm.udid">{{ vm.udid }}</b></div>
               <div v-if="vm.wda_port"><span>WDA 端口</span><b>{{ vm.wda_port }}</b></div>

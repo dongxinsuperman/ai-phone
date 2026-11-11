@@ -2,6 +2,8 @@
 
 全部用桩替换 simctl 与 WDA 启动器，不碰真实虚拟机，保证快且可重复。
 """
+import time
+
 import pytest
 
 from ai_phone.agent.drivers import ios_simulator as sim_disc
@@ -33,11 +35,12 @@ class FakeLauncher:
     instances = []
     alive_udids: set = set()
 
-    def __init__(self, udid, ports=None, expect_sim_name="", device_type=""):
+    def __init__(self, udid, ports=None, expect_sim_name="", device_type="", simulator_display_id=None):
         self.udid = udid
         self.ports = ports or wda_mod.allocate_ports(udid)
         self.expect_sim_name = expect_sim_name
         self.device_type = device_type
+        self.simulator_display_id = simulator_display_id
         self.started = 0
         self.stopped = 0
         FakeLauncher.instances.append(self)
@@ -182,6 +185,84 @@ def test_start_creates_boots_and_registers(env):
     assert FakeLauncher.instances[-1].started == 1
     # 纳管登记后才会进设备池
     assert sim_disc.is_managed(_UDID)
+
+
+def test_duo_start_waits_for_active_inner_display_before_launching_wda(env, monkeypatch):
+    from ai_phone.agent.ios_sim.duo_posture import DuoDisplay
+    from ai_phone.shared.ios_sim import IPHONE_DUO_DEVICE_TYPE
+
+    runtime_id = "com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4"
+    manager = IosSimVmManager()
+    monkeypatch.setattr(manager, "probe", lambda _req: {
+        "ok": True, "details": {"matched_runtime": {"identifier": runtime_id}, "tools": {"xcrun": "/usr/bin/xcrun"}},
+    })
+
+    operations = []
+
+    class FakeDuo:
+        def __init__(self, udid, xcrun):
+            assert udid == _UDID
+
+        def set_fold(self, state, _deadline):
+            assert env["calls"][-1][0] == "bootstatus"
+            assert not FakeLauncher.instances
+            operations.append(state)
+
+        def set_orientation(self, orientation, _deadline):
+            assert not FakeLauncher.instances
+            operations.append(orientation)
+
+        def display(self, _deadline):
+            return DuoDisplay(3, 2007, 2853, "inner-uuid", "rot90", False)
+
+    monkeypatch.setattr(mgr_mod, "DuoControls", FakeDuo)
+    result = manager.start_sync(_msg(device_type=IPHONE_DUO_DEVICE_TYPE, runtime=runtime_id,
+                                     config_json={"initial_fold_state": "unfolded",
+                                                  "initial_orientation": "landscape_right"}))
+    assert operations == ["unfolded", "landscape_right"]
+    assert result["details"]["active_display"] == {"id": 3, "width": 2007, "height": 2853}
+    assert FakeLauncher.instances[-1].simulator_display_id == 3
+    assert FakeLauncher.instances[-1].started == 1
+
+
+def test_duo_uses_unique_active_panel_when_backlight_readback_is_off(monkeypatch):
+    from ai_phone.agent.ios_sim.duo_posture import DuoControls
+
+    duo = DuoControls(_UDID)
+    panels = [
+        {"displayId": 1, "type": {"integrated": {}}, "active": False, "primary": True,
+         "backlightState": "off"},
+        {"displayId": 3, "type": {"integrated": {}}, "active": True, "primary": False,
+         "backlightState": "off", "nativeSize": [2007, 2853], "uniqueId": "inner-uuid",
+         "currentOrientation": "rot90"},
+    ]
+    monkeypatch.setattr(duo, "_read", lambda *_args: {"displays": panels})
+    display = duo.display(time.monotonic() + 1, cover=False)
+    assert display.id == 3
+    assert display.pixel_size == (2853, 2007)
+
+
+def test_duo_replays_hinge_when_startup_sensor_and_active_panel_disagree(monkeypatch):
+    from ai_phone.agent.ios_sim.duo_posture import DuoControls, DuoDisplay
+
+    duo = DuoControls(_UDID)
+    commands = []
+    inner = DuoDisplay(3, 2007, 2853, "inner-uuid", "rot90", False)
+
+    def send(_deadline, *command):
+        commands.append(command)
+        return "180.0"
+
+    def display(_deadline, *, cover):
+        assert not cover
+        if commands == [("180",)]:
+            raise TimeoutError("inner panel is not active yet")
+        return inner
+
+    monkeypatch.setattr(duo, "_send", send)
+    monkeypatch.setattr(duo, "display", display)
+    assert duo.set_fold("unfolded", time.monotonic() + 20) == inner
+    assert commands == [("180",), ("replay", "180")]
 
 
 def test_start_requires_vm_id(env):

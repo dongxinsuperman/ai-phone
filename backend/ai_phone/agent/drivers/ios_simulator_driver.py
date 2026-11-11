@@ -37,7 +37,7 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from PIL import Image
 from loguru import logger
@@ -47,6 +47,10 @@ from .ios_simulator import PLATFORM_IOS_SIM
 from .ios_simulator_wda import IosSimulatorWdaLauncher, runner_app_path
 from .simctl import SimctlError, list_simulators, simctl_run
 from .wda_client import WdaClient, WdaError
+from ai_phone.shared.ios_sim import IPHONE_DUO_DEVICE_TYPE
+
+if TYPE_CHECKING:
+    from ai_phone.agent.ios_sim.duo_posture import DuoControls
 
 
 # WDA runner 自己也是一个 User 应用，但它是我们的基础设施，不是业务 App。
@@ -74,6 +78,7 @@ class SimWdaEndpoint:
     wda_port: int
     mjpeg_port: int
     client: WdaClient
+    duo: Optional[DuoControls] = None
 
 
 _SIM_ENDPOINTS: Dict[str, SimWdaEndpoint] = {}
@@ -171,6 +176,9 @@ class IosSimulatorDriver(BaseDriver):
         没有 lockdown，失败就是失败，返回 (0, 0) 让上层按拿不到尺寸处理。
         """
         try:
+            duo = self._duo
+            if duo is not None:
+                return duo.display(time.monotonic() + 5.0).pixel_size
             size = self._wda.window_size()
             scale = self._get_scale()
             return int(round(size.width * scale)), int(round(size.height * scale))
@@ -203,7 +211,18 @@ class IosSimulatorDriver(BaseDriver):
         级都依赖 USB / tunneld。虚拟机上 WDA 就在宿主 localhost，通不了说明 WDA
         本身有问题，兜底也救不了，所以只留一条路。
         """
-        return self._wda.screenshot()
+        png = self._wda.screenshot()
+        duo = self._duo
+        if duo is None or duo.display(time.monotonic() + 5.0).rotation != "rot180":
+            return png
+        # WDA omits the 180° orientation on this Duo panel. The driver and
+        # workbench both map touches from the upright view of the same frame.
+        with Image.open(io.BytesIO(png)) as img:
+            if img.width > img.height:
+                return png  # UIKit changed orientation during this capture.
+            buf = io.BytesIO()
+            img.transpose(Image.Transpose.ROTATE_180).save(buf, format="PNG")
+            return buf.getvalue()
 
     def screenshot_jpeg(self, quality: int = 25, max_side: Optional[int] = None) -> bytes:
         png = self.screenshot_png()
@@ -275,11 +294,24 @@ class IosSimulatorDriver(BaseDriver):
         scale = self._get_scale() or 1.0
         return x / scale, y / scale
 
+    @property
+    def _duo(self) -> Optional[DuoControls]:
+        endpoint = get_sim_endpoint(self.serial)
+        return endpoint.duo if endpoint is not None else None
+
     def click(self, x: int, y: int) -> None:
+        duo = self._duo
+        if duo is not None:
+            duo.touch((x, y), (x, y), 80)
+            return
         px, py = self._px_to_pt(x, y)
         self._wda.tap(px, py)
 
     def double_click(self, x: int, y: int, interval_ms: int = 100) -> None:
+        duo = self._duo
+        if duo is not None:
+            duo.touch((x, y), (x, y), 50, count=2, interval_ms=max(0, interval_ms))
+            return
         px, py = self._px_to_pt(x, y)
         try:
             self._wda.double_tap(px, py)
@@ -287,12 +319,20 @@ class IosSimulatorDriver(BaseDriver):
             super().double_click(x, y, interval_ms)
 
     def long_press(self, x: int, y: int, duration_ms: int = 1000) -> None:
+        duo = self._duo
+        if duo is not None:
+            duo.touch((x, y), (x, y), max(50, duration_ms))
+            return
         px, py = self._px_to_pt(x, y)
         self._wda.long_press(px, py, duration_s=max(0.05, duration_ms / 1000.0))
 
     def swipe(
         self, sx: int, sy: int, ex: int, ey: int, duration_ms: int = 500
     ) -> None:
+        duo = self._duo
+        if duo is not None:
+            duo.touch((sx, sy), (ex, ey), max(50, duration_ms))
+            return
         psx, psy = self._px_to_pt(sx, sy)
         pex, pey = self._px_to_pt(ex, ey)
         self._wda.swipe(psx, psy, pex, pey, duration_s=max(0.05, duration_ms / 1000.0))
@@ -300,6 +340,9 @@ class IosSimulatorDriver(BaseDriver):
     def swipe_for_scroll(
         self, sx: int, sy: int, ex: int, ey: int, duration_ms: int,
     ) -> None:
+        if self._duo is not None:
+            self.swipe(sx, sy, ex, ey, duration_ms)
+            return
         psx, psy = self._px_to_pt(sx, sy)
         pex, pey = self._px_to_pt(ex, ey)
         self._wda.timed_swipe(psx, psy, pex, pey, duration_ms=duration_ms)
@@ -561,7 +604,12 @@ def open_ios_simulator_driver(
 
     # 这里只有 udid、拿不到 vm_id，算不出实例名，交给 launcher 回退查询——
     # 不是漏传。查不到时 launcher 会失败关闭，不会无身份校验地启动。
-    launcher = IosSimulatorWdaLauncher(udid)
+    endpoint = get_sim_endpoint(udid)
+    duo = endpoint.duo if endpoint is not None else None
+    launcher = (
+        IosSimulatorWdaLauncher(udid, device_type=IPHONE_DUO_DEVICE_TYPE, simulator_display_id=duo.capture_id)
+        if duo is not None else IosSimulatorWdaLauncher(udid)
+    )
     already_built = runner_app_path().is_dir()
     if already_built:
         _emit("initializing", "虚拟机启动中", "正在启动 WDA…")
@@ -598,6 +646,7 @@ def open_ios_simulator_driver(
             wda_port=int(launcher.ports.wda),
             mjpeg_port=int(launcher.ports.mjpeg),
             client=wda,
+            duo=duo,
         ),
     )
     _emit("ready", "虚拟机已就绪", "")

@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai_phone.shared import protocol as P
+from ai_phone.shared.ios_sim import IPHONE_DUO_DEVICE_TYPE
 
 from ..android_vm.schemas import AndroidDisplayOrientation
 from ..android_vm.service import request_vm_display, save_vm_display, vm_display_lock
@@ -29,6 +30,7 @@ from ..app_uninstall import (
 )
 from ..hub import Hub
 from ..harmony_vm.models import HarmonyVmInstance
+from ..ios_sim.models import IosSimVmInstance
 from ..lockstore import BadToken, DeviceLockStore, LockConflict, LockNotFound
 from ..models import AndroidVmInstance, Device, DeviceAlias
 from ..vm_lifecycle import require_idle, require_owner_host, runtime as vm_runtime, send_operation_once, transaction_lock
@@ -85,7 +87,8 @@ class AndroidDisplayReq(BaseModel):
 
 
 class NativeVmDisplayReq(AndroidDisplayReq):
-    platform: Literal["harmony"]
+    platform: Literal["harmony", "ios_sim"]
+    orientation: Optional[Literal["portrait", "landscape_left", "landscape_right"]] = None
     rotation_locked: Optional[bool] = None
 
 
@@ -449,12 +452,15 @@ def _android_display_target(hub: Hub, vm: Optional[AndroidVmInstance], serial: s
 
 
 def _native_display_target(
-    hub: Hub, vm: HarmonyVmInstance | None, serial: str,
+    hub: Hub, vm: HarmonyVmInstance | IosSimVmInstance | None, serial: str,
 ) -> str:
     extra = hub.get_device_extra(serial)
     agent_id = hub.agent_id_for_serial(serial)
-    if (vm is None or serial != f"harmony-vm:{vm.id}" or extra.get("hdc_serial") != vm.hdc_serial
-            or vm.state != "running" or not agent_id
+    if isinstance(vm, HarmonyVmInstance):
+        matches = serial == f"harmony-vm:{vm.id}" and extra.get("hdc_serial") == vm.hdc_serial
+    else:
+        matches = vm is not None and serial == vm.udid
+    if (vm is None or not matches or vm.state != "running" or not agent_id
             or vm.assigned_agent_id != agent_id or extra.get("vm_instance_id") != vm.id
             or not hub.agent_supports(agent_id, P.CAP_NATIVE_VM_DISPLAY)):
         raise HTTPException(409, "当前设备不支持原生虚拟机屏幕控制")
@@ -471,32 +477,42 @@ async def native_vm_display(
     store: DeviceLockStore = LockStoreDep,
     hub: Hub = HubDep,
 ) -> dict:
-    lock_key = f"harmony-vm:{body.vm_id}"
-    changes = sum(value is not None for value in (body.rotation, body.fold_state, body.rotation_locked))
-    if changes > 1 or body.orientation is not None:
+    harmony = body.platform == "harmony"
+    model = HarmonyVmInstance if harmony else IosSimVmInstance
+    lock_key = f"{'harmony-vm' if harmony else 'ios-vm'}:{body.vm_id}"
+    operations = (body.rotation, body.fold_state, body.rotation_locked, body.orientation)
+    changes = sum(value is not None for value in operations)
+    if (changes > 1 or (harmony and body.orientation is not None)
+            or (not harmony and body.rotation_locked is not None)):
         raise HTTPException(422, "请选择该模拟器支持的一个原生操作")
     async with vm_display_lock(lock_key):
         _require_device_lock(store, serial, body.lock_token)
-        vm = await session.get(HarmonyVmInstance, body.vm_id)
+        vm = await session.get(model, body.vm_id)
         agent_id = _native_display_target(hub, vm, serial)
+        if not harmony and (body.rotation or body.fold_state) and vm.device_type != IPHONE_DUO_DEVICE_TYPE:
+            raise HTTPException(422, "当前 iOS 机型不支持此原生操作")
         operation_id = (vm_runtime(vm).get("operation") or {}).get("request_id")
         await session.rollback()
         result = await request_vm_display(
             hub, agent_id=agent_id, vm_id=body.vm_id, serial=serial,
-            orientation=None, fold_state=body.fold_state,
+            orientation=body.orientation, fold_state=body.fold_state,
             rotation=body.rotation, platform=body.platform, rotation_locked=body.rotation_locked,
         )
         display = result.get("display") if result.get("ok") else None
         body_rotation = display.get("body_rotation") if isinstance(display, dict) else None
         if (not isinstance(display, dict)
+                or (body.orientation and display.get("orientation") != body.orientation)
                 or (body.rotation and (not display.get("can_rotate")
                                        or type(body_rotation) is not int or body_rotation not in range(4)))
+                or (body.rotation and not harmony and display.get("orientation") not in (
+                    "portrait", "landscape_left", "landscape_right", "portrait_upside_down",
+                ))
                 or (body.fold_state and display.get("fold_state") != body.fold_state)
                 or (body.rotation_locked is not None and display.get("rotation_locked") is not body.rotation_locked)):
             raise HTTPException(409, result.get("error") or "模拟器未确认屏幕操作")
         if changes:
             await transaction_lock(session, lock_key)
-            vm = await session.get(HarmonyVmInstance, body.vm_id, populate_existing=True)
+            vm = await session.get(model, body.vm_id, populate_existing=True)
             if (_native_display_target(hub, vm, serial) != agent_id
                     or (vm_runtime(vm).get("operation") or {}).get("request_id") != operation_id):
                 raise HTTPException(409, "虚拟机已重新启动，请刷新后重试")
@@ -504,10 +520,14 @@ async def native_vm_display(
                 await session.rollback()
                 return display
             config = dict(vm.config_json or {})
-            if body.rotation:
+            if body.orientation or (body.rotation and not harmony):
+                config["initial_orientation"] = display["orientation"]
+            if body.rotation and harmony:
                 config["initial_rotation"] = body_rotation
-            if body.fold_state:
+            if body.fold_state and harmony:
                 config["fold"] = {**(config.get("fold") or {}), "initial_state": display["fold_state"]}
+            if body.fold_state and not harmony:
+                config["initial_fold_state"] = display["fold_state"]
             vm.config_json = config
             await session.commit()
         return display

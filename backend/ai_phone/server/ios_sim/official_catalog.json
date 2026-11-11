@@ -789,6 +789,40 @@
       "max_runtime_version": 1048575,
       "min_runtime_version_string": "12.3.1",
       "max_runtime_version_string": "15.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro",
+      "name": "iPhone 18 Pro",
+      "product_family": "iPhone",
+      "model_identifier": "",
+      "min_runtime_version": 1769472,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "27.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro-Max",
+      "name": "iPhone 18 Pro Max",
+      "product_family": "iPhone",
+      "model_identifier": "",
+      "min_runtime_version": 1769472,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "27.0.0",
+      "max_runtime_version_string": "65535.255.255"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo",
+      "name": "iPhone Duo",
+      "product_family": "iPhone",
+      "model_identifier": "iPhone19,4",
+      "min_runtime_version": 1769728,
+      "max_runtime_version": 4294967295,
+      "min_runtime_version_string": "27.1.0",
+      "max_runtime_version_string": "65535.255.255",
+      "runtime_identifiers": [
+        "com.apple.CoreSimulator.SimRuntime.iOS-27-1",
+        "com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4"
+      ]
     }
   ],
   "official_runtimes": [
@@ -1031,10 +1065,48 @@
       "name": "iOS 26.5",
       "version": "26.5",
       "build": "23F77"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+      "name": "iOS 27.0",
+      "version": "27.0",
+      "build": "24A434",
+      "architectures": [
+        "arm64"
+      ]
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-1",
+      "name": "iOS 27.1 · iPhone Duo",
+      "version": "27.1",
+      "build": "24A94425",
+      "architectures": [
+        "arm64"
+      ],
+      "only_device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4",
+      "name": "iOS 27.2 · iPhone Duo",
+      "version": "27.2",
+      "build": "24B91016s",
+      "architectures": [
+        "arm64"
+      ],
+      "only_device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-2",
+      "name": "iOS 27.2",
+      "version": "27.2",
+      "build": "24B8117",
+      "architectures": [
+        "arm64"
+      ]
     }
   ],
   "xcode_version": "Xcode 26.0.1",
-  "source": "xcrun simctl list devicetypes -j",
+  "source": "xcrun simctl list devicetypes -j; iPhone 18 Pro and Duo profiles from Xcode 27.x simctl",
   "runtime_source": "https://devimages-cdn.apple.com/downloads/xcode/simulators/index2.dvtdownloadableindex",
   "collected_at": "2026-08-01T02:03:44.644768+00:00"
 }

@@ -8,11 +8,13 @@
 
 #import "FBOrientationCommands.h"
 #import "XCUIDevice+FBRotation.h"
+#import "FBConfiguration.h"
 #import "FBRouteRequest.h"
 #import "FBMacros.h"
 #import "FBSession.h"
 #import "XCUIApplication.h"
 #import "XCUIApplication+FBHelpers.h"
+#import "FBScreenshot.h"
 #import "XCUIDevice.h"
 
 extern const struct FBWDOrientationValues {
@@ -47,11 +49,52 @@ const struct FBWDOrientationValues FBWDOrientationValues = {
     [[FBRoute GET:@"/rotation"].withoutSession respondWithTarget:self action:@selector(handleGetRotation:)],
     [[FBRoute POST:@"/rotation"] respondWithTarget:self action:@selector(handleSetRotation:)],
     [[FBRoute POST:@"/rotation"].withoutSession respondWithTarget:self action:@selector(handleSetRotation:)],
+#if TARGET_OS_SIMULATOR
+    [[FBRoute GET:@"/wda/deviceOrientation"].withoutSession respondWithTarget:self action:@selector(handleGetSimulatorOrientation:)],
+    [[FBRoute POST:@"/wda/deviceOrientation"].withoutSession respondWithTarget:self action:@selector(handleSetSimulatorOrientation:)],
+    [[FBRoute POST:@"/wda/simulatorDisplay"].withoutSession respondWithTarget:self action:@selector(handleSetSimulatorDisplay:)],
+#endif
   ];
 }
 
 
 #pragma mark - Commands
+
+#if TARGET_OS_SIMULATOR
++ (id<FBResponsePayload>)handleSetSimulatorDisplay:(FBRouteRequest *)request
+{
+  NSNumber *displayID = request.arguments[@"displayId"];
+  if (![displayID isKindOfClass:NSNumber.class] || displayID.longLongValue <= 0) {
+    return FBResponseWithStatus([FBCommandStatus invalidArgumentErrorWithMessage:@"Invalid display ID" traceback:nil]);
+  }
+  [FBScreenshot setSimulatorCaptureScreenID:displayID.longLongValue];
+  return FBResponseWithObject(@([FBScreenshot captureScreenID]));
+}
+
++ (id<FBResponsePayload>)handleGetSimulatorOrientation:(FBRouteRequest *)request
+{
+  return FBResponseWithObject(@(XCUIDevice.sharedDevice.orientation));
+}
+
++ (id<FBResponsePayload>)handleSetSimulatorOrientation:(FBRouteRequest *)request
+{
+  NSNumber *value = request.arguments[@"orientation"];
+  if (![value isKindOfClass:NSNumber.class] ||
+      ![@[@(UIDeviceOrientationPortrait), @(UIDeviceOrientationPortraitUpsideDown),
+         @(UIDeviceOrientationLandscapeLeft), @(UIDeviceOrientationLandscapeRight)] containsObject:value]) {
+    return FBResponseWithStatus([FBCommandStatus invalidArgumentErrorWithMessage:@"Unsupported simulator orientation" traceback:nil]);
+  }
+  // Rotate the simulator independently of the foreground app's animations.
+  NSTimeInterval idleTimeout = FBConfiguration.waitForIdleTimeout;
+  FBConfiguration.waitForIdleTimeout = 0;
+  @try {
+    XCUIDevice.sharedDevice.orientation = (UIDeviceOrientation)value.integerValue;
+  } @finally {
+    FBConfiguration.waitForIdleTimeout = idleTimeout;
+  }
+  return FBResponseWithOK();
+}
+#endif
 
 + (id<FBResponsePayload>)handleGetOrientation:(FBRouteRequest *)request
 {

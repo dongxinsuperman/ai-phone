@@ -1,19 +1,10 @@
 """iOS 虚拟机 REST 的请求/响应 schema。
 
-字段之少是本平台的特点，不是遗漏：``simctl create`` 只接受名字、机型、系统版本三个
-参数，实例配置文件里也只有 9 个键、无一与内存/CPU/存储相关（方案 §6.5.2、§6.5.3）。
-
-对比另两端的创建表单：
-
-```text
-Android  api_level / abi / system_image / 屏幕 / 密度 / 方向 / RAM / CPU / GPU / 网络 / 快照 …
-鸿蒙      device_type / os_version / fold_state / memory_gb / storage_gb / screen_profile
-iOS Sim  alias / device_type / runtime            ← 就这三个
-```
+``simctl create`` 接受名字、机型和系统版本。可选的机身方向和 Duo 折叠姿态在启动时应用。
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -36,6 +27,8 @@ class IosSimVmCreateReq(BaseModel):
         description="系统版本 runtime identifier，如 com.apple.CoreSimulator.SimRuntime.iOS-26-0",
     )
     name: Optional[str] = Field(default=None, max_length=128, description="展示名，缺省取 alias")
+    initial_orientation: Optional[Literal["portrait", "landscape_left", "landscape_right"]] = None
+    initial_fold_state: Optional[Literal["folded", "unfolded"]] = None
     # 预留：苹果将来若放开更多可配项，加在这里，不改表结构
     config_json: Dict[str, Any] = Field(default_factory=dict)
 

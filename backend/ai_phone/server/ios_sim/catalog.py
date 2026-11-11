@@ -97,6 +97,16 @@ def supports_version(device_type: Dict[str, Any], version: str) -> bool:
     return low <= encoded <= high
 
 
+def supports_runtime(device_type: Dict[str, Any], runtime: Dict[str, Any]) -> bool:
+    only_device = runtime.get("only_device_type")
+    allowed_runtimes = device_type.get("runtime_identifiers")
+    return (
+        supports_version(device_type, str(runtime.get("version") or ""))
+        and (not only_device or only_device == device_type.get("identifier"))
+        and (not allowed_runtimes or runtime.get("identifier") in allowed_runtimes)
+    )
+
+
 def compatible_device_types(
     version: str, catalog: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
