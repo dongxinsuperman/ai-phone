@@ -21,24 +21,17 @@ export function mirrorColumnWidth(total, ratio) {
   return Math.round(Math.min(max, Math.max(min, available * ratio)))
 }
 
-// Map a point in the displayed, contained image back to the unrotated video.
-export function mirrorFramePoint(rect, frame, x, y, rotation, clamp = false) {
+// Map a point in the contained image to the source frame, accounting for padding.
+export function mirrorFramePoint(rect, frame, x, y, clamp = false) {
   if (!frame.w || !frame.h || rect.width <= 0 || rect.height <= 0) return null
-  const sideways = rotation % 2 === 1
-  const viewWidth = sideways ? frame.h : frame.w
-  const viewHeight = sideways ? frame.w : frame.h
-  const scale = Math.min(rect.width / viewWidth, rect.height / viewHeight)
-  const width = viewWidth * scale
-  const height = viewHeight * scale
+  const scale = Math.min(rect.width / frame.w, rect.height / frame.h)
+  const width = frame.w * scale
+  const height = frame.h * scale
   const left = x - rect.left - (rect.width - width) / 2
   const top = y - rect.top - (rect.height - height) / 2
   if (!clamp && (left < -1 || top < -1 || left > width + 1 || top > height + 1)) return null
-  const u = Math.min(1, Math.max(0, left / width))
-  const v = Math.min(1, Math.max(0, top / height))
-  switch (rotation) {
-    case 1: return { x: 1 - v, y: u }
-    case 2: return { x: 1 - u, y: 1 - v }
-    case 3: return { x: v, y: 1 - u }
-    default: return { x: u, y: v }
+  return {
+    x: Math.min(1, Math.max(0, left / width)),
+    y: Math.min(1, Math.max(0, top / height)),
   }
 }

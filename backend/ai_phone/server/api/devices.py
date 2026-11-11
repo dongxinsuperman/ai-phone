@@ -28,6 +28,7 @@ from ..app_uninstall import (
     get_app_uninstall_waiter,
 )
 from ..hub import Hub
+from ..harmony_vm.models import HarmonyVmInstance
 from ..lockstore import BadToken, DeviceLockStore, LockConflict, LockNotFound
 from ..models import AndroidVmInstance, Device, DeviceAlias
 from ..vm_lifecycle import require_idle, require_owner_host, runtime as vm_runtime, send_operation_once, transaction_lock
@@ -81,6 +82,11 @@ class AndroidDisplayReq(BaseModel):
     orientation: Optional[AndroidDisplayOrientation] = None
     rotation: Optional[Literal["left", "right"]] = None
     fold_state: Optional[Literal["folded", "unfolded"]] = None
+
+
+class NativeVmDisplayReq(AndroidDisplayReq):
+    platform: Literal["harmony"]
+    rotation_locked: Optional[bool] = None
 
 
 class AppUninstallReq(BaseModel):
@@ -440,6 +446,71 @@ def _android_display_target(hub: Hub, vm: Optional[AndroidVmInstance], serial: s
     require_owner_host(vm, hub)
     require_idle(vm, allow_running=True)
     return agent_id, bool(capability.get("can_fold") and (vm.config_json or {}).get("fold"))
+
+
+def _native_display_target(
+    hub: Hub, vm: HarmonyVmInstance | None, serial: str,
+) -> str:
+    extra = hub.get_device_extra(serial)
+    agent_id = hub.agent_id_for_serial(serial)
+    if (vm is None or serial != f"harmony-vm:{vm.id}" or extra.get("hdc_serial") != vm.hdc_serial
+            or vm.state != "running" or not agent_id
+            or vm.assigned_agent_id != agent_id or extra.get("vm_instance_id") != vm.id
+            or not hub.agent_supports(agent_id, P.CAP_NATIVE_VM_DISPLAY)):
+        raise HTTPException(409, "当前设备不支持原生虚拟机屏幕控制")
+    require_owner_host(vm, hub)
+    require_idle(vm, allow_running=True)
+    return agent_id
+
+
+@router.post("/{serial}/native-display")
+async def native_vm_display(
+    serial: str,
+    body: NativeVmDisplayReq,
+    session: AsyncSession = DBSession,
+    store: DeviceLockStore = LockStoreDep,
+    hub: Hub = HubDep,
+) -> dict:
+    lock_key = f"harmony-vm:{body.vm_id}"
+    changes = sum(value is not None for value in (body.rotation, body.fold_state, body.rotation_locked))
+    if changes > 1 or body.orientation is not None:
+        raise HTTPException(422, "请选择该模拟器支持的一个原生操作")
+    async with vm_display_lock(lock_key):
+        _require_device_lock(store, serial, body.lock_token)
+        vm = await session.get(HarmonyVmInstance, body.vm_id)
+        agent_id = _native_display_target(hub, vm, serial)
+        operation_id = (vm_runtime(vm).get("operation") or {}).get("request_id")
+        await session.rollback()
+        result = await request_vm_display(
+            hub, agent_id=agent_id, vm_id=body.vm_id, serial=serial,
+            orientation=None, fold_state=body.fold_state,
+            rotation=body.rotation, platform=body.platform, rotation_locked=body.rotation_locked,
+        )
+        display = result.get("display") if result.get("ok") else None
+        body_rotation = display.get("body_rotation") if isinstance(display, dict) else None
+        if (not isinstance(display, dict)
+                or (body.rotation and (not display.get("can_rotate")
+                                       or type(body_rotation) is not int or body_rotation not in range(4)))
+                or (body.fold_state and display.get("fold_state") != body.fold_state)
+                or (body.rotation_locked is not None and display.get("rotation_locked") is not body.rotation_locked)):
+            raise HTTPException(409, result.get("error") or "模拟器未确认屏幕操作")
+        if changes:
+            await transaction_lock(session, lock_key)
+            vm = await session.get(HarmonyVmInstance, body.vm_id, populate_existing=True)
+            if (_native_display_target(hub, vm, serial) != agent_id
+                    or (vm_runtime(vm).get("operation") or {}).get("request_id") != operation_id):
+                raise HTTPException(409, "虚拟机已重新启动，请刷新后重试")
+            if body.rotation_locked is not None:
+                await session.rollback()
+                return display
+            config = dict(vm.config_json or {})
+            if body.rotation:
+                config["initial_rotation"] = body_rotation
+            if body.fold_state:
+                config["fold"] = {**(config.get("fold") or {}), "initial_state": display["fold_state"]}
+            vm.config_json = config
+            await session.commit()
+        return display
 
 
 @router.post("/{serial}/android-display")

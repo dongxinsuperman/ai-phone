@@ -41,6 +41,9 @@ const candidateProbe = createVmCandidateProbe({
 })
 
 const form = reactive(defaultForm())
+const startupDirections = {
+  0: '模拟器默认', 1: '左转 90°', 2: '旋转 180°', 3: '右转 90°',
+}
 
 function defaultForm() {
   return {
@@ -62,6 +65,7 @@ function defaultForm() {
     memory_gb: 4,
     storage_gb: 8,
     fold_state: 'unfolded',
+    initial_rotation: 0,
   }
 }
 
@@ -257,6 +261,7 @@ function payloadFrom(source, alias = source.alias) {
     fold_state: source.device_type === 'Foldable'
       ? (source.fold_state || source.config_json?.fold?.initial_state || 'unfolded')
       : 'unfolded',
+    initial_rotation: source.initial_rotation ?? source.config_json?.initial_rotation ?? 0,
     screen_width: Number(source.screen_width || 1080),
     screen_height: Number(source.screen_height || 2340),
     density: Number(source.density || 480),
@@ -697,7 +702,17 @@ defineExpose({ refresh })
                 <option value="unfolded">展开（内屏）</option>
                 <option value="folded">折叠（外屏）</option>
               </select>
-              <small>设备启动后、进入可调度状态之前切换到位；冷启动最初一小段仍是展开态。运行中不提供切换。</small>
+              <small>启动就绪前应用所选形态，运行中可在工作台切换。</small>
+            </label>
+
+            <label>
+              <span>启动方向</span>
+              <select v-model.number="form.initial_rotation">
+                <option :value="0">模拟器默认</option>
+                <option :value="1">左转 90°</option>
+                <option :value="3">右转 90°</option>
+              </select>
+              <small>通过 DevEco 原生旋转，应用界面由系统决定。</small>
             </label>
 
             <label>
@@ -743,6 +758,7 @@ defineExpose({ refresh })
               <div><span>机型</span><b :title="modelLabel(vm)">{{ modelLabel(vm) }}</b></div>
               <div><span>系统</span><b>{{ osLabel(vm) }}</b></div>
               <div><span>屏幕</span><b :title="screenTitle(vm)">{{ screenLabel(vm) }}</b></div>
+              <div><span>启动方向</span><b>{{ startupDirections[vm.config_json?.initial_rotation || 0] }}</b></div>
               <div><span>内存</span><b>{{ vm.memory_gb }}GB</b></div>
               <div><span>存储</span><b>{{ vm.storage_gb }}GB</b></div>
               <div><span>架构</span><b>{{ abiLabel(vm.abi) }}</b></div>

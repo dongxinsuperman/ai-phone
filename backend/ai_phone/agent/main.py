@@ -2405,8 +2405,8 @@ class _MirrorSession:
             "ts": time.time(),
         }
         if self.stream_id:
-            # DisplayManager may letterbox locked-orientation video while scrcpy still
-            # rotates input for it. Use the unlocked frame and rotate the view in the browser.
+            # Mirror the unlocked frame and report its orientation, including
+            # rotation changes that leave the frame dimensions the same.
             payload["stream_id"] = self.stream_id
             payload["display_rotation"] = self._display_rotation
         self._last_init_payload = payload
@@ -2902,6 +2902,21 @@ class _HarmonyMirrorSession:
         """
         return
 
+    def capture_pose_frame(self) -> None:
+        """Hypium may leave a static screen silent after a native rotation."""
+        import io
+
+        from PIL import Image
+
+        driver = _get_or_open_driver(self.serial)
+        settings = get_settings()
+        jpeg = driver.screenshot_jpeg(
+            quality=settings.harmony_mirror_jpeg_quality,
+            max_side=settings.harmony_mirror_long_edge or None,
+        )
+        with Image.open(io.BytesIO(jpeg)) as frame:
+            self._on_mirror_jpeg(jpeg, *frame.size)
+
     def _dispatch(self, payload: Dict[str, Any]) -> None:
         try:
             asyncio.run_coroutine_threadsafe(self._ws.send(payload), self._loop)
@@ -3341,9 +3356,13 @@ def run(
         await _lifecycle(c, msg, _android_vm_manager, "start", "android")
 
     async def _vm_display_handler(c: AgentWSClient, msg: Dict[str, Any]) -> None:
-        assert _android_vm_manager is not None
         serial = str(msg.get("serial") or "")
-        changing = any(msg.get(key) is not None for key in ("orientation", "fold_state", "rotation"))
+        platform = str(msg.get("platform") or "android")
+        manager = {
+            "android": _android_vm_manager,
+            "harmony": _harmony_vm_manager,
+        }.get(platform)
+        changing = any(msg.get(key) is not None for key in ("orientation", "fold_state", "rotation", "rotation_locked"))
         response = {
             "type": P.MSG_VM_DISPLAY_RESULT, "request_id": msg.get("request_id"),
             "serial": serial, "vm_id": msg.get("vm_id"),
@@ -3351,13 +3370,23 @@ def run(
         with device_activity.hold(serial, maintenance=changing) as acquired:
             if not acquired:
                 response.update(ok=False, reason="device_busy", error="请先结束设备上的任务再切换屏幕")
+            elif manager is None:
+                response.update(ok=False, reason="display_unsupported", error="当前 Agent 不支持此虚拟机屏幕控制")
             else:
                 try:
-                    display = await asyncio.to_thread(_android_vm_manager.display_sync, msg)
+                    display = await asyncio.to_thread(manager.display_sync, msg)
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning("Android 屏幕操作失败 serial={}: {}", serial, exc)
+                    logger.warning("{} 屏幕操作失败 serial={}: {}", platform, serial, exc)
                     response.update(ok=False, reason="display_failed", error=str(exc))
                 else:
+                    if changing and platform == "harmony":
+                        display["frame_after"] = time.time()
+                        mirror = mirror_sup.get_session(serial)
+                        if isinstance(mirror, _HarmonyMirrorSession):
+                            try:
+                                await asyncio.wait_for(asyncio.to_thread(mirror.capture_pose_frame), timeout=3)
+                            except Exception as exc:  # noqa: BLE001
+                                logger.warning("切换姿态后读取鸿蒙画面失败 serial={}: {}", serial, exc)
                     response.update(ok=True, display=display)
         await c.send(response)
 

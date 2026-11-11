@@ -164,13 +164,22 @@ async def init_harmony_vm_db() -> None:
                 len(normalized["screen_profiles"]),
             )
         else:
-            # 目录结构随 Server 版本演进。对既有快照重新做纯数据归一化，
-            # 例如补齐“设备机型 -> 同 deviceType 官方镜像”的显式兼容列表；
-            # 不访问 Agent，也不拿 Agent 本地安装状态覆盖 Server 目录。
+            # Keep the imported snapshot and append the additions shipped in this release.
+            manifest = load_bundled_manifest()
+            additions = manifest.get("incremental_ids") or {}
+            merged = {}
+            for key, current in (
+                ("images", existing.images_json or []),
+                ("screen_profiles", existing.screen_profiles_json or []),
+            ):
+                known = {item.get("id") for item in current}
+                new_ids = set(additions.get(key) or [])
+                merged[key] = current + [
+                    item for item in manifest[key] if item["id"] in new_ids and item["id"] not in known
+                ]
             normalized = normalize_manifest(
                 {
-                    "images": existing.images_json or [],
-                    "screen_profiles": existing.screen_profiles_json or [],
+                    **merged,
                     "emulator_version": existing.emulator_version,
                 }
             )

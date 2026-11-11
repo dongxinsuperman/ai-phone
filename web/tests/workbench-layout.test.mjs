@@ -24,15 +24,13 @@ test('portrait and landscape preferences survive independently; invalid storage 
   assert.deepEqual(readMirrorRatios({ getItem() { throw new Error('storage disabled') } }), DEFAULT_MIRROR_RATIOS)
 })
 
-test('rotated mirror clicks land at the corresponding point of the original frame', () => {
-  const frame = { w: 400, h: 800 }
-  const sideways = { left: 0, top: 0, width: 1000, height: 600 }
-  const portrait = { left: 0, top: 0, width: 400, height: 800 }
+test('mirror clicks follow the displayed portrait or landscape frame', () => {
+  const portraitFrame = { w: 400, h: 800 }
+  const landscapeFrame = { w: 800, h: 400 }
+  const rect = { left: 20, top: 40, width: 1000, height: 600 }
   const expected = { x: 0.25, y: 0.75 }
-  assert.deepEqual(mirrorFramePoint(portrait, frame, 100, 600, 0), expected)
-  assert.deepEqual(mirrorFramePoint(sideways, frame, 750, 425, 1), expected)
-  assert.deepEqual(mirrorFramePoint(portrait, frame, 300, 200, 2), expected)
-  assert.deepEqual(mirrorFramePoint(sideways, frame, 250, 175, 3), expected)
-  assert.equal(mirrorFramePoint(sideways, frame, 250, 20, 1), null)
-  assert.deepEqual(mirrorFramePoint(sideways, frame, 250, 20, 1, true), { x: 1, y: 0.25 })
+  assert.deepEqual(mirrorFramePoint(rect, portraitFrame, 445, 490), expected)
+  assert.deepEqual(mirrorFramePoint(rect, landscapeFrame, 270, 465), expected)
+  assert.equal(mirrorFramePoint(rect, landscapeFrame, 270, 60), null)
+  assert.deepEqual(mirrorFramePoint(rect, landscapeFrame, 270, 60, true), { x: 0.25, y: 0 })
 })

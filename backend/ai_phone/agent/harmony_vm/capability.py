@@ -196,7 +196,7 @@ def format_os_version(os_version: str, api_version: str) -> str:
     os_value = re.sub(r"^HarmonyOS\s*", "", (os_version or "").strip(), flags=re.IGNORECASE)
     api_value = (api_version or "").strip()
     match = re.fullmatch(
-        r"(\d+(?:\.\d+)*)(?:\s*\(\s*(\d+)\s*\))?(?:\s*Beta\s*(\d+))?",
+        r"(\d+(?:\.\d+)*)(?:\s*\(\s*(\d+(?:\.\d+)*)\s*\))?(?:\s*Beta\s*(\d+))?",
         os_value,
         re.IGNORECASE,
     )
@@ -206,7 +206,7 @@ def format_os_version(os_version: str, api_version: str) -> str:
     if embedded_api and api_value and embedded_api != api_value:
         return ""
     api = embedded_api or api_value
-    if not api.isdigit():
+    if not re.fullmatch(r"\d+(?:\.\d+)*", api):
         return ""
     beta = f" Beta{match.group(3)}" if match.group(3) else ""
     return f"HarmonyOS {match.group(1)}({api}){beta}"
@@ -726,7 +726,7 @@ def _normalize_images(raw: str, *, downloaded: bool) -> list[Dict[str, Any]]:
             device_type = _device_type_from_row(row, row_text)
             if not device_type:
                 continue
-            api_match = re.search(r"\((\d+)\)", version_spec)
+            api_match = re.search(r"\((\d+(?:\.\d+)*)\)", version_spec)
             abi = str(_pick(row, "abi", "cpuArch", "architecture") or "").strip()
             resolved_abi = normalize_abi(abi) if abi else "auto"
             key = (device_type, version_spec, resolved_abi)
@@ -749,13 +749,13 @@ def _normalize_images(raw: str, *, downloaded: bool) -> list[Dict[str, Any]]:
             if detected:
                 current_type = detected
             for version_spec in re.findall(
-                r"HarmonyOS\s+\d+(?:\.\d+)*(?:\(\d+\))(?:\s+Beta\d+)?",
+                r"HarmonyOS\s+\d+(?:\.\d+)*\(\d+(?:\.\d+)*\)(?:\s+Beta\d+)?",
                 line,
             ):
                 device_type = detected or current_type
                 if not device_type:
                     continue
-                api_match = re.search(r"\((\d+)\)", version_spec)
+                api_match = re.search(r"\((\d+(?:\.\d+)*)\)", version_spec)
                 version_spec = format_os_version(version_spec, "")
                 key = (device_type, version_spec, "auto")
                 found[key] = {

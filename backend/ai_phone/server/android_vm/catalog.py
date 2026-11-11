@@ -967,6 +967,14 @@ def clean_and_dedupe_profiles(
     return [best[k] for k in order]
 
 
+def load_bundled_play_catalog() -> list[Dict[str, Any]]:
+    path = Path(__file__).with_name("android-devices-catalog.csv")
+    return clean_and_dedupe_profiles(parse_play_device_catalog_csv(
+        path.read_text(encoding="utf-8"),
+        source_url=f"bundled:{path.name}",
+    ))
+
+
 def _coverage(
     profile_id: str,
     name: str,

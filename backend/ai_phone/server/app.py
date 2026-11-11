@@ -18,6 +18,7 @@ from ai_phone.config import get_settings
 
 from sqlalchemy import delete
 
+from .android_vm.service import install_bundled_play_catalog
 from .api import include_routers
 from .app_install import AppInstallTimeoutScanner
 from .db import (
@@ -51,6 +52,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("数据库初始化失败（通常是 PG 未启动）：{}", exc)
     if core_db_ready:
+        try:
+            added = await install_bundled_play_catalog()
+            if added:
+                logger.info("内置 Android 设备库新增 {} 条档案", added)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("内置 Android 设备库导入失败：{}", exc)
         try:
             await init_harmony_vm_db()
             app.state.harmony_vm_db_ready = True

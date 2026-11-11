@@ -18,6 +18,7 @@ class HarmonyVmCreateReq(BaseModel):
     # 折叠屏初始形态。仅 Foldable 支持——WideFold / TripleFold / 2in1 Foldable
     # 的内部状态模型不同且未实测，不提供看似可选实际无效的选项。
     fold_state: Literal["unfolded", "folded"] = "unfolded"
+    initial_rotation: Literal[0, 1, 2, 3] = 0
     screen_width: int = Field(1080, ge=320, le=7680)
     screen_height: int = Field(2340, ge=320, le=7680)
     density: int = Field(420, ge=120, le=800)

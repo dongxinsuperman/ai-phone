@@ -156,7 +156,7 @@ def _version_spec(row: Dict[str, Any]) -> str:
         or ""
     ).strip()
     if re.fullmatch(
-        r"HarmonyOS\s+\d+(?:\.\d+)*(?:\(\d+\))(?:\s+Beta\d+)?", value
+        r"HarmonyOS\s+\d+(?:\.\d+)*\(\d+(?:\.\d+)*\)(?:\s+Beta\d+)?", value
     ):
         return value
     api = str(_pick(row, "apiVersion", "api", "apiLevel") or "").strip()
@@ -252,7 +252,7 @@ def normalize_images(value: Any) -> list[Dict[str, Any]]:
         device_type = _device_type(row, raw)
         if not version or not device_type:
             continue
-        api = re.search(r"\((\d+)\)", version)
+        api = re.search(r"\((\d+(?:\.\d+)*)\)", version)
         abi = str(_pick(row, "abi", "cpuArch", "architecture") or "auto").strip()
         if abi == "arm64-v8a":
             abi = "arm64"
@@ -285,13 +285,13 @@ def normalize_images(value: Any) -> list[Dict[str, Any]]:
             if detected:
                 current_type = detected
             for version in re.findall(
-                r"HarmonyOS\s+\d+(?:\.\d+)*(?:\(\d+\))(?:\s+Beta\d+)?",
+                r"HarmonyOS\s+\d+(?:\.\d+)*\(\d+(?:\.\d+)*\)(?:\s+Beta\d+)?",
                 line,
             ):
                 device_type = detected or current_type
                 if not device_type:
                     continue
-                api = re.search(r"\((\d+)\)", version)
+                api = re.search(r"\((\d+(?:\.\d+)*)\)", version)
                 found[(device_type, version, "auto")] = {
                     "id": f"{device_type}|{version}|auto",
                     "device_type": device_type,

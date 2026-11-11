@@ -148,6 +148,7 @@ Platform = Literal["android", "ios", "harmony", "ios_sim"]
 CAP_V3_PLATFORM_CACHE = "v3_platform_cache"
 CAP_ANDROID_VM_FOLDABLE = "android_vm_foldable"
 CAP_ANDROID_VM_DISPLAY = "android_avd_rotation"
+CAP_NATIVE_VM_DISPLAY = "native_vm_display"
 DeviceStatus = Literal["idle", "busy", "offline"]
 
 

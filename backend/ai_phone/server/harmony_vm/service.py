@@ -77,7 +77,10 @@ def vm_payload(vm: HarmonyVmInstance, *, request_id: str = "") -> Dict[str, Any]
         "memory_gb": vm.memory_gb,
         "storage_gb": vm.storage_gb,
         "boot_mode": vm.boot_mode,
-        "config_json": vm.config_json or {},
+        "config_json": {
+            key: value for key, value in (vm.config_json or {}).items()
+            if key != "rotation_locked"
+        },
     }
     if request_id:
         payload["request_id"] = request_id

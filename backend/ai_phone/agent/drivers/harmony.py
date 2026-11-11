@@ -890,6 +890,11 @@ class HarmonyDriver(BaseDriver):
                 return 0
         return self._call_with_reconnect(_do)
 
+    def set_rotation_locked(self, locked: bool) -> None:
+        self._call_with_reconnect(
+            lambda: self._raw._invoke("Driver.setDisplayRotationEnabled", args=[not locked])
+        )
+
     # ------------------------------------------------------------------
     # 截图
     # ------------------------------------------------------------------

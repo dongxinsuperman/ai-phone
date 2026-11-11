@@ -117,6 +117,8 @@ export const api = {
     }),
   androidDisplay: (serial, payload) =>
     request('POST', `/api/devices/${encodeURIComponent(serial)}/android-display`, { body: payload }),
+  nativeVmDisplay: (serial, payload) =>
+    request('POST', `/api/devices/${encodeURIComponent(serial)}/native-display`, { body: payload }),
 
   // 应用分发
   listAppPackages: () => request('GET', '/api/app-install/packages'),

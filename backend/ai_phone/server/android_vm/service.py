@@ -29,7 +29,7 @@ from ..vm_lifecycle import (
     transaction_lock, update_runtime, host_id as agent_host_id, fail_attempt,
 )
 from ..models import AndroidDeviceProfile, AndroidVmInstance, DeviceAlias
-from .catalog import catalog_profile_key
+from .catalog import catalog_profile_key, load_bundled_play_catalog
 
 
 TERMINAL_STATES = {"draft", "stopped", "unavailable", "error"}
@@ -46,21 +46,27 @@ def vm_display_lock(vm_id: str) -> asyncio.Lock:
 async def request_vm_display(
     hub: Hub, *, agent_id: str, vm_id: str, serial: str,
     orientation: str | None, fold_state: str | None, rotation: str | None,
+    platform: str = "android",
+    rotation_locked: bool | None = None,
 ) -> dict:
     request_id = uuid.uuid4().hex
     result = asyncio.get_running_loop().create_future()
     _display_requests[request_id] = (hub, agent_id, vm_id, serial, result)
     try:
-        sent = await send_operation_once(hub, agent_id, {
+        command = {
             "type": P.MSG_VM_DISPLAY, "request_id": request_id, "vm_id": vm_id, "serial": serial,
+            "platform": platform,
             "orientation": orientation, "fold_state": fold_state, "rotation": rotation, "operation_timeout_sec": 16,
-        })
+        }
+        if rotation_locked is not None:
+            command["rotation_locked"] = rotation_locked
+        sent = await send_operation_once(hub, agent_id, command)
         if not sent:
             raise HTTPException(503, "无法向所属 Agent 发送屏幕请求")
         try:
             return await asyncio.wait_for(result, timeout=19)
         except TimeoutError as exc:
-            raise HTTPException(504, "等待 Android 屏幕确认超时") from exc
+            raise HTTPException(504, "等待虚拟机屏幕确认超时") from exc
     finally:
         _display_requests.pop(request_id, None)
 
@@ -105,6 +111,14 @@ async def append_catalog_profiles(session: AsyncSession, rows: list[Dict[str, An
         session.add(AndroidDeviceProfile(**row))
         existing.add(key)
         added += 1
+    return added
+
+
+async def install_bundled_play_catalog() -> int:
+    rows = await asyncio.to_thread(load_bundled_play_catalog)
+    async with get_session_factory()() as session:
+        added = await append_catalog_profiles(session, rows)
+        await session.commit()
     return added
 
 

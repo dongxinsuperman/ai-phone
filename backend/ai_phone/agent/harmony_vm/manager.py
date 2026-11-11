@@ -60,6 +60,9 @@ FOLD_DUMP_ARG_UNFOLDED = "-f"
 FOLD_INITIALIZATION_SETTLE_SEC = 5.0
 FOLD_VERIFY_ATTEMPTS = 6
 FOLD_VERIFY_INTERVAL_SEC = 1.0
+ROTATION_LOCK_DEVICE_TYPES = frozenset({
+    "Phone", "Foldable", "WideFold", "TripleFold", "Tablet", "2in1", "2in1 Foldable", "TV",
+})
 
 
 def _spawn_harmony_emulator(
@@ -873,13 +876,12 @@ class HarmonyVmManager:
             # state alone is therefore not creation evidence.
             if bool(known.get("created")) and not instance_config.is_file():
                 raise RuntimeError(f"harmony_vm_instance_missing:{instance_config}")
-            current_creation_config = _persistent_message_config(msg)
             previous_creation_config = known.get("last_config")
             if (
                 bool(known.get("created"))
                 and instance_config.is_file()
                 and isinstance(previous_creation_config, dict)
-                and previous_creation_config != current_creation_config
+                and _hardware_creation_config(previous_creation_config) != _hardware_creation_config(msg)
             ):
                 # DevEco has no in-place update for create-time fields. A
                 # restart must never silently delete apps/data to apply one.
@@ -968,9 +970,19 @@ class HarmonyVmManager:
             startup_timeout(deadline, 1.0)
             runtime.driver_fport_port = int(raw._client.local_port)  # noqa: SLF001
             set_managed_fport(runtime.hdc_serial, runtime.driver_fport_port)
-            # 折叠形态必须在设备进入可调度状态之前落定，否则调度到的设备形态
-            # 与用户所选不符；失败按硬失败处理，不静默回落到展开态。
-            self._apply_fold_state(runtime, msg)
+            config = msg.get("config_json") or {}
+            if runtime.created_in_attempt is True and msg.get("device_type") in ROTATION_LOCK_DEVICE_TYPES:
+                startup_timeout(deadline, 1.0)
+                runtime.driver.set_rotation_locked(False)  # type: ignore[attr-defined]
+            startup_display = {}
+            if "initial_rotation" in config:
+                try:
+                    self._restore_body_rotation(runtime, tools.emulator, config["initial_rotation"], deadline)
+                except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                    startup_display = {"warning": "DevEco 未能恢复启动机身方向"}
+                    logger.warning("Harmony VM {} 未能恢复启动机身方向: {}", vm_id, exc)
+            # Let DevEco finish the physical rotation before confirming the selected fold.
+            self._apply_fold_state(runtime, msg, tools.emulator)
             startup_timeout(deadline, 1.0)
             runtime.ready = True
             runtime.missing_ticks = 0
@@ -981,6 +993,8 @@ class HarmonyVmManager:
             }
             self._save_registry()
             details = self._runtime_details(runtime)
+            if startup_display:
+                details["startup_display"] = startup_display
             startup_timeout(deadline, 1.0)
             return {
                 "hdc_serial": runtime.hdc_serial,
@@ -1080,19 +1094,145 @@ class HarmonyVmManager:
             "details": details,
         }
 
+    @staticmethod
+    def _rotate_emulator(emulator: str, name: str, turn: str, deadline: Optional[float] = None) -> None:
+        HarmonyVmManager._emulator_scenario(emulator, name, "-rotation", turn, deadline)
+
+    @staticmethod
+    def _body_rotation(runtime: HarmonyVmRuntime) -> Optional[int]:
+        # DevEco records the emulated device angle separately from the guest display rotation.
+        settings = Path(runtime.instance_path) / runtime.instance_name / "huawei-settings.cfg"
+        try:
+            text = settings.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        match = re.search(r"^rotation\.status[ \t]*=[ \t]*([0-3])[ \t]*$", text, re.MULTILINE)
+        return int(match[1]) if match else None
+
+    def _restore_body_rotation(
+        self, runtime: HarmonyVmRuntime, emulator: str, target: int, deadline: Optional[float],
+    ) -> None:
+        current = self._body_rotation(runtime)
+        if current == target:
+            return
+        if current is None:
+            if not runtime.created_in_attempt:
+                raise RuntimeError("DevEco 机身方向暂不可读")
+            current = 0
+        turns = {0: (), 1: ("left",), 2: ("left", "left"), 3: ("right",)}
+        for turn in turns[(target - current) % 4]:
+            self._rotate_emulator(emulator, runtime.instance_name, turn, deadline)
+        for _ in range(FOLD_VERIFY_ATTEMPTS):
+            if self._body_rotation(runtime) == target:
+                return
+            time.sleep(startup_timeout(deadline, FOLD_VERIFY_INTERVAL_SEC))
+        raise RuntimeError("DevEco 未确认目标机身方向")
+
+    @staticmethod
+    def _instance_help(emulator: str, deadline: Optional[float]) -> str:
+        result = subprocess.run(
+            [emulator, "-help", "-instance"], capture_output=True, text=True,
+            timeout=startup_timeout(deadline, 5.0),
+        )
+        return result.stdout + result.stderr
+
+    @staticmethod
+    def _emulator_scenario(
+        emulator: str, name: str, action: str, value: str, deadline: Optional[float],
+    ) -> None:
+        result = subprocess.run(
+            [emulator, "-instance", name, action, value],
+            capture_output=True, text=True, timeout=startup_timeout(deadline, 12.0),
+        )
+        message = (result.stdout + result.stderr).strip()
+        if result.returncode or "scenario simulation success" not in message.lower():
+            raise RuntimeError(f"DevEco 屏幕操作失败：{message[:240]}")
+
+    def display_sync(self, msg: Dict[str, Any]) -> Dict[str, Any]:
+        vm_id = str(msg["vm_id"])
+        deadline = _start_deadline(msg)
+        with _startup_lock(self._vm_lock(vm_id), deadline):
+            runtime = self._runtimes.get(vm_id)
+            if (runtime is None or not runtime.ready or runtime.driver is None
+                    or msg["serial"] != vm_device_identity(vm_id)
+                    or managed_vm_owner(runtime.hdc_serial) != (vm_id, runtime.lease_token)):
+                raise RuntimeError("当前鸿蒙模拟器实例未就绪")
+            tools, _ = find_harmony_tools(deadline=deadline)
+            if tools is None:
+                raise RuntimeError("未找到 DevEco Emulator")
+            help_text = self._instance_help(tools.emulator, deadline)
+            can_rotate = bool(re.search(r"-rotation\s+(?:<)?left/right", help_text, re.IGNORECASE))
+            stored = self._known.get(vm_id, {}).get("last_config") or {}
+            config = stored.get("config_json") or {}
+            outer = config.get("folded_screen") or {}
+            can_fold = (
+                stored.get("device_type") == "Foldable" and bool(outer.get("width"))
+                and "-foldedState" in help_text
+            )
+            can_set_rotation_lock = stored.get("device_type") in ROTATION_LOCK_DEVICE_TYPES
+            turn, fold_state = msg.get("rotation"), msg.get("fold_state")
+            rotation_locked = msg.get("rotation_locked")
+            outer_width = int(outer.get("width") or 0)
+            outer_height = int(outer.get("height") or 0)
+            outer_size = sorted((outer_width, outer_height))
+            size = runtime.driver.window_size()
+            actual_fold = "folded" if sorted(size) == outer_size else "unfolded"
+            if turn:
+                if not can_rotate:
+                    raise RuntimeError("当前 DevEco Emulator 不支持原生旋转")
+                self._rotate_emulator(tools.emulator, runtime.instance_name, turn, deadline)
+            if fold_state and not can_fold:
+                raise RuntimeError("当前机型不支持原生折叠控制")
+            if fold_state and actual_fold != fold_state:
+                self._set_emulator_fold(tools.emulator, runtime.instance_name, fold_state, deadline)
+            if rotation_locked is not None:
+                if not can_set_rotation_lock or not isinstance(rotation_locked, bool):
+                    raise RuntimeError("当前机型不支持系统旋转锁定操作")
+                startup_timeout(deadline, 1.0)
+                runtime.driver.set_rotation_locked(rotation_locked)  # type: ignore[attr-defined]
+            if turn or fold_state or rotation_locked is not None:
+                previous_size = None
+                for _ in range(FOLD_VERIFY_ATTEMPTS):
+                    time.sleep(startup_timeout(deadline, FOLD_VERIFY_INTERVAL_SEC))
+                    size = runtime.driver.window_size()
+                    actual_fold = "folded" if sorted(size) == outer_size else "unfolded"
+                    if min(size) > 0 and size == previous_size and (not fold_state or actual_fold == fold_state):
+                        break
+                    previous_size = size
+                else:
+                    raise RuntimeError("DevEco 切换后的屏幕未稳定")
+            if fold_state:
+                config["fold"] = {**(config.get("fold") or {}), "initial_state": fold_state}
+                stored["config_json"] = config
+                register_managed_vm(
+                    vm_id, runtime.hdc_serial, runtime.lease_token,
+                    folded_screen_width=_managed_folded_screen_width(stored),
+                )
+                self._save_registry()
+            natural_width, natural_height = (outer_width, outer_height) if can_fold and actual_fold == "folded" else (
+                _int_value(stored.get("screen_width"), 0),
+                _int_value(stored.get("screen_height"), 0),
+            )
+            return {
+                "can_rotate": can_rotate, "can_fold": can_fold, "fold_state": actual_fold if can_fold else "",
+                "width": size[0], "height": size[1],
+                "body_rotation": self._body_rotation(runtime) if can_rotate else None,
+                "body_natural_landscape": natural_width > natural_height,
+                "can_set_rotation_lock": can_set_rotation_lock,
+                "rotation_locked": rotation_locked,
+            }
+
+    def _set_emulator_fold(self, emulator: str, name: str, state: str, deadline: Optional[float]) -> None:
+        value = "close" if state == "folded" else "open"
+        self._emulator_scenario(emulator, name, "-foldedState", value, deadline)
+
     def _apply_fold_state(
-        self, runtime: HarmonyVmRuntime, msg: Dict[str, Any]
+        self, runtime: HarmonyVmRuntime, msg: Dict[str, Any], emulator: str = "",
     ) -> None:
         """把折叠屏切到用户选定的初始形态。
 
-        公开的 ``create``/``start`` CLI 没有初始折叠状态参数，实例配置里的
-        ``hw.snap.fold.status`` 也只在快照恢复链路读取，完整冷启动会跳过。可用的
-        官方通道是 DisplayManagerService 的 dump 开关：``-f`` 展开、``-m`` 折叠。
-        本机实测（Mate X5 + HarmonyOS 6.0.31）来回切换四次，应用侧拿到的显示尺寸
-        在内屏 2224×2496 与外屏 1080×2504 之间如实变化。
-
-        因此这是启动后切换，不是启动参数——冷启动最初的一小段仍是展开态，
-        但在设备对平台 ready 之前就会切到位。
+        支持场景 CLI 的 DevEco 使用与工作台相同的机身折叠命令，旧版沿用系统显示命令。
+        冷启动完成后、设备对平台 ready 前确认实际内外屏。
         """
         config = (
             msg.get("config_json")
@@ -1115,14 +1255,14 @@ class HarmonyVmManager:
         from ai_phone.agent.drivers.hdc import hdc_shell  # noqa: PLC0415
 
         folded = state == "folded"
-        # 展开态也要走这条路。冷启动确实是展开的，但"确实"不等于"已确认"——
-        # 不回读就无法保证交付的形态与用户所选一致。
-        command = "hidumper -s DisplayManagerService -a " + (
+        deadline = runtime.operation_deadline
+        native = bool(emulator and "-foldedState" in self._instance_help(emulator, deadline))
+        display_command = "hidumper -s DisplayManagerService -a " + (
             FOLD_DUMP_ARG_FOLDED if folded else FOLD_DUMP_ARG_UNFOLDED
         )
         diagnostics = {"vm_id": runtime.vm_id, "hdc_serial": runtime.hdc_serial,
                        "requested_state": state, "folded_width": folded_width,
-                       "command": command, "samples": [],
+                       "command": "DevEco -foldedState" if native else display_command, "samples": [],
                        "initialization_settle_sec": FOLD_INITIALIZATION_SETTLE_SEC}
         try:
             # boot.completed 后桌面仍可能初始化折叠形态，覆盖刚设置的显示模式。
@@ -1130,9 +1270,14 @@ class HarmonyVmManager:
             time.sleep(startup_timeout(
                 runtime.operation_deadline, FOLD_INITIALIZATION_SETTLE_SEC
             ))
-            output = hdc_shell(runtime.hdc_serial, command,
-                               timeout=startup_timeout(runtime.operation_deadline, 15.0), check=True)
-            diagnostics["command_output_tail"] = str(output)[-4096:]
+            if native:
+                size = runtime.driver.window_size()
+                if min(size) <= 0 or (folded_width in size) != folded:
+                    self._set_emulator_fold(emulator, runtime.instance_name, state, deadline)
+            else:
+                output = hdc_shell(runtime.hdc_serial, display_command,
+                                   timeout=startup_timeout(deadline, 15.0), check=True)
+                diagnostics["command_output_tail"] = str(output)[-4096:]
         except Exception as exc:
             diagnostics["command_error"] = str(exc)[:2000]
             exc.fold_diagnostics = diagnostics
@@ -1164,7 +1309,7 @@ class HarmonyVmManager:
             if (
                 reported[0] > 0
                 and reported[1] > 0
-                and (reported[0] == folded_width) == folded
+                and (folded_width in reported) == folded
             ):
                 confirmed += 1
             else:
@@ -2763,6 +2908,24 @@ def _persistent_message_config(msg: Dict[str, Any]) -> Dict[str, Any]:
         "config_json",
     )
     return {key: msg.get(key) for key in keys}
+
+
+def _hardware_creation_config(msg: Dict[str, Any]) -> Dict[str, Any]:
+    """Compare immutable DevEco creation fields separately from display preferences."""
+    result = _persistent_message_config(msg)
+    if isinstance(result["config_json"], dict):
+        config = dict(result["config_json"])
+        config.pop("initial_rotation", None)
+        config.pop("rotation_locked", None)
+        fold = config.get("fold")
+        if isinstance(fold, dict) and "initial_state" in fold:
+            fold = {key: value for key, value in fold.items() if key != "initial_state"}
+            if fold:
+                config["fold"] = fold
+            else:
+                config.pop("fold")
+        result["config_json"] = config
+    return result
 
 
 def _managed_folded_screen_width(msg: Any) -> int:

@@ -40,6 +40,7 @@ export function useJpegMirror(options = {}) {
   const error = ref(null)
   // 当前帧尺寸（agent 已经解析好 JPEG 头里的 W/H 传过来）
   const frameSize = ref({ w: 0, h: 0 })
+  const frameTimestamp = ref(0)
 
   // 保留上一张 object URL，下一帧赋值时先 revoke，避免内存泄漏
   let prevUrl = null
@@ -71,6 +72,7 @@ export function useJpegMirror(options = {}) {
   }
 
   function _applyFrameMeta(msg) {
+    frameTimestamp.value = Number(msg.ts) || 0
     // 首帧完成加载视为 ready；此后只要 websocket 活着就一直 ready
     if (!ready.value) {
       ready.value = true
@@ -165,6 +167,7 @@ export function useJpegMirror(options = {}) {
       prevUrl = null
     }
     frameSize.value = { w: 0, h: 0 }
+    frameTimestamp.value = 0
     ready.value = false
     error.value = null
   }
@@ -172,6 +175,7 @@ export function useJpegMirror(options = {}) {
   onBeforeUnmount(reset)
 
   return {
+    frameTimestamp,
     imgEl,
     ready,
     error,

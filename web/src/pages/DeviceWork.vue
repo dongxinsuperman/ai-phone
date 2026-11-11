@@ -141,7 +141,7 @@ const mirrorFocused = ref(false)
 const mirrorRatios = ref(readMirrorRatios({ getItem: key => window.localStorage.getItem(key) }))
 const layoutOrientation = computed(() => {
   const { w, h } = frameSize.value
-  return (viewSideways.value ? h > w : w > h) ? 'landscape' : 'portrait'
+  return w > h ? 'landscape' : 'portrait'
 })
 const mirrorWidth = computed(() => mirrorColumnWidth(layoutWidth.value, mirrorRatios.value[layoutOrientation.value]))
 const columnPercent = width => Math.round(width * 100 / Math.max(1, layoutWidth.value - COLUMN_GUTTER))
@@ -291,13 +291,6 @@ const frameSize = ref({ w: 0, h: 0 })
 const androidMirror = ref(null)
 const androidFrameReady = ref(false)
 const androidDisplay = ref(null)
-const viewRotation = computed(() => {
-  const body = androidDisplay.value?.body_rotation
-  const frame = androidMirror.value
-  const display = frame?.natural_orientation ? 0 : frame?.display_rotation
-  return [0, 1, 2, 3].includes(body) && [0, 1, 2, 3].includes(display) ? (body - display + 4) % 4 : 0
-})
-const viewSideways = computed(() => viewRotation.value % 2 === 1)
 const avdPoseLabels = {
   portrait: '竖放',
   portrait_reverse: '倒置竖放',
@@ -316,11 +309,47 @@ const androidDisplayCapability = computed(() => (
 const androidVmId = computed(() => (
   androidDisplayCapability.value ? device.value.extra.vm_instance_id : null
 ))
+const nativeVmPlatform = computed(() => {
+  const { platform, extra } = device.value || {}
+  if (!extra?.vm_instance_id || !extra.is_virtual) return null
+  if (platform === 'harmony' && extra.vm_platform === 'harmony') return 'harmony'
+  return null
+})
+const nativeVmId = computed(() => nativeVmPlatform.value ? device.value.extra.vm_instance_id : null)
+const nativeDisplay = ref(null)
+const nativeDisplayBusy = ref(false)
+const nativeDisplayError = ref('')
+const nativeFrameAfter = ref(0)
+const nativeFrameWaitExpired = ref(false)
+const waitingForNativeFrame = computed(() => {
+  if (!nativeFrameAfter.value) return false
+  if (jpegMirror.frameTimestamp.value < nativeFrameAfter.value) return true
+  const { width, height } = nativeDisplay.value || {}
+  const { w, h } = jpegMirror.frameSize.value
+  if (!width || !height || !w || !h) return false
+  // Hypium can deliver a buffered frame from the previous inner/outer screen.
+  return Math.abs(Math.max(w, h) * Math.min(width, height) - Math.min(w, h) * Math.max(width, height)) > width + height
+})
+watch(waitingForNativeFrame, (waiting, _previous, onCleanup) => {
+  nativeFrameWaitExpired.value = false
+  if (!waiting) return
+  const timer = setTimeout(() => { nativeFrameWaitExpired.value = true }, 12000)
+  onCleanup(() => clearTimeout(timer))
+})
+const harmonyBodyPose = computed(() => {
+  const pose = nativeDisplay.value
+  if (![0, 1, 2, 3].includes(pose?.body_rotation)) return ''
+  const labels = pose.body_natural_landscape
+    ? ['横放', '左转 90°', '倒置横放', '右转 90°']
+    : ['竖放', '左横放', '倒置竖放', '右横放']
+  return labels[pose.body_rotation]
+})
 // 顶部展示的分辨率：设备物理像素，根据当前画面方向决定要不要 W/H 互换
 // 如：物理 1080×2400 + 横屏画面 → 显示 2400×1080；竖屏 → 1080×2400
 const displaySize = computed(() => {
-  const dp = androidDisplay.value
-    ? { w: androidDisplay.value.width, h: androidDisplay.value.height }
+  const pose = androidDisplay.value || nativeDisplay.value
+  const dp = pose?.width && pose?.height
+    ? { w: pose.width, h: pose.height }
     : devicePixel.value
   if (!dp.w || !dp.h) return { w: 0, h: 0 }
   const fs = frameSize.value
@@ -332,10 +361,6 @@ const displaySize = computed(() => {
     }
   }
   return { w: dp.w, h: dp.h }
-})
-const mirrorViewSize = computed(() => {
-  const { w, h } = displaySize.value
-  return viewSideways.value ? { w: h, h: w } : { w, h }
 })
 // 上一次稳定的"是否横屏"，null 表示还没收到任何视频元数据
 let lastIsLandscape = null
@@ -387,11 +412,49 @@ const androidMirrorReady = computed(() => {
     && frame.width === frameSize.value.w && frame.height === frameSize.value.h
     && (!expected || (expected.id ? frame.stream_id === expected.id : frame.stream_id !== expected.previous))
 })
-const canSendInput = computed(() => !lock.readonly.value && (
+const canSendInput = computed(() => !lock.readonly.value && !nativeDisplayBusy.value && !waitingForNativeFrame.value && (
   !(androidVmId.value || androidMirror.value) || (androidMirrorReady.value && !displayBusy.value)
 ))
 const canChangeDisplay = computed(() => canSendInput.value && wsConnected.value
   && !!androidDisplay.value && !currentRunId.value && !tapBusy.value)
+const canChangeNativeDisplay = computed(() => canSendInput.value && wsConnected.value
+  && !!nativeDisplay.value && !currentRunId.value && !tapBusy.value)
+
+function requestNativeDisplay(change = {}) {
+  return api.nativeVmDisplay(serial.value, {
+    vm_id: nativeVmId.value, platform: nativeVmPlatform.value, lock_token: lock.token.value, ...change,
+  })
+}
+
+watch([nativeVmId, lock.token], async ([id, token], _previous, onCleanup) => {
+  let active = true
+  onCleanup(() => { active = false })
+  nativeDisplay.value = null
+  nativeFrameAfter.value = 0
+  if (!id || !token) return
+  try {
+    const pose = await requestNativeDisplay()
+    if (active) nativeDisplay.value = pose
+  } catch {
+    // Older agents can still open the workbench without pose controls.
+  }
+})
+
+async function changeNativeDisplay(change) {
+  if (!canChangeNativeDisplay.value) return
+  nativeDisplayBusy.value = true
+  nativeDisplayError.value = ''
+  gesture.active = false
+  try {
+    const pose = await requestNativeDisplay(change)
+    nativeDisplay.value = pose
+    nativeFrameAfter.value = pose.frame_after || 0
+  } catch (e) {
+    nativeDisplayError.value = e.detail?.message || e.detail || '切换模拟器姿态失败'
+  } finally {
+    nativeDisplayBusy.value = false
+  }
+}
 
 let displayReadVersion = 0
 async function readAndroidDisplay() {
@@ -461,7 +524,7 @@ const SWIPE_PX_THRESHOLD = 24
 const LONG_PRESS_MS = 450
 
 // 按下起点，抬起时一并计算 swipe
-const gesture = { active: false, x0: 0, y0: 0, t0: 0, rect: null, frame: null, rotation: 0 }
+const gesture = { active: false, x0: 0, y0: 0, t0: 0, rect: null, frame: null, nativeSize: null }
 
 // PC 键盘转发：把 mirror 当成手机的"软键盘焦点"，敲键转成 type / keycode 派发
 // - 字符（含 IME 中文）→ kind: 'type'（走 ADBKeyBoard 广播）
@@ -588,9 +651,9 @@ function _mediaSize(el) {
 
 function _mapToDevice(ev, el, { clamp = false, rect = el.getBoundingClientRect() } = {}) {
   const { w: nw, h: nh } = _mediaSize(el)
-  const point = mirrorFramePoint(rect, { w: nw, h: nh }, ev.clientX, ev.clientY, viewRotation.value, clamp)
+  const point = mirrorFramePoint(rect, { w: nw, h: nh }, ev.clientX, ev.clientY, clamp)
   if (!point) return null
-  // Managed AVD inputs carry scrcpy's encoded dimensions and coordinates before the browser rotation.
+  // Managed AVD inputs use the encoded frame's pixel coordinates.
   const ds = displaySize.value
   const w = androidMirror.value ? nw : (ds.w || devicePixel.value.w || nw)
   const h = androidMirror.value ? nh : (ds.h || devicePixel.value.h || nh)
@@ -619,8 +682,8 @@ function onMirrorPointerDown(ev) {
   try { el.setPointerCapture(ev.pointerId) } catch (_) { /* ignore */ }
   gesture.active = true
   gesture.frame = androidMirror.value
-  gesture.rotation = viewRotation.value
   gesture.rect = rect
+  gesture.nativeSize = nativeVmId.value ? displaySize.value : null
   gesture.x0 = p.x
   gesture.y0 = p.y
   gesture.t0 = performance.now()
@@ -641,11 +704,13 @@ async function onMirrorPointerUp(ev) {
   if (!el) return
   try { el.releasePointerCapture(ev.pointerId) } catch (_) { /* ignore */ }
   ev.preventDefault()
-  if (!canSendInput.value || gesture.frame !== androidMirror.value || gesture.rotation !== viewRotation.value) return
+  if (!canSendInput.value || gesture.frame !== androidMirror.value) return
+  const size = displaySize.value
+  if (gesture.nativeSize && (gesture.nativeSize.w !== size.w || gesture.nativeSize.h !== size.h)) return
 
   // 抬手可能在黑边里 / 拖出 mirror → 用 clamp 模式，把 end 夹到画面边缘
   // 键盘捕获提示可能改变画面容器高度，整次手势使用按下时的画面位置。
-  const end = _mapToDevice(ev, el, { clamp: true, rect: gesture.frame ? gesture.rect : undefined })
+  const end = _mapToDevice(ev, el, { clamp: true, rect: gesture.frame || gesture.nativeSize ? gesture.rect : undefined })
     || { x: gesture.x0, y: gesture.y0 }
   const dx = end.x - gesture.x0
   const dy = end.y - gesture.y0
@@ -766,7 +831,6 @@ function onMessage(msg) {
         gesture.active = false
         androidMirror.value = {
           stream_id: msg.stream_id, width: msg.width, height: msg.height,
-          natural_orientation: msg.natural_orientation === true,
           display_rotation: msg.display_rotation,
         }
         mirror.reset()
@@ -918,7 +982,7 @@ async function appendFunctionMapFiles(event) {
 }
 
 async function startRun() {
-  if (displayBusy.value) return
+  if (displayBusy.value || nativeDisplayBusy.value || waitingForNativeFrame.value) return
   submitError.value = null
   if (!goal.value.trim()) {
     submitError.value = '请输入 goal'
@@ -1129,8 +1193,8 @@ watch(
         <div class="mirror-wrap" ref="mirrorWrap">
           <div class="mirror-bar">
             <span class="mirror-title">实时画面</span>
-            <span class="mirror-size" v-if="mirrorViewSize.w">
-              {{ mirrorViewSize.w }}×{{ mirrorViewSize.h }}
+            <span class="mirror-size" v-if="displaySize.w">
+              {{ displaySize.w }}×{{ displaySize.h }}
             </span>
             <span class="mirror-hint" v-if="!lock.readonly.value && currentRunId">
               VLM 运行中 · 手动 tap / 键盘 可插入
@@ -1162,11 +1226,32 @@ watch(
             <span v-else-if="displayBusy || (expectedMirror && !androidMirrorReady)" role="status">正在切换画面…</span>
             <span v-if="displayError" role="alert">{{ displayError }}</span>
           </div>
-          <div
-            class="mirror"
-            :class="{ 'kb-on': kbFocused, 'avd-rotated': viewRotation, 'avd-sideways': viewSideways }"
-            :style="viewRotation ? { '--avd-angle': `${-viewRotation * 90}deg` } : null"
-          >
+          <div v-if="nativeDisplay?.can_rotate || nativeDisplay?.can_fold || nativeDisplay?.can_set_rotation_lock"
+            class="android-screen-controls" aria-label="模拟器屏幕控制" @mousedown.prevent>
+            <template v-if="nativeDisplay.can_rotate">
+              <span aria-live="polite">机身 · {{ harmonyBodyPose || '方向暂不可读' }}</span>
+              <button type="button" :disabled="!canChangeNativeDisplay"
+                @click="changeNativeDisplay({ rotation: 'left' })">左转 90°</button>
+              <button type="button" :disabled="!canChangeNativeDisplay"
+                @click="changeNativeDisplay({ rotation: 'right' })">右转 90°</button>
+            </template>
+            <template v-if="nativeDisplay.can_fold">
+              <button type="button" :disabled="!canChangeNativeDisplay" :aria-pressed="nativeDisplay.fold_state === 'unfolded'"
+                @click="changeNativeDisplay({ fold_state: 'unfolded' })">展开</button>
+              <button type="button" :disabled="!canChangeNativeDisplay" :aria-pressed="nativeDisplay.fold_state === 'folded'"
+                @click="changeNativeDisplay({ fold_state: 'folded' })">折叠</button>
+            </template>
+            <template v-if="nativeDisplay.can_set_rotation_lock">
+              <button type="button" :disabled="!canChangeNativeDisplay"
+                @click="changeNativeDisplay({ rotation_locked: false })">自动旋转</button>
+              <button type="button" :disabled="!canChangeNativeDisplay"
+                @click="changeNativeDisplay({ rotation_locked: true })">旋转锁定</button>
+            </template>
+            <span v-if="nativeFrameWaitExpired" role="alert">画面更新超时，请刷新工作台</span>
+            <span v-else-if="nativeDisplayBusy || waitingForNativeFrame" role="status">正在等待新画面…</span>
+            <span v-if="nativeDisplayError" role="alert">{{ nativeDisplayError }}</span>
+          </div>
+          <div class="mirror" :class="{ 'kb-on': kbFocused }">
             <!-- MSE 视频：muted + autoplay + playsinline 让 Chrome/Safari 都能直接自动播放 -->
             <!-- ref="videoEl" 与 useMseMirror 内部的 videoEl 是同一个 ref（别名），
                  模板把 DOM 写进来，composable 那边就能看到。mirrorMode='mse' 才显示 -->
@@ -1193,7 +1278,7 @@ watch(
               v-show="mirrorMode === 'jpeg' && mirrorReady"
               draggable="false"
               alt=""
-              :class="{ clickable: !lock.readonly.value }"
+              :class="{ clickable: canSendInput }"
               @pointerdown="onMirrorPointerDown"
               @pointermove="onMirrorPointerMove"
               @pointerup="onMirrorPointerUp"
@@ -1395,7 +1480,7 @@ watch(
               <span v-if="functionMapContextTooLong" class="limit-warn">已超出上限，请精简后再执行</span>
             </div>
             <div class="btn-row">
-              <button class="primary" :disabled="busy || displayBusy || !!currentRunId || lock.readonly.value || functionMapContextTooLong" @click="startRun">
+              <button class="primary" :disabled="busy || displayBusy || nativeDisplayBusy || waitingForNativeFrame || !!currentRunId || lock.readonly.value || functionMapContextTooLong" @click="startRun">
                 {{ currentRunId ? '运行中…' : '开始 Run' }}
               </button>
               <button class="danger" :disabled="busy || !currentRunId" @click="stopRun">停止</button>
@@ -1810,19 +1895,6 @@ h2 {
 .mirror video.clickable,
 .mirror img.clickable {
   cursor: crosshair;
-}
-.mirror.avd-rotated {
-  container-type: size;
-}
-.mirror.avd-rotated video {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%) rotate(var(--avd-angle));
-}
-.mirror.avd-sideways video {
-  width: 100cqh;
-  height: 100cqw;
 }
 .mirror.kb-on {
   /* 键盘焦点在 mirror 上时给个细蓝边，告诉用户"敲字会进手机" */

@@ -494,6 +494,10 @@ async def create_instance(
         body.config_json, selected_profile, str(selected.get("id") or "")
     )
     config_json = _fold_config(config_json, selected_type, body.fold_state)
+    config_json.pop("rotation_locked", None)
+    config_json.pop("initial_rotation", None)
+    if body.initial_rotation:
+        config_json["initial_rotation"] = body.initial_rotation
     vm = HarmonyVmInstance(
         name=alias,
         alias=alias,
@@ -582,6 +586,14 @@ async def patch_instance(
                 ),
             },
         )
+    if patch.get("config_json") is not None:
+        config = dict(patch["config_json"])
+        saved_config = vm.config_json or {}
+        for key in ("initial_rotation", "rotation_locked"):
+            config.pop(key, None)
+            if key in saved_config:
+                config[key] = saved_config[key]
+        patch["config_json"] = config
     if vm.assigned_agent_id or lifecycle_runtime(vm).get("instance_created"):
         immutable_changes = [key for key in ("memory_gb", "storage_gb", "config_json")
                              if key in patch and patch[key] is not None and patch[key] != getattr(vm, key)]

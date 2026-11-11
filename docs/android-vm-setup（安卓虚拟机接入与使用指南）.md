@@ -62,8 +62,10 @@ System on Chip、GPU、ABIs、Android SDK Versions（支持的安卓版本）、
 - 品牌名归一、按分辨率分档、去重；
 - 列表只展示**可建机型**：**Android 5.0（API 21）及以上**——这是 Android Emulator 的下限。
 
-### 3.4 怎么导入
+### 3.4 随包设备库与手动追加
 
+- 服务端安装包自带设备库 CSV，启动时自动追加缺少的档案。首次安装可直接选机型，升级保留已有档案的规格、ID 和实例绑定。
+- 随包快照保留原 Play Console 档案，并追加同一目录来源的 1,592 条新档案。CSV 只包含机型规格字段。 [增量来源](https://github.com/hossain-khan/android-device-catalog-parser/blob/72f794d6869dfb76ed6432249de17244727686d9/catalog-data/android-devices-catalog.csv)
 - **页面**：「虚拟机」页左上角「导入设备库 CSV」上传，只追加未收录机型，保留已有档案和实例绑定。
 - **接口**：见《对外调用清单》(`external-api`) 中的设备库导入接口。
 

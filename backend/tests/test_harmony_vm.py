@@ -32,6 +32,7 @@ from ai_phone.agent.harmony_vm.registry import (
     unregister_managed_serial,
 )
 from ai_phone.config import AGENT_LOCAL_FIELDS, Settings, downlink_field_names
+from ai_phone.server.android_vm.service import resolve_vm_display
 from ai_phone.server.db import init_harmony_vm_db
 from ai_phone.server.harmony_vm.catalog import (
     load_bundled_manifest,
@@ -59,6 +60,7 @@ from ai_phone.server.hub import Hub
 from ai_phone.server.app_install.service import list_packages
 from ai_phone.server.models import AppPackage, Device, DeviceAlias
 from ai_phone.server.vm_lifecycle import lifecycle_view
+from ai_phone.shared import protocol as P
 from ai_phone.shared.harmony_identity import (
     harmony_udid_from_uuid,
     normalize_harmony_instance_uuid,
@@ -476,9 +478,9 @@ def test_harmony_manager_does_not_create_or_own_image_root(tmp_path):
 
 def test_bundled_harmony_catalog_is_complete_and_preserves_official_metadata():
     normalized = normalize_manifest(load_bundled_manifest())
-    assert normalized["emulator_version"] == "HarmonyOS Emulator :6.1.0.410"
-    assert len(normalized["images"]) == 53
-    assert len(normalized["screen_profiles"]) == 41
+    assert normalized["emulator_version"] == "HarmonyOS Emulator :26.0.0.402"
+    assert len(normalized["images"]) == 79
+    assert len(normalized["screen_profiles"]) == 72
 
     wearable_kid = next(
         row
@@ -511,6 +513,9 @@ def test_bundled_harmony_catalog_is_complete_and_preserves_official_metadata():
         "Foldable|HarmonyOS 6.0.1(21)|auto",
         "Foldable|HarmonyOS 6.0.2(22)|auto",
         "Foldable|HarmonyOS 6.0.31(23)|auto",
+        "Foldable|HarmonyOS 6.1.0(23)|auto",
+        "Foldable|HarmonyOS 6.1.1(24)|auto",
+        "Foldable|HarmonyOS 7.0.0(26.0.0)|auto",
     ]
 
     matepad = next(
@@ -547,15 +552,20 @@ def test_bundled_harmony_catalog_uses_probed_create_compatibility():
     assert modern["default_screen"]["hw.lcd.single.width"] == "1320"
     assert modern["default_screen"]["hw.lcd.single.height"] == "2856"
 
-    six_x = [
+    previous_phone_images = [
         "Phone|HarmonyOS 6.0.0(20)|auto",
         "Phone|HarmonyOS 6.0.1(21)|auto",
         "Phone|HarmonyOS 6.0.2(22)|auto",
         "Phone|HarmonyOS 6.0.31(23)|auto",
     ]
+    added_phone_images = [
+        "Phone|HarmonyOS 6.1.0(23)|auto",
+        "Phone|HarmonyOS 6.1.1(24)|auto",
+        "Phone|HarmonyOS 7.0.0(26.0.0)|auto",
+    ]
     # CLI 认得出机型名，走 -screenProfile。
     nova14 = profiles[("Phone", "nova 14")]
-    assert nova14["supported_image_ids"] == six_x
+    assert nova14["supported_image_ids"] == previous_phone_images + added_phone_images
     assert set(nova14["create_methods"].values()) == {"screen_profile"}
 
     # 手机的默认机型：CLI 不接受这个名字，但不传参数建出来的就是它，
@@ -567,13 +577,14 @@ def test_bundled_harmony_catalog_uses_probed_create_compatibility():
     # 折叠屏的默认机型在 5.x 是唯一选项，到 6.0.1 以后又能按名字选，
     # 所以同一台机型在不同版本上的创建方式不同。
     mate_x5 = profiles[("Foldable", "Mate X5")]
-    assert len(mate_x5["supported_image_ids"]) == 9
+    assert len(mate_x5["supported_image_ids"]) == 12
     assert set(mate_x5["create_methods"].values()) == {"default", "screen_profile"}
 
     # CLI 认不出名字、又不是默认机型的，一律不提供。用官方屏幕参数还原虽然能建，
     # 但实例的 productModel 会变成 Customize__*，等于拿假身份冒充官方机型。
-    for name in ("Pura 90", "Mate 80 Pro、Mate 80", "Mate 70 Air"):
-        assert profiles[("Phone", name)]["supported_image_ids"] == []
+    assert profiles[("Phone", "Mate 80 Pro、Mate 80")]["supported_image_ids"] == []
+    for name in ("Pura 90", "Mate 70 Air"):
+        assert profiles[("Phone", name)]["supported_image_ids"] == added_phone_images
     # WideFold 任何版本都不接受指定机型，且官方机型列表里没有它的默认机型。
     assert profiles[("WideFold", "Pura X")]["supported_image_ids"] == []
 
@@ -588,8 +599,29 @@ async def test_empty_server_db_is_initialized_from_bundled_catalog(session):
     seeded = await session.get(HarmonyVmCatalogSnapshot, "official")
     assert seeded is not None
     assert seeded.source_type == "deveco_emulator_official_preset"
-    assert len(seeded.images_json) == 53
-    assert len(seeded.screen_profiles_json) == 41
+    assert len(seeded.images_json) == 79
+    assert len(seeded.screen_profiles_json) == 72
+
+
+async def test_harmony_server_catalog_upgrade_only_appends_release_additions(session):
+    existing = await session.get(HarmonyVmCatalogSnapshot, "official")
+    image_ids = {row["id"] for row in existing.images_json}
+    screen_id = existing.screen_profiles_json[0]["id"]
+    existing.screen_profiles_json = [
+        {**row, "width": 1200} if row["id"] == screen_id else row
+        for row in existing.screen_profiles_json
+    ]
+    profile_ids = {row["id"] for row in existing.screen_profiles_json}
+    await session.commit()
+    additions = load_bundled_manifest()["incremental_ids"]
+
+    for _ in range(2):
+        await init_harmony_vm_db()
+        await session.refresh(existing)
+        assert {row["id"] for row in existing.images_json} == image_ids | set(additions["images"])
+        profiles = {row["id"]: row for row in existing.screen_profiles_json}
+        assert profiles.keys() == profile_ids | set(additions["screen_profiles"])
+        assert profiles[screen_id]["width"] == 1200
 
 
 async def test_harmony_catalog_is_server_owned_replace_snapshot(client, session):
@@ -685,10 +717,11 @@ async def test_harmony_vm_create_locks_screen_to_official_catalog(client):
                 "image_id": "Phone|HarmonyOS 6.0.0(20)|arm64",
                 "screen_profile": screen_profile,
                 "screen_width": requested_width,
-                "config_json": {"display": {"mode": "profile"}},
+                "config_json": {"display": {"mode": "profile"}, "rotation_locked": True},
             },
         )
         assert response.status_code == 201, response.text
+        assert "rotation_locked" not in response.json()["config_json"]
         return response.json()
 
     # CLI 认得出机型名：走 -screenProfile。
@@ -761,10 +794,11 @@ async def test_harmony_vm_patch_cannot_bypass_catalog(client):
     allowed = await client.patch(
         f"/api/internal/harmony-vm/instances/{vm_id}",
         headers=AUTH,
-        json={"memory_gb": 8},
+        json={"memory_gb": 8, "config_json": {**created.json()["config_json"], "rotation_locked": True}},
     )
     assert allowed.status_code == 200, allowed.text
     assert allowed.json()["memory_gb"] == 8
+    assert "rotation_locked" not in allowed.json()["config_json"]
 
 
 def test_missing_create_compat_makes_harmony_catalog_fail_loudly(monkeypatch):
@@ -1863,9 +1897,9 @@ def test_harmony_vm_acceleration_is_evidence_based(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("device_type", "config_json", "expected_folded_width"),
+    ("device_type", "config_json", "expected_folded_width", "native_rotation", "expected_turns", "turn_fails", "existing"),
     [
-        ("Phone", {}, None),
+        ("Phone", {}, None, None, (), False, False),
         (
             "Foldable",
             {
@@ -1873,11 +1907,21 @@ def test_harmony_vm_acceleration_is_evidence_based(tmp_path):
                 "folded_screen": {"width": 1080},
             },
             1080,
+            None,
+            (),
+            False,
+            False,
         ),
+        ("Phone", {"initial_rotation": 1}, None, 1, (), False, False),
+        ("Phone", {"initial_rotation": 3}, None, 0, ("right",), False, False),
+        ("Phone", {"initial_rotation": 0}, None, 1, ("right",), False, False),
+        ("Phone", {"initial_rotation": 1}, None, 0, ("left",), True, False),
+        ("Phone", {"initial_rotation": 1, "rotation_locked": True}, None, 0, ("left",), False, True),
     ],
 )
 def test_harmony_vm_start_uses_server_assigned_hdc_port(
-    monkeypatch, tmp_path, device_type, config_json, expected_folded_width
+    monkeypatch, tmp_path, device_type, config_json, expected_folded_width,
+    native_rotation, expected_turns, turn_fails, existing,
 ):
     import ai_phone.agent.harmony_vm.manager as manager_module
     import ai_phone.agent.drivers.hdc as hdc_module
@@ -1892,8 +1936,23 @@ def test_harmony_vm_start_uses_server_assigned_hdc_port(
     )
     monkeypatch.setattr(manager, "_port_conflict", lambda _port, _serial: "")
     monkeypatch.setattr(manager, "_resolve_image_root", lambda _msg: "/host/deveco-images")
+    monkeypatch.setattr(manager, "_instance_help", lambda *_args: "")
+    monkeypatch.setattr(manager_module, "FOLD_INITIALIZATION_SETTLE_SEC", 0)
     monkeypatch.setattr(manager_module, "FOLD_VERIFY_INTERVAL_SEC", 0)
     monkeypatch.setattr(hdc_module, "hdc_shell", lambda *_args, **_kwargs: "")
+
+    rotation_file = manager.instance_path / "aiphone_harmony_vm_port_test" / "huawei-settings.cfg"
+    turns = []
+
+    def _fake_turn(_emulator, _name, turn, _deadline):
+        turns.append(turn)
+        if turn_fails:
+            raise RuntimeError("fixture: DevEco rotation failed")
+        current = manager._body_rotation(manager._runtimes["vm-port-test"])
+        rotation = (current + (1 if turn == "left" else -1)) % 4
+        rotation_file.write_text(f"rotation.status={rotation}\n", encoding="utf-8")
+
+    monkeypatch.setattr(manager, "_rotate_emulator", _fake_turn)
 
     def _fake_create(_emulator, runtime, _msg):
         config = (
@@ -1906,7 +1965,20 @@ def test_harmony_vm_start_uses_server_assigned_hdc_port(
             "created=true\nuuid=00000000-0000-0000-0000-000000000000\n",
             encoding="utf-8",
         )
+        if native_rotation is not None:
+            rotation_file.write_text(f"rotation.status={native_rotation}\n", encoding="utf-8")
 
+    if existing:
+        identity = {
+            "instance_path": str(manager.instance_path),
+            "instance_name": rotation_file.parent.name,
+        }
+        _fake_create("", SimpleNamespace(**identity), {})
+        manager._known["vm-port-test"] = {**identity, "created": True}
+        monkeypatch.setattr(
+            manager, "observe_instance",
+            lambda *_args: {"state": "stopped", "resources_released": True},
+        )
     monkeypatch.setattr(manager, "_create_instance", _fake_create)
     monkeypatch.setattr(
         manager,
@@ -1914,12 +1986,17 @@ def test_harmony_vm_start_uses_server_assigned_hdc_port(
         lambda _runtime, **_kwargs: None,
     )
 
+    applied_rotation_locks = []
+
     class FakeDriver:
         def get_raw_driver(self):
             return SimpleNamespace(_client=SimpleNamespace(local_port=16556))
 
         def window_size(self):
             return (1080, 2340)
+
+        def set_rotation_locked(self, locked):
+            applied_rotation_locks.append(locked)
 
     monkeypatch.setattr(
         manager_module, "open_harmony_driver", lambda _serial: FakeDriver()
@@ -1944,6 +2021,7 @@ def test_harmony_vm_start_uses_server_assigned_hdc_port(
             "lease_token": "server-lease",
             "device_type": device_type,
             "config_json": config_json,
+            "require_existing_instance": existing,
             "os_version": "6.0.0",
             "api_version": "20",
             "instance_uuid": "45d5504d-4143-0415-24d0-0123456789ab",
@@ -1952,6 +2030,13 @@ def test_harmony_vm_start_uses_server_assigned_hdc_port(
     runtime = manager._runtimes["vm-port-test"]  # noqa: SLF001
     try:
         assert result["hdc_serial"] == "127.0.0.1:12345"
+        assert applied_rotation_locks == ([] if existing else [False])
+        assert tuple(turns) == expected_turns
+        assert runtime.ready
+        if turn_fails:
+            assert result["details"]["startup_display"]["warning"] == "DevEco 未能恢复启动机身方向"
+        else:
+            assert "startup_display" not in result["details"]
         assert popen_args[0][popen_args[0].index("-hdcPort") + 1] == "12345"
         assert (
             popen_args[0][popen_args[0].index("-imageRoot") + 1]
@@ -2417,6 +2502,62 @@ class _FakeWs:
 
     async def send_json(self, payload):
         self.sent.append(payload)
+
+
+async def test_harmony_vm_workbench_saves_body_angle_and_leaves_rotation_lock_to_system(client, app, session):
+    vm = HarmonyVmInstance(
+        name="rotation-lock", alias="rotation-lock", state="running",
+        assigned_agent_id="owner", hdc_serial="127.0.0.1:12345",
+    )
+    session.add(vm)
+    await session.commit()
+    serial = f"harmony-vm:{vm.id}"
+    hub = Hub()
+    app.state.hub = hub
+    display = {"can_set_rotation_lock": True}
+
+    class DisplayAgent(_FakeWs):
+        async def send_json(self, payload):
+            await super().send_json(payload)
+            if payload["type"] == P.MSG_VM_DISPLAY:
+                resolve_vm_display(hub, "owner", {**payload, "ok": True, "display": dict(display)})
+
+    agent = DisplayAgent()
+    await hub.register_agent("owner", "mac", "Darwin", agent)
+    hub.set_agent_capabilities("owner", [P.CAP_NATIVE_VM_DISPLAY])
+    await hub.set_devices("owner", {serial})
+    hub.set_device_extra(serial, {"vm_instance_id": vm.id, "hdc_serial": vm.hdc_serial})
+    lock = await app.state.lock_store.acquire(serial, holder="workbench", holder_type="manual")
+    url = f"/api/devices/{serial}/native-display"
+    request = {"platform": "harmony", "vm_id": vm.id, "lock_token": lock.token}
+
+    legacy = await client.post(url, json=request)
+    assert legacy.status_code == 200
+    assert legacy.json().get("rotation_locked") is None
+    assert "rotation_locked" not in agent.sent[-1]
+
+    rejected = await client.post(url, json={**request, "rotation_locked": False})
+    assert rejected.status_code == 409
+    assert agent.sent[-1]["rotation_locked"] is False
+    await session.refresh(vm)
+    assert "rotation_locked" not in vm.config_json
+
+    for locked in (True, False):
+        display["rotation_locked"] = locked
+        changed = await client.post(url, json={**request, "rotation_locked": locked})
+        assert changed.status_code == 200, changed.text
+        assert changed.json()["rotation_locked"] is locked
+        await session.refresh(vm)
+        assert "rotation_locked" not in vm.config_json
+        del display["rotation_locked"]
+        readback = await client.post(url, json=request)
+        assert readback.json().get("rotation_locked") is None
+
+    display.update(can_rotate=True, body_rotation=2)
+    turned = await client.post(url, json={**request, "rotation": "left"})
+    assert turned.status_code == 200, turned.text
+    await session.refresh(vm)
+    assert vm.config_json["initial_rotation"] == 2
 
 
 async def test_managed_harmony_vm_rejects_mismatched_hap_before_dispatch(
