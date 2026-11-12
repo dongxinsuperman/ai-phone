@@ -299,6 +299,24 @@ async def test_lock_rejects_offline_device(client, session):
     assert resp.status_code == 409
 
 
+@pytest.mark.parametrize("rotation", [{}, {"display_rotation": 0}, {"display_rotation": None}])
+async def test_mirror_input_forwards_optional_display_rotation(client, session, app, rotation):
+    await _seed_device(session)
+    hub = app.state.hub = Hub()
+    ws = _FakeWs()
+    await hub.register_agent("agent-local", "mac", "Darwin", ws)
+    await hub.set_devices("agent-local", {"S1"})
+    lock = await app.state.lock_store.acquire("S1", holder="browser", holder_type="manual", ttl_seconds=60)
+
+    frame = {"stream_id": "mirror", "width": 568, "height": 1280, **rotation}
+    response = await client.post("/api/devices/S1/input", json={
+        "kind": "tap", "params": {"x": 20, "y": 40}, "lock_token": lock.token, "frame": frame,
+    })
+
+    assert response.status_code == 200, response.text
+    assert ws.sent[-1]["frame"] == frame
+
+
 # --------------------------------------------------------------------- cases
 
 

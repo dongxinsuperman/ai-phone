@@ -1938,8 +1938,8 @@ async def _handle_input(
             params = _remap_ios_downsampled_manual_input(driver, session, kind, params)
 
         if use_scrcpy:
-            # scrcpy fast-path：直接走控制 socket，几乎零延迟
-            await _dispatch_input_via_scrcpy(driver, session, kind, params, frame=frame)
+            # 在执行触控的线程内校验画面，涵盖请求排队期间发生的旋转。
+            await asyncio.to_thread(_dispatch_input_via_scrcpy, driver, session, kind, params, frame=frame)
             return
 
         # adb fallback
@@ -2076,7 +2076,7 @@ def _remap_ios_downsampled_manual_input(
     return out
 
 
-async def _dispatch_input_via_scrcpy(
+def _dispatch_input_via_scrcpy(
     driver: BaseDriver,
     session: "_MirrorSession",
     kind: str,
@@ -2096,10 +2096,15 @@ async def _dispatch_input_via_scrcpy(
     """
     from .scrcpy_client.const import ACTION_DOWN, ACTION_UP
 
+    ctrl = session.control
+    if ctrl is None:
+        return
     fres = session.resolution
     if frame is not None and (
-        not session.stream_id or frame.get("stream_id") != session.stream_id
+        not session.stream_id
+        or frame.get("stream_id") != session.stream_id
         or (frame.get("width"), frame.get("height")) != fres
+        or ("display_rotation" in frame and frame["display_rotation"] != session.display_rotation)
     ):
         return  # A pointer event from the previous screen must never reach the new screen.
     if not fres or not fres[0] or not fres[1]:
@@ -2111,7 +2116,6 @@ async def _dispatch_input_via_scrcpy(
         raise RuntimeError("device size unknown, fallback to adb")
     sx_scale = fw / dw
     sy_scale = fh / dh
-    ctrl = session.control
 
     def _f(x: int, y: int) -> tuple:
         return (max(0, min(fw - 1, round(x * sx_scale))),
@@ -2143,19 +2147,19 @@ async def _dispatch_input_via_scrcpy(
     if kind == "tap":
         x = int(params.get("x", 0))
         y = int(params.get("y", 0))
-        await asyncio.to_thread(_do_tap, x, y)
+        _do_tap(x, y)
     elif kind == "long_press":
         x = int(params.get("x", 0))
         y = int(params.get("y", 0))
         dur = int(params.get("duration_ms", 800))
-        await asyncio.to_thread(_do_long_press, x, y, dur)
+        _do_long_press(x, y, dur)
     elif kind == "swipe":
         x1 = int(params.get("x1", 0))
         y1 = int(params.get("y1", 0))
         x2 = int(params.get("x2", 0))
         y2 = int(params.get("y2", 0))
         dur = int(params.get("duration_ms", 300))
-        await asyncio.to_thread(_do_swipe, x1, y1, x2, y2, dur)
+        _do_swipe(x1, y1, x2, y2, dur)
 
 
 class _MirrorSession:
@@ -2196,7 +2200,7 @@ class _MirrorSession:
     ) -> None:
         self.serial = serial
         self.stream_id = stream_id
-        self._display_rotation: Optional[int] = None
+        self.display_rotation: Optional[int] = None
         self._ws = ws_client
         self._loop = loop
         self._scrcpy: Optional[ScrcpyClient] = None
@@ -2357,7 +2361,7 @@ class _MirrorSession:
             prev = getattr(self, "_last_sps_bytes", None)
             rotation = self._read_display_rotation()
             # scrcpy also emits an SPS after a 180° turn, with the same frame dimensions.
-            if prev is not None and (sps != prev or rotation != self._display_rotation):
+            if prev is not None and (sps != prev or rotation != self.display_rotation):
                 logger.info(
                     "scrcpy 检测到新 SPS（设备旋转/分辨率变更），重启 ffmpeg serial={}",
                     self.serial,
@@ -2369,7 +2373,7 @@ class _MirrorSession:
                 # 重要：device_size 也要让下一次 input 重新读，否则手动 tap 会按
                 # 旋转前的 (w, h) 缩放，整个手势打到屏幕另一半
                 self.invalidate_device_size()
-            self._display_rotation = rotation
+            self.display_rotation = rotation
             self._last_sps_bytes = sps
         self._fmp4.feed(raw)
         # 首次喂数据 / 每 100KB 累计：
@@ -2408,7 +2412,7 @@ class _MirrorSession:
             # Mirror the unlocked frame and report its orientation, including
             # rotation changes that leave the frame dimensions the same.
             payload["stream_id"] = self.stream_id
-            payload["display_rotation"] = self._display_rotation
+            payload["display_rotation"] = self.display_rotation
         self._last_init_payload = payload
         logger.info(
             "MSE init segment 就绪 serial={} mime={} size={}x{} bytes={}",

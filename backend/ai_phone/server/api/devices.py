@@ -66,6 +66,7 @@ class InputFrame(BaseModel):
     stream_id: str = Field(..., min_length=1, max_length=64)
     width: int = Field(..., gt=0)
     height: int = Field(..., gt=0)
+    display_rotation: Optional[int] = Field(None, ge=0, le=3)
 
 
 class InputReq(BaseModel):
@@ -621,7 +622,7 @@ async def send_input(
             "serial": serial,
             "kind": body.kind,
             "params": body.params or {},
-            **({"frame": body.frame.model_dump()} if body.frame is not None else {}),
+            **({"frame": body.frame.model_dump(exclude_unset=True)} if body.frame is not None else {}),
         },
     )
     if not ok:

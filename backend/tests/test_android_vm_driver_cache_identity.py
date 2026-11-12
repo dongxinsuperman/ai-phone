@@ -69,20 +69,50 @@ def test_reused_serial_does_not_inherit_fold_capture(cache_environment, monkeypa
     assert agent_main._get_or_open_driver(SERIAL)._has_cover_display is False
 
 
-async def test_android_workbench_tap_is_bound_to_the_displayed_mirror():
+def test_android_workbench_tap_is_bound_to_the_displayed_mirror():
     control = Mock()
     session = SimpleNamespace(
         serial=SERIAL, stream_id="cover", resolution=(568, 1280), control=control, get_device_size=Mock(),
     )
     tap = {"x": 550, "y": 1230}
     frame = {"stream_id": "inner", "width": 568, "height": 1280}
-    await agent_main._dispatch_input_via_scrcpy(None, session, "tap", tap, frame=frame)
+    agent_main._dispatch_input_via_scrcpy(None, session, "tap", tap, frame=frame)
     control.touch_at.assert_not_called()
 
-    await agent_main._dispatch_input_via_scrcpy(None, session, "tap", tap, frame={**frame, "stream_id": "cover"})
+    agent_main._dispatch_input_via_scrcpy(None, session, "tap", tap, frame={**frame, "stream_id": "cover"})
     assert [item.kwargs["action"] for item in control.touch_at.call_args_list] == [ACTION_DOWN, ACTION_UP]
     assert all(item.args == (550, 1230, 568, 1280) for item in control.touch_at.call_args_list)
     session.get_device_size.assert_not_called()
+
+
+async def test_android_workbench_tap_rechecks_rotation_after_queueing(monkeypatch):
+    control = Mock()
+    mirror = SimpleNamespace(
+        serial=SERIAL, is_alive=True, stream_id="mirror", resolution=(1280, 568),
+        display_rotation=1, control=control,
+    )
+    mirrors = SimpleNamespace(get_session=lambda _: mirror)
+    driver = Mock()
+    open_driver = Mock(return_value=driver)
+    monkeypatch.setattr(agent_main, "_get_or_open_driver", open_driver)
+    to_thread = agent_main.asyncio.to_thread
+
+    async def rotate_before_touch(func, *args, **kwargs):
+        if func is not open_driver:
+            mirror.display_rotation = 3
+        return await to_thread(func, *args, **kwargs)
+
+    monkeypatch.setattr(agent_main.asyncio, "to_thread", rotate_before_touch)
+    frame = {"stream_id": "mirror", "width": 1280, "height": 568, "display_rotation": 1}
+    message = {"serial": SERIAL, "kind": "tap", "params": {"x": 120, "y": 240}, "frame": frame}
+
+    await agent_main._handle_input(None, message, mirrors)
+    control.touch_at.assert_not_called()
+    driver.click.assert_not_called()
+
+    message["frame"] = {**frame, "display_rotation": 3}
+    await agent_main._handle_input(None, message, mirrors)
+    assert [item.kwargs["action"] for item in control.touch_at.call_args_list] == [ACTION_DOWN, ACTION_UP]
 
 
 @pytest.mark.parametrize("scan_gap", [False, True])
