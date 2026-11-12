@@ -4,9 +4,8 @@
 > 下发的鸿蒙虚拟机。虚拟机启动后会带 `virtual` 标识进入设备池，像鸿蒙真机
 > 一样进入工作台和任务调度。
 >
-> 本文只负责**当前已经实现的 Agent 本地 GUI 模式**。官方本地 Emulator 一旦
-> 提供真正 Headless，现有 Agent 部署和业务链路直接转换，只调整能力探查与启动
-> 参数；规划中的 Linux gRPC 资源池则是另一条集中式接入通道。完整边界见
+> Agent 会探查 DevEco Emulator 的 `-noWindow` 能力，支持时无窗口启动，旧工具链使用
+> 图形会话。规划中的 Linux gRPC 资源池是另一条集中式接入通道。完整边界见
 > [鸿蒙虚拟机当前架构与演进规划](./harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md)。
 
 ---
@@ -15,16 +14,15 @@
 
 - macOS，Apple Silicon 使用 ARM64 镜像，Intel 使用 x86_64 镜像。
 - 建议至少 16GB 内存；需要同时运行多台时建议 32GB 以上，并按目标机实测并发数。
-- 必须存在已登录的 macOS GUI 会话。当前 DevEco Emulator 没有
-  Android `-no-window` 的等价参数，启动后会出现 Emulator 窗口。
-- **不要求一直连接物理显示器。** Mac mini 可以不接显示器，但必须保持用户
-  桌面会话登录，并让 Agent 运行在该用户会话中。首次部署建议通过屏幕共享完成；
-  正式使用前必须实测一次“无物理显示器启动 VM”。如果无屏时系统没有可用显示
+- DevEco Emulator 未提供 `-noWindow` 时需要已登录的 macOS GUI 会话，启动会出现
+  Emulator 窗口。支持该参数的工具链由 Agent 使用无窗口模式。
+- **有窗口模式可以在不接物理显示器的 Mac mini 上运行。** 保持用户桌面会话登录，
+  让 Agent 运行在该会话中。可通过屏幕共享完成首次部署。如果无屏时系统没有可用显示
   表面，可使用 macOS 屏幕共享的虚拟显示或 HDMI 显示器模拟器。
 - Agent 不要配置成系统级 `LaunchDaemon`；需要自启动时使用登录用户的
   `LaunchAgent`。
 
-检查当前终端是否属于 GUI 登录用户：
+有窗口模式可用以下命令检查终端是否属于 GUI 登录用户。
 
 ```bash
 CURRENT_UID="$(id -u)"
@@ -220,9 +218,9 @@ backend/.data/storage/harmony_vm_runtime/logs/<vm-id>/emulator.log
 | 开关已开启但 stdin 管道提前关闭 | Agent 记录明确警告，继续以进程、HDC 和 Driver 就绪结果判定，不切换其他启动方式 |
 | 共享 UUID 留空 | Agent 不注入，按 DevEco 实例配置启动 |
 | 共享 UUID 已配置但写入失败 | 本次虚拟机启动失败，不回退到随机 UUID |
-| 缺镜像、ABI 不匹配、无 GUI 会话、协议未确认、端口不一致 | 直接失败，不换设备、不换镜像、不切其他端口 |
+| 缺镜像、ABI 不匹配、GUI 模式缺少图形会话、协议未确认、端口不一致 | 直接失败，不换设备、不换镜像、不切其他端口 |
 | 内存不足 | 页面提示风险，不自动降低配置 |
-| 未来官方 Headless 启动失败 | 直接失败，不静默回退 GUI |
+| `-noWindow` 启动失败 | 返回该次启动错误 |
 | 未来 Linux gRPC Provider 不可用 | 不影响当前 Agent GUI 链路，也不把 Provider 任务偷偷改派给 Agent |
 
 ---

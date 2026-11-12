@@ -1,10 +1,9 @@
 # 鸿蒙虚拟机当前架构与演进规划
 
-> 当前状态：**Agent 承接的本地 GUI 模式已经实现并可用。**
+> 0.8.1 的 Agent 支持本地 DevEco Emulator 的有窗口和无窗口模式。Agent 检查 Emulator
+> 是否提供 `-noWindow`，并按工具链能力启动。[宿主准备](./agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md)
 >
-> 后续方向一：**官方本地 Emulator 一旦提供真正 Headless，现有 Agent 链路直接切换。**
->
-> 后续方向二：**另增 Linux gRPC 无头资源池，不替换 Agent 链路。**
+> Linux gRPC 无头资源池仍是集中式扩展规划。
 >
 > 本文只描述已经落地的事实和明确的后续规划。规划中的能力不会写成当前已支持。
 
@@ -16,19 +15,14 @@ ai-phone 的鸿蒙虚拟机按下面的顺序演进：
 
 ```text
 当前：Agent-backed
-员工电脑 / Mac mini → Agent → 本机 DevEco Emulator（有 GUI 窗口）
-
-官方本地 Headless 可用后：Agent-backed
-员工电脑 / Mac mini → Agent → 本机 DevEco Emulator（无窗口）
+员工电脑 / Mac mini → Agent → 本机 DevEco Emulator（按工具能力选择有窗口或无窗口）
 
 集中式扩展：Provider-backed
 AI Phone Server → Harmony Linux gRPC Provider → Linux 无头模拟器资源池
 ```
 
-本地 Headless 是当前 Agent 链路的直接升级，不是第三套业务流程。它一旦获得官方
-支持，Server、数据库、端口租约、前端配置、调度和设备池全部保持不变，只替换
-Agent 的启动能力与宿主检查。到这一步，鸿蒙与 Android 在产品和生命周期逻辑上
-完全统一：
+有窗口与无窗口模式共用 Server、数据库、端口租约、前端配置、调度和设备池，
+由 Agent 选择对应启动参数并检查宿主能力。鸿蒙与 Android 共用以下生命周期。
 
 ```text
 Server 保存配置 → 选择 Agent → Agent 无头启动 → 设备进入统一设备池
@@ -40,7 +34,7 @@ Server 保存配置 → 选择 Agent → Agent 无头启动 → 设备进入统�
 
 ---
 
-## 2. 当前已经实现：Agent 承接的本地 GUI 模式
+## 2. Agent 承接与旧版 Emulator 的 GUI 模式
 
 ### 2.1 当前拓扑
 
@@ -71,10 +65,9 @@ AI Phone Server
 - 启动后的鸿蒙虚拟机带“虚拟机”标识进入统一设备池，与鸿蒙真机复用工作台和任务执行链路。
 - 一台 Agent 可以同时承接鸿蒙真机和多台鸿蒙虚拟机；设备身份和 HDC 端口必须严格隔离。
 
-### 2.3 当前明确限制
+### 2.3 有窗口模式的宿主条件
 
-- 当前本地 DevEco Emulator 没有经过验证的 Android `-no-window` 等价参数。
-- 命令行可以自动管理生命周期，但模拟器启动后仍会创建 GUI 窗口。
+- 旧版 DevEco Emulator 的 CLI 可以自动管理生命周期，启动后会创建 GUI 窗口。
 - Agent 必须运行在已登录的 macOS 图形会话中；Mac mini 不要求长期连接物理显示器，但必须保留可用桌面会话。
 - 当前形态应称为“无人值守 GUI 模式”，不能称为严格 Headless。
 - 单机并发容量按真实 CPU、内存和图形负载探查，不以未经验证的固定数字承诺。
@@ -83,7 +76,7 @@ AI Phone Server
 
 ---
 
-## 3. 我们原本想做什么，以及为什么现在只能使用 GUI
+## 3. 本地无窗口启动的背景
 
 ### 3.1 原本预期的工作模式
 
@@ -100,22 +93,15 @@ AI Phone Server
 这种模式符合 ai-phone 的核心资源观：**资源不必先搬进集中式机房，留在原地也能
 通过 Agent 进入统一调度。**
 
-### 3.2 当前不得不接受的官方能力缺口
+### 3.2 旧版 Emulator 的能力限制
 
 Android Emulator 公开提供 `-no-window`，本地电脑和 Linux 节点都能复用同一套
-Agent 生命周期。当前 DevEco 本地 Emulator 虽然能通过 CLI 创建、启动、停止和
-删除实例，但没有经过验证的公开 Headless / `-no-window` 等价入口，启动后仍创建
-GUI 窗口。
+Agent 生命周期。较早的 DevEco Emulator 虽然能通过 CLI 创建、启动、停止和
+删除实例，启动后仍会创建 GUI 窗口。
 
-因此当前 GUI 模式不是 ai-phone 主动选择的最终产品形态，而是在以下前提下的阶段性
-承接：
+有窗口模式保留了旧工具链上的鸿蒙镜像和多实例能力。
 
-- 不放弃已经可用的鸿蒙镜像和多实例能力。
-- 不伪造不存在的 Headless 参数。
-- 不为了隐藏窗口而使用私有 hook、窗口强杀或不稳定注入。
-- 先把完整业务链路做通，等待官方补齐本地无头入口后直接转换。
-
-这个限制带来的实际代价是：Agent 必须处于登录桌面会话，窗口可能影响员工使用，
+这类宿主需要登录桌面会话，窗口可能影响员工使用，
 单机密度和无人值守恢复能力也不如 Android Headless。
 
 ### 3.3 为什么 Linux gRPC 仍值得规划
@@ -136,7 +122,7 @@ GUI 窗口。
 
 所以项目同时保留两条方向：
 
-1. 等待官方给本地 Emulator 提供 Headless，直接升级分布式 Agent 链路。
+1. 在分布式 Agent 链路使用本地 Emulator 提供的无窗口模式。
 2. 接入 Linux gRPC，补充集中式、高密度的固定资源池。
 
 Linux gRPC 当前还不能写成已交付能力，以下契约仍需拿到真实环境逐项验证：
@@ -152,16 +138,15 @@ Linux gRPC 当前还不能写成已交付能力，以下契约仍需拿到真实
 
 ---
 
-## 4. 两条未来路线
+## 4. 本地无窗口启动与集中式扩展
 
-### 4.1 首选路线：现有 Agent 直接切换本地 Headless
+### 4.1 已实现的无窗口启动
 
-官方一旦为 macOS / Windows 本地 Emulator 提供经过验证的无窗口启动能力，改造
-范围应严格收敛在 Agent 鸿蒙虚拟机能力层：
+0.8.1 在现有 macOS Agent 链路内选择 DevEco Emulator 的启动方式。
 
 ```text
-capability：识别 Emulator 版本和官方 Headless 参数
-manager：启动时使用官方无窗口参数
+capability：从 Emulator -help 确认是否提供 -noWindow
+manager：支持时使用 -noWindow，旧工具链使用 GUI 会话
 readiness：继续等待 HDC target + hmdriver2
 reconcile：继续按实例目录、HDC 和租约恢复
 ```
@@ -176,8 +161,7 @@ Agent 选择、下发、停止、删除
 统一设备池、工作台、调度、应用分发和报告
 ```
 
-完成后，鸿蒙和 Android 都是“Server 下发给 Agent、Agent 无头启动、作为普通虚拟
-设备进入统一池”，产品逻辑完全统一。
+支持无窗口模式的鸿蒙实例由 Server 下发给 Agent 启动，随后进入统一设备池。
 
 这条转换不允许使用隐藏兜底：已确认支持 Headless 的版本若无头启动失败，本次启动
 直接失败并暴露错误，不偷偷弹回 GUI。尚未升级的旧 Emulator 则明确继续标记为
@@ -240,17 +224,17 @@ Harmony gRPC Provider。上层页面和虚拟机状态机不应依赖底层到�
 
 ## 5. 当前与未来的关系
 
-| 维度 | 当前 Agent GUI | 官方本地 Headless 后 | Linux gRPC Provider |
+| 维度 | Agent 有窗口模式 | Agent 无窗口模式 | Linux gRPC Provider |
 | --- | --- | --- | --- |
 | 资源来源 | 员工电脑、Mac mini | 与当前完全相同 | 平台维护的 Linux 节点 |
 | 生命周期入口 | Server → Agent | Server → Agent | Server → Provider |
 | 图形会话 | 需要 | 不需要 | 目标是不需要，待实测 |
 | 业务链路 | 已统一 | 完全不变 | 进入设备池后统一 |
-| 当前状态 | 已实现 | 等待官方能力 | 规划中 |
+| 当前状态 | 已实现 | 在支持 `-noWindow` 的工具链上启用 | 规划中 |
 
 最重要的架构约束：
 
-1. 官方本地 Headless 可用后，现有 Agent 链路直接转换，不另建一套业务流程。
+1. Agent 的两种启动方式共用生命周期和调度流程。
 2. Linux gRPC 是新增资源通道，不要求员工电脑安装 Linux 或改造成集中式节点。
 3. Provider 不伪装成员工 Agent；Server 必须能明确识别资源来源和能力。
 4. 无论来自哪条通道，设备进入统一设备层后都使用相同的调度和执行契约。
@@ -261,13 +245,11 @@ Harmony gRPC Provider。上层页面和虚拟机状态机不应依赖底层到�
 ## 6. 实施门槛与顺序
 
 ```text
-H0 本地 Headless 能力监听
-   跟踪官方 Emulator 的公开启动参数和版本说明
-   获得能力后先做单机、多实例、锁屏、重启和资源占用验证
+H0 已实现本地无窗口能力探查
+   读取 DevEco Emulator 的公开启动参数
 
-H1 Agent 直接转换
-   capability 上报 gui / headless
-   支持版本默认使用官方 Headless；旧版本明确保留 GUI
+H1 已实现 Agent 按能力选择
+   支持版本使用 -noWindow，旧工具链使用 GUI
    Server、数据库和通用设备层不变
 
 P0 官方交付核验
@@ -292,8 +274,8 @@ P5 容量与故障验收
    并发、重启、断连、孤儿实例、端口、资源超卖
 ```
 
-H0 未获得官方能力时继续使用当前 GUI 链路，不自行模拟 Headless。P0～P2 任一项
-不成立，就停止 gRPC 实现，不进入产品链路。
+缺少 `-noWindow` 的旧工具链继续使用 GUI。P0～P2 任一项不成立，就停止 gRPC 实现，
+不进入产品链路。
 
 ---
 
@@ -301,8 +283,8 @@ H0 未获得官方能力时继续使用当前 GUI 链路，不自行模拟 Headl
 
 | 场景 | 明确行为 |
 | --- | --- |
-| 当前 Agent 缺 GUI 会话或本地镜像 | 当前 Agent capability 不可用，直接显示真实原因 |
-| 官方尚未提供本地 Headless | 继续明确使用 GUI，不做窗口隐藏伪装 |
+| GUI 模式缺少图形会话，或本地缺镜像 | 显示 Agent 不可用的实际原因 |
+| Emulator 未提供 `-noWindow` | 使用 GUI 模式 |
 | 已验证支持 Headless，但无头启动失败 | 本次启动失败，不静默回退 GUI |
 | 旧 Emulator 尚未升级 | 明确保留 `gui` capability，不伪装为 Headless |
 | 未来 gRPC Provider 不可访问 | 只把该 Provider 容量标记 unavailable |
@@ -323,14 +305,10 @@ H0 未获得官方能力时继续使用当前 GUI 链路，不自行模拟 Headl
 
 ## 8. 实际场景简述
 
-现在，公司有三台闲置 Mac mini。每台启动 Agent、安装需要的鸿蒙镜像后，就能被
-Server 探查和下发，本机弹出 Emulator 窗口，虚拟设备进入统一设备池。这条链路已经能用。
+例如三台 Mac mini 启动 Agent 并装好所需的鸿蒙镜像后，Server 就能探查并下发。
+Agent 根据 DevEco Emulator 版本选择有窗口或无窗口启动，虚拟设备随后进入统一设备池。
 
-官方以后给本地 Emulator 增加无窗口参数，这三台 Mac mini 不需要换 Server、不需要
-迁数据库，也不需要重建虚拟机产品页；升级 DevEco 并通过能力验收后，Agent 启动命令
-直接改走 Headless，其他流程完全不变。
-
-公司也可以另外建设一组 Linux 模拟器节点。Server 通过 gRPC Provider 直接管理这组
+后续若接入 Linux 模拟器节点，Server 将通过 gRPC Provider 管理这组
 固定资源，不要求员工 Mac 改部署方式。任务调度看到的是两类可用鸿蒙虚拟机资源，
 但运维页面能明确区分它们来自“Agent Headless / GUI”还是“Linux gRPC”。
 

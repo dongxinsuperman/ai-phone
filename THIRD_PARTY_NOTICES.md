@@ -17,6 +17,19 @@ third-party components remain under their respective upstream licenses.
 - License: Apache License 2.0
 - License file: `third_party/WebDriverAgent/LICENSE`
 
+### duoctl
+
+- Upstream: https://github.com/skarol/duoctl
+- Usage: iPhone Duo simulator hinge and touch helpers
+- License: [MIT](./backend/ai_phone/agent/ios_sim/LICENSE.duoctl.txt)
+
+### Jev Phone visual helpers
+
+- Upstream: https://github.com/dongxinsuperman/jev-phone, version 0.2.0, commit `56a0553`
+- Usage: visual enhancement for replay localization
+- License: [MIT](./backend/ai_phone/agent/trajectory_cache/jev_click/visual_vendor/LICENSE)
+- [Vendoring notice](./backend/ai_phone/agent/trajectory_cache/jev_click/visual_vendor/NOTICE.md)
+
 ### scrcpy server
 
 - Path: `backend/assets/scrcpy-server.jar`

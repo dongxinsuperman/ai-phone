@@ -272,8 +272,8 @@ ai-phone 采用 **MIT License** 开源。Copyright (C) 2026 Dongxin and ai-phone
 | 文档 | 受众 | 内容 |
 |---|---|---|
 | [product-boundaries（产品边界）](./docs/product-boundaries（产品边界）.md) | 讨论者 / 集成方 / 二次开发者 | 项目出发点、产品边界，以及它和 AI 生成 case / CI / 测试平台的关系 |
-| [CHANGELOG](./CHANGELOG.md) | 部署者 / 维护者 | 影响部署、接入和排障口径的版本变化记录 |
-| [features（使用功能介绍）](./docs/features（使用功能介绍）.md) | 调用方 / 业务同学 | 产品手册：设备、队列、工作台、报告、大盘、稳定策略 |
+| [CHANGELOG](./CHANGELOG.md) | 部署者 / 维护者 | 版本变化与 [0.8.1 发布说明](./CHANGELOG.md#081) |
+| [features（使用功能介绍）](./docs/features（使用功能介绍）.md) | 调用方 / 业务同学 | 设备、队列、工作台、报告和[三端虚拟机启动姿态](./docs/features（使用功能介绍）.md#vm-startup-posture) |
 | [external-api（对外调用清单）](./docs/external-api（对外调用清单）.md) | 调用方 / CI 集成 | 当前 API 契约：投递 / 查询 / 取消 / Kafka / Webhook 完整字段 |
 | [ai-consumable-test-cases（AI可消费测试用例指南）](./docs/ai-consumable-test-cases（AI可消费测试用例指南）.md) | 调用方 / QA / AI 助手 | 如何把 `runContent` 写成更适合 AI PHONE 执行的四字段 case |
 | [architecture（架构设计）](./docs/architecture（架构设计）.md) | 二次开发者 | 系统架构：调度、三端链路、数据模型、终态广播（两条架构线的公共基座） |
@@ -287,8 +287,9 @@ ai-phone 采用 **MIT License** 开源。Copyright (C) 2026 Dongxin and ai-phone
 | [harmony-setup（HarmonyOS接入指南）](./docs/harmony-setup（HarmonyOS接入指南）.md) | 鸿蒙接入者 | hdc / hmdriver2 / hypium 镜像后端切换 |
 | [android-vm-setup（安卓虚拟机接入与使用指南）](./docs/android-vm-setup（安卓虚拟机接入与使用指南）.md) | 虚拟机使用者 | `main` 独有：「虚拟机」页创建模拟器、机型 / 镜像口径、下发与生命周期 |
 | [agent-vm-env-setup（Agent虚拟机环境准备）](./docs/agent-vm-env-setup（Agent虚拟机环境准备）.md) | Agent 部署者 | 跑 Android Emulator 的宿主环境准备（JDK / SDK / 镜像矩阵，含 Windows 专章） |
+| [Agent iOS 虚拟机环境准备](<./docs/agent-ios-sim-vm-env-setup（Agent iOS虚拟机环境准备）.md>) | Agent 部署者 | iOS Simulator、WebDriverAgent 与 iPhone Duo 专用运行时 |
 | [agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）](./docs/agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md) | Agent 部署者 | 从零准备 DevEco Studio、按需下载鸿蒙镜像并让 Agent 承接虚拟机下发 |
-| [harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）](./docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md) | 部署者 / 二次开发者 | 当前 Agent GUI 限制、官方 Headless 后的直接转换、Linux gRPC 资源池规划与明确失败规则 |
+| [harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）](./docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md) | 部署者 / 二次开发者 | Agent 有窗口与无窗口模式、Linux gRPC 资源池规划 |
 | [recommended-env（推荐部署Env清单）](./docs/recommended-env（推荐部署Env清单）.md) | 部署者 | iOS stable、Android/Harmony 黑屏待机推荐默认 |
 | [assistant-systems（辅助系统核心逻辑及效果）](./docs/assistant-systems（辅助系统核心逻辑及效果）.md) | 算法调优者 | 执行安全层：页面稳定、通道判定、卡死检测、审判、断言、状态路标、瞬态 UI gate |
 | [Midscene 执行器接入方案](./Midscene执行器接入方案.md) | 执行器扩展者 | 第三方执行器挂载方案 |

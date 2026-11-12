@@ -144,6 +144,7 @@ Most detailed documents are currently written in Chinese, but the file names and
 | Document | Purpose |
 |---|---|
 | [Chinese README](./README.md) | Full project overview |
+| [0.8.1 release notes](./CHANGELOG.md#081) | Virtual machine controls, compatibility, and upgrade guidance |
 | [product-boundaries](./docs/product-boundaries（产品边界）.md) | Product scope and integration boundary |
 | [features](./docs/features（使用功能介绍）.md) | Feature manual |
 | [external-api](./docs/external-api（对外调用清单）.md) | Submission API, query API, callback format |
@@ -155,7 +156,7 @@ Most detailed documents are currently written in Chinese, but the file names and
 | [agent-vm-env-setup](./docs/agent-vm-env-setup（Agent虚拟机环境准备）.md) | Android Emulator host preparation |
 | [agent-ios-sim-vm-env-setup](<./docs/agent-ios-sim-vm-env-setup（Agent iOS虚拟机环境准备）.md>) | iOS Simulator host preparation |
 | [agent-harmony-vm-env-setup](./docs/agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md) | HarmonyOS Emulator host preparation |
-| [harmony-vm-architecture](./docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md) | Current Agent GUI limits, direct migration to official headless, and the planned Linux gRPC pool |
+| [harmony-vm-architecture](./docs/harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md) | Agent GUI and headless modes, and the planned Linux gRPC pool |
 
 ## License
 

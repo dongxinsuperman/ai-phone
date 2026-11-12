@@ -21,8 +21,8 @@
 - **操作系统**：**只能是 macOS**。iOS Simulator 是 Xcode 的一部分，Linux / Windows
   没有等价物——探查会直接返回「iOS 虚拟机只能跑在 macOS 上」。这一点与 Android
   不同，没有跨平台方案。
-- **CPU 架构**：Apple Silicon 与 Intel 都可以。**不需要像 Android 那样区分 ABI**——
-  Simulator 跑的是宿主架构的原生代码，Xcode 自动处理，不存在「装错镜像」的问题。
+- **CPU 架构**：普通机型使用当前 Xcode 和运行时所支持的宿主架构。iPhone Duo 的
+  原生姿态控制需要 Apple Silicon，运行时要求见下文。
 - **内存 / 磁盘**：每台虚拟机约 1.5GB 内存（探查里的 `per_instance_mb`）；
   Xcode + 一个 iOS runtime 约需 30–40GB 磁盘。建议 16GB+ 内存。
 - **同时实例数**：**不拦截**——能起几台由机器实际资源决定。内存偏低时探查只给
@@ -86,6 +86,22 @@ xcodebuild -downloadPlatform iOS
   组合不合法会明确告诉你该机型的官方支持区间。
 - **建议只装当前主力版本 + 一个低版本**。iOS runtime 单个约 8–10GB，不像 Android
   镜像那样便宜，没必要铺满。
+
+### 3.1 iPhone Duo 专用运行时
+
+在 Apple Silicon Mac 上使用带 iPhone Duo 模拟器支持的 Xcode（Apple 从 Xcode 27.1 提供），
+并在 Xcode 的 Components 中安装对应的 Duo 专用 iOS 运行时。本机验收使用 Xcode 27.2
+与 iOS 27.2 的 Duo 运行时。[Apple 的 iPhone Duo Simulator 说明](https://developer.apple.com/iphone-duo/prepare/)
+
+```bash
+xcodebuild -version
+xcrun simctl list devicetypes
+xcrun simctl list runtimes
+```
+
+确认工具链能列出 iPhone Duo 和对应运行时。使用同一版本 ai-phone 仓库内的 WebDriverAgent
+工程，Duo 的内外屏镜像需要其中的显示切换支持。在「虚拟机 → iOS」选择 iPhone Duo
+和专用运行时，再对该 Agent 点「探查」。创建与工作台操作见[启动姿态指南](./features（使用功能介绍）.md#vm-startup-posture)。
 
 ---
 

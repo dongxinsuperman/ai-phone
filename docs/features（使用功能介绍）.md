@@ -125,12 +125,14 @@ Token / 稳定性展示可通过 env 开关隐藏，但后端仍会保留计算�
 
 配置清单见 [`recommended-env（推荐部署Env清单）.md`](./recommended-env（推荐部署Env清单）.md)。
 
-## 9. 虚拟机（Android / HarmonyOS）
+## 9. 虚拟机（Android / HarmonyOS / iOS）
 
-> `main` 独有能力。不依赖真机即可按需扩容 Android 和 HarmonyOS 设备。
+> `main` 独有能力，可按需扩容 Android、HarmonyOS 和 iOS 设备。
 
-「虚拟机」页提供相互隔离的 Android 与鸿蒙配置页，两边不共享表单、配置表、
-端口规则或生命周期 Manager，启动后才在通用设备层汇合。
+在「虚拟机」页选择平台、机型和系统镜像，填写设备别名并创建配置。首次运行时点「探查」，
+从能够承接该机型和镜像的 Agent 中选择宿主并下发。已绑定且允许启动的实例，也可在
+设备总览的「设备库 · 按需启动」点「启动并进入」。就绪后，三端虚拟机与真机共用设备池、
+工作台和任务执行流程。
 
 Android：
 
@@ -148,15 +150,36 @@ HarmonyOS 当前形态：
 - 按官方设备形态、机型、实测可创建系统版本和折叠屏初始形态创建配置。
 - Server 探查并选择 Agent，下发后由 Agent 调用本机 DevEco Emulator CLI 管理实例。
 - Agent 自动完成 HDC 端口连接和 hmdriver2 握手；成功后带 `virtual` 标识进入设备池，复用鸿蒙真机的工作台、调度和执行链路。
-- 当前是 **Agent 承接的本地 GUI 模式**：生命周期可以无人值守，但官方本地 Emulator 没有经过验证的公开无头入口，仍会创建窗口，宿主需要已登录图形会话。
-- 官方一旦提供真正 Headless，当前 Agent Manager 直接改用官方无窗口启动；Server 配置、数据库、端口、调度和设备池都不变，产品生命周期与 Android 完全统一。
+- Agent 探查 DevEco Emulator 是否支持 `-noWindow`，支持时使用无窗口启动。旧版 Emulator 使用已登录的 macOS 图形会话。
 - 集中式场景另规划 **Linux gRPC 无头资源池**，作为与 Agent 并列的 Provider 接入方式。
 
 当前部署见 [`agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md`](./agent-harmony-vm-env-setup（Agent鸿蒙虚拟机环境准备）.md)；当前与未来的完整边界见 [`harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md`](./harmony-vm-architecture（鸿蒙虚拟机当前架构与演进规划）.md)。
 
-兜底规则：Agent GUI、未来 Agent Headless 和 gRPC Provider 都显式判定能力。
-Headless 启动失败不偷偷弹回 GUI，Provider 失败不自动切换资源来源；旧版 Emulator
-明确继续使用 GUI，直到完成官方版本升级。
+iOS 从 Apple 机型和兼容运行时中创建配置，由 macOS Agent 启动 Simulator 和 WebDriverAgent。
+iPhone Duo 的折叠选项需要匹配的专用运行时。宿主准备见
+[Agent iOS 虚拟机环境准备](<./agent-ios-sim-vm-env-setup（Agent iOS虚拟机环境准备）.md>)。
+
+<a id="vm-startup-posture"></a>
+
+### 9.1 启动方向与折叠形态
+
+| 平台 | 创建页的启动方向 | 显示折叠选项的条件 |
+| --- | --- | --- |
+| Android | 竖屏、左横屏、右横屏、倒置竖屏 | 设备档案支持折叠，且选用兼容的 API 37 Google APIs 镜像 |
+| HarmonyOS | 模拟器默认、左转 90°、右转 90° | 机型为 `Foldable` |
+| iOS | Simulator 默认、竖放、左横放、右横放 | 机型为 iPhone Duo，且选用 Duo 专用运行时 |
+
+支持折叠的配置可选「展开（内屏）」或「折叠（外屏）」。已有配置可直接继续使用。
+脚本可通过原创建接口传可选姿态字段，详见[创建参数](./vm-lifecycle-contract.md#startup-posture-api)。
+
+### 9.2 在工作台调整并保存姿态
+
+1. 启动虚拟机并进入工作台。能控制机身方向的实例会显示旋转按钮，能控制折叠的实例会显示「展开」和「折叠」。
+2. 调整后等实时镜像切到当前画面，再继续点按。Agent 确认原生方向或折叠状态后，系统把已确认的姿态保存到该配置。
+3. 下次停止再启动时，原实例按保存的姿态开机。列表会显示已保存的方向或折叠形态。
+
+业务 App 可以在固定机身姿态下自行横竖切换，工作台镜像和 VLM 都按 App 当时的画面操作。
+iOS 的「主页」回到系统桌面，「最近」打开 App 切换器，「返回」在支持原生侧滑返回的页面生效。
 
 ## 10. 应用分发
 

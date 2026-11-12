@@ -24,6 +24,24 @@ Android 普通停止先确认一次受管实例的系统同步，再按原快照
 
 设备总览中的「设备库 · 按需启动」集中显示三端已保存的配置。已绑定、允许启动的实例可以点「启动并进入」。页面跟踪本次启动回执和匹配实例的设备就绪状态，进入工作台后仍按原流程获取控制权。首次下发和更改宿主在虚拟机管理页操作。关闭设备库或停止等待后，已经受理的启动会继续由原宿主完成。
 
+<a id="startup-posture-api"></a>
+
+## 创建时设置启动姿态
+
+以下字段加在原创建请求的 JSON 顶层，继续使用现有内部 API 的鉴权。三个接口都允许省略姿态字段。
+
+| 平台 | 创建接口 | 方向字段 | 折叠字段 |
+| --- | --- | --- | --- |
+| Android | `POST /api/internal/vm/instances` | `orientation` 接受 `portrait`（默认）、`landscape`、`landscape_left`、`landscape_right`、`portrait_reverse` | `fold_state` 可省略，指定时需匹配设备档案的 `foldable_api_level` 和 API 37 Google APIs 镜像 |
+| HarmonyOS | `POST /api/internal/harmony-vm/instances` | 数字 `initial_rotation`，`0` 模拟器默认，`1` 左转 90°，`2` 旋转 180°，`3` 右转 90°。创建页提供 `0`、`1`、`3` | `fold_state` 默认 `unfolded`，`folded` 仅适用于 `Foldable` |
+| iOS | `POST /api/internal/ios-sim/instances` | `initial_orientation` 接受 `portrait`、`landscape_left`、`landscape_right`，省略时使用 Simulator 默认 | `initial_fold_state` 可省略，指定时需选 iPhone Duo 及其专用运行时 |
+
+折叠字段接受 `unfolded`（展开）和 `folded`（折叠）。可用对应的 `GET …/instances/{vm_id}`
+核对配置。Android 的方向读 `orientation`，折叠形态读 `config_json.fold.initial_state`。
+鸿蒙读 `config_json.initial_rotation` 和 `config_json.fold.initial_state`，缺省分别为
+`0` 和 `unfolded`。iOS 读 `config_json.initial_orientation` 和 `config_json.initial_fold_state`。
+工作台操作和可选项见[使用指南](./features（使用功能介绍）.md#vm-startup-posture)。
+
 ## 身份与三端限制
 
 | 平台 | 配置身份 | 宿主上的实例与通道 |

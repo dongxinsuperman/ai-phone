@@ -846,6 +846,21 @@
 - 行为变化：正常长任务不会再在固定步数被主动打断；相应地，路径虽然偏离但未触发任何
   本地异常特征时，不再有周期审判介入。周期巡检没有隐藏替代入口。
 
+## 0.8.1
+
+- Android、鸿蒙和 iOS 虚拟机支持按机型设置启动方向，兼容的折叠机型可选择「展开（内屏）」或「折叠（外屏）」。工作台调用模拟器的原生控制，成功调整的机身姿态会保存到同一实例，下次开机恢复。
+- 设备总览新增「设备库 · 按需启动」，可直接启动已绑定的实例并进入工作台。虚拟机下发探查逐个显示 Agent 的响应，启停按原生实例状态确认。工作台可调整面板大小并聚焦实时镜像。
+- Android 随包设备库和手动导入只追加新档案，保留存量档案与实例绑定。鸿蒙识别支持 `-noWindow` 的 DevEco Emulator 并使用无窗口启动。iPhone Duo 支持专用运行时和内外屏控制，iOS 镜像修正主屏幕、最近 App 和应用内侧滑返回动作。
+- 优化旧版和慢连接 Agent 的注册。现有方舟执行线路兼容 DeepSeek，Seed XML 动作示例和格式纠错随之更新。Jev 回放定位器接入 0.2 版视觉增强。
+- 升级时保留数据库、Agent 存储目录和现有虚拟机。三端创建接口的姿态参数可省略。使用新版 Web、Server 和承接虚拟机的 Agent 可使用新增控制。[虚拟机用法](./docs/features（使用功能介绍）.md#vm-startup-posture) · [升级步骤](./docs/vm-lifecycle-upgrade-guide.md)
+- 本机验收覆盖已有配置读回、关机重启和测试 App 横竖切换。转屏时分别验证了工作台镜像和 VLM。iOS 系统导航在 Duo 内外屏实测，真机和普通 iOS 模拟器未做该项设备验收。
+
+- Set startup orientation and supported fold states for Android, HarmonyOS, and iOS virtual machines. The workbench saves confirmed native pose changes for the next boot.
+- Start an assigned VM from the on-demand device library and enter its workbench. Agent probe results arrive individually, VM lifecycle status follows the native instance, and workbench panes can be resized or focused on the live mirror.
+- Append Android device profiles while preserving existing entries and bindings. Use DevEco's `-noWindow` where supported. Add the dedicated iPhone Duo runtime, inner and outer display controls, and fixes for iOS mirror navigation.
+- Improve Agent registration for slow or older clients, support DeepSeek on the existing Ark execution path, and integrate Jev 0.2 visual enhancements into replay localization.
+- Keep the database, Agent storage, and native instances when upgrading. Startup pose fields are optional. Local acceptance covered configuration readback, restart, and test-app rotation through manual mirroring and VLM. iOS navigation was verified on both Duo displays.
+
 ## 0.7.0 - 2026-08-02
 
 ### iOS 虚拟机（Simulator）完整接入（`main` 独有）
