@@ -58,25 +58,34 @@ class DuoControls:
         self._build_dir: tempfile.TemporaryDirectory | None = None
         self._build_lock = threading.Lock()
 
-    def _helper(self, deadline: float) -> str:
+    def _helper(self, deadline: float, *, app_switcher: bool = False) -> str:
         with self._build_lock:
             if self._build_dir is None:
-                directory = tempfile.TemporaryDirectory(prefix="aiphone-duo-")
-                binary = str(Path(directory.name) / "duo_native")
+                self._build_dir = tempfile.TemporaryDirectory(prefix="aiphone-duo-")
+            if app_switcher:
+                name, sdk = "duo_app_switcher", "macosx"
+                sources = [str(_SOURCE / "duo_app_switcher.m")]
+            else:
+                name, sdk = "duo_native", "iphonesimulator"
+                sources = [
+                    "-mios-simulator-version-min=27.1", str(_SOURCE / "duo_hinge.m"),
+                    str(_SOURCE / "duo_touch.m"), "-framework", "IOKit", "-framework", "CoreMotion",
+                ]
+            binary = Path(self._build_dir.name) / name
+            if not binary.is_file():
                 try:
                     subprocess.run(
-                        [self.xcrun, "--sdk", "iphonesimulator", "clang", "-arch", "arm64",
-                         "-mios-simulator-version-min=27.1", "-O2", "-fobjc-arc",
-                         "-Wl,-adhoc_codesign", "-o", binary, str(_SOURCE / "duo_hinge.m"),
-                         str(_SOURCE / "duo_touch.m"), "-framework", "IOKit",
-                         "-framework", "Foundation", "-framework", "CoreMotion"],
+                        [self.xcrun, "--sdk", sdk, "clang", "-arch", "arm64", "-O2", "-fobjc-arc",
+                         "-Wl,-adhoc_codesign", "-o", str(binary), *sources, "-framework", "Foundation"],
                         capture_output=True, text=True, check=True, timeout=_remaining(deadline, 10.0),
                     )
                 except subprocess.CalledProcessError as exc:
-                    directory.cleanup()
+                    binary.unlink(missing_ok=True)
                     raise RuntimeError(f"无法构建 iPhone Duo 原生控制程序：{exc.stderr.strip()}") from exc
-                self._build_dir = directory
-            return str(Path(self._build_dir.name) / "duo_native")
+                except subprocess.TimeoutExpired:
+                    binary.unlink(missing_ok=True)
+                    raise
+            return str(binary)
 
     def _send(self, deadline: float, *args: str) -> str:
         helper = self._helper(deadline)
@@ -148,3 +157,19 @@ class DuoControls:
         coords = (*panel.native_point(*start), *panel.native_point(*end))
         self._send(deadline, "touch", panel.uuid, *(str(v) for v in coords),
                    str(duration_ms), str(count), str(interval_ms))
+
+    def open_app_switcher(self) -> None:
+        """Send the simulator's Home double-press via CoreSimulator."""
+        deadline = time.monotonic() + 18.0
+        try:
+            binary = self._helper(deadline, app_switcher=True)
+            simctl = subprocess.run(
+                [self.xcrun, "--find", "simctl"], capture_output=True, text=True, check=True,
+                timeout=_remaining(deadline, 3.0),
+            ).stdout.strip()
+            subprocess.run(
+                [binary, str(Path(simctl).parents[2]), self.udid],
+                capture_output=True, text=True, check=True, timeout=_remaining(deadline, 9.0),
+            )
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(f"无法打开 iPhone Duo 的 App 切换器：{exc.stderr.strip()}") from exc

@@ -1377,7 +1377,7 @@ watch(
             <button
               class="nav-btn"
               :disabled="!canSendInput"
-              title="返回 (Esc)"
+              :title="['ios', 'ios_sim'].includes(device?.platform) ? '侧滑返回 (Esc)，适用于支持该手势的页面' : '返回 (Esc)'"
               @click="navBack"
             >
               <span class="ic ic-back" aria-hidden="true"></span>

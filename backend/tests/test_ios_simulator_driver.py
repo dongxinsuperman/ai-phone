@@ -1,12 +1,14 @@
 """IosSimulatorDriver：坐标折算、应用清单、终止策略、与真机的隔离。"""
 import json
 from typing import Any, Dict, List
+from unittest.mock import Mock
 
 import pytest
 
 from ai_phone.agent.drivers import ios_simulator_driver as drv_mod
 from ai_phone.agent.drivers.ios_simulator_driver import IosSimulatorDriver
 from ai_phone.agent.drivers.simctl import SimctlError, SimulatorDevice
+from ai_phone.agent.drivers.wda_client import WdaClient
 
 
 class FakeWda:
@@ -51,8 +53,14 @@ class FakeWda:
     def dismiss_keyboard(self):
         self.calls.append(("dismiss_keyboard",))
 
-    def press_button(self, name):
-        self.calls.append(("press_button", name))
+    def press_home(self):
+        self.calls.append(("press_home",))
+
+    def swipe_back(self):
+        self.calls.append(("swipe_back",))
+
+    def open_app_switcher(self):
+        self.calls.append(("open_app_switcher",))
 
     def launch_app(self, bundle_id):
         self.calls.append(("launch_app", bundle_id))
@@ -216,18 +224,31 @@ def test_type_text_skips_empty():
 
 
 def test_press_back_uses_left_edge_swipe():
-    d, wda = _driver(scale=1.0, size=(400, 800))
-    d.press_back()
-    kind, sx, sy, ex, _ey, _dur = wda.calls[0]
-    assert kind == "swipe" and sx == 2 and ex > sx and sy == 400
+    wda = WdaClient.__new__(WdaClient)
+    wda.window_size = Mock(return_value=Mock(width=400, height=800))
+    wda.timed_swipe = Mock()
+    IosSimulatorDriver("UDID-1", wda).press_back()
+    wda.timed_swipe.assert_called_once_with(2, 400, 180, 400, duration_ms=200)
 
 
 def test_press_keycode_maps_only_three():
     d, wda = _driver(scale=1.0, size=(400, 800))
     d.press_keycode(3)
-    assert ("press_button", "home") in wda.calls
+    d.press_keycode(4)
+    d.press_keycode(187)
+    assert wda.calls == [("press_home",), ("swipe_back",), ("open_app_switcher",)]
     with pytest.raises(NotImplementedError):
         d.press_keycode(66)
+
+
+def test_duo_recents_uses_native_system_input(monkeypatch):
+    driver, wda = _driver()
+    duo = Mock()
+    endpoint = drv_mod.SimWdaEndpoint(8100, 9100, wda, duo)
+    monkeypatch.setattr(drv_mod, "get_sim_endpoint", lambda _: endpoint)
+    driver.press_keycode(187)
+    duo.open_app_switcher.assert_called_once_with()
+    assert wda.calls == []
 
 
 # --------------------------------------------------------------------------

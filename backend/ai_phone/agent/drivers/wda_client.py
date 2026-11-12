@@ -367,33 +367,57 @@ class WdaClient:
 
     @_auto_recover_session
     def timed_swipe(
-        self, sx: float, sy: float, ex: float, ey: float, duration_ms: int,
+        self, sx: float, sy: float, ex: float, ey: float, duration_ms: int, *, hold_ms: int = 0,
     ) -> None:
-        """Move a pressed touch pointer over duration_ms, without a long hold.
+        """Move a pressed touch pointer, optionally pausing at the end before lifting.
 
         /wda/dragfromtoforduration uses duration for the initial press, not
         movement. WDA's W3C pointerMove instead schedules the move's duration.
         Keep the legacy endpoint for existing drag and native CU callers.
         """
         if isinstance(duration_ms, bool) or not isinstance(duration_ms, int) or duration_ms <= 0:
-            raise ValueError("scroll movement duration must be a positive integer")
+            raise ValueError("swipe movement duration must be a positive integer")
+        if isinstance(hold_ms, bool) or not isinstance(hold_ms, int) or hold_ms < 0:
+            raise ValueError("swipe hold duration must be a nonnegative integer")
+        actions = [
+            {"type": "pointerMove", "duration": 0, "origin": "viewport", "x": float(sx), "y": float(sy)},
+            {"type": "pointerDown", "button": 0},
+            {"type": "pointerMove", "duration": duration_ms, "origin": "viewport", "x": float(ex), "y": float(ey)},
+        ]
+        if hold_ms:
+            actions.append({"type": "pause", "duration": hold_ms})
+        actions.append({"type": "pointerUp", "button": 0})
         sid = self._ensure_session()
         self._request("POST", f"/session/{sid}/actions", {
             "actions": [{
-                "type": "pointer", "id": "seed-scroll-finger",
+                "type": "pointer", "id": "finger",
                 "parameters": {"pointerType": "touch"},
-                "actions": [
-                    {"type": "pointerMove", "duration": 0, "origin": "viewport", "x": float(sx), "y": float(sy)},
-                    {"type": "pointerDown", "button": 0},
-                    {"type": "pointerMove", "duration": duration_ms, "origin": "viewport", "x": float(ex), "y": float(ey)},
-                    {"type": "pointerUp", "button": 0},
-                ],
+                "actions": actions,
             }],
         })
+
+    def swipe_back(self) -> None:
+        """Use the leading-edge gesture supported by the foreground app."""
+        size = self.window_size()
+        if size.width > 0 and size.height > 0:
+            y = size.height / 2
+            self.timed_swipe(2, y, size.width * .45, y, duration_ms=200)
+
+    def open_app_switcher(self) -> None:
+        """Hold the home-indicator gesture at the end until the switcher opens."""
+        size = self.window_size()
+        if size.width <= 0 or size.height <= 0:
+            raise WdaError("无法读取当前屏幕尺寸，无法打开 App 切换器")
+        x = size.width / 2
+        self.timed_swipe(x, size.height - 2, x, round(size.height * .55), duration_ms=400, hold_ms=500)
 
     # ------------------------------------------------------------------
     # 输入 & 按键
     # ------------------------------------------------------------------
+    def press_home(self) -> None:
+        """Switch to SpringBoard even if the previous WDA session has expired."""
+        self._request("POST", "/wda/homescreen", {})
+
     @_auto_recover_session
     def type_text(self, text: str) -> None:
         """直接给当前聚焦的输入框打字。WDA 走 IOHIDEvent，中文也可以（系统级输入法）。"""

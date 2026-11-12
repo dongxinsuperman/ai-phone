@@ -366,14 +366,13 @@ class IosSimulatorDriver(BaseDriver):
             logger.debug("[ios_sim] dismiss_keyboard 忽略 udid={}: {}", self.serial, exc)
 
     def press_home(self) -> None:
-        self._wda.press_button("home")
+        self._wda.press_home()
 
     def press_back(self) -> None:
-        """iOS 没有原生返回键，用左边缘向右滑模拟系统返回手势。
-
-        与真机实现一致。不是所有 App 都响应该手势（游戏 / 全屏 webview 不响应），
-        应用层自带返回按钮时 VLM 应自行判断点哪里。
-        """
+        """Perform the app's leading-edge swipe on the current display."""
+        if self._duo is None:
+            self._wda.swipe_back()
+            return
         w, h = self.window_size()
         if w <= 0 or h <= 0:
             return
@@ -381,17 +380,11 @@ class IosSimulatorDriver(BaseDriver):
         self.swipe(2, sy, max(40, int(w * 0.45)), sy, duration_ms=200)
 
     def press_app_switch(self) -> None:
-        """打开 App Switcher：底部中点慢速上滑到约 55% 屏高。
-
-        关键是 duration 要足够慢（1200ms）；快速上滑会变成回桌面。
-        """
-        w, h = self.window_size()
-        if w <= 0 or h <= 0:
-            logger.warning("[ios_sim] press_app_switch 拿不到屏幕尺寸，退化为 HOME")
-            self.press_home()
-            return
-        sx = w // 2
-        self.swipe(sx, max(0, h - 1), sx, int(h * 0.55), duration_ms=1200)
+        duo = self._duo
+        if duo is not None:
+            duo.open_app_switcher()
+        else:
+            self._wda.open_app_switcher()
 
     def press_keycode(self, code: int) -> None:
         """只映射与 Android 对齐的少数几个：3=HOME、4=BACK、187=APP_SWITCH。"""

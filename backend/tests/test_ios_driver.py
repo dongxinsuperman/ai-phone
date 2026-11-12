@@ -1,11 +1,42 @@
 from __future__ import annotations
 
+from unittest.mock import Mock, call
+
 import ai_phone.agent.drivers.ios as ios_mod
 from ai_phone.agent.drivers.ios import IosDriver
+from ai_phone.agent.drivers.wda_client import WdaClient
 
 
 def _driver() -> IosDriver:
     return IosDriver("IOS-1", object(), object())
+
+
+def test_ios_home_does_not_depend_on_a_wda_session():
+    wda = WdaClient.__new__(WdaClient)
+    wda._session_id = "expired"
+    wda._request = Mock()
+    IosDriver("IOS-1", object(), wda).press_home()
+    wda._request.assert_called_once_with("POST", "/wda/homescreen", {})
+
+
+def test_ios_app_switcher_swipes_from_bottom_and_holds_before_lifting():
+    wda = WdaClient.__new__(WdaClient)
+    wda._session_id = "test-session"
+    wda._request = Mock(return_value={"value": {"width": 400, "height": 800}})
+    IosDriver("IOS-1", object(), wda).press_keycode(187)
+    read_size, perform_gesture = wda._request.call_args_list
+    assert read_size == call("GET", "/session/test-session/window/size")
+    assert perform_gesture.args[:2] == ("POST", "/session/test-session/actions")
+    gesture = perform_gesture.args[2]["actions"][0]["actions"]
+    assert [(event["type"], event.get("x"), event.get("y")) for event in gesture] == [
+        ("pointerMove", 200, 798),
+        ("pointerDown", None, None),
+        ("pointerMove", 200, 440),
+        ("pause", None, None),
+        ("pointerUp", None, None),
+    ]
+    assert gesture[2]["duration"] > 0
+    assert gesture[3]["duration"] > 0
 
 
 def test_ios_list_all_packages_uses_user_and_system_not_any(monkeypatch):

@@ -707,20 +707,10 @@ class IosDriver(BaseDriver):
             logger.debug("[ios] dismiss_keyboard 忽略 udid={}: {}", self.serial, exc)
 
     def press_home(self) -> None:
-        self._wda.press_button("home")
+        self._wda.press_home()
 
     def press_back(self) -> None:
-        """iOS 没原生"返回键"。约定用左边缘向右 swipe 模拟系统级"返回手势"。
-
-        这是 iOS 14+ 在大多数 NavigationController 里通用的返回手势；不是所有
-        app 都支持（比如游戏 / 全屏 webview）。如果应用层有自己的返回按钮，
-        VLM 该自己判断点哪个区域，不应依赖本方法。
-        """
-        w, h = self.window_size()
-        if w <= 0 or h <= 0:
-            return
-        sy = h // 2
-        self.swipe(2, sy, max(40, int(w * 0.45)), sy, duration_ms=200)
+        self._wda.swipe_back()
 
     def press_keycode(self, code: int) -> None:
         """iOS 不支持 Android 风格的 keycode；这里只为 BACK / HOME / APP_SWITCH 做 mapping。"""
@@ -737,29 +727,7 @@ class IosDriver(BaseDriver):
         raise NotImplementedError(f"iOS 不支持 keycode={code}")
 
     def press_app_switch(self) -> None:
-        """打开 iOS 的「最近使用的 App / App Switcher」。
-
-        iOS 全面屏（Face ID 机型）的手势是：**从底部中点慢速上滑到约 55%
-        屏幕高度，并在那停留约 1 秒**。只上滑不停的话会直接回桌面（等于 HOME）。
-        WDA 没有直接 API，用 swipe + 足够长的 duration 来逼近"停住"效果：
-
-        - 起点：底部中间 (w/2, h-1)
-        - 终点：上 55% (w/2, int(h*0.55))
-        - duration 1200ms——关键：慢速才会进 App Switcher，快速就变回 Home
-
-        iOS ≤ 16 有 Home 键的老机型没这个手势；实测 iPhone 8 一类需要改为
-        双击 Home。目前默认只支持 Face ID 机型的手势。
-        """
-        w, h = self.window_size()
-        if w <= 0 or h <= 0:
-            logger.warning("[ios] press_app_switch 拿不到屏幕尺寸，退化为 HOME")
-            self.press_home()
-            return
-        sx = w // 2
-        sy = max(0, h - 1)
-        ey = int(h * 0.55)
-        # 1200ms 慢速上滑，经验值，短于 800ms 会触发"回桌面"
-        self.swipe(sx, sy, sx, ey, duration_ms=1200)
+        self._wda.open_app_switcher()
 
     # ------------------------------------------------------------------
     # 应用
