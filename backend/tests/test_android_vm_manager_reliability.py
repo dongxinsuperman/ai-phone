@@ -279,17 +279,15 @@ def test_assigned_port_is_not_silently_replaced(tmp_path, monkeypatch):
     assert manager._choose_port() == 5556
 
 
-@pytest.mark.parametrize(("orientation", "angle", "failed_attempts"), [
-    ("portrait", None, ()),
-    ("portrait_reverse", 2, ()),
-    ("landscape", None, ()),
-    ("landscape_left", 1, ()),
-    ("landscape_right", 3, ()),
-    ("landscape_right", 3, ("early",)),
-    ("landscape_right", 3, ("early", "ready")),
+@pytest.mark.parametrize(("orientation", "angle"), [
+    ("portrait", None),
+    ("landscape", None),
+    ("portrait_reverse", 2),
+    ("landscape_left", 1),
+    ("landscape_right", 3),
 ])
-def test_android_start_checks_exact_avd_pose_before_and_after_guest_boot(
-    tmp_path, monkeypatch, orientation, angle, failed_attempts,
+def test_android_start_requests_exact_rotation_once_after_provisioning(
+    tmp_path, monkeypatch, orientation, angle,
 ):
     manager = mod.AndroidVmManager(runtime_dir=tmp_path)
     fake_tools(monkeypatch)
@@ -301,27 +299,133 @@ def test_android_start_checks_exact_avd_pose_before_and_after_guest_boot(
     monkeypatch.setattr(manager, "_provision_device", lambda *_: phases.append("provision"))
     monkeypatch.setattr(mod.subprocess, "Popen", lambda *_a, **_kw: OwnedProcess())
 
-    def set_pose(_tools, serial, avd_name, rotation, _deadline):
-        attempt = "ready" if "provision" in phases else "early"
-        phases.append((serial, avd_name, rotation))
-        if attempt in failed_attempts:
-            raise mod._DisplayStateError("启动时无法读取 AVD 机身方向")
+    endpoint = (8554, "test-token")
+    discover = Mock(return_value=endpoint)
+    monkeypatch.setattr(mod, "rotation_endpoint", discover)
 
-    monkeypatch.setattr(manager, "_set_initial_avd_rotation", set_pose)
+    def set_pose(address, rotation, timeout):
+        assert timeout > 0
+        phases.append((address, rotation))
+
+    monkeypatch.setattr(mod, "set_rotation", set_pose)
+    monkeypatch.setattr(mod, "_read_avd_rotation", lambda _: angle)
     result = manager._start_sync_locked("a", {"orientation": orientation})
     runtime = manager._runtimes["a"]
     runtime.log_file.close()
     assert runtime.ready and runtime.process.poll() is None
     assert result["details"]["orientation"] == orientation
     if angle is None:
-        assert phases == ["boot", "provision"]
+        discover.assert_not_called()
     else:
-        pose = (result["adb_serial"], "aiphone_vm_a", angle)
-        assert phases == [pose, "boot", "provision", pose]
-    if "ready" in failed_attempts:
-        assert result["details"]["startup_display"]["warning"] == "AVD 未能确认启动机身方向"
-    else:
-        assert "startup_display" not in result["details"]
+        discover.assert_called_once_with("aiphone_vm_a", result["adb_serial"])
+    rotations = [(endpoint, angle)] if angle is not None else []
+    assert phases == ["boot", "provision", *rotations]
+
+
+@pytest.mark.parametrize("first_attempt", ["controller_unavailable", "command_error", "angle_not_applied"])
+async def test_android_start_retries_rotation_when_it_is_not_ready(tmp_path, monkeypatch, first_attempt):
+    manager = mod.AndroidVmManager(runtime_dir=tmp_path)
+    fake_tools(monkeypatch)
+    process = OwnedProcess()
+    endpoint = (8554, "test-token")
+    now = 100.0
+    requests = []
+
+    def sleep(seconds):
+        nonlocal now
+        now += seconds
+
+    def rotate(address, angle, timeout):
+        assert address == endpoint and angle == 3 and timeout > 0
+        requests.append(now)
+        if first_attempt == "command_error" and len(requests) == 1:
+            raise RuntimeError("rotation controller is still starting")
+
+    def read_angle(_adb):
+        return 0 if first_attempt == "angle_not_applied" and len(requests) == 1 else 3
+
+    first_endpoint = None if first_attempt == "controller_unavailable" else endpoint
+    discover = Mock(side_effect=[first_endpoint, endpoint])
+    monkeypatch.setattr(mod, "time", SimpleNamespace(monotonic=lambda: now, sleep=sleep, time=mod.time.time))
+    monkeypatch.setattr(mod, "rotation_endpoint", discover)
+    monkeypatch.setattr(mod, "set_rotation", rotate)
+    monkeypatch.setattr(mod, "_read_avd_rotation", read_angle)
+    monkeypatch.setattr(mod.subprocess, "Popen", lambda *_a, **_kw: process)
+    monkeypatch.setattr(manager, "probe", lambda _: {"ok": True})
+    monkeypatch.setattr(manager, "_ensure_avd", lambda *_a, **_kw: True)
+    monkeypatch.setattr(manager, "_wait_boot_completed", lambda *_: None)
+    monkeypatch.setattr(manager, "_emulator_avd_name", lambda *_: "aiphone_vm_a")
+    monkeypatch.setattr(manager, "_provision_device", lambda *_: None)
+    stop = Mock()
+    monkeypatch.setattr(manager, "stop_sync", stop)
+    client = Client()
+
+    try:
+        await manager.handle_start(client, {"vm_id": "a", "orientation": "landscape_right"})
+    finally:
+        manager._runtimes["a"].log_file.close()
+
+    assert [item["state"] for item in client.sent] == ["starting", "running"]
+    assert discover.call_count == 2
+    assert len(requests) == (1 if first_attempt == "controller_unavailable" else 2)
+    assert requests[-1] - 100.0 >= 0.5
+    assert manager._runtimes["a"].ready and process.alive
+    stop.assert_not_called()
+
+
+@pytest.mark.parametrize(("remaining", "expected_timeouts"), [(0.5, []), (2.0, [1.0]), (20.0, [1.0, 1.0])])
+async def test_start_rotation_does_not_prevent_ready_receipt_near_deadline(
+    tmp_path, monkeypatch, remaining, expected_timeouts,
+):
+    manager = mod.AndroidVmManager(runtime_dir=tmp_path)
+    fake_tools(monkeypatch)
+    process = OwnedProcess()
+    now = 100.0
+    deadline = 120.0
+    rotation_timeouts = []
+
+    def provision(*_args):
+        nonlocal now
+        now = deadline - remaining
+
+    def set_pose(_endpoint, _rotation, timeout):
+        nonlocal now
+        rotation_timeouts.append(timeout)
+        now += timeout
+        raise TimeoutError("test rotation command timed out")
+
+    def sleep(seconds):
+        nonlocal now
+        now += seconds
+
+    monkeypatch.setattr(mod, "time", SimpleNamespace(monotonic=lambda: now, sleep=sleep, time=mod.time.time))
+    monkeypatch.setattr(mod, "rotation_endpoint", lambda *_: (8554, "test-token"))
+    monkeypatch.setattr(mod, "set_rotation", set_pose)
+    monkeypatch.setattr(mod.subprocess, "Popen", lambda *_a, **_kw: process)
+    monkeypatch.setattr(manager, "probe", lambda _: {"ok": True})
+    monkeypatch.setattr(manager, "observe_instance", lambda *_a, **_kw: {"state": "stopped"})
+    monkeypatch.setattr(manager, "_ensure_avd", lambda *_a, **_kw: False)
+    monkeypatch.setattr(manager, "_wait_boot_completed", lambda *_: None)
+    monkeypatch.setattr(manager, "_emulator_avd_name", lambda *_: "aiphone_vm_a")
+    monkeypatch.setattr(manager, "_provision_device", provision)
+    stop = Mock(return_value={"ok": True, "details": {"instance_observation": {"state": "stopped"}}})
+    monkeypatch.setattr(manager, "stop_sync", stop)
+    client = Client()
+
+    try:
+        await manager.handle_start(client, {
+            "vm_id": "a", "orientation": "landscape_right", "request_id": "slow-start",
+            "operation_timeout_sec": 20, "require_existing_instance": True,
+        })
+    finally:
+        if "a" in manager._runtimes:
+            manager._runtimes["a"].log_file.close()
+
+    assert [item["state"] for item in client.sent] == ["starting", "running"]
+    assert now < deadline
+    assert rotation_timeouts == pytest.approx(expected_timeouts)
+    assert manager._runtimes["a"].ready and process.alive
+    stop.assert_not_called()
 
 
 async def test_start_identity_mismatch_is_retained_without_provisioning_other_vm(tmp_path, monkeypatch):

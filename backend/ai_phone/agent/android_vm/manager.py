@@ -554,18 +554,6 @@ class AndroidVmManager:
             _startup_timeout(operation_deadline, 1)
             proc = subprocess.Popen(args, stdout=log_file, stderr=subprocess.STDOUT)
             runtime.process = proc
-            target_rotation = None
-            if orientation in ("portrait_reverse", "landscape_left", "landscape_right"):
-                # config.ini only accepts portrait/landscape. Set the exact
-                # angle through the AVD controller while the guest is starting.
-                size = _fold_display_size(tools, avd_name, fold_state) if avd_device else (width, height)
-                target_rotation = _rotation_for_orientation(size, orientation)
-                try:
-                    self._set_initial_avd_rotation(
-                        tools, adb_serial, avd_name, target_rotation, operation_deadline,
-                    )
-                except (_DisplayStateError, TimeoutError) as exc:
-                    logger.debug("Android VM {} 将在开机预置后核对机身方向: {}", vm_id, exc)
             self._wait_boot_completed(tools, adb_serial)
             if self._emulator_avd_name(tools, adb_serial) != avd_name:
                 raise RuntimeError("启动后设备身份不匹配，拒绝配置或上报其他实例")
@@ -575,16 +563,8 @@ class AndroidVmManager:
             _startup_timeout(operation_deadline, 1)
             if self._emulator_avd_name(tools, adb_serial) != avd_name:
                 raise RuntimeError("开机预置后无法确认实例身份")
-            startup_display = {}
-            if target_rotation is not None:
-                # The sensor may settle after the early attempt. Confirm the
-                # requested angle against the ready guest before reporting it.
-                try:
-                    self._set_initial_avd_rotation(tools, adb_serial, avd_name, target_rotation, operation_deadline)
-                except (_DisplayStateError, TimeoutError) as exc:
-                    startup_display = {"warning": "AVD 未能确认启动机身方向"}
-                    logger.warning("Android VM {} 未能设置启动机身方向: {}", vm_id, exc)
-                _startup_timeout(operation_deadline, 1)
+            if orientation in ("portrait_reverse", "landscape_left", "landscape_right"):
+                self._apply_startup_rotation(tools, runtime, orientation, (width, height), fold_state)
             # 预置全部做完、临返回前才标 ready——此后才纳入运行期"消失"巡检。
             # 放在这里（而非 _wait_boot_completed 之后）：避免 provision 期间的 framework 重启抖动
             # 被巡检盯上（虽有 missing_ticks 防抖，但放到全部就绪后语义更严谨、零误判窗口）。
@@ -603,7 +583,6 @@ class AndroidVmManager:
                     "screen_height": height,
                     "density": density,
                     "orientation": orientation,
-                    **({"startup_display": startup_display} if startup_display else {}),
                     "ram_mb": ram_mb,
                     "cpu_cores": cpu_cores,
                     "vm_heap_mb": vm_heap_mb,
@@ -1669,22 +1648,36 @@ class AndroidVmManager:
                 "width": width, "height": height,
             }
 
-    def _set_initial_avd_rotation(
-        self, tools: AndroidVmTools, serial: str, avd_name: str, target: int, operation_deadline: Optional[float],
+    def _apply_startup_rotation(
+        self, tools: AndroidVmTools, runtime: VmRuntime, orientation: str,
+        size: tuple[int, int], fold_state: str,
     ) -> None:
-        deadline = time.monotonic() + _startup_timeout(operation_deadline, 8)
-        adb = partial(_display_adb, tools, serial, deadline)
-        while time.monotonic() < deadline:
-            if self._emulator_avd_name(tools, serial, deadline=deadline) == avd_name:
-                rotation = _read_avd_rotation(adb)
-                if rotation == target:
+        # The exact angle is best effort. Keep the brief retry within the
+        # remaining startup time and leave room for the ready receipt.
+        deadline = time.monotonic() + 2.5
+        if runtime.operation_deadline is not None:
+            deadline = min(deadline, runtime.operation_deadline - 1.0)
+        try:
+            if fold_state:
+                size = _fold_display_size(tools, runtime.avd_name, fold_state)
+            target = _rotation_for_orientation(size, orientation)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Android VM {} 跳过启动旋转: {}", runtime.vm_id, exc)
+            return
+        for delay in (0.0, 0.5):
+            if deadline - time.monotonic() <= delay:
+                return
+            if delay:
+                time.sleep(delay)
+            attempt_deadline = min(deadline, time.monotonic() + 1.0)
+            try:
+                endpoint = rotation_endpoint(runtime.avd_name, runtime.adb_serial)
+                if endpoint is not None:
+                    adb = partial(_display_adb, tools, runtime.adb_serial, attempt_deadline)
+                    _rotate_avd(adb, endpoint, target, attempt_deadline)
                     return
-                endpoint = rotation_endpoint(avd_name, serial)
-                if rotation is not None and endpoint is not None:
-                    _rotate_avd(adb, endpoint, target, deadline)
-                    return
-            time.sleep(0.2)
-        raise _DisplayStateError("启动时无法读取 AVD 机身方向")
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Android VM {} 启动旋转尝试未生效: {}", runtime.vm_id, exc)
 
     def _wait_settings_ready(self, tools: AndroidVmTools, adb_serial: str, timeout_sec: int = 30) -> bool:
         """等 settings 服务真正可用（framework 重启后 sys.boot_completed=1 仍可能早于它）。
