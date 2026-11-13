@@ -279,16 +279,17 @@ def test_assigned_port_is_not_silently_replaced(tmp_path, monkeypatch):
     assert manager._choose_port() == 5556
 
 
-@pytest.mark.parametrize(("orientation", "angle", "pose_timeout"), [
-    ("portrait", None, False),
-    ("portrait_reverse", 2, False),
-    ("landscape", None, False),
-    ("landscape_left", 1, False),
-    ("landscape_right", 3, False),
-    ("landscape_right", 3, True),
+@pytest.mark.parametrize(("orientation", "angle", "failed_attempts"), [
+    ("portrait", None, ()),
+    ("portrait_reverse", 2, ()),
+    ("landscape", None, ()),
+    ("landscape_left", 1, ()),
+    ("landscape_right", 3, ()),
+    ("landscape_right", 3, ("early",)),
+    ("landscape_right", 3, ("early", "ready")),
 ])
-def test_android_start_sets_exact_avd_pose_before_guest_boot(
-    tmp_path, monkeypatch, orientation, angle, pose_timeout,
+def test_android_start_checks_exact_avd_pose_before_and_after_guest_boot(
+    tmp_path, monkeypatch, orientation, angle, failed_attempts,
 ):
     manager = mod.AndroidVmManager(runtime_dir=tmp_path)
     fake_tools(monkeypatch)
@@ -297,11 +298,13 @@ def test_android_start_sets_exact_avd_pose_before_guest_boot(
     phases = []
     monkeypatch.setattr(manager, "_wait_boot_completed", lambda *_: phases.append("boot"))
     monkeypatch.setattr(manager, "_emulator_avd_name", lambda *_a, **_kw: "aiphone_vm_a")
-    monkeypatch.setattr(manager, "_provision_device", lambda *_: None)
+    monkeypatch.setattr(manager, "_provision_device", lambda *_: phases.append("provision"))
     monkeypatch.setattr(mod.subprocess, "Popen", lambda *_a, **_kw: OwnedProcess())
+
     def set_pose(_tools, serial, avd_name, rotation, _deadline):
+        attempt = "ready" if "provision" in phases else "early"
         phases.append((serial, avd_name, rotation))
-        if pose_timeout:
+        if attempt in failed_attempts:
             raise mod._DisplayStateError("启动时无法读取 AVD 机身方向")
 
     monkeypatch.setattr(manager, "_set_initial_avd_rotation", set_pose)
@@ -310,8 +313,12 @@ def test_android_start_sets_exact_avd_pose_before_guest_boot(
     runtime.log_file.close()
     assert runtime.ready and runtime.process.poll() is None
     assert result["details"]["orientation"] == orientation
-    assert phases == ([(result["adb_serial"], "aiphone_vm_a", angle), "boot"] if angle is not None else ["boot"])
-    if pose_timeout:
+    if angle is None:
+        assert phases == ["boot", "provision"]
+    else:
+        pose = (result["adb_serial"], "aiphone_vm_a", angle)
+        assert phases == [pose, "boot", "provision", pose]
+    if "ready" in failed_attempts:
         assert result["details"]["startup_display"]["warning"] == "AVD 未能确认启动机身方向"
     else:
         assert "startup_display" not in result["details"]

@@ -11,6 +11,7 @@ import tokenize
 from typing import Any
 
 import pytest
+from PIL import ExifTags, Image
 
 
 def _code_only(src: str) -> str:
@@ -26,6 +27,7 @@ def _code_only(src: str) -> str:
     return " ".join(out)
 
 from ai_phone.agent.drivers import ios_simulator_driver as sim_drv
+from ai_phone.agent.mirror.ios_capture_mjpeg_passthrough import IosMjpegPassthroughStreamer
 from ai_phone.agent.mirror.ios_sim_capture_mjpeg_passthrough import (
     IosSimMjpegPassthroughStreamer,
 )
@@ -177,6 +179,28 @@ def test_factory_builds_sim_streamer():
         serial="U1", on_jpeg=lambda *_a: None, log_tag="t"
     )
     assert isinstance(st, IosSimMjpegPassthroughStreamer)
+
+
+@pytest.mark.parametrize("orientation,expected", [
+    (None, (345, 614)),
+    (3, (345, 614)),
+    (6, (614, 345)),
+    (8, (614, 345)),
+])
+def test_simulator_mirror_reports_jpeg_display_size_without_changing_frame(orientation, expected):
+    jpeg = _io.BytesIO()
+    exif = Image.Exif()
+    if orientation is not None:
+        exif[ExifTags.Base.Orientation] = orientation
+    Image.new("RGB", (345, 614)).save(jpeg, "JPEG", exif=exif)
+    frame = jpeg.getvalue()
+    seen = []
+    st = IosSimMjpegPassthroughStreamer("U1", on_jpeg=lambda *args: seen.append(args))
+
+    st._consume_jpeg(frame, st._peek_jpeg_size(frame))
+
+    assert seen == [(frame, *expected)]
+    assert IosMjpegPassthroughStreamer._peek_jpeg_size(frame) == (345, 614)
 
 
 def test_factory_ignores_ios_mirror_backend_setting(monkeypatch):

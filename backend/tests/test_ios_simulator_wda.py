@@ -449,14 +449,23 @@ def test_simctl_failure_does_not_guess_iphone_path(monkeypatch):
         mod.is_ipad("X")
 
 
-@pytest.mark.parametrize("device_type,expected", [
-    ("com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4-8GB", ["xcodebuild"]),
-    ("com.apple.CoreSimulator.SimDeviceType.iPhone-Duo", ["xcodebuild"]),
-    ("com.apple.CoreSimulator.SimDeviceType.iPhone-16e", ["install", "launch", "wait"]),
+@pytest.mark.parametrize("device_type,has_runner,expected", [
+    ("com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M4-8GB", False, [("xcodebuild", {})]),
+    ("com.apple.CoreSimulator.SimDeviceType.iPhone-Duo", False, [("xcodebuild", {})]),
+    ("com.apple.CoreSimulator.SimDeviceType.iPhone-16e", False, ["install", "launch", "wait"]),
+    ("com.apple.CoreSimulator.SimDeviceType.iPhone-SE--2nd-generation-", True,
+     [("xcodebuild", {"disable_parallel": True})]),
 ])
-def test_known_device_type_preserves_wda_path_without_new_scan(monkeypatch, tmp_path, device_type, expected):
-    launcher = wda_mod.IosSimulatorWdaLauncher("TEST", expect_sim_name="aiphone_sim_test",
-                                            device_type=device_type)
+def test_known_device_type_preserves_wda_path_without_new_scan(
+    monkeypatch, tmp_path, device_type, has_runner, expected,
+):
+    launcher = wda_mod.IosSimulatorWdaLauncher(
+        "TEST", expect_sim_name="aiphone_sim_test", device_type=device_type, build_dir=tmp_path,
+    )
+    if has_runner:
+        runner = wda_mod._xctestrun_path("TEST", tmp_path)
+        runner.parent.mkdir(parents=True)
+        runner.touch()
     monkeypatch.setattr(wda_mod, "build_wda_for_simulator", lambda **k: tmp_path)
     monkeypatch.setattr(wda_mod, "read_runner_bundle_id", lambda _p: "test.wda")
     monkeypatch.setattr(launcher, "is_alive", lambda **k: False)
@@ -466,12 +475,41 @@ def test_known_device_type_preserves_wda_path_without_new_scan(monkeypatch, tmp_
 
     monkeypatch.setattr(wda_mod, "is_ipad", no_scan)
     calls = []
-    monkeypatch.setattr(launcher, "_start_via_xcodebuild", lambda _t: calls.append("xcodebuild"))
+    monkeypatch.setattr(launcher, "_start_via_xcodebuild", lambda _t, **kw: calls.append(("xcodebuild", kw)))
     monkeypatch.setattr(launcher, "_install", lambda _a: calls.append("install"))
     monkeypatch.setattr(launcher, "_launch", lambda: calls.append("launch"))
     monkeypatch.setattr(launcher, "_wait_ready", lambda _t: calls.append("wait"))
     launcher.start()
     assert calls == expected
+
+
+@pytest.mark.parametrize("exited", [True, False])
+def test_iphone_standalone_runner_exit_falls_back_to_serial_xctest(monkeypatch, tmp_path, exited):
+    from types import SimpleNamespace
+
+    launcher = wda_mod.IosSimulatorWdaLauncher(
+        "SE2", expect_sim_name="aiphone_sim_test",
+        device_type="com.apple.CoreSimulator.SimDeviceType.iPhone-SE--2nd-generation-",
+    )
+    monkeypatch.setattr(wda_mod, "build_wda_for_simulator", lambda **_kw: tmp_path)
+    monkeypatch.setattr(wda_mod, "read_runner_bundle_id", lambda _app: "test.wda")
+    monkeypatch.setattr(launcher, "is_alive", lambda **_kw: False)
+    monkeypatch.setattr(launcher, "_install", lambda _app: None)
+    monkeypatch.setattr(wda_mod.shutil, "which", lambda _tool: "/usr/bin/xcrun")
+    stderr = "An error was encountered (domain=FBSOpenApplicationServiceErrorDomain, code=3)."
+    if exited:
+        stderr += " The process did launch, but has since exited or crashed."
+    monkeypatch.setattr(wda_mod.subprocess, "run", lambda *_a, **_kw: SimpleNamespace(returncode=3, stderr=stderr))
+    fallback = []
+    monkeypatch.setattr(launcher, "_start_via_xcodebuild", lambda _timeout, **kw: fallback.append(kw))
+
+    if exited:
+        launcher.start()
+        assert fallback == [{"disable_parallel": True}]
+    else:
+        with pytest.raises(wda_mod.SimulatorWdaError, match="启动 WDA 失败"):
+            launcher.start()
+        assert fallback == []
 
 
 def test_wda_deadline_blocks_install_after_slow_build(monkeypatch, tmp_path):
@@ -640,7 +678,11 @@ def test_stop_terminates_xcodebuild_when_owned():
     assert "U2" not in mod._XCODEBUILD_PROCS
 
 
-def test_reclaimed_duo_stops_only_its_detached_xcodebuild(monkeypatch, tmp_path):
+@pytest.mark.parametrize("device_type", [
+    wda_mod.IPHONE_DUO_DEVICE_TYPE,
+    "com.apple.CoreSimulator.SimDeviceType.iPhone-SE--2nd-generation-",
+])
+def test_reclaimed_simulator_stops_only_its_detached_xcodebuild(monkeypatch, tmp_path, device_type):
     import os
     from types import SimpleNamespace
     from unittest.mock import Mock
@@ -672,7 +714,7 @@ def test_reclaimed_duo_stops_only_its_detached_xcodebuild(monkeypatch, tmp_path)
     monkeypatch.setattr(psutil, "process_iter", lambda _: iter((live_agent, other_user, manual_runner, runner)))
     launcher = wda_mod.IosSimulatorWdaLauncher(
         "DUO", expect_sim_name="aiphone_sim_fixture", build_dir=out_dir,
-        device_type=wda_mod.IPHONE_DUO_DEVICE_TYPE,
+        device_type=device_type,
     )
     launcher.stop()
 

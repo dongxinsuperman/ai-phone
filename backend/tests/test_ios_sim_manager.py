@@ -187,7 +187,8 @@ def test_start_creates_boots_and_registers(env):
     assert sim_disc.is_managed(_UDID)
 
 
-def test_duo_start_waits_for_active_inner_display_before_launching_wda(env, monkeypatch):
+@pytest.mark.parametrize("initial_timeout", [False, True])
+def test_duo_start_waits_for_active_inner_display_before_launching_wda(env, monkeypatch, initial_timeout):
     from ai_phone.agent.ios_sim.duo_posture import DuoDisplay
     from ai_phone.shared.ios_sim import IPHONE_DUO_DEVICE_TYPE
 
@@ -207,6 +208,8 @@ def test_duo_start_waits_for_active_inner_display_before_launching_wda(env, monk
             assert env["calls"][-1][0] == "bootstatus"
             assert not FakeLauncher.instances
             operations.append(state)
+            if initial_timeout and len(operations) == 1:
+                raise TimeoutError("inner panel is not active yet")
 
         def set_orientation(self, orientation, _deadline):
             assert not FakeLauncher.instances
@@ -219,7 +222,7 @@ def test_duo_start_waits_for_active_inner_display_before_launching_wda(env, monk
     result = manager.start_sync(_msg(device_type=IPHONE_DUO_DEVICE_TYPE, runtime=runtime_id,
                                      config_json={"initial_fold_state": "unfolded",
                                                   "initial_orientation": "landscape_right"}))
-    assert operations == ["unfolded", "landscape_right"]
+    assert operations == ["unfolded"] * (2 if initial_timeout else 1) + ["landscape_right"]
     assert result["details"]["active_display"] == {"id": 3, "width": 2007, "height": 2853}
     assert FakeLauncher.instances[-1].simulator_display_id == 3
     assert FakeLauncher.instances[-1].started == 1

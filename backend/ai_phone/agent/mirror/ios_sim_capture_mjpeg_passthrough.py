@@ -1,8 +1,7 @@
 """iOS **虚拟机**镜像通道：WDA MJPEG server → JPEG 直通浏览器。
 
-与真机走同一条 MJPEG 直通路线（方案 §1.10），只有两处技术差异，因此本模块只是
-``IosMjpegPassthroughStreamer`` 的一层薄覆盖，切帧 / 尺寸自适应 / settings 下发 /
-orientation watcher 全部复用父类。
+与真机复用同一条 MJPEG 直通路线（方案 §1.10），包括切帧、settings 下发和
+orientation watcher。模拟器按 JPEG 的 EXIF 方向报告显示尺寸。
 
 差异一：**没有 usbmux 端口转发**
 
@@ -49,7 +48,7 @@ class IosSimMjpegPassthroughStreamer(IosMjpegPassthroughStreamer):
         """
         Args:
             serial: 虚拟机 udid
-            on_jpeg: 每帧回调 ``(jpeg_bytes, width, height)``，同父类
+            on_jpeg: 每帧回调 ``(jpeg_bytes, width, height)``，宽高对应显示方向
 
         注意这里**没有** ``device_mjpeg_port`` 与 ``wda_local_port_for_settings``
         两个参数：虚拟机的两个端口都由 driver 在启动 WDA 时确定并登记，调用方无从
@@ -67,6 +66,10 @@ class IosSimMjpegPassthroughStreamer(IosMjpegPassthroughStreamer):
             wda_local_port_for_settings=None,
             log_tag=log_tag,
         )
+
+    @staticmethod
+    def _peek_jpeg_size(jpeg_bytes: bytes) -> Optional[tuple[int, int]]:
+        return IosMjpegPassthroughStreamer._peek_jpeg_size(jpeg_bytes, display_orientation=True)
 
     # ------------------------------------------------------------------
     def _endpoint(self) -> Optional[Any]:

@@ -112,6 +112,10 @@ class SimulatorWdaError(RuntimeError):
     """虚拟机 WDA 构建 / 启动失败。"""
 
 
+class _SimulatorWdaProcessExited(SimulatorWdaError):
+    """The simulator launched the standalone runner, which then exited."""
+
+
 def _startup_timeout(deadline: Optional[float], maximum: float) -> float:
     if deadline is None:
         return maximum
@@ -597,30 +601,34 @@ def _kill_all_xcodebuild() -> None:
 atexit.register(_kill_all_xcodebuild)
 
 
-def _xcodebuild_test_args(udid: str, out_dir: Path, *, duo: bool) -> list[str]:
+def _xctestrun_path(udid: str, out_dir: Path) -> Path:
+    return out_dir / "Build" / "Products" / f"aiphone-{udid}.xctestrun"
+
+
+def _xcodebuild_test_args(udid: str, out_dir: Path, *, disable_parallel: bool) -> list[str]:
     args = [
         "test-without-building",
         "-xctestrun",
-        str(out_dir / "Build" / "Products" / f"aiphone-{udid}.xctestrun"),
+        str(_xctestrun_path(udid, out_dir)),
         "-destination",
         f"platform=iOS Simulator,id={udid}",
         # Keep the simulator's test results out of the physical-device DerivedData.
         "-derivedDataPath",
         str(out_dir),
     ]
-    if duo:
+    if disable_parallel:
         args.extend(("-parallel-testing-enabled", "NO"))
     return args
 
 
-def stop_detached_duo_xcodebuild(
+def stop_detached_simulator_xcodebuild(
     udid: str, *, build_dir: Optional[Path] = None, deadline: Optional[float] = None,
 ) -> bool:
-    """Close this Agent's exact Duo runner when its original parent is gone."""
+    """Close this Agent's exact nonparallel XCTest runner after it is orphaned."""
     import psutil
 
     out_dir = _abs_build_dir(build_dir) if build_dir else default_build_dir()
-    expected = _xcodebuild_test_args(udid, out_dir, duo=True)
+    expected = _xcodebuild_test_args(udid, out_dir, disable_parallel=True)
     matches = []
     for proc in psutil.process_iter(["name", "cmdline", "ppid", "uids"]):
         _startup_timeout(deadline, 1.0)
@@ -632,7 +640,7 @@ def stop_detached_duo_xcodebuild(
     if not matches:
         return False
     if len(matches) != 1:
-        raise SimulatorWdaError(f"无法唯一确认脱离 Agent 的 Duo WDA 进程 udid={udid}")
+        raise SimulatorWdaError(f"无法唯一确认脱离 Agent 的模拟器 WDA 进程 udid={udid}")
     proc = matches[0]
     try:
         _startup_timeout(deadline, 1.0)
@@ -641,8 +649,8 @@ def stop_detached_duo_xcodebuild(
     except psutil.NoSuchProcess:
         pass
     except psutil.Error as exc:
-        raise SimulatorWdaError(f"停止脱离 Agent 的 Duo WDA 失败 udid={udid}：{exc}") from exc
-    logger.info("udid={} 已停止脱离 Agent 的 Duo WDA pid={}", udid, proc.pid)
+        raise SimulatorWdaError(f"停止脱离 Agent 的模拟器 WDA 失败 udid={udid}：{exc}") from exc
+    logger.info("udid={} 已停止脱离 Agent 的模拟器 WDA pid={}", udid, proc.pid)
     return True
 
 
@@ -735,7 +743,8 @@ class IosSimulatorWdaLauncher:
     HTTP 服务永远起不来。换 ``xcodebuild`` 后时序不同（先跑测试、后处理切后台），
     实测 3 秒就绪。根因与实验记录见方案 §1.8.0。
 
-    Duo Runtime 需要 XCTest 提供 runner 依赖，由 Xcode 启动。
+    Duo Runtime 需要 XCTest 提供 runner 依赖，由 Xcode 启动。普通 iPhone 的
+    runner 如果在直接启动后退出，也通过 Xcode 加载 XCTest。
     当前实现用 atexit 在 Agent 正常退出时主动回收 xcodebuild，因此需要
     重新确认 WDA 就绪；这不代表 guest 已关机，也不是所有退出方式下的系统保证。
     """
@@ -772,7 +781,7 @@ class IosSimulatorWdaLauncher:
         self._startup_deadline: Optional[float] = None
         self.ports = ports or allocate_ports(udid)
         self._runner_bundle_id: Optional[str] = None
-        # 仅 iPad 路径使用：常驻的 xcodebuild 子进程
+        # 通过 XCTest 启动时持有常驻的 xcodebuild 子进程。
         self._xcodebuild_proc: Optional[subprocess.Popen] = None
 
     # ------------------------------------------------------------------
@@ -901,10 +910,23 @@ class IosSimulatorWdaLauncher:
             _startup_timeout(self._startup_deadline, timeout)
             return
 
+        out_dir = _abs_build_dir(self._build_dir) if self._build_dir else default_build_dir()
+        # A runner created for this UDID means standalone launch already exited on this simulator.
+        # Retry via XCTest on cold boot as well, with no parallel simulator clone.
+        if _xctestrun_path(self.udid, out_dir).is_file():
+            self._start_via_xcodebuild(_startup_timeout(self._startup_deadline, timeout), disable_parallel=True)
+            _startup_timeout(self._startup_deadline, timeout)
+            return
+
         self._install(app)
         _startup_timeout(self._startup_deadline, timeout)
-        self._launch()
-        self._wait_ready(_startup_timeout(self._startup_deadline, timeout))
+        try:
+            self._launch()
+        except _SimulatorWdaProcessExited as exc:
+            logger.info("udid={} WDA 独立启动退出，改用 XCTest：{}", self.udid, exc)
+            self._start_via_xcodebuild(_startup_timeout(self._startup_deadline, timeout), disable_parallel=True)
+        else:
+            self._wait_ready(_startup_timeout(self._startup_deadline, timeout))
         _startup_timeout(self._startup_deadline, timeout)
 
     def stop(self, *, deadline: Optional[float] = None) -> None:
@@ -942,8 +964,8 @@ class IosSimulatorWdaLauncher:
             _forget_xcodebuild(self.udid)
             return
 
-        if self._device_type == IPHONE_DUO_DEVICE_TYPE and self._expect_sim_name.startswith("aiphone_sim_"):
-            if stop_detached_duo_xcodebuild(self.udid, build_dir=self._build_dir, deadline=deadline):
+        if self._expect_sim_name.startswith("aiphone_sim_"):
+            if stop_detached_simulator_xcodebuild(self.udid, build_dir=self._build_dir, deadline=deadline):
                 return
         bundle_id = self._runner_bundle_id
         if not bundle_id:
@@ -955,16 +977,18 @@ class IosSimulatorWdaLauncher:
         remaining(1.0)
 
     # ------------------------------------------------------------------
-    # iPad 路径：xcodebuild test-without-building
+    # XCTest 路径：xcodebuild test-without-building
     # ------------------------------------------------------------------
-    def _start_via_xcodebuild(self, timeout: float) -> None:
+    def _start_via_xcodebuild(self, timeout: float, *, disable_parallel: bool = False) -> None:
         xcodebuild = _find_xcodebuild()
         if xcodebuild is None:
             raise SimulatorWdaError("找不到 xcodebuild")
         out_dir = _abs_build_dir(self._build_dir) if self._build_dir else default_build_dir()
         xctestrun = self._prepare_xctestrun(out_dir)
 
-        cmd = [xcodebuild, *_xcodebuild_test_args(self.udid, out_dir, duo=self._device_type == IPHONE_DUO_DEVICE_TYPE)]
+        cmd = [xcodebuild, *_xcodebuild_test_args(
+            self.udid, out_dir, disable_parallel=disable_parallel or self._device_type == IPHONE_DUO_DEVICE_TYPE,
+        )]
         _prune_test_results(out_dir)
         _startup_timeout(self._startup_deadline, timeout)
         logger.info("udid={} 通过 XCTest 启动虚拟机 WDA：{}", self.udid, " ".join(cmd))
@@ -1021,7 +1045,7 @@ class IosSimulatorWdaLauncher:
                 env["AIPHONE_SIMULATOR_DISPLAY_ID"] = str(self._simulator_display_id)
             cfg["EnvironmentVariables"] = env
 
-        target = base.with_name(f"aiphone-{self.udid}.xctestrun")
+        target = _xctestrun_path(self.udid, out_dir)
         target.write_bytes(plistlib.dumps(payload))
         return target
 
@@ -1110,9 +1134,13 @@ class IosSimulatorWdaLauncher:
         except subprocess.TimeoutExpired as exc:
             raise SimulatorWdaError(f"启动 WDA 超时 udid={self.udid}") from exc
         if proc.returncode != 0:
+            stderr = (proc.stderr or "").strip()
+            if ("domain=FBSOpenApplicationServiceErrorDomain, code=3" in stderr
+                    and "process did launch, but has since exited or crashed" in stderr.lower()):
+                raise _SimulatorWdaProcessExited(f"启动 WDA 失败 udid={self.udid}：{stderr}")
             raise SimulatorWdaError(
                 f"启动 WDA 失败 udid={self.udid} rc={proc.returncode} "
-                f"stderr={(proc.stderr or '').strip()!r}"
+                f"stderr={stderr!r}"
             )
         logger.info(
             "udid={} 已启动 WDA：{} → wda={} mjpeg={}",

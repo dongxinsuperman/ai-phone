@@ -24,6 +24,7 @@ import json
 import math
 import re
 import socket
+import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
@@ -680,8 +681,7 @@ class IosSimVmManager:
                 observation = self.observe_instance(vm_id, deadline)
             elif (observation["reason"] == "wda_process_running"
                     and msg.get("udid") == observed_udid
-                    and msg.get("device_type") == IPHONE_DUO_DEVICE_TYPE
-                    and wda_state.stop_detached_duo_xcodebuild(observed_udid, deadline=deadline)):
+                    and wda_state.stop_detached_simulator_xcodebuild(observed_udid, deadline=deadline)):
                 observation = self.observe_instance(vm_id, deadline)
             if observation["state"] != "stopped" or not observation["resources_released"]:
                 raise SimVmStartFailed(f"原实例已停止但 WDA 资源尚未确认释放：{observation['reason']}", observed_udid, {
@@ -749,7 +749,16 @@ class IosSimVmManager:
             duo_deadline = time.monotonic() + _startup_timeout(deadline, 20.0)
             runtime.duo = DuoControls(udid, capability["details"]["tools"]["xcrun"])
             if initial_fold_state:
-                runtime.duo.set_fold(initial_fold_state, duo_deadline)
+                try:
+                    runtime.duo.set_fold(initial_fold_state, duo_deadline)
+                except (TimeoutError, subprocess.TimeoutExpired):
+                    if initial_fold_state != "unfolded":
+                        raise
+                    # CoreSimulator can report the hinge before the inner panel
+                    # becomes active on cold boot. Retry before binding WDA.
+                    duo_deadline = time.monotonic() + _startup_timeout(deadline, 20.0)
+                    logger.info("iOS 虚拟机 {} 冷启动未确认活动内屏，重试一次", vm_id)
+                    runtime.duo.set_fold(initial_fold_state, duo_deadline)
             if initial_orientation:
                 runtime.duo.set_orientation(initial_orientation, duo_deadline)
             display = runtime.duo.display(duo_deadline)

@@ -482,12 +482,18 @@ class IosMjpegStreamer:
     # 工具
     # ------------------------------------------------------------------
     @staticmethod
-    def _peek_jpeg_size(jpeg_bytes: bytes) -> Optional[Tuple[int, int]]:
+    def _peek_jpeg_size(
+        jpeg_bytes: bytes, *, display_orientation: bool = False,
+    ) -> Optional[Tuple[int, int]]:
         """快速读 JPEG 尺寸，不解码全图。"""
         try:
-            from PIL import Image  # noqa: PLC0415
+            from PIL import ExifTags, Image  # noqa: PLC0415
             with Image.open(io.BytesIO(jpeg_bytes)) as im:
-                return int(im.size[0]), int(im.size[1])
+                width, height = im.size
+                # WDA may keep the encoded pixels in portrait and set EXIF Orientation.
+                if display_orientation and im.getexif().get(ExifTags.Base.Orientation) in (5, 6, 7, 8):
+                    return height, width
+                return width, height
         except Exception:  # noqa: BLE001
             return None
 

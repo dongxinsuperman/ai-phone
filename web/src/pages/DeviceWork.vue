@@ -677,11 +677,10 @@ function onKbFocus() { kbFocused.value = true }
 function onKbBlur()  { kbFocused.value = false }
 
 function _mediaSize(el) {
-  // 兼容 <video>（videoWidth/videoHeight）和 <img>（naturalWidth/naturalHeight）
-  // 当前模板用 <video>，但保留兜底，方便以后单测或者切换
-  if (!el) return { w: 0, h: 0 }
-  if (el.videoWidth && el.videoHeight) return { w: el.videoWidth, h: el.videoHeight }
-  if (el.naturalWidth && el.naturalHeight) return { w: el.naturalWidth, h: el.naturalHeight }
+  // A new JPEG URL can temporarily report zero dimensions while loading.
+  // Map input against the last completed image, recorded by the load handler.
+  if (el && el === imgEl.value) return frameSize.value
+  if (el?.videoWidth && el.videoHeight) return { w: el.videoWidth, h: el.videoHeight }
   return { w: 0, h: 0 }
 }
 
