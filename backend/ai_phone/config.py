@@ -64,6 +64,10 @@ class Settings(BaseSettings):
         default=None,
         description="Agent 展示名，未设则取 hostname",
     )
+    android_ignore_network_adb: bool = Field(
+        default=False,
+        description="Agent 的 Android 设备只收录 USB 真机和本机模拟器。env: AI_PHONE_ANDROID_IGNORE_NETWORK_ADB",
+    )
 
     # ── Android 虚拟机（Emulator）行为参数 ──
     # 统一收归 Settings，纳入「下发集」由 Server 集中控制（Agent 不自行改）。
@@ -1904,6 +1908,8 @@ AGENT_LOCAL_FIELDS: frozenset[str] = frozenset({
     "server_http_base",
     "agent_token",
     "agent_name",
+    # Android 设备收录策略由设备所在的 Agent 决定。
+    "android_ignore_network_adb",
     # 法律协议必须由每台 Harmony Agent 的运维者在本机明确授权，
     # 不允许 Server 下发值覆盖。
     "harmony_auto_accept_agreements",

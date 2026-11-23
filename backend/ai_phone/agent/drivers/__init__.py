@@ -6,10 +6,13 @@ iOS / Harmony 两支都走"按需 lazy import"——第三方库在各自可选 
 from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor, wait
+from functools import partial
 from threading import Lock
 from typing import Dict, List
 
 from loguru import logger
+
+from ai_phone.config import get_settings
 
 from .base import BaseDriver, DeviceInfo
 from .android import AndroidDriver, list_android_devices, open_android_driver
@@ -121,8 +124,11 @@ def list_all_devices(include_offline: bool = False) -> List[DeviceInfo]:
     snapshot and marks it untrusted; lifecycle code must check instance/process
     evidence, not interpret a missing discovery result as a shutdown.
     """
+    android_scanner = list_android_devices
+    if get_settings().android_ignore_network_adb:
+        android_scanner = partial(list_android_devices, ignore_network_adb=True)
     scanners = (
-        ("android", list_android_devices),
+        ("android", android_scanner),
         ("ios", list_ios_devices),
         ("harmony", list_harmony_devices),
         (PLATFORM_IOS_SIM, list_ios_simulators),

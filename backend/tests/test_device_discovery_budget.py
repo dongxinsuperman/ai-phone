@@ -1,10 +1,15 @@
 """Discovery fault injection: no real transport or simulator is accessed."""
 import threading
+from types import SimpleNamespace
+from unittest.mock import Mock, call
 
 import pytest
+from adbutils import AdbDeviceInfo
 
 from ai_phone.agent import drivers
+from ai_phone.agent.drivers import android
 from ai_phone.agent.drivers.base import DeviceInfo
+from ai_phone.config import Settings
 
 
 @pytest.fixture(autouse=True)
@@ -33,6 +38,49 @@ def test_platform_scans_run_independently_but_keep_output_order(monkeypatch):
     ):
         monkeypatch.setattr(drivers, name, scan(platform))
     assert [d.platform for d in drivers.list_all_devices()] == ["android", "ios", "harmony", "ios_sim"]
+
+
+@pytest.mark.parametrize("ignore_network", [False, True])
+def test_agent_android_network_adb_switch(monkeypatch, ignore_network):
+    env_name = "AI_PHONE_ANDROID_IGNORE_NETWORK_ADB"
+    if ignore_network:
+        monkeypatch.setenv(env_name, "true")
+    else:
+        monkeypatch.delenv(env_name, raising=False)
+    settings = Settings(_env_file=None, android_setup_stay_awake=False)
+    monkeypatch.setattr(drivers, "get_settings", lambda: settings)
+    monkeypatch.setattr(android, "get_settings", lambda: settings)
+    monkeypatch.setattr(drivers, "list_android_devices", android.list_android_devices)
+
+    local_devices = [
+        AdbDeviceInfo("usb-phone", "device", tags={"usb": "1-2"}),
+        AdbDeviceInfo("emulator-5554", "device"),
+        AdbDeviceInfo("usb-offline", "offline", tags={"usb": "1-3"}),
+    ]
+    network_devices = [
+        AdbDeviceInfo("127.0.0.1:56321", "device"),
+        AdbDeviceInfo("192.0.2.10:5555", "device"),
+        AdbDeviceInfo("adb-wifi._adb-tls-connect._tcp", "device"),
+        AdbDeviceInfo("emulator-proxy.local:5555", "offline"),
+    ]
+    adb_list = Mock(return_value=local_devices + network_devices)
+    adb_device = Mock(side_effect=lambda serial: serial)
+    monkeypatch.setattr(android.adb, "list", adb_list)
+    monkeypatch.setattr(android.adb, "device", adb_device)
+
+    def make_driver(serial, *, setup_power):
+        return SimpleNamespace(device_info=lambda: DeviceInfo(serial=serial, platform="android"))
+
+    monkeypatch.setattr(android, "AndroidDriver", make_driver)
+    devices = drivers.list_all_devices(include_offline=True)
+    expected = local_devices if ignore_network else local_devices + network_devices
+
+    assert [d.serial for d in devices] == [d.serial for d in expected]
+    assert adb_device.call_args_list == [call(serial=d.serial) for d in expected if d.state == "device"]
+    if ignore_network:
+        adb_list.assert_called_once_with(extended=True)
+    else:
+        adb_list.assert_called_once_with()
 
 
 def test_timed_out_platform_retains_snapshot_without_repeated_threads(monkeypatch):

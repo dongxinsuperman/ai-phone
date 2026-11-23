@@ -789,7 +789,9 @@ class AndroidDriver(BaseDriver):
 # ----------------------------------------------------------------------
 # 设备发现
 # ----------------------------------------------------------------------
-def list_android_devices(include_offline: bool = False) -> List[DeviceInfo]:
+def list_android_devices(
+    include_offline: bool = False, *, ignore_network_adb: bool = False
+) -> List[DeviceInfo]:
     """扫描 adb 当前识别到的设备，返回 DeviceInfo 列表。
 
     Agent 启动时以及定时轮询都会调这里；未授权 / 离线的设备只回标题信息，不尝试
@@ -797,9 +799,10 @@ def list_android_devices(include_offline: bool = False) -> List[DeviceInfo]:
     """
     infos: List[DeviceInfo] = []
     try:
-        for d in adb.list():
-            # adbutils.list() 返回的 AdbDeviceInfo 只有 serial + state，正式操作
-            # 需要拿 adb.device(serial) 实例化 AdbDevice。
+        devices = adb.list(extended=True) if ignore_network_adb else adb.list()
+        for d in devices:
+            if ignore_network_adb and not (d.tags.get("usb") or re.fullmatch(r"emulator-[0-9]+", d.serial)):
+                continue
             if d.state != "device":
                 if include_offline:
                     infos.append(
