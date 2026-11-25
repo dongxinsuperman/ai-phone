@@ -31,7 +31,9 @@ test('a paste with no task guides discovery, a brief screenshot lease and releas
   assert.match(entry, /你想用哪台设备，或者需要哪种系统的模拟器/)
   assert.match(entry, /唯一符合条件的设备时，直接领用/)
   assert.match(entry, /Android、iOS 和鸿蒙模拟器/)
-  assert.ok(entry.includes(`AIPHONE_BASE_URL='${origin}' aiphone vm ios catalog --limit 5`))
+  assert.ok(entry.includes(`顶部导航打开「虚拟机」（${origin}/virtual-machines）`))
+  assert.match(entry, /也可以使用独立的 AI Phone CLI 创建模拟器.*https:\/\/github\.com\/dongxinsuperman\/aiphone-cli/)
+  assert.doesNotMatch(entry, /aiphone vm|AIPHONE_BASE_URL|--start|--wait/)
   assert.doesNotMatch(entry.split('只粘贴说明时，先做一次看图体验')[0], /-X POST|Bearer/)
 })
 

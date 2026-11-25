@@ -734,7 +734,8 @@ async def guide():
   用户只发说明时，选一台 available 的设备做一次看图体验。领取成功后优先 GET api.screenshot 保存设备当前原图，也可从 api.observe 解码 screenshot.data，或用本次领用返回的 native 取图。体验只截图，保持设备当前画面。
   保存图片后立即向 release 发 DELETE，确认 204 后再告诉用户已归还。取图失败也要归还。没有空闲设备时如实说明，等用户决定下一步。
   在回复里直接展示取回的图片，或附上用户能打开的图片文件，并说明设备型号、归还结果和可领设备。简短介绍用机和新建模拟器能力，再问用户想用哪台设备、哪种系统，或想完成什么任务。用户已明确选择设备，或任务中只有一台符合条件时，直接领用并继续该任务。
-  需要新模拟器时，可以用 aiphone vm 管理 Android、iOS 和鸿蒙。在具备本实例已有管理权限时，通过 AIPHONE_BASE_URL 临时指定实例，用对应平台的 catalog 和 systems 查询机型与兼容系统。用户明确要创建时，用 create --start --wait 创建并启动，等设备就绪后从同一清单领用。已有设备的查询和领用不依赖 CLI。
+  需要新模拟器时，在 Web 顶部打开「虚拟机」（/virtual-machines），创建并启动 Android、iOS 或鸿蒙模拟器。设备就绪后，从同一清单领用。
+  也可以使用独立的 AI Phone CLI 创建模拟器，源码见 https://github.com/dongxinsuperman/aiphone-cli
 
 查看与领取
   GET /api/ai-connect/devices 查询原生通道已就绪设备的 serial、model、platform、device_kind 和 status。查询无需凭证，也不占用设备。

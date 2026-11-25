@@ -115,7 +115,11 @@ async def test_clean_client_can_read_guide_and_discover_without_occupying(client
     intro = guide.text.split("查看与领取", 1)[0]
     assert "只粘贴接入说明或发来本指南链接" in intro
     assert "先实际查询 GET /api/ai-connect/devices" in intro
-    assert "想用哪台设备" in intro and "aiphone vm" in intro
+    assert "想用哪台设备" in intro
+    assert "Web 顶部打开「虚拟机」（/virtual-machines）" in intro
+    assert "也可以使用独立的 AI Phone CLI 创建模拟器" in intro
+    assert "https://github.com/dongxinsuperman/aiphone-cli" in intro
+    assert "aiphone vm" not in intro and "AIPHONE_BASE_URL" not in intro
     assert 'webkit-connect.pyz "$INSTANCE" lease.json --web-inspector' in guide.text
     assert "hdc fport、rport、reconnect" in guide.text
     assert "sideload、update、flash" in guide.text and "32 GiB" in guide.text
