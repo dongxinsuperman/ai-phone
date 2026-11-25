@@ -19,7 +19,8 @@ MAX_REQUEST = 64 * 1024
 _UDID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{8}-[0-9a-f]{16})", re.I)
 _PATH = re.compile(r"/[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*")
 _ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
-_ROOT_READS = {"/status", "/screenshot", "/source", "/wda/activeAppInfo", "/wda/screen"}
+_METHOD = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+DEFAULT_SESSION = b'{"capabilities":{"alwaysMatch":{},"firstMatch":[{}]}}'
 
 
 def is_udid(value):
@@ -93,16 +94,16 @@ def public_reply(raw, session):
 
 
 def allowed_request(method, path, session_id):
-    if not _PATH.fullmatch(path) or len(path) > 512:
+    if not _METHOD.fullmatch(method) or not _PATH.fullmatch(path) or len(path) > 512:
         return False
-    if method == "GET" and path in _ROOT_READS:
-        return True
     if method == "POST" and path == "/session":
-        return session_id is None
-    if method not in {"GET", "POST", "DELETE"} or not is_session_id(session_id):
-        return False
-    root = "/session/" + session_id
-    return path.startswith(root + "/") or (path == root and method in {"GET", "DELETE"})
+        return True
+    if path == "/session" or path.startswith("/session/"):
+        if not is_session_id(session_id):
+            return False
+        root = "/session/" + session_id
+        return path == root or path.startswith(root + "/")
+    return True
 
 
 async def usb_devices(udids):
@@ -159,7 +160,7 @@ async def request(open_stream, method, target, encoded_body):
     if not isinstance(target, str) or not target.startswith("/") or len(target) > 2048 \
             or any(not 33 <= ord(ch) <= 126 for ch in target):
         raise ValueError("WDA 请求地址无效")
-    if method not in {"GET", "POST", "DELETE"}:
+    if not isinstance(method, str) or not _METHOD.fullmatch(method):
         raise ValueError("不支持的 WDA 请求方法")
     body = base64.b64decode(encoded_body, validate=True)
     if len(body) > MAX_REQUEST:

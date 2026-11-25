@@ -21,9 +21,9 @@ from ai_phone.server.models import Device
 from ai_phone.shared import protocol as P
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import android_actions, ios_wda, unified
+from . import android_actions, hdc, ios_wda, unified
 from .android_changes import changes
-from .android import COMMAND_SECONDS, allowed_service
+from .android import COMMAND_SECONDS, allowed_service, hardware_serial, is_network_adb
 from .client_bundle import client_bundle
 from .relay import connect_native
 
@@ -100,8 +100,26 @@ class DirectAccess:
             raise HTTPException(503, "原设备的 WDA 通道暂不可用")
         return current
 
+    def check_hdc_device(self, lease, store, hub):
+        self.check_lease(lease, store)
+        target = lease.unified_target
+        if target.platform != "harmony":
+            raise HTTPException(409, "该设备未提供鸿蒙 HDC 原生通道")
+        agent = hub.agent_id_for_serial(lease.serial)
+        current = hub.agent_native_channel(agent)
+        instance = unified.simulator_instance(lease.serial, "harmony", hub.get_device_extra(lease.serial))
+        if (not agent or hub.agent_host_id(agent) != lease.host_id or current is None
+                or instance != target.instance_id or current.hdc_devices.get(lease.serial) != lease.transport):
+            raise HTTPException(503, "原设备的 HDC 通道暂不可用")
+        return current
+
     async def activity(self, lease, store, hub):
-        self.check_device(lease, store, hub)
+        if lease.unified_target.platform == "harmony":
+            self.check_hdc_device(lease, store, hub)
+        elif lease.unified_target.platform == "ios":
+            self.check_wda_device(lease, store, hub)
+        else:
+            self.check_device(lease, store, hub)
         await self.renew(lease, store)
         # A native service or interactive write can change what a numbered target means.
         lease.native_revision += 1
@@ -159,6 +177,51 @@ async def native_socket(ident: str, ws: WebSocket):
     await connect_native(ws, direct, lease, host, check, lambda: direct.activity(lease, store, hub))
 
 
+@router.websocket("/ws/ai-connect/sessions/{ident}/hdc")
+async def native_hdc_socket(ident: str, ws: WebSocket):
+    direct = state(ws.app)
+    store, hub = lock_store(ws), get_hub(ws)
+    try:
+        lease = direct.lookup(ident, ws)
+        host = direct.check_hdc_device(lease, store, hub)
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            await ws.accept()
+            await ws.close(code=1013, reason="HDC host temporarily unavailable")
+        else:
+            await ws.close(code=1008)
+        return
+
+    def check():
+        if direct.check_hdc_device(lease, store, hub) is not host:
+            raise HTTPException(503, "HDC 宿主通道已重新连接")
+
+    await connect_native(ws, direct, lease, host, check, lambda: direct.activity(lease, store, hub),
+                         hdc_binding=lease.unified_target.binding, host_hdc=lease.unified_target.instance_id is None)
+
+
+@router.websocket("/ws/ai-connect/sessions/{ident}/webkit")
+async def native_webkit_socket(ident: str, ws: WebSocket):
+    direct = state(ws.app)
+    store, hub = lock_store(ws), get_hub(ws)
+    try:
+        lease = direct.lookup(ident, ws)
+        host = direct.check_wda_device(lease, store, hub)
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            await ws.accept()
+            await ws.close(code=1013, reason="Web Inspector device temporarily unavailable")
+        else:
+            await ws.close(code=1008)
+        return
+
+    def check():
+        if direct.check_wda_device(lease, store, hub) is not host:
+            raise HTTPException(503, "Web Inspector 宿主通道已重新连接")
+
+    await connect_native(ws, direct, lease, host, check, lambda: direct.activity(lease, store, hub), webkit=True)
+
+
 @router.post(BASE + "/pair", include_in_schema=False)
 @router.post(BASE + "/access", include_in_schema=False)
 @router.post(BASE + "/access/instance-key", include_in_schema=False)
@@ -167,18 +230,23 @@ async def retired_access():
 
 
 def device_host(dev, hub):
-    if dev is None or dev.platform not in {"android", "ios", "ios_sim"} or dev.status != "online":
+    if dev is None or dev.platform not in {"android", "ios", "ios_sim", "harmony"} or dev.status != "online":
         return None
     agent = hub.agent_id_for_serial(dev.serial)
     if agent != dev.agent_id or not agent:
         return None
     host_id = hub.agent_host_id(agent)
     host = hub.agent_native_channel(agent) if host_id else None
-    ready = hub.get_device_extra(dev.serial).get("readiness") or {}
+    extra = hub.get_device_extra(dev.serial)
+    ready = extra.get("readiness") or {}
     if not host or ready.get("ready") is not True:
         return None
     if dev.platform == "android":
+        if is_network_adb(dev.serial) and not hardware_serial(extra.get("adb_hardware_serial")):
+            return None
         transport = host.devices.get(dev.serial)
+    elif dev.platform == "harmony":
+        transport = host.hdc_devices.get(dev.serial)
     else:
         transport = host.wda_transport(dev.serial, simulator=dev.platform == "ios_sim")
     if transport is None:
@@ -207,6 +275,9 @@ async def devices(response: Response, session: AsyncSession = DBSession,
                "status": "busy" if store.peek(dev.serial) else "available"}
         if dev.platform in {"ios", "ios_sim"}:
             row["device_kind"] = "virtual" if dev.platform == "ios_sim" else "physical"
+        elif dev.platform == "harmony":
+            row["device_kind"] = ("virtual" if unified.simulator_instance(
+                dev.serial, "harmony", hub.get_device_extra(dev.serial)) else "physical")
         entries.append(row)
     return entries
 
@@ -217,6 +288,26 @@ class Claim(BaseModel):
 
 async def bind_channels(dev, owner, agent, hub):
     _, host = owner
+    if dev.platform == "harmony":
+        transport = host.hdc_devices.get(dev.serial)
+        if transport is None or device_host(dev, hub) != owner:
+            raise HTTPException(409, "鸿蒙设备的 HDC 连接已变化，请重新查询")
+        instance = unified.simulator_instance(dev.serial, "harmony", hub.get_device_extra(dev.serial))
+        reply = await host.exchange(dev.serial, transport, 5, hdc_bind=True)
+        binding = reply.get("binding")
+        if not hdc.valid_identity(dev.serial, binding):
+            raise HTTPException(502, "鸿蒙设备未返回有效的 HDC 连接标识")
+        if (device_host(dev, hub) != owner or device_agent(dev, hub) != agent
+                or host.hdc_devices.get(dev.serial) != transport
+                or unified.simulator_instance(dev.serial, "harmony", hub.get_device_extra(dev.serial)) != instance):
+            raise HTTPException(409, "鸿蒙设备的 HDC 连接已变化，请重新查询")
+        actions = ()
+        available = reply.get("action_types")
+        if (isinstance(available, list) and "observe" in available and "tap" in available
+                and unified.agent_for_device(dev, hub) == agent):
+            actions = tuple(action for action in (*unified.READS, *unified.MUTATIONS) if action in available)
+        return unified.Target(agent, "harmony", actions, transport=transport, binding=binding, instance_id=instance)
+
     if dev.platform in {"ios", "ios_sim"}:
         simulator = dev.platform == "ios_sim"
         instance = unified.simulator_instance(dev.serial, "ios", hub.get_device_extra(dev.serial)) if simulator else None
@@ -256,7 +347,13 @@ async def bind_channels(dev, owner, agent, hub):
 def session_channels(ident: str, target: unified.Target) -> dict:
     path = f"{BASE}/sessions/{ident}"
     if target.platform == "ios":
-        native = {"protocol": "wda-http", "url": path + "/wda"}
+        native = {"protocol": "wda-http", "url": path + "/wda", "web_inspector": {
+            "url": f"/ws/ai-connect/sessions/{ident}/webkit", "client": BASE + "/webkit-connect.pyz",
+        }}
+    elif target.platform == "harmony":
+        protocol = "hdc-connect" if target.instance_id else "hdc-server"
+        native = {"protocol": protocol, "url": f"/ws/ai-connect/sessions/{ident}/hdc",
+                  "client": BASE + "/hdc-connect.pyz"}
     else:
         native = {"protocol": "adb-connect", "url": f"/ws/ai-connect/sessions/{ident}/adb",
                   "client": BASE + "/adb-connect.pyz"}
@@ -324,7 +421,8 @@ async def forward_wda(host, lease, method, path, target, body):
         status, raw = await host.call_wda(lease.serial, lease.transport, method, target, body)
         return status, raw, lease.wda_session
 
-    # WDA has one device session. Creating another would invalidate the workbench's session.
+    # Reuse the existing session for a default attach. An explicit capabilities
+    # request must be sent to WDA so the caller's settings actually take effect.
     status, raw = await host.call_wda(lease.serial, lease.transport, "GET", "/status", b"")
     if status >= 300:
         return status, raw, None
@@ -333,23 +431,26 @@ async def forward_wda(host, lease, method, path, target, body):
         active_id = receipt.get("sessionId") or value.get("sessionId")
         if value.get("ready") is not True or (active_id and not ios_wda.is_session_id(active_id)):
             raise ValueError("WDA is not ready")
-        if active_id:
-            status, raw = await host.call_wda(lease.serial, lease.transport, "GET", "/session/" + active_id, b"")
+        default = ios_wda.default_session_request(body)
+        reused = active_id if default else None
+        if reused:
+            status, raw = await host.call_wda(lease.serial, lease.transport, "GET", "/session/" + reused, b"")
         else:
             status, raw = await host.call_wda(lease.serial, lease.transport, "POST", "/session",
-                                             b'{"capabilities":{"alwaysMatch":{},"firstMatch":[{}]}}')
+                                             ios_wda.DEFAULT_SESSION if default else body)
         if status >= 300:
             return status, raw, None
         receipt, value = ios_wda.session_info(raw)
         device_id = value.get("sessionId") or receipt.get("sessionId")
-        if not ios_wda.is_session_id(device_id) or (active_id and active_id != device_id):
+        if not ios_wda.is_session_id(device_id) or (reused and reused != device_id):
             raise ValueError("unexpected WDA session ID")
     except (AttributeError, KeyError, TypeError, ValueError):
         raise HTTPException(502, "WDA 返回了无效的会话信息") from None
     return status, raw, ios_wda.Session(secrets.token_urlsafe(24), device_id)
 
 
-@router.api_route(BASE + "/sessions/{ident}/wda/{command:path}", methods=["GET", "POST", "DELETE"])
+@router.api_route(BASE + "/sessions/{ident}/wda/{command:path}",
+                  methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE"])
 async def native_wda(ident: str, command: str, request: Request, store: DeviceLockStore = LockStoreDep,
                      hub: Hub = HubDep):
     direct = state(request.app)
@@ -367,8 +468,6 @@ async def native_wda(ident: str, command: str, request: Request, store: DeviceLo
         public_id = session.public_id if session else None
         if not ios_wda.allowed_request(request.method, path, public_id):
             raise HTTPException(409, "该 WDA 操作或会话不属于本次设备占用")
-        if request.method == "POST" and path == "/session" and not ios_wda.default_session_request(body):
-            raise HTTPException(400, "请创建默认 WDA 会话，再通过 WDA 命令启动应用或设置参数")
         query = quote(request.url.query, safe="!$&'()*+,;=:@/?%")
         target = (session.target(path) if session else path) + ("?" + query if query else "")
         if len(target) > 2048:
@@ -486,6 +585,8 @@ def check_observation(direct, lease, store, hub):
         raise HTTPException(409, "本次领取未提供画面观察与操作")
     if lease.unified_target.platform == "ios":
         direct.check_wda_device(lease, store, hub)
+    elif lease.unified_target.platform == "harmony":
+        direct.check_hdc_device(lease, store, hub)
 
 
 async def session_frame(direct, lease, store, hub, *, expected_text: str | None = None):
@@ -556,8 +657,7 @@ async def act(ident: str, body: android_actions.Action, request: Request, respon
 
         response.headers.update(NO_CACHE)
         try:
-            if lease.unified_target.platform in {"android", "ios"}:
-                await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5)
             direct.check_lease(lease, store)
             current = await session_frame(direct, lease, store, hub, expected_text=body.expected_text)
         except HTTPException as exc:
@@ -596,6 +696,18 @@ async def download_native_client():
                     headers={"Content-Disposition": 'attachment; filename="adb-connect.pyz"'})
 
 
+@router.get(BASE + "/hdc-connect.pyz")
+async def download_hdc_client():
+    return Response(client_bundle(), media_type="application/octet-stream",
+                    headers={"Content-Disposition": 'attachment; filename="hdc-connect.pyz"'})
+
+
+@router.get(BASE + "/webkit-connect.pyz")
+async def download_webkit_client():
+    return Response(client_bundle(), media_type="application/octet-stream",
+                    headers={"Content-Disposition": 'attachment; filename="webkit-connect.pyz"'})
+
+
 @router.get(BASE + "/adb-client.py")
 async def download_client():
     return Response(Path(__file__).with_name("adb_client.py").read_bytes(), media_type="text/x-python",
@@ -613,11 +725,11 @@ async def guide():
   GET /api/ai-connect/devices 查询原生通道已就绪设备的 serial、model、platform 和 status。查询无需凭证，也不占用设备。
   选定 available 的设备，以 Content-Type: application/json 向 POST /api/ai-connect/sessions 提交 {"serial":"选中的 serial"}。
   201 表示此次已独占所选设备。保存完整领取结果，session_id 标识这次占用，token 供已交付的入口和归还使用。
-  当前支持 Android USB 真机、本机 Android 模拟器、iOS USB 真机和受管 iOS 模拟器。iOS 列表中的 device_kind 区分 physical 真机和 virtual 模拟器。409 时可重新查看列表。
+  设备清单包含原生通道已就绪的 Android、iOS 和鸿蒙设备。能够确认设备身份的网络 ADB 也可领用。device_kind 有值时，physical 表示真机，virtual 表示模拟器。409 时可重新查看列表。
 
 选择用法
-  优先使用原生直连 native。Android 使用 adb-connect，iOS 使用 wda-http，按文末对应说明操作。
-  领取结果提供 api.observe 和 api.act 时，可用它们读取结构和按编号操作，并在同一次占用内切回原生 ADB 或 WDA。api 为空时直接使用 native。
+  优先使用原生直连 native。Android 使用 ADB，iOS 使用 WDA，鸿蒙使用 HDC。按文末对应说明操作。
+  领取结果提供 api.observe 和 api.act 时，可用它们读取结构和按编号操作，并在同一次占用内切回原生 ADB、WDA 或 HDC。api 为空时直接使用 native。
   每个页面回包都附上同一 session_id、native、api 和 action_types，沿用领取时的 token。已连上的原生通道可继续使用。
   原生操作后要按页面编号操作，先重新 observe，以当前画面为准。
 
@@ -627,7 +739,7 @@ async def guide():
   可直接读 structure.children 的父子关系、role、文字和 state。节点的 target 引用同帧的 targets[].id。
   targets 列出 id、name、actions、bounds、point 和 state。位置可来自系统控件、图像区域或当前可检查的 WebView。name_source 为 system、screen 或 webview，分别表示名字取自系统、画面或网页结构，读不出时为 null。
   编号只在本帧有效。坐标从截图左上角按原始像素计算。tap 表示系统报告该处可点，try_tap 表示可以按位置尝试。
-  system_texts 记录系统文字、位置及关联目标。Android 和 iOS 使用系统文字及可读结构，screen_texts 可为空。keyboard.occlusion_bounds 给出已识别的键盘遮挡范围。
+  system_texts 记录系统文字、位置及关联目标，screen_texts 可为空。keyboard.occlusion_bounds 给出已识别的键盘遮挡范围。
   清单漏掉目标时，可凭本帧截图用坐标操作，也可改走同一次占用的原生通道。
   Android 的 structure_status 为 unavailable 时，本帧未取得可用结构。partial 表示只有部分结构，或已圈出目标但都没有读到名称。available 表示已取得可用结构，页面仍可能有未列出的目标。
   Android 在生成帧前检查可观测的加载信号。readiness 为 no_loading_signal 表示目前未检测到加载信号。若有明确的页面目标，可在 observe 查询参数或 act JSON 中加 expected_text，等当前帧包含该文字。readiness 为 expected_text_present 表示已确认出现该文字。等待超时时重新 observe，已执行的动作无需重发。
@@ -651,7 +763,7 @@ async def guide():
   若 action_status 为 unknown，表示未取得可确认的设备回执。请先查看当前画面再决定下一步。
 
 结构观察超时后的看图操作
-  若 observe 超时、act 已执行但没有新帧，或清单不够用，可以在同一次占用中改走原生 ADB 或 WDA。领取结果提供 api.screenshot 和 api.tap 时，也可以使用下列入口。
+  若 observe 超时、act 已执行但没有新帧，或清单不够用，可以在同一次占用中切回 native。领取结果提供 api.screenshot 和 api.tap 时，也可以使用下列入口。
   也可带同一 Bearer 凭证 GET api.screenshot，拿原尺寸 PNG 和响应头 X-AI-Phone-Frame-Id。这个入口不等待结构。
   在图上选点，带同一凭证 POST api.tap，Content-Type 为 application/json，发送 {"frame_id":"X-AI-Phone-Frame-Id 的值","x":100,"y":200}。坐标以截图左上角为原点。
   api.tap 返回执行回执。要确认当前画面，再 GET api.screenshot，或者回到 api.observe。旧截图 ID 不能重复点。
@@ -665,7 +777,7 @@ async def guide():
   403 表示会话凭证不匹配，410 表示本次占用已结束。
 
 原生连接方式 · native.protocol 为 adb-connect
-  当前开放此协议的是通过 USB 接入的 Android 真机和本机 Android 模拟器。运行原生工具的电脑需要 Python 3.9+ 和 Android platform-tools。
+  支持 USB 接入的 Android 真机、本机 Android 模拟器，以及能够确认设备身份的网络 ADB。运行原生工具的电脑需要 Python 3.9+ 和 Android platform-tools。
   将本次领取返回的完整 JSON 保存为仅自己可读的 lease.json。用 GET 从 native.client 给出的地址下载 adb-connect.pyz。
   把 INSTANCE 设为接入说明中的实例地址，运行 python3 adb-connect.pyz "$INSTANCE" lease.json，并保持进程运行。
   连接器在本机执行 adb connect，输出本次连接的 adb_serial。把它赋给 DEVICE，即可运行 adb -s "$DEVICE" shell。
@@ -674,19 +786,32 @@ async def guide():
   只有应用显示名时，可用 adb -s "$DEVICE" shell input keyevent KEYCODE_HOME 回桌面，在截图上找应用图标并启动。
   用 observe 的 package 确认前台包名，或用 adb -s "$DEVICE" shell dumpsys activity activities 查 topResumedActivity 或 mResumedActivity。
   原生看图可用 adb -s "$DEVICE" exec-out screencap -p > screen.png，再用 adb -s "$DEVICE" shell input tap <x> <y> 点当前画面。
-  文件传输可用 adb push 和 adb pull。adb forward 的端口在客户端开启，当前尚未支持 adb reverse。
+  文件传输可用 adb push 和 adb pull。adb forward 和 adb reverse 的电脑端连接由客户端 ADB 处理，反向转发随本次连接关闭。
 
 原生连接方式 · native.protocol 为 wda-http
   适用于已开放的 iOS USB 真机和受管 iOS 模拟器。WDA_BASE 是实例地址加 native.url。连接由 AI Phone 路由，无需访问设备宿主机。
   每个请求都带 Authorization: Bearer <本次领取的 token>。先 GET WDA_BASE/status，确认 value.ready。
   POST WDA_BASE/session，Content-Type 为 application/json，请求体为 {"capabilities":{"alwaysMatch":{},"firstMatch":[{}]}}。
   保存返回的 value.sessionId 或 sessionId。这个 ID 由 AI Phone 签发，仅在本次占用有效。需要重建时先 DELETE WDA_BASE/session/<WDA 会话 ID>。
-  创建时使用默认 capabilities。启动应用、调整 WDA 设置等操作在创建后调用对应 WDA 命令。
+  可以发送 WDA 支持的自定义 capabilities。默认请求会沿用设备已有的 WDA 会话，自定义请求由 WDA 创建设备会话。
+  iOS 网页调试使用 native.web_inspector。下载它的 client，运行 python3 webkit-connect.pyz "$INSTANCE" lease.json --web-inspector。输出的本地地址收发 WebKit 原生 plist 数据帧，帧头为 4 字节大端长度。
   启动应用用 POST WDA_BASE/session/<WDA 会话 ID>/wda/apps/launch，请求体例如 {"bundleId":"com.apple.Preferences"}。
   用 GET WDA_BASE/wda/activeAppInfo 核对前台 App，GET WDA_BASE/screenshot 返回 value 中的 Base64 PNG。
   读取 GET WDA_BASE/session/<WDA 会话 ID>/window/size，再用 POST WDA_BASE/session/<WDA 会话 ID>/wda/tap 发送 {"x":100,"y":200}。WDA 坐标以逻辑点为单位，按截图原尺寸与窗口尺寸换算。用新截图确认实际变化。
   从原生 WDA 操作切回编号清单时，先 GET api.observe 取得新帧。主动观察和编号操作沿用原有 WDA 会话，切回原生时可以继续使用同一 WDA 会话 ID。
   iPhone Duo 展开时，如果默认前台报桌面，先从会话的 /wda/apps/list 核对目标 App。用 GET /appium/settings 读取原 defaultActiveApplication，再向该会话路径 POST {"settings":{"defaultActiveApplication":"<Bundle ID>"}}。用会话的 /source 和 /element 定位，POST /element/<元素 ID>/click。归还前恢复原设置。
   通过领取结果的 release 归还，返回 204 后，原 WDA 入口和原凭证失效。受管模拟器关机或重启后，需要重新领取。
+
+鸿蒙模拟器原生直连（native.protocol=hdc-connect）
+  本机准备 DevEco 的 hdc 并加入 PATH。从 native.client 下载 hdc-connect.pyz。
+  运行 python3 hdc-connect.pyz "<实例地址>" lease.json，保持进程运行。使用输出的 hdc_serial。
+  例如用 hdc -t "<hdc_serial>" shell bm dump -a 列应用，用 hdc -t "<hdc_serial>" shell aa start -b "<bundle>" -a "<ability>" 启动应用。可用 snapshot_display 截图，再用 hdc file recv 读取。
+  领取回包带 api.observe 和 api.act 时，可在同一次领用内切换 HDC 和编号操作。从 HDC 切回编号清单时重新观察。
+  归还后 HDC 通道关闭，连接器移除这次建立的本地目标。
+
+鸿蒙真机原生直连（native.protocol=hdc-server）
+  同样从 native.client 下载并运行 hdc-connect.pyz。使用输出的 hdc_server。
+  运行 hdc -p -s "<hdc_server>" list targets 查看本次领用的设备，或运行 hdc -p -s "<hdc_server>" shell 使用设备命令。
+  领取回包带 api.observe 和 api.act 时，可在同次领用内切换。归还后本次 HDC 地址失效。
 
 """, media_type="text/plain")

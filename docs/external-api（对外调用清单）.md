@@ -1,6 +1,6 @@
 # external-api（对外调用清单）
 
-本文记录 ai-phone 的对外集成契约。批次调度适用于 `main` 与 `next/server-brain`。第 2.2 节记录 Android 和 iOS 的 AI 直连用法，具体地址以本次领取结果为准。
+本文记录 ai-phone 的对外集成契约。批次调度适用于 `main` 与 `next/server-brain`。第 2.2 节记录 Android、iOS 和鸿蒙的 AI 直连用法，具体地址以本次领取结果为准。
 
 - 路由注册：`backend/ai_phone/server/api/__init__.py`
 - 匿名投递：`backend/ai_phone/server/submissions/public_routes.py`
@@ -132,13 +132,13 @@ InstallationProxy 或 iOS Simulator `simctl` 通道。Android/Harmony 真机与�
 
 <a id="22-ai-直连统一观察与操作"></a>
 
-### 2.2 主动式可操作暴露
+### 2.2 AI 直连
 
-Android USB 真机和本机 Android 模拟器的原生 ADB 就绪后可领取。领取回包同时交付 Agent 支持的辅助操作入口。原生和辅助入口共用同一个占用 ID，指向同一台设备。iOS USB 真机和受管 iOS 模拟器可领取原生 WDA 通道，调用方法见下方。
+原生通道就绪的设备可领取。Android 支持 USB 真机、本机模拟器和能够确认设备身份的网络 ADB，iOS 使用 WDA，鸿蒙使用 HDC。Agent 支持辅助操作时，领取回包同时交付辅助入口。原生和辅助入口共用同一个占用 ID，指向同一台设备。
 
 1. 用 `GET /api/ai-connect/devices` 查询原生通道就绪的设备。选定 `available` 的设备后，向 `POST /api/ai-connect/sessions` 提交 `{"serial":"选中设备的 serial"}`。查询和领取均无需预先配置 token。
 2. 领取成功返回 `201`。保存完整领取结果，其中有 `session_id`、`token`、`native`、`api`、`action_types` 和 `release`。接口地址相对于实例地址。领取核对设备的原生连接与设备锁。`api` 为空时直接使用 `native`。
-3. Android 按 `native.client` 下载连接器，运行 `python3 adb-connect.pyz "<实例地址>" lease.json`，保持进程运行，并按输出的 `adb_serial` 使用 ADB。iOS 使用下面的 WDA 原生入口。完成原生操作后先重新观察，再使用新帧里的编号。
+3. Android 按 `native.client` 下载连接器，运行 `python3 adb-connect.pyz "<实例地址>" lease.json`，保持进程运行，并按输出的 `adb_serial` 使用 ADB。iOS 和鸿蒙分别使用下方的 WDA 和 HDC 原生入口。完成原生操作后先重新观察，再使用新帧里的编号。
 4. 回包有 `api.observe` 和 `api.act` 时，可用它们辅助看页面和操作。观察帧返回一张原尺寸 PNG、同帧清单与结构，以及本次的 `session_id`、`native`、`api` 和 `action_types`。发送动作时带同一会话凭证。`tap`、`scroll` 使用最新的 `frame_id`，按编号点时再给 `targets[].id`。
 
 下面的 `TOKEN` 取自领取结果，`OBSERVE_URL` 和 `ACT_URL` 分别为实例地址加上 `api.observe` 和 `api.act`。从第一帧选定目标，替换第二条命令中的帧号和编号。
@@ -153,7 +153,7 @@ curl -sS -X POST "$ACT_URL" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: 
 | `structure` | 从页面根节点的 `children` 递归读取父子关系。节点的 `role` 和文字说明它代表标题、列表、控件或其他内容，`state` 给出已知状态。有 `target` 的节点引用同帧的 `targets[].id`，可按该目标声明的动作操作。 |
 | `targets[]` | `source` 给出位置来源，`android`、`ios`、`harmony` 表示平台控件，`pixels` 表示图像区域，`webview` 表示当前可检查的网页元素。`name_source` 说明名称来自系统（`system`）、当前截图上的字（`screen`）或网页结构（`webview`）。`name=null` 表示控件名称未知，仍可有编号和动作。`system_hint` 保留原始图片提示，`system_hint_kind` 区分图片文本、资源 ID 等来源。调用者可用它核对线索。`tap` 表示该位置有控件或网页结构证据，`try_tap` 表示可发送 `tap` 尝试图像上的位置。实际响应从动作后新帧核对。 |
 | `bounds`、`point`、`state` | `bounds` 是原始屏幕像素范围 `[left,top,right,bottom]`，`point` 是以左上角为原点的 `[x,y]`，为 `null` 时该项没有可用点位。若有 `name_bounds`，它是名称所在区域。`state` 可给出选中、勾选、聚焦等已知状态。图与清单共用本帧的 `width`、`height`。 |
-| `screenshot` | 每帧的 `screenshot.data` 按 Base64 解码得到 PNG。`screenshot.annotated=true` 表示图上已画出编号，对应 `targets[].id`，目标清单为空时返回当前画面。随图返回的 `screenshot.marked_targets` 和顶层 `marked_targets` 与它同值。Android 和 iOS 取一张当前截图，按本帧清单绘框和编号。 |
+| `screenshot` | 每帧的 `screenshot.data` 按 Base64 解码得到 PNG。`screenshot.annotated=true` 表示图上已画出编号，对应 `targets[].id`，目标清单为空时返回当前画面。随图返回的 `screenshot.marked_targets` 和顶层 `marked_targets` 与它同值。主动观察取一张当前截图，按本帧清单绘框和编号。 |
 | `system_texts[]`、`screen_texts[]` | 分别记录系统文字与原始截图上识别的文字。每项含 `text`、像素范围 `bounds` 和关联的本帧目标编号 `target`。未关联目标时 `target` 为 `null`。`texts` 保留文字汇总。 |
 | `keyboard`、`dialogs`、`warnings` | 提供键盘、弹窗及本帧采集缺失的线索。`keyboard.bounds` 是键盘本体，若还提供 `occlusion_bounds`，其范围包含键盘和遮挡页面的输入工具栏。可以在收起键盘后的新帧中选择目标。旧 Agent 仅支持基本观察时，使用实际返回的 `texts`、`targets` 和截图。 |
 
@@ -191,9 +191,19 @@ curl -sS -X POST "$ACT_URL" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: 
 | 看图、读结构 | `GET /screenshot` 取得 `value` 中的 Base64 PNG，`GET /source?format=xml` 取得 XCTest XML |
 | 点击 | `POST /session/<id>/wda/tap`，发送 `{"x":100,"y":200}`。坐标用 iOS 逻辑点，窗口尺寸可查 `GET /session/<id>/window/size` |
 
-WDA 会话 ID 只属于本次占用。创建时使用默认 capabilities，创建后可用 WDA 命令启动应用和调整设置。真机和模拟器均返回 `native.protocol=wda-http`。Agent 支持主动式暴露时，同一份领用回包还给出 `api.observe` 和 `api.act`。使用编号操作后可直接切回同一个 WDA 会话。向 `release` 发送 `DELETE` 后，两个入口均返回 `410`。设备列表里的 `device_kind` 分别为 `physical` 和 `virtual`。模拟器关机重启后需重新领取。
+WDA 会话 ID 只属于本次占用。默认请求沿用设备已有的 WDA 会话，自定义 `capabilities` 由 WDA 处理。真机和模拟器均返回 `native.protocol=wda-http`，以及同次占用的 `native.web_inspector` 连接信息。Agent 支持主动式暴露时，同一份领用回包还给出 `api.observe` 和 `api.act`。使用编号操作后可直接切回同一个 WDA 会话。向 `release` 发送 `DELETE` 后，本次占用的入口失效。设备列表里的 `device_kind` 分别为 `physical` 和 `virtual`。模拟器关机重启后需重新领取。
 
 iPhone Duo 展开时，默认前台检测可能读到外屏桌面。先用 `GET /session/<id>/wda/apps/list` 核对活动应用，再用 `GET /session/<id>/appium/settings` 保存原先的 `defaultActiveApplication`。向同一路径发送 `POST` 和 `{"settings":{"defaultActiveApplication":"<Bundle ID>"}}`，通过会话内的 `/wda/activeAppInfo` 和 `/source?format=xml` 读目标应用。通过 `POST /session/<id>/element` 发送 `{"using":"accessibility id","value":"<元素的辅助功能标识>"}`，再向 `POST /session/<id>/element/<元素 ID>/click` 发送 `{}`。在归还前恢复原 `defaultActiveApplication`。
+
+#### 鸿蒙模拟器原生 HDC
+
+受管鸿蒙模拟器就绪后，领取结果返回 `native.protocol=hdc-connect`。使用本机 DevEco 的 `hdc`，从 `native.client` 下载连接器并运行 `python3 hdc-connect.pyz "<实例地址>" lease.json`。保持连接器运行，将输出的 `hdc_serial` 传给 `hdc -t`。可用 `shell bm dump -a` 列应用、`shell aa start -b <bundle> -a <ability>` 启动、`shell snapshot_display` 截图并用 `file recv` 取回。通过 `release` 归还后，本次通道关闭。
+
+Agent 支持主动式暴露时，同次领取也返回 `api.observe` 和 `api.act`。在同一次领用内可切换到 HDC。HDC 操作后重新观察，使用新帧编号。鸿蒙页面文字来自 UiTest 系统树。
+
+#### 鸿蒙真机原生 HDC
+
+已接入 Agent、HDC 就绪的鸿蒙真机可从相同入口领取。回包中的 `native.protocol` 为 `hdc-server`。使用同一连接器，按它输出的地址运行 `hdc -p -s "<hdc_server>" shell` 等设备命令。该地址只提供本次领用绑定的设备。归还后连接失效。Agent 复用原有 HDC 连接，支持主动式暴露时同次返回 `api.observe` 和 `api.act`。
 
 ## 3. 投递批次
 

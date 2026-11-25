@@ -14,8 +14,19 @@ def is_local_emulator(serial: str) -> bool:
     return re.fullmatch(r"emulator-[0-9]+", serial) is not None
 
 
+def is_network_adb(serial: str) -> bool:
+    return ":" in serial or "._adb-" in serial
+
+
+def hardware_serial(value) -> str | None:
+    if (isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9._-]{1,128}", value)
+            and value.lower() not in {"unknown", "none", "null", "0"}):
+        return value
+    return None
+
+
 def local_transport_id(serial: str, properties: dict[str, str]) -> int | None:
-    if properties.get("usb") or is_local_emulator(serial):
+    if properties.get("usb") or is_local_emulator(serial) or is_network_adb(serial):
         value = properties.get("transport_id", "")
         if value.isascii() and value.isdecimal() and int(value) > 0:
             return int(value)

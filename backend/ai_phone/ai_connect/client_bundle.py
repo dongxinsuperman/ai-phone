@@ -12,6 +12,7 @@ def client_bundle():
     result = BytesIO()
     with ZipFile(result, "w", compression=ZIP_DEFLATED) as archive:
         archive.write(Path(__file__).with_name("connect_client.py"), "__main__.py")
+        archive.write(Path(__file__).with_name("hdc_ports.py"), "hdc_ports.py")
         for entry in library.files or ():
             if entry.parts[0] == "websockets" and entry.suffix == ".py":
                 archive.write(library.locate_file(entry), str(entry))

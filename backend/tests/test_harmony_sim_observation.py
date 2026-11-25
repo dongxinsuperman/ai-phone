@@ -346,7 +346,7 @@ def test_guest_shell_normalizes_each_boot_event_and_rejects_ambiguous_output():
 
 
 def test_structure_only_uses_native_bounds_when_screenshots_are_unavailable(guest, monkeypatch):
-    monkeypatch.setattr(hm, "_capture", lambda *a, **k: (None, scene(), None))
+    monkeypatch.setattr(hm, "_capture", lambda *a, **k: (scene(), None))
     result = hm._observe(guest, {"deadline": time.time() + 8, "include_screenshot": False})
     assert "png" not in result and "structure" in result
     assert result["width"] == 160 and result["height"] == 240
@@ -357,18 +357,25 @@ def test_structure_only_uses_native_bounds_when_screenshots_are_unavailable(gues
         hm._observe(guest, {"deadline": time.time() + 8, "include_screenshot": True})
 
 
-def test_observe_retries_rotated_snapshot_and_uses_only_the_stable_current_tree(guest, monkeypatch):
+def test_observe_reads_one_frame_without_screenshot_ocr_and_drops_mismatched_tree(guest, monkeypatch):
+    from ai_phone.shared import mobile_frame
+
+    def unexpected_recognition(*_args):
+        pytest.fail("Harmony observe should use native text")
+
+    monkeypatch.setattr(mobile_frame, "_screen_text_evidence", unexpected_recognition)
+    monkeypatch.setattr(mobile_frame, "add_printed_card_titles", unexpected_recognition)
     portrait = frame_png()
     landscape = frame_png(size=(240, 160))
-    captures = iter([(portrait, scene(), landscape), (portrait, scene(), portrait)])
+    captures = iter([(scene(), portrait), (scene(), landscape)])
     monkeypatch.setattr(hm, "_capture", lambda *a, **k: next(captures))
-    result = hm._observe(guest, {"deadline": time.time() + 10, "include_screenshot": False})
+    result = hm._observe(guest, {"deadline": time.time() + 10})
     assert result["tree_available"] and result["display"] == {
         "width": 160,
         "height": 240,
     }
     assert any(t["name"] == "Continue" for t in result["targets"])
-    monkeypatch.setattr(hm, "_capture", lambda *a, **k: (portrait, scene(), landscape))
+    assert result["marked_targets"] and not result["screen_texts_available"]
     result = hm._observe(guest, {"deadline": time.time() + 10, "include_screenshot": False})
     assert not result["tree_available"] and result["width"] == 240 and result["warnings"]
     assert all(t.get("name") != "Continue" for t in result["targets"])
@@ -376,14 +383,24 @@ def test_observe_retries_rotated_snapshot_and_uses_only_the_stable_current_tree(
 
 def test_screenshot_is_raw_and_coordinate_action_verifies_the_current_dimensions(guest, monkeypatch):
     original = frame_png()
-    monkeypatch.setattr(hm, "_capture", lambda *a, **k: (None, None, original))
+    monkeypatch.setattr(hm, "_capture", lambda *a, **k: (None, original))
     raw = hm._screenshot(guest, time.time() + 8)
     assert hashlib.sha256(base64.b64decode(raw["png"])).digest() == hashlib.sha256(original[0]).digest()
     captured = []
+    powered = True
+
+    def shell(self, cmd, deadline):
+        if cmd == "hidumper -s RenderService -a screen":
+            return ("screen[0]: id=0, powerStatus=POWER_STATUS_OFF, render resolution=240x160, isVirtual=false\n"
+                    "screen[1]: id=5, powerStatus=POWER_STATUS_ON, render resolution=160x240, isVirtual=false"
+                    if powered else "")
+        captured.append(cmd)
+        return "No Error"
+
     monkeypatch.setattr(
         hm._Guest,
         "shell",
-        lambda self, cmd, deadline: captured.append(cmd) or "No Error",
+        shell,
     )
     message = {
         "serial": SERIAL,
@@ -396,11 +413,16 @@ def test_screenshot_is_raw_and_coordinate_action_verifies_the_current_dimensions
         "x": 159,
         "y": 239,
     }
-    assert hm.execute(message) == {"device_x": 159, "device_y": 239}
+    with monkeypatch.context() as probe:
+        def unexpected_capture(*args, **kwargs):
+            pytest.fail("Live display metadata matched the frame")
+        probe.setattr(hm, "_capture", unexpected_capture)
+        assert hm.execute(message) == {"device_x": 159, "device_y": 239}
     with pytest.raises(MobileSimError) as out:
         hm.execute({**message, "x": 160})
     assert out.value.status == 422 and captured == ["uitest uiInput click 159 239"]
-    monkeypatch.setattr(hm, "_capture", lambda *a, **k: (None, None, frame_png((240, 160))))
+    powered = False
+    monkeypatch.setattr(hm, "_capture", lambda *a, **k: (None, frame_png((240, 160))))
     with pytest.raises(MobileSimError) as stale:
         hm.execute(message)
     assert stale.value.status == 409 and len(captured) == 1

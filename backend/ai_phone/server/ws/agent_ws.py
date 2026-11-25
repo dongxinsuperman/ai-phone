@@ -766,6 +766,17 @@ async def _upsert_devices(
     ``extra`` 字段（agent 侧对 DeviceInfo 的补充，如 unauthorized 的 reason）
     不落库，走 hub 内存缓存，和设备同生命周期；hello 刷新就刷新，拔线就清除。
     """
+    store = getattr(hub, "vm_lock_store", None) if hub is not None else None
+    if store is not None:
+        from ai_phone.ai_connect.android import hardware_serial, is_local_emulator
+
+        for device in devices:
+            serial = str(device.get("serial") or "").strip()
+            extra = device.get("extra")
+            identity = hardware_serial(extra.get("adb_hardware_serial")) if isinstance(extra, dict) else None
+            if device.get("platform") == "android" and serial and identity and not is_local_emulator(serial):
+                store.set_device_identity(serial, "android:" + identity)
+
     async def op(session: AsyncSession) -> None:
         now = datetime.now(timezone.utc)
         present_serials: set[str] = set()

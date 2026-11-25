@@ -45,6 +45,16 @@ class Stream:
     task: asyncio.Task | None = None
 
 
+@dataclass
+class ReverseRule:
+    destination: bytes
+    listener: asyncio.AbstractServer | None = None
+
+
+def adb_string(data):
+    return f"{len(data):04x}".encode() + data
+
+
 class DeviceTransport:
     def __init__(self, ws, serial, transport):
         self.ws = ws
@@ -52,6 +62,9 @@ class DeviceTransport:
         self.transport = transport
         self.ids = itertools.count(1)
         self.streams = {}
+        self.reverse_rules: dict[bytes, ReverseRule] = {}
+        self.reverse_gate = asyncio.Lock()
+        self.closing = False
         self.max_payload = CHUNK
         self.version = 0
 
@@ -81,9 +94,19 @@ class DeviceTransport:
     async def service(self, stream, name):
         opened = False
         try:
-            # The host smart socket also understands host administration and device
-            # selection. Reverse bindings target that host and would outlive the stream.
-            if not name or name.startswith((b"host", b"reverse:")):
+            if not name or b"\0" in name or name.startswith(b"host"):
+                return
+            if name.startswith(b"reverse:"):
+                await self.ws.send("request")
+                await self.send(b"OKAY", stream.local, stream.remote)
+                opened = True
+                try:
+                    async with self.reverse_gate:
+                        result = await self.reverse(name.removeprefix(b"reverse:"))
+                except (OSError, ValueError, asyncio.IncompleteReadError) as exc:
+                    result = b"FAIL" + adb_string(str(exc).encode()[:1024])
+                await self.send(b"WRTE", stream.local, stream.remote, result)
+                await stream.ack.wait()
                 return
             async with device_connection(self.serial, self.transport) as (reader, writer):
                 await request(reader, writer, name)
@@ -91,16 +114,121 @@ class DeviceTransport:
                 await self.ws.send("request")
                 await self.send(b"OKAY", stream.local, stream.remote)
                 opened = True
-                while data := await reader.read(self.max_payload):
-                    stream.ack.clear()
-                    await self.send(b"WRTE", stream.local, stream.remote, data)
-                    await stream.ack.wait()
+                await self.download(stream, reader)
         except (OSError, ValueError, asyncio.IncompleteReadError, ConnectionClosed):
             pass
         finally:
             self.streams.pop(stream.local, None)
             with suppress(OSError, ConnectionClosed):
                 await self.send(b"CLSE", stream.local if opened else 0, stream.remote)
+
+    async def download(self, stream, reader):
+        while data := await reader.read(self.max_payload):
+            stream.ack.clear()
+            await self.ws.send("request")
+            await self.send(b"WRTE", stream.local, stream.remote, data)
+            await stream.ack.wait()
+
+    async def accept_reverse(self, rule, reader, writer):
+        if self.closing:
+            writer.close()
+            return
+        stream = Stream(next(self.ids), 0, writer=writer, task=asyncio.current_task())
+        self.streams[stream.local] = stream
+        try:
+            # This OPEN is handled by the caller's own ADB server.
+            await self.send(b"OPEN", stream.local, 0, rule.destination + b"\0")
+            await asyncio.wait_for(stream.ack.wait(), 5)
+            await self.download(stream, reader)
+        except (OSError, ConnectionClosed):
+            pass
+        finally:
+            self.streams.pop(stream.local, None)
+            writer.close()
+            with suppress(OSError, ConnectionClosed):
+                await writer.wait_closed()
+                if stream.remote:
+                    await self.send(b"CLSE", stream.local, stream.remote)
+
+    async def reverse_rpc(self, command):
+        async with asyncio.timeout(4), device_connection(self.serial, self.transport) as (reader, writer):
+            await request(reader, writer, b"reverse:" + command)
+            status = await reader.readexactly(4)
+            if status == b"FAIL":
+                raise ValueError((await read_string(reader)).decode(errors="replace"))
+            if status != b"OKAY":
+                raise ValueError("ADB reverse returned an invalid response")
+            try:
+                prefix = await reader.readexactly(4)
+            except asyncio.IncompleteReadError as exc:
+                if exc.partial:
+                    raise
+                return b""
+            size = int(prefix, 16)
+            if not 1 <= size <= 5:
+                raise ValueError("ADB reverse returned an invalid port")
+            return prefix + await reader.readexactly(size)
+
+    async def remove_reverse(self, source):
+        rule = self.reverse_rules[source]
+        await self.reverse_rpc(b"killforward:" + source)
+        self.reverse_rules.pop(source)
+        rule.listener.close()
+        await rule.listener.wait_closed()
+
+    async def reverse(self, command):
+        if command == b"list-forward":
+            return adb_string(b"".join(self.serial.encode() + b" " + source + b" " + rule.destination + b"\n"
+                                      for source, rule in self.reverse_rules.items()))
+        if command == b"killforward-all":
+            for source in list(self.reverse_rules):
+                await self.remove_reverse(source)
+            return b"OKAY"
+        if command.startswith(b"killforward:"):
+            source = command.removeprefix(b"killforward:")
+            if source not in self.reverse_rules:
+                raise ValueError("ADB reverse listener does not belong to this connection")
+            await self.remove_reverse(source)
+            return b"OKAY"
+        if not command.startswith(b"forward:"):
+            raise ValueError("Invalid ADB reverse command")
+        spec = command.removeprefix(b"forward:")
+        unbound = spec.removeprefix(b"norebind:")
+        source, delimiter, destination = unbound.partition(b";")
+        if not delimiter or not source or not destination or b";" in destination or destination.startswith(b"*"):
+            raise ValueError("Invalid ADB reverse endpoints")
+        if (rule := self.reverse_rules.get(source)) is not None:
+            if spec != unbound:
+                raise ValueError("ADB reverse listener already exists")
+            rule.destination = destination
+            return b"OKAY"
+
+        rule = ReverseRule(destination)
+        rule.listener = await asyncio.start_server(lambda r, w: self.accept_reverse(rule, r, w), "127.0.0.1", 0)
+        port = rule.listener.sockets[0].getsockname()[1]
+        setup = asyncio.create_task(self.reverse_rpc(b"forward:norebind:" + source + f";tcp:{port}".encode()))
+        try:
+            try:
+                assigned = await asyncio.shield(setup)
+            except asyncio.CancelledError:
+                assigned, = await asyncio.gather(setup, return_exceptions=True)
+                if isinstance(assigned, bytes):
+                    self.keep_reverse(source, assigned, rule)
+                raise
+            self.keep_reverse(source, assigned, rule)
+            return b"OKAY" + assigned
+        finally:
+            if rule not in self.reverse_rules.values():
+                rule.listener.close()
+                await rule.listener.wait_closed()
+
+    def keep_reverse(self, source, assigned, rule):
+        if source == b"tcp:0":
+            port = assigned[4:]
+            if len(assigned) < 5 or not port.isdigit() or not 0 < int(port) < 65536:
+                raise ValueError("ADB did not return the allocated device port")
+            source = b"tcp:" + port
+        self.reverse_rules[source] = rule
 
     async def run(self):
         try:
@@ -115,11 +243,13 @@ class DeviceTransport:
                     stream.task = asyncio.create_task(self.service(stream, data.removesuffix(b"\0")))
                 else:
                     stream = self.streams.get(local)
-                    if stream is None or stream.remote != remote:
+                    if stream is None or stream.remote not in (0, remote):
                         continue
                     if name == b"CLSE":
                         stream.task.cancel()
                     elif name == b"OKAY":
+                        if not stream.remote:
+                            stream.remote = remote
                         stream.ack.set()
                     elif name == b"WRTE" and stream.writer:
                         stream.writer.write(data)
@@ -128,7 +258,14 @@ class DeviceTransport:
                             await self.ws.send("request")
                         await self.send(b"OKAY", local, remote)
         finally:
+            self.closing = True
+            for rule in self.reverse_rules.values():
+                rule.listener.close()
             tasks = [stream.task for stream in self.streams.values()]
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+            for rule in self.reverse_rules.values():
+                rule.listener.close()
+            await asyncio.gather(*(self.remove_reverse(source) for source in list(self.reverse_rules)),
+                                 return_exceptions=True)

@@ -34,6 +34,24 @@ async def test_acquire_conflict_different_holder():
 
 
 @pytest.mark.asyncio
+async def test_android_usb_and_network_identities_share_one_occupation():
+    store = DeviceLockStore()
+    store.set_device_identity("USB001", "android:USB001")
+    store.set_device_identity("192.0.2.1:5555", "android:USB001")
+    feature = await store.acquire("USB001", "feature", "job")
+    assert store.snapshot()["192.0.2.1:5555"] is feature
+    with pytest.raises(LockConflict):
+        await store.acquire("192.0.2.1:5555", "ai-direct", "session")
+    await store.release("USB001", feature.token)
+    direct = await store.acquire("192.0.2.1:5555", "ai-direct", "session")
+    assert store.peek("USB001") is direct
+    with pytest.raises(LockConflict):
+        await store.acquire("USB001", "feature", "job")
+    await store.release("192.0.2.1:5555", direct.token)
+    assert not store.snapshot()
+
+
+@pytest.mark.asyncio
 async def test_acquire_same_holder_is_renewal():
     store = DeviceLockStore()
     info1 = await store.acquire("S1", holder="user-a", holder_type="manual")

@@ -11,7 +11,7 @@ from fastapi import HTTPException, WebSocketDisconnect
 
 from ai_phone.shared import protocol as P
 
-from . import ios_wda
+from . import hdc, ios_wda
 from .android import COMMAND_SECONDS, MAX_OUTPUT
 
 
@@ -27,6 +27,7 @@ class NativeAgentChannel:
         self.devices = {}
         self.wda_devices = {}
         self.wda_simulators = {}
+        self.hdc_devices = {}
         self.pending = {}
 
     def update(self, message):
@@ -36,6 +37,7 @@ class NativeAgentChannel:
                                      ios_wda.is_udid(serial) and type(transport) is int and transport > 0)
         self.wda_simulators = inventory(message, "wda_simulators", lambda serial, transport:
                                         ios_wda.is_simulator_udid(serial) and ios_wda.is_boot_identity(transport))
+        self.hdc_devices = inventory(message, "hdc_devices", hdc.valid_identity)
 
     async def send(self, **message):
         if self.closed:

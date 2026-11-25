@@ -160,6 +160,7 @@ CAP_UNIFIED_OPERATIONS = "unified_operations_v1"
 CAP_ANDROID_OBSERVATION = "android_observation_v1"
 CAP_MOBILE_SIMULATOR_OPERATIONS = "mobile_simulator_operations_v1"
 CAP_IOS_OBSERVATION = "ios_observation_v1"
+CAP_HARMONY_OBSERVATION = "harmony_observation_v1"
 CAP_AI_DIRECT_NATIVE = "ai_direct_native_v1"
 DeviceStatus = Literal["idle", "busy", "offline"]
 

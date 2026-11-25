@@ -153,14 +153,10 @@ async def test_ios_wda_claim_actions_and_release_are_lease_scoped(client, app, s
     assert (await client.get(base + "/status", headers=headers)).json() == {"value": {"ready": True}}
     assert (await client.get(base + "/session/device-session/source", headers=headers)).status_code == 409
     assert (await client.post(claim, json={"serial": PHONE})).status_code == 409
-    assert (await client.post(base + "/session", headers=headers,
-                              json={"capabilities": {"alwaysMatch": {"bundleId": "com.apple.Preferences"}}})).status_code == 400
-
     create = await client.post(base + "/session", headers=headers, json={"capabilities": {"alwaysMatch": {}}})
     public_id = create.json()["value"]["sessionId"]
     assert public_id != host.active and create.json()["sessionId"] == public_id
     assert host.calls[-1] == (PHONE, 7, "GET", "/session/device-session")
-    assert (await client.post(base + "/session", headers=headers)).status_code == 409
     session_path = base + "/session/" + public_id
     for url, body in (("/wda/apps/launch", {"bundleId": "com.apple.Preferences"}),
                       ("/wda/tap", {"x": 1, "y": 2})):
@@ -276,6 +272,57 @@ async def test_ios_creates_physical_session_only_if_missing(client, app, session
 
 
 @pytest.mark.asyncio
+async def test_ios_forwards_feature_capabilities_and_device_routes_under_the_lease(client, app, session, monkeypatch):
+    host = await configure(app, session)
+    relay = host.call_wda
+    posted = []
+
+    async def capture(serial, transport, method, target, body, **kwargs):
+        if method == "POST" and target == "/session":
+            posted.append(json.loads(body))
+        return await relay(serial, transport, method, target, body, **kwargs)
+
+    monkeypatch.setattr(host, "call_wda", capture)
+    lease = (await client.post(api.BASE + "/sessions", json={"serial": PHONE})).json()
+    headers = {"Authorization": "Bearer " + lease["token"]}
+    base = lease["native"]["url"]
+    assert (await client.get(base + "/wda/device/info", headers=headers)).status_code == 200
+    body = {"capabilities": {"alwaysMatch": {"appium:waitForIdleTimeout": 0}, "firstMatch": [{}]}}
+    response = await client.post(base + "/session", json=body, headers=headers)
+    assert response.status_code == 200 and posted == [body]
+    ident = response.json()["value"]["sessionId"]
+    assert (await client.patch(base + f"/session/{ident}/appium/settings", headers=headers)).status_code == 200
+    assert host.calls[-1] == (PHONE, 7, "PATCH", "/session/created-session/appium/settings")
+    assert (await client.get(base + "/session/created-session/source", headers=headers)).status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_ios_web_inspector_uses_the_same_device_lease_and_token(client, app, session, monkeypatch):
+    host = await configure(app, session)
+    lease = (await client.post(api.BASE + "/sessions", json={"serial": PHONE})).json()
+    ident = lease["session_id"]
+    headers = {"authorization": "Bearer " + lease["token"]}
+    assert lease["native"]["web_inspector"]["url"].endswith(f"/{ident}/webkit")
+    routed = []
+
+    async def tunnel(sock, direct, bound, selected, check, activity, **options):
+        assert selected is host and check() is None and bound.serial == PHONE
+        assert options == {"webkit": True}
+        await activity()
+        routed.append(bound.serial)
+
+    async def close(**options):
+        routed.append(options["code"])
+
+    monkeypatch.setattr(api, "connect_native", tunnel)
+    await api.native_webkit_socket(ident, SimpleNamespace(app=app, headers={}, close=close))
+    await api.native_webkit_socket(ident, SimpleNamespace(app=app, headers=headers, close=close))
+    assert (await client.delete(lease["release"], headers=headers)).status_code == 204
+    await api.native_webkit_socket(ident, SimpleNamespace(app=app, headers=headers, close=close))
+    assert routed == [1008, PHONE, 1008]
+
+
+@pytest.mark.asyncio
 async def test_ios_release_cancels_in_flight_wda_request(client, app, session, monkeypatch):
     host = await configure(app, session)
     lease = (await client.post(api.BASE + "/sessions", json={"serial": PHONE})).json()
@@ -304,8 +351,9 @@ async def test_ios_release_cancels_in_flight_wda_request(client, app, session, m
     assert (await tap).status_code == 410
 
 
-def test_ios_wda_limits_paths_to_http_reads_and_this_lease_session():
+def test_ios_wda_allows_device_routes_and_only_the_leased_session_id():
     assert ios_wda.allowed_request("GET", "/wda/activeAppInfo", None)
-    assert not ios_wda.allowed_request("POST", "/wda/activeAppInfo", None)
+    assert ios_wda.allowed_request("GET", "/wda/device/info", None)
+    assert ios_wda.allowed_request("PATCH", "/session/current/appium/settings", "current")
     assert not ios_wda.allowed_request("GET", "/session/current/../old-session/source", "current")
     assert not ios_wda.allowed_request("GET", "/session/current-other/source", "current")

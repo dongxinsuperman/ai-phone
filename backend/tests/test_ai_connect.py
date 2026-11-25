@@ -161,7 +161,8 @@ async def test_agent_advertises_native_transports_from_its_online_device_snapsho
     await native.refresh_inventory(client, {"emulator-5554", "iphone", "simulator"})
     await native.inventory_task
     assert sent == [{"type": P.MSG_AI_DIRECT_INVENTORY, "devices": {"emulator-5554": 7},
-                     "wda_devices": {"iphone": 8}, "wda_simulators": {"simulator": "a" * 64}}]
+                     "wda_devices": {"iphone": 8}, "wda_simulators": {"simulator": "a" * 64},
+                     "hdc_devices": {}}]
 
 
 @pytest.mark.asyncio

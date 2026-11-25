@@ -65,6 +65,8 @@ class DeviceLockStore:
     def __init__(self, ttl_seconds: float = DEFAULT_TTL_SECONDS):
         self._ttl = ttl_seconds
         self._locks: Dict[str, LockInfo] = {}
+        self._identities: dict[str, str] = {}
+        self._aliases: dict[str, set[str]] = {}
         # 本 Store 只被单个 asyncio 事件循环里的协程访问，且所有 mutation 段内
         # 都没有 await；asyncio 单任务性已经保证互斥，不再叠 asyncio.Lock。
         # 这样还能规避「Lock 绑定在旧 loop 上导致跨 loop 报错」的问题。
@@ -72,19 +74,35 @@ class DeviceLockStore:
     # ------------------------------------------------------------------
     # 读
     # ------------------------------------------------------------------
+    def set_device_identity(self, serial: str, identity: str) -> None:
+        previous = self._identities.get(serial)
+        if previous == identity:
+            return
+        if previous is not None:
+            self._aliases[previous].discard(serial)
+            if not self._aliases[previous]:
+                self._aliases.pop(previous)
+        self._identities[serial] = identity
+        self._aliases.setdefault(identity, set()).add(serial)
+
     def peek(self, serial: str, *, now: Optional[float] = None) -> Optional[LockInfo]:
         """不加锁的快速查询；返回的是引用，调用方不要改。过期则视为不存在。"""
         info = self._locks.get(serial)
-        if info is None:
-            return None
-        if info.is_expired(now):
-            return None
-        return info
+        if info is not None and not info.is_expired(now):
+            return info
+        for alias in self._aliases.get(self._identities.get(serial), ()):
+            if alias != serial and (info := self._locks.get(alias)) is not None and not info.is_expired(now):
+                return info
+        return None
 
     def snapshot(self) -> Dict[str, LockInfo]:
         """当前所有有效锁的副本。"""
         self._reap()
-        return {k: v for k, v in self._locks.items()}
+        locks = dict(self._locks)
+        for serial, lock in self._locks.items():
+            for alias in self._aliases.get(self._identities.get(serial), ()):
+                locks.setdefault(alias, lock)
+        return locks
 
     # ------------------------------------------------------------------
     # 写
@@ -106,11 +124,11 @@ class DeviceLockStore:
         now = time.monotonic()
         self._reap(now)
 
-        existing = self._locks.get(serial)
+        existing = self.peek(serial, now=now)
         if existing is not None and not existing.is_expired(now):
             # 新锁模型：互斥只看 holder 身份；holder_type（session/job/webhook/manual/auto）
             # 只是元数据标签，用来展示"谁在占着"。同一 holder 再 acquire 视为续期。
-            same_holder = existing.holder == holder
+            same_holder = existing.serial == serial and existing.holder == holder
             if same_holder:
                 existing.last_heartbeat_at = now
                 # holder_type 允许更新（比如浏览器先占，然后升级标签），但不影响 token
@@ -118,7 +136,7 @@ class DeviceLockStore:
                 if meta:
                     existing.meta.update(meta)
                 return existing
-            if not force:
+            if not force or existing.serial != serial:
                 raise LockConflict(
                     f"设备 {serial} 已被 {existing.holder_type}:{existing.holder} 占用"
                 )

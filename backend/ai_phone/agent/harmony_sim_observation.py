@@ -14,8 +14,9 @@ import tempfile
 import time
 from dataclasses import dataclass
 
-import numpy as np
 from PIL import Image
+
+from ai_phone.ai_connect.hdc import valid_device
 
 from .drivers.hdc import HdcError, hdc_file_recv, hdc_shell
 from .harmony_sim_tree import native_page, rect
@@ -37,12 +38,17 @@ _READ_BOOT_EVENTS = (
 _BUNDLE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.]{0,254}")
 _ABILITY = re.compile(r"[A-Za-z0-9_$][A-Za-z0-9_.$]{0,254}")
 _MAX_FILE = 48 * 1024 * 1024
+_POWERED_DISPLAY = re.compile(
+    r"^screen\[\d+\]:[^\n]*powerStatus=POWER_STATUS_ON\b[^\n]*"
+    r"render resolution=(\d+)x(\d+),[^\n]*\bisVirtual=false\b",
+    re.MULTILINE,
+)
 
 
 def _remaining(deadline):
     left = deadline - time.time()
     if left <= 0:
-        raise MobileSimError(504, "鸿蒙模拟器操作超时")
+        raise MobileSimError(504, "鸿蒙设备操作超时")
     return left
 
 
@@ -59,7 +65,7 @@ class _Guest:
         return hashlib.sha256(data).hexdigest()
 
     def check(self):
-        if managed_vm_owner(self.address) != (
+        if self.lease and managed_vm_owner(self.address) != (
             self.serial.removeprefix("harmony-vm:"),
             self.lease,
         ):
@@ -70,12 +76,9 @@ class _Guest:
         # Check the actual boot in the same guest shell as the action. A reused
         # HDC port must not send a late tap or cleanup to a different machine.
         read_boot = _READ_BOOT_EVENTS if self.boot.startswith("events:") else f"cat {_BOOT_FILE}"
-        guard = (
-            f'if [ "$({read_boot})" = "{self.boot}" ]; then '
-            f"{command}; _ai_guest_status=$?; "
-            'printf "\\n__AI_PHONE_STATUS=%s\\n" "$_ai_guest_status"; '
-            "else echo __AI_PHONE_BOOT_CHANGED; fi"
-        )
+        receipt = f"{command}; _ai_guest_status=$?; " 'printf "\\n__AI_PHONE_STATUS=%s\\n" "$_ai_guest_status"; '
+        guard = (f'if [ "$({read_boot})" = "{self.boot}" ]; then {receipt}'
+                 "else echo __AI_PHONE_BOOT_CHANGED; fi" if self.boot else receipt)
         try:
             output = hdc_shell(self.address, guard, timeout=_remaining(deadline))
         except HdcError as exc:
@@ -90,8 +93,12 @@ class _Guest:
 
 
 def _guest(serial, deadline):
+    if valid_device(serial) and not serial.startswith("harmony-vm:"):
+        if managed_vm_owner(serial) is not None:
+            raise MobileSimError(409, "请使用 AI Phone 中登记的鸿蒙设备编号")
+        return _Guest(serial, serial, "", "")
     if not isinstance(serial, str) or not serial.startswith("harmony-vm:") or serial == "harmony-vm:":
-        raise MobileSimError(409, "仅接受 AI Phone 已登记的鸿蒙模拟器实例")
+        raise MobileSimError(409, "鸿蒙设备编号无效")
     try:
         address = resolve_harmony_serial(serial)
     except RuntimeError:
@@ -156,16 +163,14 @@ def _capture(guest, deadline, *, tree):
     # Older platform versions also have snapshot_display. Its JPEG is losslessly
     # converted to PNG after decoding, using its own actual display dimensions.
     prefix = "/data/local/tmp/aiphone-sim-" + secrets.token_hex(10)
-    names = ("first", "last") if tree else ("last",)
-    commands, paths = [], []
-    for name in names:
-        png, jpg = f"{prefix}-{name}.png", f"{prefix}-{name}.jpeg"
-        paths.extend((png, jpg))
-        if name == "last" and tree:
-            paths.append(f"{prefix}.json")
-            commands.append(f"uitest dumpLayout -p {prefix}.json >/dev/null 2>&1")
-        commands.append(f"uitest screenCap -p {png} >/dev/null 2>&1")
-        commands.append(f"test -s {png} || snapshot_display -f {jpg} >/dev/null 2>&1")
+    png, jpg, layout = f"{prefix}.png", f"{prefix}.jpeg", f"{prefix}.json"
+    paths = [png, jpg]
+    commands = []
+    if tree:
+        paths.append(layout)
+        commands.append(f"uitest dumpLayout -p {layout} >/dev/null 2>&1")
+    commands.append(f"uitest screenCap -p {png} >/dev/null 2>&1")
+    commands.append(f"test -s {png} || snapshot_display -f {jpg} >/dev/null 2>&1")
     # Return only the names known to exist. A missing tree must not discard a
     # good screenshot, and missing screenshots can still permit a native frame.
     commands.append("for f in " + " ".join(paths) + '; do if [ -s "$f" ]; then echo "$f"; fi; done')
@@ -178,17 +183,13 @@ def _capture(guest, deadline, *, tree):
                     return _fetch(guest, path, Path(tmp) / Path(path).name, deadline)
                 return None
 
-            def image(name):
-                return _png(read(f"{prefix}-{name}.png") or read(f"{prefix}-{name}.jpeg"))
-
-            first = image("first") if tree else None
-            raw = read(f"{prefix}.json") if tree else None
-            last = image("last")
+            raw = read(layout) if tree else None
+            image = _png(read(png) or read(jpg))
             try:
                 parsed = json.loads(raw) if raw else None
             except (ValueError, UnicodeError):
                 parsed = None
-            return first, parsed, last
+            return parsed, image
     finally:
         try:
             guest.shell("rm -f " + " ".join(paths), time.time() + 0.8)
@@ -205,43 +206,19 @@ def _viewport(raw):
     return None
 
 
-def _transition(first, last):
-    if first[1] != last[1]:
-        return True
-    if first[0] == last[0]:
-        return False
-
-    def sample(png):
-        with Image.open(io.BytesIO(png)) as image:
-            return np.asarray(
-                image.convert("RGB").resize((64, 64), Image.Resampling.BOX),
-                dtype=np.int16,
-            )
-
-    changed = np.abs(sample(first[0]) - sample(last[0])).max(axis=2) >= 36
-    # Require significant changes across independent screen areas. Clocks,
-    # cursors, and isolated playing thumbnails do not hold the entire frame.
-    tiles = changed.reshape(4, 16, 4, 16).mean(axis=(1, 3))
-    return int((tiles >= 0.25).sum()) >= 4
-
-
 def _observe(guest, message):
     from ai_phone.shared.mobile_frame import build_frame
 
     deadline = message["deadline"]
     warnings = []
-    for attempt in range(2):
-        first, raw, last = _capture(guest, deadline, tree=True)
-        viewport = _viewport(raw)
-        if last and raw and ((viewport and last[1] != viewport) or (first and _transition(first, last))):
-            if not attempt and deadline - time.time() > 2:
-                continue
-            raw = None
-            warnings.append("鸿蒙系统树与转场画面无法对齐，本帧只采用画面证据")
-        break
+    raw, image = _capture(guest, deadline, tree=True)
+    viewport = _viewport(raw)
     guest.check()
-    if last:
-        png, (width, height) = last
+    if image:
+        png, (width, height) = image
+        if viewport and image[1] != viewport:
+            raw = None
+            warnings.append("鸿蒙系统树与截图尺寸不一致，本帧只采用画面证据")
     elif viewport and message.get("include_screenshot", True) is False:
         png, (width, height) = None, viewport
         warnings.append("鸿蒙截图暂不可用，本帧只采用系统树")
@@ -251,7 +228,7 @@ def _observe(guest, message):
     if not valid and not warnings:
         warnings.append("鸿蒙 UiTest 未提供当前页面的系统树")
     display = {"width": width, "height": height}
-    return build_frame(
+    frame = build_frame(
         nodes,
         platform="harmony",
         width=width,
@@ -263,11 +240,19 @@ def _observe(guest, message):
         tree_available=valid,
         warnings=warnings,
         display=display,
+        recognize_screen_text=False,
     )
+    if not frame["tree_available"]:
+        frame["structure_status"] = "partial" if frame["targets"] else "unavailable"
+    elif frame["targets"] and not any(target.get("name") for target in frame["targets"]):
+        frame["structure_status"] = "partial"
+    else:
+        frame["structure_status"] = "available"
+    return frame
 
 
 def _screenshot(guest, deadline):
-    _first, _tree, image = _capture(guest, deadline, tree=False)
+    _tree, image = _capture(guest, deadline, tree=False)
     if not image:
         raise MobileSimError(502, "鸿蒙模拟器未返回有效截图")
     raw, (w, h) = image
@@ -283,7 +268,17 @@ def _checked_size(guest, message):
     w, h, display = message.get("width"), message.get("height"), message.get("display")
     if type(w) is not int or type(h) is not int or display != {"width": w, "height": h}:
         raise MobileSimError(409, "请使用当前鸿蒙画面的坐标")
-    _first, _tree, image = _capture(guest, message["deadline"], tree=False)
+    deadline = message["deadline"]
+    try:
+        displays = _POWERED_DISPLAY.findall(guest.shell("hidumper -s RenderService -a screen", deadline))
+    except MobileSimError as exc:
+        if exc.status != 502:
+            raise
+    else:
+        if displays == [(str(w), str(h))]:
+            return w, h
+    # A rotated or multi-display device may not report the screenshot geometry in RenderService.
+    _tree, image = _capture(guest, deadline, tree=False)
     if not image or image[1] != (w, h):
         raise MobileSimError(409, "鸿蒙显示区域已变化，请重新观察")
     return w, h

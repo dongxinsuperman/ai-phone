@@ -21,7 +21,7 @@ def _adapter(platform):
         from . import harmony_sim_observation
 
         return harmony_sim_observation
-    raise MobileSimError(400, "未识别的模拟器平台")
+    raise MobileSimError(400, "未识别的设备平台")
 
 
 def execute(message: dict) -> dict:
@@ -34,11 +34,11 @@ def execute(message: dict) -> dict:
     adapter = _adapter(message.get("platform"))
     with device_activity.hold(serial) as acquired:
         if not acquired:
-            raise MobileSimError(409, "该模拟器正在维护")
+            raise MobileSimError(409, "该设备正在维护")
         if message.get("action") == "bind":
             return adapter.bind(serial, deadline)
         if not message.get("binding"):
-            raise MobileSimError(409, "本次模拟器连接已失效，请重新领取")
+            raise MobileSimError(409, "本次设备连接已失效，请重新领取")
         return adapter.execute(message)
 
 

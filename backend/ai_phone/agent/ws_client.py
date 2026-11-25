@@ -296,7 +296,7 @@ class AgentWSClient:
         if P.MSG_UNIFIED_OPERATION in self.handlers:
             capabilities.extend((P.CAP_UNIFIED_OPERATIONS, P.CAP_ANDROID_OBSERVATION))
         if P.MSG_MOBILE_SIMULATOR_OPERATION in self.handlers:
-            capabilities.append(P.CAP_MOBILE_SIMULATOR_OPERATIONS)
+            capabilities.extend((P.CAP_MOBILE_SIMULATOR_OPERATIONS, P.CAP_HARMONY_OBSERVATION))
         if P.MSG_IOS_USB_OPERATION in self.handlers:
             capabilities.append(P.CAP_IOS_OBSERVATION)
         if P.MSG_AI_DIRECT_REQUEST in self.handlers:

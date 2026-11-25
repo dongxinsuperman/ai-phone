@@ -1,9 +1,11 @@
-"""Pair an authenticated ADB client socket with the Agent's outbound data socket."""
+"""Pair a leased native client socket with the Agent's outbound data socket."""
 import asyncio
 import secrets
 from contextlib import suppress
 
 from fastapi import HTTPException, WebSocketDisconnect
+
+from .hdc import Activity as HdcActivity
 
 
 class Tunnel:
@@ -13,21 +15,23 @@ class Tunnel:
         self.closed = asyncio.Event()
 
 
-async def relay(source, target, check, *, activity=None):
+async def relay(source, target, check, *, activity=None, hdc_activity=None):
     while True:
         msg = await source.receive()
         if msg["type"] == "websocket.disconnect":
             return
         check()
-        if activity and msg.get("text") == "request":
+        if activity and hdc_activity is None and msg.get("text") == "request":
             await activity()
-        elif isinstance(msg.get("bytes"), bytes) and len(msg["bytes"]) <= 128 * 1024:
-            await target.send_bytes(msg["bytes"])
+        elif isinstance(data := msg.get("bytes"), bytes) and len(data) <= 128 * 1024:
+            if hdc_activity is not None and hdc_activity.feed(data):
+                await activity()
+            await target.send_bytes(data)
         else:
             raise ValueError("无效的直连数据")
 
 
-async def connect_native(client, direct, lease, host, check, activity):
+async def connect_native(client, direct, lease, host, check, activity, *, hdc_binding=None, host_hdc=False, webkit=False):
     tunnel = Tunnel()
     ticket = secrets.token_urlsafe(32)
     ident = secrets.token_hex(16)
@@ -44,8 +48,13 @@ async def connect_native(client, direct, lease, host, check, activity):
 
     async def transfer():
         peer = await asyncio.wait_for(asyncio.shield(tunnel.ready), 8)
-        tasks.extend([asyncio.create_task(relay(client, peer, check)),
-                      asyncio.create_task(relay(peer, client, check, activity=activity))])
+        if hdc_binding and not host_hdc:
+            upload = relay(client, peer, check, activity=activity, hdc_activity=HdcActivity())
+            download = relay(peer, client, check)
+        else:
+            upload = relay(client, peer, check)
+            download = relay(peer, client, check, activity=activity)
+        tasks.extend([asyncio.create_task(upload), asyncio.create_task(download)])
         done, _ = await asyncio.wait(tasks[-2:], return_when=asyncio.FIRST_COMPLETED)
         for task in done:
             task.result()
@@ -54,8 +63,11 @@ async def connect_native(client, direct, lease, host, check, activity):
         await client.accept()
         check()
         async with asyncio.timeout(8):
+            extra = {"hdc_binding": hdc_binding} if hdc_binding else {}
+            if webkit:
+                extra["webkit"] = True
             await host.send(id=ident, serial=lease.serial, transport=lease.transport,
-                            native_ticket=ticket)
+                            native_ticket=ticket, **extra)
         tasks.extend([asyncio.create_task(transfer()), asyncio.create_task(tunnel.stop.wait()),
                       asyncio.create_task(watch_lock())])
         done, _ = await asyncio.wait([*tasks, host_done], return_when=asyncio.FIRST_COMPLETED)

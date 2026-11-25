@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from ai_phone.server.hub import Hub
 from ai_phone.shared import protocol as P
 
-from .android import is_local_emulator
+from .android import hardware_serial, is_local_emulator, is_network_adb
 
 
 COMMAND_TIMEOUT = 10
@@ -107,27 +107,29 @@ def agent_for_device(dev, hub: Hub) -> str | None:
     if not agent or agent != dev.agent_id or (extra.get("readiness") or {}).get("ready") is not True:
         return None
     if dev.platform == "android":
-        if not is_local_emulator(serial) and (
-            serial.startswith("emulator-") or ":" in serial or "._adb-" in serial or extra.get("is_virtual")
+        if (not is_local_emulator(serial) and (serial.startswith("emulator-") or extra.get("is_virtual"))) or (
+            is_network_adb(serial) and not hardware_serial(extra.get("adb_hardware_serial"))
         ):
             return None
         capability = P.CAP_UNIFIED_OPERATIONS
     elif dev.platform == "ios":
         capability = P.CAP_IOS_OBSERVATION
+    elif dev.platform == "harmony":
+        capability = P.CAP_HARMONY_OBSERVATION
     else:
         if not simulator_instance(serial, public_platform(dev.platform), extra):
             return None
-        capability = P.CAP_IOS_OBSERVATION if dev.platform == "ios_sim" else P.CAP_MOBILE_SIMULATOR_OPERATIONS
+        capability = P.CAP_IOS_OBSERVATION
     return agent if hub.agent_supports(agent, capability) else None
 
 
 async def request(hub: Hub, agent_id: str, serial: str, action: str, *,
                   platform: str = "android", binding: str | None = None, instance_id: str | None = None, **params) -> dict:
     physical_ios = platform == "ios" and "transport" in params
-    simulator = platform != "android" and not physical_ios
+    simulator = platform != "android" and not physical_ios and not (platform == "harmony" and instance_id is None)
     if physical_ios:
         capability, message = P.CAP_IOS_OBSERVATION, P.MSG_IOS_USB_OPERATION
-    elif simulator:
+    elif simulator or platform == "harmony":
         capability, message = P.CAP_MOBILE_SIMULATOR_OPERATIONS, P.MSG_MOBILE_SIMULATOR_OPERATION
     else:
         capability, message = P.CAP_UNIFIED_OPERATIONS, P.MSG_UNIFIED_OPERATION
@@ -139,10 +141,10 @@ async def request(hub: Hub, agent_id: str, serial: str, action: str, *,
             raise HTTPException(409, "原模拟器实例已变更，请重新领取")
         if (extra.get("readiness") or {}).get("ready") is not True:
             raise HTTPException(503, "领到的模拟器尚未就绪")
-        if binding is not None:
-            params["binding"] = binding
     if platform != "android":
         params["platform"] = platform
+        if binding is not None:
+            params["binding"] = binding
     ident = secrets.token_hex(16)
     future = asyncio.get_running_loop().create_future()
     _pending[ident] = Pending(hub, agent_id, serial, future, platform, binding, action)
@@ -217,6 +219,8 @@ async def operate(hub: Hub, lease, action: str, **params) -> dict:
             raise HTTPException(409, "原设备宿主已变化，请重新领取")
         if target.platform == "ios" and not hub.agent_supports(target.agent_id, P.CAP_IOS_OBSERVATION):
             raise HTTPException(503, "当前 Agent 暂未提供 iOS 主动观察与操作")
+        if target.platform == "harmony" and not hub.agent_supports(target.agent_id, P.CAP_HARMONY_OBSERVATION):
+            raise HTTPException(503, "当前 Agent 暂未提供鸿蒙主动观察与操作")
         if target.platform == "android" or (target.platform == "ios" and target.instance_id is None):
             params["transport"] = target.transport
     pending = asyncio.create_task(request(

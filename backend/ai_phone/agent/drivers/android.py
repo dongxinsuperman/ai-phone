@@ -774,6 +774,9 @@ class AndroidDriver(BaseDriver):
                 return ""
 
         width, height = self.window_size()
+        # An emulator's synthetic serial can repeat across instances. Its own
+        # registered serial already identifies it without a wireless alias.
+        virtual = re.fullmatch(r"emulator-[0-9]+", self.serial) or _prop("ro.kernel.qemu") == "1"
         return DeviceInfo(
             serial=self.serial,
             platform=self.platform,
@@ -783,6 +786,7 @@ class AndroidDriver(BaseDriver):
             screen_width=width,
             screen_height=height,
             status="online",
+            extra={} if virtual else {"adb_hardware_serial": _prop("ro.serialno")},
         )
 
 
