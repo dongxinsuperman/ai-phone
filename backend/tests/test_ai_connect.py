@@ -335,3 +335,39 @@ async def test_interactive_adb_input_is_activity_without_parsing_commands(monkey
     finally:
         await received.put(None)
         await asyncio.wait_for(task, 1)
+
+
+@pytest.mark.asyncio
+async def test_dynamic_adb_reverse_registers_and_removes_actual_ports(monkeypatch):
+    from ai_phone.ai_connect import native
+
+    candidates = iter((0, 1, 2))
+    monkeypatch.setattr(native, "randbelow", lambda _: next(candidates))
+    device = native.DeviceTransport(None, "A", 3)
+    commands = []
+
+    async def reverse_rpc(command):
+        commands.append(command)
+        if command.startswith(b"forward:norebind:tcp:49152;"):
+            raise ValueError("cannot bind listener: Address already in use")
+        return b""
+
+    monkeypatch.setattr(device, "reverse_rpc", reverse_rpc)
+    try:
+        assert await device.reverse(b"forward:tcp:0;tcp:7001") == b"OKAY000549153"
+        assert await device.reverse(b"forward:tcp:0;tcp:7002") == b"OKAY000549154"
+        assert [command.split(b";", 1)[0] for command in commands] == [
+            b"forward:norebind:tcp:49152",
+            b"forward:norebind:tcp:49153",
+            b"forward:norebind:tcp:49154",
+        ]
+        assert await device.reverse(b"list-forward") == native.adb_string(
+            b"A tcp:49153 tcp:7001\nA tcp:49154 tcp:7002\n"
+        )
+        assert await device.reverse(b"killforward:tcp:49153") == b"OKAY"
+        assert commands[-1] == b"killforward:tcp:49153"
+        assert list(device.reverse_rules) == [b"tcp:49154"]
+    finally:
+        await device.reverse(b"killforward-all")
+    assert commands[-1] == b"killforward:tcp:49154"
+    assert not device.reverse_rules

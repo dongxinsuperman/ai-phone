@@ -6,6 +6,7 @@ import itertools
 import struct
 from contextlib import suppress
 from dataclasses import dataclass, field
+from secrets import randbelow
 
 from websockets.exceptions import ConnectionClosed
 
@@ -206,29 +207,37 @@ class DeviceTransport:
         rule = ReverseRule(destination)
         rule.listener = await asyncio.start_server(lambda r, w: self.accept_reverse(rule, r, w), "127.0.0.1", 0)
         port = rule.listener.sockets[0].getsockname()[1]
-        setup = asyncio.create_task(self.reverse_rpc(b"forward:norebind:" + source + f";tcp:{port}".encode()))
+        setup = asyncio.create_task(self.install_reverse(source, rule, port))
         try:
             try:
                 assigned = await asyncio.shield(setup)
             except asyncio.CancelledError:
-                assigned, = await asyncio.gather(setup, return_exceptions=True)
-                if isinstance(assigned, bytes):
-                    self.keep_reverse(source, assigned, rule)
+                await asyncio.gather(setup, return_exceptions=True)
                 raise
-            self.keep_reverse(source, assigned, rule)
             return b"OKAY" + assigned
         finally:
             if rule not in self.reverse_rules.values():
                 rule.listener.close()
                 await rule.listener.wait_closed()
 
-    def keep_reverse(self, source, assigned, rule):
-        if source == b"tcp:0":
-            port = assigned[4:]
-            if len(assigned) < 5 or not port.isdigit() or not 0 < int(port) < 65536:
-                raise ValueError("ADB did not return the allocated device port")
-            source = b"tcp:" + port
-        self.reverse_rules[source] = rule
+    async def install_reverse(self, source, rule, port):
+        allocate = source == b"tcp:0"
+        # Host ADB tracks the requested source. A concrete port gives setup and removal the same key.
+        for _ in range(8 if allocate else 1):
+            if allocate:
+                source = f"tcp:{49152 + randbelow(16384)}".encode()
+                if source in self.reverse_rules:
+                    continue
+            try:
+                assigned = await self.reverse_rpc(b"forward:norebind:" + source + f";tcp:{port}".encode())
+            except ValueError as exc:
+                if allocate and ("address already in use" in str(exc).lower()
+                                 or "cannot rebind existing socket" in str(exc)):
+                    continue
+                raise
+            self.reverse_rules[source] = rule
+            return adb_string(source[4:]) if allocate else assigned
+        raise ValueError("ADB could not allocate an unused device port")
 
     async def run(self):
         try:
