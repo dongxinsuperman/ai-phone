@@ -365,6 +365,15 @@ def test_resource_query_failure_is_separate_from_guest_shutdown(env, monkeypatch
     assert observation["reason"] == "wda_process_unknown"
 
 
+def test_exited_xcodebuild_does_not_block_existing_simulator_start(env, monkeypatch):
+    existing(env)
+    monkeypatch.setattr(psutil, "process_iter", lambda *_: iter([SimpleNamespace(info={
+        "name": "xcodebuild", "cmdline": None, "status": psutil.STATUS_ZOMBIE,
+    })]))
+    observation = Manager().observe_instance(VM)
+    assert observation["state"] == "stopped" and observation["resources_released"] is True
+
+
 @pytest.mark.asyncio
 async def test_failure_ack_preserves_failure_and_running_observation(env, monkeypatch):
     manager = Manager()

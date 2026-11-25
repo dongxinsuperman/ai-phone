@@ -548,11 +548,13 @@ class IosSimVmManager:
         # A dead HTTP endpoint cannot prove that a detached xcodebuild exited.
         import psutil  # noqa: PLC0415
         try:
-            for proc in psutil.process_iter(["name", "cmdline"]):
+            for proc in psutil.process_iter(["name", "cmdline", "status"]):
                 _startup_timeout(deadline, _OBSERVATION_TIMEOUT_SEC)
                 info = proc.info
                 if str(info.get("name") or "").lower() != "xcodebuild":
                     continue
+                if info.get("status") == psutil.STATUS_ZOMBIE:
+                    continue  # Exited processes no longer hold WDA resources. Ports are checked below.
                 args = info.get("cmdline")
                 if not args:
                     return False, "wda_process_unknown"
