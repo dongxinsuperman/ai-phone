@@ -19,10 +19,10 @@ from .android import is_local_emulator
 
 
 COMMAND_TIMEOUT = 10
-# On a cold simulator Agent, the first structured observation also builds the
+# On a cold iOS or Harmony Agent, the first structured observation also builds the
 # local font tables. Subsequent reads reuse them. Device actions keep their
 # own deadline so a slow observation cannot lengthen permission to send input.
-SIMULATOR_OBSERVE_TIMEOUT = 20
+MOBILE_OBSERVE_TIMEOUT = 20
 MUTATIONS = ("tap", "scroll", "input", "back", "home", "open_app")
 READS = ("observe", "screenshot")
 
@@ -99,7 +99,7 @@ def public_platform(platform: str) -> str:
 
 
 def agent_for_device(dev, hub: Hub) -> str | None:
-    if dev is None or dev.status != "online" or dev.platform not in {"android", "ios_sim", "harmony"}:
+    if dev is None or dev.status != "online" or dev.platform not in {"android", "ios", "ios_sim", "harmony"}:
         return None
     serial = dev.serial
     agent = hub.agent_id_for_serial(serial)
@@ -112,17 +112,25 @@ def agent_for_device(dev, hub: Hub) -> str | None:
         ):
             return None
         capability = P.CAP_UNIFIED_OPERATIONS
+    elif dev.platform == "ios":
+        capability = P.CAP_IOS_OBSERVATION
     else:
         if not simulator_instance(serial, public_platform(dev.platform), extra):
             return None
-        capability = P.CAP_MOBILE_SIMULATOR_OPERATIONS
+        capability = P.CAP_IOS_OBSERVATION if dev.platform == "ios_sim" else P.CAP_MOBILE_SIMULATOR_OPERATIONS
     return agent if hub.agent_supports(agent, capability) else None
 
 
 async def request(hub: Hub, agent_id: str, serial: str, action: str, *,
                   platform: str = "android", binding: str | None = None, instance_id: str | None = None, **params) -> dict:
-    simulator = platform != "android"
-    capability = P.CAP_MOBILE_SIMULATOR_OPERATIONS if simulator else P.CAP_UNIFIED_OPERATIONS
+    physical_ios = platform == "ios" and "transport" in params
+    simulator = platform != "android" and not physical_ios
+    if physical_ios:
+        capability, message = P.CAP_IOS_OBSERVATION, P.MSG_IOS_USB_OPERATION
+    elif simulator:
+        capability, message = P.CAP_MOBILE_SIMULATOR_OPERATIONS, P.MSG_MOBILE_SIMULATOR_OPERATION
+    else:
+        capability, message = P.CAP_UNIFIED_OPERATIONS, P.MSG_UNIFIED_OPERATION
     if hub.agent_id_for_serial(serial) != agent_id or not hub.agent_supports(agent_id, capability):
         raise HTTPException(503, "领到的设备暂不可用")
     if simulator:
@@ -131,17 +139,18 @@ async def request(hub: Hub, agent_id: str, serial: str, action: str, *,
             raise HTTPException(409, "原模拟器实例已变更，请重新领取")
         if (extra.get("readiness") or {}).get("ready") is not True:
             raise HTTPException(503, "领到的模拟器尚未就绪")
-        params["platform"] = platform
         if binding is not None:
             params["binding"] = binding
+    if platform != "android":
+        params["platform"] = platform
     ident = secrets.token_hex(16)
     future = asyncio.get_running_loop().create_future()
     _pending[ident] = Pending(hub, agent_id, serial, future, platform, binding, action)
-    timeout = SIMULATOR_OBSERVE_TIMEOUT if simulator and action == "observe" else COMMAND_TIMEOUT
+    timeout = MOBILE_OBSERVE_TIMEOUT if platform != "android" and action == "observe" else COMMAND_TIMEOUT
     try:
         async with asyncio.timeout(timeout + 2):
             sent = await hub.send_to_agent(agent_id, {
-                "type": P.MSG_MOBILE_SIMULATOR_OPERATION if simulator else P.MSG_UNIFIED_OPERATION,
+                "type": message,
                 "request_id": ident,
                 "serial": serial,
                 "action": action,
@@ -206,7 +215,10 @@ async def operate(hub: Hub, lease, action: str, **params) -> dict:
             raise HTTPException(503, "领到的设备暂不可用，Agent 已离线")
         if hub.agent_host_id(target.agent_id) != lease.host_id:
             raise HTTPException(409, "原设备宿主已变化，请重新领取")
-        params["transport"] = target.transport
+        if target.platform == "ios" and not hub.agent_supports(target.agent_id, P.CAP_IOS_OBSERVATION):
+            raise HTTPException(503, "当前 Agent 暂未提供 iOS 主动观察与操作")
+        if target.platform == "android" or (target.platform == "ios" and target.instance_id is None):
+            params["transport"] = target.transport
     pending = asyncio.create_task(request(
         hub, target.agent_id, lease.serial, action, platform=target.platform,
         binding=target.binding, instance_id=target.instance_id, **params,

@@ -3502,6 +3502,7 @@ def run(
 
     client.on(P.MSG_UNIFIED_OPERATION, handle_unified_operation)
     client.on(P.MSG_MOBILE_SIMULATOR_OPERATION, handle_mobile_sim_operation)
+    client.on(P.MSG_IOS_USB_OPERATION, handle_mobile_sim_operation)
     NativeDeviceAccess(client)
 
     # 暴露给 _maybe_preload_ios 使用：必须在 ws loop 起来前绑定 ref；

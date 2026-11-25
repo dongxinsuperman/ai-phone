@@ -1,4 +1,4 @@
-"""Dispatch AI Phone simulator operations independently of the Feature drivers."""
+"""Dispatch AI Phone mobile frame operations independently of the Feature drivers."""
 from __future__ import annotations
 
 import asyncio
@@ -55,15 +55,20 @@ async def _reply(client, message: dict) -> None:
     if message.get("binding") is not None:
         envelope["binding"] = message["binding"]
     try:
-        fields = await asyncio.to_thread(execute, message)
+        if message.get("type") == P.MSG_IOS_USB_OPERATION:
+            from . import ios_usb_observation
+
+            fields = await ios_usb_observation.execute(message)
+        else:
+            fields = await asyncio.to_thread(execute, message)
     except MobileSimError as exc:
         fields = {"ok": False, "status": exc.status, "error": str(exc)}
     except TimeoutError:
-        fields = {"ok": False, "status": 504, "error": "模拟器响应超时，请观察当前页面"}
+        fields = {"ok": False, "status": 504, "error": "设备响应超时，请观察当前页面"}
     except Exception as exc:
-        logger.warning("Simulator operation failed | platform={} action={} error={}",
+        logger.warning("Mobile operation failed | platform={} action={} error={}",
                        message.get("platform"), message.get("action"), type(exc).__name__)
-        fields = {"ok": False, "status": 502, "error": "模拟器操作中断，执行结果未知"}
+        fields = {"ok": False, "status": 502, "error": "设备操作中断，执行结果未知"}
     else:
         fields = {**fields, "ok": True}
     await client.send({**fields, **envelope})

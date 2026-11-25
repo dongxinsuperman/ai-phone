@@ -13,6 +13,7 @@ from PIL import Image
 from ai_phone.agent import ios_sim_observation as ios
 from ai_phone.agent.ios_sim_snapshot import from_xctest, native_keyboard
 from ai_phone.agent.mobile_sim_errors import MobileSimError
+from ai_phone.shared import mobile_frame
 from ai_phone.shared.mobile_frame import build_frame
 
 
@@ -97,7 +98,12 @@ def call(state, action, **fields):
                         "deadline": time.time() + 20, "action": action, **fields})
 
 
-def test_observe_geometry_numbered_image_and_independent_screenshot(simulator):
+def test_observe_geometry_numbered_image_and_independent_screenshot(simulator, monkeypatch):
+    def unexpected_recognition(*_args):
+        pytest.fail("iOS observe uses system text and does not recognize text from the screenshot")
+
+    monkeypatch.setattr(mobile_frame, "_screen_text_evidence", unexpected_recognition)
+    monkeypatch.setattr(mobile_frame, "add_printed_card_titles", unexpected_recognition)
     bind = ios.bind(SERIAL, time.time() + 20)
     assert bind["binding"] == simulator.boot
     assert {"screenshot", "observe", "tap", "scroll", "input", "open_app"} <= set(bind["action_types"])
@@ -110,8 +116,15 @@ def test_observe_geometry_numbered_image_and_independent_screenshot(simulator):
     assert any(r["text"] == "Archive" and r["source"] == "system" for r in observed["system_texts"])
     screenshot = call(simulator, "screenshot")
     assert base64.b64decode(screenshot["png"]) == simulator.png
+    first_call = len(simulator.calls)
     marked = call(simulator, "observe")
+    paths = [path for _, path, _ in simulator.calls[first_call:]]
+    assert [path.split("/")[-1] for path in paths if path.endswith(("/source", "/screenshot"))] == [
+        "source", "screenshot",
+    ]
     assert marked["marked_targets"] and base64.b64decode(marked["png"]) != simulator.png
+    assert marked["structure_status"] == "available"
+    assert not marked["screen_texts"] and not marked["screen_texts_available"]
     point = control["point"]
     call(simulator, "tap", x=point[0], y=point[1], width=240, height=400, display=observed["display"])
     post = next(t for t in simulator.calls if t[1].endswith("/wda/tap"))
@@ -402,10 +415,17 @@ def test_listener_uses_guest_boot_parent_not_host_pid_or_idfv(monkeypatch):
     assert ios.boot_identity(SERIAL, 49999, time.time()+20) != identity
 
 
-def test_failed_or_unstable_tree_degrades_to_only_new_pixels(simulator):
+def test_failed_tree_degrades_to_only_new_pixels(simulator):
     simulator.xml = "<malformed>"
     result = call(simulator, "observe", include_screenshot=False)
     assert not result["tree_available"] and "ios_tree_unavailable" in result["warnings"]
     assert result["width"] == 240 and "png" not in result
-    assert ios._screen_changed(png("black"), png("white"))
-    assert not ios._screen_changed(png("red"), png("red"))
+
+
+def test_app_switch_during_observe_does_not_return_the_old_tree(simulator, monkeypatch):
+    identities = iter([(0, simulator.package), (0, "org.example.other")])
+    monkeypatch.setattr(ios, "_foreground_identity", lambda _wda: next(identities))
+    with pytest.raises(MobileSimError) as moved:
+        call(simulator, "observe")
+    assert moved.value.status == 409
+    assert sum(path.endswith("/screenshot") for _, path, _ in simulator.calls) == 1

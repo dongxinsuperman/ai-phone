@@ -1,10 +1,12 @@
 """iOS native WDA shares the public device lock and scopes each WDA session."""
 import asyncio
 import base64
+import io
 import json
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 
 from ai_phone.ai_connect import api, ios_wda
 from ai_phone.ai_connect.agent_channel import NativeAgentChannel
@@ -12,6 +14,7 @@ from ai_phone.server.hub import Hub
 from ai_phone.server.models import Device
 from ai_phone.server.ws.agent_ws import _dispatch
 from ai_phone.shared import protocol as P
+from ai_phone.shared.mobile_frame import build_frame
 
 
 PHONE = "1234567890abcdef1234567890abcdef12345678"
@@ -106,6 +109,7 @@ async def test_simulator_wda_uses_managed_instance_and_boot_generation(client, a
     fields = hub.get_device_extra(SIMULATOR)
     fields.update({"device_kind": "virtual", "is_virtual": True, "vm_platform": "ios", "vm_instance_id": "original"})
     hub.set_device_extra(SIMULATOR, fields)
+    hub.set_agent_capabilities("agent", [P.CAP_MOBILE_SIMULATOR_OPERATIONS])
 
     rows = (await client.get(api.BASE + "/devices")).json()
     assert {row["serial"]: row["device_kind"] for row in rows} == {PHONE: "physical", SIMULATOR: "virtual"}
@@ -113,6 +117,7 @@ async def test_simulator_wda_uses_managed_instance_and_boot_generation(client, a
     assert response.status_code == 201
     lease = response.json()
     assert lease["native"]["protocol"] == "wda-http"
+    assert lease["api"] == {}
     headers = {"Authorization": "Bearer " + lease["token"]}
     status = lease["native"]["url"] + "/status"
     assert (await client.get(status, headers=headers)).status_code == 200
@@ -171,6 +176,85 @@ async def test_ios_wda_claim_actions_and_release_are_lease_scoped(client, app, s
     assert all(call[2] != "DELETE" for call in host.calls)
     assert (await client.post(session_path + "/wda/tap", headers=headers)).status_code == 410
     assert app.state.lock_store.peek(PHONE) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("simulator", [True, False])
+async def test_ios_dual_channel_shares_lease_and_rejects_old_frames(client, app, session, monkeypatch, simulator):
+    host = await configure(app, session)
+    hub = app.state.hub
+    serial = SIMULATOR if simulator else PHONE
+    generation = "1" * 64
+    if simulator:
+        await hub.set_devices("agent", {PHONE, OTHER, SIMULATOR})
+        hub.set_device_extra(serial, {"device_kind": "virtual", "is_virtual": True,
+                                      "vm_platform": "ios", "vm_instance_id": "sim"})
+        hub.set_device_readiness(serial, {"ready": True})
+        session.add(Device(serial=serial, agent_id="agent", platform="ios_sim", status="online"))
+        await session.commit()
+        host.wda_simulators[serial] = generation
+    hub.set_agent_capabilities("agent", [P.CAP_IOS_OBSERVATION, P.CAP_MOBILE_SIMULATOR_OPERATIONS])
+
+    taps = []
+    image = io.BytesIO()
+    Image.new("RGB", (60, 90), "white").save(image, format="PNG")
+    png = image.getvalue()
+
+    async def deliver(agent, message):
+        assert agent == "agent" and message["serial"] == serial and message["platform"] == "ios"
+        expected = P.MSG_MOBILE_SIMULATOR_OPERATION if simulator else P.MSG_IOS_USB_OPERATION
+        assert message["type"] == expected
+        if simulator:
+            assert message["binding"] == generation and "transport" not in message
+        else:
+            assert message["transport"] == 7 and "binding" not in message
+        reply = {key: message[key] for key in ("serial", "platform", "request_id")}
+        reply.update(type=P.MSG_UNIFIED_OPERATION_RESULT, ok=True)
+        if simulator:
+            reply["binding"] = generation
+        if message["action"] == "observe":
+            name = "Next page" if taps else "Open page"
+            reply.update(build_frame([{"role": "button", "name": name, "bounds": [4, 6, 56, 42], "actions": ["tap"]}],
+                                     platform="ios", width=60, height=90, png=png, include_image=True,
+                                     display={"rotation": 0}))
+        else:
+            assert message["action"] == "tap"
+            taps.append([message["x"], message["y"]])
+        await _dispatch(hub, app.state.lock_store, agent, reply)
+        return True
+
+    monkeypatch.setattr(hub, "send_to_agent", deliver)
+    response = await client.post(api.BASE + "/sessions", json={"serial": serial})
+    assert response.status_code == 201
+    lease = response.json()
+    headers = {"Authorization": "Bearer " + lease["token"]}
+    wda = lease["native"]["url"]
+    assert lease["native"]["protocol"] == "wda-http"
+    created = (await client.post(wda + "/session", headers=headers)).json()
+    wda_session = wda + "/session/" + created["sessionId"]
+
+    observe, act = (lease["api"][key] for key in ("observe", "act"))
+    before = (await client.get(observe, headers=headers)).json()
+    target, = before["targets"]
+    assert before["screenshot"]["annotated"] and base64.b64decode(before["screenshot"]["data"]) != png
+    assert (await client.get(wda + "/status", headers=headers)).status_code == 200
+    tap = {"action": "tap", "frame_id": before["frame_id"], "target": target["id"]}
+    body = (await client.post(act, headers=headers, json=tap)).json()
+    assert body["action_status"] == "executed" and taps == [target["point"]]
+    after = body["observation"]
+    assert after["frame_id"] != before["frame_id"] and after["screenshot"]["annotated"]
+    assert after["targets"][0]["name"] == "Next page" and after["native"] == lease["native"]
+    assert (await client.post(act, headers=headers, json=tap)).status_code == 409
+
+    native = await client.get(wda_session + "/source", headers=headers)
+    assert native.status_code == 200 and native.json()["sessionId"] == created["sessionId"]
+    assert (await client.post(wda_session + "/wda/tap", headers=headers, json={"x": 1, "y": 2})).status_code == 200
+    tap.update(frame_id=after["frame_id"], target=after["targets"][0]["id"])
+    assert (await client.post(act, headers=headers, json=tap)).status_code == 409
+
+    assert (await client.delete(lease["release"], headers=headers)).status_code == 204
+    assert (await client.get(observe, headers=headers)).status_code == 410
+    assert (await client.get(wda + "/status", headers=headers)).status_code == 410
 
 
 @pytest.mark.asyncio

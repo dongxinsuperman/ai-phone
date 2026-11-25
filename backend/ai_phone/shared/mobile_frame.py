@@ -398,6 +398,10 @@ def _screen_evidence(png, image, observation, excluded):
     room = _MAX_TARGETS - len(targets)
     observation["targets_truncated"] |= len(regions) > room
     targets.extend({**r, "name_source": None} for r in regions[:room])
+
+
+def _screen_text_evidence(image, observation, excluded):
+    targets = observation["targets"]
     rows = observation["system_texts"]
     try:
         from ai_phone.agent.android_visible_text import enrich_from_pixels
@@ -410,7 +414,7 @@ def _screen_evidence(png, image, observation, excluded):
 
 def build_frame(nodes, *, platform: str, width: int, height: int, png: bytes | None = None,
                 include_image: bool = True, package=None, activity=None, keyboard=None, dialogs=None,
-                warnings=(), tree_available=True, display=None) -> dict:
+                warnings=(), tree_available=True, display=None, recognize_screen_text=True) -> dict:
     """Return Agent-side observation fields. Omitting image output preserves the same structure and IDs."""
     platform = platform.lower()
     if platform not in _PREFIX or any(type(n) is not int or n <= 0 for n in (width, height)):
@@ -449,9 +453,11 @@ def build_frame(nodes, *, platform: str, width: int, height: int, png: bytes | N
         if native.occlusion_box:
             native.excluded.append(native.occlusion_box)
         _screen_evidence(png, raw, result, native.excluded)
-        prefer_label_in_existing_target(views, result)
-        remove_duplicate_screen_lines(result, views)
-        add_printed_card_titles(raw, views, result, native.excluded)
+        if recognize_screen_text:
+            _screen_text_evidence(raw, result, native.excluded)
+            prefer_label_in_existing_target(views, result)
+            remove_duplicate_screen_lines(result, views)
+            add_printed_card_titles(raw, views, result, native.excluded)
         _bind_system_headings(views, result["targets"], result["system_texts"])
         result["targets_truncated"] |= recover_labelled_peers(raw, views, result["targets"], result["system_texts"],
                                                              native.excluded, _MAX_TARGETS)

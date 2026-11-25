@@ -235,7 +235,13 @@ async def bind_channels(dev, owner, agent, hub):
                 or host.wda_transport(dev.serial, simulator=simulator) != transport
                 or (simulator and unified.simulator_instance(dev.serial, "ios", hub.get_device_extra(dev.serial)) != instance)):
             raise HTTPException(409, "iOS 原生连接已变化，请重新查询设备")
-        return unified.Target(agent, "ios", (), transport=transport, instance_id=instance)
+        actions = ()
+        binding = None
+        if unified.agent_for_device(dev, hub) == agent:
+            actions = (*unified.READS, *unified.MUTATIONS)
+            if simulator:
+                binding = transport
+        return unified.Target(agent, "ios", actions, transport=transport, binding=binding, instance_id=instance)
 
     transport = host.devices.get(dev.serial)
     if transport is None or device_host(dev, hub) != owner or device_agent(dev, hub) != agent:
@@ -249,9 +255,11 @@ async def bind_channels(dev, owner, agent, hub):
 
 def session_channels(ident: str, target: unified.Target) -> dict:
     path = f"{BASE}/sessions/{ident}"
-    if target.platform == "ios" and not target.action_types:
-        return {"session_id": ident, "native": {"protocol": "wda-http", "url": path + "/wda"},
-                "api": {}, "action_types": []}
+    if target.platform == "ios":
+        native = {"protocol": "wda-http", "url": path + "/wda"}
+    else:
+        native = {"protocol": "adb-connect", "url": f"/ws/ai-connect/sessions/{ident}/adb",
+                  "client": BASE + "/adb-connect.pyz"}
     endpoints = {}
     if "observe" in target.action_types:
         endpoints.update(observe=path + "/observe", act=path + "/act")
@@ -261,8 +269,7 @@ def session_channels(ident: str, target: unified.Target) -> dict:
         endpoints["tap"] = path + "/tap"
     return {
         "session_id": ident,
-        "native": {"protocol": "adb-connect", "url": f"/ws/ai-connect/sessions/{ident}/adb",
-                   "client": BASE + "/adb-connect.pyz"},
+        "native": native,
         "api": endpoints,
         "action_types": [action for action in target.action_types if action in unified.MUTATIONS],
     }
@@ -371,6 +378,8 @@ async def native_wda(ident: str, command: str, request: Request, store: DeviceLo
         if session and request.method == "DELETE" and path == f"/session/{public_id}":
             lease.wda_session = None
             return JSONResponse({"value": None}, headers=NO_CACHE)
+        if request.method != "GET":
+            lease.screen = None
         lease.running = asyncio.create_task(forward_wda(host, lease, request.method, path, target, body))
         try:
             status, raw, next_session = await lease.running
@@ -471,10 +480,12 @@ async def unified_tap(ident: str, body: unified.Tap, request: Request, store: De
                 lease.screen = None
 
 
-def check_observation(direct, lease, store):
+def check_observation(direct, lease, store, hub):
     direct.check_lease(lease, store)
     if not lease.unified_target or "observe" not in lease.unified_target.action_types:
         raise HTTPException(409, "本次领取未提供画面观察与操作")
+    if lease.unified_target.platform == "ios":
+        direct.check_wda_device(lease, store, hub)
 
 
 async def session_frame(direct, lease, store, hub, *, expected_text: str | None = None):
@@ -511,7 +522,7 @@ async def observe(ident: str, request: Request, response: Response,
     direct = state(request.app)
     lease = direct.lookup(ident, request)
     async with lease.gate:
-        check_observation(direct, lease, store)
+        check_observation(direct, lease, store, hub)
         await direct.renew(lease, store)
         response.headers.update(NO_CACHE)
         try:
@@ -526,7 +537,7 @@ async def act(ident: str, body: android_actions.Action, request: Request, respon
     direct = state(request.app)
     lease = direct.lookup(ident, request)
     async with lease.gate:
-        check_observation(direct, lease, store)
+        check_observation(direct, lease, store, hub)
         if body.action not in lease.unified_target.action_types:
             raise HTTPException(422, "本次设备绑定未提供这一操作")
         if body.expected_text and lease.unified_target.platform != "android":
@@ -545,7 +556,7 @@ async def act(ident: str, body: android_actions.Action, request: Request, respon
 
         response.headers.update(NO_CACHE)
         try:
-            if lease.unified_target.platform == "android":
+            if lease.unified_target.platform in {"android", "ios"}:
                 await asyncio.sleep(0.5)
             direct.check_lease(lease, store)
             current = await session_frame(direct, lease, store, hub, expected_text=body.expected_text)
@@ -606,7 +617,7 @@ async def guide():
 
 选择用法
   优先使用原生直连 native。Android 使用 adb-connect，iOS 使用 wda-http，按文末对应说明操作。
-  领取结果提供 api.observe 和 api.act 时，可用它们辅助读取结构和按编号操作。同一次 Android 占用内可自由切换。api 为空时直接使用 native。
+  领取结果提供 api.observe 和 api.act 时，可用它们读取结构和按编号操作，并在同一次占用内切回原生 ADB 或 WDA。api 为空时直接使用 native。
   每个页面回包都附上同一 session_id、native、api 和 action_types，沿用领取时的 token。已连上的原生通道可继续使用。
   原生操作后要按页面编号操作，先重新 observe，以当前画面为准。
 
@@ -616,7 +627,7 @@ async def guide():
   可直接读 structure.children 的父子关系、role、文字和 state。节点的 target 引用同帧的 targets[].id。
   targets 列出 id、name、actions、bounds、point 和 state。位置可来自系统控件、图像区域或当前可检查的 WebView。name_source 为 system、screen 或 webview，分别表示名字取自系统、画面或网页结构，读不出时为 null。
   编号只在本帧有效。坐标从截图左上角按原始像素计算。tap 表示系统报告该处可点，try_tap 表示可以按位置尝试。
-  system_texts 和 screen_texts 分别记录系统和画面的文字、位置及关联目标。keyboard.occlusion_bounds 给出已识别的键盘遮挡范围。
+  system_texts 记录系统文字、位置及关联目标。Android 和 iOS 使用系统文字及可读结构，screen_texts 可为空。keyboard.occlusion_bounds 给出已识别的键盘遮挡范围。
   清单漏掉目标时，可凭本帧截图用坐标操作，也可改走同一次占用的原生通道。
   Android 的 structure_status 为 unavailable 时，本帧未取得可用结构。partial 表示只有部分结构，或已圈出目标但都没有读到名称。available 表示已取得可用结构，页面仍可能有未列出的目标。
   Android 在生成帧前检查可观测的加载信号。readiness 为 no_loading_signal 表示目前未检测到加载信号。若有明确的页面目标，可在 observe 查询参数或 act JSON 中加 expected_text，等当前帧包含该文字。readiness 为 expected_text_present 表示已确认出现该文字。等待超时时重新 observe，已执行的动作无需重发。
@@ -640,7 +651,7 @@ async def guide():
   若 action_status 为 unknown，表示未取得可确认的设备回执。请先查看当前画面再决定下一步。
 
 结构观察超时后的看图操作
-  若 observe 超时、act 已执行但没有新帧，或清单不够用，可以在同一次占用中改走原生 ADB。领取结果提供 api.screenshot 和 api.tap 时，也可以使用下列入口。
+  若 observe 超时、act 已执行但没有新帧，或清单不够用，可以在同一次占用中改走原生 ADB 或 WDA。领取结果提供 api.screenshot 和 api.tap 时，也可以使用下列入口。
   也可带同一 Bearer 凭证 GET api.screenshot，拿原尺寸 PNG 和响应头 X-AI-Phone-Frame-Id。这个入口不等待结构。
   在图上选点，带同一凭证 POST api.tap，Content-Type 为 application/json，发送 {"frame_id":"X-AI-Phone-Frame-Id 的值","x":100,"y":200}。坐标以截图左上角为原点。
   api.tap 返回执行回执。要确认当前画面，再 GET api.screenshot，或者回到 api.observe。旧截图 ID 不能重复点。
@@ -674,6 +685,7 @@ async def guide():
   启动应用用 POST WDA_BASE/session/<WDA 会话 ID>/wda/apps/launch，请求体例如 {"bundleId":"com.apple.Preferences"}。
   用 GET WDA_BASE/wda/activeAppInfo 核对前台 App，GET WDA_BASE/screenshot 返回 value 中的 Base64 PNG。
   读取 GET WDA_BASE/session/<WDA 会话 ID>/window/size，再用 POST WDA_BASE/session/<WDA 会话 ID>/wda/tap 发送 {"x":100,"y":200}。WDA 坐标以逻辑点为单位，按截图原尺寸与窗口尺寸换算。用新截图确认实际变化。
+  从原生 WDA 操作切回编号清单时，先 GET api.observe 取得新帧。主动观察和编号操作沿用原有 WDA 会话，切回原生时可以继续使用同一 WDA 会话 ID。
   iPhone Duo 展开时，如果默认前台报桌面，先从会话的 /wda/apps/list 核对目标 App。用 GET /appium/settings 读取原 defaultActiveApplication，再向该会话路径 POST {"settings":{"defaultActiveApplication":"<Bundle ID>"}}。用会话的 /source 和 /element 定位，POST /element/<元素 ID>/click。归还前恢复原设置。
   通过领取结果的 release 归还，返回 204 后，原 WDA 入口和原凭证失效。受管模拟器关机或重启后，需要重新领取。
 

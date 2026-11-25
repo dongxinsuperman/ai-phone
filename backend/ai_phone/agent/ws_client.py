@@ -297,6 +297,8 @@ class AgentWSClient:
             capabilities.extend((P.CAP_UNIFIED_OPERATIONS, P.CAP_ANDROID_OBSERVATION))
         if P.MSG_MOBILE_SIMULATOR_OPERATION in self.handlers:
             capabilities.append(P.CAP_MOBILE_SIMULATOR_OPERATIONS)
+        if P.MSG_IOS_USB_OPERATION in self.handlers:
+            capabilities.append(P.CAP_IOS_OBSERVATION)
         if P.MSG_AI_DIRECT_REQUEST in self.handlers:
             capabilities.append(P.CAP_AI_DIRECT_NATIVE)
         sent = await self.send(

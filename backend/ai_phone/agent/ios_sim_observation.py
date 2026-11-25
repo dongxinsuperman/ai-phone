@@ -1,4 +1,4 @@
-"""Unified operations on an already-running CoreSimulator and its registered WDA."""
+"""iOS frame assembly and touch mapping, with a CoreSimulator WDA connection."""
 from __future__ import annotations
 
 import base64
@@ -14,7 +14,7 @@ from xml.etree import ElementTree as ET
 
 import httpx
 import psutil
-from PIL import Image, ImageChops, ImageStat
+from PIL import Image
 
 from ai_phone.shared.mobile_frame import build_frame
 from .drivers.ios_simulator_driver import get_sim_endpoint
@@ -39,11 +39,15 @@ class _Wda:
         self.deadline = deadline
         self.sid = None
 
+    @property
+    def duo(self):
+        return self.endpoint.duo if self.endpoint is not None else None
+
     def request(self, method, path, body=None):
         try:
             response = self.client.request(method, path, json=body, timeout=_remaining(self.deadline))
         except httpx.TimeoutException as exc:
-            raise MobileSimError(504, "iOS 模拟器未在期限内返回结果") from exc
+            raise MobileSimError(504, "iOS 设备未在期限内返回结果") from exc
         except httpx.HTTPError as exc:
             raise MobileSimError(503, "本次占用绑定的 iOS 控制服务暂不可达") from exc
         try:
@@ -55,7 +59,7 @@ class _Wda:
         value = payload.get("value")
         error = value.get("error") if isinstance(value, dict) else None
         if error == "invalid session id":
-            raise MobileSimError(409, "iOS 模拟器的控制会话已更换，请重新观察当前页面")
+            raise MobileSimError(409, "iOS 控制会话已更换，请重新观察当前页面")
         if error in ("no such element", "stale element reference", "element not interactable"):
             raise MobileSimError(409, "当前没有可用于此操作的 iOS 控件")
         if error == "unknown command" or response.status_code == 405:
@@ -66,6 +70,17 @@ class _Wda:
 
     def session(self, method, path, body=None):
         return self.request(method, f"/session/{quote(self.sid, safe='')}{path}", body).get("value")
+
+    def reuse_session(self, status):
+        info = status.get("value") or {}
+        sid = status.get("sessionId") or info.get("sessionId")
+        if not sid:
+            # Creating a second session evicts the workbench's established session.
+            fresh = self.request("POST", "/session", {"capabilities": {"alwaysMatch": {}, "firstMatch": [{}]}})
+            sid = fresh.get("sessionId") or (fresh.get("value") or {}).get("sessionId")
+        if not isinstance(sid, str) or not sid:
+            raise MobileSimError(409, "iOS 设备没有就绪的控制会话")
+        self.sid = sid
 
 
 def boot_identity(serial, port, deadline):
@@ -104,15 +119,7 @@ def _connection(serial, deadline, binding=None):
         info = status.get("value") or {}
         if not (isinstance(info, dict) and (info.get("ios") or {}).get("simulatorVersion")):
             raise MobileSimError(409, "控制服务没有报告 iOS 模拟器身份")
-        sid = status.get("sessionId")
-        if not sid:
-            # WDA has a single active session. Creating a session when one exists
-            # would evict the workbench or Feature client's established session.
-            fresh = wda.request("POST", "/session", {"capabilities": {"alwaysMatch": {}}})
-            sid = fresh.get("sessionId") or (fresh.get("value") or {}).get("sessionId")
-        if not isinstance(sid, str) or not sid:
-            raise MobileSimError(409, "iOS 模拟器没有就绪的控制会话")
-        wda.sid = sid
+        wda.reuse_session(status)
         if binding is not None and endpoint.duo is not None:
             with _duo_foreground(wda):
                 yield wda, generation
@@ -182,6 +189,16 @@ def _duo_foreground(wda):
                 restore.session("POST", "/appium/settings", {"settings": {setting: original}})
 
 
+def _foreground_identity(wda):
+    rotation = wda.session("GET", "/rotation")
+    app = wda.session("GET", "/wda/activeAppInfo")
+    try:
+        turn = int(rotation["z"]) % 360 // 90
+    except (KeyError, TypeError, ValueError) as exc:
+        raise MobileSimError(409, "iOS 还没有稳定的前台显示区域") from exc
+    return turn, app.get("bundleId") if isinstance(app, dict) else None
+
+
 def _display(wda):
     origin_known = True
     try:
@@ -191,7 +208,7 @@ def _display(wda):
             raise
         origin_known = False
         window = {"x": 0, "y": 0, **wda.session("GET", "/window/size")}
-    duo = wda.endpoint.duo
+    duo = wda.duo
     # WDA's window describes the active app. A windowed iPad app occupies only
     # part of the system screenshot, while XCTest's element frames remain global.
     screen = {}
@@ -203,7 +220,7 @@ def _display(wda):
                 raise
         if not isinstance(screen, dict):
             screen = {}
-        if not (screen.get("screenSize") or screen.get("scale")):
+        if wda.endpoint is not None and not (screen.get("screenSize") or screen.get("scale")):
             # Older or partially bundled WDA products may omit the system geometry.
             # CoreSimulator's live LCD "Preferred UI Scale" is independent of the app.
             from .drivers.simctl import simulator_screen
@@ -211,22 +228,20 @@ def _display(wda):
             hardware = simulator_screen(wda.serial)
             if hardware:
                 screen = {"scale": hardware.scale}
-    rotation = wda.session("GET", "/rotation")
-    app = wda.session("GET", "/wda/activeAppInfo")
+    turn, package = _foreground_identity(wda)
     try:
         size = screen.get("screenSize") or window
         pixel_scale = float(screen["scale"]) if duo is None and not screen.get("screenSize") else None
         width, height = float(size["width"]), float(size["height"])
         window_box = [float(window[k]) for k in ("x", "y", "width", "height")]
-        turn = int(rotation["z"]) % 360 // 90
         if (not all(math.isfinite(n) for n in (width, height, *window_box))
                 or min(width, height, *window_box[2:]) <= 0
                 or (pixel_scale is not None and not (math.isfinite(pixel_scale) and pixel_scale > 0))):
             raise ValueError("invalid WDA logical display")
     except (KeyError, TypeError, ValueError) as exc:
-        raise MobileSimError(409, "iOS 模拟器还没有稳定的前台显示区域") from exc
+        raise MobileSimError(409, "iOS 还没有稳定的前台显示区域") from exc
     display = {"wda_session": wda.sid, "width": width, "height": height, "rotation": turn,
-               "window": window_box, "package": app.get("bundleId") if isinstance(app, dict) else None}
+               "window": window_box, "package": package}
     if not origin_known:
         display["unknown_window_origin"] = True
     if pixel_scale:
@@ -269,7 +284,7 @@ def _capture(wda, display):
                 raw = buf.getvalue()
             size = image.size
     except (TypeError, OSError, ValueError) as exc:
-        raise MobileSimError(502, "iOS 模拟器没有返回可用截图") from exc
+        raise MobileSimError(502, "iOS 设备没有返回可用截图") from exc
     if "panel_id" in display and any(abs(a-b) > 1 for a,b in zip(
             (display["panel_width"], display["panel_height"]), size)):
         raise MobileSimError(409, "iPhone Duo 的截图与活动屏不一致，请重新观察")
@@ -283,64 +298,54 @@ def _capture(wda, display):
     return raw, size
 
 
-def _screen_changed(before, after):
-    if before == after:
-        return False
-    samples = []
-    for raw in (before, after):
-        with Image.open(io.BytesIO(raw)) as image:
-            samples.append(image.convert("L").resize((80, 80), Image.Resampling.BOX))
-    difference = ImageChops.difference(*samples)
-    hist = difference.histogram()
-    return sum(hist[28:]) / (80 * 80) > .15 and ImageStat.Stat(difference).mean[0] > 10
-
-
 def _observe(wda, include_image):
     warnings = []
-    for attempt in range(2):
-        display = _display(wda)
-        before, _ = _capture(wda, display)
+    display = _display(wda)
+    xml = None
+    if display.get("panel_tree", True):
         try:
-            if display.get("panel_tree", True):
-                xml = wda.session("GET", "/source?format=xml")
-            else:
-                warnings.append("ios_active_display_tree_unavailable")
-                xml = None
+            xml = wda.session("GET", "/source?format=xml")
         except MobileSimError as exc:
             if exc.status != 502:
                 raise
             warnings.append("ios_tree_unavailable")
+    else:
+        warnings.append("ios_active_display_tree_unavailable")
+    # Read XCTest evidence before taking the single image used by the returned frame.
+    png, size = _capture(wda, display)
+    logical = _logical_size(display, size)
+    if wda.duo is not None or display["window"] != [0, 0, *logical]:
+        same_display = _display(wda) == display
+    else:
+        same_display = _foreground_identity(wda) == (display["rotation"], display["package"])
+    if not same_display:
+        raise MobileSimError(409, "前台应用、方向或活动屏在取帧期间变化，请重新观察")
+
+    nodes = []
+    if xml:
+        try:
+            parsed, bundle = from_xctest(xml, logical, size)
+        except (ET.ParseError, ValueError, TypeError):
+            warnings.append("ios_tree_unavailable")
             xml = None
-        png, size = _capture(wda, display)
-        end = _display(wda)
-        if display != end:
-            if not attempt:
-                continue
-            raise MobileSimError(409, "前台应用、方向或活动屏持续变化，请重新观察")
-        if xml and _screen_changed(before, png):
-            if not attempt:
-                continue
-            warnings.append("ios_scene_changed_during_snapshot")
-            xml = None
-        nodes = []
-        if xml:
-            try:
-                nodes, bundle = from_xctest(xml, _logical_size(display, size), size)
-                if bundle and display["package"] and bundle != display["package"]:
-                    if not attempt:
-                        continue
-                    nodes = []
-                    xml = None
-                    warnings.append("ios_active_application_changed")
-            except (ET.ParseError, ValueError, TypeError):
-                warnings.append("ios_tree_unavailable")
+        else:
+            if not (bundle and display["package"] and bundle != display["package"]):
+                nodes = parsed
+            else:
+                warnings.append("ios_active_application_changed")
                 xml = None
-        result = build_frame(nodes, platform="ios", width=size[0], height=size[1],
-                             png=png, include_image=include_image, tree_available=bool(xml),
-                             display=display, package=display["package"], warnings=warnings,
-                             keyboard=native_keyboard(nodes))
-        result["rotation"] = display["rotation"]
-        return result
+    result = build_frame(nodes, platform="ios", width=size[0], height=size[1],
+                         png=png, include_image=include_image, tree_available=bool(xml),
+                         display=display, package=display["package"], warnings=warnings,
+                         keyboard=native_keyboard(nodes), recognize_screen_text=False)
+    result["rotation"] = display["rotation"]
+    if not result["tree_available"]:
+        result["structure_status"] = "partial" if result["targets"] else "unavailable"
+    elif result["targets"] and not any(target.get("name") for target in result["targets"]):
+        result["structure_status"] = "partial"
+    else:
+        result["structure_status"] = "available"
+    return result
 
 
 def _gesture(wda, display, size, start, end=None):
@@ -350,11 +355,11 @@ def _gesture(wda, display, size, start, end=None):
         y = point[1] * height / size[1]
         return x - display["window"][0], y - display["window"][1]
 
-    if wda.endpoint.duo is not None:
+    duo = wda.endpoint.duo if wda.endpoint is not None else None
+    if duo is not None:
         # The workbench's touch() starts a new eight-second budget. This request
         # retains its original deadline through panel lookup, helper build and simctl spawn.
         try:
-            duo = wda.endpoint.duo
             deadline = time.monotonic() + _remaining(wda.deadline)
             panel = duo.display(deadline)
             if (panel.id != duo.capture_id or panel.id != display["panel_id"]
@@ -449,47 +454,51 @@ def execute(message: dict) -> dict:
     if not isinstance(binding, str) or not binding:
         raise MobileSimError(409, "缺少本次 iOS 模拟器绑定")
     with _connection(message["serial"], message["deadline"], binding) as (wda, _):
-        action = message.get("action")
-        if action == "observe":
-            return _observe(wda, message.get("include_screenshot", True))
-        if action == "screenshot":
-            display = _display(wda)
-            png, size = _capture(wda, display)
-            if _display(wda) != display:
-                raise MobileSimError(409, "iOS 截图期间前台或活动屏发生了变化")
-            return {"png": base64.b64encode(png).decode("ascii"), "width": size[0],
-                    "height": size[1], "display": display}
-        if action in ("tap", "scroll"):
-            return _on_frame(wda, message, action)
-        if action == "open_app":
-            bundle = message.get("package")
-            if not isinstance(bundle, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)+", bundle):
-                raise MobileSimError(400, "iOS bundle 标识无效")
-            wda.session("POST", "/wda/apps/launch", {"bundleId": bundle})
-        elif action == "home":
-            wda.request("POST", "/wda/homescreen", {})
-        elif action == "input":
-            if wda.endpoint.duo is not None and not _display(wda)["panel_tree"]:
-                raise MobileSimError(409, "当前无法确认 iPhone Duo 活动屏上的输入框，请重新观察")
-            _input(wda, message.get("text"))
-        elif action == "back":
-            # iOS exposes a navigation gesture. An app may elect not to handle it.
-            display = _display(wda)
-            width = display.get("panel_width") or round(display["width"])
-            height = display.get("panel_height") or round(display["height"])
-            if "panel_id" in display:
-                start, end = (2, height//2), (width//2, height//2)
-            else:
-                left, top, app_width, app_height = display["window"]
-                if display.get("unknown_window_origin"):
-                    # In this legacy case a capture verifies that the active app fills the LCD.
-                    _capture(wda, display)
-                scale = display.get("pixel_scale", 1.0)
-                width, height = round(width * scale), round(height * scale)
-                mid_y = round((top + app_height/2) * scale)
-                start = (round((left + 2) * scale), mid_y)
-                end = (round((left + app_width/2) * scale), mid_y)
-            _gesture(wda, display, (width, height), start, end)
+        return execute_wda(wda, message)
+
+
+def execute_wda(wda, message):
+    action = message.get("action")
+    if action == "observe":
+        return _observe(wda, message.get("include_screenshot", True))
+    if action == "screenshot":
+        display = _display(wda)
+        png, size = _capture(wda, display)
+        if _display(wda) != display:
+            raise MobileSimError(409, "iOS 截图期间前台或活动屏发生了变化")
+        return {"png": base64.b64encode(png).decode("ascii"), "width": size[0],
+                "height": size[1], "display": display}
+    if action in ("tap", "scroll"):
+        return _on_frame(wda, message, action)
+    if action == "open_app":
+        bundle = message.get("package")
+        if not isinstance(bundle, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)+", bundle):
+            raise MobileSimError(400, "iOS bundle 标识无效")
+        wda.session("POST", "/wda/apps/launch", {"bundleId": bundle})
+    elif action == "home":
+        wda.request("POST", "/wda/homescreen", {})
+    elif action == "input":
+        if wda.duo is not None and not _display(wda)["panel_tree"]:
+            raise MobileSimError(409, "当前无法确认 iPhone Duo 活动屏上的输入框，请重新观察")
+        _input(wda, message.get("text"))
+    elif action == "back":
+        # iOS exposes a navigation gesture. An app may elect not to handle it.
+        display = _display(wda)
+        width = display.get("panel_width") or round(display["width"])
+        height = display.get("panel_height") or round(display["height"])
+        if "panel_id" in display:
+            start, end = (2, height//2), (width//2, height//2)
         else:
-            raise MobileSimError(400, "iOS 模拟器未提供该操作")
-        return {}
+            left, top, app_width, app_height = display["window"]
+            if display.get("unknown_window_origin"):
+                # In this legacy case a capture verifies that the active app fills the LCD.
+                _capture(wda, display)
+            scale = display.get("pixel_scale", 1.0)
+            width, height = round(width * scale), round(height * scale)
+            mid_y = round((top + app_height/2) * scale)
+            start = (round((left + 2) * scale), mid_y)
+            end = (round((left + app_width/2) * scale), mid_y)
+        _gesture(wda, display, (width, height), start, end)
+    else:
+        raise MobileSimError(400, "iOS 设备未提供该操作")
+    return {}
