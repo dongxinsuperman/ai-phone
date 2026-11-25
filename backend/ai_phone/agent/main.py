@@ -3496,6 +3496,14 @@ def run(
     client.on(P.MSG_APP_UNINSTALL_START, handle_app_uninstall_start)
     client.on(P.MSG_AGENT_CONFIG, _agent_config_handler)
 
+    from .mobile_sim_operations import handle as handle_mobile_sim_operation
+    from .native_direct import NativeDeviceAccess
+    from .unified_operations import handle as handle_unified_operation
+
+    client.on(P.MSG_UNIFIED_OPERATION, handle_unified_operation)
+    client.on(P.MSG_MOBILE_SIMULATOR_OPERATION, handle_mobile_sim_operation)
+    NativeDeviceAccess(client)
+
     # 暴露给 _maybe_preload_ios 使用：必须在 ws loop 起来前绑定 ref；
     # event loop 则在 run_forever 里取（在此之前还没创建）
     global _ws_client_ref, _event_loop_ref

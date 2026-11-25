@@ -29,6 +29,9 @@ MSG_DEVICE_UPDATE = "device_update"
 MSG_LOG = "log"
 MSG_STEP_DONE = "step_done"
 MSG_FRAME = "frame"
+MSG_UNIFIED_OPERATION_RESULT = "unified_operation_result"
+MSG_AI_DIRECT_INVENTORY = "ai_direct_inventory"
+MSG_AI_DIRECT_RESULT = "ai_direct_result"
 # [DEPRECATED] Server 大脑架构（server_brain）专用：Agent 把 driver_command 的执行
 # 结果回给 Server。Distributed Agent Brain 已下沉执行脑到 Agent，不再使用此消息；
 # Server 与 Agent 两侧均已移除收发 handler。常量保留仅为兼容 run_commands 历史数据，
@@ -85,6 +88,9 @@ MSG_CACHE_SUSPECT = "cache_suspect"
 MSG_START_RUN = "start_run"
 MSG_STOP_RUN = "stop_run"
 MSG_INPUT = "input"
+MSG_UNIFIED_OPERATION = "unified_operation"
+MSG_MOBILE_SIMULATOR_OPERATION = "mobile_simulator_operation"
+MSG_AI_DIRECT_REQUEST = "ai_direct_request"
 MSG_START_MIRROR = "start_mirror"
 MSG_STOP_MIRROR = "stop_mirror"
 MSG_PING = "ping"
@@ -149,6 +155,10 @@ CAP_V3_PLATFORM_CACHE = "v3_platform_cache"
 CAP_ANDROID_VM_FOLDABLE = "android_vm_foldable"
 CAP_ANDROID_VM_DISPLAY = "android_avd_rotation"
 CAP_NATIVE_VM_DISPLAY = "native_vm_display"
+CAP_UNIFIED_OPERATIONS = "unified_operations_v1"
+CAP_ANDROID_OBSERVATION = "android_observation_v1"
+CAP_MOBILE_SIMULATOR_OPERATIONS = "mobile_simulator_operations_v1"
+CAP_AI_DIRECT_NATIVE = "ai_direct_native_v1"
 DeviceStatus = Literal["idle", "busy", "offline"]
 
 

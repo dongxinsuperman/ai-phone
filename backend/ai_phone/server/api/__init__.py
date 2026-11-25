@@ -28,6 +28,9 @@ android_vm_router.include_router(android_vm_catalog_router)
 
 
 def include_routers(app: FastAPI) -> None:
+    from ai_phone.ai_connect.api import router as ai_connect_router
+
+    app.include_router(ai_connect_router)        # isolated external AI device sessions
     app.include_router(devices.router)            # /api/devices（含匿名 /available）
     app.include_router(agents.router)             # /api/agents（在线 Agent 只读快照）
     app.include_router(cases.router)

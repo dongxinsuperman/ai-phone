@@ -67,6 +67,7 @@ class AgentWSClient:
     handlers: Dict[str, Handler] = field(default_factory=dict)
     pre_hello_handlers: List[ConnectHandler] = field(default_factory=list)
     connect_handlers: List[ConnectHandler] = field(default_factory=list)
+    disconnect_handlers: List[ConnectHandler] = field(default_factory=list)
     rescan_handlers: List[RescanHandler] = field(default_factory=list)
 
     # 心跳 / 重扫描间隔
@@ -119,12 +120,19 @@ class AgentWSClient:
     def on_connect(self, handler: ConnectHandler) -> None:
         self.connect_handlers.append(handler)
 
+    def on_disconnect(self, handler: ConnectHandler) -> None:
+        self.disconnect_handlers.append(handler)
+
     def on_pre_hello(self, handler: ConnectHandler) -> None:
         self.pre_hello_handlers.append(handler)
 
     def on_rescan(self, handler: RescanHandler) -> None:
         """注册"每轮设备重扫后"回调（带当前在线 serial 集合）。复用 rescan 节拍，零额外扫描。"""
         self.rescan_handlers.append(handler)
+
+    def online_device_serials(self, platform: str) -> set[str]:
+        return {device["serial"] for device in self._last_devices
+                if device.get("platform") == platform and device.get("status") == "online" and device.get("serial")}
 
     async def send(self, payload: Dict[str, Any]) -> bool:
         key = None
@@ -245,6 +253,8 @@ class AgentWSClient:
                 self._ws = None
                 self._hello_sent = False
                 self._connected.clear()
+                for handler in self.disconnect_handlers:
+                    await self._call_connect_handler(handler, "disconnect")
 
             if self._stop.is_set():
                 break
@@ -279,6 +289,16 @@ class AgentWSClient:
         if not self._hello_sent and not initial:
             return False
         ws = self._ws
+        capabilities = [
+            P.CAP_V3_PLATFORM_CACHE, P.CAP_ANDROID_VM_FOLDABLE,
+            P.CAP_ANDROID_VM_DISPLAY, P.CAP_NATIVE_VM_DISPLAY,
+        ]
+        if P.MSG_UNIFIED_OPERATION in self.handlers:
+            capabilities.extend((P.CAP_UNIFIED_OPERATIONS, P.CAP_ANDROID_OBSERVATION))
+        if P.MSG_MOBILE_SIMULATOR_OPERATION in self.handlers:
+            capabilities.append(P.CAP_MOBILE_SIMULATOR_OPERATIONS)
+        if P.MSG_AI_DIRECT_REQUEST in self.handlers:
+            capabilities.append(P.CAP_AI_DIRECT_NATIVE)
         sent = await self.send(
             {
                 "type": P.MSG_HELLO,
@@ -287,10 +307,7 @@ class AgentWSClient:
                 "host_os": self.host_os,
                 **({"host_id": self.host_id} if self.host_id else {}),
                 "devices": devices,
-                "capabilities": [
-                    P.CAP_V3_PLATFORM_CACHE, P.CAP_ANDROID_VM_FOLDABLE,
-                    P.CAP_ANDROID_VM_DISPLAY, P.CAP_NATIVE_VM_DISPLAY,
-                ],
+                "capabilities": capabilities,
             }
         )
         if sent and self._ws is ws:

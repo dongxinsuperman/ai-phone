@@ -16,10 +16,13 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, Optional, Set
 
 from fastapi import WebSocket
 from loguru import logger
+
+if TYPE_CHECKING:
+    from ai_phone.ai_connect.agent_channel import NativeAgentChannel
 
 
 @dataclass
@@ -34,6 +37,7 @@ class AgentConn:
     run_ids: Set[str] = field(default_factory=set)
     capabilities: Set[str] = field(default_factory=set)
     host_id: str = ""
+    native_channel: NativeAgentChannel | None = None
 
 
 class Hub:
@@ -112,6 +116,10 @@ class Hub:
         conn = self._agents.get(agent_id)
         return conn.host_id if conn else ""
 
+    def agent_native_channel(self, agent_id: str | None) -> NativeAgentChannel | None:
+        conn = self._agents.get(agent_id) if agent_id else None
+        return conn.native_channel if conn else None
+
     def is_current_agent_socket(self, agent_id: str, ws: WebSocket) -> bool:
         conn = self._agents.get(agent_id)
         return conn is not None and conn.ws is ws
@@ -156,6 +164,8 @@ class Hub:
     ) -> AgentConn:
         old = self._agents.pop(agent_id, None)
         if old is not None:
+            if old.native_channel is not None:
+                old.native_channel.disconnect()
             logger.warning("Agent {} 重复注册，旧连接将被替换", agent_id)
             for s in list(old.serials):
                 self._serial_to_agent.pop(s, None)
@@ -194,6 +204,8 @@ class Hub:
             # 当前登记的是同 id 的更新连接，这条是过期的旧连接 —— 不动任何路由。
             return None
         self._agents.pop(agent_id, None)
+        if conn.native_channel is not None:
+            conn.native_channel.disconnect()
         for s in list(conn.serials):
             self._serial_to_agent.pop(s, None)
         for r in list(conn.run_ids):

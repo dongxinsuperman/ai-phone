@@ -247,8 +247,12 @@ async def agent_ws(
     devices = await filter_managed_devices_for_agent(agent_id, devices)
     devices = await _filter_managed_vm_devices(agent_id, devices, host_id=host_id)
     serials = {str(d.get("serial")) for d in devices if d.get("serial")}
-    await hub.register_agent(agent_id, agent_name, host_os, ws, host_id=host_id)
+    conn = await hub.register_agent(agent_id, agent_name, host_os, ws, host_id=host_id)
     hub.set_agent_capabilities(agent_id, first.get("capabilities"))
+    if host_id and hub.agent_supports(agent_id, P.CAP_AI_DIRECT_NATIVE):
+        from ai_phone.ai_connect.agent_channel import NativeAgentChannel
+
+        conn.native_channel = NativeAgentChannel(ws)
     await hub.set_devices(agent_id, serials)
     await _upsert_devices(agent_id, devices, hub)
 
@@ -366,6 +370,21 @@ async def _dispatch(
 
     if t == P.MSG_APP_UNINSTALL_RESULT:
         get_app_uninstall_waiter().resolve(msg)
+        return
+
+    if t == P.MSG_UNIFIED_OPERATION_RESULT:
+        from ai_phone.ai_connect.unified import resolve
+
+        resolve(hub, agent_id, msg)
+        return
+
+    if t == P.MSG_AI_DIRECT_INVENTORY or t == P.MSG_AI_DIRECT_RESULT:
+        native = hub.agent_native_channel(agent_id)
+        if native is not None:
+            if t == P.MSG_AI_DIRECT_INVENTORY:
+                native.update(msg)
+            else:
+                native.resolve(msg)
         return
 
     if t == P.MSG_VM_CAPABILITY:
@@ -1107,6 +1126,9 @@ async def _on_disconnect(
         # 孤儿回收一律跳过，避免误删新连接的设备、误杀仍在本地执行的 Run。
         logger.info("Agent {} 旧连接断开，但同 id 新连接已在线，跳过下线与孤儿回收", agent_id)
         return
+    from ai_phone.ai_connect.unified import agent_disconnected
+
+    agent_disconnected(hub, agent_id)
     # unregister_agent 只清反查表，conn.run_ids 仍保留断连瞬间这台 Agent 在飞的 Run，
     # 拿来交给宽限回收（精确到本连接，不会误伤别的 Agent）。
     in_flight_runs = set(conn.run_ids) if conn is not None else set()

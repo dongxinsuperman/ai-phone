@@ -23,6 +23,7 @@ dependencies = [
     # 后续若真有变更用手工 ALTER + 补齐 models.py 即可，避免背一个从不落地的迁移栈
     # HTTP / WS
     "httpx>=0.27",
+    "h11>=0.16",
     "websockets>=13,<14",            # 14+ 改了 connect() 返回类型，老 async for ws 用法不兼容
     # Utilities
     "python-dotenv>=1.0",
