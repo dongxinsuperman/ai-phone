@@ -10,9 +10,17 @@
   <img src="./assets/hero/ai-phone-hero.gif" alt="ai-phone AI automation flow overview" width="100%">
 </p>
 
-**ai-phone is an AI automation platform for physical and virtual devices across iOS, Android, and HarmonyOS.** It turns structured natural-language test cases into scheduled device runs, real-time execution logs, screenshots, self-contained HTML reports, and final callbacks.
+**ai-phone brings physical and virtual iOS, Android, and HarmonyOS devices into a single pool.** Your AI can claim and operate devices directly. Teams can also run batches of natural-language test cases with the built-in executor and collect logs, screenshots, HTML reports, and result callbacks.
 
-It is designed for QA teams and internal platforms that want to move from brittle step scripts to AI-consumable test cases while keeping device scheduling, observability, and reporting under control.
+## v0.9 · Give your AI direct access to mobile devices
+
+![AI Connect page showing the connection instructions and two device operation channels](./assets/screenshots/ai-connect.png)
+
+Connect Claude Code, Codex, Cursor, or your own agent to physical devices and emulators across iOS, Android, and HarmonyOS through one AI Phone instance. AI Connect requires no extra AI plugin or AI Phone VLM keys. Your AI decides what to do and uses its existing tools, model, and runtime. During a single device lease, it can switch between native tools and actions on numbered targets from a screenshot and its matching page structure. Each lease gives your AI exclusive use of the device. Devices return to the shared pool when released or when the lease expires. When you need more devices, you can use the [AI Phone CLI](https://github.com/dongxinsuperman/aiphone-cli) to create emulators.
+
+Open **AI Connect** (AI 直连) in the top navigation, copy the connection instructions, and paste them into your AI to get started. [AI Connect API reference](./docs/external-api（对外调用清单）.md#22-ai-直连统一观察与操作)
+
+![Observe and act loop showing how a numbered action returns the next screen and its targets](./assets/screenshots/ai-connect-loop.png)
 
 ## What It Does
 
@@ -35,6 +43,7 @@ In practice, this means an upstream system can generate a test case like "Open S
 | Area | Capability |
 |---|---|
 | Platforms | iOS, Android, HarmonyOS |
+| AI Connect | External AI can discover, exclusively lease, operate, and return devices through one instance. Use native tools or `observe` / `act` where supported. |
 | Execution | Natural-language goals, pure visual decision loop, optional third-party engines |
 | Scheduling | Submission queue, device alias pools, device locks, TTL recovery |
 | Reports | Self-contained HTML reports, before/after screenshots, token statistics |
@@ -47,7 +56,7 @@ In practice, this means an upstream system can generate a test case like "Open S
 
 ## Branches
 
-`main` is the recommended branch. It uses the Distributed Agent Brain architecture and receives new major features first, including virtual-device management across iOS, Android, and HarmonyOS.
+`main` is the recommended branch. It uses the Distributed Agent Brain architecture and includes AI Connect and virtual-device management across iOS, Android, and HarmonyOS.
 
 `next/server-brain` is still maintained for teams that require the model decision loop and model credentials to stay centralized on the server. It may not include every new feature from `main`.
 
@@ -71,10 +80,14 @@ Physical and virtual devices share the same execution path, while the external p
 
 ## Quick Start
 
+**Try AI Connect.** With a running AI Phone instance and a device ready to claim, open **AI Connect** (AI 直连) in the top navigation, then copy the connection instructions and paste them into your AI.
+
+**Set up an instance.** Follow the steps below to start the Server, Agent, and web UI. Fill in the model settings in `.env.example` when you plan to use the built-in VLM runner.
+
 ```bash
 git clone https://github.com/dongxinsuperman/ai-phone.git
 cd ai-phone/backend
-cp .env.example .env  # Fill DB, agent token, PHONE_VLM/AUX, and local Agent/WDA values.
+cp .env.example .env  # Fill in the database, Agent token, and device connection settings.
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -101,7 +114,7 @@ backend/.env               real deployment config; not committed
 backend/.env.local         local machine override; not committed
 ```
 
-Open <http://127.0.0.1:5180>, choose a device, enter a natural-language goal, and watch the run.
+**Try the built-in VLM runner.** Open <http://127.0.0.1:5180>, choose a device, enter a natural-language goal, and watch the run.
 
 For a full new-Mac setup, including iOS, Android, HarmonyOS, environment variables, and troubleshooting, see the Chinese deployment guide:
 
@@ -144,7 +157,7 @@ Most detailed documents are currently written in Chinese, but the file names and
 | Document | Purpose |
 |---|---|
 | [Chinese README](./README.md) | Full project overview |
-| [0.8.1 release notes](./CHANGELOG.md#081) | Virtual machine controls, compatibility, and upgrade guidance |
+| [0.9.0 release notes](./CHANGELOG.md#090) | AI Connect, device leases, and native device connections |
 | [product-boundaries](./docs/product-boundaries（产品边界）.md) | Product scope and integration boundary |
 | [features](./docs/features（使用功能介绍）.md) | Feature manual |
 | [external-api](./docs/external-api（对外调用清单）.md) | Submission API, query API, callback format |

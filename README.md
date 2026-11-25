@@ -10,19 +10,25 @@
   <img src="./assets/hero/ai-phone-hero.gif" alt="ai-phone AI automation flow overview" width="100%">
 </p>
 
-**面向中小型公司的三端真机 + 三端虚拟机 AI 自动化中台** —— iOS / Android / HarmonyOS 真机与虚拟机同级纳管，自然语言驱动的纯视觉决策，开箱即用的调度队列与多设备并发，执行器可插拔，一台 Mac 即可起完整链路。新 Mac 从 0 到 1 的完整部署见 [deployment-from-zero（从0到1部署指南）](./docs/deployment-from-zero（从0到1部署指南）.md)。
+**ai-phone 把 iOS、Android 和 HarmonyOS 的真机与虚拟机汇成同一个设备池。** 你的 AI 可以直接领用并操作设备，团队也可以用内置执行器批量跑测试、收报告。新 Mac 从 0 到 1 的完整部署见 [deployment-from-zero（从0到1部署指南）](./docs/deployment-from-zero（从0到1部署指南）.md)。
 
-> **产品形态**：ai-phone 不是一个执行器 SDK，而是把"投递批次 → 设备池调度 → 自然语言执行 → 终态广播 + HTML 报告 + 大盘统计"做成 QA 团队 / 业务回归大盘开箱即用的中台能力。**执行器是其中一个可替换组件**：默认内置自研的 VLM 纯视觉决策循环，并在外层包了页面稳定、卡死检测、审判、断言、状态路标、瞬态 UI 处理等执行安全层；也可挂载第三方执行器作为额外引擎选项。
+> **批量测试。** 从 CI、测试平台或你的 AI 投递自然语言用例，ai-phone 调度三端设备，通过内置 VLM 或第三方执行器跑用例，并返回截图、日志、报告和终态结果。详细说明见 [产品边界](./docs/product-boundaries（产品边界）.md)。
 
-> **产品边界与出发点**：ai-phone 不是孤立的“点手机工具”，也不是测试平台本身，而是 AI 测试链路里的三端设备执行层。上游可以由 Cursor、CI、内部平台或 AI 助手生成可消费测试 case，下游由 ai-phone 把这些自然语言 case 投递到 iOS / Android / HarmonyOS 真机与虚拟机上执行，并回传截图、日志、报告和终态结果。详细说明见 [product-boundaries（产品边界）](./docs/product-boundaries（产品边界）.md)。
+---
+
+## v0.9 · 给 AI 配上最顺手的移动设备
+
+![AI 直连页面 · 复制接入说明和查看两种设备操作通道](./assets/screenshots/ai-connect.png)
+
+为你的 AI（Claude Code、Codex、Cursor 或自研 Agent）接上三端真机与虚拟机，把决策与 Runtime 完整交回给它——无需装插件，不用管手机插在哪台电脑，也不用配内部模型。领用后，AI 按现场需要自由切换原生直连或带编号的同帧画面与页面结构，自主完成看屏、操作、调试和结果核对。团队多人共用不抢机、用完自动回收。设备不够时，可以用 [AI Phone CLI](https://github.com/dongxinsuperman/aiphone-cli) 创建模拟器。打开「AI 直连」复制一次说明发给你的 AI 即可开用，技术细节见 [对外调用清单 · AI 直连](./docs/external-api（对外调用清单）.md#22-ai-直连统一观察与操作)。
+
+![主动式暴露的调用闭环 · AI 按编号点击并收到带新编号的画面](./assets/screenshots/ai-connect-loop.png)
 
 ---
 
 ## 看一眼实际样子
 
 ![设备总览 · 多 Agent 统一纳管 iOS / Android / HarmonyOS 真机与虚拟机](./assets/screenshots/devices-overview-multi.png)
-
-按"调度 → 调试 → 决策护城河 → 产出 → 观测"5 个节点串起来看：
 
 **1. 调度队列** —— 三端独立 FIFO + 正在执行 + 最近批次状态一栏拉通，外部投递的 Submission 实时分发到设备池：
 
@@ -105,10 +111,11 @@
 
 | 能力维度 | ai-phone 提供的 |
 |---|---|
+| **AI 直连** | 外部 AI 通过同一个实例查询、独占领用、操作和归还设备。领用后可用 ADB、WDA 或 HDC，也可在设备支持时调用 `observe` / `act` 查看编号截图并操作 |
 | **三端真机原生** | iOS（WDA / mjpeg passthrough）/ Android（adb + scrcpy）/ HarmonyOS（hdc + hypium）三端等价。鸿蒙作为一等公民与 iOS / Android 同等支持，在开源生态里少见 |
 | **调度队列 + 多设备并发** | `POST /api/submissions` 投递批次 → 实时按 `device_alias_pool` 分发到设备池 → Submission / Item TTL 兜底超时 → Kafka / Webhook 双通道终态广播 → HTML 报告自动落盘。设备占用锁 + readiness gate 防止派单到僵尸设备 |
 | **自然语言驱动** | `runContent: "打开设置并进入关于本机"` 直接喂给 VLM，不写 selector / xpath / 步骤脚本 |
-| **纯视觉决策** | 每步只看截图，不依赖 DOM / 控件树 / 无障碍服务，跨 App 跨平台不挑食 |
+| **内置 VLM 执行** | 每步只看截图，不依赖 DOM / 控件树 / 无障碍服务，跨 App 跨平台不挑食 |
 | **辅助系统护城河** | 页面稳定后再决策；本地 pHash 卡死检测不烧 token；同坐标 / 同屏 / 震荡滑动自动召唤独立审判；before / after + 全步骤上下文做终局断言；结构化 / 自由对话自动分流 —— "VLM 是否真生效"不再是黑盒 |
 | **可监督轨迹缓存** | V1 固定动作回放、V2 状态路标对齐、V3 意图回放重定位；缓存复跑后仍走最终断言，失败会清理或标记可疑缓存；非业务瞬态弹窗可标记为 optional gate，当前没有同类弹窗时跳过，有同类弹窗时按需执行或修复 |
 | **三家协议自由组合** | 主 VLM 走 Doubao / Claude / GPT 三选一，辅助系统也可异家组合（如"主 Claude + 辅 Doubao 省成本"），全部走 env 切换、零代码改动 |
@@ -120,6 +127,7 @@
 
 **典型用户**：
 
+- 用 Claude Code、Codex 或自研 Agent 领用设备、调试 App 的研发和测试人员
 - 中小型公司 QA 团队 —— 真机上做 AI 化的兼容性 / 回归 / 冒烟测试
 - 业务回归大盘想从"脚本维护"切到"自然语言投递"
 - 海外团队需要切 Claude / GPT 跑英文 App（改两个 env 即用）
@@ -130,7 +138,7 @@
 
 ai-phone 有两条同源、并行维护的架构线，底层架构区别在「VLM 决策执行脑放在哪」。两者**核心数据库 schema 与基础产品能力（三端 driver、调度队列、缓存 V1/V2/V3、报告、大盘、辅助安全层）兼容**；但**新增大功能优先（或仅）落地 `main`，两条线的功能完整度正在拉开** —— `main` 是推荐主线。
 
-> ⚠️ **两条线并非功能对等**：像 **iOS / Android / 鸿蒙三端虚拟机** 这类较新的大功能是 **`main` 独有、暂不同步 `next/server-brain`**。`next` 仍在维护、可继续使用，但会逐步落后于 `main`。**新接入请直接用 `main`。**
+> **新接入请直接用 `main`。** AI 直连及 iOS、Android、鸿蒙三端虚拟机管理随 `main` 提供。
 
 | | `main`（默认主线） | `next/server-brain` |
 |---|---|---|
@@ -138,10 +146,10 @@ ai-phone 有两条同源、并行维护的架构线，底层架构区别在「VL
 | 执行脑 | VLM 决策循环在 **Agent 本地** 跑 | VLM 决策集中在 **Server** 跑 |
 | 配置 / 密钥 | Server 集中下发，Agent 不常驻模型密钥 | Server 集中持有 |
 | 缓存 V1/V2/V3 | Agent 本地回放 + 第一手归档回传，Server 薄存储 | Server 集中回放 + 归档 |
-| **独有大功能** | ✅ **iOS / Android / 鸿蒙三端虚拟机**，后续大功能优先落地 | ⚠️ 暂不同步 `main` 的新增大功能，逐步落后 |
+| **新增能力** | AI 直连、iOS / Android / 鸿蒙三端虚拟机管理 | 维护现有 Server Brain 执行能力 |
 | 适合 | 多 Agent 分布执行、就近决策、Agent 侧算力可用、**需要虚拟机扩容** | 合规要求 Agent 不得持有模型出口、强集中管控 / 审计 |
 
-> **怎么选**：默认用 `main`（分布式 Agent 大脑，最新主线）。需要 **三端虚拟机等 `main` 独有能力**时只能用 `main`。仅当合规要求"Agent 不得持有模型能力、一切决策与密钥集中在 Server"时才选 `next/server-brain`。两条线**二选一部署**。
+> **怎么选**：需要 AI 直连、三端虚拟机管理或分布式执行时，使用 `main`。需要将内置 VLM 的决策与模型密钥集中在 Server 时，选择 `next/server-brain`。两条线**二选一部署**。
 
 > **怎么迁移（同库）**：两条线**数据库 schema 向前兼容**，`next/server-brain` 用户备份后可**同库增量升级**到 `main`，不需要新建库。**但同一时间只让一个架构连同一套库跑**（别让两个服务同时写一个库，会互相抢任务 / 覆盖设备池）。
 
@@ -157,10 +165,14 @@ ai-phone 有两条同源、并行维护的架构线，底层架构区别在「VL
 
 ## 30 秒上手
 
+**体验 AI 直连。** 已有运行中的 AI Phone 实例和就绪设备时，在 AI Phone 页面顶部打开「AI 直连」，点击「复制接入说明」，粘贴给你的 AI 即可开始。
+
+**从零启动实例。** 按下面的步骤配置并启动 Server、Agent 和 Web。使用内置 VLM 执行时，按 `.env.example` 里的说明填写模型配置。
+
 ```bash
 git clone https://github.com/dongxinsuperman/ai-phone.git
 cd ai-phone/backend
-cp .env.example .env  # 按注释填写 DB、Agent token、PHONE_VLM/AUX、Agent/WDA 等真实值
+cp .env.example .env  # 按注释填写 DB、Agent token 和设备接入参数
 python3.11 -m venv .venv && source .venv/bin/activate && pip install -e .
 
 # 终端 A：起 Server
@@ -175,7 +187,7 @@ python -m ai_phone agent
 cd ../web && npm install && npm run dev
 ```
 
-打开 <http://127.0.0.1:5180> → 选设备 → 进工作台 → 输入自然语言 goal → 看 VLM 跑。
+**体验内置 VLM。** 打开 <http://127.0.0.1:5180> → 选设备 → 进工作台 → 输入自然语言 goal → 看 VLM 跑。
 
 配置文件职责：
 
@@ -233,6 +245,7 @@ AI PHONE 可以直接执行一句自然语言目标；但如果你要做业务�
 
 | 模块 | 状态 |
 |---|---|
+| AI 直连（Android / iOS / HarmonyOS） | ✅ 可用（v0.9 · `main`） |
 | 三端真机 driver + 镜像（iOS / Android / HarmonyOS） | ✅ 完整 |
 | 调度队列 + 设备池（Submission / Item TTL / 别名 / 锁 / readiness gate） | ✅ 完整 |
 | 终态广播（Kafka / Webhook / stdout 三选一） | ✅ 完整 |
@@ -259,7 +272,7 @@ AI PHONE 可以直接执行一句自然语言目标；但如果你要做业务�
 
 ## 维护与协作
 
-ai-phone 采用 **MIT License** 开源。Copyright (C) 2026 Dongxin and ai-phone contributors。官方默认主线是 `main`（分布式 Agent 大脑），新功能优先落地 `main`；`next/server-brain`（Server 大脑）作为并行架构线持续维护，但部分大功能（如 iOS / Android / 鸿蒙三端虚拟机）暂不同步。
+ai-phone 采用 **MIT License** 开源。Copyright (C) 2026 Dongxin and ai-phone contributors。官方默认主线是 `main`（分布式 Agent 大脑），提供 AI 直连和 iOS / Android / 鸿蒙三端虚拟机管理。`next/server-brain`（Server 大脑）作为并行架构线持续维护。
 
 协作上优先使用 Issues / Discussions 交流问题、场景和设计取舍。Pull Request 可以提交，但不承诺 review、响应时效或合并；PR 更适合作为 bug 报告、设计参考或候选补丁。
 
@@ -272,7 +285,7 @@ ai-phone 采用 **MIT License** 开源。Copyright (C) 2026 Dongxin and ai-phone
 | 文档 | 受众 | 内容 |
 |---|---|---|
 | [product-boundaries（产品边界）](./docs/product-boundaries（产品边界）.md) | 讨论者 / 集成方 / 二次开发者 | 项目出发点、产品边界，以及它和 AI 生成 case / CI / 测试平台的关系 |
-| [CHANGELOG](./CHANGELOG.md) | 部署者 / 维护者 | 版本变化与 [0.8.1 发布说明](./CHANGELOG.md#081) |
+| [CHANGELOG](./CHANGELOG.md) | 部署者 / 维护者 | 版本变化与 [0.9.0 发布说明](./CHANGELOG.md#090) |
 | [features（使用功能介绍）](./docs/features（使用功能介绍）.md) | 调用方 / 业务同学 | 设备、队列、工作台、报告和[三端虚拟机启动姿态](./docs/features（使用功能介绍）.md#vm-startup-posture) |
 | [external-api（对外调用清单）](./docs/external-api（对外调用清单）.md) | 调用方 / CI 集成 | 当前 API 契约：投递 / 查询 / 取消 / Kafka / Webhook 完整字段 |
 | [ai-consumable-test-cases（AI可消费测试用例指南）](./docs/ai-consumable-test-cases（AI可消费测试用例指南）.md) | 调用方 / QA / AI 助手 | 如何把 `runContent` 写成更适合 AI PHONE 执行的四字段 case |

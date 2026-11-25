@@ -2,43 +2,38 @@
 
 本文只记录会影响部署、接入或排障口径的工程变化；细粒度代码历史仍以 Git commit 为准。
 
+## 0.9.0
+
+### AI 直连
+
+- 在 `main` 的 Web 顶部打开「AI 直连」，复制接入说明给你的 AI。它可以通过同一个实例
+  查询、独占领用、操作和归还原生通道已就绪的 Android、iOS 与鸿蒙真机和模拟器。
+- 一次领用可以使用 ADB、WDA 或 HDC，iOS 还可使用 Web Inspector。Agent 支持主动式暴露时，
+  `observe` 和 `act` 会返回编号截图及同帧可操作项，由你的 AI 决定下一步。
+- 直连和批量任务共用设备锁。归还设备或连续空闲 30 分钟后，本次领用的入口关闭。
+- 升级时更新 Web、Server 和连接设备的 Agent。原生连接器从领用结果下载。
+  [AI 直连使用说明](./docs/external-api（对外调用清单）.md#22-ai-直连统一观察与操作)
+
+鸿蒙真机固件上传单文件上限为 32 GiB，Agent 暂存盘另预留 1 GiB。跨宿主端到端和鸿蒙真机刷写尚无完整验收记录。
+
+### AI Connect
+
+- Open AI Connect in the top navigation on `main` and copy the connection instructions to
+  your AI. It can discover, exclusively lease, operate, and return ready Android, iOS,
+  and HarmonyOS devices and emulators through one instance.
+- A lease provides ADB, WDA, or HDC. iOS also supports Web Inspector. Where the Agent
+  supports page observation, `observe` and `act` return numbered screenshots and matching
+  targets for your AI to choose from.
+- AI Connect and batch jobs share the device lock. A lease closes when released or after
+  30 minutes of inactivity.
+- Upgrade the web UI, Server, and device-host Agents. Download native connectors from the
+  claim response. [AI Connect guide](./docs/external-api（对外调用清单）.md#22-ai-直连统一观察与操作)
+
+Physical HarmonyOS firmware uploads are limited to 32 GiB per file, with 1 GiB of free
+space reserved on the Agent's staging volume. End-to-end testing across hosts and physical
+HarmonyOS firmware flashing have yet to be fully verified.
+
 ## Unreleased
-
-### 修复 AI 直连的设备占用和原生连接 / Fix AI Connect device leases and native connections
-
-- Android 的 USB 和网络 ADB 地址在确认属于同一台设备时，通过共享设备锁互斥。
-  设备下线时移除地址映射，已有占用由持有者按原令牌归还或到期。每条 ADB 流
-  独立写入，单条流阻塞时其他流可继续收发。
-- iOS 创建新 WDA 会话失败时保留原会话。Agent 会补跑重扫期间触发的刷新，
-  鸿蒙清单采集异常时 Android 和 iOS 仍可上报。直连和现有任务经同一条
-  Agent 连接串行发送。
-- 鸿蒙真机的 HDC 固件上传上限为每文件 32 GiB，Agent 暂存盘预留 1 GiB。
-  空间不足会返回明确错误，上传中断会清理临时文件。
-- Android 清单新增 `device_kind`。OpenAPI 展示现行连接器和操作入口，旧客户端
-  仍可调用兼容路径。接入说明补齐 iOS Web Inspector 和鸿蒙 HDC 命令。更新
-  Server 和设备宿主的 Agent 后，按领用回包重新下载原生连接器即可使用完整修复。
-- 后端 930 项专项回归、前端 120 项测试、Ruff 检查和前端生产构建通过。
-  鸿蒙真机刷写和跨宿主端到端验收待完成。
-
-- USB and network ADB addresses share a device lock when they resolve to the
-  same Android device. Disconnecting removes the address mapping. The current
-  holder can release the lease with its original token or let it expire. Each
-  ADB stream can progress while another stream is blocked.
-- Failed WDA session creation preserves the existing session. Agents rerun
-  inventory refreshes requested during a scan and continue publishing Android
-  and iOS inventory if HarmonyOS discovery fails. AI Connect and existing jobs
-  serialize writes on the same Agent connection.
-- Physical HarmonyOS HDC firmware uploads have a 32 GiB per-file limit and
-  reserve 1 GiB of free space on the Agent's staging volume. Insufficient space
-  returns an error, and interrupted uploads remove temporary files.
-- Android inventory now reports `device_kind`. OpenAPI advertises the current
-  endpoints, and existing clients can still call the legacy paths. The
-  connection guide covers iOS Web Inspector and HarmonyOS HDC commands. Update
-  the Server and device-host Agents, then download the current connector from
-  the claim response to get the full fix.
-- Validation passed 930 focused backend tests, 120 web tests, Ruff, and the web
-  production build. Physical HarmonyOS flashing and cross-host end-to-end
-  validation are pending.
 
 ### 精简终局断言提示词并增强输出解析健壮性 / Streamline final-verification prompts and harden verdict parsing
 
