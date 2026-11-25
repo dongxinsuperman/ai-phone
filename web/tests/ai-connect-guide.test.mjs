@@ -8,12 +8,31 @@ test('one reusable guide discovers and claims an opted-in device without an inst
   const { query, text } = buildAiConnectGuide(origin, false)
   const commands = text.split('\n').filter(line => line.startsWith('curl '))
   assert.deepEqual(commands.slice(0, 2), [
-    "curl -sS 'https://phones.example/api/ai-connect/devices'",
+    "curl -fsS --max-time 10 'https://phones.example/api/ai-connect/devices'",
     `curl -sS -X POST 'https://phones.example/api/ai-connect/sessions' -H 'Content-Type: application/json' -d '{"serial":"<设备列表中的 serial>"}'`,
   ])
   assert.equal(query, commands[0])
   assert.match(text, /release.*DELETE/)
   assert.equal(buildAiConnectGuide(origin, false).text, text)
+})
+
+test('a paste with no task guides discovery, a brief screenshot lease and release', () => {
+  const origin = 'https://phones.example'
+  const { text } = buildAiConnectGuide(origin, false)
+  const entry = text.slice(0, text.indexOf('领用设备\n'))
+  assert.match(entry, /只是粘贴这份说明.*立即.*查询/)
+  assert.ok(entry.split('\n').includes(`实时设备清单  ${origin}/api/ai-connect/devices`))
+  assert.match(entry, /HTTP 200 和设备列表后.*已连接到 AI Phone/)
+  assert.match(entry, /空列表.*设备全被占用.*查询失败/)
+  assert.match(entry, /只粘贴说明时，先做一次看图体验/)
+  assert.match(entry, /available.*临时领用.*GET api\.screenshot.*api\.observe.*native/)
+  assert.match(entry, /release 发 DELETE.*204.*取图失败也要归还/)
+  assert.match(entry, /直接展示刚取回的图片/)
+  assert.match(entry, /你想用哪台设备，或者需要哪种系统的模拟器/)
+  assert.match(entry, /唯一符合条件的设备时，直接领用/)
+  assert.match(entry, /Android、iOS 和鸿蒙模拟器/)
+  assert.ok(entry.includes(`AIPHONE_BASE_URL='${origin}' aiphone vm ios catalog --limit 5`))
+  assert.doesNotMatch(entry.split('只粘贴说明时，先做一次看图体验')[0], /-X POST|Bearer/)
 })
 
 test('one claim delivers native access and any available auxiliary endpoints', () => {

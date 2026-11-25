@@ -108,7 +108,12 @@ async def test_direct_claim_is_scoped_and_revoked(client, app, session):
 
 @pytest.mark.asyncio
 async def test_clean_client_can_read_guide_and_discover_without_occupying(client, app):
-    assert (await client.get(api.BASE + "/guide")).status_code == 200
+    guide = await client.get(api.BASE + "/guide")
+    assert guide.status_code == 200
+    intro = guide.text.split("查看与领取", 1)[0]
+    assert "只粘贴接入说明或发来本指南链接" in intro
+    assert "先实际查询 GET /api/ai-connect/devices" in intro
+    assert "想用哪台设备" in intro and "aiphone vm" in intro
     catalog = await client.get(api.BASE + "/devices")
     assert catalog.status_code == 200 and catalog.json() == []
     assert (await client.post(api.BASE + "/sessions", json={"serial": "unknown"})).status_code == 409

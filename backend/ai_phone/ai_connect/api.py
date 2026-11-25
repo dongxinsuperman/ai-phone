@@ -721,6 +721,14 @@ async def guide():
 
 接入说明可反复使用。AI 只需访问同一个实例，就能使用接在不同电脑上且原生通道已就绪的设备。以下路径都相对于该实例地址。
 
+首次接入
+  即使用户只粘贴接入说明或发来本指南链接，也请先实际查询 GET /api/ai-connect/devices。这一步无需凭证，不占用设备。
+  确认收到 HTTP 200 和设备列表后，告诉用户已连接哪个 AI Phone 实例，用编号列出当前可领设备的型号、系统和已知的设备类型。已占用的另报数量。空列表表示暂时没有可直连设备。查询失败时，报告实际连接问题。
+  用户只发说明时，选一台 available 的设备做一次看图体验。领取成功后优先 GET api.screenshot 保存设备当前原图，也可从 api.observe 解码 screenshot.data，或用本次领用返回的 native 取图。体验只截图，保持设备当前画面。
+  保存图片后立即向 release 发 DELETE，确认 204 后再告诉用户已归还。取图失败也要归还。没有空闲设备时如实说明，等用户决定下一步。
+  在回复里直接展示取回的图片，或附上用户能打开的图片文件，并说明设备型号、归还结果和可领设备。简短介绍用机和新建模拟器能力，再问用户想用哪台设备、哪种系统，或想完成什么任务。用户已明确选择设备，或任务中只有一台符合条件时，直接领用并继续该任务。
+  需要新模拟器时，可以用 aiphone vm 管理 Android、iOS 和鸿蒙。在具备本实例已有管理权限时，通过 AIPHONE_BASE_URL 临时指定实例，用对应平台的 catalog 和 systems 查询机型与兼容系统。用户明确要创建时，用 create --start --wait 创建并启动，等设备就绪后从同一清单领用。已有设备的查询和领用不依赖 CLI。
+
 查看与领取
   GET /api/ai-connect/devices 查询原生通道已就绪设备的 serial、model、platform 和 status。查询无需凭证，也不占用设备。
   选定 available 的设备，以 Content-Type: application/json 向 POST /api/ai-connect/sessions 提交 {"serial":"选中的 serial"}。

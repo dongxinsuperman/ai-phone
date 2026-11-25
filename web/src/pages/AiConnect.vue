@@ -3,7 +3,6 @@ import { nextTick, ref } from 'vue'
 import { buildAiConnectGuide } from '../lib/aiConnectGuide.js'
 
 const { origin, hostname } = window.location
-const guideUrl = `${origin}/api/ai-connect/guide`
 const isLoopback = hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '[::1]' || /^127\./.test(hostname)
 const guide = buildAiConnectGuide(origin, isLoopback)
 const previewOpen = ref(false)
@@ -73,9 +72,8 @@ async function copyInstructions() {
       <header class="channels-head">
         <div>
           <h2 id="channels-title">设备操作通道</h2>
-          <p>优先使用所领设备的原生工具。领取结果提供主动式暴露时，也可以用它查看页面结构。</p>
+          <p>领取后独占一台设备，可单独使用它支持的任一通道，用完归还。</p>
         </div>
-        <a class="manual" :href="guideUrl" target="_blank" rel="noopener">接口手册 <span aria-hidden="true">↗</span></a>
       </header>
 
       <div class="channel-grid">
@@ -84,8 +82,8 @@ async function copyInstructions() {
             <span class="channel-icon" aria-hidden="true"><span class="terminal-icon">›_</span></span>
             <h3>原生直连</h3>
           </header>
-          <p class="description">Android 可接入 AI 自己的 ADB 设备列表。iOS 真机和模拟器通过本次领取提供的 WDA 地址启动应用、截图和触控。</p>
-          <footer class="support"><span>连接方式</span><strong>Android · adb connect / iOS · WDA HTTP</strong></footer>
+          <p class="description">领用后，你的 AI 可以用设备的原生工具打开 App、截图和触控，也可以用自己的脚本操作设备。</p>
+          <footer class="support"><span>连接方式</span><strong>Android · ADB / iOS · WDA / 鸿蒙 · HDC</strong></footer>
         </article>
         <article class="channel">
           <header class="channel-head">
@@ -176,7 +174,7 @@ h1 { font-size: clamp(27px, 2.8vw, 34px); line-height: 1.2; letter-spacing: -.02
   overflow-wrap: anywhere;
 }
 .local-note { margin-top: 3px; color: var(--muted); font-size: 13px; }
-.preview-toggle, .manual {
+.preview-toggle {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -189,7 +187,7 @@ h1 { font-size: clamp(27px, 2.8vw, 34px); line-height: 1.2; letter-spacing: -.02
   font-size: 14px;
   text-decoration: none;
 }
-.preview-toggle:hover, .manual:hover { text-decoration: underline; text-underline-offset: 3px; }
+.preview-toggle:hover { text-decoration: underline; text-underline-offset: 3px; }
 .chevron { width: 7px; height: 7px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: translateY(-2px) rotate(45deg); }
 .preview-toggle[aria-expanded="true"] .chevron { transform: translateY(2px) rotate(225deg); }
 .preview { padding: 0 var(--panel-padding) 18px; }
