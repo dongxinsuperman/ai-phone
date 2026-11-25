@@ -12,12 +12,12 @@ from websockets.legacy.client import connect
 
 if __package__:
     from .hdc_ports import (
-        FIRMWARE_COMMANDS, FIRMWARE_REQUEST, FRAME_LENGTH, PORT_ERROR, PORT_READY, PORT_REQUEST,
+        FIRMWARE_COMMANDS, FIRMWARE_REQUEST, FRAME_LENGTH, MAX_FIRMWARE_BYTES, PORT_ERROR, PORT_READY, PORT_REQUEST,
         PortStreams, arguments, firmware_file_index, frame, port_rule,
     )
 else:
     from hdc_ports import (
-        FIRMWARE_COMMANDS, FIRMWARE_REQUEST, FRAME_LENGTH, PORT_ERROR, PORT_READY, PORT_REQUEST,
+        FIRMWARE_COMMANDS, FIRMWARE_REQUEST, FRAME_LENGTH, MAX_FIRMWARE_BYTES, PORT_ERROR, PORT_READY, PORT_REQUEST,
         PortStreams, arguments, firmware_file_index, frame, port_rule,
     )
 
@@ -88,7 +88,13 @@ async def hdc_forward(ws, writer, hello, command, forwarding):
 
 
 async def hdc_firmware(ws, reader, writer, hello, command):
+    async def receive():
+        async for message in ws:
+            writer.write(message)
+            await writer.drain()
+
     async def transfer():
+        reply = None
         try:
             parts = arguments(command)
             index = firmware_file_index(parts)
@@ -98,19 +104,27 @@ async def hdc_firmware(ws, reader, writer, hello, command):
                 remaining = os.fstat(package.fileno()).st_size
                 if not remaining:
                     raise ValueError("The firmware file is empty")
+                if remaining > MAX_FIRMWARE_BYTES:
+                    raise ValueError("HDC firmware file exceeds the 32 GiB upload limit")
                 manifest = json.dumps([parts, path.suffix, remaining]).encode()
                 await ws.send(frame(hello) + frame(FIRMWARE_REQUEST + manifest))
-                while remaining:
-                    data = package.read(min(65536, remaining))
-                    if not data:
-                        raise ValueError("The firmware file changed while uploading")
-                    await ws.send(frame(data))
-                    remaining -= len(data)
-            async for message in ws:
-                writer.write(message)
-                await writer.drain()
+                reply = asyncio.create_task(receive())
+                try:
+                    while remaining:
+                        data = package.read(min(65536, remaining))
+                        if not data:
+                            raise ValueError("The firmware file changed while uploading")
+                        await ws.send(frame(data))
+                        remaining -= len(data)
+                except ConnectionClosed:
+                    pass  # The Agent can reject the upload before reading the entire file.
+            await reply
         except (OSError, ValueError) as exc:
             await hdc_reply(writer, "[Fail] " + str(exc))
+        finally:
+            if reply is not None:
+                reply.cancel()
+                await asyncio.gather(reply, return_exceptions=True)
 
     tasks = [asyncio.create_task(transfer()), asyncio.create_task(reader.read(1))]
     try:

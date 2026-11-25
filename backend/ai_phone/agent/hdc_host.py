@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import socket
 import tempfile
 import time
@@ -15,7 +16,7 @@ from loguru import logger
 
 from ai_phone.ai_connect.hdc import valid_device
 from ai_phone.ai_connect.hdc_ports import (
-    FIRMWARE_COMMANDS, FIRMWARE_REQUEST, FRAME_LENGTH, PORT_ERROR, PORT_READY, PORT_REQUEST,
+    FIRMWARE_COMMANDS, FIRMWARE_REQUEST, FRAME_LENGTH, MAX_FIRMWARE_BYTES, PORT_ERROR, PORT_READY, PORT_REQUEST,
     PortStreams, arguments, firmware_file_index, frame, port_rule,
 )
 
@@ -34,6 +35,11 @@ _FILE_COMMANDS = (b"file send", b"file recv", b"install")
 _REMOTE_TRANSFERS = (b"file send remote ", b"file recv remote ", b"install remote ")
 # OpenHarmony HDC's host-side file and application transfer command IDs.
 _TRANSFER = (*range(3000, 3005), 3006, 3007, *range(3500, 3505))
+_FIRMWARE_MIN_FREE = 1024**3
+_FIRMWARE_SPACE_CHECK_INTERVAL = 8 * 1024**2
+# The free-space reading already counts written bytes. Reserve only the bytes
+# still expected by other uploads in this Agent's event loop.
+_firmware_bytes_pending = 0
 
 
 def pinned_handshake(payload, serial, server_banner):
@@ -100,27 +106,51 @@ async def _port_tunnel(peer, serial, request):
 
 
 async def _firmware_tunnel(peer, writer, binding, client_frame, download, manifest):
-    parts, extension, size = json.loads(manifest)
+    global _firmware_bytes_pending
+    fields = json.loads(manifest)
+    if not isinstance(fields, list) or len(fields) != 3:
+        raise ValueError("无效的 HDC 固件文件")
+    parts, extension, size = fields
     if (not isinstance(parts, list) or any(not isinstance(p, str) for p in parts)
             or not isinstance(extension, str) or not re.fullmatch(r"(?:\.[A-Za-z0-9]+)?", extension)
             or type(size) is not int or size <= 0):
         raise ValueError("无效的 HDC 固件文件")
+    if size > MAX_FIRMWARE_BYTES:
+        raise ValueError("HDC 固件文件超过单文件 32 GiB 上限")
     index = firmware_file_index(parts)
     if parts[index]:
         raise ValueError("HDC 固件必须由调用方上传")
     with tempfile.TemporaryDirectory(prefix="ai-phone-hdc-") as directory:
         path = Path(directory) / ("upload" + extension)
+        if size + _firmware_bytes_pending > shutil.disk_usage(directory).free - _FIRMWARE_MIN_FREE:
+            raise ValueError("Agent 暂存空间不足，无法接收 HDC 固件")
         remaining = size
         last_activity = 0.0
-        with path.open("wb") as package:
-            while remaining:
-                data = await client_frame(min(65536, remaining))
-                package.write(data)
-                remaining -= len(data)
-                now = time.monotonic()
-                if now - last_activity >= 5:
-                    await peer.send("request")
-                    last_activity = now
+        since_space_check = 0
+        _firmware_bytes_pending += size
+        try:
+            with path.open("wb") as package:
+                while remaining:
+                    limit = min(65536, remaining)
+                    data = await client_frame(limit)
+                    count = len(data)
+                    if not 0 < count <= limit:
+                        raise ValueError("HDC 固件数据超出声明大小或提前结束")
+                    if package.write(data) != count:
+                        raise OSError("Agent 未能写完 HDC 固件数据")
+                    remaining -= count
+                    _firmware_bytes_pending -= count
+                    since_space_check += count
+                    if since_space_check >= _FIRMWARE_SPACE_CHECK_INTERVAL:
+                        if _firmware_bytes_pending > shutil.disk_usage(directory).free - _FIRMWARE_MIN_FREE:
+                            raise ValueError("Agent 暂存空间不足，HDC 固件上传已中断")
+                        since_space_check = 0
+                    now = time.monotonic()
+                    if now - last_activity >= 5:
+                        await peer.send("request")
+                        last_activity = now
+        finally:
+            _firmware_bytes_pending -= remaining
         parts[index] = str(path)
         await peer.send("request")
         writer.write(binding + frame(" ".join(parts).encode() + b"\0"))
@@ -233,7 +263,10 @@ async def forward(peer, serial):
             await _port_tunnel(peer, serial, port_request)
             return
         if firmware_request is not None:
-            await _firmware_tunnel(peer, writer, binding, client_frame, download, firmware_request)
+            try:
+                await _firmware_tunnel(peer, writer, binding, client_frame, download, firmware_request)
+            except (OSError, ValueError) as exc:
+                await peer.send(frame(("[Fail] " + str(exc) + "\n").encode()))
             return
         tasks = [asyncio.create_task(upload(command, transfer)), asyncio.create_task(download())]
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)

@@ -1,16 +1,18 @@
 """Regression boundaries where direct access meets the shared device lock."""
 import asyncio
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
 
 from ai_phone.ai_connect import api
 from ai_phone.ai_connect.agent_channel import NativeAgentChannel
-from ai_phone.ai_connect.android import allowed_service
+from ai_phone.ai_connect.android import allowed_service, hardware_serial
 from ai_phone.agent import native_direct
 from ai_phone.agent.ws_client import AgentWSClient
 from ai_phone.server.hub import Hub
 from ai_phone.server.models import Device
+from ai_phone.server.ws.agent_ws import _upsert_devices
 from ai_phone.shared import protocol as P
 
 
@@ -114,6 +116,9 @@ async def test_clean_client_can_read_guide_and_discover_without_occupying(client
     assert "只粘贴接入说明或发来本指南链接" in intro
     assert "先实际查询 GET /api/ai-connect/devices" in intro
     assert "想用哪台设备" in intro and "aiphone vm" in intro
+    assert 'webkit-connect.pyz "$INSTANCE" lease.json --web-inspector' in guide.text
+    assert "hdc fport、rport、reconnect" in guide.text
+    assert "sideload、update、flash" in guide.text and "32 GiB" in guide.text
     catalog = await client.get(api.BASE + "/devices")
     assert catalog.status_code == 200 and catalog.json() == []
     assert (await client.post(api.BASE + "/sessions", json={"serial": "unknown"})).status_code == 409
@@ -127,6 +132,91 @@ def test_only_device_shell_services():
     assert allowed_service("exec:screencap -p")
     for name in ["host:kill", "host:tport:serial:B", "tcp:5037", "shell,v2,pty:ls", "shell:", "shell:ls\0host:kill"]:
         assert not allowed_service(name)
+
+
+@pytest.mark.asyncio
+async def test_android_catalog_reports_device_kind_and_requires_network_identity(client, app, session):
+    hub = app.state.hub = Hub()
+    conn = await hub.register_agent("agent", "mac", "Darwin", SimpleNamespace(), host_id="host")
+    host = conn.native_channel = NativeAgentChannel(conn)
+    host.devices = {"usb": 1, "emulator-5554": 2, "192.0.2.1:5555": 3, "192.0.2.2:5555": 4,
+                    "192.0.2.3:5555": 5}
+    await hub.set_devices("agent", set(host.devices))
+    for serial in host.devices:
+        hub.set_device_readiness(serial, {"ready": True})
+        session.add(Device(serial=serial, agent_id="agent", platform="android", status="online"))
+    hub.set_device_extra("192.0.2.1:5555", {"adb_hardware_serial": "hardware-serial"})
+    hub.set_device_extra("192.0.2.2:5555", {"adb_hardware_serial": "0123456789ABCDEF"})
+    await session.commit()
+
+    rows = (await client.get(api.BASE + "/devices")).json()
+    assert {row["serial"]: row["device_kind"] for row in rows} == {
+        "usb": "physical", "emulator-5554": "virtual", "192.0.2.1:5555": "physical",
+    }
+    assert hardware_serial("0123456789ABcdef") is None
+    assert hardware_serial("1234567890") is None
+    assert hardware_serial("hardware-serial") == "hardware-serial"
+
+
+@pytest.mark.asyncio
+async def test_openapi_advertises_current_native_endpoints(app):
+    paths = app.openapi()["paths"]
+    assert api.BASE + "/sessions/{ident}/screen" in paths
+    assert api.BASE + "/adb-connect.pyz" in paths
+    for retired_path in ("/sessions/{ident}/adb", "/sessions/{ident}/screenshot", "/adb-client.py"):
+        assert api.BASE + retired_path not in paths
+    wda_operations = paths[api.BASE + "/sessions/{ident}/wda/{command}"]
+    assert set(wda_operations) == {"get", "head", "post", "put", "patch", "delete", "options", "trace"}
+    assert len({operation["operationId"] for operation in wda_operations.values()}) == len(wda_operations)
+
+
+@pytest.mark.asyncio
+async def test_device_inventory_removes_stale_android_alias_without_releasing_feature_lock(app):
+    hub = Hub()
+    store = hub.vm_lock_store = app.state.lock_store
+    address = "192.0.2.1:5555"
+    await hub.register_agent("agent", "mac", "Darwin", SimpleNamespace())
+
+    async def report(devices):
+        await hub.set_devices("agent", {device["serial"] for device in devices})
+        await _upsert_devices("agent", devices, hub)
+
+    def android(serial, identity, status="online"):
+        return {"serial": serial, "platform": "android", "status": status,
+                "extra": {"adb_hardware_serial": identity}}
+
+    usb = android("usb", "device-a")
+    network = android(address, "device-a")
+    await report([usb, network])
+    feature = await store.acquire("usb", "feature", "job")
+    assert store.peek(address) is feature
+
+    await report([usb, android(address, "device-a", status="offline")])
+    assert store.peek(address) is None
+    await report([usb, network])
+    assert store.peek(address) is feature
+    await report([usb])
+    assert store.peek(address) is None
+    await report([usb, android(address, None)])
+    assert store.peek(address) is None
+    await report([usb, network])
+    assert store.peek(address) is feature
+
+    await hub.register_agent("other", "windows", "Windows", SimpleNamespace())
+    await hub.set_devices("other", {address})
+    await _upsert_devices("other", [android(address, "device-b")], hub)
+    other = await store.acquire(address, "direct", "session")
+    await hub.unregister_agent("agent")
+    assert hub.agent_id_for_serial(address) == "other"
+    assert await store.heartbeat("usb", feature.token) is feature
+    store.set_device_identity("usb-b", "android:device-b")
+    assert store.peek("usb-b") is other
+    await store.release(address, other.token)
+    feature_b = await store.acquire("usb-b", "feature-b", "job")
+    assert store.peek(address) is feature_b
+    await hub.unregister_agent("other")
+    assert store.peek(address) is None
+    assert await store.release("usb", feature.token)
 
 
 @pytest.mark.asyncio
@@ -168,6 +258,96 @@ async def test_agent_advertises_native_transports_from_its_online_device_snapsho
     assert sent == [{"type": P.MSG_AI_DIRECT_INVENTORY, "devices": {"emulator-5554": 7},
                      "wda_devices": {"iphone": 8}, "wda_simulators": {"simulator": "a" * 64},
                      "hdc_devices": {}}]
+
+
+@pytest.mark.asyncio
+async def test_agent_inventory_retries_new_snapshot_and_isolates_hdc_errors(monkeypatch):
+    client = AgentWSClient("ws://localhost/ws/agent", "test", "agent", "mac")
+    native = native_direct.NativeDeviceAccess(client)
+    started = asyncio.Event()
+    proceed = asyncio.Event()
+    sent = []
+
+    def device(serial):
+        return {"serial": serial, "platform": "android", "status": "online"}
+
+    async def android(serials):
+        if serials == {"first"}:
+            started.set()
+            await proceed.wait()
+        return {serial: 1 for serial in serials}
+
+    def hdc(_serials):
+        raise RuntimeError("HDC inventory unavailable")
+
+    async def send(payload):
+        sent.append(payload)
+        return True
+
+    monkeypatch.setattr(native, "android_inventory", android)
+    monkeypatch.setattr(native_direct.harmony_native, "inventory", hdc)
+    monkeypatch.setattr(client, "send", send)
+    client._last_devices = [device("first"), {"serial": "hdc", "platform": "harmony", "status": "online"}]
+    await native.refresh_inventory(client)
+    try:
+        await asyncio.wait_for(started.wait(), 1)
+        client._last_devices.append(device("second"))
+        await native.refresh_inventory(client)
+        proceed.set()
+        await asyncio.wait_for(native.inventory_task, 1)
+        assert [packet["devices"] for packet in sent] == [{"first": 1}, {"first": 1, "second": 1}]
+        assert all(packet["hdc_devices"] == {} for packet in sent)
+    finally:
+        await native.disconnected(client)
+
+
+@pytest.mark.asyncio
+async def test_native_and_feature_writes_share_agent_socket_and_waiters_cannot_cross_reconnect():
+    hub = Hub()
+    entered = asyncio.Event()
+    resume = asyncio.Event()
+    sent = []
+
+    async def send_json(payload):
+        sent.append(payload["type"])
+        if payload["type"] == "feature":
+            entered.set()
+            await resume.wait()
+
+    async def close(**_):
+        pass
+
+    conn = await hub.register_agent("agent", "mac", "Darwin", SimpleNamespace(send_json=send_json, close=close))
+    direct = conn.native_channel = NativeAgentChannel(conn)
+
+    async def queue_writes():
+        entered.clear()
+        resume.clear()
+        feature = asyncio.create_task(hub.send_to_agent("agent", {"type": "feature"}))
+        await asyncio.wait_for(entered.wait(), 1)
+        native = asyncio.create_task(direct.send(id="native"))
+        await asyncio.sleep(0)
+        return feature, native
+
+    feature, native = await queue_writes()
+    try:
+        assert sent == ["feature"]
+    finally:
+        resume.set()
+        assert await feature
+        await native
+    assert sent == ["feature", P.MSG_AI_DIRECT_REQUEST]
+
+    feature, native = await queue_writes()
+    try:
+        await hub.register_agent("agent", "mac", "Darwin", SimpleNamespace(send_json=send_json))
+    finally:
+        resume.set()
+        await feature
+        with pytest.raises(RuntimeError, match="已断开"):
+            await native
+    assert await hub.send_to_agent("agent", {"type": "new"})
+    assert sent == ["feature", P.MSG_AI_DIRECT_REQUEST, "feature", "new"]
 
 
 @pytest.mark.asyncio
@@ -286,8 +466,6 @@ async def test_native_tunnels_route_to_two_agents_and_revoke_one_phone(client, a
 
 @pytest.mark.asyncio
 async def test_interactive_adb_input_is_activity_without_parsing_commands(monkeypatch):
-    from contextlib import asynccontextmanager
-
     from ai_phone.ai_connect import native
 
     received, sent = asyncio.Queue(), asyncio.Queue()
@@ -335,6 +513,78 @@ async def test_interactive_adb_input_is_activity_without_parsing_commands(monkey
     finally:
         await received.put(None)
         await asyncio.wait_for(task, 1)
+
+
+@pytest.mark.asyncio
+async def test_adb_stream_backpressure_does_not_stall_other_streams(monkeypatch):
+    from ai_phone.ai_connect import native
+
+    received, sent = asyncio.Queue(), asyncio.Queue()
+    blocked, canceled, aborted = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    readers = [asyncio.StreamReader(), asyncio.StreamReader()]
+
+    class Wire:
+        async def __aiter__(self):
+            while (chunk := await received.get()) is not None:
+                yield chunk
+
+        send = sent.put
+
+    class Writer:
+        def __init__(self):
+            self.data = b""
+            self.transport = SimpleNamespace(abort=aborted.set)
+
+        def write(self, data):
+            self.data = data
+
+        async def drain(self):
+            if self.data == b"slow input":
+                blocked.set()
+                try:
+                    await asyncio.Future()
+                finally:
+                    canceled.set()
+
+    connections = iter(readers)
+
+    @asynccontextmanager
+    async def selected(_serial, _transport):
+        reader = next(connections)
+        reader.feed_data(b"OKAY")
+        yield reader, Writer()
+
+    async def packet(name, remote, local, data=b""):
+        magic = int.from_bytes(name, "little") ^ 0xffffffff
+        await received.put(native.HEADER.pack(name, remote, local, len(data), 0, magic) + data)
+
+    async def expect(name):
+        data = await asyncio.wait_for(sent.get(), 1)
+        assert data[:4] == name
+        return native.HEADER.unpack_from(data)[1:3], data[native.HEADER.size:]
+
+    monkeypatch.setattr(native, "device_connection", selected)
+    device = native.DeviceTransport(Wire(), "A", 3)
+    device.version = 0x01000001
+    task = asyncio.create_task(device.run())
+    try:
+        for remote in (7, 8):
+            await packet(b"OPEN", remote, 0, b"shell,v2,pty:\0")
+            assert await asyncio.wait_for(sent.get(), 1) == "request"
+            assert await expect(b"OKAY") == ((remote - 6, remote), b"")
+        await packet(b"WRTE", 7, 1, b"slow input")
+        await asyncio.wait_for(blocked.wait(), 1)
+        readers[1].feed_data(b"fast output")
+        readers[1].feed_eof()
+        assert await asyncio.wait_for(sent.get(), 1) == "request"
+        assert await expect(b"WRTE") == ((2, 8), b"fast output")
+        await packet(b"OKAY", 8, 2)
+        assert await expect(b"CLSE") == ((2, 8), b"")
+        assert not canceled.is_set()
+    finally:
+        await received.put(None)
+        await asyncio.wait_for(task, 1)
+    assert canceled.is_set() and aborted.is_set() and not device.streams
 
 
 @pytest.mark.asyncio

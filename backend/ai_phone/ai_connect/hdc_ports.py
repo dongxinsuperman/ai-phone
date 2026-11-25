@@ -11,6 +11,7 @@ PORT_READY = b"ready"
 PORT_ERROR = b"error "
 FIRMWARE_REQUEST = b"AI-PHONE HDC FILE "
 FIRMWARE_COMMANDS = (b"sideload ", b"update ", b"flash ")
+MAX_FIRMWARE_BYTES = 32 * 1024**3
 FRAME_LENGTH = struct.Struct("!I")
 _STREAM_HEADER = struct.Struct("!cI")
 

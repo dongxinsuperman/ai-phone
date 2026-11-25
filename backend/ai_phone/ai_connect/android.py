@@ -20,7 +20,7 @@ def is_network_adb(serial: str) -> bool:
 
 def hardware_serial(value) -> str | None:
     if (isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9._-]{1,128}", value)
-            and value.lower() not in {"unknown", "none", "null", "0"}):
+            and value.lower() not in {"unknown", "none", "null", "0", "0123456789abcdef", "1234567890"}):
         return value
     return None
 

@@ -21,11 +21,14 @@ def test_android_emulator_uses_its_current_local_transport(monkeypatch):
         AdbDeviceInfo("emulator-5554", "device", {"transport_id": "21"}),
         AdbDeviceInfo("127.0.0.1:5555", "device", {"transport_id": "22"}),
         AdbDeviceInfo("emulator-5556", "offline", {"transport_id": "23"}),
+        AdbDeviceInfo("127.0.0.1:5557", "device", {"transport_id": "invalid"}),
+        AdbDeviceInfo("unclassified", "device", {"transport_id": "24"}),
     ]
     monkeypatch.setattr(unified_operations.adb, "list", lambda *, extended: rows)
     assert unified_operations.device_transport("emulator-5554") == 21
     assert unified_operations.device_transport("usb-vivo") == 19
-    for serial in ("127.0.0.1:5555", "emulator-5556"):
+    assert unified_operations.device_transport("127.0.0.1:5555") == 22
+    for serial in ("emulator-5556", "127.0.0.1:5557", "unclassified", "absent"):
         with pytest.raises(unified_operations.OperationError):
             unified_operations.device_transport(serial)
 

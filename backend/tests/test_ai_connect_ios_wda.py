@@ -297,6 +297,32 @@ async def test_ios_forwards_feature_capabilities_and_device_routes_under_the_lea
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("failed_call", [("GET", "/status"), ("POST", "/session")])
+async def test_failed_wda_session_creation_keeps_existing_session(client, app, session, monkeypatch, failed_call):
+    host = await configure(app, session)
+    lease = (await client.post(api.BASE + "/sessions", json={"serial": PHONE})).json()
+    headers = {"Authorization": "Bearer " + lease["token"]}
+    base = lease["native"]["url"]
+    existing = await client.post(base + "/session", headers=headers, json={"capabilities": {"alwaysMatch": {}}})
+    assert existing.status_code == 200
+    ident = existing.json()["value"]["sessionId"]
+    relay = host.call_wda
+
+    async def fail_call(serial, transport, method, target, body, **kwargs):
+        if (method, target) == failed_call:
+            return 500, b'{"value":{"error":"session not created"}}'
+        return await relay(serial, transport, method, target, body, **kwargs)
+
+    monkeypatch.setattr(host, "call_wda", fail_call)
+    custom = {"capabilities": {"alwaysMatch": {"appium:waitForIdleTimeout": 0}}}
+    failure = await client.post(base + "/session", headers=headers, json=custom)
+    assert failure.status_code == 500 and failure.json()["value"]["error"] == "session not created"
+    source = await client.get(base + f"/session/{ident}/source", headers=headers)
+    assert source.status_code == 200 and source.json()["sessionId"] == ident
+    assert host.calls[-1] == (PHONE, 7, "GET", "/session/device-session/source")
+
+
+@pytest.mark.asyncio
 async def test_ios_web_inspector_uses_the_same_device_lease_and_token(client, app, session, monkeypatch):
     host = await configure(app, session)
     lease = (await client.post(api.BASE + "/sessions", json={"serial": PHONE})).json()

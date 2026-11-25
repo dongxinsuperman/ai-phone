@@ -8,7 +8,7 @@
 
 并发模型：
 - 单进程单 asyncio loop；所有 mutation 段内都没有 await
-- 因此不叠 ``asyncio.Lock``（其绑定 loop 的特性在测试/重连场景下会带来跨 loop 报错）
+- 路由表不加锁；下行写入由每条 Agent 连接自己的锁串行化
 - 真要做多 Server 副本，应该换 Redis pub/sub，届时 locking 由后端存储保证
 """
 from __future__ import annotations
@@ -23,6 +23,7 @@ from loguru import logger
 
 if TYPE_CHECKING:
     from ai_phone.ai_connect.agent_channel import NativeAgentChannel
+    from .lockstore import DeviceLockStore
 
 
 @dataclass
@@ -38,6 +39,19 @@ class AgentConn:
     capabilities: Set[str] = field(default_factory=set)
     host_id: str = ""
     native_channel: NativeAgentChannel | None = None
+    _send_gate: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
+    _disconnected: bool = field(default=False, init=False, repr=False)
+
+    async def send_json(self, payload: Dict[str, Any]) -> None:
+        async with self._send_gate:
+            if self._disconnected:
+                raise RuntimeError("Agent 连接已断开")
+            await self.ws.send_json(payload)
+
+    def disconnect(self) -> None:
+        self._disconnected = True
+        if self.native_channel is not None:
+            self.native_channel.disconnect()
 
 
 class Hub:
@@ -45,6 +59,7 @@ class Hub:
         self._agents: Dict[str, AgentConn] = {}
         self._serial_to_agent: Dict[str, str] = {}
         self._run_to_agent: Dict[str, str] = {}
+        self.vm_lock_store: DeviceLockStore | None = None
         self._subs: Dict[str, Set[WebSocket]] = {}
         # serial -> agent 上报的非持久化元信息（如 unauthorized 原因）。
         # 不落库（避免加 schema migration），下次 hello 来全量刷新。
@@ -164,11 +179,10 @@ class Hub:
     ) -> AgentConn:
         old = self._agents.pop(agent_id, None)
         if old is not None:
-            if old.native_channel is not None:
-                old.native_channel.disconnect()
+            old.disconnect()
             logger.warning("Agent {} 重复注册，旧连接将被替换", agent_id)
-            for s in list(old.serials):
-                self._serial_to_agent.pop(s, None)
+            for s in old.serials:
+                self._drop_device_route(agent_id, s)
             # 同 id 重连：**不**清 old 的 run→agent 路由（保留，下面统一并入新连接）。
             # serial 路由不迁——Agent 重连的 hello/set_devices 会自然重建。
             try:
@@ -204,10 +218,9 @@ class Hub:
             # 当前登记的是同 id 的更新连接，这条是过期的旧连接 —— 不动任何路由。
             return None
         self._agents.pop(agent_id, None)
-        if conn.native_channel is not None:
-            conn.native_channel.disconnect()
-        for s in list(conn.serials):
-            self._serial_to_agent.pop(s, None)
+        conn.disconnect()
+        for s in conn.serials:
+            self._drop_device_route(agent_id, s)
         for r in list(conn.run_ids):
             self._run_to_agent.pop(r, None)
         logger.info("Agent 下线 | id={} serials={}", agent_id, sorted(conn.serials))
@@ -225,8 +238,13 @@ class Hub:
         if conn is None:
             return
         conn.serials.discard(serial)
+        self._drop_device_route(agent_id, serial)
+
+    def _drop_device_route(self, agent_id: str, serial: str) -> None:
         if self._serial_to_agent.get(serial) == agent_id:
             self._serial_to_agent.pop(serial, None)
+            if self.vm_lock_store is not None:
+                self.vm_lock_store.clear_device_identity(serial)
 
     async def set_devices(self, agent_id: str, serials: Set[str]) -> None:
         """全量替换一个 Agent 的设备集合，做差分后更新反查表。"""
@@ -238,8 +256,7 @@ class Hub:
         to_remove = old - serials
         to_add = serials - old
         for s in to_remove:
-            if self._serial_to_agent.get(s) == agent_id:
-                self._serial_to_agent.pop(s, None)
+            self._drop_device_route(agent_id, s)
         for s in to_add:
             self._serial_to_agent[s] = agent_id
         conn.serials = set(serials)
@@ -304,7 +321,7 @@ class Hub:
         if conn is None:
             return False
         try:
-            await conn.ws.send_json(payload)
+            await conn.send_json(payload)
             return True
         except Exception as exc:  # noqa: BLE001
             logger.warning("发送到 Agent {} 失败：{}", agent_id, exc)

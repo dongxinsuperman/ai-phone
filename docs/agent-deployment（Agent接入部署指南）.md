@@ -266,7 +266,7 @@ AI_PHONE_SERVER_WS_URL=ws://<server-host>:8000/ws/agent
 
 Agent 侧不需要向管理员索取数据库、模型、Kafka 等 Server 专用配置。只要不在这台机器启动 Server，模板里的 `AI_PHONE_DB_URL`、`AI_PHONE_PHONE_VLM_*`、`AI_PHONE_AUX_*`、`AI_PHONE_KAFKA_BROKERS` 不会影响 Agent 连接公司 Server。
 
-Agent 使用已登记的在线设备自动上报可用原生连接。WDA 请求走既有 `/ws/agent`，Android 的 ADB 数据连接由同一个 Agent 在领用期间按需发起。
+Agent 使用已登记的在线设备自动上报可用原生连接。WDA 请求走既有 `/ws/agent`。Android ADB、鸿蒙 HDC 和 iOS Web Inspector 的数据连接由同一个 Agent 在领用期间按需发起。鸿蒙真机复用 Agent 宿主已有的 HDC 连接，受管模拟器上报当前运行实例的 HDC 连接。原生直连复用已部署的 Agent。
 
 Agent 部署者至少要逐项确认：
 

@@ -30,6 +30,7 @@ class LockInfo:
     last_heartbeat_at: float
     ttl_seconds: float = DEFAULT_TTL_SECONDS
     meta: Dict[str, Any] = field(default_factory=dict)
+    _identity: str | None = field(default=None, repr=False, compare=False)
 
     def is_expired(self, now: Optional[float] = None) -> bool:
         t = now if now is not None else time.monotonic()
@@ -67,6 +68,7 @@ class DeviceLockStore:
         self._locks: Dict[str, LockInfo] = {}
         self._identities: dict[str, str] = {}
         self._aliases: dict[str, set[str]] = {}
+        self._locks_by_identity: dict[str, set[str]] = {}
         # 本 Store 只被单个 asyncio 事件循环里的协程访问，且所有 mutation 段内
         # 都没有 await；asyncio 单任务性已经保证互斥，不再叠 asyncio.Lock。
         # 这样还能规避「Lock 绑定在旧 loop 上导致跨 loop 报错」的问题。
@@ -75,22 +77,32 @@ class DeviceLockStore:
     # 读
     # ------------------------------------------------------------------
     def set_device_identity(self, serial: str, identity: str) -> None:
-        previous = self._identities.get(serial)
-        if previous == identity:
+        if self._identities.get(serial) == identity:
             return
-        if previous is not None:
-            self._aliases[previous].discard(serial)
-            if not self._aliases[previous]:
-                self._aliases.pop(previous)
+        self.clear_device_identity(serial)
         self._identities[serial] = identity
         self._aliases.setdefault(identity, set()).add(serial)
+        # A lock acquired before discovery learns its identity once. A later
+        # port reuse must never transfer that lock to the new physical device.
+        lock = self._locks.get(serial)
+        if lock is not None and lock._identity is None and not lock.is_expired():
+            lock._identity = identity
+            self._locks_by_identity.setdefault(identity, set()).add(serial)
+
+    def clear_device_identity(self, serial: str) -> None:
+        identity = self._identities.pop(serial, None)
+        if identity is not None:
+            aliases = self._aliases[identity]
+            aliases.discard(serial)
+            if not aliases:
+                self._aliases.pop(identity)
 
     def peek(self, serial: str, *, now: Optional[float] = None) -> Optional[LockInfo]:
         """不加锁的快速查询；返回的是引用，调用方不要改。过期则视为不存在。"""
         info = self._locks.get(serial)
         if info is not None and not info.is_expired(now):
             return info
-        for alias in self._aliases.get(self._identities.get(serial), ()):
+        for alias in self._locks_by_identity.get(self._identities.get(serial), ()):
             if alias != serial and (info := self._locks.get(alias)) is not None and not info.is_expired(now):
                 return info
         return None
@@ -99,8 +111,8 @@ class DeviceLockStore:
         """当前所有有效锁的副本。"""
         self._reap()
         locks = dict(self._locks)
-        for serial, lock in self._locks.items():
-            for alias in self._aliases.get(self._identities.get(serial), ()):
+        for lock in self._locks.values():
+            for alias in self._aliases.get(lock._identity, ()):
                 locks.setdefault(alias, lock)
         return locks
 
@@ -150,8 +162,12 @@ class DeviceLockStore:
             last_heartbeat_at=now,
             ttl_seconds=ttl_seconds or self._ttl,
             meta=dict(meta or {}),
+            _identity=self._identities.get(serial),
         )
+        self._remove_lock(serial)
         self._locks[serial] = info
+        if info._identity is not None:
+            self._locks_by_identity.setdefault(info._identity, set()).add(serial)
         return info
 
     async def heartbeat(self, serial: str, token: str) -> LockInfo:
@@ -169,17 +185,25 @@ class DeviceLockStore:
             return False
         if not force and info.token != token:
             raise BadToken("锁 token 不匹配")
-        self._locks.pop(serial, None)
+        self._remove_lock(serial)
         return True
 
     # ------------------------------------------------------------------
     # 内部：过期清理
     # ------------------------------------------------------------------
+    def _remove_lock(self, serial: str) -> None:
+        info = self._locks.pop(serial, None)
+        if info is not None and info._identity is not None:
+            locks = self._locks_by_identity[info._identity]
+            locks.discard(serial)
+            if not locks:
+                self._locks_by_identity.pop(info._identity)
+
     def _reap(self, now: Optional[float] = None) -> None:
         t = now if now is not None else time.monotonic()
         expired = [s for s, info in self._locks.items() if info.is_expired(t)]
         for s in expired:
-            self._locks.pop(s, None)
+            self._remove_lock(s)
 
 
 # 进程级单例，FastAPI 里通过 app.state 注入；测试可以直接 new 一个。

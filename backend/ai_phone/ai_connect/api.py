@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import android_actions, hdc, ios_wda, unified
 from .android_changes import changes
-from .android import COMMAND_SECONDS, allowed_service, hardware_serial, is_network_adb
+from .android import COMMAND_SECONDS, allowed_service, hardware_serial, is_local_emulator, is_network_adb
 from .client_bundle import client_bundle
 from .relay import connect_native
 
@@ -273,7 +273,11 @@ async def devices(response: Response, session: AsyncSession = DBSession,
             continue
         row = {"serial": dev.serial, "model": dev.model, "platform": unified.public_platform(dev.platform),
                "status": "busy" if store.peek(dev.serial) else "available"}
-        if dev.platform in {"ios", "ios_sim"}:
+        if dev.platform == "android":
+            extra = hub.get_device_extra(dev.serial)
+            virtual = is_local_emulator(dev.serial) or extra.get("device_kind") == "virtual"
+            row["device_kind"] = "virtual" if virtual else "physical"
+        elif dev.platform in {"ios", "ios_sim"}:
             row["device_kind"] = "virtual" if dev.platform == "ios_sim" else "physical"
         elif dev.platform == "harmony":
             row["device_kind"] = ("virtual" if unified.simulator_instance(
@@ -425,7 +429,7 @@ async def forward_wda(host, lease, method, path, target, body):
     # request must be sent to WDA so the caller's settings actually take effect.
     status, raw = await host.call_wda(lease.serial, lease.transport, "GET", "/status", b"")
     if status >= 300:
-        return status, raw, None
+        return status, raw, lease.wda_session
     try:
         receipt, value = ios_wda.session_info(raw)
         active_id = receipt.get("sessionId") or value.get("sessionId")
@@ -439,7 +443,7 @@ async def forward_wda(host, lease, method, path, target, body):
             status, raw = await host.call_wda(lease.serial, lease.transport, "POST", "/session",
                                              ios_wda.DEFAULT_SESSION if default else body)
         if status >= 300:
-            return status, raw, None
+            return status, raw, lease.wda_session
         receipt, value = ios_wda.session_info(raw)
         device_id = value.get("sessionId") or receipt.get("sessionId")
         if not ios_wda.is_session_id(device_id) or (reused and reused != device_id):
@@ -449,8 +453,6 @@ async def forward_wda(host, lease, method, path, target, body):
     return status, raw, ios_wda.Session(secrets.token_urlsafe(24), device_id)
 
 
-@router.api_route(BASE + "/sessions/{ident}/wda/{command:path}",
-                  methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE"])
 async def native_wda(ident: str, command: str, request: Request, store: DeviceLockStore = LockStoreDep,
                      hub: Hub = HubDep):
     direct = state(request.app)
@@ -495,6 +497,11 @@ async def native_wda(ident: str, command: str, request: Request, store: DeviceLo
                         media_type="application/json", headers=NO_CACHE)
 
 
+# Register each method separately so generated clients have distinct operation IDs.
+for method in ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE"):
+    router.add_api_route(BASE + "/sessions/{ident}/wda/{command:path}", native_wda, methods=[method])
+
+
 async def operate(ident, request, store, hub, service):
     direct = state(request.app)
     lease = direct.lookup(ident, request)
@@ -526,7 +533,7 @@ class AdbService(BaseModel):
     service: str = Field(min_length=1, max_length=16384)
 
 
-@router.post(BASE + "/sessions/{ident}/adb")
+@router.post(BASE + "/sessions/{ident}/adb", include_in_schema=False)
 async def adb(ident: str, body: AdbService, request: Request,
               store: DeviceLockStore = LockStoreDep, hub: Hub = HubDep):
     if not allowed_service(body.service):
@@ -535,7 +542,7 @@ async def adb(ident: str, body: AdbService, request: Request,
     return Response(raw, media_type="application/octet-stream", headers=NO_CACHE)
 
 
-@router.get(BASE + "/sessions/{ident}/screenshot")
+@router.get(BASE + "/sessions/{ident}/screenshot", include_in_schema=False)
 async def screenshot(ident: str, request: Request, store: DeviceLockStore = LockStoreDep, hub: Hub = HubDep):
     raw = await operate(ident, request, store, hub, "exec:screencap -p")
     if not raw.startswith(b"\x89PNG\r\n\x1a\n") or not raw.endswith(b"IEND\xaeB\x60\x82"):
@@ -708,7 +715,7 @@ async def download_webkit_client():
                     headers={"Content-Disposition": 'attachment; filename="webkit-connect.pyz"'})
 
 
-@router.get(BASE + "/adb-client.py")
+@router.get(BASE + "/adb-client.py", include_in_schema=False)
 async def download_client():
     return Response(Path(__file__).with_name("adb_client.py").read_bytes(), media_type="text/x-python",
                     headers={"Content-Disposition": 'attachment; filename="ai-phone-adb.py"'})
@@ -730,10 +737,10 @@ async def guide():
   需要新模拟器时，可以用 aiphone vm 管理 Android、iOS 和鸿蒙。在具备本实例已有管理权限时，通过 AIPHONE_BASE_URL 临时指定实例，用对应平台的 catalog 和 systems 查询机型与兼容系统。用户明确要创建时，用 create --start --wait 创建并启动，等设备就绪后从同一清单领用。已有设备的查询和领用不依赖 CLI。
 
 查看与领取
-  GET /api/ai-connect/devices 查询原生通道已就绪设备的 serial、model、platform 和 status。查询无需凭证，也不占用设备。
+  GET /api/ai-connect/devices 查询原生通道已就绪设备的 serial、model、platform、device_kind 和 status。查询无需凭证，也不占用设备。
   选定 available 的设备，以 Content-Type: application/json 向 POST /api/ai-connect/sessions 提交 {"serial":"选中的 serial"}。
   201 表示此次已独占所选设备。保存完整领取结果，session_id 标识这次占用，token 供已交付的入口和归还使用。
-  设备清单包含原生通道已就绪的 Android、iOS 和鸿蒙设备。能够确认设备身份的网络 ADB 也可领用。device_kind 有值时，physical 表示真机，virtual 表示模拟器。409 时可重新查看列表。
+  设备清单包含原生通道已就绪的 Android、iOS 和鸿蒙设备。能够确认设备身份的网络 ADB 也可领用。device_kind 为 physical 表示真机，为 virtual 表示模拟器。409 时可重新查看列表。
 
 选择用法
   优先使用原生直连 native。Android 使用 ADB，iOS 使用 WDA，鸿蒙使用 HDC。按文末对应说明操作。
@@ -821,6 +828,8 @@ async def guide():
 鸿蒙真机原生直连（native.protocol=hdc-server）
   同样从 native.client 下载并运行 hdc-connect.pyz。使用输出的 hdc_server。
   运行 hdc -p -s "<hdc_server>" list targets 查看本次领用的设备，或运行 hdc -p -s "<hdc_server>" shell 使用设备命令。
+  真机可用 hdc fport、rport、reconnect。端口转发跟随本次连接关闭。
+  sideload、update、flash 从运行连接器的电脑读取固件文件。命令中可用本机绝对路径，单个文件上限 32 GiB，需有足够的 Agent 暂存空间。
   领取回包带 api.observe 和 api.act 时，可在同次领用内切换。归还后本次 HDC 地址失效。
 
 """, media_type="text/plain")

@@ -7,6 +7,7 @@ import time
 from contextlib import suppress
 from urllib.parse import urlsplit, urlunsplit
 
+from loguru import logger
 from websockets.exceptions import ConnectionClosed
 from websockets.legacy.client import connect
 
@@ -31,6 +32,7 @@ class NativeDeviceAccess:
         self.operations = {}
         self.cancel_replies = set()
         self.inventory_task = None
+        self.inventory_requested = False
         self.last_inventory = None
         self.simulators = {}
         client.on(P.MSG_AI_DIRECT_REQUEST, self.handle)
@@ -40,8 +42,17 @@ class NativeDeviceAccess:
 
     async def refresh_inventory(self, client, _serials=None):
         # Schedule beside the existing scan so a slow native probe cannot hold up its callbacks.
+        self.inventory_requested = True
         if self.inventory_task is None or self.inventory_task.done():
-            self.inventory_task = asyncio.create_task(self.publish(client), name="ai-direct-inventory")
+            self.inventory_task = asyncio.create_task(self.publish_pending(client), name="ai-direct-inventory")
+
+    async def publish_pending(self, client):
+        while self.inventory_requested:
+            self.inventory_requested = False
+            try:
+                await self.publish(client)
+            except Exception:
+                logger.exception("AI 直连设备清单上报失败")
 
     async def disconnected(self, _client):
         tasks = [*self.operations.values(), *self.cancel_replies]
@@ -51,6 +62,7 @@ class NativeDeviceAccess:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         self.inventory_task = None
+        self.inventory_requested = False
         self.last_inventory = None
         self.simulators = {}
 
@@ -88,7 +100,11 @@ class NativeDeviceAccess:
         )
         wda_devices = {serial: device.devid for serial, device in usb.items()}
         simulators = {serial: generation for serial, (_, generation) in self.simulators.items()}
-        hdc_devices = harmony_native.inventory(client.online_device_serials("harmony"))
+        try:
+            hdc_devices = harmony_native.inventory(client.online_device_serials("harmony"))
+        except Exception:
+            logger.exception("AI 直连鸿蒙设备清单采集失败")
+            hdc_devices = {}
         snapshot = devices, wda_devices, simulators, hdc_devices
         if snapshot != self.last_inventory:
             if await client.send({"type": P.MSG_AI_DIRECT_INVENTORY, "devices": devices,

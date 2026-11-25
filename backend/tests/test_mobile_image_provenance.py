@@ -71,8 +71,16 @@ def test_verified_scrim_keeps_visible_words_and_native_floating_targets(monkeypa
             box = [point[0] - 10, 125, point[0] + 10, 154]
             frame["targets"].append({"id":key,"name":word,"name_source":"screen","role":"visible_text",
                                      "actions":["try_tap"],"source":"pixels","bounds":box,"point":point,"state":{}})
-            frame["screen_texts"].append({"text":word,"source":"screen", "bounds":box, "target":key})
+
+    def screen_text(_, frame, __):
+        frame["screen_texts"] = [
+            {"text": target["name"], "source": "screen", "bounds": target["bounds"], "target": target["id"]}
+            for target in frame["targets"] if target["id"] in {"T1", "T2"}
+        ]
+        frame["screen_texts_available"] = True
+
     monkeypatch.setattr(mobile_frame,"_screen_evidence",screen)
+    monkeypatch.setattr(mobile_frame, "_screen_text_evidence", screen_text)
     nodes=[{"role":"group","bounds":[0,0,380,270],"actions":["tap"],"point":[50,180],
             "_captures_taps_in":[[0,0,90,270]],
             "children":[{"role":"button","name":"Next","actions":["tap"],"bounds":[200,30,320,60]}]},

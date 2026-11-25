@@ -136,7 +136,7 @@ InstallationProxy 或 iOS Simulator `simctl` 通道。Android/Harmony 真机与�
 
 原生通道就绪的设备可领取。Android 支持 USB 真机、本机模拟器和能够确认设备身份的网络 ADB，iOS 使用 WDA，鸿蒙使用 HDC。Agent 支持辅助操作时，领取回包同时交付辅助入口。原生和辅助入口共用同一个占用 ID，指向同一台设备。
 
-1. 用 `GET /api/ai-connect/devices` 查询原生通道就绪的设备。选定 `available` 的设备后，向 `POST /api/ai-connect/sessions` 提交 `{"serial":"选中设备的 serial"}`。查询和领取均无需预先配置 token。
+1. 用 `GET /api/ai-connect/devices` 查询原生通道就绪的设备。`device_kind` 为 `physical` 表示真机，为 `virtual` 表示模拟器。选定 `available` 的设备后，向 `POST /api/ai-connect/sessions` 提交 `{"serial":"选中设备的 serial"}`。查询和领取均无需预先配置 token。
 2. 领取成功返回 `201`。保存完整领取结果，其中有 `session_id`、`token`、`native`、`api`、`action_types` 和 `release`。接口地址相对于实例地址。领取核对设备的原生连接与设备锁。`api` 为空时直接使用 `native`。
 3. Android 按 `native.client` 下载连接器，运行 `python3 adb-connect.pyz "<实例地址>" lease.json`，保持进程运行，并按输出的 `adb_serial` 使用 ADB。iOS 和鸿蒙分别使用下方的 WDA 和 HDC 原生入口。完成原生操作后先重新观察，再使用新帧里的编号。
 4. 回包有 `api.observe` 和 `api.act` 时，可用它们辅助看页面和操作。观察帧返回一张原尺寸 PNG、同帧清单与结构，以及本次的 `session_id`、`native`、`api` 和 `action_types`。发送动作时带同一会话凭证。`tap`、`scroll` 使用最新的 `frame_id`，按编号点时再给 `targets[].id`。
@@ -193,6 +193,8 @@ curl -sS -X POST "$ACT_URL" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: 
 
 WDA 会话 ID 只属于本次占用。默认请求沿用设备已有的 WDA 会话，自定义 `capabilities` 由 WDA 处理。真机和模拟器均返回 `native.protocol=wda-http`，以及同次占用的 `native.web_inspector` 连接信息。Agent 支持主动式暴露时，同一份领用回包还给出 `api.observe` 和 `api.act`。使用编号操作后可直接切回同一个 WDA 会话。向 `release` 发送 `DELETE` 后，本次占用的入口失效。设备列表里的 `device_kind` 分别为 `physical` 和 `virtual`。模拟器关机重启后需重新领取。
 
+需要调试已开放检查的网页时，从 `native.web_inspector.client` 下载连接器，运行 `python3 webkit-connect.pyz "<实例地址>" lease.json --web-inspector`。连接器输出 `web_inspector` 本地地址，收发 WebKit 原生 plist 消息，每帧以 4 字节大端长度开头。iOS 真机需在 Safari 的高级设置中打开「网页检查器」。模拟器断开后重连时，系统调试服务可能需要约 10 秒重新启动。
+
 iPhone Duo 展开时，默认前台检测可能读到外屏桌面。先用 `GET /session/<id>/wda/apps/list` 核对活动应用，再用 `GET /session/<id>/appium/settings` 保存原先的 `defaultActiveApplication`。向同一路径发送 `POST` 和 `{"settings":{"defaultActiveApplication":"<Bundle ID>"}}`，通过会话内的 `/wda/activeAppInfo` 和 `/source?format=xml` 读目标应用。通过 `POST /session/<id>/element` 发送 `{"using":"accessibility id","value":"<元素的辅助功能标识>"}`，再向 `POST /session/<id>/element/<元素 ID>/click` 发送 `{}`。在归还前恢复原 `defaultActiveApplication`。
 
 #### 鸿蒙模拟器原生 HDC
@@ -204,6 +206,8 @@ Agent 支持主动式暴露时，同次领取也返回 `api.observe` 和 `api.ac
 #### 鸿蒙真机原生 HDC
 
 已接入 Agent、HDC 就绪的鸿蒙真机可从相同入口领取。回包中的 `native.protocol` 为 `hdc-server`。使用同一连接器，按它输出的地址运行 `hdc -p -s "<hdc_server>" shell` 等设备命令。该地址只提供本次领用绑定的设备。归还后连接失效。Agent 复用原有 HDC 连接，支持主动式暴露时同次返回 `api.observe` 和 `api.act`。
+
+用同一个 `hdc -p -s "<hdc_server>"` 前缀调用 `fport tcp:<电脑端口> tcp:<设备端口>`、`rport tcp:<设备端口> tcp:<电脑端口>` 或 `reconnect`。端口转发随本次连接结束而清理。调用 `sideload`、`update` 或 `flash` 时，固件路径指向运行连接器的电脑，可用本机绝对路径。固件单个文件上限为 32 GiB，需有足够的 Agent 暂存空间。
 
 ## 3. 投递批次
 

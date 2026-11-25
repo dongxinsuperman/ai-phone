@@ -4,6 +4,42 @@
 
 ## Unreleased
 
+### 修复 AI 直连的设备占用和原生连接 / Fix AI Connect device leases and native connections
+
+- Android 的 USB 和网络 ADB 地址在确认属于同一台设备时，通过共享设备锁互斥。
+  设备下线时移除地址映射，已有占用由持有者按原令牌归还或到期。每条 ADB 流
+  独立写入，单条流阻塞时其他流可继续收发。
+- iOS 创建新 WDA 会话失败时保留原会话。Agent 会补跑重扫期间触发的刷新，
+  鸿蒙清单采集异常时 Android 和 iOS 仍可上报。直连和现有任务经同一条
+  Agent 连接串行发送。
+- 鸿蒙真机的 HDC 固件上传上限为每文件 32 GiB，Agent 暂存盘预留 1 GiB。
+  空间不足会返回明确错误，上传中断会清理临时文件。
+- Android 清单新增 `device_kind`。OpenAPI 展示现行连接器和操作入口，旧客户端
+  仍可调用兼容路径。接入说明补齐 iOS Web Inspector 和鸿蒙 HDC 命令。更新
+  Server 和设备宿主的 Agent 后，按领用回包重新下载原生连接器即可使用完整修复。
+- 后端 930 项专项回归、前端 120 项测试、Ruff 检查和前端生产构建通过。
+  鸿蒙真机刷写和跨宿主端到端验收待完成。
+
+- USB and network ADB addresses share a device lock when they resolve to the
+  same Android device. Disconnecting removes the address mapping. The current
+  holder can release the lease with its original token or let it expire. Each
+  ADB stream can progress while another stream is blocked.
+- Failed WDA session creation preserves the existing session. Agents rerun
+  inventory refreshes requested during a scan and continue publishing Android
+  and iOS inventory if HarmonyOS discovery fails. AI Connect and existing jobs
+  serialize writes on the same Agent connection.
+- Physical HarmonyOS HDC firmware uploads have a 32 GiB per-file limit and
+  reserve 1 GiB of free space on the Agent's staging volume. Insufficient space
+  returns an error, and interrupted uploads remove temporary files.
+- Android inventory now reports `device_kind`. OpenAPI advertises the current
+  endpoints, and existing clients can still call the legacy paths. The
+  connection guide covers iOS Web Inspector and HarmonyOS HDC commands. Update
+  the Server and device-host Agents, then download the current connector from
+  the claim response to get the full fix.
+- Validation passed 930 focused backend tests, 120 web tests, Ruff, and the web
+  production build. Physical HarmonyOS flashing and cross-host end-to-end
+  validation are pending.
+
 ### 精简终局断言提示词并增强输出解析健壮性 / Streamline final-verification prompts and harden verdict parsing
 
 - 将普通执行、独立长程救援及 V1/V2/V3 缓存终局验收的裁决原则集中在共享

@@ -42,6 +42,8 @@ class Stream:
     local: int
     remote: int
     ack: asyncio.Event = field(default_factory=asyncio.Event)
+    # The ADB handshake omits delayed_ack, so the peer waits after each write.
+    incoming: asyncio.Queue[bytes] = field(default_factory=lambda: asyncio.Queue(maxsize=1))
     writer: asyncio.StreamWriter | None = None
     task: asyncio.Task | None = None
 
@@ -115,7 +117,7 @@ class DeviceTransport:
                 await self.ws.send("request")
                 await self.send(b"OKAY", stream.local, stream.remote)
                 opened = True
-                await self.download(stream, reader)
+                await self.exchange_stream(stream, reader)
         except (OSError, ValueError, asyncio.IncompleteReadError, ConnectionClosed):
             pass
         finally:
@@ -130,6 +132,31 @@ class DeviceTransport:
             await self.send(b"WRTE", stream.local, stream.remote, data)
             await stream.ack.wait()
 
+    async def upload(self, stream):
+        while True:
+            data = await stream.incoming.get()
+            stream.writer.write(data)
+            try:
+                await stream.writer.drain()
+            except asyncio.CancelledError:
+                # Closing normally would wait for the blocked socket to flush.
+                stream.writer.transport.abort()
+                raise
+            if data:
+                await self.ws.send("request")
+            await self.send(b"OKAY", stream.local, stream.remote)
+
+    async def exchange_stream(self, stream, reader):
+        tasks = [asyncio.create_task(self.upload(stream)), asyncio.create_task(self.download(stream, reader))]
+        try:
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                task.result()
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
     async def accept_reverse(self, rule, reader, writer):
         if self.closing:
             writer.close()
@@ -140,7 +167,7 @@ class DeviceTransport:
             # This OPEN is handled by the caller's own ADB server.
             await self.send(b"OPEN", stream.local, 0, rule.destination + b"\0")
             await asyncio.wait_for(stream.ack.wait(), 5)
-            await self.download(stream, reader)
+            await self.exchange_stream(stream, reader)
         except (OSError, ConnectionClosed):
             pass
         finally:
@@ -261,11 +288,10 @@ class DeviceTransport:
                             stream.remote = remote
                         stream.ack.set()
                     elif name == b"WRTE" and stream.writer:
-                        stream.writer.write(data)
-                        await stream.writer.drain()
-                        if data:
-                            await self.ws.send("request")
-                        await self.send(b"OKAY", local, remote)
+                        try:
+                            stream.incoming.put_nowait(data)
+                        except asyncio.QueueFull:
+                            stream.task.cancel()
         finally:
             self.closing = True
             for rule in self.reverse_rules.values():
@@ -274,6 +300,7 @@ class DeviceTransport:
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+            self.streams.clear()
             for rule in self.reverse_rules.values():
                 rule.listener.close()
             await asyncio.gather(*(self.remove_reverse(source) for source in list(self.reverse_rules)),

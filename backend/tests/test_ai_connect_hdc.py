@@ -2,17 +2,20 @@
 import asyncio
 import io
 import json
+import shlex
 import struct
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from PIL import Image
+from websockets.exceptions import ConnectionClosedOK
 
+from ai_phone.agent import hdc_host
 from ai_phone.agent.hdc_host import _firmware_tunnel, forward, pinned_handshake
-from ai_phone.ai_connect import api, hdc, unified
+from ai_phone.ai_connect import api, connect_client, hdc, unified
 from ai_phone.ai_connect.agent_channel import NativeAgentChannel
-from ai_phone.ai_connect.hdc_ports import PortStreams
+from ai_phone.ai_connect.hdc_ports import FIRMWARE_REQUEST, MAX_FIRMWARE_BYTES, PortStreams, frame
 from ai_phone.server.hub import Hub
 from ai_phone.server.models import Device
 from ai_phone.shared import protocol as P
@@ -51,6 +54,8 @@ def test_native_hdc_host_handshake_pins_one_device():
     (b"list targets -v", None, b"USB001\n"),
     (b"wait", None, b"Wait for connected target is USB001\n"),
     (b"discover", None, b"[Fail] This command requires access to the HDC host\n"),
+    (FIRMWARE_REQUEST + json.dumps([["update", ""], ".zip", MAX_FIRMWARE_BYTES + 1]).encode(),
+     None, "[Fail] HDC 固件文件超过单文件 32 GiB 上限\n".encode()),
 ])
 async def test_native_hdc_forwards_target_commands_and_keeps_host_operations_scoped(monkeypatch, command, upstream, reply):
     def frame(data):
@@ -148,7 +153,9 @@ async def test_hdc_port_mapping_transfers_multiple_streams_and_closes_them_toget
 
 
 @pytest.mark.asyncio
-async def test_hdc_firmware_uses_only_transferred_bytes_and_cleans_up_staging():
+async def test_hdc_firmware_uses_only_transferred_bytes_and_cleans_up_staging(tmp_path, monkeypatch):
+    monkeypatch.setattr(hdc_host.tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr(hdc_host.shutil, "disk_usage", lambda _: SimpleNamespace(free=hdc_host._FIRMWARE_MIN_FREE + 3))
     frames = []
     messages = []
 
@@ -173,6 +180,76 @@ async def test_hdc_firmware_uses_only_transferred_bytes_and_cleans_up_staging():
                            json.dumps([["update", ""], ".zip", 3]).encode())
     assert len(messages) == 2 and set(messages) == {"request"}
     assert not frames[1].exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("chunk", [b"", b"more bytes than declared"])
+async def test_invalid_hdc_firmware_payload_discards_partial_upload(tmp_path, monkeypatch, chunk):
+    monkeypatch.setattr(hdc_host.tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr(hdc_host.shutil, "disk_usage", lambda _: SimpleNamespace(free=hdc_host._FIRMWARE_MIN_FREE + 5))
+    chunks = iter((b"ab", chunk))
+
+    async def read(_limit):
+        return next(chunks)
+
+    async def send(_message):
+        pass
+
+    with pytest.raises(ValueError, match="声明大小或提前结束"):
+        await _firmware_tunnel(SimpleNamespace(send=send), None, b"", read, None,
+                               json.dumps([["update", ""], ".zip", 5]).encode())
+    assert not list(tmp_path.iterdir()) and hdc_host._firmware_bytes_pending == 0
+
+
+@pytest.mark.asyncio
+async def test_overlapping_hdc_firmware_uploads_reserve_space_until_disconnect(tmp_path, monkeypatch):
+    monkeypatch.setattr(hdc_host.tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr(hdc_host.shutil, "disk_usage", lambda _: SimpleNamespace(free=hdc_host._FIRMWARE_MIN_FREE + 10))
+    manifest = json.dumps([["update", ""], ".zip", 6]).encode()
+    entered = asyncio.Event()
+
+    async def read(_limit):
+        entered.set()
+        await asyncio.Future()
+
+    first = asyncio.create_task(_firmware_tunnel(None, None, b"", read, None, manifest))
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        with pytest.raises(ValueError, match="暂存空间不足"):
+            await asyncio.wait_for(_firmware_tunnel(None, None, b"", read, None, manifest), 1)
+        assert hdc_host._firmware_bytes_pending == 6
+    finally:
+        first.cancel()
+        await asyncio.gather(first, return_exceptions=True)
+    assert not list(tmp_path.iterdir()) and hdc_host._firmware_bytes_pending == 0
+
+
+@pytest.mark.asyncio
+async def test_hdc_connector_delivers_staging_rejection_during_upload(tmp_path):
+    package = tmp_path / "update.zip"
+    package.write_bytes(b"firmware")
+    rejection = frame("[Fail] Agent 暂存空间不足，无法接收 HDC 固件\n".encode())
+    sent, written = [], []
+    delivered = asyncio.Event()
+
+    class Peer:
+        async def send(self, data):
+            sent.append(data)
+            if len(sent) > 1:
+                await delivered.wait()
+                raise ConnectionClosedOK(None, None)
+
+        async def __aiter__(self):
+            yield rejection
+
+    async def drain():
+        delivered.set()
+
+    writer = SimpleNamespace(write=written.append, drain=drain)
+    await asyncio.wait_for(connect_client.hdc_firmware(Peer(), asyncio.StreamReader(), writer, b"hello",
+                                                     f"update {shlex.quote(str(package))}".encode()), 1)
+    assert sent[0] == frame(b"hello") + frame(FIRMWARE_REQUEST + json.dumps([["update", ""], ".zip", 8]).encode())
+    assert written == [rejection]
 
 
 @pytest.mark.asyncio

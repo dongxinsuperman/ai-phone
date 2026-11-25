@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import time
 
 import pytest
 
@@ -52,6 +51,33 @@ async def test_android_usb_and_network_identities_share_one_occupation():
 
 
 @pytest.mark.asyncio
+async def test_detached_android_alias_keeps_original_lock_on_its_hardware():
+    store = DeviceLockStore()
+    address = "192.0.2.1:5555"
+    store.set_device_identity("usb-a", "android:device-a")
+    store.set_device_identity("usb-b", "android:device-b")
+    feature = await store.acquire(address, "feature", "job")
+    store.set_device_identity(address, "android:device-a")
+    store.clear_device_identity(address)
+    assert store.peek("usb-a") is feature
+    with pytest.raises(LockConflict):
+        await store.acquire("usb-a", "direct", "session")
+
+    store.set_device_identity(address, "android:device-b")
+    assert await store.heartbeat(address, feature.token) is feature
+    assert store.snapshot() == {address: feature, "usb-a": feature}
+    assert store.peek("usb-b") is None
+    assert await store.release(address, feature.token)
+    assert not store.snapshot()
+
+    new_lock = await store.acquire(address, "direct", "session")
+    assert store.peek("usb-b") is new_lock and store.peek("usb-a") is None
+    new_lock.last_heartbeat_at -= new_lock.ttl_seconds + 1
+    assert not store.snapshot()
+    assert store.peek("usb-b") is None
+
+
+@pytest.mark.asyncio
 async def test_acquire_same_holder_is_renewal():
     store = DeviceLockStore()
     info1 = await store.acquire("S1", holder="user-a", holder_type="manual")
@@ -96,7 +122,7 @@ async def test_heartbeat_on_missing_lock_raises():
 @pytest.mark.asyncio
 async def test_release_wrong_token_unless_force():
     store = DeviceLockStore()
-    info = await store.acquire("S1", holder="u", holder_type="manual")
+    await store.acquire("S1", holder="u", holder_type="manual")
     with pytest.raises(BadToken):
         await store.release("S1", token="wrong")
     assert store.peek("S1") is not None

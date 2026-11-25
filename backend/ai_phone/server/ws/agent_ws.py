@@ -252,7 +252,7 @@ async def agent_ws(
     if host_id and hub.agent_supports(agent_id, P.CAP_AI_DIRECT_NATIVE):
         from ai_phone.ai_connect.agent_channel import NativeAgentChannel
 
-        conn.native_channel = NativeAgentChannel(ws)
+        conn.native_channel = NativeAgentChannel(conn)
     await hub.set_devices(agent_id, serials)
     await _upsert_devices(agent_id, devices, hub)
 
@@ -772,10 +772,15 @@ async def _upsert_devices(
 
         for device in devices:
             serial = str(device.get("serial") or "").strip()
+            if not serial or hub.agent_id_for_serial(serial) != agent_id:
+                continue
             extra = device.get("extra")
             identity = hardware_serial(extra.get("adb_hardware_serial")) if isinstance(extra, dict) else None
-            if device.get("platform") == "android" and serial and identity and not is_local_emulator(serial):
+            if (device.get("platform") == "android" and (device.get("status") or "online") == "online"
+                    and identity and not is_local_emulator(serial)):
                 store.set_device_identity(serial, "android:" + identity)
+            else:
+                store.clear_device_identity(serial)
 
     async def op(session: AsyncSession) -> None:
         now = datetime.now(timezone.utc)
@@ -825,11 +830,11 @@ async def _upsert_devices(
         ]
         if stale:
             await session.execute(
-                delete(Device).where(Device.serial.in_(stale))
+                delete(Device).where(Device.agent_id == agent_id, Device.serial.in_(stale))
             )
             logger.info("Agent {} 移除已拔出设备 {}", agent_id, stale)
             if hub is not None:
-                hub.clear_device_extra(set(stale))
+                hub.clear_device_extra({serial for serial in stale if hub.agent_id_for_serial(serial) is None})
 
         await session.commit()
 
@@ -1149,10 +1154,8 @@ async def _on_disconnect(
     get_capability_waiter().discard_agent(agent_id)
     get_harmony_capability_waiter().discard_agent(agent_id)
     get_ios_sim_capability_waiter().discard_agent(agent_id)
-    if conn is not None:
-        hub.clear_device_extra(set(conn.serials))
-    elif serials:
-        hub.clear_device_extra(set(serials))
+    detached = conn.serials if conn is not None else serials
+    hub.clear_device_extra({serial for serial in detached if hub.agent_id_for_serial(serial) is None})
     await _offline_devices(agent_id, serials or (conn.serials if conn else set()))
     try:
         count = await mark_agent_vms_unavailable(agent_id, hub=hub)
