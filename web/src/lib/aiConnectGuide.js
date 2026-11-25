@@ -54,7 +54,7 @@ export function buildAiConnectGuide(origin, isLoopback) {
     '查 Android 可启动的应用：adb -s "<adb_serial>" shell cmd package query-activities --brief --components -a android.intent.action.MAIN -c android.intent.category.LAUNCHER',
     '把返回的 package/activity 传给 adb -s "<adb_serial>" shell am start -n "<package/activity>"。只有应用显示名时，先回桌面，看图找到应用图标并启动。',
     '用 observe 的 package 确认前台包名，或用 adb -s "<adb_serial>" shell dumpsys activity activities 查 topResumedActivity 或 mResumedActivity。',
-    '原生看图可用 adb -s "<adb_serial>" exec-out screencap -p > screen.png，再用 adb -s "<adb_serial>" shell input tap <x> <y> 点当前画面。',
+    '原生看图可用 adb -s "<adb_serial>" shell -T screencap -p > screen.png，再用 adb -s "<adb_serial>" shell input tap <x> <y> 点当前画面。',
     'adb forward 和 adb reverse 可以用于所领设备的调试。电脑端口在运行 ADB 的电脑上，反向转发跟随本次直连关闭。',
     '',
     'iOS 原生直连 · wda-http',

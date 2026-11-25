@@ -793,7 +793,7 @@ async def guide():
   输出中的 package/activity 可以传给 adb -s "$DEVICE" shell am start -n "<package/activity>"。也可以把 package 传给上面的 open_app。
   只有应用显示名时，可用 adb -s "$DEVICE" shell input keyevent KEYCODE_HOME 回桌面，在截图上找应用图标并启动。
   用 observe 的 package 确认前台包名，或用 adb -s "$DEVICE" shell dumpsys activity activities 查 topResumedActivity 或 mResumedActivity。
-  原生看图可用 adb -s "$DEVICE" exec-out screencap -p > screen.png，再用 adb -s "$DEVICE" shell input tap <x> <y> 点当前画面。
+  原生看图可用 adb -s "$DEVICE" shell -T screencap -p > screen.png，再用 adb -s "$DEVICE" shell input tap <x> <y> 点当前画面。
   文件传输可用 adb push 和 adb pull。adb forward 和 adb reverse 的电脑端连接由客户端 ADB 处理，反向转发随本次连接关闭。
 
 原生连接方式 · native.protocol 为 wda-http
