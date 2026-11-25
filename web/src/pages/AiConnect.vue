@@ -42,7 +42,7 @@ async function copyInstructions() {
     <section class="access" aria-labelledby="connect-title">
       <header class="access-head">
         <div>
-          <h1 id="connect-title">AI 直连</h1>
+          <h1 id="connect-title">让 AI 直接操作移动设备</h1>
           <p>即使设备接在不同电脑上，你的 AI 也只需访问这一个 AI Phone 实例，就能查看和领用原生通道已就绪的设备。接入说明复制一次即可。</p>
         </div>
         <button type="button" class="copy" @click="copyInstructions">
@@ -72,7 +72,7 @@ async function copyInstructions() {
       <header class="channels-head">
         <div>
           <h2 id="channels-title">设备操作通道</h2>
-          <p>领取后独占一台设备，可单独使用它支持的任一通道，用完归还。</p>
+          <p>AI 可端到端完成设备查询、领用、操作和归还。领用期间独占设备，可使用它支持的任一通道。</p>
         </div>
       </header>
 
