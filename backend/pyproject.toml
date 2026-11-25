@@ -83,6 +83,7 @@ where = ["."]
 include = ["ai_phone*"]
 
 [tool.setuptools.package-data]
+"ai_phone.agent" = ["android_io_assets/*.jar", "android_io_assets/*.java"]
 "ai_phone.agent.drivers" = ["harmony_assets/*"]
 "ai_phone.agent.ios_sim" = ["duo_hinge.m", "duo_touch.m", "duo_app_switcher.m", "LICENSE.duoctl.txt"]
 "ai_phone.agent.trajectory_cache.jev_click.visual_vendor" = ["LICENSE", "NOTICE.md", "wda/*.patch", "wda/NOTICE"]
