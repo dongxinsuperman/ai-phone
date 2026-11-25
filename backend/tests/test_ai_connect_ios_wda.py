@@ -323,6 +323,50 @@ async def test_ios_web_inspector_uses_the_same_device_lease_and_token(client, ap
 
 
 @pytest.mark.asyncio
+async def test_simulator_inspector_opens_after_service_start_and_reports_device_eof(monkeypatch):
+    from ai_phone.agent import ios_sim_observation, ios_webkit
+
+    calls = []
+    sent = []
+    reader = asyncio.StreamReader()
+    reader.feed_data(b"reply")
+    reader.feed_eof()
+
+    def identity(*_):
+        calls.append("identity")
+        return "same-boot"
+
+    async def start(serial):
+        assert serial == SIMULATOR
+        calls.append("start")
+
+    async def closed():
+        pass
+
+    async def connect(address):
+        assert address == "/inspector"
+        calls.append("connect")
+        return reader, SimpleNamespace(close=lambda: calls.append("close"), wait_closed=closed)
+
+    class Peer:
+        async def __aiter__(self):
+            while True:
+                yield await asyncio.Future()
+
+        async def send(self, data):
+            sent.append(data)
+
+    monkeypatch.setattr(ios_sim_observation, "boot_identity", identity)
+    monkeypatch.setattr(ios_webkit, "simulator_socket", lambda serial: "/inspector")
+    monkeypatch.setattr(ios_webkit, "start_simulator_inspector", start)
+    monkeypatch.setattr(asyncio, "open_unix_connection", connect)
+    with pytest.raises(ConnectionError, match="Web Inspector 已关闭连接"):
+        await ios_webkit.forward(Peer(), SIMULATOR, "same-boot", simulator_port=8100)
+    assert calls == ["identity", "start", "connect", "identity", "close"]
+    assert sent == [b"reply"]
+
+
+@pytest.mark.asyncio
 async def test_ios_release_cancels_in_flight_wda_request(client, app, session, monkeypatch):
     host = await configure(app, session)
     lease = (await client.post(api.BASE + "/sessions", json={"serial": PHONE})).json()

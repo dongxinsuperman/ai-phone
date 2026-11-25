@@ -4,8 +4,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import time
+from contextlib import suppress
 from urllib.parse import urlsplit, urlunsplit
 
+from websockets.exceptions import ConnectionClosed
 from websockets.legacy.client import connect
 
 from ai_phone.ai_connect import ios_wda
@@ -141,7 +143,12 @@ class NativeDeviceAccess:
             else:
                 raise ValueError("本次领取的 iOS 设备已离线")
             async with data_peer(client, message["native_ticket"]) as peer:
-                await ios_webkit.forward(peer, serial, transport, simulator_port=port, deadline=time.time() + 10)
+                try:
+                    await ios_webkit.forward(peer, serial, transport, simulator_port=port, deadline=time.time() + 10)
+                except Exception as exc:
+                    with suppress(ConnectionClosed, OSError):
+                        await peer.send("error:" + (str(exc)[:300] or "设备 Web Inspector 已关闭连接"))
+                    raise
             return {"closed": True}
         if message.get("hdc_bind") or "hdc_binding" in message:
             if serial not in client.online_device_serials("harmony"):

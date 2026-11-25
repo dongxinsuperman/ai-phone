@@ -64,6 +64,7 @@ export function buildAiConnectGuide(origin, isLoopback) {
     'GET WDA_BASE/screenshot，从 value 解码 PNG。GET WDA_BASE/session/<WDA 会话 ID>/window/size 取得逻辑点尺寸，再按图换算坐标，POST WDA_BASE/session/<WDA 会话 ID>/wda/tap 发送 {"x":100,"y":200}。取新图确认变化。',
     '从 WDA 操作切回编号清单时，先 GET api.observe 取新帧。主动观察和编号操作沿用原有 WDA 会话，切回原生时可继续使用同一 WDA 会话 ID。',
     '需要读已开启调试的 iOS 网页时，可从 native.web_inspector.client 下载 webkit-connect.pyz，运行 python3 webkit-connect.pyz "<实例地址>" lease.json --web-inspector。输出的 web_inspector 地址使用 WebKit 原生 plist 帧，每条消息前有 4 字节大端长度。',
+    'iOS 真机需在 Safari 浏览器的高级设置中打开「网页检查器」。模拟器断开后重连时，系统调试服务可能需要约 10 秒重新启动，同一条连接可连续发送调试请求。',
     'iPhone Duo 展开时，如果默认前台报桌面，先从会话的 /wda/apps/list 核对目标 App，再用 POST /appium/settings 把 settings.defaultActiveApplication 设为该 Bundle ID。用会话的 /source 和 /element 定位，再调用 POST /element/<元素 ID>/click。归还前恢复原设置。',
     '',
     '鸿蒙模拟器原生直连 · hdc-connect',

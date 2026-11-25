@@ -15,7 +15,7 @@ class Tunnel:
         self.closed = asyncio.Event()
 
 
-async def relay(source, target, check, *, activity=None, hdc_activity=None):
+async def relay(source, target, check, *, activity=None, hdc_activity=None, webkit=False):
     while True:
         msg = await source.receive()
         if msg["type"] == "websocket.disconnect":
@@ -23,6 +23,8 @@ async def relay(source, target, check, *, activity=None, hdc_activity=None):
         check()
         if activity and hdc_activity is None and msg.get("text") == "request":
             await activity()
+        elif webkit and isinstance(message := msg.get("text"), str) and message.startswith("error:"):
+            raise ValueError(message.removeprefix("error:"))
         elif isinstance(data := msg.get("bytes"), bytes) and len(data) <= 128 * 1024:
             if hdc_activity is not None and hdc_activity.feed(data):
                 await activity()
@@ -40,6 +42,7 @@ async def connect_native(client, direct, lease, host, check, activity, *, hdc_bi
     lease.tunnels.add(tunnel)
     host.pending[ident] = host_done
     tasks = []
+    error = ""
 
     async def watch_lock():
         while True:
@@ -53,7 +56,7 @@ async def connect_native(client, direct, lease, host, check, activity, *, hdc_bi
             download = relay(peer, client, check)
         else:
             upload = relay(client, peer, check)
-            download = relay(peer, client, check, activity=activity)
+            download = relay(peer, client, check, activity=activity, webkit=webkit)
         tasks.extend([asyncio.create_task(upload), asyncio.create_task(download)])
         done, _ = await asyncio.wait(tasks[-2:], return_when=asyncio.FIRST_COMPLETED)
         for task in done:
@@ -72,9 +75,12 @@ async def connect_native(client, direct, lease, host, check, activity, *, hdc_bi
                       asyncio.create_task(watch_lock())])
         done, _ = await asyncio.wait([*tasks, host_done], return_when=asyncio.FIRST_COMPLETED)
         for task in done:
-            task.result()
-    except (HTTPException, ValueError, TimeoutError, OSError, RuntimeError, WebSocketDisconnect):
-        pass
+            result = task.result()
+            if webkit and task is host_done and result.get("error"):
+                error = result["error"]
+    except (HTTPException, ValueError, TimeoutError, OSError, RuntimeError, WebSocketDisconnect) as exc:
+        if webkit and not isinstance(exc, (HTTPException, WebSocketDisconnect)):
+            error = str(exc) or "Web Inspector 连接失败"
     finally:
         direct.tickets.pop(ticket, None)
         for task in tasks:
@@ -95,11 +101,15 @@ async def connect_native(client, direct, lease, host, check, activity, *, hdc_bi
                 peers.append(tunnel.ready.result())
             try:
                 check()
-                code = 1000
+                code = 1011 if error else 1000
             except HTTPException as exc:
                 code = 1008 if exc.status_code == 410 else 1011
+            reason = error.encode()[:123].decode(errors="ignore") if code == 1011 else ""
             for peer in peers:
                 with suppress(OSError, RuntimeError, WebSocketDisconnect):
-                    await peer.close(code=code)
+                    if reason and peer is client:
+                        await peer.close(code=code, reason=reason)
+                    else:
+                        await peer.close(code=code)
             lease.tunnels.discard(tunnel)
             tunnel.closed.set()

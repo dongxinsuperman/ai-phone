@@ -4,6 +4,7 @@ import json
 import plistlib
 import struct
 import subprocess
+import time
 from contextlib import suppress
 
 from ai_phone.ai_connect import ios_wda
@@ -12,6 +13,7 @@ from ai_phone.ai_connect import ios_wda
 _LENGTH = struct.Struct("!I")
 _CHUNK = 65536
 _SOCKET = "/com.apple.webinspectord_sim.socket"
+_SIM_SERVICE = "user/foreground/com.apple.webinspectord"
 
 
 def simulator_socket(serial):
@@ -34,14 +36,37 @@ def simulator_socket(serial):
     return sockets.pop()
 
 
+async def start_simulator_inspector(serial):
+    # The daemon exits with its last client. Kickstart waits for launchd to admit a new
+    # process, or returns immediately if it is already running. It never restarts it.
+    process = await asyncio.create_subprocess_exec(
+        "xcrun", "simctl", "spawn", serial, "launchctl", "kickstart", _SIM_SERVICE,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    try:
+        async with asyncio.timeout(16):
+            if await process.wait() != 0:
+                raise ValueError("模拟器 Web Inspector 启动失败")
+    except TimeoutError as exc:
+        raise ValueError("模拟器 Web Inspector 启动超时") from exc
+    finally:
+        if process.returncode is None:
+            with suppress(ProcessLookupError):
+                process.kill()
+            await process.wait()
+
+
 async def forward(peer, serial, transport, *, simulator_port=None, deadline=None):
     if simulator_port is not None:
         from .ios_sim_observation import boot_identity
 
         address = await asyncio.to_thread(simulator_socket, serial)
+        if await asyncio.to_thread(boot_identity, serial, simulator_port, deadline) != transport:
+            raise ValueError("本次领取的 iOS 模拟器已重启")
+        await start_simulator_inspector(serial)
         reader, writer = await asyncio.open_unix_connection(address)
         try:
-            if await asyncio.to_thread(boot_identity, serial, simulator_port, deadline) != transport:
+            if await asyncio.to_thread(boot_identity, serial, simulator_port, time.time() + 3) != transport:
                 raise ValueError("本次领取的 iOS 模拟器已重启")
 
             async def upload():
@@ -55,6 +80,7 @@ async def forward(peer, serial, transport, *, simulator_port=None, deadline=None
             async def download():
                 while data := await reader.read(_CHUNK):
                     await peer.send(data)
+                raise ConnectionError("模拟器 Web Inspector 已关闭连接")
 
             await exchange(upload, download)
         finally:

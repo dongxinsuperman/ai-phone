@@ -803,6 +803,7 @@ async def guide():
   保存返回的 value.sessionId 或 sessionId。这个 ID 由 AI Phone 签发，仅在本次占用有效。需要重建时先 DELETE WDA_BASE/session/<WDA 会话 ID>。
   可以发送 WDA 支持的自定义 capabilities。默认请求会沿用设备已有的 WDA 会话，自定义请求由 WDA 创建设备会话。
   iOS 网页调试使用 native.web_inspector。下载它的 client，运行 python3 webkit-connect.pyz "$INSTANCE" lease.json --web-inspector。输出的本地地址收发 WebKit 原生 plist 数据帧，帧头为 4 字节大端长度。
+  iOS 真机需在 Safari 浏览器的高级设置中打开「网页检查器」。模拟器断开后重连时，系统调试服务可能需要约 10 秒重新启动，同一条连接可连续发送调试请求。
   启动应用用 POST WDA_BASE/session/<WDA 会话 ID>/wda/apps/launch，请求体例如 {"bundleId":"com.apple.Preferences"}。
   用 GET WDA_BASE/wda/activeAppInfo 核对前台 App，GET WDA_BASE/screenshot 返回 value 中的 Base64 PNG。
   读取 GET WDA_BASE/session/<WDA 会话 ID>/window/size，再用 POST WDA_BASE/session/<WDA 会话 ID>/wda/tap 发送 {"x":100,"y":200}。WDA 坐标以逻辑点为单位，按截图原尺寸与窗口尺寸换算。用新截图确认实际变化。

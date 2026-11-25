@@ -187,6 +187,8 @@ async def attach(instance, lease, *, web_inspector=False):
         except ConnectionClosed as exc:
             if exc.code == 1008:
                 stopped.set()
+            elif protocol == "webkit":
+                print(f"Web Inspector 连接中断：{exc.reason or exc.code}", file=sys.stderr, flush=True)
         except (EOFError, TimeoutError, OSError, ValueError) as exc:
             print(f"AI Phone 连接中断：{exc}", file=sys.stderr, flush=True)
         finally:
