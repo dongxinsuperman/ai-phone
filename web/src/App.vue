@@ -45,6 +45,7 @@ onBeforeUnmount(() => {
         <RouterLink to="/virtual-machines" class="tab" active-class="on">虚拟机</RouterLink>
         <RouterLink to="/device-config" class="tab" active-class="on">设备配置</RouterLink>
         <RouterLink to="/analytics" class="tab" active-class="on">大盘</RouterLink>
+        <RouterLink to="/ai-connect" class="tab" active-class="on">AI 直连</RouterLink>
       </nav>
       <div class="meta">
         <span v-if="version">v{{ version }}</span>

@@ -19,6 +19,7 @@ dist/
 # Project data (本地运行产生的截图 / 日志)
 .data/
 data/
+.*.ai-connect-private/
 
 # IDE
 .idea/

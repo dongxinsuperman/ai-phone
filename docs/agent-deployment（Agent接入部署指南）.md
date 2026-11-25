@@ -266,6 +266,8 @@ AI_PHONE_SERVER_WS_URL=ws://<server-host>:8000/ws/agent
 
 Agent 侧不需要向管理员索取数据库、模型、Kafka 等 Server 专用配置。只要不在这台机器启动 Server，模板里的 `AI_PHONE_DB_URL`、`AI_PHONE_PHONE_VLM_*`、`AI_PHONE_AUX_*`、`AI_PHONE_KAFKA_BROKERS` 不会影响 Agent 连接公司 Server。
 
+Agent 使用已登记的在线设备自动上报可用原生连接。WDA 请求走既有 `/ws/agent`，Android 的 ADB 数据连接由同一个 Agent 在领用期间按需发起。
+
 Agent 部署者至少要逐项确认：
 
 | 类型 | 必须按本机改吗 | 字段 |

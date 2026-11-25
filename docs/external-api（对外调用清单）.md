@@ -1,6 +1,6 @@
 # external-api（对外调用清单）
 
-本文是 ai-phone 当前对外集成契约（`main` 与 `next/server-brain` 两条架构线通用，对外 API 无差异）。代码锚点：
+本文记录 ai-phone 的对外集成契约。批次调度适用于 `main` 与 `next/server-brain`。第 2.2 节记录 Android 和 iOS 的 AI 直连用法，具体地址以本次领取结果为准。
 
 - 路由注册：`backend/ai_phone/server/api/__init__.py`
 - 匿名投递：`backend/ai_phone/server/submissions/public_routes.py`
@@ -14,6 +14,8 @@
 |---|---|---|---|
 | 对外投递 | `/api/submissions` | 匿名 | 面向外部 CI / 回归平台；依赖网络隔离、防火墙或上游网关 |
 | 设备状态查询 | `/api/devices/statuses`、`/api/devices/available` | 匿名 | 面向外部调度前查询；`/statuses` 与当前全量设备状态模型等价 |
+| AI 直连说明、查机、领机 | `GET /api/ai-connect/guide`、`GET /api/ai-connect/devices`、`POST /api/ai-connect/sessions` | 匿名 | 查询不会占用设备，只有领取成功才签发本次 token |
+| AI 直连 HTTP 设备操作、归还 | 领取结果中的 `api`、iOS `native.url`、`release` | `Authorization: Bearer <本次 token>` | 只对本次领取的设备有效 |
 | App 同步卸载 | `/api/devices/{serial}/apps/uninstall` | 当前本地中台接口 | 破坏性操作；生产外放前必须放在内网或有认证的上游网关后 |
 | 内部投递 | `/api/internal/submissions` | `Authorization: Bearer <token>` | Web 队列页和内部调试使用 |
 | 本地中台 | `/api/devices`、`/api/runs`、`/api/cases` | 当前本地中台接口 | Web 工作台使用；生产外放前建议放在内网或网关后 |
@@ -127,6 +129,71 @@ InstallationProxy 或 iOS Simulator `simctl` 通道。Android/Harmony 真机与�
 
 `package_name` 不接受空格、分号或 shell 表达式；格式无效时由请求校验返回 `422`。
 卸载期间会独占设备锁，请求结束或超时后自动释放；本接口不创建异步任务、不写应用分发任务表。
+
+<a id="22-ai-直连统一观察与操作"></a>
+
+### 2.2 主动式可操作暴露
+
+Android USB 真机和本机 Android 模拟器的原生 ADB 就绪后可领取。领取回包同时交付 Agent 支持的辅助操作入口。原生和辅助入口共用同一个占用 ID，指向同一台设备。iOS USB 真机和受管 iOS 模拟器可领取原生 WDA 通道，调用方法见下方。
+
+1. 用 `GET /api/ai-connect/devices` 查询原生通道就绪的设备。选定 `available` 的设备后，向 `POST /api/ai-connect/sessions` 提交 `{"serial":"选中设备的 serial"}`。查询和领取均无需预先配置 token。
+2. 领取成功返回 `201`。保存完整领取结果，其中有 `session_id`、`token`、`native`、`api`、`action_types` 和 `release`。接口地址相对于实例地址。领取核对设备的原生连接与设备锁。`api` 为空时直接使用 `native`。
+3. 要用自己的原生工具，从 `native.client` 下载连接器，运行 `python3 adb-connect.pyz "<实例地址>" lease.json`，保持进程运行。按连接器输出的 `adb_serial` 使用原生 ADB。原生命令照常返回原始结果。切回页面清单时先观察，取得新的编号。
+4. 回包有 `api.observe` 和 `api.act` 时，可用它们辅助看页面和操作。观察帧返回一张原尺寸 PNG、同帧清单与结构，以及本次的 `session_id`、`native`、`api` 和 `action_types`。发送动作时带同一会话凭证。`tap`、`scroll` 使用最新的 `frame_id`，按编号点时再给 `targets[].id`。
+
+下面的 `TOKEN` 取自领取结果，`OBSERVE_URL` 和 `ACT_URL` 分别为实例地址加上 `api.observe` 和 `api.act`。从第一帧选定目标，替换第二条命令中的帧号和编号。
+
+```sh
+curl -sS "$OBSERVE_URL" -H "Authorization: Bearer $TOKEN" -o frame.json
+curl -sS -X POST "$ACT_URL" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"action":"tap","frame_id":"<这帧的 frame_id>","target":"<选中的 id>"}' -o result.json
+```
+
+| 观察字段 | 如何读取 |
+| --- | --- |
+| `structure` | 从页面根节点的 `children` 递归读取父子关系。节点的 `role` 和文字说明它代表标题、列表、控件或其他内容，`state` 给出已知状态。有 `target` 的节点引用同帧的 `targets[].id`，可按该目标声明的动作操作。 |
+| `targets[]` | `source` 给出位置来源，`android`、`ios`、`harmony` 表示平台控件，`pixels` 表示图像区域，`webview` 表示当前可检查的网页元素。`name_source` 说明名称来自系统（`system`）、当前截图上的字（`screen`）或网页结构（`webview`）。`name=null` 表示控件名称未知，仍可有编号和动作。`system_hint` 保留原始图片提示，`system_hint_kind` 区分图片文本、资源 ID 等来源。调用者可用它核对线索。`tap` 表示该位置有控件或网页结构证据，`try_tap` 表示可发送 `tap` 尝试图像上的位置。实际响应从动作后新帧核对。 |
+| `bounds`、`point`、`state` | `bounds` 是原始屏幕像素范围 `[left,top,right,bottom]`，`point` 是以左上角为原点的 `[x,y]`，为 `null` 时该项没有可用点位。若有 `name_bounds`，它是名称所在区域。`state` 可给出选中、勾选、聚焦等已知状态。图与清单共用本帧的 `width`、`height`。 |
+| `screenshot` | 每帧的 `screenshot.data` 按 Base64 解码得到 PNG。`screenshot.annotated=true` 表示图上已画出编号，对应 `targets[].id`，目标清单为空时返回当前画面。随图返回的 `screenshot.marked_targets` 和顶层 `marked_targets` 与它同值。Agent 根据原图补读画面文字，再按本帧清单绘框和编号。 |
+| `system_texts[]`、`screen_texts[]` | 分别记录系统文字与原始截图上识别的文字。每项含 `text`、像素范围 `bounds` 和关联的本帧目标编号 `target`。未关联目标时 `target` 为 `null`。`texts` 保留文字汇总。 |
+| `keyboard`、`dialogs`、`warnings` | 提供键盘、弹窗及本帧采集缺失的线索。`keyboard.bounds` 是键盘本体，若还提供 `occlusion_bounds`，其范围包含键盘和遮挡页面的输入工具栏。可以在收起键盘后的新帧中选择目标。旧 Agent 仅支持基本观察时，使用实际返回的 `texts`、`targets` 和截图。 |
+
+| 要做什么 | 请求体示例 |
+| --- | --- |
+| 点一个目标 | `{"action":"tap","frame_id":"当前帧","target":"A3"}`，将 A3 换成该帧返回的编号 |
+| 点图上一处 | `{"action":"tap","frame_id":"当前帧","x":100,"y":200}`，从原图左上角按像素计 |
+| 向下翻看 | `{"action":"scroll","frame_id":"当前帧","direction":"down"}`，方向可用 up、down、left、right，也可用 `target` 指定支持滚动的区域 |
+| 填写已聚焦的输入框 | 领取支持 `input` 时可用 `{"action":"input","text":"新内容"}` 设置完整文字，空字符串清空 |
+| 打开应用、返回、回桌面 | `{"action":"open_app","package":"com.example.app"}`、`{"action":"back"}`、`{"action":"home"}`。将 `package` 换为设备上应用的包名、bundle ID 或 bundleName，并以本次 `action_types` 为准 |
+
+动作回包中的 `action_status=executed` 表示设备已执行该动作。`observation` 是动作后的新帧，图在 `observation.screenshot.data`，图上的号对应 `observation.targets[].id`，两条入口在 `observation.native` 和 `observation.api`。沿用已领取的 token 和原生连接。同级的 `changes` 给出能确认的文字增减和控件状态变化，有 `changes.text_sources` 时可查看共同参与比较的文字来源。只需要未加标记的截图时，可用领取结果中的 `api.screenshot` 单独取纯 PNG。之后要按编号点按，请重新观察以取得当前帧的目标。
+
+`changes.added_target_names`、`removed_target_names` 列出前后帧多出或少掉的系统控件名，例如「开始」消失，新出现「计次」「暂停」。`changes.changed_regions` 在有可比较的原图时给出肉眼可见变化的大致像素范围。`texts_in_region` 若有值，列出该处本帧的可读字。两个选项交换颜色时，外部 AI 可按范围查看新图，自行核对选中项。
+
+| 收到的回执 | 接下来怎么做 |
+| --- | --- |
+| `tree_available=false` 或 `source=pixels` | 名称未知时用编号和位置指代。直接查看回包中的同帧截图。点按后查看新的 `observation` 是否出现预期响应。 |
+| `409` 提示旧 `frame_id` 已过期 | 重新观察，从新回包读取 `frame_id` 和目标编号。编号仅在所属会话的对应帧内有效。 |
+| `executed` 且 `observation=null` | 动作已送达，回包顶层保留有效占用的 `native` 和 `api`。只重新观察当前页，避免重复发送动作。 |
+| `action_status=unknown` | 无法确认手机是否执行。先观察现场，再决定下一步。 |
+
+用完向 `release` 地址发送 `DELETE`，成功返回 `204`。占用连续空闲 30 分钟也会释放。归还后旧观察与操作入口返回 `410`，下次需要设备时用原说明重新领取。
+
+<a id="ios-usb-真机原生-wda"></a>
+
+#### iOS 真机与模拟器原生 WDA
+
+将实例地址和 `native.url` 拼成 WDA 的请求前缀。每个请求都带 `Authorization: Bearer <本次 token>`。用 `GET /status` 检查 `value.ready`，再向 `POST /session` 发送 `{"capabilities":{"alwaysMatch":{},"firstMatch":[{}]}}`。保存返回的 `value.sessionId`，在以下路径中替换 `<id>`。
+
+| 操作 | WDA 路径和参数 |
+| --- | --- |
+| 启动已安装 App | `POST /session/<id>/wda/apps/launch`，例如 `{"bundleId":"com.apple.Preferences"}` |
+| 核对前台 App | `GET /wda/activeAppInfo`，读 `value.bundleId` |
+| 看图、读结构 | `GET /screenshot` 取得 `value` 中的 Base64 PNG，`GET /source?format=xml` 取得 XCTest XML |
+| 点击 | `POST /session/<id>/wda/tap`，发送 `{"x":100,"y":200}`。坐标用 iOS 逻辑点，窗口尺寸可查 `GET /session/<id>/window/size` |
+
+WDA 会话 ID 只属于本次占用。创建时使用默认 capabilities，创建后可用 WDA 命令启动应用和调整设置。向领取结果中的 `release` 发送 `DELETE` 后，旧 WDA 入口返回 `410`。真机与模拟器均返回 `native.protocol=wda-http`，`api` 为空。设备列表里的 `device_kind` 分别为 `physical` 和 `virtual`。模拟器关机重启后需重新领取。
+
+iPhone Duo 展开时，默认前台检测可能读到外屏桌面。先用 `GET /session/<id>/wda/apps/list` 核对活动应用，再用 `GET /session/<id>/appium/settings` 保存原先的 `defaultActiveApplication`。向同一路径发送 `POST` 和 `{"settings":{"defaultActiveApplication":"<Bundle ID>"}}`，通过会话内的 `/wda/activeAppInfo` 和 `/source?format=xml` 读目标应用。通过 `POST /session/<id>/element` 发送 `{"using":"accessibility id","value":"<元素的辅助功能标识>"}`，再向 `POST /session/<id>/element/<元素 ID>/click` 发送 `{}`。在归还前恢复原 `defaultActiveApplication`。
 
 ## 3. 投递批次
 

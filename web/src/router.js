@@ -10,6 +10,7 @@ import VirtualMachinesHome from './pages/VirtualMachinesHome.vue'
 
 const routes = [
   { path: '/', name: 'devices', component: DeviceGrid },
+  { path: '/ai-connect', name: 'ai-connect', component: () => import('./pages/AiConnect.vue') },
   { path: '/device-library', name: 'device-library', component: DeviceLibrary },
   { path: '/queue', name: 'queue', component: Queue },
   { path: '/app-distribution', name: 'app-distribution', component: AppDistribution },
