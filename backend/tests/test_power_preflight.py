@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from ai_phone.agent.drivers import harmony as harmony_mod
 from ai_phone.agent.drivers import ios as ios_mod
 from ai_phone.agent.health import probe as probe_mod
@@ -118,7 +120,12 @@ def test_android_screen_off_can_be_dispatchable_by_env(monkeypatch):
     assert outcome.ready is True
 
 
-def test_android_non_secure_keyguard_can_be_dispatchable_before_run(monkeypatch):
+@pytest.mark.parametrize("trust", [
+    "deviceLocked=0, strongAuthRequired=0x0\n",
+    "deviceLocked=0, strongAuthRequired=0x1\n",
+    "deviceLocked=false\n",
+])
+def test_android_non_secure_keyguard_can_be_dispatchable_before_run(monkeypatch, trust):
     class FakeDevice:
         def shell(self, cmd: str, *, timeout: float) -> str:
             assert 0 < timeout <= 3.0
@@ -131,7 +138,7 @@ def test_android_non_secure_keyguard_can_be_dispatchable_before_run(monkeypatch)
             if cmd.startswith("dumpsys window"):
                 return "mShowingDream=false mDreamingLockscreen=true\n"
             if cmd.startswith("dumpsys trust"):
-                return "deviceLocked=0, strongAuthRequired=0x0\n"
+                return trust
             raise AssertionError(f"unexpected command: {cmd}")
 
     class FakeAdb:
@@ -154,7 +161,16 @@ def test_android_non_secure_keyguard_can_be_dispatchable_before_run(monkeypatch)
     assert outcome.ready is True
 
 
-def test_android_secure_keyguard_stays_not_ready(monkeypatch):
+@pytest.mark.parametrize(("policy", "trust"), [
+    ("secure=true\n", "deviceLocked=1, strongAuthRequired=0x10\n"),
+    ("secure=true\n", "deviceLocked=0, strongAuthRequired=0x1\n"),
+    ("secure=false\n", "deviceLocked=true, strongAuthRequired=0x1\n"),
+    ("secure=false\n", "deviceLocked=0\ndeviceLocked=1\n"),
+    ("", "deviceLocked=0, strongAuthRequired=0x1\n"),
+    ("secure=false\n", "strongAuthRequired=0x1\n"),
+    ("secure=false\n", "deviceLocked=0x1\n"),
+])
+def test_android_secure_or_uncertain_keyguard_stays_not_ready(monkeypatch, policy, trust):
     class FakeDevice:
         def shell(self, cmd: str, *, timeout: float) -> str:
             assert 0 < timeout <= 3.0
@@ -163,11 +179,11 @@ def test_android_secure_keyguard_stays_not_ready(monkeypatch):
             if "dumpsys power" in cmd:
                 return "mWakefulness=Awake\nDisplay Power: state=ON\n"
             if cmd.startswith("dumpsys window policy"):
-                return "showing=true\nsecure=true\nscreenState=SCREEN_STATE_ON\n"
+                return "showing=true\n" + policy + "screenState=SCREEN_STATE_ON\n"
             if cmd.startswith("dumpsys window"):
                 return "mShowingDream=false mDreamingLockscreen=true\n"
             if cmd.startswith("dumpsys trust"):
-                return "deviceLocked=1, strongAuthRequired=0x10\n"
+                return trust
             raise AssertionError(f"unexpected command: {cmd}")
 
     class FakeAdb:

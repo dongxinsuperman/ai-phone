@@ -15,6 +15,7 @@ supervisor 再结合"连续失败阈值"决定是否真的降级。
 from __future__ import annotations
 
 import asyncio
+import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from threading import BoundedSemaphore
@@ -239,22 +240,17 @@ def _android_keyguard_can_be_dismissed(device, *, deadline: Optional[float] = No
             timeout=_remaining_timeout(deadline),
         )
         trust_out = device.shell(
-            "dumpsys trust | grep -E 'deviceLocked|strongAuthRequired|trusted|trustManaged'",
+            "dumpsys trust | grep -F 'deviceLocked='",
             timeout=_remaining_timeout(deadline),
         )
     except Exception as exc:  # noqa: BLE001
         logger.debug("[readiness:android] keyguard security probe failed: {}", exc)
         return False
 
-    if "secure=true" in policy_out:
-        return False
-    if "deviceLocked=1" in trust_out or "deviceLocked=true" in trust_out:
-        return False
-    if "strongAuthRequired=0x0" not in trust_out:
-        return False
-    return "secure=false" in policy_out and (
-        "deviceLocked=0" in trust_out or "deviceLocked=false" in trust_out
-    )
+    # The after-boot strong auth flag can be set on a device with no credential.
+    secure = set(re.findall(r"\bsecure=([^,\s]+)", policy_out))
+    device_locked = set(re.findall(r"\bdeviceLocked=([^,\s]+)", trust_out))
+    return secure == {"false"} and bool(device_locked) and device_locked <= {"0", "false"}
 
 
 # ---------------------------------------------------------------------------
