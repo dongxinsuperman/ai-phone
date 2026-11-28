@@ -30,11 +30,12 @@ def test_activity_ignores_fragmented_hdc_control_frames():
     tracker = hdc.Activity()
     heartbeats = packet(0, b"payload") * 2
     assert not any(tracker.feed(bytes((byte,))) for byte in heartbeats)
-    action = packet(17, b"command")
-    assert not tracker.feed(action[:12])
-    assert tracker.feed(action[12:15])
-    assert not tracker.feed(action[15:] + heartbeats)
-    assert tracker.feed(heartbeats + action)
+    closed = packet(17, b"command")
+    prefix = closed[:-len(b"command")]
+    assert not tracker.feed(prefix[:12])
+    assert tracker.feed(prefix[12:]) == hdc.ActivityKind.RENEW
+    assert not tracker.feed(b"command" + heartbeats)
+    assert tracker.feed(heartbeats + closed) == hdc.ActivityKind.RENEW
 
 
 def test_native_hdc_host_handshake_pins_one_device():
@@ -48,16 +49,25 @@ def test_native_hdc_host_handshake_pins_one_device():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("command", "upstream", "reply"), [
-    (b"help verbose", b"help verbose", b"native response"),
-    (b"bugreport report.txt", b"bugreport", b"native response"),
-    (b"list targets -v", None, b"USB001\n"),
-    (b"wait", None, b"Wait for connected target is USB001\n"),
-    (b"discover", None, b"[Fail] This command requires access to the HDC host\n"),
+@pytest.mark.parametrize(("command", "upstream", "reply", "event"), [
+    (b"help verbose", b"help verbose", b"native response", "request"),
+    (b"bugreport report.txt", b"bugreport", b"native response", "request"),
+    (b"list targets -v", None, b"USB001\n", "renew"),
+    (b"wait", None, b"Wait for connected target is USB001\n", "renew"),
+    (b"shell cat /proc/net/unix", b"shell cat /proc/net/unix", b"native response", "renew"),
+    (b"shell cat /proc/1234/cmdline /proc/1234/stat",
+     b"shell cat /proc/1234/cmdline /proc/1234/stat", b"native response", "renew"),
+    (b"shell cat /proc/1234/cmdline /proc/1234/stat && true",
+     b"shell cat /proc/1234/cmdline /proc/1234/stat && true", b"native response", "request"),
+    (b"shell uitest uiInput click 4 5", b"shell uitest uiInput click 4 5", b"native response", "request"),
+    (b"shell cat /proc/net/unix; echo x", b"shell cat /proc/net/unix; echo x", b"native response", "request"),
+    (b"discover", None, b"[Fail] This command requires access to the HDC host\n", None),
     (FIRMWARE_REQUEST + json.dumps([["update", ""], ".zip", MAX_FIRMWARE_BYTES + 1]).encode(),
-     None, "[Fail] HDC 固件文件超过单文件 32 GiB 上限\n".encode()),
+     None, "[Fail] HDC 固件文件超过单文件 32 GiB 上限\n".encode(), None),
 ])
-async def test_native_hdc_forwards_target_commands_and_keeps_host_operations_scoped(monkeypatch, command, upstream, reply):
+async def test_native_hdc_forwards_target_commands_and_keeps_host_operations_scoped(
+    monkeypatch, command, upstream, reply, event,
+):
     def frame(data):
         return struct.pack("!I", len(data)) + data
 
@@ -92,11 +102,48 @@ async def test_native_hdc_forwards_target_commands_and_keeps_host_operations_sco
     async with await asyncio.start_server(host, "127.0.0.1", 0) as listener:
         monkeypatch.setenv("OHOS_HDC_SERVER_PORT", str(listener.sockets[0].getsockname()[1]))
         peer = SimpleNamespace(recv=recv, send=send, wait_closed=wait_closed)
-        await asyncio.wait_for(forward(peer, "USB001"), 2)
+        await asyncio.wait_for(forward(peer, "USB001", renew_activity=True), 2)
         actual = await asyncio.wait_for(received, 2)
     expected = frame(hello[:12] + b"USB001".ljust(32, b"\0")) + frame(upstream + b"\0") if upstream else b""
     assert actual == expected
-    assert outgoing == ([frame(hello), "request", frame(reply)] if upstream else [frame(hello), frame(reply)])
+    assert outgoing == [frame(hello), *([event] if event else []), frame(reply)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("renew_activity", "event"), [(True, "renew"), (False, "request")])
+async def test_host_hdc_port_forwarding_renews_during_setup_and_data(monkeypatch, renew_activity, event):
+    clock = SimpleNamespace(now=10)
+    sent, commands = [], []
+
+    class Stream:
+        def __init__(self, _peer, *, destination, activity):
+            assert destination > 0
+            self.activity = activity
+
+        async def run(self):
+            clock.now += 6
+            await self.activity()
+
+        async def close(self):
+            pass
+
+    def hdc_run(*command, serial, timeout):
+        assert serial == "USB001" and timeout > 0
+        commands.append(command)
+        return "Forwardport result:OK" if len(commands) == 1 else "success"
+
+    async def send(message):
+        sent.append(message)
+
+    monkeypatch.setattr(hdc_host, "PortStreams", Stream)
+    monkeypatch.setattr(hdc_host, "hdc_run", hdc_run)
+    monkeypatch.setattr(hdc_host, "time", SimpleNamespace(monotonic=lambda: clock.now))
+    await hdc_host._port_tunnel(SimpleNamespace(send=send), "USB001", b"fport tcp:9000 tcp:9001",
+                                renew_activity=renew_activity)
+    mapping = commands[0]
+    assert mapping[:2] == ("-p", "fport") and mapping[-1] == "tcp:9001"
+    assert commands[1] == ("-p", "fport", "rm", *mapping[2:])
+    assert sent == [event, hdc_host.PORT_READY, event]
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,9 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, WebSocket
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -23,7 +25,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import android_actions, hdc, ios_wda, unified
 from .android_changes import changes
-from .android import COMMAND_SECONDS, allowed_service, hardware_serial, is_local_emulator, is_network_adb
+from .android import (
+    COMMAND_SECONDS, allowed_service, hardware_serial, is_local_emulator, is_network_adb, is_read_only_service,
+)
 from .client_bundle import client_bundle
 from .relay import connect_native
 
@@ -31,6 +35,28 @@ router = APIRouter(tags=["ai-connect"])
 BASE = "/api/ai-connect"
 NO_CACHE = {"Cache-Control": "no-store"}
 LEASE_SECONDS = 30 * 60
+
+
+class FrameRequestError(BaseModel):
+    detail: str
+
+
+class FrameRoute(APIRoute):
+    def get_route_handler(self):
+        handle = super().get_route_handler()
+
+        async def frame_request(request):
+            try:
+                return await handle(request)
+            except RequestValidationError as exc:
+                error = exc.errors()[0]
+                field = ".".join(map(str, error["loc"]))
+                raise HTTPException(422, f"请求参数无效（{field}，{error['msg']}）") from None
+
+        return frame_request
+
+
+frame_router = APIRouter(route_class=FrameRoute, responses={422: {"model": FrameRequestError}})
 
 
 def bearer(headers):
@@ -55,6 +81,10 @@ class Lease:
     screen: unified.Screen | None = None
     native_revision: int = 0
     wda_session: ios_wda.Session | None = None
+
+    def invalidate_screen(self) -> None:
+        self.native_revision += 1
+        self.screen = None
 
 
 class DirectAccess:
@@ -113,7 +143,7 @@ class DirectAccess:
             raise HTTPException(503, "原设备的 HDC 通道暂不可用")
         return current
 
-    async def activity(self, lease, store, hub):
+    async def renew_activity(self, lease, store, hub):
         if lease.unified_target.platform == "harmony":
             self.check_hdc_device(lease, store, hub)
         elif lease.unified_target.platform == "ios":
@@ -121,9 +151,10 @@ class DirectAccess:
         else:
             self.check_device(lease, store, hub)
         await self.renew(lease, store)
-        # A native service or interactive write can change what a numbered target means.
-        lease.native_revision += 1
-        lease.screen = None
+
+    async def activity(self, lease, store, hub):
+        await self.renew_activity(lease, store, hub)
+        lease.invalidate_screen()
 
     async def renew(self, lease, store):
         self.check_lease(lease, store)
@@ -174,7 +205,8 @@ async def native_socket(ident: str, ws: WebSocket):
         if direct.check_device(lease, store, hub) is not host:
             raise HTTPException(503, "ADB 宿主通道已重新连接")
 
-    await connect_native(ws, direct, lease, host, check, lambda: direct.activity(lease, store, hub))
+    await connect_native(ws, direct, lease, host, check, lambda: direct.activity(lease, store, hub),
+                         renew_activity=lambda: direct.renew_activity(lease, store, hub))
 
 
 @router.websocket("/ws/ai-connect/sessions/{ident}/hdc")
@@ -197,6 +229,7 @@ async def native_hdc_socket(ident: str, ws: WebSocket):
             raise HTTPException(503, "HDC 宿主通道已重新连接")
 
     await connect_native(ws, direct, lease, host, check, lambda: direct.activity(lease, store, hub),
+                         renew_activity=lambda: direct.renew_activity(lease, store, hub),
                          hdc_binding=lease.unified_target.binding, host_hdc=lease.unified_target.instance_id is None)
 
 
@@ -219,7 +252,7 @@ async def native_webkit_socket(ident: str, ws: WebSocket):
         if direct.check_wda_device(lease, store, hub) is not host:
             raise HTTPException(503, "Web Inspector 宿主通道已重新连接")
 
-    await connect_native(ws, direct, lease, host, check, lambda: direct.activity(lease, store, hub), webkit=True)
+    await connect_native(ws, direct, lease, host, check, lambda: direct.renew_activity(lease, store, hub), webkit=True)
 
 
 @router.post(BASE + "/pair", include_in_schema=False)
@@ -480,7 +513,7 @@ async def native_wda(ident: str, command: str, request: Request, store: DeviceLo
             lease.wda_session = None
             return JSONResponse({"value": None}, headers=NO_CACHE)
         if request.method != "GET":
-            lease.screen = None
+            lease.invalidate_screen()
         lease.running = asyncio.create_task(forward_wda(host, lease, request.method, path, target, body))
         try:
             status, raw, next_session = await lease.running
@@ -508,7 +541,10 @@ async def operate(ident, request, store, hub, service):
     direct.check_device(lease, store, hub)
     async with lease.gate:
         host = direct.check_device(lease, store, hub)
-        await direct.activity(lease, store, hub)
+        if is_read_only_service(service.encode()):
+            await direct.renew_activity(lease, store, hub)
+        else:
+            await direct.activity(lease, store, hub)
         lease.running = asyncio.create_task(host.call(lease, service, COMMAND_SECONDS))
         try:
             while not lease.running.done():
@@ -566,7 +602,7 @@ async def unified_screen(ident: str, request: Request, store: DeviceLockStore = 
         return result
 
 
-@router.post(BASE + "/sessions/{ident}/tap")
+@frame_router.post(BASE + "/sessions/{ident}/tap")
 async def unified_tap(ident: str, body: unified.Tap, request: Request, store: DeviceLockStore = LockStoreDep,
                       hub: Hub = HubDep):
     direct = state(request.app)
@@ -602,7 +638,7 @@ async def session_frame(direct, lease, store, hub, *, expected_text: str | None 
     direct.check_lease(lease, store)
     if lease.native_revision != revision:
         lease.screen = None
-        raise HTTPException(409, "取帧期间收到了原生请求，请重新观察当前页")
+        raise HTTPException(409, "取帧期间有原生操作可能改变画面，请重新观察当前页")
     return {**frame, **lease.connection_info}
 
 
@@ -623,7 +659,7 @@ def frame_error(direct, lease, store, error, *, action_status=None):
     return JSONResponse(body, status_code=200 if action_status == "executed" else error.status_code, headers=NO_CACHE)
 
 
-@router.get(BASE + "/sessions/{ident}/observe", name="observe_android")
+@frame_router.get(BASE + "/sessions/{ident}/observe", name="observe_android")
 async def observe(ident: str, request: Request, response: Response,
                   store: DeviceLockStore = LockStoreDep, hub: Hub = HubDep,
                   expected_text: str | None = Query(default=None, min_length=1, max_length=160)):
@@ -639,7 +675,7 @@ async def observe(ident: str, request: Request, response: Response,
             return frame_error(direct, lease, store, exc)
 
 
-@router.post(BASE + "/sessions/{ident}/act", name="act_android")
+@frame_router.post(BASE + "/sessions/{ident}/act", name="act_android")
 async def act(ident: str, body: android_actions.Action, request: Request, response: Response,
               store: DeviceLockStore = LockStoreDep, hub: Hub = HubDep):
     direct = state(request.app)
@@ -673,6 +709,9 @@ async def act(ident: str, body: android_actions.Action, request: Request, respon
             return frame_error(direct, lease, store, exc, action_status="executed")
         delta = changes(previous.observation, lease.screen.observation) if previous and previous.observation is not None else None
         return {"action_status": "executed", "observation": current, "changes": delta}
+
+
+router.include_router(frame_router)
 
 
 @router.delete(BASE + "/sessions/{ident}", status_code=204)

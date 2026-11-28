@@ -146,6 +146,7 @@ class NativeDeviceAccess:
 
     async def execute(self, client, message):
         serial, transport = message["serial"], message["transport"]
+        renew_activity = message.get("renew_activity") is True
         if message.get("webkit"):
             if serial in client.online_device_serials("ios_sim"):
                 port, generation = self.simulators.get(serial, (None, None))
@@ -182,7 +183,7 @@ class NativeDeviceAccess:
                 if guest.lease:
                     await harmony_native.forward(peer, guest)
                 else:
-                    await hdc_host.forward(peer, serial)
+                    await hdc_host.forward(peer, serial, renew_activity=renew_activity)
             return {"closed": True}
 
         if "wda" in message:
@@ -208,7 +209,7 @@ class NativeDeviceAccess:
             raise ValueError("本次领取的 ADB 连接已变化")
         if "native_ticket" in message:
             async with data_peer(client, message["native_ticket"]) as peer:
-                await DeviceTransport(peer, serial, transport).run()
+                await DeviceTransport(peer, serial, transport, renew_activity=renew_activity).run()
             return {"closed": True}
 
         async with asyncio.timeout(min(COMMAND_SECONDS, message["budget"])):

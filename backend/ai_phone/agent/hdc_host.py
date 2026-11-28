@@ -14,6 +14,7 @@ from pathlib import Path
 
 from loguru import logger
 
+from ai_phone.ai_connect.activity import RENEW_ACTIVITY, WRITE_ACTIVITY, is_read_only_shell
 from ai_phone.ai_connect.hdc import valid_device
 from ai_phone.ai_connect.hdc_ports import (
     FIRMWARE_COMMANDS, FIRMWARE_REQUEST, FRAME_LENGTH, MAX_FIRMWARE_BYTES, PORT_ERROR, PORT_READY, PORT_REQUEST,
@@ -54,7 +55,7 @@ def pinned_handshake(payload, serial, server_banner):
     return frame(server_banner + key.ljust(_KEY_END - _KEY_START, b"\x00") + payload[_KEY_END:])
 
 
-async def _port_tunnel(peer, serial, request):
+async def _port_tunnel(peer, serial, request, *, renew_activity=False):
     direction, _, endpoint = port_rule(arguments(request))
     last_activity = 0.0
 
@@ -63,7 +64,7 @@ async def _port_tunnel(peer, serial, request):
         now = time.monotonic()
         if now - last_activity >= 5:
             last_activity = now
-            await peer.send("request")
+            await peer.send(RENEW_ACTIVITY if renew_activity else WRITE_ACTIVITY)
 
     listener = None
     if direction == "fport":
@@ -147,18 +148,18 @@ async def _firmware_tunnel(peer, writer, binding, client_frame, download, manife
                         since_space_check = 0
                     now = time.monotonic()
                     if now - last_activity >= 5:
-                        await peer.send("request")
+                        await peer.send(WRITE_ACTIVITY)
                         last_activity = now
         finally:
             _firmware_bytes_pending -= remaining
         parts[index] = str(path)
-        await peer.send("request")
+        await peer.send(WRITE_ACTIVITY)
         writer.write(binding + frame(" ".join(parts).encode() + b"\0"))
         await writer.drain()
         await download()
 
 
-async def forward(peer, serial):
+async def forward(peer, serial, *, renew_activity=False):
     # Match the existing HDC CLI's local server port. Keep the original USB session attached.
     port = int(os.environ.get("OHOS_HDC_SERVER_PORT", "8710"))
     async with asyncio.timeout(4):
@@ -167,12 +168,12 @@ async def forward(peer, serial):
     tasks = []
     last_use = 0.0
 
-    async def activity():
+    async def activity(event):
         nonlocal last_use
         now = time.monotonic()
         if now - last_use >= 5:
             last_use = now
-            await peer.send("request")
+            await peer.send(event)
 
     async def client_frame(limit=65536):
         while len(pending) < FRAME_LENGTH.size:
@@ -195,13 +196,13 @@ async def forward(peer, serial):
             data = await client_frame(8 * 1024 * 1024)
             if transfer and (len(data) < 2 or int.from_bytes(data[:2], "little") not in _TRANSFER):
                 raise ValueError("无效的 HDC 文件传输数据")
-            await activity()
+            await peer.send(WRITE_ACTIVITY)
             writer.write(frame(data))
             await writer.drain()
 
-    async def download():
+    async def download(event=WRITE_ACTIVITY):
         while data := await reader.read(65536):
-            await activity()
+            await activity(event)
             await peer.send(data)
 
     try:
@@ -223,9 +224,13 @@ async def forward(peer, serial):
             port_request = command.removeprefix(PORT_REQUEST) if command.startswith(PORT_REQUEST) else None
             firmware_request = command.removeprefix(FIRMWARE_REQUEST) if command.startswith(FIRMWARE_REQUEST) else None
             if command.startswith(b"list targets"):
+                if renew_activity:
+                    await peer.send(RENEW_ACTIVITY)
                 await peer.send(frame(serial.encode("ascii") + b"\n"))
                 return
             if command == b"wait":
+                if renew_activity:
+                    await peer.send(RENEW_ACTIVITY)
                 await peer.send(frame(b"Wait for connected target is " + serial.encode("ascii") + b"\n"))
                 return
             if command == b"reconnect" or command.startswith(b"reconnect "):
@@ -233,7 +238,7 @@ async def forward(peer, serial):
                 if requested and requested != [serial]:
                     await peer.send(frame(b"[Fail] The target differs from the leased device\n"))
                     return
-                await activity()
+                await activity(WRITE_ACTIVITY)
                 try:
                     reply = await asyncio.to_thread(hdc_run, "-p", "reconnect", serial, timeout=4)
                 except RuntimeError as exc:
@@ -254,13 +259,17 @@ async def forward(peer, serial):
             if command.startswith(b"bugreport"):
                 # HDC's optional output path is on the server. Return stdout to the caller.
                 first = b"bugreport\x00"
+            shell_command = command.removeprefix(b"shell ")
+            event = WRITE_ACTIVITY
+            if renew_activity and shell_command != command and is_read_only_shell(shell_command):
+                event = RENEW_ACTIVITY
             if port_request is None and firmware_request is None:
-                await activity()
+                await activity(event)
                 writer.write(binding + frame(first))
                 await writer.drain()
         if port_request is not None:
             writer.close()
-            await _port_tunnel(peer, serial, port_request)
+            await _port_tunnel(peer, serial, port_request, renew_activity=renew_activity)
             return
         if firmware_request is not None:
             try:
@@ -268,7 +277,7 @@ async def forward(peer, serial):
             except (OSError, ValueError) as exc:
                 await peer.send(frame(("[Fail] " + str(exc) + "\n").encode()))
             return
-        tasks = [asyncio.create_task(upload(command, transfer)), asyncio.create_task(download())]
+        tasks = [asyncio.create_task(upload(command, transfer)), asyncio.create_task(download(event))]
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in done:
             task.result()

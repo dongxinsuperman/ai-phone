@@ -6,8 +6,11 @@ import re
 import struct
 from contextlib import asynccontextmanager
 
+from .activity import is_read_only_shell
+
 MAX_OUTPUT = 8 * 1024 * 1024
 COMMAND_SECONDS = 20
+_DEVTOOLS_SOCKET = re.compile(rb"localabstract:(?:webview|chrome)_devtools_remote(?:_[A-Za-z0-9_.-]+)?")
 
 
 def is_local_emulator(serial: str) -> bool:
@@ -41,6 +44,13 @@ def allowed_service(service: str) -> bool:
         re.fullmatch(r"shell,v2,raw(?:,TERM=[A-Za-z0-9_.+-]+)?", name)
         or re.fullmatch(r"shell,v2,TERM=[A-Za-z0-9_.+-]+,raw", name)
     )
+
+
+def is_read_only_service(name: bytes) -> bool:
+    if name in (b"reverse:list-forward", b"exec:screencap -p") or _DEVTOOLS_SOCKET.fullmatch(name):
+        return True
+    service, separator, command = name.partition(b":")
+    return bool(separator and service.split(b",", 1)[0] in (b"shell", b"exec") and is_read_only_shell(command))
 
 
 @asynccontextmanager

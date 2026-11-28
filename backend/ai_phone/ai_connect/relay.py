@@ -5,7 +5,8 @@ from contextlib import suppress
 
 from fastapi import HTTPException, WebSocketDisconnect
 
-from .hdc import Activity as HdcActivity
+from .activity import RENEW_ACTIVITY, WRITE_ACTIVITY
+from .hdc import Activity as HdcActivity, ActivityKind
 
 
 class Tunnel:
@@ -15,25 +16,33 @@ class Tunnel:
         self.closed = asyncio.Event()
 
 
-async def relay(source, target, check, *, activity=None, hdc_activity=None, webkit=False):
+async def relay(source, target, check, *, activity=None, renew_activity=None, hdc_activity=None, webkit=False):
     while True:
         msg = await source.receive()
         if msg["type"] == "websocket.disconnect":
             return
         check()
-        if activity and hdc_activity is None and msg.get("text") == "request":
+        message = msg.get("text")
+        if activity and hdc_activity is None and message == WRITE_ACTIVITY:
             await activity()
-        elif webkit and isinstance(message := msg.get("text"), str) and message.startswith("error:"):
+        elif renew_activity and hdc_activity is None and message == RENEW_ACTIVITY:
+            await renew_activity()
+        elif webkit and isinstance(message, str) and message.startswith("error:"):
             raise ValueError(message.removeprefix("error:"))
         elif isinstance(data := msg.get("bytes"), bytes) and len(data) <= 128 * 1024:
-            if hdc_activity is not None and hdc_activity.feed(data):
-                await activity()
+            if hdc_activity is not None:
+                event = hdc_activity.feed(data)
+                if event == ActivityKind.WRITE:
+                    await activity()
+                elif event == ActivityKind.RENEW:
+                    await renew_activity()
             await target.send_bytes(data)
         else:
             raise ValueError("无效的直连数据")
 
 
-async def connect_native(client, direct, lease, host, check, activity, *, hdc_binding=None, host_hdc=False, webkit=False):
+async def connect_native(client, direct, lease, host, check, activity, *, renew_activity=None,
+                         hdc_binding=None, host_hdc=False, webkit=False):
     tunnel = Tunnel()
     ticket = secrets.token_urlsafe(32)
     ident = secrets.token_hex(16)
@@ -52,11 +61,12 @@ async def connect_native(client, direct, lease, host, check, activity, *, hdc_bi
     async def transfer():
         peer = await asyncio.wait_for(asyncio.shield(tunnel.ready), 8)
         if hdc_binding and not host_hdc:
-            upload = relay(client, peer, check, activity=activity, hdc_activity=HdcActivity())
+            upload = relay(client, peer, check, activity=activity, renew_activity=renew_activity,
+                           hdc_activity=HdcActivity())
             download = relay(peer, client, check)
         else:
             upload = relay(client, peer, check)
-            download = relay(peer, client, check, activity=activity, webkit=webkit)
+            download = relay(peer, client, check, activity=activity, renew_activity=renew_activity, webkit=webkit)
         tasks.extend([asyncio.create_task(upload), asyncio.create_task(download)])
         done, _ = await asyncio.wait(tasks[-2:], return_when=asyncio.FIRST_COMPLETED)
         for task in done:
@@ -69,6 +79,10 @@ async def connect_native(client, direct, lease, host, check, activity, *, hdc_bi
             extra = {"hdc_binding": hdc_binding} if hdc_binding else {}
             if webkit:
                 extra["webkit"] = True
+            if renew_activity is not None:
+                # Old Agents still send only "request". New Agents send "renew"
+                # only when the Server handling this tunnel accepts it.
+                extra["renew_activity"] = True
             await host.send(id=ident, serial=lease.serial, transport=lease.transport,
                             native_ticket=ticket, **extra)
         tasks.extend([asyncio.create_task(transfer()), asyncio.create_task(tunnel.stop.wait()),

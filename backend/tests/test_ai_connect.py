@@ -469,7 +469,20 @@ async def test_native_tunnels_route_to_two_agents_and_revoke_one_phone(client, a
 
 
 @pytest.mark.asyncio
-async def test_interactive_adb_input_is_activity_without_parsing_commands(monkeypatch):
+@pytest.mark.parametrize(("service", "renew_activity", "event"), [
+    (b"localabstract:webview_devtools_remote_1234", True, "renew"),
+    (b"shell,v2,raw:cat /proc/net/unix", True, "renew"),
+    (b"shell,v2,raw:cat /proc/1234/cmdline /proc/1234/stat", True, "renew"),
+    (b"shell,v2,raw:cat /proc/1234/cmdline /system/build.prop", True, "request"),
+    (b"localabstract:webview_devtools_remote_1234", False, "request"),
+    (b"shell,v2,pty:", True, "request"),
+    (b"shell,v2,raw:input tap 4 5", True, "request"),
+    (b"shell:am start -n com.example/.Main", True, "request"),
+    (b"shell:pm clear com.example", True, "request"),
+    (b"shell:cat /proc/net/unix; input tap 4 5", True, "request"),
+    (b"shell:cat /proc/net/unix > /data/local/tmp/output", True, "request"),
+])
+async def test_adb_stream_activity_follows_the_device_service(monkeypatch, service, renew_activity, event):
     from ai_phone.ai_connect import native
 
     received, sent = asyncio.Queue(), asyncio.Queue()
@@ -499,21 +512,25 @@ async def test_interactive_adb_input_is_activity_without_parsing_commands(monkey
         return native.HEADER.pack(name, remote, local, len(data), 0, magic) + data
 
     monkeypatch.setattr(native, "device_connection", selected)
-    device = native.DeviceTransport(Wire(), "A", 3)
+    device = native.DeviceTransport(Wire(), "A", 3, renew_activity=renew_activity)
     device.version = 0x01000001
     task = asyncio.create_task(device.run())
     try:
-        opening = packet(b"OPEN", 7, 0, b"shell,v2,pty:\0")
+        opening = packet(b"OPEN", 7, 0, service + b"\0")
         await received.put(opening[:10])
         await received.put(opening[10:])
-        assert await asyncio.wait_for(sent.get(), 1) == "request"
+        assert await asyncio.wait_for(sent.get(), 1) == event
         _, local, remote, *_ = native.HEADER.unpack(await sent.get())
         assert remote == 7
         await received.put(packet(b"OKAY", 7, local))
         await received.put(packet(b"WRTE", 7, local, b"test input\n"))
-        assert await asyncio.wait_for(sent.get(), 1) == "request"
+        assert await asyncio.wait_for(sent.get(), 1) == event
         assert (await sent.get())[:4] == b"OKAY" and sent.empty()
         assert writes[-1] == b"test input\n"
+        reader.feed_data(b"device reply")
+        assert await asyncio.wait_for(sent.get(), 1) == event
+        assert (await asyncio.wait_for(sent.get(), 1))[native.HEADER.size:] == b"device reply"
+        await received.put(packet(b"OKAY", 7, local))
     finally:
         await received.put(None)
         await asyncio.wait_for(task, 1)
@@ -578,6 +595,7 @@ async def test_adb_stream_backpressure_does_not_stall_other_streams(monkeypatch)
             assert await expect(b"OKAY") == ((remote - 6, remote), b"")
         await packet(b"WRTE", 7, 1, b"slow input")
         await asyncio.wait_for(blocked.wait(), 1)
+        assert await asyncio.wait_for(sent.get(), 1) == "request"
         readers[1].feed_data(b"fast output")
         readers[1].feed_eof()
         assert await asyncio.wait_for(sent.get(), 1) == "request"

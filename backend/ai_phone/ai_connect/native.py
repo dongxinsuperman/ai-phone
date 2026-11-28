@@ -10,7 +10,8 @@ from secrets import randbelow
 
 from websockets.exceptions import ConnectionClosed
 
-from .android import adb_connection, device_connection, local_inventory, read_string, request
+from .activity import RENEW_ACTIVITY, WRITE_ACTIVITY
+from .android import adb_connection, device_connection, is_read_only_service, local_inventory, read_string, request
 
 
 HEADER = struct.Struct("<4s5I")
@@ -46,6 +47,7 @@ class Stream:
     incoming: asyncio.Queue[bytes] = field(default_factory=lambda: asyncio.Queue(maxsize=1))
     writer: asyncio.StreamWriter | None = None
     task: asyncio.Task | None = None
+    activity: str = WRITE_ACTIVITY
 
 
 @dataclass
@@ -59,10 +61,11 @@ def adb_string(data):
 
 
 class DeviceTransport:
-    def __init__(self, ws, serial, transport):
+    def __init__(self, ws, serial, transport, *, renew_activity=False):
         self.ws = ws
         self.serial = serial
         self.transport = transport
+        self.renew_activity = renew_activity
         self.ids = itertools.count(1)
         self.streams = {}
         self.reverse_rules: dict[bytes, ReverseRule] = {}
@@ -99,8 +102,10 @@ class DeviceTransport:
         try:
             if not name or b"\0" in name or name.startswith(b"host"):
                 return
+            if self.renew_activity and is_read_only_service(name):
+                stream.activity = RENEW_ACTIVITY
             if name.startswith(b"reverse:"):
-                await self.ws.send("request")
+                await self.ws.send(stream.activity)
                 await self.send(b"OKAY", stream.local, stream.remote)
                 opened = True
                 try:
@@ -112,9 +117,9 @@ class DeviceTransport:
                 await stream.ack.wait()
                 return
             async with device_connection(self.serial, self.transport) as (reader, writer):
+                await self.ws.send(stream.activity)
                 await request(reader, writer, name)
                 stream.writer = writer
-                await self.ws.send("request")
                 await self.send(b"OKAY", stream.local, stream.remote)
                 opened = True
                 await self.exchange_stream(stream, reader)
@@ -128,13 +133,15 @@ class DeviceTransport:
     async def download(self, stream, reader):
         while data := await reader.read(self.max_payload):
             stream.ack.clear()
-            await self.ws.send("request")
+            await self.ws.send(stream.activity)
             await self.send(b"WRTE", stream.local, stream.remote, data)
             await stream.ack.wait()
 
     async def upload(self, stream):
         while True:
             data = await stream.incoming.get()
+            if data:
+                await self.ws.send(stream.activity)
             stream.writer.write(data)
             try:
                 await stream.writer.drain()
@@ -142,8 +149,6 @@ class DeviceTransport:
                 # Closing normally would wait for the blocked socket to flush.
                 stream.writer.transport.abort()
                 raise
-            if data:
-                await self.ws.send("request")
             await self.send(b"OKAY", stream.local, stream.remote)
 
     async def exchange_stream(self, stream, reader):
